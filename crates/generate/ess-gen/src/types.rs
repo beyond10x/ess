@@ -226,6 +226,11 @@ pub(crate) struct Node {
     /// The dialect, at a document root only.
     #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
     pub(crate) dialect: Option<&'static str>,
+    /// The document's absolute identity, at a document root only, and only where the adopter named
+    /// a base for it (`ess generate --schema-id-base`, beyond10x/ess#590). Absent, a document keeps
+    /// the bytes it had before identities could be asked for.
+    #[serde(rename = "$id", skip_serializing_if = "Option::is_none")]
+    pub(crate) id: Option<String>,
     /// A pointer to a definition in this same document.
     #[serde(rename = "$ref", skip_serializing_if = "Option::is_none")]
     pub(crate) reference: Option<String>,

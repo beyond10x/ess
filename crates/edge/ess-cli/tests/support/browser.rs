@@ -176,10 +176,18 @@ impl Drop for ProfileScratch {
 }
 
 struct OwnedChild(Child);
-impl Drop for OwnedChild {
-    fn drop(&mut self) {
+impl OwnedChild {
+    /// Stop the child and reap it, so everything it wrote to its stderr is on disk before a
+    /// refusal reads that file. A refusal read while Firefox was still writing reported fewer
+    /// bytes than the file held a moment later.
+    fn stop(&mut self) {
         let _ = self.0.kill();
         let _ = self.0.wait();
+    }
+}
+impl Drop for OwnedChild {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 pub struct Browser {
@@ -496,6 +504,7 @@ impl Browser {
         loop {
             // startup-path: harness
             if child.0.try_wait().unwrap().is_some() {
+                child.stop();
                 return Err(startup_refusal(
                     Stage::Exited,
                     started.elapsed(),
@@ -505,6 +514,7 @@ impl Browser {
             }
             let elapsed = started.elapsed();
             if elapsed >= deadline {
+                child.stop();
                 return Err(Self::connect_give_up(
                     elapsed,
                     deadline,
@@ -535,6 +545,7 @@ impl Browser {
                     last_socket_error = Some(error.to_string());
                     // startup-path: harness
                     if child.0.try_wait().unwrap().is_some() {
+                        child.stop();
                         return Err(startup_refusal(
                             Stage::Exited,
                             started.elapsed(),
@@ -544,6 +555,7 @@ impl Browser {
                     }
                     let elapsed = started.elapsed();
                     if elapsed >= deadline {
+                        child.stop();
                         return Err(Self::connect_give_up(
                             elapsed,
                             deadline,
@@ -577,6 +589,7 @@ impl Browser {
             {
                 // startup-path: harness
                 let reason = format!("restoring the session timeouts: {error}");
+                child.stop();
                 return Err(startup_refusal(
                     Stage::Upgrade(&reason),
                     started.elapsed(),
@@ -645,6 +658,7 @@ impl Browser {
         loop {
             // startup-path: harness
             if child.0.try_wait().unwrap().is_some() {
+                child.stop();
                 return Err(startup_refusal(
                     Stage::Exited,
                     started.elapsed(),
@@ -654,6 +668,7 @@ impl Browser {
             }
             let elapsed = started.elapsed();
             if elapsed >= deadline {
+                child.stop();
                 return Err(startup_refusal(
                     Stage::Announce,
                     elapsed,

@@ -78,7 +78,7 @@ enum Command {
         #[command(subcommand)]
         command: Option<GenerateAreaCommand>,
         #[command(flatten)]
-        direct: GenerateArgs,
+        direct: Box<GenerateArgs>,
     },
     /// Hold an implementation, or a later revision, to what a system says.
     Verify {
@@ -244,7 +244,7 @@ enum GenerateAreaCommand {
     /// takes any number of `--include` pages beside the generated ones — a plan board another tool
     /// rendered, a runbook. Both are markdown somebody wrote, read into the document and styled
     /// like every other page.
-    Generate(GenerateArgs),
+    Generate(Box<GenerateArgs>),
     /// Generate a parser and process adapter from a typed CLI presentation binding.
     Cli(cli_binding::Generate),
     /// Generate an application from an `ess-ui/1` document.
@@ -294,6 +294,11 @@ struct GenerateArgs {
     /// pins.
     #[arg(long, requires = "http")]
     refines: Option<PathBuf>,
+    /// Give every document `--kind schema` writes a root `$id`: this absolute URI, ending in `/` or
+    /// `:`, followed by the document's path under `schema/` (beyond10x/ess#590). Only with
+    /// `--kind schema`; without it no document carries an `$id`.
+    #[arg(long, value_name = "URI")]
+    schema_id_base: Option<String>,
 }
 
 /// `ess generate`: IR becomes artifacts; explicit executor verbs deliver them — `crates/generate/`.
@@ -1687,6 +1692,16 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
     if arguments.http.is_some() && !matches!(arguments.kind, Some(Projection::OpenApi)) {
         bail!("--http binds routes for the OpenAPI projection; it requires --kind openapi");
     }
+    if arguments.schema_id_base.is_some() && !matches!(arguments.kind, Some(Projection::Schema)) {
+        bail!(
+            "--schema-id-base identifies the JSON Schema projection's documents; it requires --kind schema"
+        );
+    }
+    let identified = arguments
+        .schema_id_base
+        .as_deref()
+        .map(ess_gen::schema::IdentifiedJsonSchema::new)
+        .transpose()?;
     generate(
         &arguments.input.path,
         arguments.kind,
@@ -1698,13 +1713,18 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
         },
         arguments.format,
         arguments.strict,
-        match (arguments.transport.as_deref(), arguments.http.as_deref()) {
-            (Some(transport), _) => Beside::Transport(transport),
-            (None, Some(binding)) => Beside::Http {
+        match (
+            arguments.transport.as_deref(),
+            arguments.http.as_deref(),
+            identified.as_ref(),
+        ) {
+            (Some(transport), _, _) => Beside::Transport(transport),
+            (None, Some(binding), _) => Beside::Http {
                 binding,
                 refines: arguments.refines.as_deref(),
             },
-            (None, None) => Beside::Nothing,
+            (None, None, Some(identified)) => Beside::SchemaIds(identified),
+            (None, None, None) => Beside::Nothing,
         },
     )
 }
@@ -3402,6 +3422,33 @@ enum Beside<'a> {
         binding: &'a Path,
         refines: Option<&'a Path>,
     },
+    /// A base every JSON Schema document's `$id` is minted under, for `--kind schema`.
+    SchemaIds(&'a ess_gen::schema::IdentifiedJsonSchema),
+}
+
+/// `openapi` and `asyncapi` write one document per component, so a domain no component owns
+/// is absent from both, and a specification with no components projects to nothing at all.
+/// That is legal; saying nothing about it is what made it look like a clean run (ess#102).
+/// Names each such domain, and says whether `--strict` refuses the run for it.
+fn refuses_unowned_domains(
+    kind: Option<Projection>,
+    ir: &ess_compiler::EssIr,
+    strict: bool,
+) -> bool {
+    if !matches!(
+        kind,
+        None | Some(Projection::OpenApi | Projection::AsyncApi)
+    ) {
+        return false;
+    }
+    let unowned = unowned_domains(ir);
+    for domain in &unowned {
+        eprintln!(
+            "{}: no component owns {domain}; declare it in components.yaml",
+            if strict { "refused" } else { "note" }
+        );
+    }
+    strict && !unowned.is_empty()
 }
 
 /// Resolve once, then render the selected projection and preflight its complete output set.
@@ -3425,23 +3472,8 @@ fn generate(
     let Ok((ir, _)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
-    // `openapi` and `asyncapi` write one document per component, so a domain no component owns
-    // is absent from both, and a specification with no components projects to nothing at all.
-    // That is legal; saying nothing about it is what made it look like a clean run (ess#102).
-    if matches!(
-        kind,
-        None | Some(Projection::OpenApi | Projection::AsyncApi)
-    ) {
-        let unowned = unowned_domains(&ir);
-        for domain in &unowned {
-            eprintln!(
-                "{}: no component owns {domain}; declare it in components.yaml",
-                if strict { "refused" } else { "note" }
-            );
-        }
-        if strict && !unowned.is_empty() {
-            return Ok(ExitCode::from(1));
-        }
+    if refuses_unowned_domains(kind, &ir, strict) {
+        return Ok(ExitCode::from(1));
     }
     let mut publications = Vec::new();
     let artifacts = match (kind, beside) {
@@ -3473,6 +3505,11 @@ fn generate(
                 Some(artifacts) => artifacts,
                 None => return Ok(ExitCode::from(1)),
             }
+        }
+        (Some(Projection::Schema), Beside::SchemaIds(identified)) => {
+            ess_gen::artifact::run(identified, &ir)?
+                .into_iter()
+                .collect()
         }
         (Some(kind), _) => {
             let generator = ess_gen::generator(kind.name()).context("projection unavailable")?;

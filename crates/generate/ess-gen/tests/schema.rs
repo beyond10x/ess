@@ -1181,3 +1181,113 @@ fn an_alphabet_is_an_annotation_on_its_type_and_an_example_on_its_input_property
     .unwrap();
     assert!(!bytes.contains("examples"), "no example, no key: {bytes}");
 }
+
+/// A projected root can carry an absolute `$id` under a base the adopter chooses, so ESS's own
+/// registry validator accepts the projection as it stands (beyond10x/ess#590).
+mod schema_id_base {
+    use super::{artifacts, billing, document, run, validator_for, Value};
+    use ess_gen::schema::IdentifiedJsonSchema;
+
+    const BASE: &str = "https://schemas.example.org/billing/";
+
+    #[test]
+    fn issue_590_a_schema_id_base_identifies_every_document_by_its_path() {
+        let ir = billing();
+        let generator = IdentifiedJsonSchema::new(BASE).expect("an absolute base ending in `/`");
+        let identified = run(&generator, &ir).expect("no two schemas claim one path");
+        let plain = artifacts(&ir);
+        assert_eq!(
+            identified.keys().collect::<Vec<_>>(),
+            plain.keys().collect::<Vec<_>>(),
+            "the base adds an identity and no document"
+        );
+        let mut identities = std::collections::BTreeSet::new();
+        for path in identified.keys() {
+            let mut with = document(&identified, path);
+            let under = path.strip_prefix("schema/").expect("under schema/");
+            assert_eq!(
+                with.get("$id").and_then(Value::as_str),
+                Some(format!("{BASE}{under}").as_str()),
+                "{path}: the id is the base and the path under schema/"
+            );
+            // The parsed value sorts its keys; the bytes carry the order the document was written in.
+            let written = identified[path]
+                .contents
+                .lines()
+                .skip(1)
+                .take(2)
+                .map(|line| {
+                    line.trim_start()
+                        .split('"')
+                        .nth(1)
+                        .unwrap_or_default()
+                        .to_owned()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                written,
+                ["$schema", "$id"],
+                "{path}: the id follows the dialect"
+            );
+            identities.insert(with["$id"].as_str().unwrap().to_owned());
+            jsonschema::meta::validate(&with)
+                .unwrap_or_else(|error| panic!("{path} is a valid 2020-12 document: {error}"));
+            let _ = validator_for(&with);
+            with.as_object_mut().unwrap().remove("$id");
+            assert_eq!(
+                with,
+                document(&plain, path),
+                "{path}: removing the id gives back the unidentified document"
+            );
+        }
+        assert_eq!(identities.len(), identified.len(), "every id is distinct");
+    }
+
+    #[test]
+    fn issue_590_without_a_base_no_document_moves() {
+        let ir = billing();
+        for (path, artifact) in artifacts(&ir) {
+            assert!(
+                !artifact.contents.contains("\"$id\""),
+                "{path}: no base, no id"
+            );
+        }
+        let urn = IdentifiedJsonSchema::new("urn:example:billing:").expect("a URN prefix");
+        let identified = run(&urn, &ir).unwrap();
+        let money = document(
+            &identified,
+            "schema/types/billing.invoice.Money.schema.json",
+        );
+        assert_eq!(
+            money["$id"],
+            "urn:example:billing:types/billing.invoice.Money.schema.json"
+        );
+    }
+
+    #[test]
+    fn issue_590_a_base_that_is_not_an_absolute_prefix_is_refused() {
+        for refused in [
+            "",
+            "schemas/",
+            "/schemas/",
+            "1http://example.org/",
+            "https://example.org/schemas",
+            "https://example.org/schemas/?v=1/",
+            "https://example.org/schemas/#/",
+            "https://example.org/my schemas/",
+            "urn:example",
+        ] {
+            assert!(
+                IdentifiedJsonSchema::new(refused).is_err(),
+                "{refused:?} is not an absolute base ending in `/` or `:`"
+            );
+        }
+        for admitted in [
+            "https://example.org/schemas/",
+            "urn:example:",
+            "tag:example.org,2026:",
+        ] {
+            assert!(IdentifiedJsonSchema::new(admitted).is_ok(), "{admitted:?}");
+        }
+    }
+}
