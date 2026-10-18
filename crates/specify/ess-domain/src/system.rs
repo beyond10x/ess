@@ -52,6 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+    27,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -266,6 +267,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 27,
+        release: None,
+        added: &[
+            "A command guarding on a related row (`when_related:`) may declare an `unknown_instance:` branch for the row it addresses through its input: the precedence order places it, an `exists: false` over a row the input names answering first, then the input-guarded refusals, then the unknown addressed identity, then the held state and the present related row's predicates; below `ess/27` the pairing is refused as `conflicting_declaration`, its hint naming `ess/27`.",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -367,6 +376,9 @@ impl FormatVersion {
     /// A named refusal that addresses an existing row is witnessed on the whole row: an `external:`
     /// refusal's scenario reads the row back and requires it unchanged (beyond10x/ess#587).
     pub const V26: Self = Self(26);
+    /// A command guarding on a related row may answer an unknown addressed identity with an
+    /// `unknown_instance:` branch, at step 3 of the precedence order.
+    pub const V27: Self = Self(27);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

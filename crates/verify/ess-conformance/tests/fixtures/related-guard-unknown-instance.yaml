@@ -1,0 +1,82 @@
+format: ess/27
+system: demo
+version: v1
+domain: demo.seats
+summary: A seat moved to another tier, refused for a seat no row carries, a tier no row carries and a closed tier.
+types:
+  - {name: demo.seats.SeatId, kind: newtype, of: Uuid}
+  - {name: demo.seats.TierId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.seats.Tier
+    identity: {name: tier_id, type: demo.seats.TierId}
+    fields:
+      - {name: open, type: Boolean}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.seats.Seat
+    identity: {name: seat_id, type: demo.seats.SeatId}
+    fields:
+      - {name: tier_id, type: demo.seats.TierId}
+    relations:
+      - {name: tier, kind: references, target: demo.seats.Tier, cardinality: one, via: tier_id}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+actors:
+  - name: demo.seats.Operator
+    may: [demo.seats.DefineTier, demo.seats.Issue, demo.seats.ChangeTier]
+errors:
+  - {name: demo.seats.UnknownSeat, summary: No seat carries the identity., fields: []}
+  - {name: demo.seats.UnknownTier, summary: No tier carries the identity., fields: []}
+  - {name: demo.seats.TierClosed, summary: The tier is closed., fields: []}
+events:
+  - name: demo.seats.TierDefined
+    fields:
+      - {name: tier_id, type: demo.seats.TierId}
+  - name: demo.seats.Issued
+    fields:
+      - {name: seat_id, type: demo.seats.SeatId}
+  - name: demo.seats.TierChanged
+    fields:
+      - {name: seat_id, type: demo.seats.SeatId}
+commands:
+  - name: demo.seats.DefineTier
+    input:
+      - {name: open, type: Boolean}
+    outcomes:
+      - name: defined
+        creates: demo.seats.Tier
+        instance: tier_id
+        sets: {open: input.open}
+        emits: [demo.seats.TierDefined]
+        payload:
+          demo.seats.TierDefined: {tier_id: {generated: true}}
+  - name: demo.seats.Issue
+    input:
+      - {name: tier_id, type: demo.seats.TierId}
+    outcomes:
+      - name: issued
+        creates: demo.seats.Seat
+        instance: seat_id
+        sets: {tier_id: input.tier_id}
+        emits: [demo.seats.Issued]
+        payload:
+          demo.seats.Issued: {seat_id: {generated: true}}
+  - name: demo.seats.ChangeTier
+    input:
+      - {name: seat_id, type: demo.seats.SeatId}
+      - {name: tier_id, type: demo.seats.TierId}
+    outcomes:
+      - name: unknown-seat
+        unknown_instance: true
+        error: demo.seats.UnknownSeat
+      - name: unknown-tier
+        when_related: {via: input.tier_id, exists: false}
+        error: demo.seats.UnknownTier
+      - name: tier-closed
+        when_related: {via: input.tier_id, predicate: open == false}
+        error: demo.seats.TierClosed
+      - name: changed
+        updates: demo.seats.Seat
+        instance: seat_id
+        sets: {tier_id: input.tier_id}
+        emits: [demo.seats.TierChanged]
+        payload:
+          demo.seats.TierChanged: {seat_id: input.seat_id}

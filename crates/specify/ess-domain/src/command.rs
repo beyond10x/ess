@@ -3576,7 +3576,7 @@ impl CommandSpec {
         // with the input, which needs the other entity's field types, known at assembly; here its
         // own branches are checked, including that it selects on nothing else.
         if related_guard::uses(self) {
-            return related_guard::validate_shape(self);
+            return related_guard::validate_shape(self, types);
         }
         // Two strategies stay two (`cross-record-and-stored-field-guards.md`, "One strategy or
         // two"): a command selecting on stored fields and on the held lifecycle state at once is

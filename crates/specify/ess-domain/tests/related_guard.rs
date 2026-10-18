@@ -306,11 +306,15 @@ fn issue_211_a_command_does_not_select_on_the_related_row_and_its_own_subject_at
         "      - name: initiated\n",
         "      - name: unknown\n        unknown_instance: true\n        error: demo.signin.NoConfiguration\n      - name: initiated\n",
     ));
+    // `InitiateSignIn` addresses no row its input names, so its `unknown_instance:` branch is
+    // refused as unreachable, whatever the format. The pairing with `when_related:` on a command
+    // that does address one is refused below `ess/27` and admitted from it
+    // (`tests/related_guard_unknown_instance.rs`).
     assert!(
         has(
             &errors,
-            ValidationCode::ConflictingDeclaration,
-            "`unknown_instance` branch"
+            ValidationCode::UnreachableBranch,
+            "answers an identity no record carries"
         ),
         "{errors}"
     );
