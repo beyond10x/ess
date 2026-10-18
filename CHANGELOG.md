@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A binding whose invoked command chooses its branch by a `when_related` guard over the row an
+  input names (`exists: false`, a predicate over the row's stored fields, the default) gets its
+  `flow`, `mapping` and `delivery` scenarios instead of the `ESS-SYNTH-010` refusal "whose branch
+  is decided by an input the event fills". Where the binding maps that input unconverted from an
+  event field the trigger copies from its own input, synthesis creates the row through its
+  creating command so the accepting branch is taken, and sends the trigger naming it. A guard that
+  also reads the invoked command's input, or a row named by an identity the implementation mints,
+  keeps the refusal. A model without such a binding keeps its suite bytes
+  (downstream report, 2026-10-18).
+
 ## [0.62.0] — 2026-10-16
 
 ### Added

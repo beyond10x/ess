@@ -308,6 +308,37 @@ reading construct: `{related: {via: <field>, field: <field>}}` in `sets:` or `pa
 The conformance suite arranges the referenced row and asserts the value the invoked command
 emits, so the read is checked where it is made.
 
+The same holds when the command chooses its branch by the row: a flag on another entity that
+decides whether the binding's work is done or skipped is a `when_related` guard of the invoked
+command, not a binding condition.
+
+```yaml
+  - name: demo.seats.IssueSeat
+    input:
+      - {name: member_id, type: demo.seats.MemberId}
+      - {name: plan_id, type: demo.seats.PlanId}
+    outcomes:
+      - name: no-such-plan
+        when_related: {via: input.plan_id, exists: false}
+        error: demo.seats.NoSuchPlan
+      - name: ineligible
+        when_related: {via: input.plan_id, predicate: eligible == false}
+        emits: [demo.seats.SeatSkipped]
+      - name: issued
+        creates: demo.seats.Seat
+        instance: member_id
+        emits: [demo.seats.SeatIssued]
+```
+
+Where the binding maps `plan_id` straight from an event field that the triggering command copies
+from its own input, the binding's `flow`, `mapping` and `delivery` scenarios create the plan through
+its creating command first, so the invocation takes the accepting branch, and send the trigger
+naming that plan. The accepting branch is the default where it accepts, otherwise the first
+predicate branch that does. Each branch of the command keeps its own outcome scenario. If a guard
+also reads the invoked command's input, or the row is named by a value the implementation mints,
+the branch depends on values the scenario does not choose, and the binding's scenarios are still
+refused with `ESS-SYNTH-010`.
+
 A `mapping:` value written as `{related: …}` is refused as an unknown field of a selection.
 
 ## Selections, periodic causes and delivery context
