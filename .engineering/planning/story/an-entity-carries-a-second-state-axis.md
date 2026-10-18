@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-entity-carries-a-second-state-axis
 kind: story
-status: draft
+status: archived
 title: Two independent lifecycles on one entity (proposed decline, with the idiom)
 tags:
 - adopter-report
@@ -11,7 +11,9 @@ refs:
   reference: beyond10x/ess#559
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-18T21:32:03Z", actor: "human:timo", revision: 2}
 ---
 ## Outcome
 

@@ -1,0 +1,98 @@
+format: ess/26
+system: perrow
+version: v1
+domain: perrow.batch
+summary: A batch applies each approved proposal by the answer an external system gave for that row.
+types:
+  - {name: perrow.batch.ProposalId, kind: newtype, of: Uuid}
+  - {name: perrow.batch.BatchId, kind: newtype, of: Uuid}
+  - {name: perrow.batch.Verdict, kind: enum, variants: [applied, refused, invalid]}
+  - name: perrow.batch.Answer
+    kind: struct
+    fields:
+      - {name: proposal_id, type: perrow.batch.ProposalId}
+      - {name: verdict, type: perrow.batch.Verdict}
+entities:
+  - name: perrow.batch.Batch
+    identity: {name: batch_id, type: perrow.batch.BatchId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Applied]
+      terminal: [Applied]
+      transitions:
+        - {name: apply, from: [Open], to: Applied}
+  - name: perrow.batch.Proposal
+    identity: {name: proposal_id, type: perrow.batch.ProposalId}
+    fields:
+      - {name: batch_id, type: perrow.batch.BatchId}
+    lifecycle:
+      initial: Approved
+      states: [Approved, Applied, Refused, Invalid]
+      terminal: [Applied, Refused, Invalid]
+      transitions:
+        - {name: apply, from: [Approved], to: Applied}
+        - {name: refuse, from: [Approved], to: Refused}
+        - {name: invalidate, from: [Approved], to: Invalid}
+errors:
+  - {name: perrow.batch.Duplicate, summary: An answer names one proposal twice., fields: []}
+  - {name: perrow.batch.WrongState, summary: The batch is not open., fields: []}
+events:
+  - name: perrow.batch.BatchOpened
+    fields: [{name: batch_id, type: perrow.batch.BatchId}]
+  - name: perrow.batch.Proposed
+    fields: [{name: proposal_id, type: perrow.batch.ProposalId}]
+  - name: perrow.batch.BatchApplied
+    fields: [{name: batch_id, type: perrow.batch.BatchId}]
+actors:
+  - name: perrow.batch.Operator
+    may: [perrow.batch.Open, perrow.batch.Propose, perrow.batch.Apply]
+commands:
+  - name: perrow.batch.Open
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: perrow.batch.Batch
+        instance: batch_id
+        emits: [perrow.batch.BatchOpened]
+        payload: {perrow.batch.BatchOpened: {batch_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: perrow.batch.Propose
+    input:
+      - {name: batch_id, type: perrow.batch.BatchId}
+    outcomes:
+      - name: proposed
+        creates: perrow.batch.Proposal
+        instance: proposal_id
+        emits: [perrow.batch.Proposed]
+        payload: {perrow.batch.Proposed: {proposal_id: {generated: true}}}
+        sets: {batch_id: input.batch_id}
+  - name: perrow.batch.Apply
+    input:
+      - {name: batch_id, type: perrow.batch.BatchId}
+      - {name: answers, type: List<perrow.batch.Answer>}
+    outcomes:
+      - name: duplicated
+        when: {not: {distinct: {in: answers, as: a, by: a.proposal_id}}}
+        error: perrow.batch.Duplicate
+      - name: applied
+        moves: perrow.batch.Batch.apply
+        instance: batch_id
+        emits: [perrow.batch.BatchApplied]
+        payload: {perrow.batch.BatchApplied: {batch_id: input.batch_id}}
+        affects:
+          - entity: perrow.batch.Proposal
+            each: {in: input.answers, as: a}
+            instance: a.proposal_id
+            moves: perrow.batch.Proposal.apply
+      - {name: wrong-state, wrong_state: true, error: perrow.batch.WrongState}
+views:
+  - name: perrow.batch.Proposals
+    source: perrow.batch.Proposal
+    consistency: read_your_writes
+    fields:
+      - {name: proposal_id, type: perrow.batch.ProposalId}
+      - {name: batch_id, type: perrow.batch.BatchId}
+      - {name: state, type: perrow.batch.Proposal.State}
