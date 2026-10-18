@@ -49,6 +49,8 @@ use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
 use super::identity;
 use super::precedence;
 use super::set_effects::{input_value, misses, subject_value, written_in};
+
+mod copied;
 use super::{
     absorb, arrange_toward_owned, candidates, flatten, instance_name, prepare_in, settled,
     still_unwritten, subject_fact, supply, unwritten_by, ActorRef, Arrangement, ConformanceSuite,
@@ -933,11 +935,18 @@ fn apply(
     let entity = &subject.entity;
     match &subject.effect {
         ResolvedEffect::Creates => {
-            let before = if uses(command) {
+            let mut before = if uses(command) {
                 selected_values(ir, command, outcome, supplied, rows)
             } else {
                 BTreeMap::new()
             };
+            before.extend(copied::values(
+                ir,
+                outcome,
+                supplied,
+                &BTreeMap::new(),
+                rows,
+            ));
             let settled = settled(ir, outcome, supplied, &before);
             let instance = captured
                 .filter(|(_, captured)| *captured == EntityRef::from(entity))
@@ -963,10 +972,12 @@ fn apply(
                 rows.opaque.insert(entity.clone());
                 return;
             };
-            let before = rows
+            let mut before = rows
                 .named(entity, &named)
                 .map(|row| row.settled.clone())
                 .unwrap_or_default();
+            let read = copied::values(ir, outcome, supplied, &before, rows);
+            before.extend(read);
             let determined = settled(ir, outcome, supplied, &before);
             let Some(row) = rows.named(entity, &named) else {
                 rows.opaque.insert(entity.clone());
@@ -1213,11 +1224,13 @@ fn arrange_row(
         other if required(other) => other.clone(),
         _ => Predicate::Always,
     };
-    [goal.clone(), relaxed, Predicate::Always]
-        .iter()
-        .find_map(|steer| {
-            arrange_toward_owned(ir, entity, steer, actors, distinction, owner, accept)
-        })
+    copied::steered(ir, entity, goal, actors, (distinction, owner), accept).or_else(|| {
+        [goal.clone(), relaxed, Predicate::Always]
+            .iter()
+            .find_map(|steer| {
+                arrange_toward_owned(ir, entity, steer, actors, distinction, owner, accept)
+            })
+    })
 }
 
 /// Why no scenario can decide the rows `selection` selects, where none can: it is unscoped, or it
