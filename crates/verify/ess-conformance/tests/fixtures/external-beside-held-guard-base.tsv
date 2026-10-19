@@ -44,8 +44,8 @@ crates/specify/ess-composition/tests/fixtures/owner-consumer/owner/system.yaml	A
 crates/specify/ess-composition/tests/fixtures/two-components/system.yaml	ASSEMBLE 74a0ef8ca80c67eb56c8:458
 crates/specify/ess-domain/tests/fixtures/binding-selection.yaml	suite=1361d6cc82688779dbdc:2180 refusals=4d66337d8f495b389830:238 claimable=
 crates/specify/ess-domain/tests/fixtures/lending/system.yaml	ASSEMBLE 85c94c36442628166bea:214
-crates/specify/ess-domain/tests/fixtures/outcome-groups/system.yaml	ASSEMBLE c8f3de2caa2dbb67419c:449
-crates/specify/ess-domain/tests/fixtures/outcome-groups-twin/system.yaml	ASSEMBLE c8f3de2caa2dbb67419c:449
+crates/specify/ess-domain/tests/fixtures/outcome-groups/system.yaml	ASSEMBLE e81263926bcf9e3938ac:451
+crates/specify/ess-domain/tests/fixtures/outcome-groups-twin/system.yaml	ASSEMBLE e81263926bcf9e3938ac:451
 crates/specify/ess-domain/tests/fixtures/periodic.yaml	suite=15a17f755c76ca3b4c88:8935 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	suite=1fc3b8f3846fac6fbb2b:323 refusals=b364fba60dba0462e7c1:334 claimable=
 crates/specify/ess-service-contract/tests/fixtures/system.yaml	ASSEMBLE bfbe3990bccba3100311:459
