@@ -1471,9 +1471,10 @@ refuses it as `unsupported_construct`, `when_subject:` naming the `when_related`
 one comparison or an `all:` holding a **tie**, a top-level `<name>.<field> == <candidate field>`
 either way round (`missing_declaration` without one; an equality under `any:` or `not:` is no
 tie). The binder may not name a field of the candidate, `state`, a root or a binder in scope
-(`conflicting_declaration`). `forall` over rows is refused with its rewrite, `not: {exists: {in:
-{entity: <Entity>}, as: <name>, that: {all: [<tie>, {not: <condition>}]}}}`, and a rows test
-inside another as `unsupported_construct`; `<Entity>` must be declared (`undeclared_reference`).
+(`conflicting_declaration`). `forall` over rows is refused with its rewrite,
+`not: {exists: {in: {entity: <Entity>}, as: <name>, that: {all: [<tie>, {not: <condition>}]}}}`,
+and a rows test inside another as `unsupported_construct`; `<Entity>` must be declared
+(`undeclared_reference`).
 Below `ess/27` the shape is refused as `unsupported_format_version`, naming `ess/27`.
 
 The related rows are the store just before the branch is selected, the snapshot the candidates are
