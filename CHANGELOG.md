@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.63.0] — 2026-10-19
+
 ### Added
 
 - From `format: ess/27` a value may be computed by an expression, `{expr: "<expression>"}`, in
@@ -169,7 +171,7 @@
   interpreter and generated Rust and Go answer them. A `deletes:` sibling stays refused. Below
   `ess/27` the pairing keeps its `conflicting_declaration`, the hint naming `ess/27`
   (beyond10x/ess#535).
-- `ess/27`, a specification format no release has shipped yet. A model below it keeps its meaning,
+- `ess/27`, a new specification format. A model below it keeps its meaning,
   its IR bytes and its compiled digest; each construct below is refused under an earlier header as
   `unsupported_format_version` naming `ess/27`, or keeps the reading it had there
   (`ess specify formats` prints the row).
@@ -368,6 +370,8 @@
   (beyond10x/ess#546).
 - A minted ordered head refuses only its own branch, naming it, instead of every sibling branch of
   the command (beyond10x/ess#552).
+
+Language: 1 general, 7 one-to-one, 7 part (general share 7%; cumulative 20%).
 
 ## [0.62.0] — 2026-10-16
 

@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.63.0](#a-value-can-be-computed-by-a-typed-expression-and-every-guard-answers-in-one-precedence-order) | A value can be computed by a typed expression, and every guard answers in one precedence order | capability | notable |
 | [0.62.0](#a-suite-holds-a-command-at-a-fixed-now-so-a-guard-on-a-time-boundary-is-tested-exactly-there) | A suite holds a command at a fixed now, so a guard on a time boundary is tested exactly there | capability | notable |
 | [0.61.0](#concurrent-histories-record-each-calls-input-and-events-and-check-history-holds-them) | Concurrent histories record each call's input and events, and check-history holds them | capability | notable |
 | [0.60.0](#a-composition-states-which-component-plays-anothers-role-and-which-command-implements-or-gates-it) | A composition states which component plays another's role, and which command implements or gates it | capability | notable |
@@ -71,6 +72,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.63.0 — 2026-10-19
+
+### A value can be computed by a typed expression, and every guard answers in one precedence order
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.63.0)
+
+Format `ess/27` computes a value from an expression in `sets:`, payloads and view fields, reads digest functions in guards, and answers a command's guards in one precedence order, admitting the guard pairs that order settles. `ess verify conform diff` compares two suites, and a suite states the event catalog once.
 
 ## 0.62.0 — 2026-10-16
 

@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.63.0 — 2026-10-19
+
+### A value can be computed by a typed expression, and every guard answers in one precedence order
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/typed-expressions-and-one-precedence-order) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.63.0)
+
+Format `ess/27` computes a value from an expression in `sets:`, payloads and view fields, reads digest functions in guards, and answers a command's guards in one precedence order, admitting the guard pairs that order settles. `ess verify conform diff` compares two suites, and a suite states the event catalog once.
+
 ## 0.62.0 — 2026-10-16
 
 ### A suite holds a command at a fixed now, so a guard on a time boundary is tested exactly there
