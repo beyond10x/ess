@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-19T21:15:04Z",
+  "actor": "human:timo",
+  "artifact": "story:minted-value-present-and-shared-with-its-payload",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "https://github.com/beyond10x/ess/actions/runs/39303029081 (0.63.0 Release preparation Gate green at be102be67, PR 602)"
+  }
+}

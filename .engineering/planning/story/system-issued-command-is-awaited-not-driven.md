@@ -2,9 +2,15 @@
 format: aep.planning-md/3
 id: story:system-issued-command-is-awaited-not-driven
 kind: story
-status: draft
+status: implemented
 title: A system-issued command is awaited, not driven
-revision: 3
+relations:
+- serves: vision:O2
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-19T21:14:59Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-10-19T21:14:59Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-19T21:15:00Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-leaves-unread-optional-inputs-absent
 kind: story
-status: draft
+status: implemented
 title: Synthesis fills every Optional input, with a related input's literal, so an unread optional deadline is set on every scenario
 summary: Leave an Optional input absent unless the scenario's arrangement reads it
 owner: timo
@@ -11,7 +11,13 @@ tags:
 refs:
 - provider: github
   reference: beyond10x/ess#546
-revision: 1
+relations:
+- serves: vision:O2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-19T21:15:05Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-19T21:15:06Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-19T21:15:06Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Problem
 

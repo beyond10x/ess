@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:minted-head-refuses-only-its-branch
 kind: story
-status: draft
+status: implemented
 title: Synthesis drops every branch of a command once one branch reads a head over a minted key
 summary: A minted-head branch is refused alone; sibling branches keep their scenarios
 owner: timo
@@ -11,7 +11,13 @@ tags:
 refs:
 - provider: github
   reference: beyond10x/ess#552
-revision: 1
+relations:
+- serves: vision:O2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-19T21:15:11Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-19T21:15:11Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-19T21:15:12Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

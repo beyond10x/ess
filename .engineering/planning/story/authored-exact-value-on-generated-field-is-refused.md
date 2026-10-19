@@ -2,9 +2,15 @@
 format: aep.planning-md/3
 id: story:authored-exact-value-on-generated-field-is-refused
 kind: story
-status: draft
+status: implemented
 title: An authored exact value on a generated field is refused
-revision: 1
+relations:
+- serves: vision:O2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-19T21:15:03Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-19T21:15:03Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-19T21:15:04Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 
