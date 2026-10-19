@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance/tests/integer_literal_token.rs
 - confidence: cited
   path: website/docs/guides/verify/runners.md
-revision: 3
+revision: 4
 ---
 ## Outcome
 
@@ -78,3 +78,20 @@ bytes; the runner guide documents the normalisation for them. Decimal literals a
 - Test: new `crates/verify/ess-conformance/tests/integer_literal_token.rs`.
 
 One unit, scheduled with the `/52` pair (after U5 and the port fix the pair's other contents).
+
+## Decisions
+
+2026-10-19, left out of the 0.63.0 batch. The quick-fix unit found that the store cannot tell an
+Integer `1` from a Decimal `1.0` (`crates/specify/ess-primitives/src/facts.rs`, `Number::serialize`
+is the writer; the scope line naming `scenario.rs` is wrong), so a writer that picks the token by
+type cannot reproduce an admitted `/52` suite byte for byte
+(`the_vocabulary_round_trips_byte_for_byte`). The two routes:
+
+| option | does | costs |
+|---|---|---|
+| A | every whole number is an integer token from suite `/52` | breaks this story's "Decimal literals unchanged" |
+| B | the shared number type carries an integer-token flag | a change under `docs/design/review-primitive-semantics.md` |
+
+Fresh suites start at `/34`: unless an Integer literal itself raises a suite to `/52`, a downstream
+suite keeps writing `1.0`; if it does, about 289 suite-version pins in 138 files move. Open until a
+design pass picks A or B.
