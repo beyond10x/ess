@@ -412,7 +412,10 @@ fn dumped(label: &str, text: &str) -> String {
 /// `adv-identity-selector-present.yaml`, wrote a document whose SHA-256 is the literal below: the
 /// suite synthesized `FormTeam/*` and `NameSuccessor/outcome/no-such-team`, and refused
 /// `NameSuccessor/successor-is-a-team` and `NameSuccessor/named` as "its row set is Unknown". The
-/// unit's own invariant: an old format keeps its bytes.
+/// unit's own invariant: an old format keeps its bytes. Re-pinned on the 0.63.0 integration
+/// branch for the review fix a422cac9d alone: both refusals carry the arrangement help in place of
+/// "give the field a type that has a finite value, or drop it from the command's input"; with
+/// that line put back, the document hashes to the old literal `c9cc1517…fa256c` byte for byte.
 #[test]
 fn adv_an_ess22_identity_selector_keeps_its_suite_bytes() {
     use sha2::{Digest, Sha256};
@@ -429,7 +432,7 @@ fn adv_an_ess22_identity_selector_keeps_its_suite_bytes() {
         });
     assert_eq!(
         digest,
-        "c9cc15173d057fbe168d1a35738c4cb58f133d5888d7ef7c7300c8db64fa256c",
+        "47b9b0d3e37a3efb3447b907703157478bed959cdfaa93390770c0bf5a7529da",
         "the ess/22 suite moved:\n{}",
         &out[out.find("---- refusals").unwrap_or(0)..]
     );

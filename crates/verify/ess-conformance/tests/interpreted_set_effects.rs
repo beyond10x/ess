@@ -234,9 +234,13 @@ fn primary_failure_and_unknown_filters_never_apply_secondary_or_partial_writes()
 
 #[test]
 fn secondary_and_set_subject_invariants_are_checked_before_returning_a_step() {
+    // The invariant reads `note`, which `Invite`'s `affects:` entry does not write, so validation
+    // leaves it to the run (an invariant every field of which a branch writes with a literal is
+    // refused at validation, `ess-domain/tests/literal_entity_invariants.rs`); the affected rows'
+    // `note` is not `never`, so `on_hold: true` breaks it on them.
     let source = MODEL.replace(
         "    lifecycle:\n",
-        "    invariants: ['on_hold == false']\n    lifecycle:\n",
+        "    invariants: [{any: ['on_hold == false', 'note == \"never\"']}]\n    lifecycle:\n",
     );
     let ir = model(&source);
     let mut store = Store::default();

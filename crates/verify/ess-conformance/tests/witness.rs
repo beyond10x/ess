@@ -1114,7 +1114,9 @@ fn an_integral_witness_is_still_written_with_the_fractional_part_it_does_not_hav
         assert_eq!(reached, integral);
     }
 
-    // A whole witness input, byte for byte, as `ess conform synthesize` writes one.
+    // A whole witness input, byte for byte, as `ess conform synthesize` writes one. `note`, an
+    // `Optional` nothing reads, is left out of the first candidate (beyond10x/ess#546); every
+    // number keeps its spelling.
     let ir = compiled();
     let inputs = ess_conformance::witness::candidates(
         &ir,
@@ -1130,7 +1132,7 @@ fn an_integral_witness_is_still_written_with_the_fractional_part_it_does_not_hav
     );
     assert_eq!(
         written,
-        r#"{"amount":{"amount":1.0,"currency":"amount.currency"},"channel":"Email","currency":"currency","express":true,"labels":{"labels":"labels.0"},"lines":[],"note":"note","payee":{"kind":"company","value":"payee"},"priced":{"amount":1.0,"currency":"priced.currency"},"quantity":1.0}"#,
+        r#"{"amount":{"amount":1.0,"currency":"amount.currency"},"channel":"Email","currency":"currency","express":true,"labels":{"labels":"labels.0"},"lines":[],"payee":{"kind":"company","value":"payee"},"priced":{"amount":1.0,"currency":"priced.currency"},"quantity":1.0}"#,
         "the witness bytes moved"
     );
 }

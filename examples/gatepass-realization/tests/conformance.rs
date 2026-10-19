@@ -581,22 +581,20 @@ fn deposit_node(deposit: &Deposit) -> Node {
     ]))
 }
 
-/// A `Badge`, its signature as base64 text.
+/// A `Badge`, its signature as base64 text. An absent `printed_at` is left out, as the generated
+/// server's wire codec writes it (`gatepass-server/src/wire.rs`).
 fn badge_node(badge: &Badge) -> Node {
-    Node::Map(BTreeMap::from([
+    let mut fields = BTreeMap::from([
         ("serial".to_owned(), Node::Text(badge.serial.clone())),
-        (
-            "printed_at".to_owned(),
-            badge
-                .printed_at
-                .as_ref()
-                .map_or(Node::Null, |at| Node::Text(at.0.clone())),
-        ),
         (
             "signature".to_owned(),
             Node::Text(base64_encode(&badge.signature)),
         ),
-    ]))
+    ]);
+    if let Some(at) = &badge.printed_at {
+        fields.insert("printed_at".to_owned(), Node::Text(at.0.clone()));
+    }
+    Node::Map(fields)
 }
 
 /// An `Integer` as a number, or as text where a double would not hold it exactly.

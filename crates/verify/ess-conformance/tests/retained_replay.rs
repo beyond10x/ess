@@ -2025,7 +2025,27 @@ mod issue_308 {
 
     fn suite() -> ess_conformance::ConformanceSuite {
         let result = synthesize(&model());
-        assert!(result.refusals.is_empty(), "{:#?}", result.refusals);
+        // `optional` publishes `BaseId`, whose invariant is observed inside the `Optional` from
+        // suite /52 (wrapped value invariants): no command writes the field, so no row holds a
+        // value there and that one position is refused by name. Nothing else is refused.
+        let refused: Vec<String> = result
+            .refusals
+            .iter()
+            .filter_map(|refusal| refusal.scenario.as_ref().map(ToString::to_string))
+            .collect();
+        assert!(
+            result.refusals.len() == 1
+                && matches!(
+                    result.refusals[0].cause,
+                    ess_conformance::synthesize::RefusalCause::ValueInvariantUnwitnessed { .. }
+                )
+                && refused.len() == 1
+                && refused[0].starts_with(
+                    "retained.core.BaseId/invariant-wrapped/at/retained.core.Records/optional/"
+                ),
+            "{:#?}",
+            result.refusals
+        );
         let mut suite = result.suite;
         suite
             .scenarios

@@ -26,8 +26,9 @@
 //!    vary slowest, after every candidate that fills them, and each is reserved inside rule 4's
 //!    bound so a guard with many varied leaves cannot crowd it out. **An optional member the
 //!    command cannot read is sent absent** (beyond10x/ess#546): one no guard, invariant or
-//!    non-copying effect reads — a plain copy is not a read, except by the branch whose own
-//!    scenario is being built (`under_test`) — is left out of every candidate first, and filled
+//!    non-copying effect reads, and whose stored copy no branch copies onward as a value
+//!    (`value_reads`) — a plain copy is not a read, except by the branch whose own scenario is
+//!    being built (`under_test`) — is left out of every candidate first, and filled
 //!    only in the candidate paired behind it, as a presence-policy member is
 //!    (`unread_optionals`, `docs/design/unread-optional-inputs.md`). A filled optional
 //!    `Timestamp`, number, `Duration` or `Bytes` leaf takes a value `apart` from every required
@@ -1283,8 +1284,9 @@ fn optional_copies(
     found
 }
 
-/// Every input path a branch of `command` copies into a stored field some invariant of that entity,
-/// or the filter of a view over it, reads, into `read`.
+/// Every input path a branch of `command` copies into a stored field some invariant of that entity
+/// or the filter of a view over it reads, or some branch copies onward as a value
+/// ([`value_reads`]), into `read`.
 ///
 /// The invariant is checked after every later step, so the copy is what a later step's scenario
 /// reads: `any: [state == Paused, not defined(tags)]` beside `sets: {tags: input.tags}` needs `tags`
@@ -1361,8 +1363,95 @@ fn invariant_reads(ir: &EssIr, command: &ResolvedCommand, read: &mut BTreeSet<Fa
                     read.insert(input.clone());
                 }
             }
+            // A stored field another branch copies as a value — `{related: …}` through it or of
+            // it, a selected row's or a head's field, `subject.<field>`, `{changed: <field>}` — is
+            // what that branch's scenario observes: left absent on every row, a target copying it
+            // from another row, or from none, answers alike.
+            let valued = value_reads(ir, entity);
+            for (stored, input) in &copied {
+                if stored
+                    .segments()
+                    .first()
+                    .is_some_and(|head| valued.contains(head.as_str()))
+                {
+                    read.insert(input.clone());
+                }
+            }
         }
     }
+}
+
+/// The stored fields of `entity` some branch reads as a value: through or of a `{related: …}`
+/// read, as the field of a selected row or an ordered head, as `subject.<field>` or as
+/// `{changed: <field>}`. Each is copied onward, so its scenario tells the rows apart by it.
+fn value_reads<'ir>(ir: &'ir EssIr, entity: &EntityHandle) -> BTreeSet<&'ir str> {
+    use ess_compiler::ir::{ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedVia};
+    fn walk<'ir>(
+        fields: &'ir [ResolvedPayloadField],
+        subjects: &[&EntityHandle],
+        entity: &EntityHandle,
+        found: &mut BTreeSet<&'ir str>,
+    ) {
+        let addressed = subjects.contains(&entity);
+        for field in fields {
+            match &field.value {
+                ResolvedPayloadValue::RelatedField {
+                    via,
+                    through,
+                    entity: last,
+                    field,
+                    ..
+                } => {
+                    if let ResolvedRelatedVia::Subject { field, .. } = via {
+                        if addressed {
+                            found.insert(field.as_str());
+                        }
+                    }
+                    for hop in through {
+                        if hop.entity == *entity {
+                            found.insert(hop.field.as_str());
+                        }
+                    }
+                    if last == entity {
+                        found.insert(field.as_str());
+                    }
+                }
+                ResolvedPayloadValue::RelatedSelection {
+                    selection, field, ..
+                }
+                | ResolvedPayloadValue::RelatedHead {
+                    selection, field, ..
+                } => {
+                    if selection.entity == *entity {
+                        found.insert(field.as_str());
+                    }
+                }
+                ResolvedPayloadValue::SubjectField { field, .. }
+                | ResolvedPayloadValue::ChangedField { field, .. } => {
+                    if addressed {
+                        found.insert(field.as_str());
+                    }
+                }
+                ResolvedPayloadValue::Struct { fields } => walk(fields, subjects, entity, found),
+                _ => {}
+            }
+        }
+    }
+    let mut found = BTreeSet::new();
+    for outcome in ir.commands().values().flat_map(|command| &command.outcomes) {
+        let subject: Vec<&EntityHandle> = outcome.subject.iter().map(|it| &it.entity).collect();
+        walk(&outcome.sets, &subject, entity, &mut found);
+        walk(&outcome.error_payload, &subject, entity, &mut found);
+        for payload in &outcome.payload {
+            walk(&payload.fields, &subject, entity, &mut found);
+        }
+        for affect in &outcome.affects {
+            let mut both = subject.clone();
+            both.push(&affect.entity);
+            walk(&affect.sets, &both, entity, &mut found);
+        }
+    }
+    found
 }
 
 /// The stored fields of `entity` a command addressing it reads a related row through.

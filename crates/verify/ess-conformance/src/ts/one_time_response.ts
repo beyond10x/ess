@@ -1065,7 +1065,10 @@ export function expandCompactSuite(root: { [key: string]: Node }, major: number)
         const step = steps[Number(index)];
         if (!isObject(step) || step.step !== 'expect_not_granted')
           throw new Error('an unpublished-event list names an expect_not_granted step');
-        if (has(step, 'unpublished') && !(Array.isArray(step.unpublished) && step.unpublished.length === 0))
+        if (
+          has(step, 'unpublished') &&
+          !(Array.isArray(step.unpublished) && step.unpublished.length === 0)
+        )
           throw new Error('an unpublished-event list completes a step written without one');
         step.unpublished = compactKept(catalog, compactEvents(patch.except, catalog));
       }

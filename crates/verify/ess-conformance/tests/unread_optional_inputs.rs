@@ -445,3 +445,88 @@ fn issue_546_an_absent_copy_the_branch_does_not_write_is_not_claimed_as_null() {
     }
     assert_all_pass(&model, &result);
 }
+
+/// `Remind` copies the deadline of the item it names, `{related: {via: input.item_id, field:
+/// expires_at}}`, onto a reminder of its own.
+const REMIND: &str = r"  - name: demo.queue.Remind
+    input:
+      - {name: item_id, type: demo.queue.ItemId}
+    outcomes:
+      - name: no-item
+        when_related: {via: input.item_id, exists: false}
+        error: demo.queue.NotQueued
+      - name: reminded
+        creates: demo.queue.Reminder
+        instance: reminder_id
+        emits: [demo.queue.Reminded]
+        payload:
+          demo.queue.Reminded: {reminder_id: {generated: true}}
+        sets:
+          item_id: input.item_id
+          due: {related: {via: input.item_id, field: expires_at}}
+views:
+  - name: demo.queue.Reminders
+    source: demo.queue.Reminder
+    consistency: read_your_writes
+    fields:
+      - {name: reminder_id, type: demo.queue.ReminderId}
+      - {name: item_id, type: demo.queue.ItemId}
+      - {name: due, type: Optional<Timestamp>}
+";
+
+/// The model with `Remind` added: a later command that copies the stored deadline as a value.
+fn with_remind() -> String {
+    let text = MODEL
+        .replacen("views:\n", REMIND, 1)
+        .replacen(
+            "  - {name: demo.queue.ItemId, kind: newtype, of: Uuid}\n",
+            "  - {name: demo.queue.ItemId, kind: newtype, of: Uuid}\n  \
+             - {name: demo.queue.ReminderId, kind: newtype, of: Uuid}\n",
+            1,
+        )
+        .replacen(
+            "events:\n",
+            "  - name: demo.queue.Reminder\n    identity: {name: reminder_id, type: \
+             demo.queue.ReminderId}\n    fields:\n      - {name: item_id, type: \
+             demo.queue.ItemId}\n      - {name: due, type: Optional<Timestamp>}\n    lifecycle: \
+             {initial: Set, states: [Set], terminal: [Set]}\nevents:\n",
+            1,
+        )
+        .replacen(
+            "actors:\n",
+            "  - name: demo.queue.Reminded\n    fields: [{name: reminder_id, type: \
+             demo.queue.ReminderId}]\nactors:\n",
+            1,
+        )
+        .replacen(
+            "demo.queue.Withdraw]}",
+            "demo.queue.Withdraw, demo.queue.Remind]}",
+            1,
+        );
+    assert!(text.contains("demo.queue.Remind\n") && text.contains("name: demo.queue.Reminder\n"));
+    text
+}
+
+/// A later command copying the stored copy as a value reads it: `reminded` observes the deadline
+/// of the item it names, so the `Submit` arranging that item sends one. Left out, every item holds
+/// none, and a target copying the deadline of another item, or none, passes.
+#[test]
+fn issue_546_a_related_value_read_of_the_stored_copy_reads_it() {
+    let model = ir(&with_remind());
+    let result = ess_conformance::synthesize::synthesize(&model);
+    let steps = submits(&result);
+    let reminded: Vec<_> = steps
+        .iter()
+        .filter(|(scenario, _)| scenario == "demo.queue.Remind/outcome/reminded")
+        .map(|(_, input)| input)
+        .collect();
+    assert!(!reminded.is_empty(), "{steps:#?}");
+    for input in reminded {
+        assert!(
+            input.contains_key("expires_at"),
+            "`reminded` copies the stored deadline, so the item it names is arranged with one: \
+             {input:?}"
+        );
+    }
+    assert_all_pass(&model, &result);
+}
