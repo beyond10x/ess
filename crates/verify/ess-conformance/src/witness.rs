@@ -132,7 +132,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedCommand, ResolvedTypeRef};
+use ess_compiler::ir::{EntityHandle, EssIr, ResolvedBody, ResolvedCommand, ResolvedTypeRef};
 use ess_domain::types::{Primitive, MAX_TYPE_DEPTH};
 use ess_primitives::facts::{FactPath, FactValue, Number};
 use ess_primitives::node::Node;
@@ -1283,8 +1283,8 @@ fn optional_copies(
     found
 }
 
-/// Every input path a branch of `command` copies into a stored field some invariant of that entity
-/// reads, into `read`.
+/// Every input path a branch of `command` copies into a stored field some invariant of that entity,
+/// or the filter of a view over it, reads, into `read`.
 ///
 /// The invariant is checked after every later step, so the copy is what a later step's scenario
 /// reads: `any: [state == Paused, not defined(tags)]` beside `sets: {tags: input.tags}` needs `tags`
@@ -1328,8 +1328,21 @@ fn invariant_reads(ir: &EssIr, command: &ResolvedCommand, read: &mut BTreeSet<Fa
         for (entity, sets) in written {
             let mut copied = Vec::new();
             copies(sets, None, &mut copied);
-            for invariant in &ir.entity(entity).invariants {
-                for path in invariant.predicate.fact_paths() {
+            // A view filtering its rows on the copy reads it as well: a scenario querying that
+            // view decides which rows it shows by the value sent.
+            let filters = ir
+                .views()
+                .values()
+                .filter(|view| view.source == *entity)
+                .filter_map(|view| view.filter.as_ref());
+            let predicates = ir
+                .entity(entity)
+                .invariants
+                .iter()
+                .map(|invariant| &invariant.predicate)
+                .chain(filters);
+            for predicate in predicates {
+                for path in predicate.fact_paths() {
                     for (stored, input) in &copied {
                         if path.segments().starts_with(stored.segments())
                             || stored.segments().starts_with(path.segments())
@@ -1339,8 +1352,40 @@ fn invariant_reads(ir: &EssIr, command: &ResolvedCommand, read: &mut BTreeSet<Fa
                     }
                 }
             }
+            // A stored reference a command reads its related row through, `when_related:
+            // {via: <field>}`, decides that command's branches, held-state refusals included.
+            for (stored, input) in &copied {
+                if references(ir, entity)
+                    .any(|field| stored.segments().first().map(String::as_str) == Some(field))
+                {
+                    read.insert(input.clone());
+                }
+            }
         }
     }
+}
+
+/// The stored fields of `entity` a command addressing it reads a related row through.
+fn references<'ir>(ir: &'ir EssIr, entity: &'ir EntityHandle) -> impl Iterator<Item = &'ir str> {
+    use ess_compiler::ir::{ResolvedCondition, ResolvedRelatedVia};
+    ir.commands()
+        .values()
+        .filter(move |command| {
+            command.outcomes.iter().any(|outcome| {
+                outcome
+                    .subject
+                    .as_ref()
+                    .is_some_and(|subject| subject.entity == *entity)
+            })
+        })
+        .flat_map(|command| &command.outcomes)
+        .filter_map(|outcome| match &outcome.condition {
+            ResolvedCondition::Related {
+                via: ResolvedRelatedVia::Subject { field, .. },
+                ..
+            } => Some(field.as_str()),
+            _ => None,
+        })
 }
 
 /// Every input path `outcome` reads other than by a plain copy, into `read`.

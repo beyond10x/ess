@@ -34,6 +34,8 @@ of these reads it, the optional itself or anything inside it:
 | a guard the witness search is asked to decide | the search's own guards, with quantifier bodies rebound (rule 3) |
 | any input guard of the command | `when:`, and the input part of every subject, related and row-set condition |
 | an invariant over the input | the struct invariants of the input's types; every invariant of an entity that reads a stored field a branch copies the input into, also one that reads other fields beside it (`invariant_reads`): it is checked after every later step |
+| a view filter over the stored copy | the filter of every view whose source is the entity a branch copies the input into, where it reads that field (`invariant_reads`): a scenario querying the view decides which rows it shows by the value sent |
+| a stored reference a related guard reads | the copy into a field some command addressing the entity reads its related row through, `when_related: {via: <field>}` (`references`): the reference decides that command's branches, and the order of its held-state refusals against the related row's is observable only where one is stored |
 | an effect that is not a plain copy | `{input: x, else: …}` and its input fallback; a `Supplied` instance; an input `via`; the filter of `instances:`, `affects:` and a row selection; `each:` over an input list; a copy through a declared conversion |
 | an input `example:` | the author's own value for that input |
 | a later step reading the stored copy | translated onto this command's input by the arrangement that needs it (`subject_fact`, `related_guard`, view filters), so it arrives as a guard of that search |
@@ -41,7 +43,10 @@ of these reads it, the optional itself or anything inside it:
 A plain copy (`input.x` into a stored field, an event payload field or an error payload field) is not
 a read for a step that only arranges. An absent input copied into an optional field is an absent
 field, which is what the suite then expects; a target that stores or publishes a value nobody sent
-fails.
+fails. A later branch that does not write the field does not claim how its row spells the absence:
+unless the view field declares `null_when_absent`, a row may leave the key out or carry `null`, and
+the row it asserts names neither (`unclaimed_absence`), as an event payload does not
+(beyond10x/ess#285).
 
 The one exception is **the branch under test**. The scenario of a branch — its `/outcome/` id, and
 the `/transition/` id of a move it makes — observes that branch's copies, so there the copied
@@ -109,7 +114,8 @@ of it), moved from the base instant `2020-01-01T00:00:00Z` to
 - **Other families' own branch.** Only the outcome, transition and disclosure scenarios (through
   `exercise_as`) mark a branch under test. State refusals, unknown instances, absent input,
   existence, set effects and invariant scenarios do not, so an error payload copying an unread
-  optional in one of those is sent it absent. An invariant reading the copy still fills it
-  (`invariant_reads`).
+  optional in one of those is sent it absent. An invariant or a view filter reading the copy still
+  fills it (`invariant_reads`). The wrapped value-invariant scenario marks its creating branch under
+  test, since it observes the copy.
 - **An input-level relation or synthesis hint** (`synthesize: absent`, `offset_from:`), which the
   issue offers as alternatives. No authored surface is added.

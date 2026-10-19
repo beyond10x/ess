@@ -150,8 +150,7 @@ fn identity_at(
             .map(|inputs| {
                 inputs
                     .into_iter()
-                    .next()
-                    .and_then(|input| ess_compiler::ir::read_input(&input, field).cloned())
+                    .find_map(|input| ess_compiler::ir::read_input(&input, field).cloned())
             })
     };
     let unfresh = || {

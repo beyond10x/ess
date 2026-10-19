@@ -9945,6 +9945,7 @@ fn subject_row(
     state: &StateName,
 ) -> Vec<ViewExpectation> {
     let mut row = shown(view, identity.clone(), &run.settled);
+    unclaimed_absence(view, outcome, &mut row);
     let required = shown_leaves(ir, view, outcome, &run.input, &run.before_settled, &mut row);
     row.extend(lifecycle_state(ir, entity, view, state));
     let mut expectations = vec![ViewExpectation::Contains { fields: row }];
@@ -10793,6 +10794,24 @@ fn shown(
         }
     }
     fields
+}
+
+/// Drops from `row` each field the arrangement left absent and `outcome` does not write, where the
+/// view field declares no `null_when_absent`: an absent value may be published left out or as
+/// `null`, and a plain field name is compared exactly, so the row does not claim the spelling (as
+/// an event payload does not, beyond10x/ess#285). An `Optional` input an arranging step left out
+/// (beyond10x/ess#546) leaves such a field absent. A field the branch writes keeps its claim.
+fn unclaimed_absence(
+    view: &ResolvedView,
+    outcome: &ResolvedOutcome,
+    row: &mut BTreeMap<String, ScenarioValue>,
+) {
+    row.retain(|name, value| {
+        !matches!(value, ScenarioValue::Literal { value: Node::Null })
+            || outcome.sets.iter().any(|set| set.target == *name)
+            || view.field(name).and_then(|field| field.naming.presence)
+                == Some(ess_domain::types::Presence::NullWhenAbsent)
+    });
 }
 
 /// The lifecycle state a row of this view is required to carry, where the view projects it.
@@ -13429,8 +13448,7 @@ fn fresh_identity(
             .map(|inputs| {
                 inputs
                     .into_iter()
-                    .next()
-                    .and_then(|input| input.get(field).cloned())
+                    .find_map(|input| input.get(field).cloned())
             })
     };
     let unfresh = || {
@@ -13755,6 +13773,7 @@ fn from_source(
         }
         let identity = identifying(ir, subject, Some(&arrangement.instance), view);
         let mut row = shown(view, identity.clone(), &left);
+        unclaimed_absence(view, outcome, &mut row);
         let required = shown_leaves(ir, view, outcome, &supplied, &before, &mut row);
         row.extend(lifecycle_state(ir, &subject.entity, view, to));
         let name = ViewRef::new(view.name.clone());

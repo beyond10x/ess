@@ -420,6 +420,9 @@ fn observed_at(
             if subject.entity != view.source {
                 continue;
             }
+            // The scenario observes the value this branch copies, so an `Optional` input it copies
+            // is sent present here (beyond10x/ess#546).
+            let _under_test = crate::witness::under_test(ir, command, outcome);
             let Ok(arranged) = run(ir, command, outcome, actors) else {
                 continue;
             };

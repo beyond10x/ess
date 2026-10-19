@@ -319,3 +319,129 @@ fn issue_546_a_guard_reading_the_optional_gets_it_present_and_apart() {
     assert!(!without.contains_key("expires_at"), "{without:?}");
     assert_all_pass(&model, &result);
 }
+
+/// A view filtering on the stored copy: `LongJobs` shows a job by its optional `hours`.
+const FILTERED: &str = r"format: ess/18
+system: demo
+version: v1
+domain: demo.jobs
+types:
+  - {name: demo.jobs.JobId, kind: newtype, of: Uuid}
+errors:
+  - {name: demo.jobs.AlreadyDone, summary: The job is already done., fields: []}
+entities:
+  - name: demo.jobs.Job
+    identity: {name: job_id, type: demo.jobs.JobId}
+    fields:
+      - {name: hours, type: Optional<Integer>}
+    lifecycle:
+      initial: Open
+      states: [Open, Done]
+      terminal: [Done]
+      transitions:
+        - {name: finish, from: [Open], to: Done}
+events:
+  - name: demo.jobs.Created
+    fields: [{name: job_id, type: demo.jobs.JobId}]
+  - name: demo.jobs.Finished
+    fields: [{name: job_id, type: demo.jobs.JobId}]
+actors:
+  - {name: demo.jobs.Planner, may: [demo.jobs.CreateJob, demo.jobs.FinishJob]}
+commands:
+  - name: demo.jobs.CreateJob
+    input:
+      - {name: hours, type: Optional<Integer>}
+    outcomes:
+      - name: created
+        creates: demo.jobs.Job
+        instance: job_id
+        sets: {hours: input.hours}
+        emits: [demo.jobs.Created]
+        payload:
+          demo.jobs.Created: {job_id: {generated: true}}
+  - name: demo.jobs.FinishJob
+    input:
+      - {name: job_id, type: demo.jobs.JobId}
+    outcomes:
+      - name: finished
+        moves: demo.jobs.Job.finish
+        instance: job_id
+        emits: [demo.jobs.Finished]
+        payload:
+          demo.jobs.Finished: {job_id: input.job_id}
+      - {name: already-done, wrong_state: true, error: demo.jobs.AlreadyDone}
+views:
+  - name: demo.jobs.Jobs
+    source: demo.jobs.Job
+    consistency: read_your_writes
+    fields:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: state, type: demo.jobs.Job.State}
+      - {name: hours, type: Optional<Integer>}
+  - name: demo.jobs.LongJobs
+    source: demo.jobs.Job
+    consistency: read_your_writes
+    filter: hours >= 5
+    fields:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: hours, type: Optional<Integer>}
+";
+
+/// A view filter over the stored copy reads it: the scenario querying `LongJobs` after `FinishJob`
+/// decides which rows it shows by the hours sent, so the arranging `CreateJob` sends them. Left out,
+/// the filter is undecided and the scenario skips its read of the view (`ESS-SYNTH-005`).
+#[test]
+fn issue_546_a_view_filter_over_the_stored_copy_reads_it() {
+    let model = ir(FILTERED);
+    let result = ess_conformance::synthesize::synthesize(&model);
+    assert!(result.refusals.is_empty(), "{:#?}", result.refusals);
+    let finished = result
+        .suite
+        .scenarios
+        .iter()
+        .find(|(id, _)| id.to_string() == "demo.jobs.FinishJob/outcome/finished")
+        .map_or_else(|| panic!("no finished scenario"), |(_, scenario)| scenario);
+    let created = finished.steps.iter().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand { command, input, .. }
+            if command.to_string() == "demo.jobs.CreateJob" =>
+        {
+            Some(input)
+        }
+        _ => None,
+    });
+    let created = created.unwrap_or_else(|| panic!("{:#?}", finished.steps));
+    assert!(created.contains_key("hours"), "{created:?}");
+    assert_all_pass(&model, &result);
+}
+
+/// The deadline an arranging `Submit` left out is absent on the row `Withdraw` moves, and the view
+/// declares no `null_when_absent`, so the row may leave the key out or carry `null`: the row
+/// `withdrawn` asserts claims neither spelling (a generated Rust or Go server leaves it out).
+#[test]
+fn issue_546_an_absent_copy_the_branch_does_not_write_is_not_claimed_as_null() {
+    let model = ir(MODEL);
+    let result = ess_conformance::synthesize::synthesize(&model);
+    let withdrawn = result
+        .suite
+        .scenarios
+        .iter()
+        .find(|(id, _)| id.to_string() == "demo.queue.Withdraw/outcome/withdrawn")
+        .map_or_else(|| panic!("no withdrawn scenario"), |(_, scenario)| scenario);
+    let rows: Vec<_> = withdrawn
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExpectView {
+                expectation: ess_conformance::ViewExpectation::Contains { fields },
+                ..
+            } => Some(fields),
+            _ => None,
+        })
+        .collect();
+    assert!(!rows.is_empty(), "{:#?}", withdrawn.steps);
+    for fields in rows {
+        assert!(fields.contains_key("item_id"), "{fields:?}");
+        assert!(!fields.contains_key("expires_at"), "{fields:?}");
+    }
+    assert_all_pass(&model, &result);
+}
