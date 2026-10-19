@@ -1,0 +1,94 @@
+format: ess/25
+system: cascade
+version: v1
+domain: cascade.feed
+summary: Cancelling a feed discards its pending items; an item is posted only to a feed that exists.
+types:
+  - {name: cascade.feed.FeedId, kind: newtype, of: Uuid}
+  - {name: cascade.feed.ItemId, kind: newtype, of: Uuid}
+entities:
+  - name: cascade.feed.Feed
+    identity: {name: feed_id, type: cascade.feed.FeedId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Cancelled]
+      terminal: [Cancelled]
+      transitions:
+        - {name: cancel, from: [Open], to: Cancelled}
+  - name: cascade.feed.Item
+    identity: {name: item_id, type: cascade.feed.ItemId}
+    fields:
+      - {name: feed_id, type: cascade.feed.FeedId}
+      - {name: note, type: Optional<String>}
+    relations:
+      - {name: feed, kind: references, target: cascade.feed.Feed, cardinality: one, via: feed_id}
+    lifecycle:
+      initial: Pending
+      states: [Pending, Discarded]
+      terminal: [Discarded]
+      transitions:
+        - {name: discard, from: [Pending], to: Discarded}
+errors:
+  - {name: cascade.feed.WrongState, summary: The feed is not open., fields: []}
+events:
+  - name: cascade.feed.FeedOpened
+    fields: [{name: feed_id, type: cascade.feed.FeedId}]
+  - name: cascade.feed.ItemPosted
+    fields: [{name: item_id, type: cascade.feed.ItemId}]
+  - name: cascade.feed.FeedCancelled
+    fields: [{name: feed_id, type: cascade.feed.FeedId}]
+actors:
+  - name: cascade.feed.Operator
+    may: [cascade.feed.Open, cascade.feed.Post, cascade.feed.Cancel]
+commands:
+  - name: cascade.feed.Open
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: cascade.feed.Feed
+        instance: feed_id
+        emits: [cascade.feed.FeedOpened]
+        payload: {cascade.feed.FeedOpened: {feed_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: cascade.feed.Post
+    input:
+      - {name: feed_id, type: cascade.feed.FeedId}
+    outcomes:
+      - name: posted
+        creates: cascade.feed.Item
+        instance: item_id
+        emits: [cascade.feed.ItemPosted]
+        payload: {cascade.feed.ItemPosted: {item_id: {generated: true}}}
+        sets: {feed_id: input.feed_id}
+  - name: cascade.feed.Cancel
+    input:
+      - {name: feed_id, type: cascade.feed.FeedId}
+    outcomes:
+      - name: cancelled
+        moves: cascade.feed.Feed.cancel
+        instance: feed_id
+        emits: [cascade.feed.FeedCancelled]
+        payload: {cascade.feed.FeedCancelled: {feed_id: input.feed_id}}
+        affects:
+          - entity: cascade.feed.Item
+            where: feed_id == input.feed_id
+            moves: cascade.feed.Item.discard
+      - {name: wrong-state, wrong_state: true, error: cascade.feed.WrongState}
+views:
+  - name: cascade.feed.Items
+    source: cascade.feed.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: cascade.feed.ItemId}
+      - {name: feed_id, type: cascade.feed.FeedId}
+      - {name: note, type: Optional<String>}
+      - {name: state, type: cascade.feed.Item.State}
+  - name: cascade.feed.Feeds
+    source: cascade.feed.Feed
+    consistency: read_your_writes
+    fields:
+      - {name: feed_id, type: cascade.feed.FeedId}
+      - {name: state, type: cascade.feed.Feed.State}

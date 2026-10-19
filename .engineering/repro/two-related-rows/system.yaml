@@ -1,0 +1,79 @@
+format: ess/25
+system: wiring
+version: v1
+domain: wiring.board
+summary: A wire joins an output port to an input port; both ports must exist and face the right way.
+types:
+  - {name: wiring.board.PortId, kind: newtype, of: Uuid}
+  - {name: wiring.board.WireId, kind: newtype, of: Uuid}
+  - {name: wiring.board.Direction, kind: enum, variants: [input, output]}
+entities:
+  - name: wiring.board.Port
+    identity: {name: port_id, type: wiring.board.PortId}
+    fields:
+      - {name: direction, type: wiring.board.Direction}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: wiring.board.Wire
+    identity: {name: wire_id, type: wiring.board.WireId}
+    fields:
+      - {name: from_port, type: wiring.board.PortId}
+      - {name: to_port, type: wiring.board.PortId}
+    relations:
+      - {name: source, kind: references, target: wiring.board.Port, cardinality: one, via: from_port}
+      - {name: sink, kind: references, target: wiring.board.Port, cardinality: one, via: to_port}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+errors:
+  - {name: wiring.board.SourceNotFound, summary: No port carries the source identity., fields: []}
+  - {name: wiring.board.SourceNotOutput, summary: The source port is not an output., fields: []}
+  - {name: wiring.board.SinkNotFound, summary: No port carries the sink identity., fields: []}
+  - {name: wiring.board.SinkNotInput, summary: The sink port is not an input., fields: []}
+events:
+  - name: wiring.board.PortAdded
+    fields: [{name: port_id, type: wiring.board.PortId}]
+  - name: wiring.board.Connected
+    fields: [{name: wire_id, type: wiring.board.WireId}]
+actors:
+  - name: wiring.board.Operator
+    may: [wiring.board.AddPort, wiring.board.Connect]
+commands:
+  - name: wiring.board.AddPort
+    input:
+      - {name: direction, type: wiring.board.Direction}
+    outcomes:
+      - name: added
+        creates: wiring.board.Port
+        instance: port_id
+        emits: [wiring.board.PortAdded]
+        payload: {wiring.board.PortAdded: {port_id: {generated: true}}}
+        sets: {direction: input.direction}
+  - name: wiring.board.Connect
+    input:
+      - {name: from_port, type: wiring.board.PortId}
+      - {name: to_port, type: wiring.board.PortId}
+    outcomes:
+      - name: no-source
+        when_related: {via: input.from_port, exists: false}
+        error: wiring.board.SourceNotFound
+      - name: no-sink
+        when_related: {via: input.to_port, exists: false}
+        error: wiring.board.SinkNotFound
+      - name: source-not-output
+        when_related: {via: input.from_port, predicate: direction != output}
+        error: wiring.board.SourceNotOutput
+      - name: sink-not-input
+        when_related: {via: input.to_port, predicate: direction != input}
+        error: wiring.board.SinkNotInput
+      - name: connected
+        creates: wiring.board.Wire
+        instance: wire_id
+        emits: [wiring.board.Connected]
+        payload: {wiring.board.Connected: {wire_id: {generated: true}}}
+        sets: {from_port: input.from_port, to_port: input.to_port}
+views:
+  - name: wiring.board.Wires
+    source: wiring.board.Wire
+    consistency: read_your_writes
+    fields:
+      - {name: wire_id, type: wiring.board.WireId}
+      - {name: from_port, type: wiring.board.PortId}
+      - {name: to_port, type: wiring.board.PortId}

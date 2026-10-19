@@ -7,7 +7,7 @@ title: A related selector that compares a row field with a subject field gets a 
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -20,3 +20,7 @@ Not yet minimised. A reproducer with neutral nouns (`catalog`, `items`, `group_k
 ## Next
 
 Assess with `.agents/skills/assessing-external-requests/SKILL.md` before any build. The fix is expected in synthesis (`crates/verify/ess-conformance/src/synthesize/`), so it is scheduled after the other session's synthesis waves leave those files.
+
+## Downstream report 2026-10-19
+
+Neutral reproduction from a downstream report (2026-10-19, finding 10): `.engineering/repro/related-from-subject-field/row-set-subject.yaml` — `Rename` refuses a name another port of the subject's node holds, `when_related: {entity: Port, where: {all: [node_id == subject.node_id, port_id != subject.port_id, name == input.name]}, exists: true}`. Integration build: `ESS-SYNTH-001` on both `name-taken` and `renamed` ("reads a subject field the steps leave undetermined"). The downstream specification lost 16 scenarios to one such selector.
