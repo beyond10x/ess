@@ -205,7 +205,7 @@ fn step_carries(step: &ScenarioStep, test: fn(&Predicate) -> bool) -> bool {
 }
 
 /// Whether some `satisfies` of a typed suite reads a text's `.count` off a view row
-/// ([`crate::input::lifted_text_length`]): a leaf only `/40` and `/41` carry to a row, which no
+/// (`crate::input::lifted_text_length`): a leaf only `/40` and `/41` carry to a row, which no
 /// untyped reading of the predicate can tell from a declared member named `count`, so the model
 /// decides it. A view the model does not declare reads nothing here.
 pub fn text_lengths_used_by(ir: &ess_compiler::EssIr, suite: &ConformanceSuite) -> bool {

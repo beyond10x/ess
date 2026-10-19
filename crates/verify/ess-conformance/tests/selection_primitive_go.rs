@@ -20,13 +20,14 @@ fn go_selection_validates_primitives_and_every_list_member() {
     std::fs::write(
         directory.join("runtime.go"),
         format!(
-            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
             include_str!("../src/go/runtime.go"),
             include_str!("../src/go/reading.go"),
             include_str!("../src/go/response.go"),
             include_str!("../src/go/replay.go"),
             include_str!("../src/go/fixtures.go"),
             include_str!("../src/go/prerequisites.go"),
+            include_str!("../src/go/await.go"),
             include_str!("../src/go/one_time.go"),
             include_str!("../src/go/one_time_identity.go"),
             include_str!("../src/go/one_time_execution.go"),

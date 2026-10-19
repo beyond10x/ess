@@ -27,10 +27,10 @@
 //!    bound so a guard with many varied leaves cannot crowd it out. **An optional member the
 //!    command cannot read is sent absent** (beyond10x/ess#546): one no guard, invariant or
 //!    non-copying effect reads — a plain copy is not a read, except by the branch whose own
-//!    scenario is being built ([`under_test`]) — is left out of every candidate first, and filled
+//!    scenario is being built (`under_test`) — is left out of every candidate first, and filled
 //!    only in the candidate paired behind it, as a presence-policy member is
-//!    ([`unread_optionals`], `docs/design/unread-optional-inputs.md`). A filled optional
-//!    `Timestamp`, number, `Duration` or `Bytes` leaf takes a value [`apart`] from every required
+//!    (`unread_optionals`, `docs/design/unread-optional-inputs.md`). A filled optional
+//!    `Timestamp`, number, `Duration` or `Bytes` leaf takes a value `apart` from every required
 //!    leaf's and every other optional leaf's, so an optional deadline is never sent at the queue
 //!    instant's literal unless a guard relating the two asks for it.
 //! 2. **A text witness is its own fact path.** `contact` carries `"contact"` and

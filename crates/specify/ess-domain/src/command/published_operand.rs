@@ -22,7 +22,7 @@
 //! this cut, and an error outcome publishes no event payload; each refuses the operand by name.
 //!
 //! The payload fields of one outcome form a graph, each field a node and each operand an edge to
-//! the field it reads. It has no cycle, a field reading itself included ([`validate`]).
+//! the field it reads. It has no cycle, a field reading itself included (`validate`).
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt::Write as _;
