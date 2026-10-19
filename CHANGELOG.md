@@ -141,6 +141,23 @@
 
 ### Fixed
 
+- `ess specify validate` refuses a branch whose literal writes break an invariant of the entity
+  they land in, as a literal breaking a newtype's invariant already was: `sets: {capacity: 0}`
+  beside `invariants: [capacity > 0]`, in a subject's `sets:`, a set subject's or an `affects:`
+  entry's, is `conflicting_declaration` naming the branch, the literal and the invariant. Only an
+  invariant every field of which the branch writes with a literal is decided, with the `state` the
+  branch arrives in where it reads one; a value read from the input stays the run's to decide
+  (downstream report, 2026-10-19).
+- A `when_related` refusal of `via: subject.<field>`, or any other path that names no input
+  field, gives a hint naming both accepted forms from `ess/22`, `via: input.<field>` and the bare
+  stored field `via: <field>` (`via: node_id` for `subject.node_id`); through `ess/21` the hint is
+  unchanged (downstream report, 2026-10-19).
+- `ess verify diff` reports a domain's display name or summary edit, on a domain both revisions
+  declare, as `domain/<name>/display-name-changed` or `domain/<name>/summary-changed`, compatible
+  for callers, readers and history, in `ess-diff/20`. It was `system/<name>/unclassified-changed`,
+  `unknown`, so a summary edit failed `--fail-on breaking-or-unknown`. A domain's wire name stays
+  unclassified, and `ess verify impact` still owes everything for either (downstream report,
+  2026-10-19).
 - Synthesis witnesses a set effect, an `affects:` entry or a `when_related:` row set whose filter
   reads a field the arranging command writes from its caller (`sets: {owner: {caller: user_id}}`):
   each arranging act is sent as a caller whose attribute carries the value its record needs, so

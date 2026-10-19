@@ -202,6 +202,44 @@ fn issue_211_via_is_an_input_field_typed_as_another_entitys_identity() {
     );
 }
 
+/// A `via: subject.<field>` names no row; from ess/22 the refusal names the bare stored field
+/// beside the input form, which is what reads the row the subject's stored reference names
+/// (downstream report, 2026-10-19, finding 10). Through ess/21 the hint is the one it always was.
+#[test]
+fn a_subject_prefixed_via_is_refused_with_the_bare_field_hint() {
+    let hint = |errors: &ValidationErrors| {
+        errors
+            .as_slice()
+            .iter()
+            .find(|error| {
+                error.code == ValidationCode::TypeMismatch
+                    && error.message.contains("`subject.tenant`")
+            })
+            .unwrap_or_else(|| panic!("the subject-prefixed via is refused: {errors}"))
+            .hint
+            .clone()
+            .expect("the refusal carries a hint")
+    };
+    let subject = replaced(
+        SIGN_IN,
+        ABSENT,
+        "        when_related: {via: subject.tenant, exists: false}\n",
+    );
+    for format in ["ess/22", "ess/25", "ess/27"] {
+        let hint = hint(&refused(&at(&subject, format)));
+        assert!(hint.contains("`via: tenant`"), "{format}: {hint}");
+        assert!(hint.contains("`via: input.<field>`"), "{format}: {hint}");
+    }
+    for document in [subject.clone(), at(&subject, "ess/21")] {
+        assert_eq!(
+            hint(&refused(&document)),
+            "write `via: input.<field>`, naming the input field typed as the other entity's \
+             identity",
+            "{document}"
+        );
+    }
+}
+
 #[test]
 fn issue_211_the_predicate_reads_the_related_rows_fields_and_the_input() {
     let errors = refused(&replaced(

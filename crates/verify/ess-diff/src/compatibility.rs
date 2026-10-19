@@ -38,7 +38,7 @@
 //!
 //! | change | decided as |
 //! |---|---|
-//! | display name, summary or example moved | compatible everywhere: documentation |
+//! | display name, summary or example moved, a domain's included (`ess-diff/20`) | compatible everywhere: documentation |
 //! | a type widened (`expanded`) | breaking for readers of an output use; compatible for callers and history |
 //! | a type narrowed (`narrowed`) | breaking for callers of an input use and for stored history; compatible for readers |
 //! | a union variant gains or loses a required payload (ess/22) | breaking for every use: neither revision reads what the other writes |
@@ -680,7 +680,10 @@ fn dimensions(change: &SemanticChange, uses: &BTreeSet<TypeUse>) -> Dimensions {
         // from every surface a caller or a reader addresses through it; what it stored is named by
         // each removed entity and event, each breaking history on its own (beyond10x/ess#469).
         SemanticChange::Domain { changed, .. } => match changed {
-            DomainChange::Added => [C, C, C],
+            // A domain's display name and summary are documentation, answered above.
+            DomainChange::Added
+            | DomainChange::DisplayNameChanged { .. }
+            | DomainChange::SummaryChanged { .. } => [C, C, C],
             DomainChange::Removed => [B, B, C],
         },
         SemanticChange::Type { changed, .. } => type_dimensions(changed, change.relation(), uses),
@@ -805,7 +808,7 @@ fn unit_variant_dimensions(changed: &TypeChange) -> Option<Dimensions> {
 /// depends on.
 fn documentation_only(change: &SemanticChange) -> bool {
     match change {
-        SemanticChange::Domain { .. } => false,
+        SemanticChange::Domain { changed, .. } => changed.is_naming(),
         SemanticChange::System { changed, .. } => {
             matches!(changed, SystemChange::SummaryChanged { .. })
         }

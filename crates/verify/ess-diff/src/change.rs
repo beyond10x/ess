@@ -22,7 +22,7 @@
 //! | family | fields covered |
 //! |---|---|
 //! | [`SystemChange`] | `EssIr::{version, summary}` — `system` is the refusal, and `naming` is a field no document can set |
-//! | [`DomainChange`] | which keys `EssIr::domains` holds — a domain's member sets are each construct's own `domain`, compared by that construct's family, and the naming of a domain both revisions declare stays residual |
+//! | [`DomainChange`] | which keys `EssIr::domains` holds — a domain's member sets are each construct's own `domain`, compared by that construct's family; from `ess-diff/20` the `naming` of a domain both revisions declare, its `display` and `summary`, while its `wire` stays residual |
 //! | [`TypeChange`] | `ResolvedType::{body, naming, reading}`, and `body` down to every arm of `ResolvedBody` |
 //! | [`EntityChange`] | `ResolvedEntity::{domain, identity, fields, lifecycle, invariants, naming}` — `state_type` is derived from the name, and the lifecycle's *state set* is the synthesised `<Entity>.State` enum, which the type family already reports variant by variant |
 //! | [`CommandChange`] | `ResolvedCommand::{domain, input, outcomes, naming, await_within}` — `system_issued` is a pure function of the grants and the actors' `system`, each compared on its own — and each outcome down to `ResolvedOutcome::{condition, subject, replays, complete_refusal, emits, payload, error, error_payload, refuses, accepts_nothing, returns, summary, sets, decided_by_caller, instances, affects}` — `test_strategy` is a pure function of the condition (`OutcomeCondition::test_strategy`) and `retains_result` of every outcome's `replays`, so comparing either would report one edit twice; `refs` stays residual |
@@ -454,6 +454,7 @@ impl SemanticChange {
                 changed: CommandChange::AwaitWithinChanged { .. },
                 ..
             } => SYSTEM_ISSUED_DELTA_FORMAT,
+            Self::Domain { changed, .. } if changed.is_naming() => DOMAIN_NAMING_DELTA_FORMAT,
             Self::Domain { .. } => DOMAIN_DELTA_FORMAT,
             Self::Command { changed, .. } if changed.is_compensation() => 14,
             Self::Binding { changed, .. } if changed.is_refusal_policy() => 14,
@@ -832,14 +833,22 @@ pub const SYSTEM_ISSUED_DELTA_FORMAT: u32 = 20;
 /// that carries one is classified even when nobody asked.
 pub const SHORTHAND_DELTA_FORMAT: u32 = 20;
 
+/// The first delta format whose vocabulary has `display-name-changed` and `summary-changed` on a
+/// domain both revisions declare (downstream report, 2026-10-19, finding 18).
+///
+/// Above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT) too, so a delta
+/// that carries one is classified even when nobody asked.
+pub const DOMAIN_NAMING_DELTA_FORMAT: u32 = 20;
+
 /// A domain entered in, or dropped from, the system's `domains:` list.
 ///
 /// Only the arrival and the departure. A domain's member sets are derived from each construct's
 /// own `domain`, so every construct a new domain declares is already `<family>/<name>/added`; but a
 /// domain may declare nothing, and then nothing else says it arrived. Before `ess-diff/15` the
 /// entry fell to the residual as `system/<name>/unclassified-changed`, `unknown`, and a purely
-/// additive revision failed `--fail-on breaking-or-unknown`. The naming of a domain both revisions
-/// declare is not compared here and stays residual, as it was.
+/// additive revision failed `--fail-on breaking-or-unknown`. From `ess-diff/20` a domain both revisions
+/// declare is compared for its display name and its summary, which are documentation; its wire name
+/// stays residual, as it was, because it reaches every path addressed through the domain.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum DomainChange {
@@ -847,6 +856,22 @@ pub enum DomainChange {
     Added,
     /// The domain was declared in the earlier revision and is not in the later one.
     Removed,
+    /// The name the domain is shown as moved, a domain both revisions declare (`ess-diff/20`,
+    /// downstream report 2026-10-19). Each side falls back to the domain's last segment.
+    DisplayNameChanged {
+        /// Previous value.
+        before: String,
+        /// Current value.
+        after: String,
+    },
+    /// The domain's summary moved, a domain both revisions declare (`ess-diff/20`, downstream
+    /// report 2026-10-19).
+    SummaryChanged {
+        /// Previous value.
+        before: Option<String>,
+        /// Current value.
+        after: Option<String>,
+    },
 }
 
 impl DomainChange {
@@ -855,7 +880,17 @@ impl DomainChange {
         match self {
             Self::Added => "added",
             Self::Removed => "removed",
+            Self::DisplayNameChanged { .. } => "display-name-changed",
+            Self::SummaryChanged { .. } => "summary-changed",
         }
+    }
+
+    /// Whether the change is a domain's naming: `ess-diff/20` vocabulary.
+    pub const fn is_naming(&self) -> bool {
+        matches!(
+            self,
+            Self::DisplayNameChanged { .. } | Self::SummaryChanged { .. }
+        )
     }
 
     /// Nothing: the change is about the whole domain.
@@ -874,6 +909,14 @@ impl DomainChange {
         match self {
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),
+            Self::DisplayNameChanged { before, after } => {
+                format!("display name `{before}` → `{after}`")
+            }
+            Self::SummaryChanged { before, after } => format!(
+                "summary {} → {}",
+                optional(before.as_ref()),
+                optional(after.as_ref())
+            ),
         }
     }
 }
