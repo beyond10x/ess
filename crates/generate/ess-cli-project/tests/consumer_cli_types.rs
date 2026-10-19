@@ -1170,8 +1170,14 @@ fn quantified_predicates_change_kind_collection_binder_and_body_without_cli_effe
     let Predicate::Exists(b) = guard(&after) else {
         panic!("exists")
     };
-    assert_eq!(a.over.segments(), &["groups"]);
-    assert_eq!(b.over.segments(), &["entry", "children"]);
+    assert_eq!(
+        a.over.fact().expect("a fact collection").segments(),
+        &["groups"]
+    );
+    assert_eq!(
+        b.over.fact().expect("a fact collection").segments(),
+        &["entry", "children"]
+    );
     assert_eq!(a.bind, "group");
     assert_eq!(b.bind, "batch");
     assert!(matches!(a.body, Predicate::Exists(_)));

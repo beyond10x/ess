@@ -15660,8 +15660,9 @@ fn map_paths(predicate: &Predicate, onto: &dyn Fn(&FactPath) -> FactPath) -> Pre
                     onto(path)
                 }
             };
+            // A rows collection names an entity, not a path, and does not move.
             let mapped = Box::new(Quantified {
-                over: onto(&quantified.over),
+                over: quantified.over.map_fact(|over| onto(over)),
                 bind: quantified.bind.clone(),
                 body: map_paths(&quantified.body, &inner),
             });

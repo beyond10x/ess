@@ -1,4 +1,4 @@
-#	models=264	commands=518
+#	models=265	commands=524
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -614,6 +614,13 @@ crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml
 crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	demo.seats.ChangeTier	related_row: unknown-tier | existence: unknown-seat | present_related: tier-closed | default: changed
 crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	demo.seats.DefineTier	default: defined
 crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	demo.seats.Issue	default: issued
+crates/verify/ess-conformance/tests/fixtures/related-rows-quantifier.yaml	ir=d7645e18ee4f85edee06d1d7be71285d7aca9e27fd1afd32043fb5de45136890:33785
+crates/verify/ess-conformance/tests/fixtures/related-rows-quantifier.yaml	demo.slots.CloseSlot	default: closed
+crates/verify/ess-conformance/tests/fixtures/related-rows-quantifier.yaml	demo.slots.Finish	default: finished
+crates/verify/ess-conformance/tests/fixtures/related-rows-quantifier.yaml	demo.slots.Join	default: joined
+crates/verify/ess-conformance/tests/fixtures/related-rows-quantifier.yaml	demo.slots.Leave	default: left
+crates/verify/ess-conformance/tests/fixtures/related-rows-quantifier.yaml	demo.slots.MatchInGroup	present_related: no-match | default: paired
+crates/verify/ess-conformance/tests/fixtures/related-rows-quantifier.yaml	demo.slots.OpenSlot	default: opened
 crates/verify/ess-conformance/tests/fixtures/related-values-chained.yaml	ir=ab75682e9e4308374158de73f7bf5a7e55bc911c7a496dedac919f5acf26dc8e:20260
 crates/verify/ess-conformance/tests/fixtures/related-values-chained.yaml	demo.costs.Book	default: booked
 crates/verify/ess-conformance/tests/fixtures/related-values-chained.yaml	demo.costs.SetObjective	default: set

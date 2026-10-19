@@ -222,7 +222,7 @@ fn distinct_reads_an_outer_binder_and_composes_with_other_leaves() {
     assert_eq!(
         guard(&spec),
         Predicate::Forall(Box::new(Quantified {
-            over: path("groups"),
+            over: ess_primitives::predicate::Collection::Fact(path("groups")),
             bind: "group".to_owned(),
             body: distinct(
                 "group.members",

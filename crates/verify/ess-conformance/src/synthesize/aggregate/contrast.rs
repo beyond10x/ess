@@ -147,10 +147,14 @@ fn reads(
         },
         Predicate::FoldMatch { path, values, .. } => note(path, values),
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
-            note(&quantified.over, &[]);
-            let mut inner = binders.clone();
-            inner.insert(quantified.bind.clone(), target(&quantified.over));
-            reads(&quantified.body, &inner, out);
+            // A test over another entity's rows (ess/27) reads no field of this row, and validation
+            // keeps it out of every view.
+            if let Some(over) = quantified.over.fact() {
+                note(over, &[]);
+                let mut inner = binders.clone();
+                inner.insert(quantified.bind.clone(), target(over));
+                reads(&quantified.body, &inner, out);
+            }
         }
         // A `distinct` (ess/22) reads its list.
         Predicate::Distinct(distinct) => note(&distinct.over, &[]),

@@ -49,7 +49,9 @@ use ess_primitives::predicate::{Predicate, WrittenPredicate};
 
 use super::{CommandSpec, Effect, Outcome, OutcomeName, PayloadSource, PayloadTable, Subject};
 use crate::entity::EntitySpec;
-use crate::expression::{CurrentTimeAdmission, DomainEnvironment, Shape, TypeEnvironment};
+use crate::expression::{
+    CurrentTimeAdmission, DomainEnvironment, RelatedRows, Shape, TypeEnvironment,
+};
 use crate::name::QualifiedName;
 use crate::system::FormatVersion;
 use crate::types::{Field, Primitive, TypeRef, TypeRegistry};
@@ -1780,7 +1782,7 @@ fn check_filter(
         types,
         filter,
         (at, super::published_operand::Site::Effect),
-        false,
+        (false, false),
     );
     if format.major() < FormatVersion::V27.major() && reads_identity(entity, filter) {
         let identity = &entity.identity.name;
@@ -1920,6 +1922,10 @@ fn pins_the_subject(
 /// From `ess/27` (beyond10x/ess#549) `site` decides `payload.<Event>.<field>`: a value source
 /// reads what its outcome publishes there ([`super::published_operand`]), and every other site
 /// refuses it by name. A candidate field named `payload` keeps being read as itself.
+///
+/// With `rows`, a quantifier may walk the rows of a declared entity (ess/27, beyond10x/ess#551,
+/// [`super::related_rows`]): a selector's environment. A set effect's filter admits none, and the
+/// checker refuses them there by name.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn check_row_predicate(
     spec: &Specification,
@@ -1930,7 +1936,7 @@ pub(super) fn check_row_predicate(
     types: &TypeRegistry,
     filter: &Predicate,
     (at, site): (&ConstructRef, super::published_operand::Site<'_>),
-    current_time: bool,
+    (current_time, rows): (bool, bool),
 ) -> ValidationErrors {
     let owner = at.render();
     let published = super::published_operand::classify(spec, fields, filter, site, at);
@@ -1959,6 +1965,7 @@ pub(super) fn check_row_predicate(
         identity: subject.map(|subject| &subject.identity),
         current_time,
         published: (!published.admitted.is_empty()).then_some(&published.admitted),
+        rows: rows.then_some(spec),
     };
     let checked = crate::expression::check_predicate(&environment, filter, &owner);
     let mut errors = published.errors;
@@ -1989,6 +1996,8 @@ enum Read {
     Published(Vec<String>),
     /// The payload of an admitted event.
     PublishedEvent(QualifiedName),
+    /// A row of a declared entity, under a quantifier over its rows (ess/27, beyond10x/ess#551).
+    Row(QualifiedName),
 }
 
 impl fmt::Display for Read {
@@ -2005,6 +2014,7 @@ impl fmt::Display for Read {
             Self::PublishedEvent(event) => {
                 write!(f, "{}.{event}", super::published_operand::ROOT)
             }
+            Self::Row(entity) => write!(f, "a row of {entity}"),
         }
     }
 }
@@ -2021,13 +2031,16 @@ struct WithSubject<'a> {
     current_time: bool,
     /// The published reads admitted, where there are any (ess/27, beyond10x/ess#549).
     published: Option<&'a super::published_operand::Admitted>,
+    /// Where a quantifier may walk the rows of an entity, the specification declaring them: a
+    /// selector's environment (ess/27, beyond10x/ess#551).
+    rows: Option<&'a Specification>,
 }
 
 impl WithSubject<'_> {
     fn declared(read: &Read) -> Option<&TypeRef> {
         match read {
             Read::Declared(type_ref) => Some(type_ref),
-            Read::Subject | Read::Published(_) | Read::PublishedEvent(_) => None,
+            Read::Subject | Read::Published(_) | Read::PublishedEvent(_) | Read::Row(_) => None,
         }
     }
 }
@@ -2065,7 +2078,9 @@ impl TypeEnvironment for WithSubject<'_> {
     fn shape(&self, reference: &Read) -> Result<Shape<Read>, String> {
         match reference {
             Read::Declared(type_ref) => self.inner.shape(type_ref).map(lifted),
-            Read::Subject | Read::Published(_) | Read::PublishedEvent(_) => Ok(Shape::Struct),
+            Read::Subject | Read::Published(_) | Read::PublishedEvent(_) | Read::Row(_) => {
+                Ok(Shape::Struct)
+            }
         }
     }
     fn is_clock_reading(&self, reference: &Read) -> bool {
@@ -2120,7 +2135,25 @@ impl TypeEnvironment for WithSubject<'_> {
                 .published?
                 .field(event, name)
                 .map(|type_ref| Read::Declared(type_ref.clone())),
+            // What a selector reads of its own candidate: identity, declared fields, `state`.
+            Read::Row(entity) => self
+                .rows?
+                .entities()
+                .get(entity)
+                .map(super::row_set::candidate_fields)?
+                .into_iter()
+                .find(|field| field.name == name)
+                .map(|field| Read::Declared(field.type_ref)),
         }
+    }
+    fn related_rows(&self, entity: &str) -> RelatedRows<Read> {
+        let Some(spec) = self.rows else {
+            return RelatedRows::NotHere;
+        };
+        // Below the format or naming no declared entity, `super::related_rows` refuses it.
+        super::related_rows::admitted(spec, entity).map_or(RelatedRows::Reported, |declared| {
+            RelatedRows::Admitted(Read::Row(declared.name.clone()))
+        })
     }
     fn has_parameters(&self) -> bool {
         self.inner.has_parameters()

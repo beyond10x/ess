@@ -1653,13 +1653,18 @@ fn preflight(
         Predicate::Not(inner) | Predicate::Trimmed(inner) => preflight(inner, facts, work),
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
             work.debit(1)?;
-            let members = facts.cardinality(&quantified.over).unwrap_or(0);
+            // Validation keeps a test over the rows of an entity out of every invariant
+            // (beyond10x/ess#551): it reads no fact of this value, so there is nothing to preflight.
+            let Some(over) = quantified.over.fact() else {
+                return Ok(());
+            };
+            let members = facts.cardinality(over).unwrap_or(0);
             for index in 0..members {
                 work.debit(1)?;
                 let bound = Bound {
                     inner: facts,
                     bind: &quantified.bind,
-                    prefix: quantified.over.child(&index.to_string()),
+                    prefix: over.child(&index.to_string()),
                 };
                 preflight(&quantified.body, &bound, work)?;
             }

@@ -629,7 +629,7 @@ its canonical key order. A quantifier is a mapping with exactly three keys:
 
 | Key | Value |
 |---|---|
-| `in` | the list or map, as a fact path |
+| `in` | the list or map, as a fact path; from `ess/27`, in a selector, the rows of an entity, `{entity: <Entity>}` (see [a test over each candidate's related rows](#from-ess27-a-test-over-each-candidates-related-rows)) |
 | `as` | a one-segment name the body binds each element to |
 | `that` | a predicate over that name and any other fact |
 
@@ -1384,6 +1384,61 @@ structs and is refused as `ESS-COMMAND-002`. Without such an equality, and on a 
 two selectors, synthesis reports
 `ESS-SYNTH-001` naming the branch. Generated Rust and Go keep such a command a hand-written
 obligation, naming the row set; Entity Runtime refuses it as `RowSetUnsupported`.
+
+### From `ess/27`: a test over each candidate's related rows
+
+A selector may test each candidate's related rows (beyond10x/ess#551,
+`docs/design/related-rows-quantifier.md`). The quantifier `exists:` takes the rows of an entity as
+its collection, `in: {entity: <Entity>}`, binds each row to its `as:` name, and holds of a
+candidate when some row satisfies `that:`. Inside `that:`, `<name>.<field>` reads the related row,
+its identity, a declared field or `state`; a bare name keeps reading the candidate, and `input.`,
+`subject.`, `now` and `payload.<Event>.<field>` keep their meaning. The best open slot of a group
+whose two sides each hold a `Present` membership, and the refusal when there is none:
+
+```text
+- name: no-match
+  when_related:
+    entity: demo.slots.Slot
+    where:
+      all:
+        - group_id == input.group_id
+        - state == Open
+        - exists:
+            in: {entity: demo.slots.Membership}
+            as: member
+            that: {all: [member.slot_id == slot_id, member.side == Left, member.state == Present]}
+        - exists:
+            in: {entity: demo.slots.Membership}
+            as: member
+            that: {all: [member.slot_id == slot_id, member.side == Right, member.state == Present]}
+    exists: false
+  error: demo.slots.NoMatchableSlot
+```
+
+The same `where:` under `{related: {entity: demo.slots.Slot, where: …, order_by: [score desc,
+slot_id], first: slot_id}}` publishes that slot. The test stands in the `where:` of a related read
+or a head and in a row-set `when_related:`'s `where:` and `forall:`; every other predicate site
+refuses it as `unsupported_construct`, `when_subject:` naming the `when_related` idiom. `that:` is
+one comparison or an `all:` holding a **tie**, a top-level `<name>.<field> == <candidate field>`
+either way round (`missing_declaration` without one; an equality under `any:` or `not:` is no
+tie). The binder may not name a field of the candidate, `state`, a root or a binder in scope
+(`conflicting_declaration`). `forall` over rows is refused with its rewrite, `not: {exists: {in:
+{entity: <Entity>}, as: <name>, that: {all: [<tie>, {not: <condition>}]}}}`, and a rows test
+inside another as `unsupported_construct`; `<Entity>` must be declared (`undeclared_reference`).
+Below `ess/27` the shape is refused as `unsupported_format_version`, naming `ess/27`.
+
+The related rows are the store just before the branch is selected, the snapshot the candidates are
+read from. For one candidate `exists` is `true` when some row's body is `true`, `false` when every
+row's is `false` (or the entity holds no row), and unknown otherwise; an unknown candidate stays a
+possible member, so a head or a test it leaves undecided decides nothing. Synthesis gives each
+selected candidate the related rows that make its tests hold, through the related entity's
+creating command, which must write the tie's field from its input (otherwise the branch is
+refused, naming the field); and for each test it arranges one candidate meeting the rest of the
+selector that fails it — for `exists`, one related row per conjunct of the body other than the
+tie, each failing that conjunct alone — ranked above the head on the first key where the branch
+reads a head. A target that ignores the test, tests one side, or drops a conjunct or the tie then
+answers that candidate. Where no candidate can rank above the head, the gap is named and the
+scenario stands.
 
 ## What synthesis can witness
 

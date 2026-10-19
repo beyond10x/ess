@@ -415,6 +415,7 @@ fn select(
                 input,
                 subject: subject.map(|facts| facts as &dyn FactSource),
                 published: None,
+                related: None,
             })
         }) {
             Truth::True => selected.push(key.clone()),
@@ -478,6 +479,51 @@ pub(super) struct Facts<'a> {
     /// The values of its own outcome's payload a value read's selector reads (ess/27,
     /// beyond10x/ess#549); `None` for every other predicate.
     pub(super) published: Option<Published<'a>>,
+    /// The stored rows of each entity a selector's rows quantifier walks, by the entity's name as
+    /// the quantifier writes it (ess/27, beyond10x/ess#551); `None` for every other predicate, whose
+    /// rows quantifier, refused by validation, stays `Unknown`.
+    pub(super) related: Option<&'a Related<'a>>,
+}
+
+/// The rows of each entity a selector's rows quantifier walks, read from the store before the
+/// branch is selected, by the entity's name as the quantifier writes it (ess/27,
+/// beyond10x/ess#551).
+pub(super) type Related<'a> = BTreeMap<String, Vec<super::history::Facts<'a>>>;
+
+/// One related row, lent to a quantifier that walks it.
+struct Lent<'a>(&'a dyn FactSource);
+
+impl FactSource for Lent<'_> {
+    fn fact(&self, path: &FactPath) -> Option<FactValue> {
+        self.0.fact(path)
+    }
+    fn observe(&self, path: &FactPath) -> Option<FactValue> {
+        self.0.observe(path)
+    }
+    fn present(&self, path: &FactPath) -> bool {
+        self.0.present(path)
+    }
+    fn observed_presence(&self, path: &FactPath) -> Option<bool> {
+        self.0.observed_presence(path)
+    }
+    fn scales(&self) -> &Scales {
+        self.0.scales()
+    }
+    fn orders_as_instant(&self, path: &FactPath) -> bool {
+        self.0.orders_as_instant(path)
+    }
+    fn now(&self) -> Option<ess_primitives::time::Rfc3339Instant> {
+        self.0.now()
+    }
+    fn orders_text_by_bytes(&self, path: &FactPath) -> bool {
+        self.0.orders_text_by_bytes(path)
+    }
+    fn cardinality(&self, path: &FactPath) -> Option<usize> {
+        self.0.cardinality(path)
+    }
+    fn rows(&self, entity: &str) -> Option<Vec<Box<dyn FactSource + '_>>> {
+        self.0.rows(entity)
+    }
 }
 
 /// The published values one selector reads: `facts` holds the value of `reads[i]` under the root
@@ -560,5 +606,13 @@ impl FactSource for Facts<'_> {
     fn orders_text_by_bytes(&self, path: &FactPath) -> bool {
         self.source(path)
             .is_some_and(|(source, path)| source.orders_text_by_bytes(&path))
+    }
+    fn rows(&self, entity: &str) -> Option<Vec<Box<dyn FactSource + '_>>> {
+        let rows = self.related?.get(entity)?;
+        Some(
+            rows.iter()
+                .map(|row| Box::new(Lent(row)) as Box<dyn FactSource + '_>)
+                .collect(),
+        )
     }
 }

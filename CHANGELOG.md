@@ -128,6 +128,18 @@
   The interpreter resolves them in dependency order and refuses values that read each other, and
   synthesis arranges nested heads with cross decoys in the other outer rows
   (beyond10x/ess#549, `docs/design/published-value-operand.md`).
+- A selector may test each candidate's related rows: `exists: {in: {entity: <E>}, as: <b>, that:
+  <P>}` walks every row of `E`, `<b>.<field>` reading the row and a bare name still the candidate,
+  so a command picks the best slot among those whose two sides each hold a `Present` membership and
+  refuses by name when none does. It stands in the `where:` of a related read or a head and of a
+  row-set `when_related:`, tied to the candidate by a conjunct `<b>.<field> == <candidate field>`;
+  `forall` over rows, nesting, an untied test and a binder shadowing the candidate are refused, and
+  every other predicate site refuses it by name. The interpreter and the history checker evaluate
+  it over the same snapshot as the candidates, and synthesis arranges the related rows of each
+  selected candidate and, per test, a higher-ranked candidate that fails it, so a target ignoring
+  the test, testing one side or dropping a conjunct or the tie fails a scenario. `Quantified::over`
+  in `ess-primitives` is now a `Collection`, and `FactSource` gains a defaulted `rows`
+  (beyond10x/ess#551, `docs/design/related-rows-quantifier.md`).
 
 ### Fixed
 

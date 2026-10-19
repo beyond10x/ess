@@ -301,7 +301,9 @@ measured).
 
   I know of no other idiom. Without it, a model whose best slot has an empty side cannot publish a
   pair, and it cannot refuse by name either, because a guard cannot read the published head. That
-  needs its own construct and a decision.
+  needs its own construct and a decision: `related-rows-quantifier.md`
+  (https://github.com/beyond10x/ess/issues/551) designs it as a quantifier over the rows of an
+  entity.
 - **An effect on the head row** (pop the membership): the `affects[].where` site above, with #547.
 - **A named intermediate** (an unpublished value read by selectors). See alternative (b).
 - **Mutation operators** (scope the inner by the first-inserted outer row). The cross decoys

@@ -34,7 +34,7 @@ use ess_domain::entity::{Cardinality, RelationKind};
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
 use ess_primitives::facts::{FactPath, FactValue};
-use ess_primitives::predicate::{CompareOp, Operand, Predicate, Quantified, TextOp};
+use ess_primitives::predicate::{Collection, CompareOp, Operand, Predicate, Quantified, TextOp};
 use ess_service_contract::{ServiceDiagnostic, ServiceIr};
 use ess_synth::{PlannedCapability, SynthesisPlan};
 use serde_json::{Map, Number, Value};
@@ -733,6 +733,23 @@ impl Projector<'_> {
         }
     }
 
+    /// Refuse a test over the rows of another entity (`exists: {in: {entity: <E>}, …}`, ess/27,
+    /// beyond10x/ess#551) by name, as the row set it stands in: entity-core has no query over rows.
+    fn refuse_related_rows(&mut self, predicate: &Predicate, at: &str) {
+        if ess_domain::command::related_rows::walks_rows(predicate) {
+            self.diagnostic_naming(
+                LoweringCode::RowSetUnsupported,
+                subset::ROW_SET,
+                at,
+                format!(
+                    "`{predicate}` tests the rows of another entity (`in: {{entity: …}}`, ess/27), \
+                     and Entity Runtime has no query over the rows of an entity; any lowering \
+                     would decide a different rule"
+                ),
+            );
+        }
+    }
+
     /// Refuse every text length `predicate` reads over `fields` that entity-core cannot address.
     /// entity-core 0.27.0 reads `<path>.count` on a declared `string` only along its run-time walk
     /// from a schema root, which carries each field's declaration through members and list
@@ -788,6 +805,7 @@ impl Projector<'_> {
                 ),
             );
         }
+        self.refuse_related_rows(predicate, at);
         if predicate.reads_utf8_bytes() {
             self.diagnostic(
                 LoweringCode::Utf8BytesUnsupported,
@@ -4382,8 +4400,14 @@ fn lower_quantified(
         outer: Box::new(rewrite.clone()),
         binder: quantified.bind.clone(),
     };
+    let over = match &quantified.over {
+        Collection::Fact(over) => over,
+        // Refused before lowering (`RowSetUnsupported`), so no definition carrying this is ever
+        // returned; entity-core has no rows to walk, and no lowering stands in for them.
+        Collection::Rows { .. } => return Condition::Literal(false),
+    };
     let closed = Quantifier {
-        over: rewrite.path(&quantified.over),
+        over: rewrite.path(over),
         bind: quantified.bind.clone(),
         body: Box::new(lower_typed(&quantified.body, &nested, typing)),
     };
