@@ -1239,6 +1239,7 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 // `implementation-generated`, and `…, present` for an ess/27 present mint.
                 | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::PayloadRead { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::Expression { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
@@ -1977,6 +1978,16 @@ fn compare_aggregations(was: &ResolvedView, is: &ResolvedView, push: &mut impl F
                 after: after.map(ToString::to_string),
             });
         }
+        // A field computed from one row (`expr:`, ess/27, beyond10x/ess#560) is what the field
+        // computes too, reported under the same kind, its expression compared as a typed tree.
+        let (before, after) = (was.computed.get(field), is.computed.get(field));
+        if before != after {
+            push(ViewChange::FieldAggregateChanged {
+                field: field.to_owned(),
+                before: before.map(|expr| format!("expr: {expr}")),
+                after: after.map(|expr| format!("expr: {expr}")),
+            });
+        }
     }
 }
 
@@ -2287,6 +2298,7 @@ fn written_sets(
                 // `implementation-generated`, and `…, present` for an ess/27 present mint.
                 | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::PayloadRead { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::Expression { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
@@ -2669,7 +2681,8 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
             residual_fields(declaration, "params");
             remove_keys(
                 declaration,
-                // `aggregation` is `grouping-changed` / `field-aggregate-changed` (ess#256).
+                // `aggregation` is `grouping-changed` / `field-aggregate-changed` (ess#256), and so
+                // is `computed` (ess/27, beyond10x/ess#560).
                 &[
                     "source",
                     "filter",
@@ -2679,6 +2692,7 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                     "consistency",
                     "assertion_style",
                     "aggregation",
+                    "computed",
                 ],
             );
         }

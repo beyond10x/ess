@@ -539,6 +539,10 @@ pub enum LoweringCode {
     /// beyond10x/ess#429): an entity-core operation acts on the instance its request names, and has
     /// no move of an instance to another identity.
     IdentityChangeUnsupported,
+    /// A guard reads a fact through a function, `challenge != base64url(sha256(ascii(input.v)))`
+    /// (ess/27, beyond10x/ess#584): entity-core has no digest or encoding operand, and lowering the
+    /// comparison as a read of the fact would decide a different rule.
+    FunctionCallUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -806,6 +810,17 @@ impl Projector<'_> {
             );
         }
         self.refuse_related_rows(predicate, at);
+        if predicate.reads_call() {
+            self.diagnostic(
+                LoweringCode::FunctionCallUnsupported,
+                at,
+                format!(
+                    "`{predicate}` reads a fact through a function, and Entity Runtime has no \
+                     digest or encoding operand; lowering it as a read of the fact would decide a \
+                     different rule"
+                ),
+            );
+        }
         if predicate.reads_utf8_bytes() {
             self.diagnostic(
                 LoweringCode::Utf8BytesUnsupported,
@@ -2378,6 +2393,7 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::RelatedHead { .. }
                         | ResolvedPayloadValue::CallerAttribute { .. }
                         | ResolvedPayloadValue::PayloadRead { .. }
+                        | ResolvedPayloadValue::Expression { .. }
                         | ResolvedPayloadValue::ChangedField { .. }
                         | ResolvedPayloadValue::ChangedState { .. }
                         | ResolvedPayloadValue::ChangedCount => {
@@ -3149,7 +3165,8 @@ impl Projector<'_> {
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::Generated { present: true }
-            | ResolvedPayloadValue::PayloadRead { .. }) => {
+            | ResolvedPayloadValue::PayloadRead { .. }
+            | ResolvedPayloadValue::Expression { .. }) => {
                 self.diagnostic_naming(
                     LoweringCode::ValueExpressionUnsupported,
                     subset::value_expression(value),
@@ -4075,6 +4092,8 @@ fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
             // value a payload publishes.
             | ResolvedPayloadValue::Generated { present: true }
             | ResolvedPayloadValue::PayloadRead { .. }
+            // ess/27 (beyond10x/ess#560): entity-core computes no expression.
+            | ResolvedPayloadValue::Expression { .. }
     ) || is_input_path(value)
 }
 

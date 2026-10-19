@@ -46,8 +46,62 @@ impl CommandSpec {
         let admitted = format.is_some_and(|format| format.major() >= FormatVersion::V16.major());
         admitted
             && self
-                .narrowed_input(outcome, &read.name)
+                .narrowed_input_at(outcome, &read.name, format)
                 .is_some_and(|present| conversions.permits(present, target))
+    }
+
+    /// [`Self::narrowed_input`], and from `ess/27` also an `Optional` input a `when_related:`
+    /// branch reads its row through (`via: input.<field>`): an absent reference reads no row and
+    /// selects no such branch, so the branch is only ever taken with the input present
+    /// (`story:expression-roots-a-branch-establishes-are-readable`, beyond10x/ess#556).
+    pub fn narrowed_input_at(
+        &self,
+        outcome: &Outcome,
+        field: &str,
+        format: Option<FormatVersion>,
+    ) -> Option<&TypeRef> {
+        if let Some(present) = self.narrowed_input(outcome, field) {
+            return Some(present);
+        }
+        let TypeRef::Optional(present) = &self.input_field(field)?.type_ref else {
+            return None;
+        };
+        let from_27 = format.is_some_and(|format| format.major() >= FormatVersion::V27.major());
+        let related = matches!(
+            &outcome.condition,
+            OutcomeCondition::Related {
+                via: super::RelatedVia::Input(name),
+                ..
+            } if name == field
+        );
+        (from_27 && related).then_some(present.as_ref())
+    }
+
+    /// From `ess/27`: whether `outcome`'s own guard proves the stored `field` of the subject it
+    /// reads present: a `when_subject:` predicate requiring `defined(field)`, alone or as a member
+    /// of an `all:` (beyond10x/ess#556).
+    pub fn narrows_subject_field(&self, outcome: &Outcome, field: &str) -> bool {
+        matches!(
+            &outcome.condition,
+            OutcomeCondition::SubjectPredicate { predicate, .. }
+                if requires_defined(predicate, field)
+        )
+    }
+
+    /// From `ess/27`: whether `outcome`'s own `when_related:` guard over the row `via` names proves
+    /// that row's `field` present: its predicate requires `defined(field)` (beyond10x/ess#556).
+    pub fn narrows_related_field(
+        &self,
+        outcome: &Outcome,
+        via: &super::RelatedVia,
+        field: &str,
+    ) -> bool {
+        matches!(
+            &outcome.condition,
+            OutcomeCondition::Related { via: guarded, test, .. }
+                if guarded == via
+                    && test.predicate().is_some_and(|predicate| requires_defined(predicate, field))
+        )
     }
 
     /// The type `input.<field>` is read at in `outcome` when it is narrowed there: `T` for an

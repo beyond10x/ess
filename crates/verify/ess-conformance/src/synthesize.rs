@@ -185,7 +185,9 @@ mod bounded_retry;
 mod caller;
 mod delivery_context;
 mod disclosure;
+mod established;
 mod existence;
+mod expression;
 mod grant;
 mod identity;
 mod ordered_head;
@@ -3079,6 +3081,25 @@ fn outcome_scenario_noting(
             }
         }
     }
+    // ess/27 (#560): a branch computing a value with `{expr: …}` is run once more per point its
+    // expressions are worth checking on — the reads apart, a zero divisor, a rounding tie — so a
+    // target computing the figure otherwise fails one. A model without one keeps its suite's bytes.
+    if again {
+        for nth in 0..expression::point_bound(outcome) {
+            if let Some((more, depends, _)) = exercise_as(
+                models,
+                command,
+                outcome,
+                actors,
+                &id,
+                &mut Vec::new(),
+                Witness::ExpressionPoint(nth),
+            ) {
+                steps.extend(more);
+                source.extend(depends);
+            }
+        }
+    }
     // ess/18 (#201): a branch whose `when_subject_state:` lists several states is witnessed in each
     // of them, on a further row per state after the first invocation, so a target that mishandles
     // any listed state fails. A state refusal is witnessed per state by `state_refusals`.
@@ -3320,6 +3341,10 @@ enum Witness {
     /// it sends (ess/22, beyond10x/ess#418, [`arranged_with_union_variant`]), so a synthesized suite
     /// sends each variant and not only the first label.
     UnionVariant(usize),
+    /// A further instance whose input is the `n`th point the branch's expression values are checked
+    /// on (ess/27, beyond10x/ess#560, [`expression::points`]): the reads apart, a zero divisor, a
+    /// rounding tie.
+    ExpressionPoint(usize),
     /// A further invocation of an external refusal answered before the row (`before_row: true`,
     /// ess/25, beyond10x/ess#534), sent an identity no row carries ([`arranged_unstored`]), so a
     /// target that reads the row first answers the unknown identity instead and fails.
@@ -3430,7 +3455,9 @@ fn exercise_run_in(
     let mut steps = run.steps();
     let held = held_before(ir, command, outcome, &run);
     if let Some(error) = &outcome.error {
-        steps.push(expect_error(ir, outcome, error, &run.input, &held));
+        let mut expected = expect_error(ir, outcome, error, &run.input, &held);
+        established::name_instances(ir, command, outcome, &run.input, &steps, &mut expected);
+        steps.push(expected);
     }
     for event in &emitted {
         let literals = determined_payload(ir, outcome, event, &run.input, &held);
@@ -3801,6 +3828,7 @@ fn run_as(
                 | Witness::Listed(_)
                 | Witness::RelatedValueAbsent(_)
                 | Witness::UnionVariant(_)
+                | Witness::ExpressionPoint(_)
                 | Witness::Unstored
                 | Witness::InsideLaterRefusal(_) => return Err(related_guard::unarranged()),
             }
@@ -3918,6 +3946,11 @@ fn run_as(
         }
         Witness::LiteralFallbacks(run) => {
             related_at = fallback_distinction(run);
+            true
+        }
+        // ess/27 (#560): a further run of a branch computing a value, on its own row.
+        Witness::ExpressionPoint(nth) => {
+            related_at = expression_distinction(nth);
             true
         }
         _ => false,
@@ -7718,7 +7751,9 @@ fn determined_fields(
             | ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. }
-            | ResolvedPayloadValue::CallerAttribute { .. } => {
+            | ResolvedPayloadValue::CallerAttribute { .. }
+            // ess/27 (#560): computed forwards by the shared evaluator.
+            | ResolvedPayloadValue::Expression { .. } => {
                 if let Some(ScenarioValue::Literal { value }) =
                     expression_value(ir, field, supplied, before)
                 {
@@ -8890,6 +8925,10 @@ fn expression_value_at(
         } => before
             .get(&ordered_head::key(selection, order_by, read))
             .map(|held| held.value.clone()),
+        // ess/27 (#560): the shared evaluator over what the scenario sent and what the row held.
+        ResolvedPayloadValue::Expression { expr, .. } => {
+            crate::synthesize::expression::expected(expr, supplied, before)
+        }
         ResolvedPayloadValue::Increment { by } => {
             let Node::Number(held) = before_literal_at(before, target_location)? else {
                 return None;
@@ -9138,7 +9177,11 @@ fn arranged_as(
     witness: Witness,
 ) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
     match witness {
-        Witness::Full => arranged(ir, command, outcome, actors, routed),
+        Witness::Full => {
+            let (setup, input) = arranged(ir, command, outcome, actors, routed)?;
+            let input = expression_spelled(ir, command, outcome, setup.before.as_ref(), input);
+            Ok((setup, input))
+        }
         Witness::LiteralFallbacks(run) => {
             arranged_without_fallbacks(ir, command, outcome, actors, run)
         }
@@ -9148,6 +9191,9 @@ fn arranged_as(
         }
         Witness::UnionVariant(nth) => {
             arranged_with_union_variant(ir, command, outcome, actors, nth)
+        }
+        Witness::ExpressionPoint(nth) => {
+            arranged_at_expression_point(ir, command, outcome, actors, nth)
         }
         Witness::Unstored => arranged_unstored(ir, command, outcome),
         Witness::InsideLaterRefusal(nth) => arranged_inside_later(ir, command, outcome, nth),
@@ -9543,6 +9589,92 @@ fn arranged_with_union_variant(
     Ok((setup, input))
 }
 
+/// The distinction the expression points (ess/27, beyond10x/ess#560) are counted from: past every
+/// union-variant witness, so their rows and identities are their own.
+const EXPRESSION_POINT_WITNESS: usize = 3 * ABSENT_REFERENCE_WITNESS;
+
+/// The witness the `nth` expression point is arranged under.
+fn expression_distinction(nth: usize) -> Distinction {
+    Distinction::further(EXPRESSION_POINT_WITNESS + nth)
+}
+
+/// The arrangement and input of [`Witness::ExpressionPoint`] (ess/27, beyond10x/ess#560): a further
+/// instance, its input the plain witness at that distinction with the `nth` point's values in
+/// place ([`expression::points`]), where the branch is still the one the input selects.
+///
+/// Only for a branch its input selects, as for [`Witness::LiteralFallbacks`].
+fn arranged_at_expression_point(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    nth: usize,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    if subject_fact::routes(command, outcome) || has_subject_guards(command) {
+        return Err(no_expression_run(command));
+    }
+    let distinction = expression_distinction(nth);
+    let setup = prepare_in(ir, outcome, actors, None, distinction)?;
+    let input = reach(ir, command, outcome, distinction)?;
+    let input = existence::fresh_created(ir, command, outcome, input, true)?;
+    let mut input = freshened(
+        ir,
+        command,
+        outcome,
+        input,
+        setup.before.as_ref(),
+        &setup.settled,
+    );
+    let points = expression::points(outcome, &input);
+    let point = points.get(nth).ok_or_else(|| no_expression_run(command))?;
+    for (field, value) in point {
+        input.insert(field.clone(), value.clone());
+    }
+    if !expression::spelled_at(outcome, &input)
+        || !admitted(ir, command, &input)
+        || !selects_branch(ir, command, outcome, setup.before.as_ref(), &input).unwrap_or(false)
+    {
+        return Err(no_expression_run(command));
+    }
+    Ok((setup, input))
+}
+
+/// `input`, or where an expression value of the branch has no value its field can hold over it — a
+/// witness sending `ended_at` before `started_at` — `input` with the reads moved apart
+/// ([`expression::apart`]), where the branch is still selected (ess/27, beyond10x/ess#560). A
+/// branch without an expression keeps its input.
+fn expression_spelled(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    before: Option<&StateName>,
+    input: BTreeMap<String, Node>,
+) -> BTreeMap<String, Node> {
+    if expression::spelled_at(outcome, &input) {
+        return input;
+    }
+    let mut moved = input.clone();
+    moved.extend(expression::apart(outcome, &input));
+    if expression::spelled_at(outcome, &moved)
+        && admitted(ir, command, &moved)
+        && selects_branch(ir, command, outcome, before, &moved).unwrap_or(false)
+    {
+        moved
+    } else {
+        input
+    }
+}
+
+/// Why [`Witness::ExpressionPoint`] builds nothing. Never reported: the full invocation is the
+/// scenario, and this run only adds to it.
+fn no_expression_run(command: &ResolvedCommand) -> RefusalCause {
+    RefusalCause::NoWitness(WitnessGap {
+        path: command.name.to_string(),
+        type_ref: "expression".into(),
+        reason: "no further point to check an expression value on",
+    })
+}
+
 /// Why [`Witness::UnionVariant`] builds nothing. Never reported: the full invocation is the
 /// scenario, and this run only adds to it.
 fn no_union_variant_run(command: &ResolvedCommand) -> RefusalCause {
@@ -9614,6 +9746,15 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         ResolvedPayloadValue::RelatedSelection { selection, .. }
         | ResolvedPayloadValue::RelatedHead { selection, .. } => {
             out.extend(row_set::input_reads(&selection.filter).map(|field| (field, Read::Needed)));
+        }
+        // ess/27 (#560): every input an expression reads is sent; an omission run would only
+        // assert its absence, which the expression's own witnesses arrange.
+        ResolvedPayloadValue::Expression { expr, .. } => {
+            out.extend(
+                crate::synthesize::expression::input_reads(expr)
+                    .into_iter()
+                    .map(|field| (field, Read::Needed)),
+            );
         }
         ResolvedPayloadValue::Literal { .. }
         | ResolvedPayloadValue::ResponseField { .. }
@@ -10157,7 +10298,9 @@ fn settled(
             | ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. }
-            | ResolvedPayloadValue::CallerAttribute { .. } => {
+            | ResolvedPayloadValue::CallerAttribute { .. }
+            // ess/27 (#560): computed forwards by the shared evaluator.
+            | ResolvedPayloadValue::Expression { .. } => {
                 match expression_value(ir, field, supplied, before) {
                     Some(value) => value,
                     None => continue,
@@ -10800,10 +10943,20 @@ fn shown(
     settled: &BTreeMap<String, Determined>,
 ) -> BTreeMap<String, ScenarioValue> {
     for (name, determined) in settled {
+        if view.computed.contains_key(name) {
+            continue;
+        }
         if view.field(name).map(|field| &field.type_ref) == Some(&determined.type_ref) {
             fields
                 .entry(name.clone())
                 .or_insert_with(|| determined.value.clone());
+        }
+    }
+    // ess/27 (#560): a computed field, where every field it reads is determined, is the shared
+    // evaluator's value over them.
+    for (name, expr) in &view.computed {
+        if let Some(value) = expression::computed_field(expr, &fields, settled) {
+            fields.entry(name.clone()).or_insert(value);
         }
     }
     fields

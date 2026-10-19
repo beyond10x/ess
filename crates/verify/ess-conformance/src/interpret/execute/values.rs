@@ -20,10 +20,11 @@ pub(super) fn selected_subject(
     input: &super::Context<'_>,
 ) -> Option<Row> {
     let subject = outcome.subject.as_ref().or_else(|| {
-        outcome
-            .error
-            .as_ref()
-            .and_then(|_| command.selection_subject(outcome))
+        outcome.error.as_ref().and_then(|_| {
+            command
+                .selection_subject(outcome)
+                .or_else(|| through_reference(command, outcome))
+        })
     })?;
     let ResolvedInstance::Supplied { field } = &subject.instance else {
         return None;
@@ -610,6 +611,67 @@ pub(super) fn selected(
         target.conversion.as_deref(),
         value.as_ref(),
     )
+}
+
+/// The addressed subject a refusal guarded by a related row the subject's stored reference names
+/// reads (`when_related: {via: <field>, …}`, ess/27, beyond10x/ess#555): the record was read to
+/// follow the reference, so its payload reads the record's stored fields. The command's first
+/// branch addressing a supplied identity names it, as for any refusal reading the held row.
+fn through_reference<'c>(
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Option<&'c ess_compiler::ir::ResolvedSubject> {
+    let ess_compiler::ir::ResolvedCondition::Related { via, .. } = &outcome.condition else {
+        return None;
+    };
+    if !matches!(via, ResolvedRelatedVia::Subject { .. }) {
+        return None;
+    }
+    command
+        .outcomes
+        .iter()
+        .filter_map(|branch| branch.subject.as_ref())
+        .find(|subject| matches!(subject.instance, ResolvedInstance::Supplied { .. }))
+}
+
+/// `{expr: …}` (ess/27, beyond10x/ess#560): the shared evaluator over the invocation's input
+/// (`input.`) and the row as it was before the outcome (`subject.`). Absent leaves the field absent;
+/// a read the history does not know, or a value out of bounds, is undetermined rather than guessed.
+pub(super) fn expression(
+    expr: &ess_primitives::expr::Expr,
+    input: &super::Context<'_>,
+    before: Option<&Row>,
+) -> Result<Option<Value>, Undetermined> {
+    use ess_primitives::expr::{Evaluated, Reading};
+    let reads = |path: &ess_primitives::facts::FactPath| -> Reading {
+        let text = path.to_string();
+        if let Some(field) = text.strip_prefix("input.") {
+            return input.get(field).map_or(Reading::Absent, Reading::of_node);
+        }
+        if let Some(field) = text.strip_prefix("subject.") {
+            let Some(row) = before else {
+                return Reading::Unknown;
+            };
+            return match row.fields.get(field).map(Value::concrete) {
+                None | Some(Ok(None)) => Reading::Absent,
+                Some(Ok(Some(node))) => Reading::of_node(&node),
+                Some(Err(())) => Reading::Unknown,
+            };
+        }
+        Reading::Unknown
+    };
+    match expr.evaluate(&reads) {
+        Evaluated::Unknown => Err(Undetermined::NoValue {
+            what: format!("the value `{expr}` computes, which reads an undetermined value"),
+        }),
+        evaluated => match evaluated.to_node() {
+            Some(Node::Null) => Ok(None),
+            Some(node) => Ok(Some(Value::Known(node))),
+            None => Err(Undetermined::NoValue {
+                what: format!("the value `{expr}` computes, which has no spelling of its type"),
+            }),
+        },
+    }
 }
 
 #[cfg(test)]

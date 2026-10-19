@@ -8,6 +8,7 @@ use std::fmt;
 
 pub(crate) mod attributes;
 pub mod lexical;
+pub mod value;
 
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::{FactPath, FactValue};
@@ -19,6 +20,38 @@ use ess_primitives::predicate::{
 use ess_primitives::window::{CalendarWindow, WindowInstant};
 
 use crate::{Field, Primitive, TypeBody, TypeRef, TypeRegistry};
+
+/// Where one side of a comparison is a function of a fact (`ess/27`, beyond10x/ess#584), the type it
+/// computes and the other side, where that side holds no value of that type: `String` against a
+/// `String`, `Bytes` against text that is no `String`, an instant, a `Duration`, a number, a
+/// Boolean.
+fn computed_against<'v>(
+    left: &'v ValueType,
+    right: &'v ValueType,
+) -> Option<(ess_primitives::expr::Kind, &'v ValueType)> {
+    use ess_primitives::expr::Kind;
+    let admits = |kind: Kind, other: &ValueType| match other.computes {
+        Some(computed) => computed == kind,
+        None => match kind {
+            Kind::String => other.string || other.declared.starts_with("Text literal"),
+            Kind::Bytes => {
+                other.scalar == Some(ScalarKind::Text)
+                    && !other.string
+                    && !other.instant
+                    && !other.duration
+            }
+            Kind::Timestamp => other.instant,
+            Kind::Duration => other.duration,
+            Kind::Integer | Kind::Decimal => other.scalar == Some(ScalarKind::Number),
+            Kind::Boolean => other.scalar == Some(ScalarKind::Bool),
+        },
+    };
+    match (left.computes, right.computes) {
+        (Some(kind), _) if !admits(kind, right) => Some((kind, right)),
+        (None, Some(kind)) if !admits(kind, left) => Some((kind, left)),
+        _ => None,
+    }
+}
 
 /// The three scalar representations understood by the predicate evaluator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -204,12 +237,34 @@ pub trait TypeEnvironment {
     fn current_time_later(&self) -> Option<&'static str> {
         None
     }
+    /// Whether this site is a view's filter, where a refusal of the current time names the
+    /// parameter idiom (`story:expression-arithmetic-and-time`, `now_relative_view_filter`).
+    ///
+    /// `false` by default.
+    fn is_view_filter(&self) -> bool {
+        false
+    }
     /// Whether a one-segment fact that no binder names may stand on the right of a comparison —
     /// the operand the canonical form writes as `{fact: …}`, which `ess/22` introduced
     /// (`docs/design/expression-family-source22.md`, A1).
     ///
     /// `true` by default, for the reason [`Self::admits_text_length`] is.
     fn admits_root_facts(&self) -> bool {
+        true
+    }
+    /// Whether the format admits a function of a fact as an operand, `sha256(…)`, which `ess/27`
+    /// introduced (beyond10x/ess#584).
+    ///
+    /// `true` by default, for the reason [`Self::admits_text_length`] is.
+    fn admits_calls(&self) -> bool {
+        true
+    }
+    /// Whether this site admits a function of a fact as an operand: a command outcome's guards
+    /// (`when:`, `when_subject:`, `when_related:`), which are decided while a request is handled
+    /// and never carried into a suite.
+    ///
+    /// `true` by default: the compiler's environment reads an IR validation already admitted.
+    fn calls_here(&self) -> bool {
         true
     }
     /// Whether this environment checks an authored source whose bare words name roots (`ess/22`
@@ -421,6 +476,9 @@ enum CurrentTimeSite {
     /// A command outcome's `when_subject:` or `when_related:` predicate over a stored row, from
     /// `ess/22`.
     Stored,
+    /// A view's filter: refused, and the refusal names the `from`/`to` parameter idiom, because a
+    /// view read has no clock a suite fixes (`docs/design/generic-language-features.md`, grid R).
+    ViewFilter,
 }
 
 impl<'a> DomainEnvironment<'a> {
@@ -472,6 +530,13 @@ impl<'a> DomainEnvironment<'a> {
         self.current_time = CurrentTimeSite::Stored;
         self
     }
+    /// Mark the environment a view's filter is checked in, so a refusal of `now` there names the
+    /// `from`/`to` parameter idiom.
+    #[must_use]
+    pub fn in_view_filter(mut self) -> Self {
+        self.current_time = CurrentTimeSite::ViewFilter;
+        self
+    }
 }
 
 impl TypeEnvironment for DomainEnvironment<'_> {
@@ -513,6 +578,17 @@ impl TypeEnvironment for DomainEnvironment<'_> {
             .format()
             .is_none_or(|format| format.major() >= crate::system::FormatVersion::V22.major())
     }
+    fn admits_calls(&self) -> bool {
+        self.registry
+            .format()
+            .is_none_or(|format| format.major() >= crate::system::FormatVersion::V27.major())
+    }
+    fn calls_here(&self) -> bool {
+        matches!(
+            self.current_time,
+            CurrentTimeSite::Input | CurrentTimeSite::Stored
+        )
+    }
     fn resolves_bare_words(&self) -> bool {
         self.registry
             .format()
@@ -529,7 +605,7 @@ impl TypeEnvironment for DomainEnvironment<'_> {
         };
         CurrentTimeAdmission {
             site: match self.current_time {
-                CurrentTimeSite::None => false,
+                CurrentTimeSite::None | CurrentTimeSite::ViewFilter => false,
                 CurrentTimeSite::Input => true,
                 CurrentTimeSite::Stored => at(crate::system::FormatVersion::V22),
             },
@@ -539,6 +615,9 @@ impl TypeEnvironment for DomainEnvironment<'_> {
     fn current_time_later(&self) -> Option<&'static str> {
         (self.current_time == CurrentTimeSite::Stored && !self.current_time().site)
             .then_some("ess/22")
+    }
+    fn is_view_filter(&self) -> bool {
+        self.current_time == CurrentTimeSite::ViewFilter
     }
     type Type = TypeRef;
 
@@ -1294,6 +1373,18 @@ pub(crate) fn resolve_lexical_reading<E: TypeEnvironment>(
             let bindings = scope_bindings(environment, scope);
             let word = match spelling {
                 lexical::Spelling::Word(word) => word,
+                // A call spelling (beyond10x/ess#584): the expression it parses to, where it reads
+                // one fact through a function; the checker admits it from `ess/27`. Text that is
+                // no such expression keeps the meaning it always had.
+                lexical::Spelling::Call(text) => {
+                    return ess_primitives::expr::Expr::parse(text)
+                        .ok()
+                        .and_then(Derived::call)
+                        .map_or_else(
+                            || Operand::Literal(FactValue::Text(text.to_owned())),
+                            Operand::Derived,
+                        );
+                }
                 // A dotted path with a `-`: the fact it reads where it names one, else the offset
                 // it also spells (`window.lower-5`), else the fact it always was, which the checker
                 // refuses as unobservable as before.
@@ -1837,6 +1928,9 @@ struct ValueType {
     string: bool,
     /// Whether the terminal type is `Integer`, which an Integer offset moves (A2).
     integer: bool,
+    /// What a function of a fact computes (`ess/27`, beyond10x/ess#584); `None` for every other
+    /// operand, whose type the flags above say.
+    computes: Option<ess_primitives::expr::Kind>,
 }
 
 impl<E: TypeEnvironment> Checker<'_, E> {
@@ -1889,6 +1983,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             declared: resolved.declared,
             scalar: resolved.scalar,
             variants: resolved.variants,
+            computes: None,
         }
     }
 
@@ -1911,6 +2006,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     duration: false,
                     string: false,
                     integer: false,
+                    computes: None,
                 })
             }
         }
@@ -1920,6 +2016,9 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     /// the UTF-8 byte length of a `String` — through newtypes and `Optional` — which is an
     /// `Integer`. The parent is read like any fact, so a producer publishes the text it measures.
     fn derived(&mut self, derived: &Derived) -> Option<ValueType> {
+        if let Derived::Call(expr) = derived {
+            return self.call(derived, expr);
+        }
         let parent = derived.parent();
         if !self.environment.admits_root_facts() {
             self.checked.errors.push(error(
@@ -1961,6 +2060,102 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             duration: false,
             string: false,
             integer: true,
+            computes: None,
+        })
+    }
+
+    /// A function of one fact (`ess/27`, beyond10x/ess#584): admitted in a command outcome's
+    /// guards from `ess/27`, its one read typed as any fact is, and the expression typed over it by
+    /// the shared rules ([`ess_primitives::expr::Expr::infer`]), each misuse refused naming the
+    /// function and the type it takes.
+    fn call(&mut self, derived: &Derived, expr: &ess_primitives::expr::Expr) -> Option<ValueType> {
+        use ess_primitives::expr::Kind;
+        let parent = derived.parent();
+        if !self.environment.admits_calls() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UnsupportedFormatVersion,
+                Some(parent),
+                None,
+                format!(
+                    "`{expr}` reads `{parent}` through a function, which requires specification \
+                     format ess/27; below it, quote the text to compare with it"
+                ),
+            ));
+            return None;
+        }
+        if !self.environment.calls_here() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UnsupportedConstruct,
+                Some(parent),
+                None,
+                format!(
+                    "`{expr}` computes a value from `{parent}`, and a function of a fact is \
+                     admitted only in a command outcome's guards (`when:`, `when_subject:`, \
+                     `when_related:`); compare stored values here, or move the rule into the \
+                     command's guard"
+                ),
+            ));
+            return None;
+        }
+        let resolved = self.read(parent, false)?;
+        let primitive = self.environment.primitive(&resolved.terminal);
+        let kind = match primitive {
+            Some(Primitive::Integer) => Some(Kind::Integer),
+            Some(Primitive::Decimal) => Some(Kind::Decimal),
+            Some(Primitive::Timestamp) => Some(Kind::Timestamp),
+            Some(Primitive::Duration) => Some(Kind::Duration),
+            Some(Primitive::String) => Some(Kind::String),
+            Some(Primitive::Bytes) => Some(Kind::Bytes),
+            Some(Primitive::Boolean) => Some(Kind::Boolean),
+            _ => None,
+        };
+        let Some(kind) = kind else {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(parent),
+                None,
+                format!(
+                    "`{expr}` reads `{parent}`, which is `{}`; a function reads an Integer, a \
+                     Decimal, a Timestamp, a Duration, a String, Bytes or a Boolean",
+                    resolved.declared
+                ),
+            ));
+            return None;
+        };
+        let read = ess_primitives::expr::ExprType {
+            kind,
+            optional: resolved.optional,
+        };
+        let typed = match expr.infer(&|_| Ok(read)) {
+            Ok(typed) => typed,
+            Err(refused) => {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::TypeMismatch,
+                    Some(parent),
+                    None,
+                    format!("{refused}; `{parent}` is `{}`", resolved.declared),
+                ));
+                return None;
+            }
+        };
+        Some(ValueType {
+            declared: format!("{expr} ({})", typed.kind),
+            declaring_variants: None,
+            scalar: Some(match typed.kind {
+                Kind::Integer | Kind::Decimal => ScalarKind::Number,
+                Kind::Boolean => ScalarKind::Bool,
+                Kind::Timestamp | Kind::Duration | Kind::String | Kind::Bytes => ScalarKind::Text,
+            }),
+            variants: None,
+            instant: typed.kind == Kind::Timestamp,
+            duration: typed.kind == Kind::Duration,
+            string: typed.kind == Kind::String,
+            integer: typed.kind == Kind::Integer,
+            computes: Some(typed.kind),
         })
     }
 
@@ -2288,6 +2483,10 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     /// elsewhere. `true` when this decided the literal; `false` leaves it to the rules every other
     /// text literal meets, which is what a format before `ess/16` keeps for everything but an
     /// ordering in a `when:` — so an equality with the word `now` means what it meant there.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one arm per admission of the current time, each with its own refusal"
+    )]
     fn current_time_literal(
         &mut self,
         expression: &Predicate,
@@ -2330,6 +2529,31 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                      `{text}`, which requires specification format ess/16"
                 ),
                 "write `format: ess/16` on the source that declares the system".to_owned(),
+            ),
+            // A view filter: no suite sets a clock for a read, so the bound is the caller's
+            // parameters, which keep it in the specification and checked.
+            (
+                ordering,
+                parsed,
+                CurrentTimeAdmission {
+                    site: false,
+                    format: true,
+                },
+            ) if (ordering || parsed) && self.environment.is_view_filter() => (
+                ValidationCode::TypeMismatch,
+                format!(
+                    "`{expression}` compares the Timestamp `{path}` with the current time, \
+                     `{text}`, which is admitted only in a command outcome's `when:` over its \
+                     input and, from ess/22, in its `when_subject:` and `when_related:` \
+                     predicates; in a view filter a read has no clock a suite can fix, so no \
+                     scenario could check the rows either side of the bound"
+                ),
+                format!(
+                    "declare the bounds as view parameters and filter on them, such as \
+                     `params: [{{name: from, type: Timestamp}}, {{name: to, type: Timestamp}}]` \
+                     with `{path} >= param.from` and `{path} < param.to`; the caller sends the \
+                     window it means"
+                ),
             ),
             // A site that refuses the operand names where it is admitted, whatever else is wrong
             // with the comparison, and never suggests writing it again here.
@@ -2683,6 +2907,19 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     || left_type.scalar != Some(ScalarKind::Bool));
             if !compatible {
                 self.mismatch(predicate, &op.to_string(), &left_type, Some(&right_type));
+            } else if let Some((computed, other)) = computed_against(&left_type, &right_type) {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::TypeMismatch,
+                    left.fact_path().or_else(|| right.fact_path()),
+                    None,
+                    format!(
+                        "`{predicate}` compares {computed} with `{}`, which is no {computed}; a \
+                         function's value compares with a value of the type it computes, such as \
+                         `base64url(…)`'s String",
+                        other.declared
+                    ),
+                ));
             }
             if op.needs_ordering() {
                 self.duration_ordering(predicate, [(left, &left_type), (right, &right_type)]);
@@ -3376,6 +3613,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                             duration: false,
                             string: false,
                             integer: false,
+                            computes: None,
                         };
                         self.mismatch(predicate, op, &typed, Some(&literal));
                     }

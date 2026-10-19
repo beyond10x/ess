@@ -483,6 +483,9 @@ fn include_payload_field(
         | ResolvedPayloadValue::ChangedCount
         | ResolvedPayloadValue::Literal { .. }
         | ResolvedPayloadValue::Increment { .. }
+        // ess/27 (#560): an expression reads the input and the subject, whose types the command
+        // and the entity carry, and computes the target's type.
+        | ResolvedPayloadValue::Expression { .. }
         | ResolvedPayloadValue::Cleared => None,
     };
     if let Some(source) = source {

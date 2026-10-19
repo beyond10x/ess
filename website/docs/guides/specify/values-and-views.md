@@ -169,6 +169,60 @@ value an obligation.
 A literal over a `Decimal` target is admitted in every format, quoted (`'0.25'`) or unquoted
 (`0.25`): an optional `-`, digits without a leading zero, optionally a point and digits.
 
+### From `ess/27`: a computed value
+
+Source `ess/27` computes a value with an expression, `{expr: "<expression>"}`, in `sets:`, an
+event's `payload:` and an error's `payload:`, and computes a view field from its source row with
+`expr:` beside the field's type (beyond10x/ess#560):
+
+```yaml
+- name: recorded
+  creates: demo.ledger.Incident
+  instance: incident_id
+  emits: [demo.ledger.IncidentRecorded]
+  payload:
+    demo.ledger.IncidentRecorded:
+      incident_id: {generated: true}
+      duration: {expr: "input.ended_at - input.started_at"}           # a Duration
+      share: {expr: "coalesce(round(input.affected / input.total, 2, half_even), 0)"}
+  sets:
+    duration: {expr: "input.ended_at - input.started_at"}
+views:
+  - name: demo.ledger.Incidents
+    source: demo.ledger.Incident
+    fields:
+      - {name: incident_id, type: demo.ledger.IncidentId}
+      - {name: elapsed, type: Duration, expr: "ended_at - started_at"}  # from the row
+```
+
+| Form | Over | Gives |
+|---|---|---|
+| `a + b`, `a - b`, `a * b` | Integer, Decimal | an Integer over two Integers, otherwise a Decimal; exact, and unknown past 128 bits |
+| `a / b` | Integer, Decimal | an `Optional<Decimal>` at six places, half-even; absent where `b` is zero |
+| `round(x, digits, half_even \| half_up \| down)` | Integer, Decimal | a Decimal; a quotient inside is rounded once, at these digits and this mode |
+| `abs(x)`, `min(a, b)`, `max(a, b)` | Integer, Decimal, Duration; `min`/`max` also Timestamp and String | the operand's type |
+| `coalesce(a, b)` | one type | `a` where it is present, otherwise `b` |
+| `t1 - t2` | two Timestamps | a Duration of elapsed seconds |
+| `t + d`, `t - d`, `d1 + d2`, `d * n` | Timestamp, Duration, Integer | a Timestamp; a Duration |
+| `60s`, `5m`, `1h` | — | Duration literals; there are no days |
+
+An expression in a command outcome reads `input.<path>` and, where the outcome acts on a subject
+that exists before it, `subject.<field>` as the row held it; a view field reads its source row's
+fields by name. The expression is typed by what it reads and held to the field it fills:
+`ended_at - started_at` into an `Integer` is refused as `type_mismatch` naming the `Duration`, and
+a quotient into a required field is refused naming `coalesce(…, 0)`. `now` is refused as a value,
+and so are an expression in a set effect's `sets:` and a computed field in an aggregate view.
+
+The interpreter and synthesis compute the value with one shared evaluator. Synthesis asserts it on
+the event and the row, and runs the branch again on inputs worth checking the figure on: every
+input the expression reads moved apart from the others, so a target computing `started_at -
+ended_at` fails; each divisor read directly from the input at `0`; and each such quotient on a
+rounding tie at its digits, once on an even and once on an odd neighbour, so a target rounding by
+another mode fails one. The generated Rust and Go behaviours and queries, and Entity Runtime
+lowering, keep such a command or view an obligation named by the expression. Below `ess/27`
+`{expr: …}` is the nested mapping it always was, and `expr:` on a view field is refused naming
+`ess/27`.
+
 ### A relation the model only implies
 Where a stored field is typed as exactly one entity's named identity, or a `when_related:` row is settled by that type alone, and no relation says so, `ess specify validate` prints a warning, `ESS-ENTITY-019` (`ESS-COMMAND-019` for the guard): declare a `references` relation on the field, or the target's `owns`. A warning changes neither the exit status nor the compiled model; a bare primitive identity such as `Uuid`, and a row set selector (`entity`, `where`), are not linted ([how to read it](./layout-and-validation.md#a-relation-the-model-only-implies)).
 

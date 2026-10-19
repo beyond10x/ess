@@ -782,10 +782,15 @@ pub struct RawViewField {
     /// What it computes over the group's rows, where it is an aggregate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aggregate: Option<RawAggregate>,
+    /// What it computes from its source row, where it is a computed field: an expression over the
+    /// row's fields, `ended_at - started_at` (ess/27, beyond10x/ess#560,
+    /// `docs/design/generic-language-features.md` § G1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expr: Option<String>,
 }
 
 impl RawViewField {
-    fn split(self) -> (Field, Option<RawAggregate>) {
+    fn split(self) -> (Field, Option<RawAggregate>, Option<String>) {
         (
             Field {
                 name: self.name,
@@ -793,6 +798,7 @@ impl RawViewField {
                 naming: self.naming,
             },
             self.aggregate,
+            self.expr,
         )
     }
 }
@@ -948,6 +954,10 @@ pub struct ViewSpec {
     pub params: Vec<Field>,
     /// Which instances it contains. Absent means all of them.
     pub filter: Option<Predicate>,
+    /// The fields computed from the source row rather than projected from it, by name, each with
+    /// its expression as written (`expr:`, ess/27, beyond10x/ess#560). Empty for a view that only
+    /// projects, which every view before `ess/27` does.
+    pub computed: BTreeMap<String, String>,
     /// What makes this an aggregate view, where it is one.
     ///
     /// Present exactly when at least one field declares `aggregate:`. The filter runs per source
@@ -1158,7 +1168,8 @@ impl ViewSpec {
         let mut read_params = BTreeSet::new();
         if let Some(filter) = &self.filter {
             let environment = crate::expression::DomainEnvironment::new(types, source_fields)
-                .with_params(&self.params);
+                .with_params(&self.params)
+                .in_view_filter();
             let checked = crate::expression::check_predicate(&environment, filter, &at("filter"));
             for error in &checked.errors {
                 let mut diagnostic = error.validation_error();
@@ -1268,6 +1279,16 @@ impl ViewSpec {
                 errors.extend(own);
                 continue;
             }
+            if let Some(written) = self.computed.get(&field.name) {
+                errors.extend(self.validate_computed(
+                    &field_at,
+                    field,
+                    written,
+                    types,
+                    source_fields,
+                ));
+                continue;
+            }
 
             let Some(source_field) = known(&field.name) else {
                 errors.push(
@@ -1299,6 +1320,96 @@ impl ViewSpec {
                     ),
                 ));
             }
+        }
+        errors
+    }
+
+    /// The expression `written` computing `field` (`expr:`, ess/27, beyond10x/ess#560), checked
+    /// against the source row's fields: every read typed, and what it computes; or why it is
+    /// refused. What validation reports and the compiler lowers.
+    pub fn computed_value(
+        &self,
+        field: &Field,
+        written: &str,
+        types: &TypeRegistry,
+        source_fields: &[Field],
+    ) -> Result<crate::expression::value::Checked, crate::expression::value::Refusal> {
+        let read = |path: &ess_primitives::facts::FactPath| {
+            let name = path.to_string();
+            source_fields
+                .iter()
+                .find(|declared| declared.name == name)
+                .map(|declared| declared.type_ref.clone())
+                .ok_or_else(|| {
+                    crate::expression::value::Refusal::new(
+                        ValidationCode::UndeclaredReference,
+                        format!(
+                            "`{name}` is no field of `{}`, the row `{}` computes `{}` from",
+                            self.source, self.name, field.name
+                        ),
+                    )
+                    .with_hint(format!(
+                        "fields of `{}`: {}",
+                        self.source,
+                        join(source_fields.iter().map(|declared| declared.name.clone()))
+                    ))
+                })
+        };
+        crate::expression::value::check(written, &read, types, (&field.name, &field.type_ref))
+    }
+
+    /// A computed field (`expr:`, ess/27, beyond10x/ess#560): its expression reads the source
+    /// row's fields by name and computes the field's declared type. An aggregate view computes over
+    /// groups, where arithmetic over measures is a later design's (G3), so it takes none.
+    fn validate_computed(
+        &self,
+        field_at: &str,
+        field: &Field,
+        written: &str,
+        types: &TypeRegistry,
+        source_fields: &[Field],
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let at = format!("view.{}.{field_at}.expr", self.name);
+        if types
+            .format()
+            .is_some_and(|format| format.major() < crate::system::FormatVersion::V27.major())
+        {
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UnsupportedFormatVersion,
+                    at,
+                    format!(
+                        "`{}` computes `{}` with `expr:`, a view field from specification format \
+                         ess/27",
+                        self.name, field.name
+                    ),
+                )
+                .with_hint("declare `format: ess/27`"),
+            );
+            return errors;
+        }
+        if self.is_aggregate() {
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UnsupportedConstruct,
+                    at,
+                    format!(
+                        "`{}` is an aggregate view, and `{}` computes from one row; arithmetic \
+                         over measures is not admitted yet",
+                        self.name, field.name
+                    ),
+                )
+                .with_hint("compute the field in a view that projects rows"),
+            );
+            return errors;
+        }
+        if let Err(refusal) = self.computed_value(field, written, types, source_fields) {
+            let error = ValidationError::new(refusal.code, at, refusal.message);
+            errors.push(match refusal.hint {
+                Some(hint) => error.with_hint(hint),
+                None => error,
+            });
         }
         errors
     }
@@ -1825,13 +1936,35 @@ pub struct RawViewSpec {
 impl TryFrom<RawViewSpec> for ViewSpec {
     type Error = ValidationErrors;
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the written fields read in one pass: aggregates, computed fields and grouping"
+    )]
     fn try_from(raw: RawViewSpec) -> Result<Self, Self::Error> {
         let mut fields = Vec::with_capacity(raw.fields.len());
         let mut functions = BTreeMap::new();
         let mut grouping = ValidationErrors::new();
         let at = |suffix: &str| format!("view.{}.{suffix}", raw.name);
+        let mut computed = BTreeMap::new();
         for (index, written) in raw.fields.into_iter().enumerate() {
-            let (field, aggregate) = written.split();
+            let (field, aggregate, expr) = written.split();
+            if let Some(expr) = expr {
+                if aggregate.is_some() {
+                    grouping.push(
+                        ValidationError::new(
+                            ValidationCode::ConflictingDeclaration,
+                            at(&format!("fields[{index}].expr")),
+                            format!(
+                                "`{}` declares both `aggregate:` and `expr:`; a field is computed \
+                                 over the group's rows or from one row, not both",
+                                field.name
+                            ),
+                        )
+                        .with_hint("keep one of the two"),
+                    );
+                }
+                computed.insert(field.name.clone(), expr);
+            }
             if let Some(aggregate) = &aggregate {
                 let read = aggregate.read(
                     at(&format!("fields[{index}].aggregate.where")),
@@ -1904,6 +2037,7 @@ impl TryFrom<RawViewSpec> for ViewSpec {
             fields,
             params: raw.params,
             filter,
+            computed,
             aggregation,
             order_by: raw.order_by,
             paging: raw.paging,
@@ -1928,6 +2062,7 @@ impl From<ViewSpec> for RawViewSpec {
             .into_iter()
             .map(|field| RawViewField {
                 aggregate: functions.get(&field.name).map(RawAggregate::from),
+                expr: view.computed.get(&field.name).cloned(),
                 name: field.name,
                 type_ref: field.type_ref,
                 naming: field.naming,

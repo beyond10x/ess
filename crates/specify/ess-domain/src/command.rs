@@ -204,6 +204,7 @@
 
 pub(crate) mod absent_input;
 pub mod caller_value;
+pub mod expression_value;
 pub mod finite;
 pub mod fixture_inputs;
 pub mod identity_write;
@@ -1254,6 +1255,15 @@ pub enum PayloadSource {
         /// The entity field read, the identity included, or `state`.
         field: String,
     },
+    /// A value computed by an expression: `{expr: "input.ended_at - input.started_at"}` (ess/27,
+    /// beyond10x/ess#560, [`expression_value`], `docs/design/generic-language-features.md` § G1).
+    ///
+    /// The text as written; it is parsed and typed against the field it fills where the
+    /// declarations are in hand.
+    Expression {
+        /// The expression, in the compact text form.
+        expr: String,
+    },
 }
 
 impl PayloadSource {
@@ -1328,6 +1338,7 @@ impl fmt::Display for PayloadSource {
             ),
             Self::ChangedCount => f.write_str("{count: changed}"),
             Self::ChangedField { field } => write!(f, "{{changed: {field}}}"),
+            Self::Expression { expr } => write!(f, "{{expr: \"{expr}\"}}"),
             Self::Increment { by, .. } => write!(f, "increment by {by}"),
             Self::InputOrGenerated {
                 field,
@@ -1376,7 +1387,9 @@ impl PayloadSource {
             | Self::InputField { .. }
             | Self::Literal { .. }
             | Self::Scalar { .. }
-            | Self::Cleared => false,
+            | Self::Cleared
+            // ess/27: below it the shape is read back as the nested mapping it was.
+            | Self::Expression { .. } => false,
         }
     }
 }
@@ -1429,6 +1442,8 @@ enum RawPayloadSource {
     PresentMint(minted_value::RawPresentMint),
     /// `{payload: <Event>.<field>}` (ess/27, beyond10x/ess#545).
     PayloadRead(minted_value::RawPayloadRead),
+    /// `{expr: "<expression>"}` (ess/27, beyond10x/ess#560).
+    Expr(expression_value::RawExprSource),
     /// `{changed: <field>}` (ess/25, beyond10x/ess#531).
     Changed(set_effects::RawChangedSource),
     Nested(RawNestedSources),
@@ -1560,7 +1575,7 @@ impl<'de> serde::de::Visitor<'de> for Source {
              `{input: <field>, else: {generated: true}}`, \
              `{input: <field>, else: <literal>}`, \
              `{related: {via: <field>, field: <field>}}`, `{caller: <attribute>}`, \
-             `{count: changed}`, or a mapping of struct fields",
+             `{count: changed}`, `{expr: \"<expression>\"}`, or a mapping of struct fields",
         )
     }
 
@@ -1649,6 +1664,9 @@ impl<'de> serde::de::Visitor<'de> for Source {
         }
         if let Some(read) = minted_value::RawPayloadRead::recognise(&entries) {
             return Ok(RawPayloadSource::PayloadRead(read));
+        }
+        if let Some(expression) = expression_value::RawExprSource::recognise(&entries) {
+            return Ok(RawPayloadSource::Expr(expression));
         }
         if let Some(changed) = set_effects::RawChangedSource::recognise(&entries) {
             return Ok(RawPayloadSource::Changed(changed));
@@ -1965,6 +1983,7 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
             RawPayloadSource::Count(_) => Ok(Self::ChangedCount),
             RawPayloadSource::PresentMint(_) => Ok(Self::Generated { present: true }),
             RawPayloadSource::PayloadRead(read) => Ok(read.into_source()),
+            RawPayloadSource::Expr(expression) => Ok(expression.into_source()),
             RawPayloadSource::Changed(changed) => Ok(changed.into_source()),
             RawPayloadSource::Nested(RawNestedSources(entries)) => entries
                 .into_iter()
@@ -2140,6 +2159,10 @@ impl PayloadSource {
 }
 
 impl From<&PayloadSource> for RawPayloadSource {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one arm per payload source, each written back as the document spelled it"
+    )]
     fn from(source: &PayloadSource) -> Self {
         let explicit = |fill: &dyn Fn(&mut ExplicitPayloadSource)| {
             let mut explicit = ExplicitPayloadSource::empty();
@@ -2156,6 +2179,9 @@ impl From<&PayloadSource> for RawPayloadSource {
             }
             PayloadSource::PayloadRead { event, field } => {
                 Self::PayloadRead(minted_value::RawPayloadRead::of(event, field))
+            }
+            PayloadSource::Expression { expr } => {
+                Self::Expr(expression_value::RawExprSource::of(expr))
             }
             PayloadSource::Cleared => explicit(&|e| e.cleared = Some(true)),
             PayloadSource::SubjectField { field } => explicit(&|e| e.subject = Some(field.clone())),
@@ -4079,6 +4105,7 @@ fn check_payload_entry(
         // Checked with the entity, input and struct in hand by `value_expression::validate`.
         PayloadSource::Generated { .. }
         | PayloadSource::PayloadRead { .. }
+        | PayloadSource::Expression { .. }
         | PayloadSource::SubjectField { .. }
         | PayloadSource::Increment { .. }
         | PayloadSource::InputOrGenerated { .. }
@@ -4133,6 +4160,11 @@ fn check_payload_entry(
             if admitted {
                 return errors;
             }
+            // ess/27 (beyond10x/ess#556): a `when_related:` branch over the input narrows it there.
+            let from_27 = matches!(source, PayloadSource::InputField { .. })
+                && command
+                    .narrowed_input_at(outcome, &read.name, Some(crate::system::FormatVersion::V27))
+                    .is_some_and(|present| conversions.permits(present, &filled.type_ref));
             errors.push(
                 ValidationError::at(
                     at.clone(),
@@ -4143,12 +4175,22 @@ fn check_payload_entry(
                         command.name, read.type_ref, event.name, filled.type_ref
                     ),
                 )
-                .with_hint(format!(
-                    "declare the crossing — `conversions: [{{from: {}, to: {}, because: …}}]` — \
-                     or make the two types agree. The reason is required, because a crossing \
-                     nobody explained is the silent widening this refusal exists to catch",
-                    read.type_ref, filled.type_ref
-                )),
+                .with_hint(if from_27 {
+                    format!(
+                        "from specification format ess/27 this branch reads `input.{}` present, \
+                         since its `when_related:` reads the row through it: declare `format: \
+                         ess/27`",
+                        read.name
+                    )
+                } else {
+                    format!(
+                        "declare the crossing — `conversions: [{{from: {}, to: {}, because: …}}]` \
+                         — or make the two types agree. The reason is required, because a \
+                         crossing nobody explained is the silent widening this refusal exists to \
+                         catch",
+                        read.type_ref, filled.type_ref
+                    )
+                }),
             );
         }
         PayloadSource::Literal { value } => {
@@ -4307,6 +4349,7 @@ fn reads_row(source: &PayloadSource) -> bool {
         PayloadSource::InputOrGenerated { otherwise, .. } => {
             otherwise.as_deref().is_some_and(reads_row)
         }
+        PayloadSource::Expression { expr } => expression_value::reads_root(expr, "subject"),
         PayloadSource::ResponseField { .. }
         | PayloadSource::Generated { .. }
         | PayloadSource::InputField { .. }

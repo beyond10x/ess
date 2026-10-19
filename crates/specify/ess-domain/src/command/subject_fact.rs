@@ -79,8 +79,23 @@ pub fn error_subject<'a>(command: &'a CommandSpec, outcome: &'a Outcome) -> Opti
             | OutcomeCondition::StateChange { .. }
             | OutcomeCondition::SubjectField { .. }
             | OutcomeCondition::SubjectPredicate { .. }
-    );
+    ) || reads_subject_through_reference(outcome);
     reads_row.then(|| common_subject(command)).flatten()
+}
+
+/// Whether `outcome` is guarded by a related row the addressed record's stored reference names
+/// (`when_related: {via: <field>, …}`): the record is read, and so established, before the guard is
+/// decided, and from `ess/27` its payload reads the record's stored fields
+/// (`story:expression-roots-a-branch-establishes-are-readable`, beyond10x/ess#555). The format is
+/// the caller's to apply.
+pub fn reads_subject_through_reference(outcome: &Outcome) -> bool {
+    matches!(
+        outcome.condition,
+        OutcomeCondition::Related {
+            via: super::RelatedVia::Subject(_),
+            ..
+        }
+    )
 }
 
 /// Local declaration checks, which need no registry and no entity.

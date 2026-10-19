@@ -65,6 +65,10 @@ pub enum LexicalOperand {
     /// and from `ess/22` the offset it also spells where it names no fact (A2, rule 3a — a field
     /// name holds no `-`, so the dotted reading names nothing there).
     DottedSpelling(FactPath),
+    /// Unquoted text spelled as a function call, `base64url(sha256(ascii(input.verifier)))`: text
+    /// before `ess/22`, and an expression of the shared language where it parses as one reading
+    /// one fact (beyond10x/ess#584), which the checker admits from `ess/27`.
+    CallSpelling(String),
 }
 
 /// How one undecided right side was written, as the resolver is asked about it.
@@ -74,6 +78,8 @@ pub(crate) enum Spelling<'w> {
     Word(&'w str),
     /// A dotted path with a `-` in it ([`LexicalOperand::DottedSpelling`]).
     Dotted(&'w FactPath),
+    /// Unquoted text spelled as a function call ([`LexicalOperand::CallSpelling`]).
+    Call(&'w str),
 }
 
 /// A predicate whose comparisons keep how their right-hand sides were written.
@@ -110,6 +116,14 @@ pub enum LexicalPredicate {
 pub(crate) type Decide<'a, 'f> =
     dyn FnMut(&Operand, CompareOp, Spelling<'_>, &[&'a LexicalQuantified]) -> Operand + 'f;
 
+/// How the reader recorded one comparison's right side: a word or an offset spelling the resolver
+/// decides as a fact or a literal, or a call spelling it decides as an expression.
+#[derive(Debug, Clone, Copy, Default)]
+struct RightSide {
+    word: bool,
+    call: bool,
+}
+
 /// A quantifier whose body is still lexical.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LexicalQuantified {
@@ -135,7 +149,10 @@ impl LexicalPredicate {
     /// The lexical tree of a predicate that was never authored — built in code, or read from a
     /// canonical document — in which no word is left to decide.
     pub fn resolved(predicate: &Predicate) -> Self {
-        Self::build(predicate.clone(), &mut std::iter::repeat(false))
+        Self::build(
+            predicate.clone(),
+            &mut std::iter::repeat(RightSide::default()),
+        )
     }
 
     /// A right side is left to decide where it was a bare word (A1) or unquoted text spelled as an
@@ -145,14 +162,18 @@ impl LexicalPredicate {
             .words
             .into_iter()
             .zip(spelled.offsets)
-            .map(|(word, offset)| word || offset);
+            .zip(spelled.calls)
+            .map(|((word, offset), call)| RightSide {
+                word: word || offset,
+                call,
+            });
         Self::build(spelled.predicate, &mut words)
     }
 
     /// Pairs each comparison of `predicate`, in pre-order, with the next flag of `words` — the
     /// order the reader recorded them in.
-    fn build(predicate: Predicate, words: &mut dyn Iterator<Item = bool>) -> Self {
-        let all = |children: Vec<Predicate>, words: &mut dyn Iterator<Item = bool>| {
+    fn build(predicate: Predicate, words: &mut dyn Iterator<Item = RightSide>) -> Self {
+        let all = |children: Vec<Predicate>, words: &mut dyn Iterator<Item = RightSide>| {
             children
                 .into_iter()
                 .map(|child| Self::build(child, words))
@@ -165,12 +186,15 @@ impl LexicalPredicate {
                 right,
                 kind,
             } => {
-                let word = words.next().unwrap_or(false);
+                let written = words.next().unwrap_or_default();
                 let right = match right {
-                    Operand::Literal(FactValue::Text(text)) if word => {
+                    Operand::Literal(FactValue::Text(text)) if written.word => {
                         LexicalOperand::UnquotedText(text)
                     }
-                    Operand::Fact(path) if word => LexicalOperand::DottedSpelling(path),
+                    Operand::Literal(FactValue::Text(text)) if written.call => {
+                        LexicalOperand::CallSpelling(text)
+                    }
+                    Operand::Fact(path) if written.word => LexicalOperand::DottedSpelling(path),
                     other => LexicalOperand::Read(other),
                 };
                 Self::Compare {
@@ -195,7 +219,7 @@ impl LexicalPredicate {
 
     fn quantified(
         quantified: Quantified,
-        words: &mut dyn Iterator<Item = bool>,
+        words: &mut dyn Iterator<Item = RightSide>,
     ) -> LexicalQuantified {
         LexicalQuantified {
             over: quantified.over,
@@ -210,7 +234,9 @@ impl LexicalPredicate {
     /// `ess/22` keeps its meaning and its canonical bytes.
     pub fn literal(&self) -> Predicate {
         self.lower(&mut |_, _, spelling| match spelling {
-            Spelling::Word(word) => Operand::Literal(FactValue::Text(word.to_owned())),
+            Spelling::Word(word) | Spelling::Call(word) => {
+                Operand::Literal(FactValue::Text(word.to_owned()))
+            }
             Spelling::Dotted(path) => Operand::Fact(path.clone()),
         })
     }
@@ -250,6 +276,9 @@ impl LexicalPredicate {
                     }
                     LexicalOperand::DottedSpelling(path) => {
                         decide(left, *op, Spelling::Dotted(path), scope)
+                    }
+                    LexicalOperand::CallSpelling(text) => {
+                        decide(left, *op, Spelling::Call(text), scope)
                     }
                 },
             },

@@ -2099,6 +2099,15 @@ fn lifted(shape: Shape<TypeRef>) -> Shape<Read> {
 impl TypeEnvironment for WithSubject<'_> {
     type Type = Read;
 
+    fn admits_calls(&self) -> bool {
+        self.inner.admits_calls()
+    }
+    /// A selector reads candidate rows, and a function of a fact is a command guard's operand only
+    /// in this release (ess/27, beyond10x/ess#584).
+    fn calls_here(&self) -> bool {
+        false
+    }
+
     fn root(&self, name: &str) -> Option<Read> {
         match (self.inner.root(name), self.subject) {
             (Some(found), _) => Some(Read::Declared(found)),

@@ -400,6 +400,40 @@ the guard is refused as `ESS-SYNTH-018`. Generated Rust and Go behaviour and inv
 measure with `str::len` and `len` of a valid UTF-8 `string`; a view filter with a byte length stays
 owed, and Entity Runtime refuses it as `Utf8BytesUnsupported`.
 
+### From `ess/27`: a fact read through a digest or encoding function
+
+From `ess/27` (beyond10x/ess#584) a command outcome's guard — `when:`, `when_subject:`,
+`when_related:` — may compare with a fact read through a function, written unquoted on the right:
+
+```yaml
+- name: mismatch                           # RFC 7636 PKCE S256
+  when_subject:
+    predicate:
+      all:
+        - method == S256
+        - challenge != base64url(sha256(ascii(input.verifier)))
+  error: demo.pkce.InvalidVerifier
+```
+
+| Function | Takes | Gives |
+|---|---|---|
+| `sha256(x)` | a String (its UTF-8 bytes) or Bytes | the 32-byte SHA-256 digest (FIPS 180-4), Bytes |
+| `base64url(x)` | Bytes | base64url without padding (RFC 4648 § 5), a String |
+| `ascii(x)` | a String | its bytes where every character is ASCII; unknown otherwise |
+
+The functions nest around one fact, and the result is compared with a value of the type it gives:
+`base64url(…)` with a String. A misuse is refused as `type_mismatch` naming the type the function
+takes, and a function anywhere but a command guard — an invariant, a view filter, a selector — as
+`unsupported_construct`. Quoted, `"base64url(…)"` is the text it spells in every format; unquoted
+below `ess/27` it is refused naming `ess/27`. The canonical form is the operand `{expr:
+"base64url(sha256(ascii(input.verifier)))"}`. The same functions compute a value under `{expr: …}`.
+
+Synthesis issues the stored value the input it sends computes for the accepting branch, and sends
+an input computing another for the refusal, so a target that skips the check fails. A held-state
+refusal is also witnessed on a row and input where a refusal declared after it holds too, which
+requires the first declared. The generated Rust and Go behaviours keep such a command an obligation,
+and Entity Runtime refuses the guard as `FunctionCallUnsupported`.
+
 ### Absence is not `null`
 
 An unquoted `null` on the right of `==` or `!=` is refused, with a hint that names `defined(x)` or

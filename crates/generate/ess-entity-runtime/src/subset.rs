@@ -108,6 +108,9 @@ pub(crate) const CALENDAR_WINDOW: &str =
 pub(crate) const COMPENSATING_REFUSAL: &str =
     "a refusal that compensates (`compensates: true`, ess/22)";
 pub(crate) const IDENTITY_CHANGE: &str = "a re-key (`updates:` writing the identity, ess/23)";
+pub(crate) const EXPRESSION: &str = "an expression value (`{expr: …}`, ess/27)";
+pub(crate) const FUNCTION_CALL: &str =
+    "a function of a fact in a guard (`sha256(…)`, `base64url(…)`, `ascii(…)`, ess/27)";
 
 /// The row a refused value expression is named by.
 pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -> &'static str {
@@ -122,6 +125,7 @@ pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -
         Source::Struct { .. } => STRUCT,
         Source::RelatedField { .. } => RELATED_VALUE,
         Source::RelatedSelection { .. } | Source::RelatedHead { .. } => ROW_SET,
+        Source::Expression { .. } => EXPRESSION,
         Source::ResponseField { .. }
         | Source::Generated { .. }
         | Source::PayloadRead { .. }
@@ -503,6 +507,12 @@ pub const CONSTRUCTS: &[Construct] = &[
         &["tests/lowerable_subset.rs::each_value_expression_is_refused_under_its_own_construct"],
     ),
     refused(
+        EXPRESSION,
+        LoweringCode::ValueExpressionUnsupported,
+        Needs::EntityCore("arithmetic, time and digest functions over the arguments and the stored row"),
+        &["tests/expression_values.rs::an_expression_value_is_refused_by_name"],
+    ),
+    refused(
         CASE_FOLD,
         LoweringCode::CaseFoldUnsupported,
         Needs::EntityCore("a condition that folds ASCII case"),
@@ -624,6 +634,12 @@ pub const CONSTRUCTS: &[Construct] = &[
         Needs::EntityCore("an operation that moves the instance it names to another identity"),
         &["tests/identity_changing_updates.rs::a_rename_is_refused_by_name"],
     ),
+    refused(
+        FUNCTION_CALL,
+        LoweringCode::FunctionCallUnsupported,
+        Needs::EntityCore("a digest and encoding operand: SHA-256, base64url, ASCII bytes"),
+        &["tests/digest_guard.rs::a_guard_reading_a_fact_through_a_function_is_refused_by_name"],
+    ),
 ];
 
 impl LoweringCode {
@@ -668,6 +684,7 @@ impl LoweringCode {
         Self::CalendarWindowUnsupported,
         Self::CompensatingRefusalUnsupported,
         Self::IdentityChangeUnsupported,
+        Self::FunctionCallUnsupported,
     ];
 
     /// The code as a harness matches on it: the variant's name.
@@ -919,6 +936,11 @@ impl LoweringCode {
                 "IdentityChangeUnsupported",
                 IDENTITY_CHANGE,
                 "An update writes the identity and re-keys its record.",
+            ),
+            Self::FunctionCallUnsupported => (
+                "FunctionCallUnsupported",
+                FUNCTION_CALL,
+                "A guard reads a fact through a digest or encoding function.",
             ),
         }
     }

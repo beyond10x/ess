@@ -39,7 +39,7 @@ use ess_domain::command::OutcomeName;
 use ess_domain::entity::Cardinality;
 use ess_primitives::facts::Number;
 use ess_primitives::node::Node;
-use ess_primitives::predicate::{CompareOp, Operand};
+use ess_primitives::predicate::{CompareKind, CompareOp, Operand};
 
 use crate::synthesis_seeds::SeedRecord;
 
@@ -71,7 +71,7 @@ fn stored(condition: &ResolvedCondition) -> Option<Predicate> {
     match condition {
         ResolvedCondition::SubjectPredicate { predicate, .. } => Some(predicate.clone()),
         ResolvedCondition::SubjectField { field, equals, .. } => Some(Predicate::Compare {
-            kind: ess_primitives::predicate::CompareKind::Value,
+            kind: CompareKind::Value,
             left: Operand::Fact(FactPath::new(field).ok()?),
             op: CompareOp::Eq,
             right: Operand::Literal(ess_primitives::facts::FactValue::text(equals.clone())),
@@ -193,6 +193,69 @@ fn hints(command: &ResolvedCommand) -> Vec<Predicate> {
     guarded(command)
         .filter_map(|branch| stored(&branch.condition))
         .collect()
+}
+
+/// `hints`, with each comparison between a stored field and a function of the command's input
+/// (`ess/27`, beyond10x/ess#584) grounded on that input's plain witness: `challenge != base64url(…
+/// input.verifier …)` adds `challenge == <the value the plain verifier computes>`, whose literal is a
+/// value the row is tried at. The function has no inverse a candidate search could walk, so the row
+/// is arranged to the value the input it is sent with computes, and the guard is decided both ways
+/// on that input: the row holding it, and the row holding any other value.
+fn with_calls(ir: &EssIr, command: &ResolvedCommand, mut hints: Vec<Predicate>) -> Vec<Predicate> {
+    let mut found = Vec::new();
+    for hint in &hints {
+        leaves(hint, &mut found);
+    }
+    let calls: Vec<(FactPath, &ess_primitives::predicate::Derived, CompareKind)> = found
+        .iter()
+        .filter_map(|leaf| {
+            let Predicate::Compare {
+                left, right, kind, ..
+            } = leaf
+            else {
+                return None;
+            };
+            match (left, right) {
+                (Operand::Fact(stored), Operand::Derived(derived))
+                | (Operand::Derived(derived), Operand::Fact(stored))
+                    if matches!(derived, ess_primitives::predicate::Derived::Call(_))
+                        && input_path(stored).is_none() =>
+                {
+                    Some((stored.clone(), derived, *kind))
+                }
+                _ => None,
+            }
+        })
+        .collect();
+    if calls.is_empty() {
+        return hints;
+    }
+    let Ok(plain) = crate::witness::fields(ir, &command.input, Distinction::PLAIN) else {
+        return hints;
+    };
+    for (stored, derived, kind) in calls {
+        let Some(read) = input_path(derived.parent()) else {
+            continue;
+        };
+        let Some(value) = derived.value_with(&|path| {
+            if path != derived.parent() {
+                return None;
+            }
+            node_at(&plain, read.segments()).and_then(super::fact_value)
+        }) else {
+            continue;
+        };
+        let grounded = Predicate::Compare {
+            kind,
+            left: Operand::Fact(stored),
+            op: CompareOp::Eq,
+            right: Operand::Literal(value),
+        };
+        if !hints.contains(&grounded) {
+            hints.push(grounded);
+        }
+    }
+    hints
 }
 
 /// The stored fields any guarded branch of this command reads, in name order.
@@ -3138,7 +3201,7 @@ fn admit_alike(ir: &EssIr, command: &ResolvedCommand, left: &Predicate, right: &
 fn one_value_equality(guard: &Predicate) -> Predicate {
     match guard {
         Predicate::AnyOf { path, values } if values.len() == 1 => Predicate::Compare {
-            kind: ess_primitives::predicate::CompareKind::Value,
+            kind: CompareKind::Value,
             left: Operand::Fact(path.clone()),
             op: CompareOp::Eq,
             right: Operand::Literal(values[0].clone()),
@@ -3474,7 +3537,7 @@ fn on_literal(leaf: &Predicate) -> Option<Predicate> {
     match (left, right) {
         (Operand::Fact(_), Operand::Literal(_)) | (Operand::Literal(_), Operand::Fact(_)) => {
             Some(Predicate::Compare {
-                kind: ess_primitives::predicate::CompareKind::Value,
+                kind: CompareKind::Value,
                 left: left.clone(),
                 op: CompareOp::Eq,
                 right: right.clone(),
@@ -5417,7 +5480,7 @@ pub(super) fn prepare(
         strategy: outcome.test_strategy,
     })?;
     let entity = &subject.entity;
-    let hints = hints(command);
+    let hints = with_calls(ir, command, hints(command));
     let fields = read_fields(ir, entity, &hints);
     let label = fields.iter().cloned().collect::<Vec<_>>().join(",");
     if let Some(refusal) = unarrangeable(ir, entity, &fields) {
@@ -6118,13 +6181,17 @@ pub(super) fn around(
     )?;
     let (overlapping, overlap_source) =
         overlaps(models, command, outcome, actors, (&mut present, &mut taken))?;
+    let (declared, declared_source) =
+        declared_overlaps(models, command, outcome, actors, (&mut present, &mut taken))?;
     let (mut steps, mut unobserved) =
         around_row(models, command, outcome, actors, setup, supplied)?;
     models.mark(super::caller::InvocationPhase::Act, &mut steps);
     steps.extend(further);
     steps.extend(overlapping);
+    steps.extend(declared);
     setup.source.extend(source);
     setup.source.extend(overlap_source);
+    setup.source.extend(declared_source);
     let claimed = claimed_states(models, command, outcome, actors, setup, &mut taken);
     steps.extend(claimed.steps);
     setup.source.extend(claimed.source);
@@ -6590,7 +6657,7 @@ pub(super) fn limit_goals(
                     continue;
                 }
                 let pin = Predicate::Compare {
-                    kind: ess_primitives::predicate::CompareKind::Value,
+                    kind: CompareKind::Value,
                     left: Operand::Fact(path.clone()),
                     op: CompareOp::Eq,
                     right: Operand::Literal(ess_primitives::facts::FactValue::Number(value)),
@@ -7027,7 +7094,7 @@ pub(super) fn boundaries(
         return Ok((steps, source));
     }
     let entity = &read.entity;
-    let hints = hints(command);
+    let hints = with_calls(ir, command, hints(command));
     let fields = read_fields(ir, entity, &hints);
     let goals = further_goals(
         ir,
@@ -7483,7 +7550,7 @@ fn overlaps(
         return Ok((steps, source));
     };
     let entity = &read.entity;
-    let hints = hints(command);
+    let hints = with_calls(ir, command, hints(command));
     let fields = read_fields(ir, entity, &hints);
     let refusals: Vec<&Predicate> = super::sibling_refusals(command, outcome)
         .filter_map(when)
@@ -7557,6 +7624,107 @@ fn overlaps(
                 ));
             }
             Err(_) => continue,
+        };
+        rows += 1;
+        send_for_row(
+            models,
+            command,
+            outcome,
+            actors,
+            (read, &fields),
+            arrangement,
+            (&input, (&mut *present, &mut *taken)),
+            (&mut steps, &mut source),
+        )?;
+    }
+    if rows > 0 {
+        let command_ref = CommandRef::new(command.name.clone());
+        source.insert(OutcomeRef::new(command_ref.clone(), outcome.name.clone()).into());
+        source.insert(command_ref.into());
+    }
+    Ok((steps, source))
+}
+
+/// Further rows a refusal its stored guard selects is witnessed on where a refusal declared after
+/// it, selected by its own stored guard, holds too (`ess/27`; within one precedence step the first
+/// declared answers, `docs/design/generic-language-features.md` § G4; beyond10x/ess#584): one per
+/// such sibling, on a row and an input both guards hold on. The refusal is required there, so a
+/// target that checks the later refusal first fails. Below `ess/27` no row is added, so an older
+/// suite keeps its bytes; a pair no bounded row and input meets adds no row.
+fn declared_overlaps(
+    models: &super::caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (present, taken): (&mut bool, &mut BTreeSet<super::InstanceName>),
+) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let ir = models.arrangement;
+    let mut steps = Vec::new();
+    let mut source = BTreeSet::new();
+    let held_refusal = |branch: &ResolvedOutcome| {
+        branch.error.is_some()
+            && branch.subject.is_none()
+            && matches!(branch.condition, ResolvedCondition::SubjectPredicate { .. })
+    };
+    if ir.format().major() < ess_domain::system::FormatVersion::V27.major()
+        || !held_refusal(outcome)
+    {
+        return Ok((steps, source));
+    }
+    let (Some(own), Some(read)) = (stored(&outcome.condition), reading(command, outcome)) else {
+        return Ok((steps, source));
+    };
+    let entity = &read.entity;
+    let hints = with_calls(ir, command, hints(command));
+    let fields = read_fields(ir, entity, &hints);
+    let later = command
+        .outcomes
+        .iter()
+        .skip_while(|branch| branch.name != outcome.name)
+        .skip(1)
+        .filter(|branch| held_refusal(branch));
+    let mut rows = 0;
+    for sibling in later {
+        let Some(theirs) = stored(&sibling.condition) else {
+            continue;
+        };
+        if rows >= MAX_BOUNDARIES {
+            break;
+        }
+        let both = [own.clone(), theirs];
+        let found = search_unbound(
+            ir,
+            entity,
+            actors,
+            &hints,
+            2 * MAX_BOUNDARIES + rows + 1,
+            "declared-overlap",
+            taken,
+            |node| {
+                for input in inputs_for(ir, command, entity, node)? {
+                    let holds = both.iter().all(|predicate| {
+                        row_truth_with(
+                            ir,
+                            entity,
+                            &node.settled,
+                            &node.unwritten,
+                            Some(&node.state),
+                            predicate,
+                            Some((command, &input)),
+                        ) == Truth::True
+                    });
+                    if holds
+                        && selects(ir, command, entity, node, &input, Order::FirstDeclared)?
+                            .is_some_and(|branch| branch.name == outcome.name)
+                    {
+                        return Ok(Some(input));
+                    }
+                }
+                Ok(None)
+            },
+        )?;
+        let Ok((arrangement, input)) = found else {
+            continue;
         };
         rows += 1;
         send_for_row(

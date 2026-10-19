@@ -1132,6 +1132,19 @@ pub enum ResolvedPayloadValue {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         present: bool,
     },
+    /// A value computed by an expression, `{expr: "input.ended_at - input.started_at"}` (`ess/27`,
+    /// beyond10x/ess#560, `docs/design/generic-language-features.md` § G1). `ess-domain` typed it
+    /// against the target and admitted only `input.` and, on an existing subject, `subject.` reads;
+    /// every read carries the kind its declaration gives it. Serialized as its canonical text.
+    Expression {
+        /// The expression.
+        expr: ess_primitives::expr::Expr,
+        /// What it computes.
+        computes: ess_primitives::expr::Kind,
+        /// Whether it may be absent: an `Optional` read or a quotient not wrapped in `coalesce`.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        optional: bool,
+    },
     /// The value this outcome publishes in `field` of `event` (`ess/27`, beyond10x/ess#545):
     /// `{payload: <Event>.<field>}` in `sets:`, so one mint feeds the event and the row.
     /// `ess-domain` admitted it only where this outcome fills that field under `payload:`, at a type
@@ -1722,6 +1735,7 @@ impl ResolvedPayloadValue {
             Self::PayloadRead { event, field, .. } => {
                 format!("the published `{}.{field}`", event.name())
             }
+            Self::Expression { expr, .. } => format!("{{expr: \"{expr}\"}}"),
             Self::Cleared => "cleared".to_owned(),
             Self::SubjectField { field, .. } => format!("subject.{field} before the outcome"),
             Self::SubjectState { .. } => "the state the subject held before the outcome".to_owned(),
@@ -2167,6 +2181,13 @@ pub struct ResolvedView {
     /// Which instances it contains, as a parsed predicate. `None` means all of them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<Predicate>,
+    /// The fields computed from the source row rather than projected from it, by name (`expr:`,
+    /// ess/27, beyond10x/ess#560): each expression reads the row's fields by name, every read
+    /// carrying its kind, and computes the field's declared type, checked by `ess-domain`.
+    ///
+    /// Omitted when empty, so the IR bytes and digest of every model without one are unchanged.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub computed: BTreeMap<String, ess_primitives::expr::Expr>,
     /// What makes this an aggregate view, where it is one (`docs/design/aggregate-views.md`).
     ///
     /// Omitted when `None`, so the IR bytes and digest of every model without an aggregate view

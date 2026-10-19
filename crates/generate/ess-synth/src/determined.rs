@@ -415,16 +415,53 @@ fn value(
     }
     let target = &field.target_type;
     match &field.value {
-        ResolvedPayloadValue::InputField { type_ref, .. }
-        | ResolvedPayloadValue::CallerAttribute { type_ref, .. } => {
+        ResolvedPayloadValue::InputField {
+            type_ref,
+            field: read,
+        } => {
+            // A read its branch proves present (ess/16, ess/27) is typed `T` over a declared
+            // `Optional<T>`: the generated behaviours read the declared `Optional` and copy no
+            // value out of it, so the command stays owed, named by the read.
+            let declared = command
+                .input
+                .iter()
+                .find(|input| input.name == *read)
+                .map(|input| &input.type_ref);
+            if declared.is_some_and(|declared| declared.is_optional() && !type_ref.is_optional()) {
+                return Err(format!(
+                    "a narrowed read of the Optional input `{read}`, which its branch proves \
+                     present, for `{}`",
+                    field.target
+                ));
+            }
             if !assignable(type_ref, target) {
                 return Err(format!("a value of another type for `{}`", field.target));
             }
         }
-        ResolvedPayloadValue::SubjectField { type_ref, .. } => {
-            if held.is_none() {
+        ResolvedPayloadValue::CallerAttribute { type_ref, .. } => {
+            if !assignable(type_ref, target) {
+                return Err(format!("a value of another type for `{}`", field.target));
+            }
+        }
+        ResolvedPayloadValue::SubjectField {
+            type_ref,
+            field: read,
+        } => {
+            let Some(held) = held else {
                 return Err(format!(
                     "`{{subject:}}` for `{}` on a branch that holds no subject",
+                    field.target
+                ));
+            };
+            // As for a narrowed input (ess/27, beyond10x/ess#556): the row's field is `Optional`.
+            let declared = std::iter::once(&held.identity)
+                .chain(&held.fields)
+                .find(|declared| declared.name == *read)
+                .map(|declared| &declared.type_ref);
+            if declared.is_some_and(|declared| declared.is_optional() && !type_ref.is_optional()) {
+                return Err(format!(
+                    "a narrowed read of the subject's Optional `{read}`, which its branch proves \
+                     present, for `{}`",
                     field.target
                 ));
             }
@@ -535,6 +572,15 @@ fn value(
         }
         ResolvedPayloadValue::ResponseField { .. } => {
             return Err(format!("a response field for `{}`", field.target));
+        }
+        // The generated behaviours compute no expression yet (ess/27, beyond10x/ess#560): the
+        // command stays owed, named by the value it would compute, rather than computed otherwise
+        // than the shared evaluator computes it.
+        ResolvedPayloadValue::Expression { expr, .. } => {
+            return Err(format!(
+                "an expression value (`{{expr: \"{expr}\"}}`) for `{}`",
+                field.target
+            ));
         }
         // Generated code would have to order the payload's value before the row; owed in this cut
         // (ess/27, beyond10x/ess#545, `docs/design/minted-value-sources.md`).
@@ -1039,7 +1085,18 @@ pub(crate) fn resolve_derived(
             "`{derived}`, a byte length the generated view query does not compare"
         ));
     }
-    let Derived::Utf8Bytes(parent) = derived;
+    // The generated behaviours compute no function of a fact yet (ess/27, beyond10x/ess#584): the
+    // command stays owed, named by the expression, rather than decided otherwise than the shared
+    // evaluator decides it.
+    let parent = match derived {
+        Derived::Utf8Bytes(parent) => parent,
+        Derived::Call(expr) => {
+            return Err(format!(
+                "a guard reading `{}` through a function (`{expr}`)",
+                derived.parent()
+            ))
+        }
+    };
     let mut resolved = resolve(ir, env, parent)?;
     if resolved.kind != Kind::Text || leaf_primitive(ir, &resolved) != Some(Primitive::String) {
         return Err(format!(

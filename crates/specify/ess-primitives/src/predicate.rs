@@ -664,6 +664,13 @@ pub enum Derived {
     /// normalization occurs. A text holding a lone surrogate is no Unicode text and its byte length
     /// is `Unknown` in every lane; a Rust `str` cannot hold one, so here it never arrives.
     Utf8Bytes(FactPath),
+    /// A function of the fact at one path, `base64url(sha256(ascii(input.verifier)))` (`ess/27`,
+    /// beyond10x/ess#584, `docs/design/generic-language-features.md` § G1): an expression of the
+    /// shared language ([`crate::expr`]) reading exactly one fact, its parent, evaluated by the one
+    /// evaluator every lane uses. Canonically `{expr: "<expression>"}`. An unobserved or absent
+    /// parent, and a value the expression has no answer for (a non-ASCII text under `ascii`), are
+    /// `Unknown`.
+    Call(Box<crate::expr::Expr>),
 }
 
 impl Derived {
@@ -671,10 +678,24 @@ impl Derived {
     /// format reads it from (`label.utf8_bytes`).
     pub const UTF8_BYTES: &'static str = "utf8_bytes";
 
+    /// The key of the canonical mapping `{expr: "<expression>"}` of a [`Self::Call`].
+    pub const EXPR: &'static str = "expr";
+
+    /// `expr` as a derived operand: where it reads exactly one fact and calls a function.
+    pub fn call(expr: crate::expr::Expr) -> Option<Self> {
+        (expr.reads().len() == 1 && !expr.functions().is_empty())
+            .then(|| Self::Call(Box::new(expr)))
+    }
+
     /// The fact this value is derived from.
     pub fn parent(&self) -> &FactPath {
         match self {
             Self::Utf8Bytes(parent) => parent,
+            Self::Call(expr) => expr
+                .reads()
+                .into_iter()
+                .next()
+                .expect("a derived call reads exactly one fact"),
         }
     }
 
@@ -683,13 +704,16 @@ impl Derived {
     pub fn with_parent(&self, parent: FactPath) -> Self {
         match self {
             Self::Utf8Bytes(_) => Self::Utf8Bytes(parent),
+            Self::Call(expr) => Self::Call(Box::new(expr.map_paths(&|_| parent.clone()))),
         }
     }
 
-    /// The path a full-path observation of this value is bound at: `<parent>.utf8_bytes`.
+    /// The path a full-path observation of this value is bound at: `<parent>.utf8_bytes`. A call
+    /// has no observation of its own; its value is always computed, and this names the parent.
     pub fn observed_at(&self) -> FactPath {
         match self {
             Self::Utf8Bytes(parent) => parent.child(Self::UTF8_BYTES),
+            Self::Call(_) => self.parent().clone(),
         }
     }
 
@@ -703,6 +727,13 @@ impl Derived {
     /// differently from the evaluator that decides it.
     pub fn value_with(&self, fact: &dyn Fn(&FactPath) -> Option<FactValue>) -> Option<FactValue> {
         match self {
+            Self::Call(expr) => {
+                let reads = |path: &FactPath| match fact(path) {
+                    Some(value) => crate::expr::Reading::Value(value),
+                    None => crate::expr::Reading::Unknown,
+                };
+                expr.evaluate(&reads).to_fact()
+            }
             Self::Utf8Bytes(parent) => {
                 if let Some(bound) = fact(&self.observed_at()) {
                     let length = bound.as_number()?;
@@ -716,11 +747,14 @@ impl Derived {
         }
     }
 
-    /// The canonical mapping, `{utf8_bytes: <parent>}`.
+    /// The canonical mapping, `{utf8_bytes: <parent>}` or `{expr: "<expression>"}`.
     pub fn to_node(&self) -> Node {
         match self {
             Self::Utf8Bytes(parent) => {
                 Node::Map([(Self::UTF8_BYTES.to_owned(), Node::Text(parent.to_string()))].into())
+            }
+            Self::Call(expr) => {
+                Node::Map([(Self::EXPR.to_owned(), Node::Text(expr.to_string()))].into())
             }
         }
     }
@@ -732,6 +766,7 @@ impl fmt::Display for Derived {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Utf8Bytes(parent) => write!(f, "{{{}: {parent}}}", Self::UTF8_BYTES),
+            Self::Call(expr) => write!(f, "{{{}: \"{expr}\"}}", Self::EXPR),
         }
     }
 }
@@ -1079,6 +1114,23 @@ impl Operand {
         }
     }
 
+    /// Whether `raw` is unquoted text spelled as a function call — a name, `(`, and `)` last —
+    /// which this reader keeps as text and a source format may read as an expression (`ess/27`,
+    /// beyond10x/ess#584).
+    fn is_call_spelling(raw: &str) -> bool {
+        let trimmed = raw.trim();
+        let Some(open) = trimmed.find('(') else {
+            return false;
+        };
+        let name = &trimmed[..open];
+        !trimmed.starts_with(['"', '\''])
+            && trimmed.ends_with(')')
+            && !name.is_empty()
+            && name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    }
+
     /// Parses an operand as written on the right-hand side of a comparison.
     ///
     /// A bare word containing a dot is a fact path; everything else is a literal. Quote a
@@ -1163,6 +1215,19 @@ impl Operand {
                 FactPath::new(path).map(Self::Fact).map_err(|error| {
                     ParseError::predicate(&written(), format!("`{{fact: …}}`: {error}"))
                 })
+            }
+            Some((key, Node::Text(written_expr))) if entries.len() == 1 && key == Derived::EXPR => {
+                crate::expr::Expr::parse(written_expr)
+                    .ok()
+                    .and_then(Derived::call)
+                    .map(Self::Derived)
+                    .ok_or_else(|| {
+                        ParseError::predicate(
+                            &written(),
+                            "`{expr: …}` is an expression reading exactly one fact through a \
+                             function, such as `base64url(sha256(ascii(input.verifier)))`",
+                        )
+                    })
             }
             Some((key, Node::Text(path))) if entries.len() == 1 && key == Derived::UTF8_BYTES => {
                 FactPath::new(path)
@@ -1484,14 +1549,19 @@ pub struct Spelled {
     /// read as one constant offset of that fact (`docs/design/expression-family-source22.md`, A2,
     /// rule 3a), and text or the dotted fact otherwise.
     pub offsets: Vec<bool>,
+    /// Per comparison, in pre-order: whether its right-hand side was unquoted text spelled as a
+    /// function call, `base64url(sha256(ascii(input.verifier)))`: text to this reader, and from
+    /// `ess/27` an expression of the shared language ([`crate::expr`], beyond10x/ess#584).
+    pub calls: Vec<bool>,
 }
 
-/// What the spelled readers record per comparison, in pre-order: [`Spelled::words`] and
-/// [`Spelled::offsets`].
+/// What the spelled readers record per comparison, in pre-order: [`Spelled::words`],
+/// [`Spelled::offsets`] and [`Spelled::calls`].
 #[derive(Default)]
 struct Spellings {
     words: Vec<bool>,
     offsets: Vec<bool>,
+    calls: Vec<bool>,
 }
 
 impl Spellings {
@@ -1499,12 +1569,14 @@ impl Spellings {
     fn literal(&mut self) {
         self.words.push(false);
         self.offsets.push(false);
+        self.calls.push(false);
     }
 
     /// One comparison whose right side was written as `raw` under `binders`.
     fn written(&mut self, raw: &str, binders: &[String]) {
         self.words.push(Operand::is_word(raw, binders));
         self.offsets.push(Operand::is_offset_spelling(raw, binders));
+        self.calls.push(Operand::is_call_spelling(raw));
     }
 }
 
@@ -2828,6 +2900,21 @@ impl Predicate {
         found
     }
 
+    /// Whether any comparison, at any depth, reads a fact through a function,
+    /// `{expr: "base64url(sha256(ascii(input.verifier)))"}` (`ess/27`, beyond10x/ess#584).
+    pub fn reads_call(&self) -> bool {
+        match self {
+            Self::Compare { left, right, .. } => {
+                matches!(left, Operand::Derived(Derived::Call(_)))
+                    || matches!(right, Operand::Derived(Derived::Call(_)))
+            }
+            Self::All(children) | Self::Any(children) => children.iter().any(Self::reads_call),
+            Self::Not(inner) | Self::Trimmed(inner) => inner.reads_call(),
+            Self::Forall(quantified) | Self::Exists(quantified) => quantified.body.reads_call(),
+            _ => false,
+        }
+    }
+
     /// Whether any comparison, at any depth, reads a derived operand — the UTF-8 byte length of a
     /// text, `{utf8_bytes: <path>}` (`docs/design/expression-family-source22.md`, decision 11): the
     /// question the `ess/22` source gate and the suite pair `/40` and `/41` ask beside
@@ -2835,7 +2922,8 @@ impl Predicate {
     pub fn reads_utf8_bytes(&self) -> bool {
         match self {
             Self::Compare { left, right, .. } => {
-                matches!(left, Operand::Derived(_)) || matches!(right, Operand::Derived(_))
+                matches!(left, Operand::Derived(Derived::Utf8Bytes(_)))
+                    || matches!(right, Operand::Derived(Derived::Utf8Bytes(_)))
             }
             Self::All(children) | Self::Any(children) => {
                 children.iter().any(Self::reads_utf8_bytes)
@@ -2949,6 +3037,7 @@ impl Predicate {
             predicate,
             words: spellings.words,
             offsets: spellings.offsets,
+            calls: spellings.calls,
         })
     }
 
@@ -2961,6 +3050,7 @@ impl Predicate {
             predicate,
             words: spellings.words,
             offsets: spellings.offsets,
+            calls: spellings.calls,
         })
     }
 
@@ -3188,7 +3278,9 @@ impl Predicate {
         let left = match &fields["left"] {
             Node::Text(path) => Operand::Fact(FactPath::new(path)?),
             Node::Map(entries)
-                if entries.len() == 1 && entries.contains_key(Derived::UTF8_BYTES) =>
+                if entries.len() == 1
+                    && (entries.contains_key(Derived::UTF8_BYTES)
+                        || entries.contains_key(Derived::EXPR)) =>
             {
                 Operand::fact_mapping(entries, written)?
             }

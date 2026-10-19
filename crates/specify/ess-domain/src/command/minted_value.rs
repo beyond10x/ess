@@ -157,6 +157,15 @@ fn nested(source: &mut PayloadSource) {
                 }],
             };
         }
+        // `{expr: …}` (ess/27, beyond10x/ess#560, `expression_value`): one text leaf.
+        PayloadSource::Expression { expr } => {
+            *source = PayloadSource::Struct {
+                fields: vec![PayloadField {
+                    target: super::expression_value::EXPR_KEY.to_owned(),
+                    source: PayloadSource::parse(expr),
+                }],
+            };
+        }
         PayloadSource::Struct { fields } => {
             for leaf in fields {
                 nested(&mut leaf.source);
@@ -200,13 +209,16 @@ pub(super) fn misread_mapping(
         [GENERATED_KEY, PRESENT_KEY] | [PRESENT_KEY, GENERATED_KEY]
     );
     let payload = keys == [PAYLOAD_KEY];
-    if !present && !payload {
+    let expression = keys == [super::expression_value::EXPR_KEY];
+    if !present && !payload && !expression {
         return None;
     }
     let shape = if present {
         "`{generated: true, present: true}`"
-    } else {
+    } else if payload {
         "`{payload: <Event>.<field>}`"
+    } else {
+        "`{expr: \"<expression>\"}`"
     };
     if format.major() < FormatVersion::V27.major() {
         return Some(
@@ -231,17 +243,25 @@ pub(super) fn misread_mapping(
                     "`{}` is `{}`, and `generated:` and `present:` beside it each take `true`",
                     target.name, target.type_ref
                 )
-            } else {
+            } else if payload {
                 format!(
                     "`{}` is `{}`, and `payload:` names `<qualified event>.<field>`",
                     target.name, target.type_ref
                 )
+            } else {
+                format!(
+                    "`{}` is `{}`, and `expr:` takes the expression as text, \
+                     `{{expr: \"<expression>\"}}`",
+                    target.name, target.type_ref
+                )
             },
         )
-        .with_hint(
+        .with_hint(if expression {
+            "quote the expression: `{expr: \"input.ended_at - input.started_at\"}`"
+        } else {
             "write `{generated: true, present: true}` for a present mint, or \
-             `{generated: true}` where the value may be absent",
-        ),
+             `{generated: true}` where the value may be absent"
+        }),
     )
 }
 

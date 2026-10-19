@@ -306,6 +306,11 @@ required scalar, and beside another required field, each from one `ConstructRef`
 at `actor.<name>.system` and beside `attributes:` at `actor.<name>.attributes`. None adds a head
 literal below.
 
+`view.rs` gains four string-located sites with the computed view field (`expr:`, `ess/27`,
+beyond10x/ess#560), in the family the row above defers: `aggregate:` beside `expr:`, `expr:`
+below `ess/27`, `expr:` in an aggregate view, and the expression's own refusal, each at
+`view.<name>.fields[<n>].expr`; one of them adds a `view` head literal below.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
@@ -326,7 +331,7 @@ system_issued.rs 0 3
 topology.rs 10 0
 types.rs 23 1
 undeclared_fields.rs 0 4
-view.rs 29 0
+view.rs 33 0
 wire.rs 2 0
 ```
 <!-- inventory:end -->
@@ -377,7 +382,7 @@ types system.rs 3
 types types.rs 13
 types wire.rs 1
 view primitive_admission.rs 3
-view view.rs 13
+view view.rs 14
 view wire.rs 2
 ```
 <!-- heads:end -->

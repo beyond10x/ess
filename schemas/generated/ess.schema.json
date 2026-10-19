@@ -2607,6 +2607,20 @@
       },
       "additionalProperties": false
     },
+    "RawExprSource": {
+      "description": "`{expr: \"<expression>\"}`, written as exactly this key over text.",
+      "type": "object",
+      "required": [
+        "expr"
+      ],
+      "properties": {
+        "expr": {
+          "description": "The expression, in the compact text form.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "RawGroupOutcome": {
       "description": "One outcome of a group: always an external refusal.",
       "type": "object",
@@ -3177,6 +3191,14 @@
           ]
         },
         {
+          "description": "`{expr: \"<expression>\"}` (ess/27, beyond10x/ess#560).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawExprSource"
+            }
+          ]
+        },
+        {
           "description": "`{changed: <field>}` (ess/25, beyond10x/ess#531).",
           "allOf": [
             {
@@ -3685,6 +3707,13 @@
         },
         "display": {
           "description": "What a person is shown.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expr": {
+          "description": "What it computes from its source row, where it is a computed field: an expression over the row's fields, `ended_at - started_at` (ess/27, beyond10x/ess#560, `docs/design/generic-language-features.md` § G1).",
           "type": [
             "string",
             "null"

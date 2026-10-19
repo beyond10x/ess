@@ -500,6 +500,7 @@ fn unchosen(
         ResolvedPayloadValue::CallerAttribute { .. } => "a `{caller: …}` source",
         ResolvedPayloadValue::ChangedCount => "`{count: changed}`",
         ResolvedPayloadValue::PayloadRead { .. } => "a value the outcome's payload publishes",
+        ResolvedPayloadValue::Expression { .. } => "an expression value (`{expr: …}`)",
         // ess/25 (#531): an event payload source only, never a row's.
         ResolvedPayloadValue::ChangedField { .. } => "`{changed: …}`",
         ResolvedPayloadValue::ChangedState { .. } => "`{changed: state}`",
