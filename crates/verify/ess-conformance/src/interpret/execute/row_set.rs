@@ -153,6 +153,33 @@ impl<'a> Reader<'a> {
             Subject::None | Subject::Missing => None,
         };
         let subject = held.as_ref().map(|facts| facts as &dyn FactSource);
+        // The rows each rows quantifier of the selector or `satisfies` walks (ess/27,
+        // beyond10x/ess#551): every stored row of its entity, from the same snapshot as the
+        // candidates, read once per decision.
+        let walked: Vec<(&str, &ResolvedEntity, Vec<ResolvedField>)> =
+            std::iter::once(&selection.filter)
+                .chain(satisfies)
+                .flat_map(ess_domain::command::related_rows::walked)
+                .collect::<std::collections::BTreeSet<&str>>()
+                .into_iter()
+                .filter_map(|name| {
+                    let entity = self.ir.entities().get(&name.parse().ok()?)?;
+                    Some((name, entity, set_effects::fields(entity)))
+                })
+                .collect();
+        let mut related = set_effects::Related::new();
+        for (name, entity, fields) in &walked {
+            let mut rows = Vec::new();
+            for (_, key, row) in self
+                .store
+                .instances()
+                .filter(|(held, _, _)| **held == entity.name)
+            {
+                rows.push(set_effects::row_facts(self.ir, fields, entity, key, row)?);
+            }
+            related.insert((*name).to_owned(), rows);
+        }
+        let related = (!walked.is_empty()).then_some(&related);
         if subject.is_none()
             && (reads_subject(&selection.filter) || satisfies.is_some_and(reads_subject))
         {
@@ -175,6 +202,7 @@ impl<'a> Reader<'a> {
                         input: &self.facts,
                         subject,
                         published,
+                        related,
                     };
                     predicate.evaluate(&caller::Facts::new(&read, None, &[], self.now))
                 })

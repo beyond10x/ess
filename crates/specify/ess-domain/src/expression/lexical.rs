@@ -41,7 +41,9 @@ use std::collections::BTreeMap;
 use ess_primitives::error::ParseError;
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::node::Node;
-use ess_primitives::predicate::{CompareKind, CompareOp, Operand, Predicate, Quantified, Spelled};
+use ess_primitives::predicate::{
+    Collection, CompareKind, CompareOp, Operand, Predicate, Quantified, Spelled,
+};
 
 use crate::command::{CommandSpec, OutcomeCondition, OutcomeName};
 use crate::entity::EntitySpec;
@@ -112,7 +114,7 @@ pub(crate) type Decide<'a, 'f> =
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LexicalQuantified {
     /// The collection.
-    pub over: FactPath,
+    pub over: Collection,
     /// The binder.
     pub bind: String,
     /// The body.
@@ -1128,7 +1130,7 @@ fn identity_orderings_in<E: crate::expression::TypeEnvironment>(
         environment: &E,
         predicate: &Predicate,
         identities: &std::collections::BTreeSet<String>,
-        scope: &mut Vec<(FactPath, String)>,
+        scope: &mut Vec<(Collection, String)>,
         found: &mut Vec<String>,
     ) {
         match predicate {
@@ -1138,7 +1140,7 @@ fn identity_orderings_in<E: crate::expression::TypeEnvironment>(
                 right: Operand::Fact(right),
                 ..
             } if op.needs_ordering() => {
-                let pairs: Vec<(&FactPath, &str)> = scope
+                let pairs: Vec<(&Collection, &str)> = scope
                     .iter()
                     .map(|(over, bind)| (over, bind.as_str()))
                     .collect();

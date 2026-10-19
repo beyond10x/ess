@@ -169,7 +169,9 @@ const fn fold_op(op: FoldOp) -> u8 {
 }
 
 fn quantified(quantified: &Quantified, out: &mut Vec<Token>) {
-    path(&quantified.over, out);
+    // A path keeps its text; a rows collection's `{entity: <E>}` is no path's text. Validation
+    // refuses rows in a measure, so only a path reaches here from an admitted view.
+    out.push(Token::Text(quantified.over.to_string()));
     out.push(Token::Text(quantified.bind.clone()));
     walk(&quantified.body, out);
 }

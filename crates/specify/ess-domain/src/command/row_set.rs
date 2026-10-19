@@ -276,6 +276,12 @@ pub(super) fn check(
     predicate: &Predicate,
     (at, site): (&ConstructRef, super::published_operand::Site<'_>),
 ) -> ValidationErrors {
+    // The rules of a test over related rows come first: a broken one would only bury itself
+    // under the type checker's reading of the same body (beyond10x/ess#551).
+    let rows = super::related_rows::check(spec, entity, predicate, at);
+    if !rows.is_empty() {
+        return rows;
+    }
     let fields = candidate_fields(entity);
     super::set_effects::check_row_predicate(
         spec,
@@ -286,7 +292,7 @@ pub(super) fn check(
         types,
         predicate,
         (at, site),
-        true,
+        (true, true),
     )
 }
 

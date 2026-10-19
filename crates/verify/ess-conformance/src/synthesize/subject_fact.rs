@@ -1246,8 +1246,13 @@ fn ground_leaf(
             }
         }
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            // A test over another entity's rows (ess/27) is no fact of the subject or the input,
+            // and validation keeps it out of a subject guard: nothing is grounded.
+            let Some(collection) = quantified.over.fact() else {
+                return;
+            };
             let bind = quantified.bind.as_str();
-            if let Some(over) = free.and_then(|free| input_side(&quantified.over, bound, free)) {
+            if let Some(over) = free.and_then(|free| input_side(collection, bound, free)) {
                 // The binder shadows any outer one of its name.
                 let inner: Vec<(&str, &Node)> = bound
                     .iter()
@@ -1265,7 +1270,7 @@ fn ground_leaf(
                 let universal = matches!(leaf, Predicate::Forall(_));
                 out.extend(grounded.into_iter().map(|body| {
                     let quantified = Box::new(ess_primitives::predicate::Quantified {
-                        over: over.clone(),
+                        over: ess_primitives::predicate::Collection::Fact(over.clone()),
                         bind: bind.to_owned(),
                         body,
                     });
@@ -1277,7 +1282,7 @@ fn ground_leaf(
                 }));
                 return;
             }
-            let elements = match held_node(settled, bound, &quantified.over) {
+            let elements = match held_node(settled, bound, collection) {
                 Some(Node::Map(entries)) => entries.into_values().collect(),
                 Some(Node::Seq(items)) => items,
                 _ => Vec::new(),
@@ -1362,12 +1367,13 @@ fn elementwise(ir: &EssIr, entity: &EntityHandle, predicates: &[Predicate]) -> V
     }
     found.retain(|leaf| match leaf {
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
-            input_path(&quantified.over).is_none()
-                && declared
-                    .fields
-                    .iter()
-                    .any(|field| field.name == quantified.over.namespace())
-                && reads_input(ir, entity, leaf)
+            quantified.over.fact().is_some_and(|over| {
+                input_path(over).is_none()
+                    && declared
+                        .fields
+                        .iter()
+                        .any(|field| field.name == over.namespace())
+            }) && reads_input(ir, entity, leaf)
         }
         _ => false,
     });
@@ -1411,9 +1417,13 @@ pub(super) fn witnesses_elements(
         let (Predicate::Forall(quantified) | Predicate::Exists(quantified)) = leaf else {
             return true;
         };
+        // [`elementwise`] keeps a stored collection only.
+        let Some(over) = quantified.over.fact() else {
+            return true;
+        };
         let exists = matches!(leaf, Predicate::Exists(_));
         let held = truth(&node.settled, leaf);
-        let count = match held_node(&node.settled, &[], &quantified.over) {
+        let count = match held_node(&node.settled, &[], over) {
             Some(Node::Map(entries)) => entries.len(),
             Some(Node::Seq(items)) => items.len(),
             _ => return true,
@@ -1434,7 +1444,7 @@ pub(super) fn witnesses_elements(
         let differs = |truth: Truth| truth != held && truth != Truth::Unknown;
         differs(truth(&node.settled, &other))
             && [false, true].into_iter().all(|last| {
-                one_element(&node.settled, &quantified.over, last)
+                one_element(&node.settled, over, last)
                     .is_some_and(|settled| differs(truth(&settled, leaf)))
             })
     })
@@ -1529,11 +1539,14 @@ fn spread(
         let (Predicate::Forall(quantified) | Predicate::Exists(quantified)) = leaf else {
             continue;
         };
-        let Some(sent) = mapping.get(quantified.over.namespace()) else {
+        let Some(over) = quantified.over.fact() else {
+            continue;
+        };
+        let Some(sent) = mapping.get(over.namespace()) else {
             continue;
         };
         let mut path: Vec<String> = sent.split('.').map(str::to_owned).collect();
-        path.extend(quantified.over.segments()[1..].iter().cloned());
+        path.extend(over.segments()[1..].iter().cloned());
         if !written.insert(path.clone()) {
             continue;
         }
@@ -3958,7 +3971,7 @@ fn profile(
             .iter()
             .filter_map(|leaf| match leaf {
                 Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
-                    held_node(&arrangement.settled, &[], &quantified.over)
+                    held_node(&arrangement.settled, &[], quantified.over.fact()?)
                 }
                 _ => None,
             })

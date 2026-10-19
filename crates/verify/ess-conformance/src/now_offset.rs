@@ -518,7 +518,7 @@ pub(crate) fn stored_predicates<'ir>(
 pub(crate) fn now_compared(predicate: &Predicate) -> Vec<(FactPath, bool)> {
     fn walk(
         predicate: &Predicate,
-        binders: &mut Vec<(String, FactPath)>,
+        binders: &mut Vec<(String, ess_primitives::predicate::Collection)>,
         out: &mut Vec<(FactPath, bool)>,
     ) {
         match predicate {
@@ -550,7 +550,14 @@ pub(crate) fn now_compared(predicate: &Predicate) -> Vec<(FactPath, bool)> {
                         .rev()
                         .find(|(bind, _)| bind == path.namespace())
                     {
-                        Some((_, over)) => out.push((over.clone(), false)),
+                        Some((_, ess_primitives::predicate::Collection::Fact(over))) => {
+                            out.push((over.clone(), false));
+                        }
+                        // A related row's field (ess/27): no `now_offset` carries another entity's
+                        // row, so it is reported as read, and as one that cannot be carried.
+                        Some((_, ess_primitives::predicate::Collection::Rows { .. })) => {
+                            out.push((path.clone(), false));
+                        }
                         None => out.push((path.clone(), path.segments().len() == 1)),
                     }
                 }

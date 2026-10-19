@@ -1,6 +1,7 @@
 # A selector tests each candidate's related rows (`ess/27`)
 
-Status: design, not implemented (https://github.com/beyond10x/ess/issues/551). Source format
+Status: implemented (https://github.com/beyond10x/ess/issues/551); the synthesis module is
+`ess-conformance/src/synthesize/row_set/related_rows.rs`. Source format
 `ess/27`, unreleased at the time of writing (`FormatVersion::V27`,
 `crates/specify/ess-domain/src/system.rs:355`). This page opens no format of its own. No new
 keyword, no new `ValidationCode`, no IR shape change, no suite or `ess-diff` version. It builds on

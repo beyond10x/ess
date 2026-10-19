@@ -217,6 +217,7 @@ pub mod precedence;
 pub mod published_operand;
 pub mod related_guard;
 pub use related_guard::RelatedTest;
+pub mod related_rows;
 pub mod related_value;
 pub use related_value::RelatedVia;
 pub mod row_set;

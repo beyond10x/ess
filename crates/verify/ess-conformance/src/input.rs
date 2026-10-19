@@ -635,7 +635,13 @@ impl ProofBudget {
                 }
             }
             Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
-                path(&quantified.over)?;
+                match &quantified.over {
+                    ess_primitives::predicate::Collection::Fact(over) => path(over)?,
+                    // An entity name is read once, as a path is.
+                    ess_primitives::predicate::Collection::Rows { entity } => {
+                        self.charge(entity.len())?;
+                    }
+                }
                 self.charge(quantified.bind.len())?;
                 for _ in 0..width {
                     self.predicate(&quantified.body, width)?;
@@ -1289,11 +1295,14 @@ impl<'ir> InputFacts<'ir> {
             // when a body leaf is, and that case is not classified here: the body reads paths under
             // a binder, and `explain_path` resolves against the command's input types, where no
             // binder exists. Reporting the collection would name the wrong path.
+            // A test over an entity's rows reads no input: an input guard never admits one, and
+            // what made it `Unknown` is nothing the input names.
             Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
-                if self.cardinality(&quantified.over).is_none() {
-                    push(self.explain_path(&quantified.over));
-                } else {
-                    push(Reason::Unclassified);
+                match quantified.over.fact() {
+                    Some(over) if self.cardinality(over).is_none() => {
+                        push(self.explain_path(over));
+                    }
+                    _ => push(Reason::Unclassified),
                 }
             }
             // The same two cases: an unobserved list, or a key read under the binder that is absent

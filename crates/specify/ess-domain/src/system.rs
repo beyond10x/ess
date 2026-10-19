@@ -280,6 +280,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
             "A set effect's `instances:` or `affects:` filter may read the candidate row's identity, `<identity> == input.<field>` or, in an `affects:` entry, `<identity> == subject.<field>`, as a row-set selector reads it, while `state` stays unreadable; below `ess/27` the read is refused alone, naming `ess/27`, and a filter not reading the identity keeps its meaning (beyond10x/ess#547).",
             "A selector's `where:` may read a value its own outcome publishes, `payload.<Event>.<field>`, naming an event the outcome fills and a field given a source there, so one selector scopes another's rows; values that read each other are refused, and below `ess/27`, or over an entity declaring a field `payload`, the path keeps the meaning it had (beyond10x/ess#549).",
             "An `affects:` entry over an input list (`each:`) may move or delete the row each element names, `moves: <Entity>.<transition>` or `deletes: <Entity>`, and `each:` may carry a `where:` over the element and the input, so one call takes each named row to its own transition by the answer the input carries for it: the entries apply in the order written, an element its filter does not select, one naming no row and one whose row rests outside the move's `from` states are skipped, and nothing is created; two such entries may move rows of one entity, the `distinct:` requirement is unchanged, and `where:` on the entry beside `each:` stays refused; below `ess/27` the entry's `moves:` or `deletes:` keeps its `conflicting_declaration`, its hint naming `ess/27`, and a `where:` inside `each:` is refused as `unsupported_format_version` naming `ess/27`; an entry without them keeps its IR bytes and digest (beyond10x/ess#596).",
+            "The selector of a related read or a head and of a row-set `when_related:` may test each candidate's related rows, `exists: {in: {entity: <Entity>}, as: <name>, that: <predicate>}`, true when some row of the entity bound to `<name>` satisfies the body, a bare name still reading the candidate; the body must tie the rows to the candidate with a top-level `<name>.<field> == <candidate field>` (`missing_declaration`), `forall` over rows is refused with its `not: {exists: …}` rewrite and a rows test inside another as `unsupported_construct`, a binder naming a candidate field, `state` or a root as `conflicting_declaration`, and every other predicate site refuses it as `unsupported_construct`; below `ess/27` it is refused as `unsupported_format_version` naming `ess/27`, where it was a parse refusal at every format (beyond10x/ess#551).",
         ],
         stricter: &[],
     },
@@ -390,8 +391,9 @@ impl FormatVersion {
     /// 2026-10-18); a minted value stored present and a `sets:` value read from the outcome's own
     /// payload (beyond10x/ess#545), system actors and the await bound (beyond10x/ess#542), the head of an
     /// ordered selection (beyond10x/ess#543), set-effect filters reading the row's identity
-    /// (beyond10x/ess#547), a selector reading a published value (beyond10x/ess#549) and a struct's
-    /// shorthand field, a value written as that field alone (beyond10x/ess#594).
+    /// (beyond10x/ess#547), a selector reading a published value (beyond10x/ess#549), a struct's
+    /// shorthand field, a value written as that field alone (beyond10x/ess#594), and a selector
+    /// testing each candidate's related rows (beyond10x/ess#551).
     pub const V27: Self = Self(27);
 
     /// How a format version is written.

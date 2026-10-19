@@ -1238,6 +1238,17 @@ pub trait FactSource {
             _ => None,
         }
     }
+
+    /// Every row of the entity named `entity`, each as a source of its own fields, or `None` when
+    /// this source knows no rows of it: what a quantifier over `in: {entity: <E>}` walks
+    /// (`ess/27`, beyond10x/ess#551, `docs/design/related-rows-quantifier.md`).
+    ///
+    /// `None` by default, and the quantifier is then `Unknown`: a source that knows no store can
+    /// never answer `False` for a test over rows nobody looked at. A source wrapping another
+    /// forwards it.
+    fn rows(&self, _entity: &str) -> Option<Vec<Box<dyn FactSource + '_>>> {
+        None
+    }
 }
 
 /// A count as a number of elements, or `None` when it is not one.

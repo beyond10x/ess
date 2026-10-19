@@ -61,6 +61,7 @@ use super::precedence;
 use super::set_effects::{input_value, misses, subject_value, written_in};
 
 mod copied;
+mod related_rows;
 use super::{
     absorb, arrange_toward_owned, candidates, flatten, instance_name, prepare_in, settled,
     still_unwritten, subject_fact, supply, unwritten_by, ActorRef, Arrangement, ConformanceSuite,
@@ -809,6 +810,10 @@ impl<'a> Reading<'a> {
     }
 
     fn truth(&self, row: &Row, predicate: &Predicate) -> Truth {
+        // Each test over another entity's rows, decided over the rows the steps left (ess/27,
+        // beyond10x/ess#551).
+        let decided = related_rows::decided(self, row, predicate);
+        let predicate = &decided;
         // The row's own identity, where the steps named it by a literal: a selector over the
         // identity (ess/23, beyond10x/ess#429) reads the key the row is stored under.
         // Only where the predicate reads the identity: every other predicate binds what it bound.
@@ -1990,6 +1995,7 @@ impl<'p> Plan<'p> {
         let mut gaps: Vec<RefusalCause> = Vec::new();
         let mut steps = before.to_vec();
         let mut arranged: Vec<Arrangement> = Vec::new();
+        let mut failing: Vec<(usize, Vec<related_rows::Test>, Predicate)> = Vec::new();
         for (at, selection) in self.selections.iter().enumerate() {
             // A selector reading values this branch does not publish is another branch's to read.
             if !publishes(self.outcome, selection) {
@@ -2001,6 +2007,10 @@ impl<'p> Plan<'p> {
             if reads_published(&filters[at], &selection.reads) {
                 return None;
             }
+            // A selector testing each candidate's related rows (ess/27, beyond10x/ess#551) selects
+            // its candidates by the rest of its `where:`, and the related rows are arranged after.
+            let tests = related_rows::tests(&filters[at]).ok()?;
+            let own = related_rows::stripped(&filters[at]);
             let others: Vec<Predicate> = self
                 .selections
                 .iter()
@@ -2011,12 +2021,12 @@ impl<'p> Plan<'p> {
                         && sibling.entity == selection.entity
                         && publishes(self.outcome, sibling)
                 })
-                .map(|(_, (_, filter))| filter.clone())
+                .map(|(_, (_, filter))| related_rows::stripped(filter))
                 .collect();
             let rows = arrange_rows(
                 ir,
                 &selection.entity,
-                &filters[at],
+                &own,
                 &self.foralls[at],
                 (
                     counts[at],
@@ -2038,7 +2048,22 @@ impl<'p> Plan<'p> {
             for row in &rows {
                 steps.extend(row.steps.iter().cloned());
             }
+            let related = if tests.is_empty() {
+                Vec::new()
+            } else {
+                let mut context = self.context(ir, supplied, actors, (&mut taken, &mut steps));
+                let related = related_rows::for_selected(
+                    &mut context,
+                    &tests,
+                    &selection.entity,
+                    &own,
+                    &rows,
+                )?;
+                failing.push((at, tests, own));
+                related
+            };
             arranged.extend(rows);
+            arranged.extend(related);
             if let Some(order_by) = self.heads[at].filter(|_| counts[at] >= 2) {
                 if !selection.reads.is_empty() {
                     let decoys = self.cross_decoys(
@@ -2055,7 +2080,94 @@ impl<'p> Plan<'p> {
                 }
             }
         }
+        // Last, so that no row arranged for another selector makes it pass: one candidate per test
+        // failing it, above the head where the branch reads one.
+        for (at, tests, own) in failing {
+            let made = self.failing(
+                ir,
+                (supplied, actors),
+                (at, &tests, &own),
+                (&mut taken, &mut steps),
+                &mut gaps,
+            );
+            arranged.extend(made);
+        }
         Some((steps, arranged, gaps))
+    }
+
+    /// What arranging related rows for this branch reads (ess/27, beyond10x/ess#551).
+    fn context<'c>(
+        &'c self,
+        ir: &'c EssIr,
+        supplied: &'c BTreeMap<String, ScenarioValue>,
+        actors: &'c BTreeMap<QualifiedName, ActorRef>,
+        (taken, steps): (&'c mut BTreeSet<InstanceName>, &'c mut Vec<ScenarioStep>),
+    ) -> related_rows::Context<'c> {
+        related_rows::Context {
+            ir,
+            command: self.command,
+            outcome: self.outcome,
+            supplied,
+            actors,
+            taken,
+            steps,
+        }
+    }
+
+    /// One candidate of selector `at` per test of `tests`, meeting `own` and failing that test,
+    /// ranked above the head the branch reads from the selector, where it reads one, as the rows
+    /// `steps` leave rank it.
+    fn failing(
+        &self,
+        ir: &EssIr,
+        (supplied, actors): (
+            &BTreeMap<String, ScenarioValue>,
+            &BTreeMap<QualifiedName, ActorRef>,
+        ),
+        (at, tests, own): (usize, &[related_rows::Test], &Predicate),
+        (taken, steps): (&mut BTreeSet<InstanceName>, &mut Vec<ScenarioStep>),
+        gaps: &mut Vec<RefusalCause>,
+    ) -> Vec<Arrangement> {
+        let selection = self.selections[at];
+        let above = self.heads[at].and_then(|order_by| {
+            let first = order_by.first()?;
+            let rows = walk(ir, steps, false).ok()?;
+            let reading = Reading::new(ir, self.command, supplied, &rows)
+                .ok()?
+                .for_outcome(self.outcome);
+            let head = reading
+                .head(selection, order_by, self.ties(selection))
+                .ok()?;
+            Some(related_rows::Above {
+                first,
+                value: row_key(ir, head, &first.field),
+            })
+        });
+        let at = format!("{}/{}", self.command.name, self.outcome.name);
+        let mut context = self.context(ir, supplied, actors, (taken, steps));
+        related_rows::failing(
+            &mut context,
+            (&at, &selection.entity),
+            own,
+            tests,
+            above.as_ref(),
+            gaps,
+        )
+    }
+
+    /// How the head this branch reads from `selection` treats ties, where it reads one.
+    fn ties(&self, selection: &ResolvedRowSelection) -> Ties {
+        reads(self.outcome)
+            .into_iter()
+            .find_map(|read| match &read.value {
+                ResolvedPayloadValue::RelatedHead {
+                    selection: read,
+                    ties,
+                    ..
+                } if read == selection => Some(*ties),
+                _ => None,
+            })
+            .unwrap_or(Ties::Total)
     }
 
     /// Every filter with the published values it reads written in, as the rows `steps` leave
@@ -2332,6 +2444,7 @@ pub(super) fn prepare(
     let at = || format!("{}/{}", command.name, outcome.name);
     for selection in &selections {
         decidable(ir, command, selection).map_err(|reason| gap(at(), reason))?;
+        related_rows::untied(ir, &at(), &selection.filter)?;
     }
     let input = input_for(ir, command, outcome, Distinction::PLAIN)?;
     let setup = subject_setup(ir, command, outcome, actors)?;

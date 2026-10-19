@@ -1369,7 +1369,7 @@ fn listed_membership(predicate: &Predicate) -> Option<(String, String)> {
     let Predicate::Exists(quantified) = predicate else {
         return None;
     };
-    let [namespace, name] = quantified.over.segments() else {
+    let [namespace, name] = quantified.over.fact()?.segments() else {
         return None;
     };
     if namespace != ViewSpec::PARAM {

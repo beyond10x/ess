@@ -12,9 +12,9 @@ pub mod lexical;
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{
-    CompareKind, CompareOp, Derived, Distinct, DistinctKeyKind, FoldOp, OffsetMagnitude,
-    OffsetOperand, Operand, Predicate, Quantified, TextNamespace, TextOp, TextOperand, TRIMMED,
-    TRIMMED_WHITESPACE,
+    Collection, CompareKind, CompareOp, Derived, Distinct, DistinctKeyKind, FoldOp,
+    OffsetMagnitude, OffsetOperand, Operand, Predicate, Quantified, TextNamespace, TextOp,
+    TextOperand, TRIMMED, TRIMMED_WHITESPACE,
 };
 use ess_primitives::window::{CalendarWindow, WindowInstant};
 
@@ -269,6 +269,29 @@ pub trait TypeEnvironment {
     fn caller_attribute(&self, _name: &str) -> Option<Self::Type> {
         None
     }
+    /// Whether a quantifier may walk the rows of `entity` here, `exists: {in: {entity: <E>}, …}`
+    /// (`ess/27`, beyond10x/ess#551, `docs/design/related-rows-quantifier.md`), and the type each
+    /// row is read as.
+    ///
+    /// [`RelatedRows::NotHere`] by default, which the checker refuses by name: only the selector of
+    /// a related read and of a row-set guard admits rows, and every other predicate site refuses
+    /// them without having to know the construct exists.
+    fn related_rows(&self, _entity: &str) -> RelatedRows<Self::Type> {
+        RelatedRows::NotHere
+    }
+}
+
+/// What a predicate site answers for a quantifier over the rows of an entity
+/// ([`TypeEnvironment::related_rows`]).
+#[derive(Debug, Clone)]
+pub enum RelatedRows<T> {
+    /// Admitted here: the binder reads a row of this type, its fields as members.
+    Admitted(T),
+    /// A site that admits rows, where this use is refused by the site's own rules — below the
+    /// format, or no declared entity — so the checker reports nothing and types no binder.
+    Reported,
+    /// Not admitted at this site.
+    NotHere,
 }
 
 /// Whether a predicate site admits the current-time operand (beyond10x/ess#171), in two parts
@@ -1105,7 +1128,7 @@ fn utf8_bytes_path<E: TypeEnvironment>(
 fn derive_selectors<E: TypeEnvironment>(
     environment: &E,
     predicate: Predicate,
-    scope: &mut Vec<(FactPath, String)>,
+    scope: &mut Vec<(Collection, String)>,
     input_namespace: bool,
 ) -> Predicate {
     match predicate {
@@ -1115,7 +1138,7 @@ fn derive_selectors<E: TypeEnvironment>(
             right,
             kind,
         } => {
-            let pairs: Vec<(&FactPath, &str)> = scope
+            let pairs: Vec<(&Collection, &str)> = scope
                 .iter()
                 .map(|(over, bind)| (over, bind.as_str()))
                 .collect();
@@ -1171,13 +1194,15 @@ fn derive_selectors<E: TypeEnvironment>(
 fn derive_quantified<E: TypeEnvironment>(
     environment: &E,
     quantified: Quantified,
-    scope: &mut Vec<(FactPath, String)>,
+    scope: &mut Vec<(Collection, String)>,
     input_namespace: bool,
 ) -> Quantified {
     // The binder is typed where `key_kinds` types it: a collection written `input.<path>` in a
     // plain input guard is the input `<path>`, so `s.utf8_bytes` over `input.tags` reads the text
     // `s` as `{utf8_bytes: s}` does.
-    let typed = typed_over(&quantified.over, scope, input_namespace);
+    let typed = quantified
+        .over
+        .map_fact(|over| typed_over(over, scope, input_namespace));
     scope.push((typed, quantified.bind.clone()));
     let body = derive_selectors(environment, quantified.body, scope, input_namespace);
     scope.pop();
@@ -1320,10 +1345,10 @@ pub(crate) fn resolve_lexical_reading<E: TypeEnvironment>(
 fn key_kinds<E: TypeEnvironment>(
     environment: &E,
     predicate: Predicate,
-    scope: &mut Vec<(FactPath, String)>,
+    scope: &mut Vec<(Collection, String)>,
     input_namespace: bool,
 ) -> Predicate {
-    let nested = |child: Predicate, scope: &mut Vec<(FactPath, String)>| {
+    let nested = |child: Predicate, scope: &mut Vec<(Collection, String)>| {
         key_kinds(environment, child, scope, input_namespace)
     };
     match predicate {
@@ -1366,10 +1391,12 @@ fn key_kinds<E: TypeEnvironment>(
 fn kinds_in<E: TypeEnvironment>(
     environment: &E,
     quantified: Quantified,
-    scope: &mut Vec<(FactPath, String)>,
+    scope: &mut Vec<(Collection, String)>,
     input_namespace: bool,
 ) -> Quantified {
-    let typed = typed_over(&quantified.over, scope, input_namespace);
+    let typed = quantified
+        .over
+        .map_fact(|over| typed_over(over, scope, input_namespace));
     scope.push((typed, quantified.bind.clone()));
     let body = key_kinds(environment, quantified.body, scope, input_namespace);
     scope.pop();
@@ -1382,7 +1409,7 @@ fn kinds_in<E: TypeEnvironment>(
 
 /// The path a collection is typed at: `over`, or with `input_namespace` the input `<path>` that
 /// `input.<path>` names where no binder is called `input` (decision 6).
-fn typed_over(over: &FactPath, scope: &[(FactPath, String)], input_namespace: bool) -> FactPath {
+fn typed_over(over: &FactPath, scope: &[(Collection, String)], input_namespace: bool) -> FactPath {
     let namespace = crate::command::subject_fact::INPUT_NAMESPACE;
     if input_namespace
         && over.namespace() == namespace
@@ -1399,14 +1426,14 @@ fn typed_over(over: &FactPath, scope: &[(FactPath, String)], input_namespace: bo
 fn with_key_kind<E: TypeEnvironment>(
     environment: &E,
     mut distinct: Distinct,
-    scope: &[(FactPath, String)],
+    scope: &[(Collection, String)],
     input_namespace: bool,
 ) -> Distinct {
     if distinct.key_kind.is_some() {
         return distinct;
     }
-    let over = typed_over(&distinct.over, scope, input_namespace);
-    let mut pairs: Vec<(&FactPath, &str)> = scope
+    let over = Collection::Fact(typed_over(&distinct.over, scope, input_namespace));
+    let mut pairs: Vec<(&Collection, &str)> = scope
         .iter()
         .map(|(over, bind)| (over, bind.as_str()))
         .collect();
@@ -1529,7 +1556,7 @@ fn base_resolves<E: TypeEnvironment>(
 fn tag_instants<E: TypeEnvironment>(
     environment: &E,
     predicate: Predicate,
-    scope: &mut Vec<(FactPath, String)>,
+    scope: &mut Vec<(Collection, String)>,
 ) -> Predicate {
     match predicate {
         Predicate::Compare {
@@ -1538,7 +1565,7 @@ fn tag_instants<E: TypeEnvironment>(
             right: Operand::Fact(right),
             kind: CompareKind::Value,
         } => {
-            let pairs: Vec<(&FactPath, &str)> = scope
+            let pairs: Vec<(&Collection, &str)> = scope
                 .iter()
                 .map(|(over, bind)| (over, bind.as_str()))
                 .collect();
@@ -1586,7 +1613,7 @@ fn tag_instants<E: TypeEnvironment>(
 fn tag_quantified<E: TypeEnvironment>(
     environment: &E,
     quantified: Quantified,
-    scope: &mut Vec<(FactPath, String)>,
+    scope: &mut Vec<(Collection, String)>,
 ) -> Quantified {
     scope.push((quantified.over.clone(), quantified.bind.clone()));
     let body = tag_instants(environment, quantified.body, scope);
@@ -1603,7 +1630,7 @@ fn scope_bindings<E: TypeEnvironment>(
     environment: &E,
     scope: &[&lexical::LexicalQuantified],
 ) -> Vec<Binding<E::Type>> {
-    let pairs: Vec<(&FactPath, &str)> = scope
+    let pairs: Vec<(&Collection, &str)> = scope
         .iter()
         .map(|quantified| (&quantified.over, quantified.bind.as_str()))
         .collect();
@@ -1614,10 +1641,31 @@ fn scope_bindings<E: TypeEnvironment>(
 /// [`Checker::quantified`] types them.
 fn bindings_of<E: TypeEnvironment>(
     environment: &E,
-    scope: &[(&FactPath, &str)],
+    scope: &[(&Collection, &str)],
 ) -> Vec<Binding<E::Type>> {
     let mut bindings: Vec<Binding<E::Type>> = Vec::new();
     for (over, bind) in scope {
+        let over = match over {
+            Collection::Fact(over) => over,
+            // A row of an entity, where this environment admits one: its fields are members.
+            Collection::Rows { entity } => {
+                let reference = match environment.related_rows(entity) {
+                    RelatedRows::Admitted(row) => Some(row),
+                    RelatedRows::Reported | RelatedRows::NotHere => None,
+                };
+                bindings.push(Binding {
+                    name: (*bind).to_owned(),
+                    reference,
+                    access: Access {
+                        collection: true,
+                        text_length: false,
+                        depth: 1,
+                    },
+                    optional: false,
+                });
+                continue;
+            }
+        };
         let target = resolve(environment, over, "", &bindings).ok();
         let reference =
             target
@@ -1726,7 +1774,7 @@ pub fn read_input_namespace(predicate: &Predicate) -> Predicate {
         }
     }
     fn quantifier<'a>(quantified: &'a Quantified, bound: &mut Vec<&'a str>) -> Quantified {
-        let over = strip(&quantified.over, bound);
+        let over = quantified.over.map_fact(|over| strip(over, bound));
         bound.push(&quantified.bind);
         let body = walk(&quantified.body, bound);
         bound.pop();
@@ -2464,7 +2512,14 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     }
 
     fn quantified(&mut self, predicate: &Predicate, quantified: &Quantified) {
-        let target = self.read(&quantified.over, true);
+        let over = match &quantified.over {
+            Collection::Fact(over) => over,
+            Collection::Rows { entity } => {
+                self.rows(predicate, quantified, entity);
+                return;
+            }
+        };
+        let target = self.read(over, true);
         let mut reference = None;
         let mut access = Access {
             collection: true,
@@ -2498,6 +2553,45 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             reference,
             access,
             optional,
+        });
+        self.predicate(&quantified.body);
+        self.bindings.pop();
+    }
+
+    /// A quantifier over the rows of `entity` (`ess/27`, beyond10x/ess#551): where the site admits
+    /// rows, the binder reads a row of the entity and the body is checked as any body is; where it
+    /// does not, the refusal names the two sites that do. The body's free paths are checked either
+    /// way.
+    fn rows(&mut self, predicate: &Predicate, quantified: &Quantified, entity: &str) {
+        let reference = match self.environment.related_rows(entity) {
+            RelatedRows::Admitted(row) => Some(row),
+            RelatedRows::Reported => None,
+            RelatedRows::NotHere => {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::UnsupportedConstruct,
+                    None,
+                    None,
+                    format!(
+                        "`{predicate}` walks the rows of `{entity}`, which a quantifier does only \
+                         in the `where:` of a `{{related: …}}` read and of a row-set \
+                         `when_related:`; to test the rows related to the subject or the input, \
+                         guard with `when_related: {{entity: {entity}, where: <its tie to \
+                         subject. or input.>, exists: true}}`"
+                    ),
+                ));
+                None
+            }
+        };
+        self.bindings.push(Binding {
+            name: quantified.bind.clone(),
+            reference,
+            access: Access {
+                collection: true,
+                text_length: false,
+                depth: 1,
+            },
+            optional: false,
         });
         self.predicate(&quantified.body);
         self.bindings.pop();

@@ -2158,14 +2158,14 @@ fn element_bodies(predicate: &Predicate, found: &mut Vec<Predicate>) {
             }
         }
         Predicate::Not(inner) => element_bodies(inner, found),
+        // A test over another entity's rows (ess/27) has no element the input could hold, and
+        // an input guard never admits one.
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
-            let body = rebind(
-                &quantified.body,
-                &quantified.bind,
-                &quantified.over.child("0"),
-            );
-            element_bodies(&body, found);
-            found.push(body);
+            if let Some(over) = quantified.over.fact() {
+                let body = rebind(&quantified.body, &quantified.bind, &over.child("0"));
+                element_bodies(&body, found);
+                found.push(body);
+            }
         }
         _ => {}
     }
@@ -2264,7 +2264,7 @@ fn remapped(
             let mut inside = bound.to_vec();
             inside.push(&quantified.bind);
             let inner = ess_primitives::predicate::Quantified {
-                over: path(&quantified.over),
+                over: quantified.over.map_fact(|over| path(over)),
                 bind: quantified.bind.clone(),
                 body: remapped(&quantified.body, map, &inside),
             };
@@ -2746,13 +2746,18 @@ pub(crate) fn trim_witnesses(guard: &Predicate) -> Vec<(FactPath, Node)> {
             }
             Predicate::Not(inner) => walk(inner, found),
             Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
-                let element = quantified.over.child("0");
+                // A test over the rows of an entity (beyond10x/ess#551) stands in selectors only,
+                // never in a guard the trimmed witnesses are sent to.
+                let Some(over) = quantified.over.fact() else {
+                    return;
+                };
+                let element = over.child("0");
                 let body = rebind(&quantified.body, &quantified.bind, &element);
                 let mut inner = Vec::new();
                 walk(&body, &mut inner);
                 for (at, literal, fold) in inner {
                     let at = match at {
-                        At::Leaf(path) if path == element => At::List(quantified.over.clone()),
+                        At::Leaf(path) if path == element => At::List(over.clone()),
                         other => other,
                     };
                     found.push((at, literal, fold));
