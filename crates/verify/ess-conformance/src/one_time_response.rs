@@ -12,6 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod cells;
 pub use cells::{Aspect, Cell};
+pub mod compact;
 pub(crate) mod produce;
 
 /// Whether a compiled model requires private disclosure observations.

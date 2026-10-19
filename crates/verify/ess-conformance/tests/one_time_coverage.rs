@@ -1,4 +1,6 @@
-//! Actual source-produced coverage/35 input, kept identical for every runtime.
+//! Actual source-produced coverage input, kept identical for every runtime: suite/53, whose
+//! one-time trace states its rules once (beyond10x/ess#570). `fixtures/one-time-coverage` keeps
+//! the suite/35 input this producer wrote before, which every runtime still executes.
 #[allow(dead_code)]
 mod support_one_time;
 use ess_conformance::{
@@ -13,7 +15,7 @@ const SOURCE: &str = "format: ess/21\nsystem: credentials\nversion: v1\ndomain: 
 const AUTHORED: &str = "type: ess-scenario/4\ndomain: credentials.api\nscenario: protected-rotation\nsummary: Issue then rotate without redisclosing the old value.\ntimeline:\n  - at: 2026-10-02T00:00:00Z\n    command: credentials.api.Issue\n    outcome: issued\n  - at: 2026-10-02T00:00:01Z\n    command: credentials.api.Issue\n    outcome: issued\n";
 
 #[test]
-fn actual_coverage35_producer_execution_is_frozen() {
+fn actual_coverage_producer_execution_is_frozen() {
     let spec = ess_domain::Specification::assemble([(
         ess_domain::system::Source::new("one-time-coverage.yaml"),
         ess_domain::spec::RawSpecFile::parse(SOURCE).unwrap(),
@@ -34,7 +36,7 @@ fn actual_coverage35_producer_execution_is_frozen() {
     let input = input.select(&[id]).unwrap();
     assert_eq!(
         input.selected().suite().provenance.suite_version.major(),
-        35
+        53
     );
     assert_eq!(input.parents().len(), 1);
     assert_eq!(input.selected().suite().len(), 1);
@@ -65,8 +67,8 @@ fn actual_coverage35_producer_execution_is_frozen() {
         }
         manifest.push(serde_json::json!({"case":mode,"status":status,"required_code":code,"counts":actual_counts,"callback_trace":target.trace()}));
     }
-    let root =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/one-time-coverage");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/one-time-coverage-53");
     let output = std::env::var_os("ESS_ONE_TIME_COVERAGE_OUT").map(std::path::PathBuf::from);
     for (name, text) in [
         ("model.yaml", SOURCE.to_owned()),

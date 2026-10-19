@@ -58,7 +58,7 @@ pub(super) fn generate(
     target: SuiteTarget,
     out: Option<&Path>,
     (component, scenarios): (Option<&str>, Option<&Path>),
-    (authored, compact): (bool, bool),
+    (authored, compact, check): (bool, bool, bool),
     seeds: &[String],
 ) -> Result<ExitCode> {
     let Ok((ir, _)) = super::resolved(&input.path, input.format)? else {
@@ -75,31 +75,44 @@ pub(super) fn generate(
     } else {
         suite.original_json()
     };
-    match target {
-        SuiteTarget::Ir => {
-            if let Some(out) = out {
+    if let Some(out) = out {
+        let current = match target {
+            SuiteTarget::Ir if check => super::check_named_suite(out, json)?,
+            SuiteTarget::Ir => {
                 super::write_named_output(out, json)?;
+                true
             }
-        }
-        SuiteTarget::Go => {
-            let files = ess_conformance::go::emit_input_with_model(&admitted, &ir)?;
-            if let Some(out) = out {
-                super::write_owned_files(
-                    out,
-                    "conformance-go",
-                    files.iter().map(|f| (f.path.as_str(), f.contents.as_str())),
-                )?;
+            SuiteTarget::Go | SuiteTarget::Typescript => {
+                let (files, family): (Vec<(String, String)>, _) = if target == SuiteTarget::Go {
+                    (
+                        ess_conformance::go::emit_input_with_model(&admitted, &ir)?
+                            .into_iter()
+                            .map(|f| (f.path, f.contents))
+                            .collect(),
+                        "conformance-go",
+                    )
+                } else {
+                    (
+                        ess_conformance::ts::emit_input_with_model(&admitted, &ir)?
+                            .into_iter()
+                            .map(|f| (f.path, f.contents))
+                            .collect(),
+                        "conformance-typescript",
+                    )
+                };
+                let files = files
+                    .iter()
+                    .map(|(path, contents)| (path.as_str(), contents.as_str()));
+                if check {
+                    super::check_owned_suite(out, family, files)?
+                } else {
+                    super::write_owned_files(out, family, files)?;
+                    true
+                }
             }
-        }
-        SuiteTarget::Typescript => {
-            let files = ess_conformance::ts::emit_input_with_model(&admitted, &ir)?;
-            if let Some(out) = out {
-                super::write_owned_files(
-                    out,
-                    "conformance-typescript",
-                    files.iter().map(|f| (f.path.as_str(), f.contents.as_str())),
-                )?;
-            }
+        };
+        if !current {
+            return Ok(ExitCode::from(1));
         }
     }
     match input.format {

@@ -896,8 +896,8 @@ impl AdmittedInput {
 
 #[derive(Serialize)]
 struct Document<'a> {
-    provenance: &'a crate::SuiteProvenance,
-    scenarios: &'a BTreeMap<ScenarioId, crate::ConformanceScenario>,
+    #[serde(flatten)]
+    suite: &'a ConformanceSuite,
     coverage: &'a Inventory,
 }
 
@@ -906,11 +906,7 @@ pub(crate) fn suite_document(
     coverage: &Inventory,
 ) -> Result<String, AdmissionError> {
     crate::admission::suite(suite)?;
-    canonical(&Document {
-        provenance: &suite.provenance,
-        scenarios: &suite.scenarios,
-        coverage,
-    })
+    canonical(&Document { suite, coverage })
 }
 
 /// Write a freshly produced coverage suite compactly, retaining its entire inventory.
@@ -924,12 +920,8 @@ pub fn compact_suite_document(
 ) -> Result<String, AdmissionError> {
     crate::admission::suite(suite)?;
     coverage.validate(suite)?;
-    let mut value = serde_json::to_value(Document {
-        provenance: &suite.provenance,
-        scenarios: &suite.scenarios,
-        coverage,
-    })
-    .map_err(|e| error(e.to_string()))?;
+    let mut value =
+        serde_json::to_value(Document { suite, coverage }).map_err(|e| error(e.to_string()))?;
     value.sort_all_objects();
     let mut text = serde_json::to_string(&value).map_err(|e| error(e.to_string()))?;
     text.push('\n');

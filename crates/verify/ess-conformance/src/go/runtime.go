@@ -1600,6 +1600,7 @@ type Suite struct {
 	Provenance Provenance          `json:"provenance"`
 	Scenarios  map[string]Scenario `json:"scenarios"`
 	original   string
+	decoded    string
 	document   map[string]any
 	coverage   map[string]any
 	oneTime    map[string]*oneTimeTrace
@@ -4430,7 +4431,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	if err != nil {
 		return suite, err
 	}
-	root, err := closed(value, "provenance scenarios", "coverage")
+	root, err := closed(value, "provenance scenarios", "coverage events one_time_response")
 	if err != nil {
 		return suite, err
 	}
@@ -4452,6 +4453,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	}
 	if _, present := root["coverage"]; present != coverageMajor(major) {
 		return suite, fmt.Errorf("coverage is required exactly for the odd suite majors from /5")
+	}
+	decoded, err := expandCompactSuite(root, major, raw)
+	if err != nil {
+		return suite, err
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -4591,7 +4596,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			return suite, fmt.Errorf("explicit suite requires complete input parents")
 		}
 	}
-	suite.original, suite.document = raw, root
+	suite.original, suite.decoded, suite.document = raw, decoded, root
 	if coverageMajor(major) {
 		suite.coverage = root["coverage"].(map[string]any)
 		// Original admission includes parents which will never execute. Retain their exact
@@ -4609,11 +4614,11 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		return suite, nil
 	}
 	if major == 12 || major == 14 || major == 16 || major == 18 {
-		decoder := json.NewDecoder(strings.NewReader(raw))
+		decoder := json.NewDecoder(strings.NewReader(decoded))
 		decoder.UseNumber()
 		err = decoder.Decode(&suite)
 	} else {
-		err = json.Unmarshal([]byte(raw), &suite)
+		err = json.Unmarshal([]byte(decoded), &suite)
 	}
 	if err == nil {
 		err = decodeExactSuiteSteps(&suite)
@@ -4630,11 +4635,11 @@ func executionSuite(suite Suite) (Suite, error) {
 		}
 		var err error
 		if suiteMajor(suite.Provenance.SuiteVersion) >= 13 {
-			decoder := json.NewDecoder(strings.NewReader(suite.original))
+			decoder := json.NewDecoder(strings.NewReader(suite.decoded))
 			decoder.UseNumber()
 			err = decoder.Decode(&suite)
 		} else {
-			err = json.Unmarshal([]byte(suite.original), &suite)
+			err = json.Unmarshal([]byte(suite.decoded), &suite)
 		}
 		if err != nil {
 			return Suite{}, fmt.Errorf("exact selected metadata exceeds the inherited Go execution view: %w", err)

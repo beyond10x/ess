@@ -22,7 +22,8 @@ fn model(text: &str) -> ess_compiler::EssIr {
 #[test]
 fn generated_source_policy_installs_trace_and_rotation_obligations() {
     let synthesis = ess_conformance::synthesize(&model(MODEL));
-    assert_eq!(synthesis.suite.provenance.suite_version.major(), 34);
+    // The trace states its rules once from suite/52 (beyond10x/ess#570).
+    assert_eq!(synthesis.suite.provenance.suite_version.major(), 52);
     assert!(synthesis.suite.scenarios.values().any(|scenario| scenario
         .one_time_response
         .is_some()
@@ -240,7 +241,7 @@ fn authored_and_coverage_producers_preserve_the_policy() {
             .unwrap();
     assert_eq!(
         coverage.selected().suite().provenance.suite_version.major(),
-        35
+        53
     );
 }
 

@@ -19,7 +19,8 @@ a reviewer or a consumer reads. Rebuild the rest in CI, where they cannot drift 
 | run reports, histories and mutation output | no | rerunning the suite, the explorer or `ess verify conform mutate` | none needed |
 | projections a consumer reads, selected with `--kind`: `openapi`, `asyncapi` or `schema`, with `.ess-output` | yes | `ess generate --kind <kind> --out <root>` | the same command with `--check` |
 | `site` and `docs` projections | no; build them in CI for publication | `ess generate --kind site` or `--kind docs` | none needed |
-| synthesized runner and suite (`--target go` or `--target typescript`) | yes | `ess verify conform synthesize` | regenerate, then fail CI on a dirty tree |
+| synthesized suite document (`--target ir`) | yes, when `ess verify impact --suite` or a review reads it | `ess verify conform synthesize --target ir --out <file>`; synthesizing twice is byte-identical | the same command with `--check`; review a change with `ess verify conform diff` |
+| synthesized runner and suite (`--target go` or `--target typescript`) | yes | `ess verify conform synthesize` | the same command with `--check` |
 | synthesized code your implementation links | yes | `ess generate synthesize` | regenerate, then fail CI on a dirty tree |
 | planning store and evidence | see [AEP](https://beyond10x.github.io/docs/aep/concepts/planning-store/) | AEP | AEP |
 
@@ -31,6 +32,44 @@ machine that wrote it; see
 the synthesized runner is committed rather than imported. The pin is described in
 [name the `ess` release](./specify/layout-and-validation.md#name-the-ess-release-the-specification-is-maintained-with).
 [Drift-checking in CI](./generate-artifacts.md#drift-checking-in-ci) shows the `--check` run.
+
+## Commit the suite document, check it, review it by construct
+
+Commit the `--target ir` suite when something reads the earlier revision of it: `ess verify impact
+--suite` needs the suite of the base revision to say which scenarios a specification change puts
+back to owed, and a reviewer reads what a change adds to the obligations. Synthesis is
+deterministic, so CI can prove the committed file current without regenerating the tree:
+
+```shell-session
+$ ess verify conform synthesize --path spec --target ir --out conformance/suite.json
+$ ess verify conform synthesize --path spec --target ir --out conformance/suite.json --check
+```
+
+`--check` writes nothing. It compares the bytes the same command would write, so pass the same
+`--compact`, `--suite-format` and `--component` the committed file was written with. It exits 1 and
+names the file when it is missing or differs, and the same flag checks a `go` or `typescript`
+package.
+
+A textual diff of a large suite is not a review. Compare the suite of the base revision with the
+one the change synthesizes instead:
+
+```shell-session
+$ git show main:conformance/suite.json > base-suite.json
+$ ess verify conform diff --from base-suite.json --to conformance/suite.json
+$ ess verify conform diff --from base-suite.json --to conformance/suite.json --format json
+```
+
+It lists the scenario ids added, removed and changed under the construct each is about, such as
+`billing.invoice.CreateInvoice/outcome` or, for a one-time disclosure cell,
+`keys.api.IssueKey/disclosure/issued/secret/rotation`, with the steps removed from and added to each
+changed scenario. The JSON form (`ess-suite-diff/1`) is what a CI comment can carry.
+
+A suite grows with the obligations a specification declares, not with how it spells them: from
+`ess-conformance/52` the declared event catalog and the one-time response authority are written
+once at the suite root, so a scenario does not repeat an observation window or an absent event
+for every declared event. If a committed suite still reaches tens of megabytes, commit it
+`--compact` (whitespace only, a pretty and a compact suite are the same suite) and keep `--check`
+on that spelling.
 
 ## Why the first diff is large
 

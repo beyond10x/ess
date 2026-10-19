@@ -188,8 +188,12 @@ impl AdmittedSuite {
     }
 }
 
+/// The optional members of a suite root and of a scenario.
+const ROOT_OPTIONAL: [&str; 3] = ["coverage", "events", "one_time_response"];
+const SCENARIO_OPTIONAL: [&str; 3] = ["one_time_response", "absent_events", "unpublished_events"];
+
 fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
-    let root = value.closed(&["provenance", "scenarios"], &["coverage"])?;
+    let root = value.closed(&["provenance", "scenarios"], &ROOT_OPTIONAL)?;
     let p = root["provenance"].closed(
         &[
             "suite_version",
@@ -274,19 +278,48 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
             "coverage is required exactly for odd suite majors from /5 through /53",
         ));
     }
+    compact_spellings(value, version.major())?;
     for scenario in root["scenarios"].object()?.values() {
-        let s = scenario.closed(&["purpose", "steps", "source"], &["one_time_response"])?;
-        if version.major() < 34 && s.contains_key("one_time_response") {
-            return Err(scenario.error(
-                "UnsupportedVocabulary",
-                "one-time response authority requires suite/34 or /35",
-            ));
-        }
+        let s = scenario.closed(&["purpose", "steps", "source"], &SCENARIO_OPTIONAL)?;
         for step in s["steps"].array()? {
             step_value(step, version.major())?;
         }
         for source in s["source"].array()? {
             semantic_reference(source)?;
+        }
+    }
+    Ok(())
+}
+/// One-time authority arrived in suite/34 and /35; the suite-level catalogs and the scenario
+/// spellings that refer to them in suite/52 and /53 (beyond10x/ess#570).
+fn compact_spellings(value: &Json, major: u32) -> Result<(), AdmissionError> {
+    let root = value.object()?;
+    for scenario in root["scenarios"].object()?.values() {
+        if major < 34 && scenario.object()?.contains_key("one_time_response") {
+            return Err(scenario.error(
+                "UnsupportedVocabulary",
+                "one-time response authority requires suite/34 or /35",
+            ));
+        }
+    }
+    if major >= crate::one_time_response::compact::ORDINARY {
+        return Ok(());
+    }
+    for key in ["events", "one_time_response"] {
+        if let Some(catalog) = root.get(key) {
+            return Err(catalog.error(
+                "UnsupportedVocabulary",
+                "a suite-level event or one-time catalog requires suite/52 or /53",
+            ));
+        }
+    }
+    for scenario in root["scenarios"].object()?.values() {
+        let s = scenario.object()?;
+        if s.contains_key("absent_events") || s.contains_key("unpublished_events") {
+            return Err(scenario.error(
+                "UnsupportedVocabulary",
+                "absent-event runs and unpublished-event lists require suite/52 or /53",
+            ));
         }
     }
     Ok(())

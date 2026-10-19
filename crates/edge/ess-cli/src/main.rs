@@ -643,6 +643,14 @@ enum ConformCommand {
         /// Write fresh IR as compact JSON with one trailing newline; requires --target ir.
         #[arg(long)]
         compact: bool,
+        /// Refuse when `--out` differs from the suite this command would write, writing nothing.
+        ///
+        /// Compares the `--target ir` file, or every file of the `go` or `typescript` package, byte for
+        /// byte with what the same command without `--check` would write, `--compact` and
+        /// `--suite-format` included. Exit 0 when `--out` is current, 1 with one line per drifted
+        /// file.
+        #[arg(long, requires = "out")]
+        check: bool,
         /// Offer the `setup` row of arrangement INSTANCE in the authored document FILE as an
         /// explicit synthesis seed; repeatable.
         ///
@@ -712,6 +720,24 @@ enum ConformCommand {
         /// write history pages and the player to different directories.
         #[arg(long, conflicts_with_all = ["scenarios", "suite_format"])]
         history: Option<PathBuf>,
+    },
+    /// Say what changed between two suites: scenarios added, removed and changed, by construct.
+    ///
+    /// Each scenario is filed under the construct it is about — its subject and family, such as
+    /// `billing.invoice.CreateInvoice/outcome`, and for a one-time disclosure cell also the origin
+    /// outcome, field and aspect. A changed scenario names the parts that differ and lists the
+    /// steps removed from it and added to it. Scenarios are compared as read, so a suite rewritten
+    /// in a newer spelling of the same scenarios shows no change. `--format json` writes an
+    /// `ess-suite-diff/1` document. Exit 0 whatever changed, 1 when a suite cannot be read.
+    Diff {
+        /// The earlier suite, such as the one committed on the base branch.
+        #[arg(long)]
+        from: PathBuf,
+        /// The later suite, such as the one this change synthesizes.
+        #[arg(long)]
+        to: PathBuf,
+        #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
+        format: MachineFormat,
     },
     /// Narrow a coverage suite/5, /7 or /9 by explicit IDs, retaining every exact original parent.
     Select {
@@ -3637,6 +3663,7 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             scenarios,
             suite_format,
             compact,
+            check,
             synthesis_seed,
         } => synthesize_suite(
             &input,
@@ -3644,7 +3671,7 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             out.as_deref(),
             component.as_deref(),
             scenarios.as_deref(),
-            (&suite_format, compact),
+            (&suite_format, compact, check),
             &synthesis_seed,
         ),
         ConformCommand::Author {
@@ -3672,6 +3699,7 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             ids,
             out,
         } => coverage::select(suite.as_deref(), suite_input.as_deref(), &ids, &out),
+        ConformCommand::Diff { from, to, format } => conform_diff(&from, &to, format),
         command @ ConformCommand::Run { .. } => conform_run(command),
         command @ ConformCommand::Report { .. } => Ok(conform_report_mode(command)),
         command @ ConformCommand::Mutate { .. } => conform_mutate_mode(command),
@@ -3689,6 +3717,30 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             output,
         } => Ok(import_history(&path, &log, &adapter, output.as_deref())),
     }
+}
+
+/// `ess verify conform diff`: what changed between two suites, by construct (beyond10x/ess#572).
+fn conform_diff(from: &Path, to: &Path, format: MachineFormat) -> Result<ExitCode> {
+    let read = |path: &Path| -> Result<Option<ess_conformance::ConformanceSuite>> {
+        let text =
+            fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        Ok(match ess_conformance::ConformanceSuite::from_json(&text) {
+            Ok(suite) => Some(suite),
+            Err(error) => {
+                eprintln!("refused: {} is not a suite: {error}", path.display());
+                None
+            }
+        })
+    };
+    let (Some(before), Some(after)) = (read(from)?, read(to)?) else {
+        return Ok(ExitCode::from(1));
+    };
+    let diff = ess_conformance::suite_diff::diff(&before, &after);
+    match format {
+        MachineFormat::Text => print!("{}", diff.to_text()),
+        MachineFormat::Json => print!("{}", diff.to_canonical_json()),
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 /// `ess verify conform report`: 0 written, 2 refused.
@@ -4727,16 +4779,24 @@ fn render_conformance_report(
 /// package target writes a tree, and the only thing that differs between two package targets is
 /// which emitter and which output owner — which is the shape a third language should be able to
 /// join without touching the verb around it.
+///
+/// With `check`, compares instead of writing (beyond10x/ess#571): `None` after naming each drifted
+/// file.
 fn write_suite(
     suite: &ess_conformance::ConformanceSuite,
     ir: &EssIr,
     target: SuiteTarget,
     json: &str,
-    out: &Path,
-) -> Result<String> {
+    (out, check): (&Path, bool),
+) -> Result<Option<String>> {
     if target == SuiteTarget::Ir {
+        if check {
+            return Ok(
+                check_named_suite(out, json)?.then(|| format!("current in {}", out.display()))
+            );
+        }
         write_named_output(out, json)?;
-        return Ok(format!("written to {}", out.display()));
+        return Ok(Some(format!("written to {}", out.display())));
     }
     let (files, family) = match target {
         SuiteTarget::Ir => unreachable!("answered above"),
@@ -4755,18 +4815,63 @@ fn write_suite(
             "conformance-typescript",
         ),
     };
-    write_owned_files(
-        out,
-        family,
-        files
-            .iter()
-            .map(|(path, contents)| (path.as_str(), contents.as_str())),
-    )?;
-    Ok(format!(
-        "{} file(s) written to {}",
-        files.len(),
+    let files = files
+        .iter()
+        .map(|(path, contents)| (path.as_str(), contents.as_str()));
+    if check {
+        return Ok(
+            check_owned_suite(out, family, files)?.then(|| format!("current in {}", out.display()))
+        );
+    }
+    let count = files.len();
+    write_owned_files(out, family, files)?;
+    Ok(Some(format!(
+        "{count} file(s) written to {}",
         out.display()
-    ))
+    )))
+}
+
+/// What a drifted suite file says to do.
+const SUITE_REMEDY: &str = "regenerate it with `ess verify conform synthesize`";
+
+/// Compare one suite document with the file at `path`, writing nothing; `false` after naming it
+/// when it is missing or holds other bytes.
+fn check_named_suite(path: &Path, contents: &str) -> Result<bool> {
+    let reason = match fs::read(path) {
+        Ok(existing) if existing == contents.as_bytes() => return Ok(true),
+        Ok(_) => "differs from the synthesized suite",
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => "is missing",
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("reading {} for drift check", path.display()))
+        }
+    };
+    eprintln!("{} {reason}; {SUITE_REMEDY}", path.display());
+    Ok(false)
+}
+
+/// Compare a suite package with the tree under `root` as `ess generate --check` compares a
+/// projection, writing nothing; `false` after naming each drifted file.
+fn check_owned_suite<'a>(
+    root: &Path,
+    family: &str,
+    files: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Result<bool> {
+    let drifted =
+        output_ownership::drift(root, &[output_ownership::Publication::tree(family, files)?])?;
+    for drift in &drifted {
+        let remedy = if drift.remedy == output_ownership::REGENERATE {
+            SUITE_REMEDY
+        } else {
+            drift.remedy
+        };
+        eprintln!(
+            "{} {}; {remedy}",
+            root.join(&drift.path).display(),
+            drift.reason
+        );
+    }
+    Ok(drifted.is_empty())
 }
 
 /// Files the compiled authored scenarios in `synthesis`'s suite and returns how many it kept.
@@ -4813,7 +4918,7 @@ fn synthesize_suite(
     out: Option<&Path>,
     component: Option<&str>,
     scenarios: Option<&Path>,
-    (suite_format, compact): (&str, bool),
+    (suite_format, compact, check): (&str, bool, bool),
     seeds: &[String],
 ) -> Result<ExitCode> {
     if compact && target != SuiteTarget::Ir {
@@ -4825,7 +4930,7 @@ fn synthesize_suite(
             target,
             out,
             (component, scenarios),
-            (false, compact),
+            (false, compact, check),
             seeds,
         );
     }
@@ -4872,7 +4977,10 @@ fn synthesize_suite(
     // tries twice.
     let written = match &out {
         None => None,
-        Some(out) => Some(write_suite(&synthesis.suite, &ir, target, &json, out)?),
+        Some(out) => match write_suite(&synthesis.suite, &ir, target, &json, (out, check))? {
+            Some(summary) => Some(summary),
+            None => return Ok(ExitCode::from(1)),
+        },
     };
 
     match input.format {
@@ -5089,7 +5197,7 @@ fn author_suite(
             SuiteTarget::Ir,
             out,
             (None, scenarios),
-            (true, false),
+            (true, false, false),
             &[],
         );
     }
@@ -6185,7 +6293,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 83;
+    const AREA_LEAVES: usize = 84;
     const AREA_ONLY_LEAVES: [&[&str]; 13] = [
         &["specify", "protocol", "validate"],
         &["specify", "protocol", "compile"],

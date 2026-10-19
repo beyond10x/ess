@@ -58,6 +58,7 @@ import type { DirectResponse } from './direct_response.js';
 import {
   admitOneTimeTrace,
   admitDisclosureId,
+  expandCompactSuite,
   parseDisclosureId,
   DisclosureCaptures,
   DisclosureViolation,
@@ -6647,7 +6648,7 @@ export function admitSuite(raw: string): Suite {
 export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   accessorPreflight(raw);
   const value = strictSuiteJSON(raw);
-  const root = closed(value, 'provenance scenarios', 'coverage');
+  const root = closed(value, 'provenance scenarios', 'coverage events one_time_response');
   const provenance = closed(
     root.provenance,
     'suite_version system specification_version spec_digest contract_digest',
@@ -6668,6 +6669,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   if (carriesCoverage !== coverageMajor(major)) {
     throw new Error('coverage is required exactly for odd suite majors from /5 through /53');
   }
+  expandCompactSuite(root, major);
   for (const key of ['system', 'specification_version', 'spec_digest', 'contract_digest']) {
     const held = text(provenance[key]);
     if (key.endsWith('digest') && !modelDigest.test(held)) {

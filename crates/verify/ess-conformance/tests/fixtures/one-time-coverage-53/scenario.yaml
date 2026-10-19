@@ -1,0 +1,11 @@
+type: ess-scenario/4
+domain: credentials.api
+scenario: protected-rotation
+summary: Issue then rotate without redisclosing the old value.
+timeline:
+  - at: 2026-10-02T00:00:00Z
+    command: credentials.api.Issue
+    outcome: issued
+  - at: 2026-10-02T00:00:01Z
+    command: credentials.api.Issue
+    outcome: issued

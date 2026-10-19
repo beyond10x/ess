@@ -2803,7 +2803,7 @@ commands:
         ),
         (
             "player.js",
-            "0bc7077dba992b563414dd47661bd90af5e4e0fdde17337897ffd4c66da70916",
+            "9457158c17d23bc179becf4fd1f475c004fc7cd4a0c86c9ff2e9d755f6530611",
         ),
     ] {
         assert_eq!(
