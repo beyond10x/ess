@@ -1592,6 +1592,21 @@ impl<'a> Resolver<'a> {
             })
             .map(|declared| declared.name.clone())
             .collect();
+        // The structs declared `shorthand: <field>` (`ess/27`), carried beside the types.
+        let shorthands = self
+            .spec
+            .system()
+            .types
+            .iter()
+            .filter(|declared| types.contains_key(&declared.name))
+            .filter_map(|declared| match &declared.body {
+                TypeBody::Struct {
+                    shorthand: Some(field),
+                    ..
+                } => Some((declared.name.clone(), field.clone())),
+                _ => None,
+            })
+            .collect();
         Ok(EssIr::from_parts(crate::ir::EssIrParts {
             system: self.spec.system().name.clone(),
             version: self.spec.system().version,
@@ -1600,6 +1615,7 @@ impl<'a> Resolver<'a> {
             domains,
             types,
             undeclared_fields_ignored,
+            shorthands,
             conversions,
             entities,
             commands,

@@ -18,7 +18,23 @@ pub(super) fn emit(plan: &Plan) -> Realization {
     );
     output.push_str("export type EssJsonValue = null | boolean | number | string | EssJsonValue[] | { [key: string]: EssJsonValue };\n\n");
     for (name, node) in &plan.definitions {
-        let rendered = render(node, plan, &mut report.obligations);
+        let mut rendered = render(node, plan, &mut report.obligations);
+        // A struct with a shorthand (`ess/27`, beyond10x/ess#594) is on the wire either its one
+        // field's value or the record; the declaration says so and leaves normalizing to a reader.
+        if let (Some(short), Shape::Object { fields, .. }) =
+            (plan.shorthands.get(&node.pointer), &node.shape)
+        {
+            let scalar = render(&fields[&short.wire].value, plan, &mut report.obligations);
+            rendered = format!("{scalar} | {rendered}");
+            report.obligations.insert(finding(
+                &node.pointer,
+                "typescript_shorthand",
+                &format!(
+                    "the value may be written as its {:?} field alone; a consumer normalizes that short form to the record before reading it as one",
+                    short.wire
+                ),
+            ));
+        }
         writeln!(output, "export type {} = {rendered};\n", plan.names[name]).expect("String write");
         if let Some(attributes) = plan.attributes.get(&node.pointer) {
             accessors(&mut output, &plan.names[name], attributes);

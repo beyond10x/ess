@@ -1191,6 +1191,11 @@
             "reading": {
               "$ref": "#/definitions/ReadingContract"
             },
+            "shorthand": {
+              "description": "The one field a value of this struct may be written as alone: with `shorthand: op`, the scalar `getIssue` is the value `{op: getIssue}`. The field is required and a scalar on the wire, and every other field is `Optional` (`ess/27`, beyond10x/ess#594).",
+              "type": "string",
+              "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
+            },
             "undeclared_fields": {
               "description": "What a reader does with a field this struct does not declare: `refused`, the default, or `ignored`, which admits fields beyond the declared ones while every declared field stays required and typed (`ess/24`, beyond10x/ess#500).",
               "allOf": [

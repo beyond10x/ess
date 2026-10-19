@@ -273,6 +273,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         added: &[
             "A binding condition and a binding selection `where` may compare a `Boolean` leaf with `true` or `false`, `event.<path> == false` or `item.<path> != true`, beside the String and enum comparisons and under `all`/`any`/`not`; a definite comparison proves its path present as any comparison does, and the condition's IR read of such a leaf is `{kind: boolean}`. A text literal against a Boolean leaf stays `type_mismatch` and a bare Boolean path stays outside the bounded fragment; below `ess/27` the comparison is refused as `unsupported_format_version` naming `ess/27`, and a Boolean leaf read only by `defined(...)` keeps `{kind: other}` and its bytes (downstream report, 2026-10-18).",
             "A command guarding on a related row (`when_related:`) may declare an `unknown_instance:` branch for the row it addresses through its input: the precedence order places it, an `exists: false` over a row the input names answering first, then the input-guarded refusals, then the unknown addressed identity, then the held state and the present related row's predicates; below `ess/27` the pairing is refused as `conflicting_declaration`, its hint naming `ess/27`.",
+            "`shorthand: <field>` on a `kind: struct` type: a value of the struct may be written as that field alone, so with `shorthand: op` the scalar `getIssue` is the value `{op: getIssue}`, every writer the model generates writing the long form; the field must be declared, required and a scalar on the wire (a primitive other than `Json`, an enum, or a newtype over one of those), and every other field `Optional`, each breach refused by name at `<type>.shorthand`; the key is refused as `unsupported_construct` on a newtype, an enum, a union and every declaration that is not a type, and below `ess/27` as `unsupported_format_version` naming `ess/27`; a model without it keeps its IR bytes and digest, and the JSON Schema of such a struct is `oneOf` the field's schema and the closed object, annotated `x-ess-shorthand` (beyond10x/ess#594).",
         ],
         stricter: &[],
     },
@@ -380,7 +381,8 @@ impl FormatVersion {
     /// A binding condition and a binding selection compare a Boolean leaf with `true` or
     /// `false`, and a command guarding on a related row may answer an unknown addressed identity
     /// with an `unknown_instance:` branch, at step 3 of the precedence order (downstream report,
-    /// 2026-10-18).
+    /// 2026-10-18). A struct may name one field as its shorthand, a value written as that field
+    /// alone, `shorthand: <field>` (beyond10x/ess#594).
     pub const V27: Self = Self(27);
 
     /// How a format version is written.

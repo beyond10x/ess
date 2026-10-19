@@ -442,3 +442,7 @@ fn a_unit_outside_its_alphabet_or_length_is_refused_naming_the_constraint() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// A struct written as one field alone (`ess/27`, beyond10x/ess#594).
+#[path = "model_ergonomics/shorthand.rs"]
+mod shorthand;

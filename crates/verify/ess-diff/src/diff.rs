@@ -695,6 +695,14 @@ fn type_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChange>
                         after: opens,
                     });
                 }
+                // Beside the types too (`ess/27`): which field a struct may be written as alone.
+                let (was, is) = (before.shorthand(name), after.shorthand(name));
+                if was != is {
+                    push(TypeChange::ShorthandChanged {
+                        before: was.map(str::to_owned),
+                        after: is.map(str::to_owned),
+                    });
+                }
             }
             (None, None) => unreachable!("a key came from one of the two maps"),
         }
@@ -2338,11 +2346,18 @@ fn declarations<'a>(
 /// introduced serialized fields visible by default, even beside an already classified edit.
 /// This value is internal equality evidence; it is never persisted as a change/property bag.
 fn residual(mut value: serde_json::Value) -> serde_json::Value {
-    // `undeclared_fields_ignored` (`ess/24`) is compared per type both revisions declare as
-    // `undeclared-fields-changed`; a type in one revision only is its own `added` or `removed`.
+    // `undeclared_fields_ignored` (`ess/24`) and `shorthands` (`ess/27`) are compared per type both
+    // revisions declare, as `undeclared-fields-changed` and `shorthand-changed`; a type in one
+    // revision only is its own `added` or `removed`.
     remove_keys(
         &mut value,
-        &["system", "version", "summary", "undeclared_fields_ignored"],
+        &[
+            "system",
+            "version",
+            "summary",
+            "undeclared_fields_ignored",
+            "shorthands",
+        ],
     );
     for family in RESIDUAL_FAMILIES {
         if let Some(declarations) = value

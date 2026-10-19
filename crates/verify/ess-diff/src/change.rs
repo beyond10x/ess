@@ -438,6 +438,10 @@ impl SemanticChange {
                 changed: CommandChange::ResponseUndeclaredFieldsChanged { .. },
                 ..
             } => UNDECLARED_FIELDS_DELTA_FORMAT,
+            Self::Type {
+                changed: TypeChange::ShorthandChanged { .. },
+                ..
+            } => SHORTHAND_DELTA_FORMAT,
             Self::View {
                 changed: ViewChange::AbsentChanged { .. },
                 ..
@@ -804,6 +808,13 @@ pub const UNDECLARED_FIELDS_DELTA_FORMAT: u32 = 18;
 /// that carries one is classified even when nobody asked.
 pub const ABSENT_DELTA_FORMAT: u32 = 19;
 
+/// The first delta format whose vocabulary has `shorthand-changed` on a type: a struct's
+/// `shorthand:` declared, dropped or moved (`ess/27`, beyond10x/ess#594).
+///
+/// Above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT) too, so a delta
+/// that carries one is classified even when nobody asked.
+pub const SHORTHAND_DELTA_FORMAT: u32 = 20;
+
 /// A domain entered in, or dropped from, the system's `domains:` list.
 ///
 /// Only the arrival and the departure. A domain's member sets are derived from each construct's
@@ -1097,6 +1108,19 @@ pub enum TypeChange {
         /// What it does.
         after: ess_domain::types::UndeclaredFields,
     },
+    /// A struct's `shorthand:` declared, dropped or moved to another field (`ess/27`,
+    /// beyond10x/ess#594), each side the field's declared name. Only an `ess-diff/20` delta
+    /// carries it.
+    ///
+    /// Declaring one widens what the struct admits: every long form, and now the field's scalar
+    /// alone. Dropping one, or moving it to another field, narrows: a short form written against
+    /// the earlier revision is refused, or read as another field.
+    ShorthandChanged {
+        /// The field it could be written as, if any.
+        before: Option<String>,
+        /// The field it can be written as, if any.
+        after: Option<String>,
+    },
 }
 
 /// How a record's `undeclared_fields:` moving relates the revisions: opening it widens what it
@@ -1142,6 +1166,7 @@ impl TypeChange {
             Self::PrefixRemoved { .. } => "prefix-removed",
             Self::PrefixChanged { .. } => "prefix-changed",
             Self::UndeclaredFieldsChanged { .. } => "undeclared-fields-changed",
+            Self::ShorthandChanged { .. } => "shorthand-changed",
         }
     }
 
@@ -1182,8 +1207,14 @@ impl TypeChange {
     /// does not — and telling those apart is a rule this slice does not have.
     pub fn relation(&self) -> SemanticRelation {
         match self {
-            Self::VariantAdded { .. } => SemanticRelation::Expanded,
-            Self::VariantRemoved { .. } => SemanticRelation::Narrowed,
+            Self::VariantAdded { .. }
+            | Self::ShorthandChanged {
+                before: None,
+                after: Some(_),
+            } => SemanticRelation::Expanded,
+            Self::VariantRemoved { .. } | Self::ShorthandChanged { .. } => {
+                SemanticRelation::Narrowed
+            }
             Self::AlphabetChanged { before, after } => {
                 alphabet_relation(before.as_deref(), after.as_deref())
             }
@@ -1273,6 +1304,11 @@ impl TypeChange {
             Self::UndeclaredFieldsChanged { before, after } => {
                 format!("undeclared fields {before} → {after}")
             }
+            Self::ShorthandChanged { before, after } => format!(
+                "shorthand {} → {}",
+                optional(before.as_ref()),
+                optional(after.as_ref())
+            ),
             Self::InvariantsChanged { before, after } => format!(
                 "invariants [{}] → [{}]",
                 before.join("; "),

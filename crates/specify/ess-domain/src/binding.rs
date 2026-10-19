@@ -2750,6 +2750,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
                     ],
                     invariants: Vec::new(),
                     undeclared_fields: None,
+                    shorthand: None,
                 },
             ),
             (

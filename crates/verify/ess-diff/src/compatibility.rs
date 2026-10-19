@@ -52,6 +52,7 @@
 //! | a refusal gains or loses its compensating change (`compensates: true`, ess/22) | breaking for callers and readers; compatible for history |
 //! | an input whose type is not `Optional` added, or a refusal added or its guard changed so that an input the earlier revision accepted is refused by it, where the guards decide that (`ess-diff/17`) | breaking for callers; unknown for readers; compatible for history |
 //! | a struct opened or closed, `undeclared_fields: ignored` ↔ `refused` (`ess-diff/18`, ess/24) | decided as `expanded`, or `narrowed`: an open record admits every value the closed one did and more |
+//! | a struct's `shorthand:` declared, or dropped or moved to another field (`ess-diff/20`, ess/27) | decided as `expanded`, or `narrowed`: a short form is a value of the struct only while it declares that field |
 //! | a command response opened (`ess-diff/18`) | breaking for readers: one written against the closed response may be sent a field it refuses; compatible for callers and history |
 //! | a command response closed (`ess-diff/18`) | compatible: it carries only what every reader of the open one admitted |
 //! | a view's answer for an identity no row carries gained, lost or changed (`absent:`, `ess-diff/19`, ess/25) | breaking for readers; compatible for callers and history |
@@ -1307,9 +1308,11 @@ impl Residual {
                 }
             }
         }
-        // Which structs ignore undeclared fields (`ess/24`) is a property of each, not a use.
+        // Which structs ignore undeclared fields (`ess/24`), and which may be written as one field
+        // alone (`ess/27`), is a property of each, not a use.
         if let Some(model) = rest.as_object_mut() {
             model.remove("undeclared_fields_ignored");
+            model.remove("shorthands");
         }
         // A payload or mapping target type restates the event, error or command-input field it
         // fills, each of which is read above.

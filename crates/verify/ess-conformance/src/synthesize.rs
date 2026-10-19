@@ -197,6 +197,7 @@ mod repeated_identity;
 mod row_set;
 mod seeds;
 mod set_effects;
+mod shorthand;
 mod singleton;
 mod subject_fact;
 mod value_invariant;
@@ -1148,6 +1149,12 @@ impl RefusalCause {
     #[allow(clippy::too_many_lines)]
     pub fn hint(&self) -> &'static str {
         match self {
+            // A struct a target may answer in its short form (beyond10x/ess#594).
+            Self::NoWitness(gap) if gap.reason == shorthand::OBSERVED => {
+                "no runner decodes a struct's short form yet: keep the struct out of what a \
+                 response, an event, an error or a view carries, or drop `shorthand:` until one \
+                 does"
+            }
             // A gap in what a view lets a scenario observe is repaired by declaring a view, not by
             // changing a value type (beyond10x/ess#132). Every such reason names the view it needs,
             // and says `immediate` where only a `read_your_writes` one will do, or names the
@@ -2299,6 +2306,8 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     // Nor any other row created twice under one literal identity, which a target answers as
     // existing (beyond10x/ess#480).
     repeated_identity::withdraw_repeated_identities(ir, &mut synthesis);
+    // Nor any scenario observing a struct a target may answer in its short form (beyond10x/ess#594).
+    shorthand::withdraw_observed(ir, &mut synthesis);
     // A scenario requiring a branch for an input an input-guarded refusal answers first fails every
     // target that honours the specification, so it is withdrawn and refused (beyond10x/ess#280).
     for refusal in precedence_contradictions(ir, &synthesis.suite) {

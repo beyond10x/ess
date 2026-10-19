@@ -69,6 +69,7 @@ pub mod outcome_group;
 pub mod primitive_admission;
 pub mod refs;
 pub mod selection;
+mod shorthand;
 pub mod spec;
 pub mod system;
 pub mod topology;

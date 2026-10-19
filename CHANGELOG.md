@@ -49,6 +49,23 @@
   a key that is not a string, a number that is not finite, a key written twice or a second
   document is refused, naming the file and pointer. `validate-bundle` now reads JSON numbers as
   `validate` does (https://github.com/beyond10x/ess/issues/591).
+- Source format `ess/27`: a `kind: struct` type may name one field as its shorthand,
+  `shorthand: <field>`, and a value of the struct may then be written as that field alone: with
+  `shorthand: op`, `getIssue` is the value `{op: getIssue}`. The field must be declared, required
+  and a scalar on the wire (a primitive other than `Json`, an enum, or a newtype over one), and
+  every other field `Optional`; each breach is refused by name at `<type>.shorthand`, the key on
+  any other declaration as `unsupported_construct`, and below `ess/27` as
+  `unsupported_format_version` naming `ess/27`. The IR names the shorthands beside the types
+  (`shorthands`, omitted when empty, so a model without the key keeps its bytes and digest), and
+  the JSON Schema, OpenAPI and AsyncAPI definition of such a struct is `oneOf` the field's schema
+  and the closed object, annotated `x-ess-shorthand` with the field's wire name
+  (https://github.com/beyond10x/ess/issues/594). The generated Rust, Go and TypeScript model
+  types read the short form beside the object; a numeric shorthand field is refused for Rust.
+  `ess verify diff` writes `ess-diff/20` for a struct whose `shorthand:` was declared
+  (`expanded`), dropped or moved (`narrowed`), as
+  `type/<name>/shorthand-changed`. Synthesis of a Rust or Go server or the web app refuses such a
+  struct by name, since their codecs decode it from its object only, and conformance withdraws
+  each scenario that would observe one, refusing it with the type.
 
 ### Fixed
 

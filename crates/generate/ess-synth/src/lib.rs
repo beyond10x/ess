@@ -488,6 +488,7 @@ fn emit(
     failure::binary64(ir, &plan, target)?;
     failure::input_absent(ir, &plan, target)?;
     failure::one_time_response(ir, &plan, target)?;
+    failure::shorthand(ir, &plan, target)?;
     set_effects::refuse(ir, &plan, target)?;
     paging::refuse(ir, &plan, target)?;
     failure::binding_policies(ir, &plan, target)?;

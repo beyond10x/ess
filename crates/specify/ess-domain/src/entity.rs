@@ -2084,6 +2084,7 @@ invariants:
                     ],
                     invariants: Vec::new(),
                     undeclared_fields: None,
+                    shorthand: None,
                 },
                 naming: Naming::default(),
             })
