@@ -958,7 +958,7 @@ pub struct ResolvedOutcome {
     /// One line for generated documentation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Carried through from the declaration so a projection can publish it. Empty by default.
     #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
@@ -1886,7 +1886,7 @@ pub struct ResolvedCommand {
     pub outcomes: Vec<ResolvedOutcome>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Carried through from the declaration so a projection can publish it. Empty by default.
     #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
@@ -2719,7 +2719,7 @@ pub struct ResolvedBinding {
     pub refusal_policy: Option<ResolvedRefusalPolicy>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Carried through from the declaration so a projection can publish it. Empty by default.
     #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
@@ -2875,7 +2875,7 @@ pub struct ResolvedComponent {
     /// moved every committed artifact in the repository for a statement no author made.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub settings: Vec<ResolvedComponentSetting>,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Carried through from the declaration so a projection can publish it. Empty by default.
     #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]

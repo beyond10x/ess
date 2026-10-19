@@ -121,7 +121,7 @@ impl ObjectRef {
         }
     }
 
-    /// The filename stem this object's artifact is written under: `shop.deployment.storefront`.
+    /// The filename stem this object's artifact is written under: `shop.deployment.web`.
     ///
     /// Injective over the objects a projection can reach, which is what makes it safe as a
     /// filename. A namespace is a DNS-1123 *label* and cannot contain a dot, and the kind comes

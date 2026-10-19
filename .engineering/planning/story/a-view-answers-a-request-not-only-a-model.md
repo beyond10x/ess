@@ -6,7 +6,7 @@ status: archived
 title: A view answers a request, not only a model
 relations:
 - decomposes: epic:specification-runs-as-a-fake-backend
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "archived", at: "2026-09-14T22:49:59Z", actor: "human:timo", revision: 3, imported: true}
 ---
@@ -24,7 +24,7 @@ transitions:
 
 All four became hand-written JavaScript sitting between the module and the browser: a paginator, an
 id resolver, and an account filter re-derived per request. A defect hid there for three rounds —
-`/api/v2/queues` was never scoped to a customer at all, though the controller it was lifted from
+the queue listing endpoint was never scoped to a customer at all, though the controller it was lifted from
 pins one, and no test caught it because no test had two accounts.
 
 That defect is the argument. A hand-written filter is a filter nothing validates against the model.

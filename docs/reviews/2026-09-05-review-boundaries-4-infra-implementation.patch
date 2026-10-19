@@ -1044,7 +1044,7 @@ index ebfe385..27e90e0 100644
 +        let mut bench = Workbench::new(&ir);
 +        let before = serde_json::to_vec(&bench.working.document()).unwrap();
 +        let change = Change::Replicas {
-+            workload: "shop/deployment/flaky-agent".to_owned(),
++            workload: "shop/deployment/worker-agent".to_owned(),
 +            from: 1,
 +            to: 2,
 +        };
@@ -1071,7 +1071,7 @@ index ebfe385..27e90e0 100644
 +            .record_admitted(&change, candidate)
 +            .expect("the same intended change can be admitted and recorded");
 +        assert_eq!(
-+            bench.working.model().workloads["shop/deployment/flaky-agent"].replicas,
++            bench.working.model().workloads["shop/deployment/worker-agent"].replicas,
 +            Some(2)
 +        );
 +        assert_eq!(bench.drafts.len(), 1);

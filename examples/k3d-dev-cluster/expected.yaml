@@ -11,10 +11,10 @@ name: k3d dev cluster, as it ought to be
 
 expectations:
   # --- workload_exists ------------------------------------------------------------------------
-  - id: storefront-exists
-    statement: the storefront deployment is the reason this cluster exists
+  - id: web-exists
+    statement: the web deployment is the reason this cluster exists
     expect:
-      workload_exists: {namespace: shop, workload_kind: deployment, name: storefront-server}
+      workload_exists: {namespace: shop, workload_kind: deployment, name: web-server}
 
   - id: checkout-exists
     statement: checkout was never deployed here; this expectation exists to say so out loud
@@ -22,9 +22,9 @@ expectations:
       workload_exists: {namespace: shop, workload_kind: deployment, name: checkout-api}
 
   # --- replicas_within ------------------------------------------------------------------------
-  - id: storefront-replicas
+  - id: web-replicas
     scope:
-      workload_selector: {app.kubernetes.io/name: storefront-server}
+      workload_selector: {app.kubernetes.io/name: web-server}
     expect:
       replicas_within: {min: 2, max: 4}
 
@@ -40,9 +40,9 @@ expectations:
       replicas_within: {min: 1, max: 4}
 
   # --- resources_declared ---------------------------------------------------------------------
-  - id: storefront-resources
+  - id: web-resources
     scope:
-      workload_selector: {app.kubernetes.io/name: storefront-server}
+      workload_selector: {app.kubernetes.io/name: web-server}
     expect: resources_declared
 
   # The one expectation in this file that carries a `remedy:` — the value a projection writes
@@ -77,15 +77,15 @@ expectations:
       probes_declared: {liveness: true}
 
   # --- image_registry -------------------------------------------------------------------------
-  - id: switchboard-registry
+  - id: relay-registry
     scope:
-      workload_selector: {app.kubernetes.io/name: devspace-app}
+      workload_selector: {app.kubernetes.io/name: tooling-app}
     expect:
       image_registry: {allowed: [registry.example.com]}
 
-  - id: flaky-agent-registry
+  - id: worker-agent-registry
     scope:
-      workload_selector: {app: flaky-agent}
+      workload_selector: {app: worker-agent}
     expect:
       image_registry: {allowed: [registry.example.com]}
 
@@ -93,12 +93,12 @@ expectations:
   - id: shop-registry
     scope: {namespace: shop}
     expect:
-      image_registry: {allowed: [registry.example.com, "localhost:31721", registry.local]}
+      image_registry: {allowed: [registry.example.com, "registry.example.test:31721", registry.example.test]}
 
   # --- image_tag_not_latest -------------------------------------------------------------------
-  - id: storefront-tag
+  - id: web-tag
     scope:
-      workload_selector: {app.kubernetes.io/name: storefront-server}
+      workload_selector: {app.kubernetes.io/name: web-server}
     expect: image_tag_not_latest
 
   - id: shop-tags
@@ -151,9 +151,9 @@ expectations:
       namespace_allowlist: {allowed: [shop]}
 
   # --- workload_predicate ---------------------------------------------------------------------
-  - id: flaky-agent-one-container
+  - id: worker-agent-one-container
     scope:
-      workload_selector: {app: flaky-agent}
+      workload_selector: {app: worker-agent}
     expect:
       workload_predicate: workload.containers == 1
 

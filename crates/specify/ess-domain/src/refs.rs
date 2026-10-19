@@ -12,14 +12,14 @@
 //! the conversation: the ticket, the incident, the decision record. So a construct names the record
 //! and the record keeps the prose.
 //!
-//! The spelling is `provider:key` — `jira:DEV-630`, `zendesk:204519` — which is AEP's spelling for
+//! The spelling is `provider:key` — `jira:EX-1`, `zendesk:204519` — which is AEP's spelling for
 //! the same idea on a planning artifact, resolved through the same `providers:` map in
 //! `.engineering/project.yaml`. One vocabulary across both tools, so a repository that records a
 //! ticket on a story and on the binding that story produced writes it the same way twice.
 //!
 //! # The URL is not here
 //!
-//! A reference is `jira:DEV-630` and never `https://…/DEV-630`. A model that carried the host would
+//! A reference is `jira:EX-1` and never `https://…/EX-1`. A model that carried the host would
 //! have to be rewritten when a tracker moves, in every construct that named one, and the copies are
 //! exactly what is wrong after a migration. A projection that wants a link builds one from the
 //! project's map; a provider with no entry renders as text, because a link that opens the wrong
@@ -35,7 +35,7 @@ use ess_primitives::error::ParseError;
 pub struct ExternalRef {
     /// The system holding the record, such as `jira`.
     pub provider: String,
-    /// Its key in that system, such as `DEV-630`.
+    /// Its key in that system, such as `EX-1`.
     pub reference: String,
 }
 
@@ -46,7 +46,7 @@ impl ExternalRef {
             |reason: String| Err(ParseError::identifier("external reference", value, reason));
 
         let Some((provider, reference)) = value.split_once(':') else {
-            return reject("must be written `provider:key`, such as `jira:DEV-630`".to_owned());
+            return reject("must be written `provider:key`, such as `jira:EX-1`".to_owned());
         };
         if provider.is_empty() || reference.is_empty() {
             return reject("has an empty provider or key".to_owned());
@@ -65,7 +65,7 @@ impl ExternalRef {
         if reference.trim() != reference {
             return reject("has a key with leading or trailing whitespace".to_owned());
         }
-        // The one mistake worth naming. `https://tracker.example/DEV-630` splits into a provider
+        // The one mistake worth naming. `https://tracker.example/EX-1` splits into a provider
         // `https` — lower-case letters, so otherwise legal — and a key that is the rest of a URL,
         // which would become a provider nobody declared and a link nobody can build. It is also
         // exactly what somebody reaches for first.
@@ -181,18 +181,18 @@ mod tests {
 
     #[test]
     fn a_reference_is_a_provider_and_a_key_and_round_trips() {
-        let parsed = ExternalRef::parse("jira:DEV-630").expect("valid");
+        let parsed = ExternalRef::parse("jira:EX-1").expect("valid");
         assert_eq!(parsed.provider, "jira");
-        assert_eq!(parsed.reference, "DEV-630");
-        assert_eq!(parsed.to_string(), "jira:DEV-630");
+        assert_eq!(parsed.reference, "EX-1");
+        assert_eq!(parsed.to_string(), "jira:EX-1");
     }
 
     #[test]
     fn a_key_may_hold_a_colon_because_only_the_first_one_separates() {
-        let parsed = ExternalRef::parse("wiki:space:Runbooks/ACD").expect("valid");
+        let parsed = ExternalRef::parse("wiki:space:Runbooks/Billing").expect("valid");
         assert_eq!(parsed.provider, "wiki");
         assert_eq!(
-            parsed.reference, "space:Runbooks/ACD",
+            parsed.reference, "space:Runbooks/Billing",
             "a key is opaque and belongs to the provider, not to this parser"
         );
     }
@@ -201,7 +201,7 @@ mod tests {
     fn a_url_is_refused_where_a_reference_belongs() {
         // The one mistake worth naming: a URL parses as `https` plus a key, which would silently
         // become a provider nobody declared and a link nobody can build.
-        let refusal = ExternalRef::parse("https://tracker.example/DEV-630")
+        let refusal = ExternalRef::parse("https://tracker.example/EX-1")
             .expect_err("refused")
             .to_string();
         assert!(
@@ -212,13 +212,7 @@ mod tests {
 
     #[test]
     fn a_provider_that_is_not_a_key_into_a_map_is_refused() {
-        for bad in [
-            "Jira:DEV-630",
-            "jira :DEV-630",
-            ":DEV-630",
-            "jira:",
-            "DEV-630",
-        ] {
+        for bad in ["Jira:EX-1", "jira :EX-1", ":EX-1", "jira:", "EX-1"] {
             assert!(ExternalRef::parse(bad).is_err(), "`{bad}` should not parse");
         }
     }

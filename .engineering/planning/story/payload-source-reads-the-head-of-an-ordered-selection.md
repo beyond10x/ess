@@ -4,7 +4,7 @@ id: story:payload-source-reads-the-head-of-an-ordered-selection
 kind: story
 status: draft
 title: A payload source reads the head of an ordered selection
-revision: 2
+revision: 3
 ---
 ## Outcome
 
@@ -69,7 +69,7 @@ Each line names the failing test written first.
 
 ## Design pass
 
-Design pass (2026-10-13, unit commit 441b8a35f, merged on `integrate/ess-acd-gaps-20261013` as 09f0846d8): `docs/design/ordered-related-head.md`. Its Fit review answers all seven questions of `.agents/skills/assessing-external-requests/SKILL.md` with citations. Decision: **accept, redesigned**.
+Design pass (2026-10-13, unit commit 441b8a35f, merged on the 2026-10-13 integration branch as 09f0846d8): `docs/design/ordered-related-head.md`. Its Fit review answers all seven questions of `.agents/skills/assessing-external-requests/SKILL.md` with citations. Decision: **accept, redesigned**.
 
 Departures from the decisions above, accepted by the coordinator:
 

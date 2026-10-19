@@ -1,4 +1,4 @@
-   Compiling ess-conformance v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/verify/ess-conformance)
+   Compiling ess-conformance v0.38.0 (<tree>/crates/verify/ess-conformance)
     Finished `test` profile [unoptimized] target(s) in 0.98s
      Running tests/direct_return_port.rs (target/debug/deps/direct_return_port-bb8578869fb9e683)
 

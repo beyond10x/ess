@@ -134,19 +134,19 @@ fn strings(values: &[&str]) -> Vec<String> {
 fn c2_shape() -> Vec<(String, Vec<String>)> {
     vec![
         (
-            "tel.calls.Dial".to_owned(),
+            "desk.calls.Dial".to_owned(),
             strings(&["dialled", "session-expired"]),
         ),
         (
-            "tel.calls.Hold".to_owned(),
+            "desk.calls.Hold".to_owned(),
             strings(&["held", "session-expired", "credential-rejected"]),
         ),
         (
-            "tel.calls.Park".to_owned(),
+            "desk.calls.Park".to_owned(),
             strings(&["parked", "credential-rejected"]),
         ),
         (
-            "tel.calls.Resume".to_owned(),
+            "desk.calls.Resume".to_owned(),
             strings(&["resumed", "credential-rejected"]),
         ),
     ]
@@ -158,33 +158,33 @@ fn c2_shape() -> Vec<(String, Vec<String>)> {
 fn c2_each_member_gains_its_groups_outcomes_after_its_own_in_group_name_order() {
     let spec = Specification::assemble(fixture()).unwrap_or_else(|errors| panic!("{errors}"));
     assert_eq!(
-        outcomes_of(&spec, "tel.calls.Hold"),
+        outcomes_of(&spec, "desk.calls.Hold"),
         strings(&["held", "session-expired", "credential-rejected"]),
         "`audited` sorts before `remote-backed`, although it is declared in the later file"
     );
     assert_eq!(
-        outcomes_of(&spec, "tel.calls.Resume"),
+        outcomes_of(&spec, "desk.calls.Resume"),
         strings(&["resumed", "credential-rejected"])
     );
     assert_eq!(
-        outcomes_of(&spec, "tel.calls.Dial"),
+        outcomes_of(&spec, "desk.calls.Dial"),
         strings(&["dialled", "session-expired"])
     );
     assert_eq!(
-        outcomes_of(&spec, "tel.calls.Park"),
+        outcomes_of(&spec, "desk.calls.Park"),
         strings(&["parked", "credential-rejected"]),
         "the excepted command keeps only its own outcome"
     );
-    let park = &spec.commands()[&"tel.calls.Park".parse().unwrap()];
+    let park = &spec.commands()[&"desk.calls.Park".parse().unwrap()];
     assert_eq!(
         park.outcomes[1].error.as_ref().map(ToString::to_string),
-        Some("tel.session.Expired".to_owned()),
+        Some("desk.session.Expired".to_owned()),
         "Park's own `credential-rejected`, not the group's"
     );
-    let hold = &spec.commands()[&"tel.calls.Hold".parse().unwrap()];
+    let hold = &spec.commands()[&"desk.calls.Hold".parse().unwrap()];
     assert_eq!(
         hold.outcomes[2].error.as_ref().map(ToString::to_string),
-        Some("tel.session.Unauthenticated".to_owned())
+        Some("desk.session.Unauthenticated".to_owned())
     );
     assert_eq!(
         hold.outcomes[2].summary.as_deref(),
@@ -215,7 +215,7 @@ fn a_group_may_be_declared_in_a_file_with_no_domain() {
     ))
     .unwrap_or_else(|errors| panic!("{errors}"));
     assert_eq!(
-        outcomes_of(&spec, "tel.calls.Hold"),
+        outcomes_of(&spec, "desk.calls.Hold"),
         strings(&["held", "session-expired", "credential-rejected"])
     );
 }
@@ -223,11 +223,11 @@ fn a_group_may_be_declared_in_a_file_with_no_domain() {
 #[test]
 fn a_domain_selector_selects_the_commands_its_files_declare() {
     let spec = Specification::assemble(groups(
-        "  - name: everywhere\n    domain: tel.calls\n    except: [tel.calls.Park]\n    outcomes:\n      \
-         - {name: credential-rejected, external: the service rejects it, error: tel.session.Unauthenticated}\n",
+        "  - name: everywhere\n    domain: desk.calls\n    except: [desk.calls.Park]\n    outcomes:\n      \
+         - {name: credential-rejected, external: the service rejects it, error: desk.session.Unauthenticated}\n",
     ))
     .unwrap_or_else(|errors| panic!("{errors}"));
-    for command in ["tel.calls.Hold", "tel.calls.Resume", "tel.calls.Dial"] {
+    for command in ["desk.calls.Hold", "desk.calls.Resume", "desk.calls.Dial"] {
         assert_eq!(
             outcomes_of(&spec, command).last().map(String::as_str),
             Some("credential-rejected"),
@@ -235,7 +235,7 @@ fn a_domain_selector_selects_the_commands_its_files_declare() {
         );
     }
     assert_eq!(
-        outcomes_of(&spec, "tel.calls.Park"),
+        outcomes_of(&spec, "desk.calls.Park"),
         strings(&["parked", "credential-rejected"])
     );
 }
@@ -243,13 +243,13 @@ fn a_domain_selector_selects_the_commands_its_files_declare() {
 #[test]
 fn an_actor_declared_twice_is_selected_by_its_first_declaration() {
     let calls = CALLS.replace(
-        "  - name: tel.calls.Supervisor\n",
-        "  - name: tel.calls.Agent\n    may: [tel.calls.Dial]\n  - name: tel.calls.Supervisor\n",
+        "  - name: desk.calls.Supervisor\n",
+        "  - name: desk.calls.Agent\n    may: [desk.calls.Dial]\n  - name: desk.calls.Supervisor\n",
     );
     let text = format!(
         "{}outcome_groups:
   - name: agents
-    actor: tel.calls.Agent
+    actor: desk.calls.Agent
 {OUTCOME}",
         without_groups(&calls)
     );
@@ -266,11 +266,11 @@ fn an_actor_declared_twice_is_selected_by_its_first_declaration() {
             .clone()
     };
     assert_eq!(
-        of("tel.calls.Dial"),
+        of("desk.calls.Dial"),
         strings(&["dialled"]),
         "the second `Agent` grants nothing to a group"
     );
-    assert_eq!(of("tel.calls.Hold"), strings(&["held", "lost"]));
+    assert_eq!(of("desk.calls.Hold"), strings(&["held", "lost"]));
 }
 
 // Reader errors ------------------------------------------------------------------------------------
@@ -285,7 +285,7 @@ fn parse_error(groups: &str) -> String {
 
 #[test]
 fn a_group_key_the_format_does_not_have_is_a_reader_error() {
-    let error = parse_error("  - name: g\n    commands: [tel.calls.Hold]\n    when: {}\n");
+    let error = parse_error("  - name: g\n    commands: [desk.calls.Hold]\n    when: {}\n");
     assert!(error.contains("unknown field `when`"), "{error}");
 }
 
@@ -293,13 +293,13 @@ fn a_group_key_the_format_does_not_have_is_a_reader_error() {
 fn a_group_outcome_is_only_an_external_refusal() {
     for key in [
         "when: {}",
-        "emits: [tel.calls.CallHeld]",
-        "moves: tel.calls.X.y",
+        "emits: [desk.calls.CallHeld]",
+        "moves: desk.calls.X.y",
         "wrong_state: true",
     ] {
         let error = parse_error(&format!(
-            "  - name: g\n    commands: [tel.calls.Hold]\n    outcomes:\n      - name: o\n        \
-             external: it fails\n        error: tel.session.Expired\n        {key}\n"
+            "  - name: g\n    commands: [desk.calls.Hold]\n    outcomes:\n      - name: o\n        \
+             external: it fails\n        error: desk.session.Expired\n        {key}\n"
         ));
         let field = key.split(':').next().unwrap();
         assert!(
@@ -312,35 +312,35 @@ fn a_group_outcome_is_only_an_external_refusal() {
 #[test]
 fn a_group_outcome_without_external_or_error_is_a_reader_error() {
     let no_external = parse_error(
-        "  - name: g\n    commands: [tel.calls.Hold]\n    outcomes:\n      - {name: o, error: tel.session.Expired}\n",
+        "  - name: g\n    commands: [desk.calls.Hold]\n    outcomes:\n      - {name: o, error: desk.session.Expired}\n",
     );
     assert!(
         no_external.contains("missing field `external`"),
         "{no_external}"
     );
     let no_error = parse_error(
-        "  - name: g\n    commands: [tel.calls.Hold]\n    outcomes:\n      - {name: o, external: it fails}\n",
+        "  - name: g\n    commands: [desk.calls.Hold]\n    outcomes:\n      - {name: o, external: it fails}\n",
     );
     assert!(no_error.contains("missing field `error`"), "{no_error}");
 }
 
 #[test]
 fn a_malformed_group_name_is_a_reader_error() {
-    let error = parse_error("  - name: Remote_Backed\n    commands: [tel.calls.Hold]\n");
+    let error = parse_error("  - name: Remote_Backed\n    commands: [desk.calls.Hold]\n");
     assert!(error.contains("Remote_Backed"), "{error}");
 }
 
 // G1–G16 -------------------------------------------------------------------------------------------
 
-const OUTCOME: &str = "    outcomes:\n      - {name: lost, external: the service drops it, error: tel.session.Expired}\n";
+const OUTCOME: &str = "    outcomes:\n      - {name: lost, external: the service drops it, error: desk.session.Expired}\n";
 
 #[test]
 fn g1_a_group_name_declared_twice_is_refused_once_and_the_later_copy_not_expanded() {
     let errors = refused(tree(
         SYSTEM,
-        &format!("  - name: twice\n    commands: [tel.calls.Hold]\n{OUTCOME}"),
+        &format!("  - name: twice\n    commands: [desk.calls.Hold]\n{OUTCOME}"),
         // The later copy would collide with Hold's own `held` if it were expanded.
-        "  - name: twice\n    commands: [tel.calls.Hold]\n    outcomes:\n      - {name: held, external: x, error: tel.session.Expired}\n",
+        "  - name: twice\n    commands: [desk.calls.Hold]\n    outcomes:\n      - {name: held, external: x, error: desk.session.Expired}\n",
     ));
     let message = only(
         &errors,
@@ -363,7 +363,7 @@ fn g2_a_group_with_no_membership_is_refused() {
 #[test]
 fn g3_a_group_with_two_membership_forms_is_refused_naming_both() {
     let errors = refused(groups(&format!(
-        "  - name: g\n    actor: tel.calls.Agent\n    commands: [tel.calls.Hold]\n{OUTCOME}"
+        "  - name: g\n    actor: desk.calls.Agent\n    commands: [desk.calls.Hold]\n{OUTCOME}"
     )));
     let message = only(
         &errors,
@@ -379,7 +379,7 @@ fn g3_a_group_with_two_membership_forms_is_refused_naming_both() {
 #[test]
 fn g4_a_listed_command_nobody_declares_is_refused() {
     let errors = refused(groups(&format!(
-        "  - name: g\n    commands: [tel.calls.Hold, tel.calls.Nope]\n{OUTCOME}"
+        "  - name: g\n    commands: [desk.calls.Hold, desk.calls.Nope]\n{OUTCOME}"
     )));
     only(
         &errors,
@@ -387,7 +387,7 @@ fn g4_a_listed_command_nobody_declares_is_refused() {
         "outcome_groups.g.commands",
     );
     assert!(
-        hint(&errors).contains("tel.calls.Dial"),
+        hint(&errors).contains("desk.calls.Dial"),
         "{}",
         hint(&errors)
     );
@@ -396,7 +396,7 @@ fn g4_a_listed_command_nobody_declares_is_refused() {
 #[test]
 fn g5_an_actor_selector_naming_no_actor_is_refused() {
     let errors = refused(groups(&format!(
-        "  - name: g\n    actor: tel.calls.Nobody\n{OUTCOME}"
+        "  - name: g\n    actor: desk.calls.Nobody\n{OUTCOME}"
     )));
     only(
         &errors,
@@ -408,7 +408,7 @@ fn g5_an_actor_selector_naming_no_actor_is_refused() {
 #[test]
 fn g6_a_domain_selector_naming_no_domain_is_refused() {
     let errors = refused(groups(&format!(
-        "  - name: g\n    domain: tel.nowhere\n{OUTCOME}"
+        "  - name: g\n    domain: desk.nowhere\n{OUTCOME}"
     )));
     only(
         &errors,
@@ -420,7 +420,7 @@ fn g6_a_domain_selector_naming_no_domain_is_refused() {
 #[test]
 fn g7_except_beside_an_explicit_list_is_refused() {
     let errors = refused(groups(&format!(
-        "  - name: g\n    commands: [tel.calls.Hold]\n    except: [tel.calls.Dial]\n{OUTCOME}"
+        "  - name: g\n    commands: [desk.calls.Hold]\n    except: [desk.calls.Dial]\n{OUTCOME}"
     )));
     only(
         &errors,
@@ -433,7 +433,7 @@ fn g7_except_beside_an_explicit_list_is_refused() {
 #[test]
 fn g8a_an_exception_nobody_declares_is_refused() {
     let errors = refused(groups(&format!(
-        "  - name: g\n    actor: tel.calls.Agent\n    except: [tel.calls.Park, tel.calls.Nope]\n{OUTCOME}"
+        "  - name: g\n    actor: desk.calls.Agent\n    except: [desk.calls.Park, desk.calls.Nope]\n{OUTCOME}"
     )));
     only(
         &errors,
@@ -445,35 +445,35 @@ fn g8a_an_exception_nobody_declares_is_refused() {
 #[test]
 fn g8b_an_exception_the_selector_does_not_select_is_refused() {
     let errors = refused(groups(&format!(
-        "  - name: g\n    actor: tel.calls.Agent\n    except: [tel.calls.Park, tel.calls.Dial]\n{OUTCOME}"
+        "  - name: g\n    actor: desk.calls.Agent\n    except: [desk.calls.Park, desk.calls.Dial]\n{OUTCOME}"
     )));
     let message = only(
         &errors,
         ValidationCode::ConflictingDeclaration,
         "outcome_groups.g.except",
     );
-    assert!(message.contains("tel.calls.Dial"), "{message}");
+    assert!(message.contains("desk.calls.Dial"), "{message}");
 }
 
 #[test]
 fn g9_a_group_whose_membership_is_empty_is_refused() {
-    let observer = CALLS.replace("actors:\n", "actors:\n  - name: tel.calls.Observer\n");
+    let observer = CALLS.replace("actors:\n", "actors:\n  - name: desk.calls.Observer\n");
     for (case, calls, group) in [
         ("an empty list", CALLS.to_owned(), "    commands: []\n"),
         (
             "an actor granted nothing",
             observer,
-            "    actor: tel.calls.Observer\n",
+            "    actor: desk.calls.Observer\n",
         ),
         (
             "a domain with no command",
             CALLS.to_owned(),
-            "    domain: tel.session\n",
+            "    domain: desk.session\n",
         ),
         (
             "everything excepted",
             CALLS.to_owned(),
-            "    actor: tel.calls.Supervisor\n    except: [tel.calls.Dial]\n",
+            "    actor: desk.calls.Supervisor\n    except: [desk.calls.Dial]\n",
         ),
     ] {
         let text = format!(
@@ -497,7 +497,7 @@ fn g9_a_group_whose_membership_is_empty_is_refused() {
 fn g10_a_group_with_no_outcomes_is_refused() {
     for outcomes in ["", "    outcomes: []\n"] {
         let errors = refused(groups(&format!(
-            "  - name: g\n    commands: [tel.calls.Hold]\n{outcomes}"
+            "  - name: g\n    commands: [desk.calls.Hold]\n{outcomes}"
         )));
         only(
             &errors,
@@ -510,9 +510,9 @@ fn g10_a_group_with_no_outcomes_is_refused() {
 #[test]
 fn g11_two_outcomes_of_one_name_in_a_group_are_refused() {
     let errors = refused(groups(
-        "  - name: g\n    commands: [tel.calls.Hold]\n    outcomes:\n      \
-         - {name: lost, external: one, error: tel.session.Expired}\n      \
-         - {name: lost, external: two, error: tel.session.Expired}\n",
+        "  - name: g\n    commands: [desk.calls.Hold]\n    outcomes:\n      \
+         - {name: lost, external: one, error: desk.session.Expired}\n      \
+         - {name: lost, external: two, error: desk.session.Expired}\n",
     ));
     only(
         &errors,
@@ -524,8 +524,8 @@ fn g11_two_outcomes_of_one_name_in_a_group_are_refused() {
 #[test]
 fn g12_an_external_cause_that_is_blank_is_refused() {
     let errors = refused(groups(
-        "  - name: g\n    commands: [tel.calls.Hold]\n    outcomes:\n      \
-         - {name: lost, external: '   ', error: tel.session.Expired}\n",
+        "  - name: g\n    commands: [desk.calls.Hold]\n    outcomes:\n      \
+         - {name: lost, external: '   ', error: desk.session.Expired}\n",
     ));
     only(
         &errors,
@@ -537,8 +537,8 @@ fn g12_an_external_cause_that_is_blank_is_refused() {
 #[test]
 fn g13_c4_an_undeclared_error_is_refused_once_not_once_per_member() {
     let errors = refused(groups(
-        "  - name: g\n    commands: [tel.calls.Hold, tel.calls.Resume, tel.calls.Dial]\n    outcomes:\n      \
-         - {name: lost, external: the service drops it, error: tel.session.Nope}\n",
+        "  - name: g\n    commands: [desk.calls.Hold, desk.calls.Resume, desk.calls.Dial]\n    outcomes:\n      \
+         - {name: lost, external: the service drops it, error: desk.session.Nope}\n",
     ));
     only(
         &errors,
@@ -555,7 +555,7 @@ fn g14_a_member_declaring_the_same_outcome_is_refused_once_at_the_group() {
             .split_once("outcome_groups:\n")
             .unwrap()
             .1
-            .replace("    except: [tel.calls.Park]\n", ""),
+            .replace("    except: [desk.calls.Park]\n", ""),
         SESSION.split_once("outcome_groups:\n").unwrap().1,
     ));
     let message = only(
@@ -563,9 +563,9 @@ fn g14_a_member_declaring_the_same_outcome_is_refused_once_at_the_group() {
         ValidationCode::DuplicateDeclaration,
         "outcome_groups.remote-backed.outcomes.credential-rejected",
     );
-    assert!(message.contains("tel.calls.Park"), "{message}");
+    assert!(message.contains("desk.calls.Park"), "{message}");
     assert!(
-        hint(&errors).contains("list `tel.calls.Park` under `except:`"),
+        hint(&errors).contains("list `desk.calls.Park` under `except:`"),
         "{}",
         hint(&errors)
     );
@@ -579,7 +579,7 @@ fn g14_the_colliding_command_gets_none_of_the_group_and_the_others_do() {
             .split_once("outcome_groups:\n")
             .unwrap()
             .1
-            .replace("    except: [tel.calls.Park]\n", ""),
+            .replace("    except: [desk.calls.Park]\n", ""),
         SESSION.split_once("outcome_groups:\n").unwrap().1,
     );
     let (commands, errors) = expanded(&mut files);
@@ -590,8 +590,8 @@ fn g14_the_colliding_command_gets_none_of_the_group_and_the_others_do() {
 #[test]
 fn g14_under_an_explicit_list_the_hint_says_leave_it_out() {
     let errors = refused(groups(
-        "  - name: g\n    commands: [tel.calls.Hold, tel.calls.Park]\n    outcomes:\n      \
-         - {name: parked, external: x, error: tel.session.Expired}\n",
+        "  - name: g\n    commands: [desk.calls.Hold, desk.calls.Park]\n    outcomes:\n      \
+         - {name: parked, external: x, error: desk.session.Expired}\n",
     ));
     only(
         &errors,
@@ -599,7 +599,7 @@ fn g14_under_an_explicit_list_the_hint_says_leave_it_out() {
         "outcome_groups.g.outcomes.parked",
     );
     assert!(
-        hint(&errors).contains("leave `tel.calls.Park` out of `commands:`"),
+        hint(&errors).contains("leave `desk.calls.Park` out of `commands:`"),
         "{}",
         hint(&errors)
     );
@@ -620,7 +620,7 @@ fn g15_two_groups_giving_one_command_the_same_outcome_are_refused_at_the_later()
         "outcome_groups.remote-backed.outcomes.credential-rejected",
     );
     assert!(
-        message.contains("`audited`") && message.contains("tel.calls.Hold"),
+        message.contains("`audited`") && message.contains("desk.calls.Hold"),
         "{message}"
     );
 
@@ -635,16 +635,16 @@ fn g15_two_groups_giving_one_command_the_same_outcome_are_refused_at_the_later()
             .clone()
     };
     assert_eq!(
-        of("tel.calls.Hold"),
+        of("desk.calls.Hold"),
         strings(&["held"]),
         "neither group wins"
     );
     assert_eq!(
-        of("tel.calls.Dial"),
+        of("desk.calls.Dial"),
         strings(&["dialled", "credential-rejected"])
     );
     assert_eq!(
-        of("tel.calls.Resume"),
+        of("desk.calls.Resume"),
         strings(&["resumed", "credential-rejected"])
     );
 }

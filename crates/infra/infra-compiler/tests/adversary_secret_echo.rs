@@ -42,7 +42,7 @@ fn an_ir_refusal_never_quotes_a_secret_keys_block_that_is_a_bare_value() {
     let ir = infra_compiler::compile(&Observation::try_from(raw).expect("the example reads"));
     let mut document = serde_json::to_value(ir.document()).expect("the document serializes");
     assert_eq!(document["format"], "infra-ir/3");
-    document["model"]["secrets"]["shop/storefront-server"]["keys"] = serde_json::json!(GUESS);
+    document["model"]["secrets"]["shop/web-server"]["keys"] = serde_json::json!(GUESS);
     let canonical = serde_json::to_vec(&document["model"]).expect("the model serializes");
     document["digest"] = serde_json::json!(infra_compiler::digest_of_canonical(&canonical));
     let errors = infra_compiler::read_document(&document)

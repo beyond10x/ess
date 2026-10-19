@@ -10,7 +10,7 @@ scope:
   path: crates/edge/ess-cli
 - confidence: cited
   path: crates/verify/ess-conformance
-revision: 5
+revision: 6
 ---
 ## What this is
 
@@ -76,7 +76,7 @@ that names the defect. A second run over the same specification writes identical
 
 ## Where this came from
 
-Asked for by the operator on 2026-09-04, while settling what `acd/specs` should generate for its
+Asked for by the operator on 2026-09-04, while settling what a downstream specification should generate for its
 67 authored scenarios.
 
 ## Scope

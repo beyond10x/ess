@@ -6,7 +6,7 @@ status: archived
 title: A view may project more than one entity
 relations:
 - decomposes: epic:specification-runs-as-a-fake-backend
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "archived", at: "2026-09-14T22:50:02Z", actor: "human:timo", revision: 3, imported: true}
 ---
@@ -20,7 +20,7 @@ names.
 
 The adopting project's live `GET /api/v2/agents` is a native-SQL projection with `LEFT JOIN`s. Its
 documented response carries `presence`, `status`, `groups`, `tags`, `integration`, `webrtc` and
-`state` — **33 of its properties are not columns of `acd_agent`**, measured by validating the
+`state` — **33 of its properties are not columns of `queue_agent`**, measured by validating the
 modelled response against the repository's own OpenAPI document.
 
 So the view that models it is not incomplete by omission. It is incomplete by construction: there is

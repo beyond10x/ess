@@ -55,7 +55,7 @@ continuing coordinators retain their evidence; none is swept by age or broad GC 
 
 Planned managed ID: `ess-cache-origin`.
 Planned branch: `impl/review-cache-origin`.
-Planned path: `~/.local/state/worktree/trees/b10x/ess/ess-cache-origin`.
+Planned path: `<tree>`.
 Build: that tree's `target`. Scratch: `target/review-boundaries-12/cache-origin` within the unit.
 Cargo home stays within assigned scratch, with literal links to the existing offline registry
 and Git dependency caches as in the previous unit. The current ess-cli package includes the

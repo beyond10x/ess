@@ -4,7 +4,7 @@ id: story:system-issued-command-is-awaited-not-driven
 kind: story
 status: draft
 title: A system-issued command is awaited, not driven
-revision: 2
+revision: 3
 ---
 ## Outcome
 
@@ -75,7 +75,7 @@ Each line names the failing test written first.
 
 ## Design pass
 
-Design pass (2026-10-13, unit commit e6c4b4c46, merged on `integrate/ess-acd-gaps-20261013` as fda971d48): `docs/design/system-issued-commands.md`. Its Fit review answers all seven questions of `.agents/skills/assessing-external-requests/SKILL.md` with citations. Decision: **accept, redesigned**.
+Design pass (2026-10-13, unit commit e6c4b4c46, merged on the 2026-10-13 integration branch as fda971d48): `docs/design/system-issued-commands.md`. Its Fit review answers all seven questions of `.agents/skills/assessing-external-requests/SKILL.md` with citations. Decision: **accept, redesigned**.
 
 Departures from the decisions above, accepted by the coordinator:
 

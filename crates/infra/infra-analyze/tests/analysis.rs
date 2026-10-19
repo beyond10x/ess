@@ -38,46 +38,46 @@ fn properties_carry_declared_and_observed_replicas_per_workload() {
     assert_eq!(coredns.observed_pods, 1, "one pod was observed");
     assert_eq!(coredns.ready_pods, 1, "and it is ready");
 
-    let storefront = all
+    let web = all
         .iter()
-        .find(|entry| entry.workload == "shop/deployment/storefront-server")
-        .expect("storefront-server has properties");
-    assert_eq!(storefront.replicas, Some(2));
-    assert_eq!(storefront.observed_pods, 2);
-    assert_eq!(storefront.ready_pods, 0, "neither pod passes readiness");
+        .find(|entry| entry.workload == "shop/deployment/web-server")
+        .expect("web-server has properties");
+    assert_eq!(web.replicas, Some(2));
+    assert_eq!(web.observed_pods, 2);
+    assert_eq!(web.ready_pods, 0, "neither pod passes readiness");
 }
 
 #[test]
 fn properties_name_the_budgets_and_autoscalers_covering_each_workload() {
     let ir = example_ir();
     let all = properties(&ir);
-    let switchboard = all
+    let relay = all
         .iter()
-        .find(|entry| entry.workload == "shop/statefulset/switchboard")
-        .expect("switchboard has properties");
+        .find(|entry| entry.workload == "shop/statefulset/relay")
+        .expect("relay has properties");
     assert_eq!(
-        switchboard.pod_disruption_budgets.as_deref(),
-        Some(&["shop/switchboard".to_owned()][..]),
-        "the switchboard budget covers the switchboard template"
+        relay.pod_disruption_budgets.as_deref(),
+        Some(&["shop/relay".to_owned()][..]),
+        "the relay budget covers the relay template"
     );
     assert_eq!(
-        switchboard.horizontal_pod_autoscalers.as_deref(),
-        Some(&["shop/switchboard".to_owned()][..]),
+        relay.horizontal_pod_autoscalers.as_deref(),
+        Some(&["shop/relay".to_owned()][..]),
         "the pinned autoscaler targets the statefulset"
     );
 
-    let storefront = all
+    let web = all
         .iter()
-        .find(|entry| entry.workload == "shop/deployment/storefront-server")
-        .expect("storefront-server has properties");
+        .find(|entry| entry.workload == "shop/deployment/web-server")
+        .expect("web-server has properties");
     assert_eq!(
-        storefront.pod_disruption_budgets.as_deref(),
+        web.pod_disruption_budgets.as_deref(),
         Some(&[][..]),
         "scanned and uncovered is an empty list, never None"
     );
     assert_eq!(
-        storefront.horizontal_pod_autoscalers.as_deref(),
-        Some(&["shop/storefront-server".to_owned()][..])
+        web.horizontal_pod_autoscalers.as_deref(),
+        Some(&["shop/web-server".to_owned()][..])
     );
 }
 
@@ -141,12 +141,12 @@ fn the_registry_candidate_names_the_dominant_registry_and_lists_every_exception(
     assert_eq!(
         registry.exceptions.len(),
         3,
-        "the example.com, localhost and registry.local images: {:?}",
+        "the example.com and the two example.test registries' images: {:?}",
         registry.exceptions
     );
     assert!(
         registry.exceptions.iter().any(|exception| exception.subject
-            == "workloads/shop/statefulset/switchboard"
+            == "workloads/shop/statefulset/relay"
             && exception.detail.contains("registry.example.com")),
         "an exception names its subject and what it does instead: {:?}",
         registry.exceptions
@@ -169,7 +169,7 @@ fn a_candidate_with_exceptions_reads_as_uniformity_with_exceptions_not_as_violat
     assert_eq!((coverage.holds_for, coverage.population), (2, 3));
     assert_eq!(
         coverage.exceptions[0].subject,
-        "workloads/shop/deployment/storefront-server"
+        "workloads/shop/deployment/web-server"
     );
 
     let text = candidates_to_text(&mined);
@@ -270,7 +270,7 @@ fn the_directions_text_states_candidate_exceptions_without_prescribing() {
         "a candidate's direction restates the fact: {text}"
     );
     assert!(
-        text.contains("-> workloads/shop/deployment/storefront-server"),
+        text.contains("-> workloads/shop/deployment/web-server"),
         "the exception is the subject to look at: {text}"
     );
 }
@@ -291,7 +291,7 @@ fn the_html_page_sections_by_namespace_aggregates_pods_and_badges_by_worst_findi
     assert!(page.contains("<h2>namespace kube-system</h2>"));
     assert!(page.contains("<h2>namespace shop</h2>"));
     assert!(
-        page.contains("deployment storefront-server — 0/2 ready"),
+        page.contains("deployment web-server — 0/2 ready"),
         "pods appear only aggregated on their workload: {}",
         &page[..600]
     );
@@ -300,7 +300,7 @@ fn the_html_page_sections_by_namespace_aggregates_pods_and_badges_by_worst_findi
         "no pod boxes; a pod name may appear only inside a finding subject"
     );
     assert!(
-        page.contains("deployment flaky-agent — 0/1 ready\"]:::sevError"),
+        page.contains("deployment worker-agent — 0/1 ready\"]:::sevError"),
         "the crash-looping pod's error rolls up to its workload's badge"
     );
     assert!(
@@ -332,7 +332,7 @@ fn the_namespace_filter_scopes_sections_findings_and_directions_alike() {
         "shop's crash loop must not leak into kube-system's page"
     );
     assert!(
-        !page.contains("flaky-agent"),
+        !page.contains("worker-agent"),
         "no shop subject appears anywhere on the filtered page"
     );
 

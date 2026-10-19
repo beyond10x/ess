@@ -20,7 +20,7 @@
 //! # Embedded rather than inlined
 //!
 //! `suite.json` is a file the package embeds with `go:embed`, not a string constant. A generated
-//! purpose reads `` `acd.backend.ConnectAgent` answers `requested` `` — backticks — so a Go raw
+//! purpose reads `` `queue.backend.ConnectAgent` answers `requested` `` — backticks — so a Go raw
 //! string literal cannot hold it, and an interpreted literal would need the whole document escaped
 //! into one unreadable line. As a file it stays diffable, and `git diff` on a model change shows
 //! which scenarios moved.
@@ -602,7 +602,12 @@ mod tests {
             "{}",
             readme.contents
         );
-        assert!(!readme.contents.contains("acd"), "{}", readme.contents);
+        assert_eq!(
+            readme.contents.matches("example.com/").count(),
+            readme.contents.matches("example.com/yourservice").count(),
+            "the README names a module other than the placeholder: {}",
+            readme.contents
+        );
     }
 
     /// Every file the package carries spells the grouped commands the CLI help and the agent

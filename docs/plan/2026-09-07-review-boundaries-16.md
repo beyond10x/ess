@@ -66,7 +66,7 @@ actual exposed command durations and runner counts.
 
 Planned managed ID: ess-delivery-trust-contract.
 Planned branch: impl/review-delivery-trust-contract.
-Planned worktree: ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract.
+Planned worktree: <tree>.
 Default target: that worktree's target, with no target environment override.
 Implementor scratch: target/review-boundaries-16/delivery-trust inside the unit.
 Adversary scratch: target/review-boundaries-16/adversary-pass-1 inside the unit.
@@ -143,7 +143,7 @@ actual Rust/WASM path with 21 claims and 28 steps. The frozen Rust inventory rem
 
 Managed worktree ess-delivery-trust-contract was created at that opening commit on
 impl/review-delivery-trust-contract, with active lease ess-review-delivery-trust-implementation.
-Its path is ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract; its private
+Its path is <tree>; its private
 build directory is target and its evidence scratch is target/review-boundaries-16/delivery-trust.
 The external scratch root is ~/.cache/ess-w16-delivery-tmp. Provisioning, branch creation
 and lease start each returned zero; the complete 50-entry Firefox inventory was verified first.
@@ -166,7 +166,7 @@ prepare other candidates independently; no second implementation is selected.
 
 The three public pages require the workspace's source-lock, Atlas snapshot and delivery gates.
 Prepare a managed Website tree at observed remote main 02271aa02022818a75a99ca3702c8cc00d135b1f,
-ID ess-wave16-website-delivery, path ~/.local/state/worktree/trees/b10x/website/ess-wave16-website-delivery.
+ID ess-wave16-website-delivery, path <tree>.
 Read its own AGENTS.md and keep source-lock refresh after ESS source publication. The Website
 work includes bot-authored commits for the deterministic lock and generated snapshot, followed
 by its gate and publication checks. No Website runtime or organization delivery-control promotion
@@ -202,7 +202,7 @@ scan found no unit producer; the agent reports every session completed.
 
 Source attack1 uses the complete aep-drive:adversary0.8.0 charter through the collaboration adapter,
 with the inherited dirty implementation distinguished from the reviewer’s test-only delta. Its
-scratch is ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/target/review-boundaries-16/adversary-pass-1,
+scratch is <tree>/target/review-boundaries-16/adversary-pass-1,
 assigned TMP ~/.cache/ess-w16-delivery-adversary-1-tmp.
 Counted roots are unit target, implementation TMP and review TMP; combined allowance12GiB,
 free floor8GiB, one producer/two Rust jobs, exact frozen tools and private launch environment.

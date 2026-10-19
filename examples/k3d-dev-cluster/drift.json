@@ -23,7 +23,7 @@
     {
       "change": "removed",
       "kind": "workload",
-      "subject": "shop/deployment/flaky-agent"
+      "subject": "shop/deployment/worker-agent"
     },
     {
       "change": "removed",
@@ -33,13 +33,13 @@
     {
       "change": "replicas_changed",
       "from": 2,
-      "subject": "shop/statefulset/switchboard",
+      "subject": "shop/statefulset/relay",
       "to": 3
     },
     {
       "change": "container_added",
       "container": "metrics-sidecar",
-      "subject": "shop/deployment/storefront-server"
+      "subject": "shop/deployment/web-server"
     },
     {
       "change": "container_removed",
@@ -48,30 +48,30 @@
     },
     {
       "change": "image_changed",
-      "container": "storefront-server",
-      "from": "localhost:31721/apps/storefront-server:AtqQlTV",
-      "subject": "shop/deployment/storefront-server",
-      "to": "localhost:31721/apps/storefront-server:Bx7pQr2"
+      "container": "web-server",
+      "from": "registry.example.test:31721/apps/web-server:AtqQlTV",
+      "subject": "shop/deployment/web-server",
+      "to": "registry.example.test:31721/apps/web-server:Bx7pQr2"
     },
     {
       "change": "resources_changed",
       "container": "redis",
-      "subject": "shop/deployment/queue-redis"
+      "subject": "shop/deployment/cache-redis"
     },
     {
       "change": "probes_changed",
       "container": "redis",
-      "subject": "shop/deployment/queue-redis"
+      "subject": "shop/deployment/cache-redis"
     },
     {
       "change": "environment_changed",
       "container": "redis",
-      "subject": "shop/deployment/queue-redis"
+      "subject": "shop/deployment/cache-redis"
     },
     {
       "change": "environment_changed",
-      "container": "storefront-server",
-      "subject": "shop/deployment/storefront-server"
+      "container": "web-server",
+      "subject": "shop/deployment/web-server"
     },
     {
       "change": "workload_field_changed",
@@ -81,7 +81,7 @@
     {
       "change": "service_field_changed",
       "field": "ports",
-      "subject": "shop/queue-redis-master"
+      "subject": "shop/cache-redis-master"
     },
     {
       "change": "ingress_routing_changed",
@@ -95,7 +95,7 @@
       ],
       "kind": "config_map",
       "removed_keys": [],
-      "subject": "shop/storefront-env"
+      "subject": "shop/web-env"
     },
     {
       "added_keys": [
@@ -105,7 +105,7 @@
       "changed_keys": [],
       "kind": "secret",
       "removed_keys": [],
-      "subject": "shop/storefront-server"
+      "subject": "shop/web-server"
     },
     {
       "change": "claim_phase_changed",
@@ -116,7 +116,7 @@
     {
       "change": "reference_broke",
       "site": "containers[redis].env[REDIS_MAXMEMORY]",
-      "subject": "workloads/shop/deployment/queue-redis",
+      "subject": "workloads/shop/deployment/cache-redis",
       "target": "configmap redis-tuning"
     },
     {
@@ -129,10 +129,10 @@
   "format": "infra-drift/3",
   "from": {
     "context": "k3d-dev-cluster",
-    "digest": "73b68c18c311bd81a36d76b50238ae08ffb0621ae16753ff54b7329778deb785"
+    "digest": "cc80082ad1d7daaf379c946dc8bec0461bc664653b2921d70415de5df5f5cdeb"
   },
   "to": {
     "context": "k3d-dev-cluster",
-    "digest": "04b0d1379a2f9eb4a4941fb8010149af43bca09acad9ce87c8475e01d33ae28e"
+    "digest": "fd64ad477e416575a6b659e545d11af1aa2bd0f773deb07a59279e41c608f22f"
   }
 }

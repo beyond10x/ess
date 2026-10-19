@@ -925,7 +925,7 @@ fn the_detector_finds_each_home_directory_spelling_and_no_portable_one() {
         .map(|marker| format!("the directory {marker} is where such accounts live on a host"))
         .collect();
     for portable in bare.iter().map(String::as_str).chain([
-        "the tree is at ~/.local/state/worktree/trees/b10x/ess/wt-0 on the workstation",
+        "the tree is at ~/.cache/trees/wt-0 on the workstation",
         "the fixture records examples/billing/system.yaml, repository-relative",
         "under crates/edge/ess-cli/tests/fixtures/coverage-producers, and nowhere else",
     ]) {

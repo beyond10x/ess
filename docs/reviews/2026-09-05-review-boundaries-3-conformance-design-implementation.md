@@ -9,7 +9,7 @@ needs-coordinator:      no source patch outside assignment; later Atlas/AEP/adop
 
 Acceptance: a binding migration design specifies unambiguous old/current suite and report semantics for every current producer state and coverage category before a new writer is implemented.
 
-The new document is docs/design/review-conformance-coverage.md in ~/.local/state/worktree/trees/b10x/ess/review-conformance-format-design, based on ESS 45832cc885377b2d61845ee33af14f0293d99e67. Its decisions reserve report/2, suite/5 and detailed run/2, freeze existing meanings/valid bytes, define producer-specific outcome partitions, define exact issued-JSON byte binding, persist selection/coverage, specify strict qualification, and sequence readers before new default writers.
+The new document is docs/design/review-conformance-coverage.md in <tree>, based on ESS 45832cc885377b2d61845ee33af14f0293d99e67. Its decisions reserve report/2, suite/5 and detailed run/2, freeze existing meanings/valid bytes, define producer-specific outcome partitions, define exact issued-JSON byte binding, persist selection/coverage, specify strict qualification, and sequence readers before new default writers.
 
 The document distinguishes source observations from specified future behavior. It does not claim an Atlas ADR, downstream adaptation, compatibility test, or implementation release has shipped.
 
@@ -124,8 +124,8 @@ git diff --check exits 0. The new-file no-index check emits no whitespace diagno
 Authored outside-worktree paths: none.
 
 Authored paths:
-- ~/.local/state/worktree/trees/b10x/ess/review-conformance-format-design/docs/design/review-conformance-coverage.md
-- ~/.local/state/worktree/trees/b10x/ess/review-conformance-format-design/target/review-boundaries-3/implementation-report.md
+- <tree>/docs/design/review-conformance-coverage.md
+- <tree>/target/review-boundaries-3/implementation-report.md
 
 No compiler target or new cache location was created, and no build ran. Free space at final observation was 140,469,350,400 bytes, above the 8,589,934,592-byte reserve. No worktree/cache/build directory was removed.
 

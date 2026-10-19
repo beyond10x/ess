@@ -69,7 +69,7 @@ fn a_replica_count_below_the_range_is_raised_to_the_floor_and_nothing_more() {
         generated(
             &projection,
             "shop-replicas",
-            "workloads/shop/deployment/flaky-agent"
+            "workloads/shop/deployment/worker-agent"
         ),
         "spec.replicas: 1 -> 2",
         "the nearest acceptable count, which the range decides; anything else would be a number \
@@ -115,7 +115,7 @@ fn a_resource_gap_is_patched_only_because_the_specification_states_the_quantitie
     let change = generated(
         &projection,
         "shop-resources",
-        "workloads/shop/deployment/queue-redis",
+        "workloads/shop/deployment/cache-redis",
     );
     assert!(
         change.contains("cpu=25m") && change.contains("cpu=500m"),
@@ -277,7 +277,7 @@ fn a_probe_gap_with_nothing_stated_is_owed_and_says_what_to_write_where() {
         owed(
             &projection,
             "shop-probes",
-            "workloads/shop/deployment/storefront-server"
+            "workloads/shop/deployment/web-server"
         ),
         &ObligationReason::ValueUnstated {
             fields: vec!["probes.liveness".to_owned()],
@@ -295,7 +295,7 @@ fn a_missing_disruption_budget_becomes_a_manifest_built_from_the_workloads_own_s
     let object = projection
         .objects
         .iter()
-        .find(|object| object.target.name == "storefront-server")
+        .find(|object| object.target.name == "web-server")
         .expect("the fixture's multi-replica workload has no budget");
     assert_eq!(object.target.api_version, "policy/v1");
     assert_eq!(
@@ -304,7 +304,7 @@ fn a_missing_disruption_budget_becomes_a_manifest_built_from_the_workloads_own_s
         "the weakest budget the gap itself determines; any other number is a decision"
     );
     let selector = &object.manifest["spec"]["selector"]["matchLabels"];
-    assert_eq!(selector["app.kubernetes.io/name"], "storefront-server");
+    assert_eq!(selector["app.kubernetes.io/name"], "web-server");
     assert!(
         object.manifest["metadata"].get("uid").is_none(),
         "a manifest claims no identity the API server has not assigned"
@@ -373,18 +373,18 @@ fn every_gap_kind_that_needs_a_decision_gets_one_with_the_class_that_names_it() 
             ObligationReason::ObjectUndefined,
         ),
         (
-            "flaky-agent-registry",
-            "workloads/shop/deployment/flaky-agent",
+            "worker-agent-registry",
+            "workloads/shop/deployment/worker-agent",
             ObligationReason::ImageChoice,
         ),
         (
             "shop-tags",
-            "workloads/shop/statefulset/switchboard",
+            "workloads/shop/statefulset/relay",
             ObligationReason::ImageChoice,
         ),
         (
             "shop-digests",
-            "workloads/shop/deployment/queue-redis",
+            "workloads/shop/deployment/cache-redis",
             ObligationReason::ImageChoice,
         ),
         (
@@ -394,7 +394,7 @@ fn every_gap_kind_that_needs_a_decision_gets_one_with_the_class_that_names_it() 
         ),
         (
             "shop-config-refs",
-            "workloads/shop/deployment/flaky-agent",
+            "workloads/shop/deployment/worker-agent",
             ObligationReason::TargetUnknown,
         ),
         (
@@ -592,8 +592,8 @@ fn a_gap_this_projections_own_changes_open_is_marked_as_such_and_closed_in_the_s
     assert_eq!(
         induced,
         vec![
-            "workloads/shop/deployment/flaky-agent",
-            "workloads/shop/deployment/queue-redis"
+            "workloads/shop/deployment/cache-redis",
+            "workloads/shop/deployment/worker-agent"
         ],
         "raising these two to two replicas is what makes them multi-replica workloads a budget \
          has to cover"
@@ -629,7 +629,7 @@ fn one_object_gets_one_patch_file_and_its_type_is_the_one_that_carries_every_cha
     let flaky = projection
         .patches
         .iter()
-        .find(|patch| patch.target.name == "flaky-agent")
+        .find(|patch| patch.target.name == "worker-agent")
         .expect("the fixture patches it");
     assert_eq!(
         flaky.patch_type,

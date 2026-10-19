@@ -69,10 +69,10 @@ fn c1_a_group_and_its_hand_copy_synthesize_byte_identical_suites() {
     let grouped = suite_json(&FIXTURE);
     assert_eq!(grouped, suite_json(&TWIN));
     for scenario in [
-        "tel.calls.Hold/outcome/credential-rejected",
-        "tel.calls.Hold/outcome/session-expired",
-        "tel.calls.Resume/outcome/credential-rejected",
-        "tel.calls.Dial/outcome/session-expired",
+        "desk.calls.Hold/outcome/credential-rejected",
+        "desk.calls.Hold/outcome/session-expired",
+        "desk.calls.Resume/outcome/credential-rejected",
+        "desk.calls.Dial/outcome/session-expired",
     ] {
         assert!(
             grouped.contains(scenario),
@@ -80,7 +80,7 @@ fn c1_a_group_and_its_hand_copy_synthesize_byte_identical_suites() {
         );
     }
     assert!(
-        !grouped.contains("tel.calls.Dial/outcome/credential-rejected"),
+        !grouped.contains("desk.calls.Dial/outcome/credential-rejected"),
         "the Supervisor's command is not an Agent's"
     );
 }

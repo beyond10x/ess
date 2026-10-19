@@ -4,7 +4,7 @@ id: story:authored-scenarios
 kind: story
 status: implemented
 title: A specification carries the scenarios an author wrote, not only the ones it obliges
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-04T11:08:08Z", actor: "human:timo", revision: 2, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-04T11:08:11Z", actor: "human:timo", revision: 3, imported: true}
@@ -33,7 +33,7 @@ suite.
 
 ## Why the generator cannot cover it
 
-Synthesis says so itself. On the ACD model in `an adopting project`, `ess synthesize` reports 73 capabilities —
+Synthesis says so itself. On a downstream model in `an adopting project`, `ess synthesize` reports 73 capabilities —
 54 generated, 16 obligations, **3 refused** — and one refusal reads:
 
 > the contract is declared; the algorithm is not
@@ -44,13 +44,13 @@ specification language should have an answer for and currently does not.
 
 ## The adopter this comes from
 
-`an adopting project` and `acd/acd-rs` hold three behavioural oracles between them, none of them generated, all
+`an adopting project` and its Rust port hold three behavioural oracles between them, none of them generated, all
 of them synced by hand:
 
 | oracle | Go | Rust | kept equal by |
 | --- | --- | --- | --- |
 | routing scenarios | `scenarios/*.yaml`, 11 files | the same 11 | **byte-identical copies** |
-| slotmatcher conformance | 2,530 lines | 822 lines, *"ported from the Go"* | **a hand re-expression** |
+| matcher conformance | 2,530 lines | 822 lines, *"ported from the Go"* | **a hand re-expression** |
 
 The second is the one to look at. A copy diffs; a re-expression does not, and nothing checks that
 the two still say the same thing.

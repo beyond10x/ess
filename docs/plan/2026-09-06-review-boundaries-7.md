@@ -1477,24 +1477,24 @@ Opening21eac63d347d5d1328712cd59dd9ae5edf41aace has verified bot author and comm
 [
   {
     "id": "review-expression-typechecking",
-    "path": "~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking",
+    "path": "<tree>",
     "branch": "impl/review-expression-typechecking",
     "base": "21eac63d347d5d1328712cd59dd9ae5edf41aace",
     "lease": "ess-review-expression-implementation",
-    "build": "~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target",
-    "scratch": "~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target/review-boundaries-7",
-    "brief": "~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target/review-boundaries-7/unit-brief.md",
+    "build": "<tree>/target",
+    "scratch": "<tree>/target/review-boundaries-7",
+    "brief": "<tree>/target/review-boundaries-7/unit-brief.md",
     "stage": "provisioned; brief written; ready for dispatch"
   },
   {
     "id": "review-openapi-semantic-accounting",
-    "path": "~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting",
+    "path": "<tree>",
     "branch": "impl/review-openapi-semantic-accounting",
     "base": "21eac63d347d5d1328712cd59dd9ae5edf41aace",
     "lease": "ess-review-openapi-implementation",
-    "build": "~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target",
-    "scratch": "~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7",
-    "brief": "~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/unit-brief.md",
+    "build": "<tree>/target",
+    "scratch": "<tree>/target/review-boundaries-7",
+    "brief": "<tree>/target/review-boundaries-7/unit-brief.md",
     "stage": "provisioned; brief written; ready for dispatch"
   }
 ]

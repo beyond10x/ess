@@ -102,7 +102,7 @@ impl Document {
 
 /// A page's identity, which is also where a renderer files it.
 ///
-/// Slash-separated and without an extension — `domains/acd-routing`, `index` — because the
+/// Slash-separated and without an extension — `domains/queue-routing`, `index` — because the
 /// extension is the renderer's decision and the identity is not. It is the only thing a
 /// [`Target::Page`] names, which is what stops a link being a path somebody computed.
 #[derive(
@@ -304,7 +304,7 @@ impl Inline {
 ///
 /// Typed, and this is the point of the whole layer. A producer names *what* it is linking to; the
 /// renderer, which is the only thing that knows where it put its pages and what extension they
-/// have, works out the address. `docs.rs` used to compute `../domains/acd-routing.md#dispatch`, and
+/// have, works out the address. `docs.rs` used to compute `../domains/queue-routing.md#dispatch`, and
 /// the site projection had to unpick it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "target", rename_all = "snake_case")]
@@ -404,7 +404,7 @@ mod tests {
     #[test]
     fn a_page_id_says_how_deep_it_is_so_a_renderer_can_reach_the_root() {
         assert_eq!(PageId::from("index").depth(), 0);
-        assert_eq!(PageId::from("domains/acd-routing").depth(), 1);
+        assert_eq!(PageId::from("domains/queue-routing").depth(), 1);
     }
 
     #[test]

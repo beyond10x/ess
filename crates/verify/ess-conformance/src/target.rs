@@ -435,7 +435,7 @@ pub trait ConformanceTarget {
     /// A duration claim can be checked three ways, and each is wrong as a *requirement*. Waiting on
     /// a wall clock is real and makes every suite slow and flaky. Advancing a logical clock is
     /// deterministic and most systems have none to advance. Reporting an elapsed measurement after
-    /// the fact is honest and, on its own, cannot make the twenty seconds of DEV-741's experiment
+    /// the fact is honest and, on its own, cannot make the twenty seconds of an experiment
     /// actually happen.
     ///
     /// So the interface asks for the third and permits the first two to produce it. `hold` says how

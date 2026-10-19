@@ -280,7 +280,7 @@ pub struct RawBindingSpec {
     /// What it is for, in one line.
     #[serde(default)]
     pub summary: Option<String>,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
@@ -1184,7 +1184,7 @@ pub struct BindingSpec {
     pub refusals: Option<refusal::RefusalPolicy>,
     /// What it is called on the wire, and what a person is shown.
     pub naming: Naming,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
@@ -2679,7 +2679,7 @@ when: {event: billing.invoice.InvoiceCreated}
 invoke: {command: billing.email.SendEmail}
 delivery: at_least_once
 on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
-refs: [jira:DEV-630, zendesk:204519]
+refs: [jira:EX-1, zendesk:204519]
 ";
         let raw: RawBindingSpec = ess_yaml::from_str(document).expect("parses");
         let binding = BindingSpec::try_from(raw).expect("a valid binding");
@@ -2689,12 +2689,12 @@ refs: [jira:DEV-630, zendesk:204519]
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>(),
-            vec!["jira:DEV-630".to_owned(), "zendesk:204519".to_owned()],
+            vec!["jira:EX-1".to_owned(), "zendesk:204519".to_owned()],
             "order is the author's: the first reference is usually why the thing exists"
         );
 
         let written = ess_yaml::to_string(&binding).expect("writes");
-        assert!(written.contains("jira:DEV-630"), "{written}");
+        assert!(written.contains("jira:EX-1"), "{written}");
     }
 
     #[test]

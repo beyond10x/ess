@@ -1576,7 +1576,7 @@ impl<'de> serde::Deserialize<'de> for InstanceName {
 /// # Why a duration claim may not have an implicit anchor
 ///
 /// Every step in this vocabulary but this one is anchored by position: an assertion is about the
-/// command before it. A window is not, and the difference is not cosmetic. The ACD end-to-end suite
+/// command before it. A window is not, and the difference is not cosmetic. The end-to-end suite
 /// this feature was built for had a `NeverWithin(observation, duration)` whose window opened
 /// "wherever the preceding block happened to end", so inserting one arrangement step moved every
 /// negative in the file and nothing said so. A window therefore names the instant it opens at, that
@@ -1634,9 +1634,9 @@ impl<'de> serde::Deserialize<'de> for InstantName {
 ///
 /// # Why seconds, and why a whole number of them
 ///
-/// Because the claims that exist are written in them. The ACD suite's five lost windows are 20 s,
-/// 5 s, 20 s, 1 s and 60 s, and every one of them is a configured timer or a sweep interval —
-/// nothing in that population is finer than a second and nothing is expressed as a fraction. A
+/// Because the claims that exist are written in them. Every window this was built for is a
+/// configured timer or a sweep interval of whole seconds, from one second to a minute — nothing in
+/// that population is finer than a second and nothing is expressed as a fraction. A
 /// millisecond field would therefore be four zeroes on every line of every scenario, and a
 /// floating-point one would give two spellings of one value, which is the thing
 /// [`to_canonical_json`](ConformanceSuite::to_canonical_json) cannot have.
@@ -2768,11 +2768,10 @@ pub enum ScenarioStep {
     /// arrives; nothing said a system's own timer had to run first, so a system that fired every
     /// timer immediately passed every suite ESS could write.
     ///
-    /// It is also the only way to say *let the system run for this long* — DEV-741's twenty seconds
-    /// are twenty passes of a one-hertz sweep against a bridged call, and the sweep is the
-    /// experiment. The runner asks the target to let the window close and compares the reading it
-    /// gets back; a target that reports less than the claim asked for **fails**, rather than the
-    /// runner assuming it waited.
+    /// It is also the only way to say *let the system run for this long* — twenty seconds can be
+    /// twenty passes of a one-hertz sweep, and then the sweep is the experiment. The runner asks
+    /// the target to let the window close and compares the reading it gets back; a target that
+    /// reports less than the claim asked for **fails**, rather than the runner assuming it waited.
     ExpectNotBefore {
         /// The instant the window opens at, marked earlier in this scenario.
         instant: InstantName,

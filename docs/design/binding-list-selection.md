@@ -31,7 +31,7 @@ an unwitnessed capability.
 ## Concrete syntax
 
 The following is new syntax within the coordinator's unreleased source capability.
-`example.telephony.CallBody` is an illustrative declared record type, with the same
+`example.calls.CallBody` is an illustrative declared record type, with the same
 relevant member names as the measured records: `id: String`, `domain: Optional<Domain>`
 and `source: Optional<Source>`. The two actual domain variants are `Internal` and
 `External`; no third domain value is introduced. Source literals below must belong
@@ -41,7 +41,7 @@ to that record's declared source enum.
 selection_inputs:
   - name: legs
     from: event.data
-    as: List<Optional<example.telephony.CallBody>>
+    as: List<Optional<example.calls.CallBody>>
 selections:
   - name: first_agent
     first:

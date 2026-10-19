@@ -1,5 +1,5 @@
     Blocking waiting for file lock on build directory
-   Compiling ess-conformance v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/verify/ess-conformance)
+   Compiling ess-conformance v0.38.0 (<tree>/crates/verify/ess-conformance)
     Finished `test` profile [unoptimized] target(s) in 9.11s
      Running tests/direct_return_port.rs (target/debug/deps/direct_return_port-64b4190310c49aa3)
 

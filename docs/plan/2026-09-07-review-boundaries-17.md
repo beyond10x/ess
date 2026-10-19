@@ -59,7 +59,7 @@ reconciliation is assigned.
 |---|---|
 | Managed id | ess-authored-discovery-wave17 |
 | Branch | impl/review-authored-discovery-wave17 |
-| Worktree | ~/.local/state/worktree/trees/b10x/ess/ess-authored-discovery-wave17 |
+| Worktree | <tree> |
 | Build | Worktree's default target directory |
 | Scratch | target/review-boundaries-17/authored-discovery inside the unit |
 | Cargo bookkeeping | target/review-boundaries-17/cargo-home inside the unit |

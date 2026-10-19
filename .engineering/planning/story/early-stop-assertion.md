@@ -21,7 +21,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/target.rs
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-04T13:24:38Z", actor: "human:timo", revision: 3, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-04T13:24:38Z", actor: "human:timo", revision: 4, imported: true}
@@ -39,17 +39,16 @@ separates them. `authored`'s own module documentation says so, under *What is de
 here*: *"No bound here says an ordered scan stopped … a prefix read in silence is still a prefix.
 That is a different feature."*
 
-A migration of forty-five ACD slotmatcher cases into the format hit it twice and refused to fake it.
-`ScanOrdered_EarlyTermination` for the ordered set and for the queue — the Go cases at
-`internal/slotmatcher/conformance/slotset_tests.go:182-196` and `queue_tests.go:252-266` — each add
+A migration of an existing matcher suite into the format hit it twice and refused to fake it.
+`ScanOrdered_EarlyTermination` for the ordered set and for the queue — two Go cases
+— each add
 three elements, return "stop" from the scan after two, and assert that the scan visited two. Written
 as a prefix assertion they would compile, be green against both implementations for reasons
 unrelated to the defect, and look like coverage that does not exist.
 
-The defect they would otherwise hide is measured. `acd-rs` cannot early-stop at all:
+The defect they would otherwise hide is measured. The Rust port cannot early-stop at all:
 `ScoredHeapQueue` has no ordered iterator, and `OrderedSlotSet` has a `for_each` that returns
-nothing beside a materialising `ordered_keys`
-(`acd-rs/crates/acd-slotmatcher/src/slot_set.rs:98,116`). Go can, and pins it.
+nothing beside a materialising `ordered_keys`. Go can, and pins it.
 
 ## What a target has to be able to do
 

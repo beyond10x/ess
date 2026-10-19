@@ -52,7 +52,7 @@ else moved.
    adding a remedy to a committed specification cannot move a committed simulation, and the value a
    patch writes is provably one a human chose. `INFRA-SPEC-009` refuses a remedy beside a kind that
    can never write it, so a specification cannot claim a projection it does not get.
-4. **The projection closes what it opens.** Raising `flaky-agent` from one replica to two satisfies
+4. **The projection closes what it opens.** Raising `worker-agent` from one replica to two satisfies
    `shop-replicas` and immediately breaks `shop-pdb`, which held only because the workload had a
    single replica. Generation is therefore a **fixed point**: each round simulates the specification
    against the working model — the observed one with every change so far applied — and disposes
@@ -132,7 +132,7 @@ case beside it that gets a different answer, which is what keeps the rule from w
 
 Three of the four generating kinds are load-bearing on the committed fixture. The probe *patch* is
 not, deliberately: `shop-probes` is namespace-scoped over four unrelated containers, and one
-liveness probe for `storefront-server`, `switchboard`, `agent` and `redis` would be a guess written
+liveness probe for `web-server`, `relay`, `agent` and `redis` would be a guess written
 as a specification. The fixture carries the obligation instead, and the patch is exercised where a
 single container is in scope (`a_stated_probe_is_written_into_the_container_that_lacks_it`). The
 same asymmetry is the reason `shop-resources` *does* carry a remedy: a namespace-wide default

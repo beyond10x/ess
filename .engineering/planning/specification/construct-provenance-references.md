@@ -11,7 +11,7 @@ tags:
 refs:
 - provider: github
   reference: beyond10x/ess#3
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "in_review", at: "2026-09-03T14:44:08Z", actor: "human:timo", revision: 2, imported: true}
 - {from: "in_review", to: "approved", at: "2026-09-03T14:44:08Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, imported: true}
@@ -58,7 +58,7 @@ The original proposal is preserved below, including the broader event/error and 
 
 ## Acceptance Criteria
 
-- `jira:DEV-630` parses and round-trips as one external reference.
+- `jira:EX-1` parses and round-trips as one external reference.
 - malformed references and URL-shaped values are refused by name.
 - A specification containing references on supported constructs compiles and its generated documentation includes them.
 - `task check` passes at the migrated repository revision.
@@ -91,14 +91,14 @@ Source: `https://github.com/beyond10x/ess/issues/3`
 >
 > ### What this costs, concretely
 >
-> Modelling the ACD v3 → backend boundary in `an adopting project` produced three bindings, each declaring
+> Modelling a downstream system's boundary to its backend in `an adopting project` produced three bindings, each declaring
 > `delivery: at_least_once` and an `on_failure` escalation. Those declarations exist *because* the v1
 > event path silently drops every event other than two, which was found by reading
-> `adapters/backendsvc/svc.go:165`. That sentence is the most valuable thing about the binding and
+> the adapter's source. That sentence is the most valuable thing about the binding and
 > there is nowhere in the model to write it — it lives in a hand-written `README.md` beside the spec,
 > where nothing checks it and `ess generate` cannot reach it.
 >
-> The same is true of a ticket id. A command that exists because of `DEV-630` cannot say so.
+> The same is true of a ticket id. A command that exists because of `EX-1` cannot say so.
 >
 > ### What would fix it
 >
@@ -106,7 +106,7 @@ Source: `https://github.com/beyond10x/ess/issues/3`
 >
 > - `because:` — free prose, the same shape `Conversion` already has.
 > - `refs:` — external references, `provider:key`. AEP added exactly this to its planning artifacts in
->   0.41.0 (`{provider: jira, reference: DEV-630}`, with the URL pattern configured once per project
+>   0.41.0 (`{provider: jira, reference: EX-1}`, with the URL pattern configured once per project
 >   rather than written per artifact), and the two models would then agree on how a ticket is named.
 >
 > Both should reach `ess generate --kind docs`, since documenting the contract is what the generated

@@ -195,17 +195,20 @@ mod tests {
 
     #[test]
     fn an_image_with_a_registry_port_and_no_tag_is_untagged_not_tagged_5000() {
-        let parsed = parse_image("registry.local:5000/team/app");
-        assert_eq!(parsed.repository, "registry.local:5000/team/app");
-        assert_eq!(parsed.registry.as_deref(), Some("registry.local:5000"));
+        let parsed = parse_image("registry.example.test:5000/team/app");
+        assert_eq!(parsed.repository, "registry.example.test:5000/team/app");
+        assert_eq!(
+            parsed.registry.as_deref(),
+            Some("registry.example.test:5000")
+        );
         assert_eq!(parsed.tag, None, "the port is not a tag");
         assert_eq!(parsed.digest, None);
     }
 
     #[test]
     fn a_tagged_image_with_a_registry_port_keeps_both_apart() {
-        let parsed = parse_image("registry.local:5000/team/app:1.2.3");
-        assert_eq!(parsed.repository, "registry.local:5000/team/app");
+        let parsed = parse_image("registry.example.test:5000/team/app:1.2.3");
+        assert_eq!(parsed.repository, "registry.example.test:5000/team/app");
         assert_eq!(parsed.tag.as_deref(), Some("1.2.3"));
     }
 

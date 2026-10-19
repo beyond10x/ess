@@ -337,8 +337,8 @@ mod tests {
 
     #[test]
     fn a_leading_title_becomes_the_page_title_and_not_a_second_heading() {
-        let (title, body) = titled("# The ACD boundary\n\nWhy it exists.\n", "fallback");
-        assert_eq!(title, vec![Inline::text("The ACD boundary")]);
+        let (title, body) = titled("# The billing boundary\n\nWhy it exists.\n", "fallback");
+        assert_eq!(title, vec![Inline::text("The billing boundary")]);
         assert!(matches!(body.as_slice(), [Block::Prose { .. }]), "{body:?}");
 
         // Markdown that opens with prose keeps the caller's title rather than inventing one.

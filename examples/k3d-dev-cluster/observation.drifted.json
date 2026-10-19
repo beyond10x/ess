@@ -25,7 +25,7 @@
       "REGION": "eu-central"
      },
      "metadata": {
-      "name": "storefront-env",
+      "name": "web-env",
       "namespace": "shop",
       "uid": "synthetic-0000-0000-0003"
      }
@@ -138,7 +138,7 @@
            },
            {
             "name": "DEST_IPS",
-            "value": "10.43.2.99"
+            "value": "10.0.0.99"
            }
           ],
           "image": "rancher/klipper-lb:v0.4.9",
@@ -280,15 +280,15 @@
     {
      "metadata": {
       "labels": {
-       "app.kubernetes.io/component": "storefront-server",
-       "app.kubernetes.io/instance": "storefront-server",
+       "app.kubernetes.io/component": "web-server",
+       "app.kubernetes.io/instance": "web-server",
        "app.kubernetes.io/managed-by": "Helm",
-       "app.kubernetes.io/name": "storefront-server",
-       "app.kubernetes.io/part-of": "storefront",
+       "app.kubernetes.io/name": "web-server",
+       "app.kubernetes.io/part-of": "web",
        "app.kubernetes.io/version": "0.3.0",
-       "helm.sh/chart": "storefront-server-0.1.0"
+       "helm.sh/chart": "web-server-0.1.0"
       },
-      "name": "storefront-server",
+      "name": "web-server",
       "namespace": "shop",
       "uid": "878da52b-f5d0-419f-9a5d-877dc0c77225"
      },
@@ -296,21 +296,21 @@
       "replicas": 2,
       "selector": {
        "matchLabels": {
-        "app.kubernetes.io/instance": "storefront-server",
-        "app.kubernetes.io/name": "storefront-server"
+        "app.kubernetes.io/instance": "web-server",
+        "app.kubernetes.io/name": "web-server"
        }
       },
       "template": {
        "metadata": {
         "labels": {
-         "app.kubernetes.io/component": "storefront-server",
-         "app.kubernetes.io/instance": "storefront-server",
+         "app.kubernetes.io/component": "web-server",
+         "app.kubernetes.io/instance": "web-server",
          "app.kubernetes.io/managed-by": "Helm",
-         "app.kubernetes.io/name": "storefront-server",
-         "app.kubernetes.io/part-of": "storefront",
+         "app.kubernetes.io/name": "web-server",
+         "app.kubernetes.io/part-of": "web",
          "app.kubernetes.io/version": "0.3.0",
          "com.example.monitoring-enabled": "true",
-         "helm.sh/chart": "storefront-server-0.1.0"
+         "helm.sh/chart": "web-server-0.1.0"
         }
        },
        "spec": {
@@ -318,117 +318,117 @@
          {
           "env": [
            {
-            "name": "BC_LOG_LEVEL",
+            "name": "APP_LOG_LEVEL",
             "value": "info"
            },
            {
-            "name": "BC_GRPC_LISTEN",
+            "name": "APP_GRPC_LISTEN",
             "value": ":7090"
            },
            {
-            "name": "BC_METRICS_LISTEN",
+            "name": "APP_METRICS_LISTEN",
             "value": ":2121"
            },
            {
-            "name": "BC_GRPCWEB_LISTEN",
+            "name": "APP_GRPCWEB_LISTEN",
             "value": ":7091"
            },
            {
-            "name": "BC_WEB_ROOT",
+            "name": "APP_WEB_ROOT",
             "value": "/web"
            },
            {
-            "name": "BC_BACKEND_BASE",
+            "name": "APP_BACKEND_BASE",
             "value": "http://backend:7777"
            },
            {
-            "name": "BC_INTROSPECT_URL",
+            "name": "APP_INTROSPECT_URL",
             "value": "http://backend:7777/oauth/introspect"
            },
            {
-            "name": "BC_FAYE_URL",
-            "value": "http://pusher:8000/faye"
+            "name": "APP_EVENTS_URL",
+            "value": "http://events:8000/stream"
            },
            {
-            "name": "BC_SIP_ENABLE",
+            "name": "APP_SIGNAL_ENABLE",
             "value": "true"
            },
            {
-            "name": "BC_SIP_UDP_LISTEN",
+            "name": "APP_SIGNAL_UDP_LISTEN",
             "value": ":5082"
            },
            {
-            "name": "BC_SIP_TCP_LISTEN",
+            "name": "APP_SIGNAL_TCP_LISTEN",
             "value": ":5082"
            },
            {
-            "name": "BC_SIP_CONTACT_PORT",
+            "name": "APP_SIGNAL_CONTACT_PORT",
             "value": "5082"
            },
            {
-            "name": "BC_MEDIA_BACKEND",
-            "value": "rtpengine"
+            "name": "APP_MEDIA_BACKEND",
+            "value": "media-proxy"
            },
            {
-            "name": "BC_RTPENGINE_NG_ADDR",
+            "name": "APP_MEDIA_PROXY_ADDR",
             "value": "172.18.0.2:2223"
            },
            {
-            "name": "BC_MEDIA_UDP_PORT_MIN",
+            "name": "APP_MEDIA_UDP_PORT_MIN",
             "value": "41000"
            },
            {
-            "name": "BC_MEDIA_UDP_PORT_MAX",
+            "name": "APP_MEDIA_UDP_PORT_MAX",
             "value": "41100"
            },
            {
-            "name": "BC_TURN_ENABLE",
+            "name": "APP_TUNNEL_ENABLE",
             "value": "true"
            },
            {
-            "name": "BC_TURN_LISTEN",
+            "name": "APP_TUNNEL_LISTEN",
             "value": ":3478"
            },
            {
-            "name": "BC_TURN_REALM",
+            "name": "APP_TUNNEL_REALM",
             "value": "example"
            },
            {
-            "name": "BC_TURN_RELAY_PORT_MIN",
+            "name": "APP_TUNNEL_PORT_MIN",
             "value": "41200"
            },
            {
-            "name": "BC_TURN_RELAY_PORT_MAX",
+            "name": "APP_TUNNEL_PORT_MAX",
             "value": "41300"
            },
            {
-            "name": "BC_TURN_CRED_TTL",
+            "name": "APP_TUNNEL_CRED_TTL",
             "value": "12h"
            },
            {
-            "name": "BC_TURN_SECRET",
+            "name": "APP_TUNNEL_SECRET",
             "valueFrom": {
              "secretKeyRef": {
-              "key": "turn-secret",
-              "name": "storefront-server",
+              "key": "tunnel-secret",
+              "name": "web-server",
               "optional": true
              }
             }
            },
            {
-            "name": "BC_TURN_CLIENT_URL",
-            "value": "turn:127.0.0.1:3478?transport=tcp"
+            "name": "APP_TUNNEL_CLIENT_URL",
+            "value": "tcp://127.0.0.1:3478"
            }
           ],
           "envFrom": [
            {
             "configMapRef": {
-             "name": "storefront-env"
+             "name": "web-env"
             }
            }
           ],
-          "image": "localhost:31721/apps/storefront-server:Bx7pQr2",
-          "name": "storefront-server",
+          "image": "registry.example.test:31721/apps/web-server:Bx7pQr2",
+          "name": "web-server",
           "resources": {
            "limits": {
             "cpu": "2",
@@ -461,7 +461,7 @@
     },
     {
      "metadata": {
-      "name": "queue-redis",
+      "name": "cache-redis",
       "namespace": "shop",
       "uid": "e5a4e66d-5776-4af0-ae9e-8fc2cce9af4f"
      },
@@ -469,13 +469,13 @@
       "replicas": 1,
       "selector": {
        "matchLabels": {
-        "app": "queue-redis"
+        "app": "cache-redis"
        }
       },
       "template": {
        "metadata": {
         "labels": {
-         "app": "queue-redis"
+         "app": "cache-redis"
         }
        },
        "spec": {
@@ -524,7 +524,7 @@
          {
           "name": "data",
           "persistentVolumeClaim": {
-           "claimName": "queue-redis-data"
+           "claimName": "cache-redis-data"
           }
          }
         ]
@@ -598,31 +598,31 @@
    "items": [
     {
      "metadata": {
-      "name": "switchboard",
+      "name": "relay",
       "namespace": "shop",
-      "uid": "synthetic-switchboard-hpa"
+      "uid": "synthetic-relay-hpa"
      },
      "spec": {
       "maxReplicas": 2,
       "minReplicas": 2,
       "scaleTargetRef": {
        "kind": "StatefulSet",
-       "name": "switchboard"
+       "name": "relay"
       }
      }
     },
     {
      "metadata": {
-      "name": "storefront-server",
+      "name": "web-server",
       "namespace": "shop",
-      "uid": "synthetic-storefront-hpa"
+      "uid": "synthetic-web-hpa"
      },
      "spec": {
       "maxReplicas": 3,
       "minReplicas": 1,
       "scaleTargetRef": {
        "kind": "Deployment",
-       "name": "storefront-server"
+       "name": "web-server"
       }
      }
     },
@@ -659,13 +659,13 @@
      "spec": {
       "rules": [
        {
-        "host": "bc.dev.local",
+        "host": "dev.example.test",
         "http": {
          "paths": [
           {
            "backend": {
             "service": {
-             "name": "storefront-server",
+             "name": "web-server",
              "port": {
               "number": 7091
              }
@@ -832,11 +832,11 @@
     {
      "metadata": {
       "labels": {
-       "app.kubernetes.io/component": "switchboard",
+       "app.kubernetes.io/component": "relay",
        "app.kubernetes.io/managed-by": "Helm",
-       "app.kubernetes.io/name": "devspace-app"
+       "app.kubernetes.io/name": "tooling-app"
       },
-      "name": "config-switchboard-0",
+      "name": "config-relay-0",
       "namespace": "shop",
       "uid": "32bffc91-f75a-459a-a0af-9b6e35a58c3d"
      },
@@ -857,7 +857,7 @@
     },
     {
      "metadata": {
-      "name": "queue-redis-data",
+      "name": "cache-redis-data",
       "namespace": "shop",
       "uid": "54ddf450-ebc3-482b-89a6-8d5c9390c78f"
      },
@@ -923,15 +923,15 @@
     },
     {
      "metadata": {
-      "name": "switchboard",
+      "name": "relay",
       "namespace": "shop",
-      "uid": "synthetic-switchboard-pdb"
+      "uid": "synthetic-relay-pdb"
      },
      "spec": {
       "minAvailable": 1,
       "selector": {
        "matchLabels": {
-        "app.kubernetes.io/name": "devspace-app"
+        "app.kubernetes.io/name": "tooling-app"
        }
       }
      }
@@ -947,7 +947,7 @@
       "selector": {
        "matchLabels": {
         "app": "retired",
-        "app.kubernetes.io/name": "devspace-app"
+        "app.kubernetes.io/name": "tooling-app"
        }
       }
      }
@@ -1036,20 +1036,20 @@
     {
      "metadata": {
       "labels": {
-       "app.kubernetes.io/component": "switchboard",
+       "app.kubernetes.io/component": "relay",
        "app.kubernetes.io/managed-by": "Helm",
-       "app.kubernetes.io/name": "devspace-app",
+       "app.kubernetes.io/name": "tooling-app",
        "apps.kubernetes.io/pod-index": "0",
-       "controller-revision-hash": "switchboard-6b55f5755d",
-       "statefulset.kubernetes.io/pod-name": "switchboard-0"
+       "controller-revision-hash": "relay-6b55f5755d",
+       "statefulset.kubernetes.io/pod-name": "relay-0"
       },
-      "name": "switchboard-0",
+      "name": "relay-0",
       "namespace": "shop",
       "ownerReferences": [
        {
         "controller": true,
         "kind": "StatefulSet",
-        "name": "switchboard"
+        "name": "relay"
        }
       ],
       "uid": "90d54813-52bb-48bf-b463-cfd251023473"
@@ -1061,7 +1061,7 @@
      "status": {
       "containerStatuses": [
        {
-        "name": "switchboard",
+        "name": "relay",
         "ready": false,
         "restartCount": 0,
         "state": {
@@ -1077,23 +1077,23 @@
     {
      "metadata": {
       "labels": {
-       "app.kubernetes.io/component": "storefront-server",
-       "app.kubernetes.io/instance": "storefront-server",
+       "app.kubernetes.io/component": "web-server",
+       "app.kubernetes.io/instance": "web-server",
        "app.kubernetes.io/managed-by": "Helm",
-       "app.kubernetes.io/name": "storefront-server",
-       "app.kubernetes.io/part-of": "storefront",
+       "app.kubernetes.io/name": "web-server",
+       "app.kubernetes.io/part-of": "web",
        "app.kubernetes.io/version": "0.3.0",
        "com.example.monitoring-enabled": "true",
-       "helm.sh/chart": "storefront-server-0.1.0",
+       "helm.sh/chart": "web-server-0.1.0",
        "pod-template-hash": "94f65b68f"
       },
-      "name": "storefront-server-94f65b68f-22zfj",
+      "name": "web-server-94f65b68f-22zfj",
       "namespace": "shop",
       "ownerReferences": [
        {
         "controller": true,
         "kind": "ReplicaSet",
-        "name": "storefront-server-94f65b68f"
+        "name": "web-server-94f65b68f"
        }
       ],
       "uid": "92bf3ca6-e40e-436e-9e71-01f55d2e10c8"
@@ -1105,7 +1105,7 @@
      "status": {
       "containerStatuses": [
        {
-        "name": "storefront-server",
+        "name": "web-server",
         "ready": false,
         "restartCount": 0
        }
@@ -1116,23 +1116,23 @@
     {
      "metadata": {
       "labels": {
-       "app.kubernetes.io/component": "storefront-server",
-       "app.kubernetes.io/instance": "storefront-server",
+       "app.kubernetes.io/component": "web-server",
+       "app.kubernetes.io/instance": "web-server",
        "app.kubernetes.io/managed-by": "Helm",
-       "app.kubernetes.io/name": "storefront-server",
-       "app.kubernetes.io/part-of": "storefront",
+       "app.kubernetes.io/name": "web-server",
+       "app.kubernetes.io/part-of": "web",
        "app.kubernetes.io/version": "0.3.0",
        "com.example.monitoring-enabled": "true",
-       "helm.sh/chart": "storefront-server-0.1.0",
+       "helm.sh/chart": "web-server-0.1.0",
        "pod-template-hash": "94f65b68f"
       },
-      "name": "storefront-server-94f65b68f-qz8mp",
+      "name": "web-server-94f65b68f-qz8mp",
       "namespace": "shop",
       "ownerReferences": [
        {
         "controller": true,
         "kind": "ReplicaSet",
-        "name": "storefront-server-94f65b68f"
+        "name": "web-server-94f65b68f"
        }
       ],
       "uid": "386cf8c0-2fe2-4eb1-a985-3c1a3d5c6bdb"
@@ -1144,7 +1144,7 @@
      "status": {
       "containerStatuses": [
        {
-        "name": "storefront-server",
+        "name": "web-server",
         "ready": false,
         "restartCount": 0
        }
@@ -1155,16 +1155,16 @@
     {
      "metadata": {
       "labels": {
-       "app": "queue-redis",
+       "app": "cache-redis",
        "pod-template-hash": "66f544d5b"
       },
-      "name": "queue-redis-66f544d5b-mplh5",
+      "name": "cache-redis-66f544d5b-mplh5",
       "namespace": "shop",
       "ownerReferences": [
        {
         "controller": true,
         "kind": "ReplicaSet",
-        "name": "queue-redis-66f544d5b"
+        "name": "cache-redis-66f544d5b"
        }
       ],
       "uid": "60c9f4d4-82c9-4b04-aab3-703ca6d56677"
@@ -1187,16 +1187,16 @@
     {
      "metadata": {
       "labels": {
-       "app": "flaky-agent",
+       "app": "worker-agent",
        "pod-template-hash": "6d8f9c7b44"
       },
-      "name": "flaky-agent-6d8f9c7b44-x1q2z",
+      "name": "worker-agent-6d8f9c7b44-x1q2z",
       "namespace": "shop",
       "ownerReferences": [
        {
         "controller": true,
         "kind": "ReplicaSet",
-        "name": "flaky-agent-6d8f9c7b44"
+        "name": "worker-agent-6d8f9c7b44"
        }
       ],
       "uid": "synthetic-flaky-pod"
@@ -1306,17 +1306,17 @@
     {
      "metadata": {
       "labels": {
-       "app.kubernetes.io/instance": "storefront-server",
-       "app.kubernetes.io/name": "storefront-server",
+       "app.kubernetes.io/instance": "web-server",
+       "app.kubernetes.io/name": "web-server",
        "pod-template-hash": "94f65b68f"
       },
-      "name": "storefront-server-94f65b68f",
+      "name": "web-server-94f65b68f",
       "namespace": "shop",
       "ownerReferences": [
        {
         "controller": true,
         "kind": "Deployment",
-        "name": "storefront-server"
+        "name": "web-server"
        }
       ],
       "uid": "ee504964-de39-4922-84c0-0c126f1dfffd"
@@ -1328,16 +1328,16 @@
     {
      "metadata": {
       "labels": {
-       "app": "queue-redis",
+       "app": "cache-redis",
        "pod-template-hash": "66f544d5b"
       },
-      "name": "queue-redis-66f544d5b",
+      "name": "cache-redis-66f544d5b",
       "namespace": "shop",
       "ownerReferences": [
        {
         "controller": true,
         "kind": "Deployment",
-        "name": "queue-redis"
+        "name": "cache-redis"
        }
       ],
       "uid": "f76be73f-a062-41f2-bbda-22abe0f8fda6"
@@ -1349,16 +1349,16 @@
     {
      "metadata": {
       "labels": {
-       "app": "flaky-agent",
+       "app": "worker-agent",
        "pod-template-hash": "6d8f9c7b44"
       },
-      "name": "flaky-agent-6d8f9c7b44",
+      "name": "worker-agent-6d8f9c7b44",
       "namespace": "shop",
       "ownerReferences": [
        {
         "controller": true,
         "kind": "Deployment",
-        "name": "flaky-agent"
+        "name": "worker-agent"
        }
       ],
       "uid": "synthetic-flaky-rs"
@@ -1381,21 +1381,21 @@
       "session-key": {
        "present": true
       },
-      "turn-secret": {
+      "tunnel-secret": {
        "present": true
       }
      },
      "metadata": {
       "labels": {
-       "app.kubernetes.io/component": "storefront-server",
-       "app.kubernetes.io/instance": "storefront-server",
+       "app.kubernetes.io/component": "web-server",
+       "app.kubernetes.io/instance": "web-server",
        "app.kubernetes.io/managed-by": "Helm",
-       "app.kubernetes.io/name": "storefront-server",
-       "app.kubernetes.io/part-of": "storefront",
+       "app.kubernetes.io/name": "web-server",
+       "app.kubernetes.io/part-of": "web",
        "app.kubernetes.io/version": "0.3.0",
-       "helm.sh/chart": "storefront-server-0.1.0"
+       "helm.sh/chart": "web-server-0.1.0"
       },
-      "name": "storefront-server",
+      "name": "web-server",
       "namespace": "shop",
       "uid": "48a65258-f9b2-4f9c-a051-2f81fa95eee0"
      },
@@ -1409,14 +1409,14 @@
      },
      "metadata": {
       "labels": {
-       "name": "acd",
-       "owner": "devspace"
+       "name": "cache",
+       "owner": "tooling"
       },
-      "name": "devspace-cache-acd",
+      "name": "cache-secret",
       "namespace": "shop",
       "uid": "e4e580c8-9978-4fca-8063-6f35f2a0468b"
      },
-     "type": "devspace.sh/remote-cache"
+     "type": "example.test/remote-cache"
     },
     {
      "data": {
@@ -1522,15 +1522,15 @@
     {
      "metadata": {
       "labels": {
-       "app.kubernetes.io/component": "storefront-server",
-       "app.kubernetes.io/instance": "storefront-server",
+       "app.kubernetes.io/component": "web-server",
+       "app.kubernetes.io/instance": "web-server",
        "app.kubernetes.io/managed-by": "Helm",
-       "app.kubernetes.io/name": "storefront-server",
-       "app.kubernetes.io/part-of": "storefront",
+       "app.kubernetes.io/name": "web-server",
+       "app.kubernetes.io/part-of": "web",
        "app.kubernetes.io/version": "0.3.0",
-       "helm.sh/chart": "storefront-server-0.1.0"
+       "helm.sh/chart": "web-server-0.1.0"
       },
-      "name": "storefront-server",
+      "name": "web-server",
       "namespace": "shop",
       "uid": "9866e67c-2d2c-4e9b-a007-9d3e30c25520"
      },
@@ -1549,21 +1549,21 @@
         "targetPort": "web"
        },
        {
-        "name": "sip-udp",
+        "name": "signal-udp",
         "port": 5082,
         "protocol": "UDP",
-        "targetPort": "sip-udp"
+        "targetPort": "signal-udp"
        },
        {
-        "name": "turn",
+        "name": "tunnel",
         "port": 3478,
         "protocol": "TCP",
-        "targetPort": "turn"
+        "targetPort": "tunnel"
        }
       ],
       "selector": {
-       "app.kubernetes.io/instance": "storefront-server",
-       "app.kubernetes.io/name": "storefront-server"
+       "app.kubernetes.io/instance": "web-server",
+       "app.kubernetes.io/name": "web-server"
       },
       "type": "ClusterIP"
      }
@@ -1572,9 +1572,9 @@
      "metadata": {
       "labels": {
        "app.kubernetes.io/managed-by": "Helm",
-       "app.kubernetes.io/name": "switchboard"
+       "app.kubernetes.io/name": "relay"
       },
-      "name": "switchboard-headless",
+      "name": "relay-headless",
       "namespace": "shop",
       "uid": "b4663a3e-0cf0-424c-b357-e32e62bdead6"
      },
@@ -1588,16 +1588,16 @@
        }
       ],
       "selector": {
-       "app.kubernetes.io/component": "switchboard",
+       "app.kubernetes.io/component": "relay",
        "app.kubernetes.io/managed-by": "Helm",
-       "app.kubernetes.io/name": "devspace-app"
+       "app.kubernetes.io/name": "tooling-app"
       },
       "type": "ClusterIP"
      }
     },
     {
      "metadata": {
-      "name": "queue-redis-master",
+      "name": "cache-redis-master",
       "namespace": "shop",
       "uid": "4e155239-a852-4472-8413-a7f497e1523a"
      },
@@ -1610,16 +1610,16 @@
        }
       ],
       "selector": {
-       "app": "queue-redis"
+       "app": "cache-redis"
       },
       "type": "ClusterIP"
      }
     },
     {
      "metadata": {
-      "name": "switchboard-client",
+      "name": "relay-client",
       "namespace": "shop",
-      "uid": "synthetic-switchboard-client"
+      "uid": "synthetic-relay-client"
      },
      "spec": {
       "ports": [
@@ -1630,9 +1630,9 @@
        }
       ],
       "selector": {
-       "app.kubernetes.io/component": "switchboard",
+       "app.kubernetes.io/component": "relay",
        "app.kubernetes.io/managed-by": "Helm",
-       "app.kubernetes.io/name": "devspace-app"
+       "app.kubernetes.io/name": "tooling-app"
       },
       "type": "ClusterIP"
      }
@@ -1668,11 +1668,11 @@
     {
      "metadata": {
       "labels": {
-       "app.kubernetes.io/component": "switchboard",
+       "app.kubernetes.io/component": "relay",
        "app.kubernetes.io/managed-by": "Helm",
-       "app.kubernetes.io/name": "devspace-app"
+       "app.kubernetes.io/name": "tooling-app"
       },
-      "name": "switchboard",
+      "name": "relay",
       "namespace": "shop",
       "uid": "9542b207-ea6d-4bc3-b051-c88b4fe51cc6"
      },
@@ -1680,18 +1680,18 @@
       "replicas": 3,
       "selector": {
        "matchLabels": {
-        "app.kubernetes.io/component": "switchboard",
+        "app.kubernetes.io/component": "relay",
         "app.kubernetes.io/managed-by": "Helm",
-        "app.kubernetes.io/name": "devspace-app"
+        "app.kubernetes.io/name": "tooling-app"
        }
       },
-      "serviceName": "switchboard-headless",
+      "serviceName": "relay-headless",
       "template": {
        "metadata": {
         "labels": {
-         "app.kubernetes.io/component": "switchboard",
+         "app.kubernetes.io/component": "relay",
          "app.kubernetes.io/managed-by": "Helm",
-         "app.kubernetes.io/name": "devspace-app"
+         "app.kubernetes.io/name": "tooling-app"
         }
        },
        "spec": {
@@ -1699,16 +1699,16 @@
          {
           "env": [
            {
-            "name": "AGI_HANDLER",
+            "name": "APP_HANDLER",
             "value": "backend"
            },
            {
             "name": "UPLOAD_URL",
-            "value": "http://backend:7777/api/core/internal/recording/upload"
+            "value": "http://backend:7777/api/v1/recording/upload"
            }
           ],
-          "image": "registry.example.com/services/switchboard-8:latest",
-          "name": "switchboard",
+          "image": "registry.example.com/services/relay-8:latest",
+          "name": "relay",
           "resources": {
            "limits": {
             "cpu": "4"
@@ -1719,7 +1719,7 @@
           },
           "volumeMounts": [
            {
-            "mountPath": "/etc/switchboard",
+            "mountPath": "/etc/relay",
             "name": "config"
            }
           ]
