@@ -14,7 +14,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:every-guard-combination-validates-under-the-rule
 - informed_by: story:unknown-instance-and-input-guard-agree-on-order
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -92,3 +92,15 @@ After `story:every-guard-combination-validates-under-the-rule`: it rewrites the 
 `when_related:` arm story 2 removes, and its explorer test runs over story 2's corpus fixture.
 Parallel with `story:unknown-instance-beside-preserving-and-update-selection` (no shared file) and
 with `story:the-language-policy-is-counted-and-cited`.
+
+## Downstream report 2026-10-19
+
+Downstream case (2026-10-19, finding 12): an accepting `when:` branch (`priority == 7`) declared
+before an overlapping input refusal (`priority > 0`) validates (exit 0 on 0.60.0, 0.62.0 and the
+integration build) and synthesis refuses it, ESS-SYNTH-003 "… outside too-high (priority > 0), the
+input-guarded refusal taken first" (`.engineering/repro/narrow-success-before-refusal/system.yaml`).
+The answer order is the documented rule (input refusals step 2, accepting `when:` step 6,
+`docs/design/selection-plan.md:24,28`); the defect is that validation admits a branch the rule makes
+unreachable. Under format A this order is refused as `conflicting_declaration`
+(`docs/design/generic-language-features.md:447`). Idiom today: narrow the refusal,
+`when: {all: ["priority > 0", "priority != 7"]}` (`idiom.yaml` beside it: 3 scenarios, 0 refusals).

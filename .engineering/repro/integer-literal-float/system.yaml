@@ -1,0 +1,57 @@
+format: ess/25
+system: pool
+version: v1
+domain: pool.slots
+summary: A pool is declared with a positive slot count and a label; both are stored and published.
+types:
+  - {name: pool.slots.PoolId, kind: newtype, of: Uuid}
+entities:
+  - name: pool.slots.Pool
+    identity: {name: pool_id, type: pool.slots.PoolId}
+    fields:
+      - {name: slots, type: Integer}
+      - {name: spare, type: Integer}
+      - {name: label, type: String}
+    lifecycle:
+      initial: Declared
+      states: [Declared]
+      terminal: [Declared]
+      transitions: []
+errors:
+  - name: pool.slots.NoSlots
+    summary: A pool needs at least one slot.
+    fields: [{name: submitted, type: Integer}]
+events:
+  - name: pool.slots.PoolDeclared
+    fields:
+      - {name: pool_id, type: pool.slots.PoolId}
+      - {name: slots, type: Integer}
+actors:
+  - name: pool.slots.Operator
+    may: [pool.slots.DeclarePool]
+commands:
+  - name: pool.slots.DeclarePool
+    input:
+      - {name: slots, type: Integer}
+      - {name: spare, type: Integer}
+      - {name: label, type: String}
+    outcomes:
+      - name: no-slots
+        when: slots < 1
+        error: pool.slots.NoSlots
+        payload: {pool.slots.NoSlots: {submitted: input.slots}}
+      - name: declared
+        creates: pool.slots.Pool
+        instance: pool_id
+        emits: [pool.slots.PoolDeclared]
+        payload: {pool.slots.PoolDeclared: {pool_id: {generated: true}, slots: input.slots}}
+        sets: {slots: input.slots, spare: input.spare, label: input.label}
+views:
+  - name: pool.slots.Pools
+    source: pool.slots.Pool
+    consistency: read_your_writes
+    fields:
+      - {name: pool_id, type: pool.slots.PoolId}
+      - {name: slots, type: Integer}
+      - {name: spare, type: Integer}
+      - {name: label, type: String}

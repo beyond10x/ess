@@ -1,0 +1,131 @@
+format: ess/25
+system: seats
+version: v1
+domain: seats.desk
+summary: A seat copies its tier's flag and group when issued; later commands read the copies.
+types:
+  - {name: seats.desk.TierId, kind: newtype, of: Uuid}
+  - {name: seats.desk.SeatId, kind: newtype, of: Uuid}
+  - {name: seats.desk.GroupId, kind: newtype, of: Uuid}
+entities:
+  - name: seats.desk.Group
+    identity: {name: group_id, type: seats.desk.GroupId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+  - name: seats.desk.Tier
+    identity: {name: tier_id, type: seats.desk.TierId}
+    fields:
+      - {name: qualifies, type: Boolean}
+      - {name: group_id, type: seats.desk.GroupId}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: seats.desk.Seat
+    identity: {name: seat_id, type: seats.desk.SeatId}
+    fields:
+      - {name: qualifies, type: Boolean}
+      - {name: group_id, type: seats.desk.GroupId}
+    lifecycle:
+      initial: Open
+      states: [Open, Used, Closed]
+      terminal: [Used, Closed]
+      transitions:
+        - {name: use, from: [Open], to: Used}
+        - {name: close, from: [Open], to: Closed}
+errors:
+  - {name: seats.desk.NotQualified, summary: The seat does not qualify., fields: []}
+  - {name: seats.desk.WrongState, summary: The seat is not open., fields: []}
+events:
+  - name: seats.desk.GroupOpened
+    fields: [{name: group_id, type: seats.desk.GroupId}]
+  - name: seats.desk.TierDefined
+    fields: [{name: tier_id, type: seats.desk.TierId}]
+  - name: seats.desk.Issued
+    fields: [{name: seat_id, type: seats.desk.SeatId}]
+  - name: seats.desk.Used
+    fields: [{name: seat_id, type: seats.desk.SeatId}]
+  - name: seats.desk.GroupClosed
+    fields: [{name: group_id, type: seats.desk.GroupId}]
+actors:
+  - name: seats.desk.Operator
+    may: [seats.desk.OpenGroup, seats.desk.DefineTier, seats.desk.Issue, seats.desk.Use, seats.desk.CloseGroup]
+commands:
+  - name: seats.desk.OpenGroup
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: seats.desk.Group
+        instance: group_id
+        emits: [seats.desk.GroupOpened]
+        payload: {seats.desk.GroupOpened: {group_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: seats.desk.DefineTier
+    input:
+      - {name: qualifies, type: Boolean}
+      - {name: group_id, type: seats.desk.GroupId}
+    outcomes:
+      - name: defined
+        creates: seats.desk.Tier
+        instance: tier_id
+        emits: [seats.desk.TierDefined]
+        payload: {seats.desk.TierDefined: {tier_id: {generated: true}}}
+        sets: {qualifies: input.qualifies, group_id: input.group_id}
+  - name: seats.desk.Issue
+    input:
+      - {name: tier_id, type: seats.desk.TierId}
+    outcomes:
+      - name: issued
+        creates: seats.desk.Seat
+        instance: seat_id
+        emits: [seats.desk.Issued]
+        payload: {seats.desk.Issued: {seat_id: {generated: true}}}
+        sets:
+          qualifies: {related: {via: input.tier_id, field: qualifies}}
+          group_id: {related: {via: input.tier_id, field: group_id}}
+  - name: seats.desk.Use
+    input:
+      - {name: seat_id, type: seats.desk.SeatId}
+    outcomes:
+      - name: not-qualified
+        when_subject: {predicate: qualifies == false}
+        error: seats.desk.NotQualified
+      - name: used
+        moves: seats.desk.Seat.use
+        instance: seat_id
+        emits: [seats.desk.Used]
+        payload: {seats.desk.Used: {seat_id: input.seat_id}}
+      - {name: wrong-state, wrong_state: true, error: seats.desk.WrongState}
+  - name: seats.desk.CloseGroup
+    input:
+      - {name: group_id, type: seats.desk.GroupId}
+    outcomes:
+      - name: closed
+        moves: seats.desk.Group.close
+        instance: group_id
+        emits: [seats.desk.GroupClosed]
+        payload: {seats.desk.GroupClosed: {group_id: input.group_id}}
+        affects:
+          - entity: seats.desk.Seat
+            where: group_id == input.group_id
+            moves: seats.desk.Seat.close
+      - {name: wrong-state, wrong_state: true, error: seats.desk.WrongState}
+views:
+  - name: seats.desk.Seats
+    source: seats.desk.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: seat_id, type: seats.desk.SeatId}
+      - {name: qualifies, type: Boolean}
+      - {name: group_id, type: seats.desk.GroupId}
+      - {name: state, type: seats.desk.Seat.State}
+  - name: seats.desk.Groups
+    source: seats.desk.Group
+    consistency: read_your_writes
+    fields:
+      - {name: group_id, type: seats.desk.GroupId}
+      - {name: state, type: seats.desk.Group.State}

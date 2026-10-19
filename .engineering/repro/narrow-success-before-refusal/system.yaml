@@ -1,0 +1,53 @@
+format: ess/25
+system: narrow
+version: v1
+domain: narrow.lane
+summary: A lane admits the one exempt priority even though priorities above zero are otherwise refused.
+types:
+  - {name: narrow.lane.LaneId, kind: newtype, of: Uuid}
+entities:
+  - name: narrow.lane.Lane
+    identity: {name: lane_id, type: narrow.lane.LaneId}
+    fields:
+      - {name: priority, type: Integer}
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+      transitions: []
+errors:
+  - {name: narrow.lane.TooHigh, summary: The priority is above zero., fields: []}
+events:
+  - name: narrow.lane.LaneOpened
+    fields: [{name: lane_id, type: narrow.lane.LaneId}]
+actors:
+  - name: narrow.lane.Clerk
+    may: [narrow.lane.OpenLane]
+commands:
+  - name: narrow.lane.OpenLane
+    input:
+      - {name: priority, type: Integer}
+    outcomes:
+      - name: exempt
+        when: priority == 7
+        creates: narrow.lane.Lane
+        instance: lane_id
+        emits: [narrow.lane.LaneOpened]
+        payload: {narrow.lane.LaneOpened: {lane_id: {generated: true}}}
+        sets: {priority: input.priority}
+      - name: too-high
+        when: priority > 0
+        error: narrow.lane.TooHigh
+      - name: opened
+        creates: narrow.lane.Lane
+        instance: lane_id
+        emits: [narrow.lane.LaneOpened]
+        payload: {narrow.lane.LaneOpened: {lane_id: {generated: true}}}
+        sets: {priority: input.priority}
+views:
+  - name: narrow.lane.Lanes
+    source: narrow.lane.Lane
+    consistency: read_your_writes
+    fields:
+      - {name: lane_id, type: narrow.lane.LaneId}
+      - {name: priority, type: Integer}
