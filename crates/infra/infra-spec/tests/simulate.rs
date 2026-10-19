@@ -396,8 +396,8 @@ fn a_service_with_no_selector_is_undecidable_rather_than_failing_a_resolution_it
 fn workload_exists_holds_for_each_of_the_three_kinds_and_fails_when_the_kind_is_the_wrong_one() {
     let ir = support::example_ir();
     for (kind, namespace, name) in [
-        ("deployment", "shop", "storefront-server"),
-        ("statefulset", "shop", "switchboard"),
+        ("deployment", "shop", "web-server"),
+        ("statefulset", "shop", "relay"),
         ("daemonset", "kube-system", "svclb-traefik-2290261f"),
     ] {
         let spec = read_spec(&format!(
@@ -415,7 +415,7 @@ fn workload_exists_holds_for_each_of_the_three_kinds_and_fails_when_the_kind_is_
     // name because a deployment may legally share a name with a statefulset.
     let spec = read_spec(
         "format: infra-spec/1\nname: fixture\nexpectations:\n  - id: a\n    expect:\n      \
-         workload_exists: {namespace: shop, workload_kind: statefulset, name: storefront-server}\n",
+         workload_exists: {namespace: shop, workload_kind: statefulset, name: web-server}\n",
     )
     .expect("valid");
     assert_eq!(simulate(&spec, &ir).reports[0].verdict, Truth::False);
@@ -505,7 +505,7 @@ fn a_report_names_every_subject_the_scope_selected_including_the_ones_that_held(
     );
     assert!(report
         .subjects
-        .contains(&"workloads/shop/deployment/storefront-server".to_owned()));
+        .contains(&"workloads/shop/deployment/web-server".to_owned()));
 }
 
 #[test]

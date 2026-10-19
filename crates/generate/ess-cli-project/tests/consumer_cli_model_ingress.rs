@@ -318,7 +318,7 @@ fn entity_identity_fields_naming_and_invariants_change_the_model_only() {
         ("/entities/2/fields/0/type", json!("Integer"), "fields", 2),
         (
             "/entities/0/invariants/0",
-            json!("amount >= 1"),
+            json!("amount <= 1000"),
             "invariants",
             0,
         ),
@@ -347,11 +347,11 @@ fn entity_identity_fields_naming_and_invariants_change_the_model_only() {
         &mut invariant_input,
         1,
         "/entities/0/invariants/0",
-        json!("amount >= 1"),
+        json!("amount <= 1000"),
     );
     let other = admitted(&invariant_input);
     let new = &other.spec.entities()[&name("model.data.Parent")].invariants[0];
-    assert_eq!(new.statement, "amount >= 1");
+    assert_eq!(new.statement, "amount <= 1000");
     assert_ne!(old.predicate, new.predicate);
 }
 

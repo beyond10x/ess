@@ -4,7 +4,7 @@ id: release-plan:consolidated-ess-019
 kind: release-plan
 status: implemented
 title: Consolidate ESS worktrees and release 0.19.0
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "active", at: "2026-09-05T21:15:48Z", actor: "agent:specification-planner", revision: 2, imported: true}
 - {from: "active", to: "implemented", at: "2026-10-06T09:44:37Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":2}}}
@@ -252,12 +252,12 @@ Its three implementation/compatibility trees were retired by that owner during
 this operation, not selected by this session. The release checkout wt-6525314b6daa
 is retained only until its final evidence commits are published and checked; its
 own finish/GC is the last local operation. The temporary clean Atlas authority is
-likewise reserved until bot publication is complete. ACD and IVR specs remain
+likewise reserved until bot publication is complete. The downstream specifications remain
 unchanged throughout this release phase.
 
 The historical 0.17.0 ancestry reconciliation and final handoff are audited above;
 their original commits will be retained without replacing the integrated tree.
 Re-run task release-status against the resulting remote main. The initial exit201
 and draft-reporting defect remain recorded rather than replaced by a clean-history
-claim. Full IVR mapping, Go/TypeScript normalization and the separate Website
+claim. Full mapping of a second downstream system, Go/TypeScript normalization and the separate Website
 delivery are not claimed complete by this release plan.

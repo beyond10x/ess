@@ -1606,7 +1606,7 @@ mod tests {
         let mut bench = Workbench::new(&ir);
         let before = serde_json::to_vec(&bench.working.document()).unwrap();
         let change = Change::Replicas {
-            workload: "shop/deployment/flaky-agent".to_owned(),
+            workload: "shop/deployment/worker-agent".to_owned(),
             from: 1,
             to: 2,
         };
@@ -1633,7 +1633,7 @@ mod tests {
             .record_admitted(&change, candidate)
             .expect("the same intended change can be admitted and recorded");
         assert_eq!(
-            bench.working.model().workloads["shop/deployment/flaky-agent"].replicas,
+            bench.working.model().workloads["shop/deployment/worker-agent"].replicas,
             Some(2)
         );
         assert_eq!(bench.drafts.len(), 1);
@@ -1676,20 +1676,20 @@ mod tests {
 
     #[test]
     fn a_generated_budget_names_no_uid_because_nothing_has_assigned_one() {
-        let target = ObjectRef::disruption_budget("shop", "storefront-server");
+        let target = ObjectRef::disruption_budget("shop", "web-server");
         let mut drafts = BTreeMap::new();
         let mut created = BTreeMap::new();
         record(
             &Change::DisruptionBudget {
                 namespace: "shop".to_owned(),
-                name: "storefront-server".to_owned(),
+                name: "web-server".to_owned(),
                 selector: BTreeMap::from([("app".to_owned(), "shop".to_owned())]),
             },
             &target,
             &mut drafts,
             &mut created,
         );
-        let (_, manifest) = &created["shop/storefront-server"];
+        let (_, manifest) = &created["shop/web-server"];
         assert!(
             manifest["metadata"].get("uid").is_none(),
             "a manifest is what a person commits; the API server assigns the uid: {manifest}"

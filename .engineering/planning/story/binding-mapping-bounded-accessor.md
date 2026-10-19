@@ -98,7 +98,7 @@ scope:
   path: website/docs/guides/write-a-specification.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-11T06:20:42Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1,"review_outcome":5}}, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-11T06:20:42Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"approval":1,"review_outcome":5}}, imported: true}
@@ -131,7 +131,7 @@ is silent about every field beside it. 77 projection fields sat under a line tha
 **It bought a false statement, which is the stronger half.** With the fields in place a row *was* written:
 `CallUpdated → BackendCallEvent`, nine inputs, all read off the envelope leg. The reducer does not work that
 way. `/agent/{id}/calls` pushes a call with both legs (`child`/`parent` in the `'current'` map), and
-`pickLegs` (`consumer-context/internal/grpcsvc/backendstate.go:1074-1090`) walks the `legs` slice and
+`pickLegs` (in the consumer's backend-state reducer) walks the `legs` slice and
 selects **two different elements by predicate** — `Domain == "internal" || Source == "webrtc"` for the agent
 leg, `Domain == "external"` for the other. `mergeCall` then keys the call on `agent.ID` (`:1035`) while
 `From`, `To` and `Anonymous` come off `external` (`:1046-1055`), and `recording` is

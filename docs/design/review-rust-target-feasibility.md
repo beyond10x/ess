@@ -37,7 +37,7 @@ way: by a real specification refusing to emit.
 An entity's lifecycle enum is `X.State`, filed in `ir.types()` like an authored type. A target with
 no dotted type names flattens both it and an authored `XState` to one identifier, and the
 feasibility inventory refused the workspace. A view named for the entity whose state it projects is
-an ordinary thing to write — `acd.routing.CallState` over `acd.routing.Call` — so this refused
+an ordinary thing to write — `queue.routing.CallState` over `queue.routing.Call` — so this refused
 models that are legal, compile, and pass `ess specify validate`. `--target go` emitted the same
 workspace, which is how the model could be legal and unemittable at once.
 

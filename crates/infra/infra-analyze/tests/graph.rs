@@ -44,8 +44,8 @@ fn a_deployment_pod_is_owned_exactly_through_its_observed_replicaset() {
         "pod -> replicaset -> deployment, every rung observed"
     );
     assert_eq!(
-        graph.owner_of("shop/switchboard-0"),
-        Some("shop/statefulset/switchboard"),
+        graph.owner_of("shop/relay-0"),
+        Some("shop/statefulset/relay"),
         "a statefulset pod names its workload directly"
     );
 
@@ -361,9 +361,9 @@ fn the_selector_edge_carries_the_selector_and_the_env_edge_carries_its_site() {
     let selects = graph
         .edges()
         .find(|edge| {
-            edge.relation == EdgeRelation::Selects && edge.to.key == "shop/statefulset/switchboard"
+            edge.relation == EdgeRelation::Selects && edge.to.key == "shop/statefulset/relay"
         })
-        .expect("a service selects the switchboard statefulset");
+        .expect("a service selects the relay statefulset");
     assert!(
         selects.sites[0].starts_with("selector["),
         "the edge's evidence is the selector itself: {:?}",
@@ -374,9 +374,9 @@ fn the_selector_edge_carries_the_selector_and_the_env_edge_carries_its_site() {
         .edges()
         .find(|edge| {
             edge.relation == EdgeRelation::ReadsKeyOf
-                && edge.from.key == "shop/deployment/storefront-server"
+                && edge.from.key == "shop/deployment/web-server"
         })
-        .expect("storefront-server reads a key of its secret");
+        .expect("web-server reads a key of its secret");
     assert!(
         reads
             .sites

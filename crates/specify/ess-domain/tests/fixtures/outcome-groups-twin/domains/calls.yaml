@@ -1,68 +1,68 @@
-domain: tel.calls
+domain: desk.calls
 summary: Calls, placed and held by a remote service.
 events:
-  - name: tel.calls.CallHeld
+  - name: desk.calls.CallHeld
     fields: [{name: call_id, type: Uuid}]
-  - name: tel.calls.CallResumed
+  - name: desk.calls.CallResumed
     fields: [{name: call_id, type: Uuid}]
-  - name: tel.calls.CallParked
+  - name: desk.calls.CallParked
     fields: [{name: call_id, type: Uuid}]
-  - name: tel.calls.CallDialled
+  - name: desk.calls.CallDialled
     fields: [{name: call_id, type: Uuid}]
 commands:
-  - name: tel.calls.Hold
+  - name: desk.calls.Hold
     input: [{name: call_id, type: Uuid}]
     outcomes:
       - name: held
-        emits: [tel.calls.CallHeld]
+        emits: [desk.calls.CallHeld]
         payload:
-          tel.calls.CallHeld:
+          desk.calls.CallHeld:
             call_id: input.call_id
       - name: session-expired
         external: the audit service reports the session expired
-        error: tel.session.Expired
+        error: desk.session.Expired
       - name: credential-rejected
         external: the service rejects the session credential
-        error: tel.session.Unauthenticated
+        error: desk.session.Unauthenticated
         summary: The remote service refused the session.
         refs: [issue:beyond10x/ess#105]
-  - name: tel.calls.Resume
+  - name: desk.calls.Resume
     input: [{name: call_id, type: Uuid}]
     outcomes:
       - name: resumed
-        emits: [tel.calls.CallResumed]
+        emits: [desk.calls.CallResumed]
         payload:
-          tel.calls.CallResumed:
+          desk.calls.CallResumed:
             call_id: input.call_id
       - name: credential-rejected
         external: the service rejects the session credential
-        error: tel.session.Unauthenticated
+        error: desk.session.Unauthenticated
         summary: The remote service refused the session.
         refs: [issue:beyond10x/ess#105]
-  - name: tel.calls.Park
+  - name: desk.calls.Park
     input: [{name: call_id, type: Uuid}]
     outcomes:
       - name: parked
-        emits: [tel.calls.CallParked]
+        emits: [desk.calls.CallParked]
         payload:
-          tel.calls.CallParked:
+          desk.calls.CallParked:
             call_id: input.call_id
       - name: credential-rejected
         external: the parking service reports the session expired
-        error: tel.session.Expired
-  - name: tel.calls.Dial
+        error: desk.session.Expired
+  - name: desk.calls.Dial
     input: [{name: call_id, type: Uuid}]
     outcomes:
       - name: dialled
-        emits: [tel.calls.CallDialled]
+        emits: [desk.calls.CallDialled]
         payload:
-          tel.calls.CallDialled:
+          desk.calls.CallDialled:
             call_id: input.call_id
       - name: session-expired
         external: the audit service reports the session expired
-        error: tel.session.Expired
+        error: desk.session.Expired
 actors:
-  - name: tel.calls.Agent
-    may: [tel.calls.Hold, tel.calls.Resume, tel.calls.Park]
-  - name: tel.calls.Supervisor
-    may: [tel.calls.Dial]
+  - name: desk.calls.Agent
+    may: [desk.calls.Hold, desk.calls.Resume, desk.calls.Park]
+  - name: desk.calls.Supervisor
+    may: [desk.calls.Dial]

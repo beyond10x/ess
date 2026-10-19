@@ -2,14 +2,15 @@
   "apiVersion": "policy/v1",
   "kind": "PodDisruptionBudget",
   "metadata": {
-    "name": "flaky-agent",
+    "name": "web-server",
     "namespace": "shop"
   },
   "spec": {
     "maxUnavailable": 1,
     "selector": {
       "matchLabels": {
-        "app": "flaky-agent"
+        "app.kubernetes.io/instance": "web-server",
+        "app.kubernetes.io/name": "web-server"
       }
     }
   }

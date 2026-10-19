@@ -8,7 +8,7 @@ summary: Draft protocol semantics for peers, messages, exchanges, channels, time
 relations:
 - serves: vision:O2
 - informed_by: epic:message-contract-clients
-revision: 2
+revision: 3
 ---
 # ess-protospec design proposal
 
@@ -68,7 +68,7 @@ is a design recommendation, not an accepted AEP artifact or an implementation co
 | Classification | A semantic gap in conversation modeling and observation. Individual message types and many local state transitions are already expressible. [E1–E4] |
 | Existing idiom | Reuse commands, outcomes, types, views, bindings and current observation mechanisms. Avoid parallel copies of them. A minimal executable comparison against the existing idiom is a prerequisite to adopting new source keys. |
 | Composition | Protocol roles bind to component instances; application actions bind to existing commands; predicates retain their type rules; effects refer to existing message/event types. Network transmission does not silently inherit an application event binding's delivery guarantee. |
-| Independent use | A device controller and a device can exchange numbered operations, acknowledgements and status notifications while handling reconnects and stale replies. This needs the same semantics without telephony-specific concepts. |
+| Independent use | A device controller and a device can exchange numbered operations, acknowledgements and status notifications while handling reconnects and stale replies. This needs the same semantics without domain-specific concepts. |
 | Cost | New source declarations, resolved references, trace operations, suite admission, target capabilities, compatibility classifications and documentation. Every affected target must implement or explicitly refuse them. |
 | Alternatives | Keeping current harnesses, lowering entirely to existing commands, a separate protocol language, and an integrated protocol capability are compared below. |
 

@@ -158,7 +158,7 @@ pub struct RawComponentSpec {
     /// existed digests exactly as it did — the same position `reached_by` and `cli:` took.
     #[serde(default)]
     pub settings: Vec<RawComponentSetting>,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
@@ -478,7 +478,7 @@ pub struct ComponentSpec {
     /// written before this key existed serialises exactly as it did.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub settings: Vec<ComponentSetting>,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]

@@ -26,7 +26,7 @@ Atlas authority is clean at remote main `6035d6e1209686ca474a3f43975fde7d8621ba4
 
 ## Unit records
 
-Absolute root: `~/.local/state/worktree/trees/b10x/ess`. Worktrees below are created from the opening commit; build and scratch paths are relative to each unit tree. No shared target directory.
+Absolute root: `<worktree root>`. Worktrees below are created from the opening commit; build and scratch paths are relative to each unit tree. No shared target directory.
 
 | Story | Branch | Worktree under root | Build | Scratch | Head/stage |
 | --- | --- | --- | --- | --- | --- |

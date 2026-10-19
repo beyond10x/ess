@@ -3214,7 +3214,7 @@ fn gap_blocks(heading: &str, preamble: &str) -> Vec<Block> {
 /// The identity of a bounded context's page, which is also where a renderer files it.
 ///
 /// The dots of a qualified name become hyphens. A dot in a path segment makes a static file server
-/// read `acd.routing` as a name with an extension, so `domains/acd.routing.md` is served as
+/// read `queue.routing` as a name with an extension, so `domains/queue.routing.md` is served as
 /// something it is not or not at all — every one of these pages 404'd behind GitLab Pages until
 /// the adopter carried a rename pass of their own. A generator that emits a route nothing can serve
 /// has not generated documentation.

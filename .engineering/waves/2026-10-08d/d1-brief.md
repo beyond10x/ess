@@ -12,7 +12,7 @@ Read the story: `aep plan artifact show story:a-wire-name-in-a-path-segment-refu
 ## The triple
 
 ```
-worktree:  ~/.local/state/worktree/trees/b10x/ess/ess-wave-20261008d-d1
+worktree:  <tree>
 build dir: <worktree>/target
 scratch:   <worktree>/target/wave-scratch/d1
 ```
@@ -25,7 +25,7 @@ scratch:   <worktree>/target/wave-scratch/d1
 | **not yours** | everything else; `CHANGELOG.md` and `.engineering/**` are the coordinator's |
 
 Invariants: `.engineering/waves/2026-10-08d/invariants.md` in the integration tree
-(`~/.local/state/worktree/trees/b10x/ess/ess-wave-20261008d`). Read it first.
+(`<tree>`). Read it first.
 
 Decided: the refusal lives in validation (`wire::validate`, called from `Specification::validate_after`), because every generated HTTP path comes from `ess_gen::http::routes`. Refuse a wire name of a domain, command or view that contains `/`, or is `.` or `..`, naming the declaration and the wire name. Decide yourself whether views are refused always or only when network-reached, and say which in the report. Examples and committed suites must validate unchanged.
 

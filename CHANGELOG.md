@@ -3291,7 +3291,7 @@
 
 - The `README.md` that `ess verify conform synthesize --target go` writes wires the package into
   `package yourservice_test` importing `example.com/yourservice/essconform`, and says both stand
-  for the adopter's own module. It named `acd_test` and `example.com/acd`, a project unrelated to
+  for the adopter's own module. It named the test package and module of a project unrelated to
   the synthesized system.
 - Generated files spell the grouped commands the CLI help and the agent skills use: the Go and
   TypeScript conformance packages (`README.md` and source headers) say `ess verify conform
@@ -4446,7 +4446,7 @@ retries and absence of physical writes remain adopter-owned acceptance.
   are all predicates over the rows a read returned — `contains`, `excludes`, `counts`, `ranked`,
   `at`, `satisfies` — and two implementations that return the same rows are indistinguishable under
   every one of them. "The producer stopped" is exactly the fact that separates them, and until now
-  the format could not say it: a migration of forty-five ACD slotmatcher cases hit the wall twice,
+  the format could not say it: a migration of an existing matcher suite hit the wall twice,
   refused to write a prefix assertion in its place, and quoted this crate's own documentation back —
   *a prefix read in silence is still a prefix*. The claim it could not make is `ScanOrdered`
   returning "stop" after two of three elements, and the implementation it would have hidden is real:
@@ -4501,11 +4501,10 @@ Written as 0.17.0; released in 0.18.0. See the note at the top of this section.
 
 - **An authored scenario can claim a length of time.** `ess-scenario/1` could say what happened and
   in what order, and nothing about how long anything took: `at:` ordered the file and reached no
-  runner. A migration of forty-five ACD scenarios into the format reported that as its one class of
-  loss, and enumerated it — a twenty-second hold that *is* an experiment's independent variable, two
-  wrap-up windows, a one-second queue-exit threshold, a one-minute callback TTL and a five-second
-  teardown margin, all of them gaps between two instants and enforced by nothing. A system that
-  fires every timer the moment it is armed passed every check ESS could write.
+  runner. A migration of an existing scenario suite into the format reported that as its one class
+  of loss — a twenty-second hold that *is* an experiment's independent variable, and a handful of
+  timer windows and margins, all of them gaps between two instants and enforced by nothing. A
+  system that fires every timer the moment it is armed passed every check ESS could write.
 
 - **Three bounds, each on an anchor somebody wrote.** An act names its instant with `mark:`, and a
   later act states what must be true of the gap: `not_before:` is the hold, `within:` is the
@@ -4792,15 +4791,15 @@ Releases 0.15.0.
 
 - **A wrong-state branch that accepts rather than refuses: `refuses: false`.** `wrong_state:` could
   say one thing — the command refuses here, and reports this error — so a command that is
-  deliberately idempotent had no way to be written down. ACD's `EndCall` on a call that has already
+  deliberately idempotent had no way to be written down. An `EndCall` on a call that has already
   ended answers and does nothing, on purpose and documented; its specification claimed a refusal the
-  code never makes, and that claim was filed as a defect in ACD before anybody read the code. A key
+  code never makes, and that claim was filed as a defect before anybody read the code. A key
   rather than "leave `error:` out": a branch missing its error is a mistake the validator has caught
   since `wrong_state:` shipped, and making the omission mean *accepts* would turn every one of those
   mistakes into a silent claim. The generated scenario's id says which claim it carries —
   `…/accepts/EndCall` beside `…/refuses/CancelInvoice`.
 - **`params:` on a view, and a `query_view` that carries them.** Most views are one answer the whole
-  system shares. ACD's position in a queue is not: it is per queue, and one ranked list of every
+  system shares. A call's position in a queue is not: it is per queue, and one ranked list of every
   queued call is a different thing from what the implementation can be asked. A parameter is read in
   the filter as `param.<name>`, so the predicate grammar needs nothing new; `params:` and the
   parameters the filter reads must be the same set. Synthesis binds each from what the arrangement
@@ -4861,8 +4860,8 @@ Releases 0.15.0.
   printed as `outside:` with what they need, so they are visible somewhere other than by their
   absence. `SuiteProvenance.component` records the scope and is left out of an unscoped suite, so
   every existing suite is the bytes it was. The refusals are the whole system's, untouched.
-  Measured on the ACD ↔ backend model: 44 scenarios for the system, of which the `acd` component
-  can be held to the ones its own commands, events and views make answerable.
+  On a two-component model, a component can be held to the scenarios its own commands, events
+  and views make answerable.
 - **The emitted Go runner writes `ess-conformance-report/1`.** `ESS_REPORT_OUT=<file> go test`
   leaves the same closed document the Rust runner writes — specification, digest, implementation,
   status, counts, the non-passing scenarios by status — so `aep artifact evidence --from <file>`
@@ -5060,7 +5059,7 @@ Releases 0.15.0.
 ## [0.4.0] — 2026-09-02
 
 - **The documentation projection writes different filenames.** `--kind docs` now writes `index.md`
-  rather than `README.md`, and `domains/acd-routing.md` rather than `domains/acd.routing.md`: a dot
+  rather than `README.md`, and `domains/queue-routing.md` rather than `domains/queue.routing.md`: a dot
   in a path segment makes a static file server read the name as having an extension, so every one
   of those pages was unservable behind GitLab Pages and an adopter carried a rename pass of their
   own. Committed output moves once; the links inside it move with it.

@@ -300,7 +300,7 @@
           "type": "string"
         },
         "reference": {
-          "description": "Its key in that system, such as `DEV-630`.",
+          "description": "Its key in that system, such as `EX-1`.",
           "type": "string"
         }
       }
@@ -793,7 +793,7 @@
           ]
         },
         "refs": {
-          "description": "The records outside this model that explain it, such as `jira:DEV-630`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
+          "description": "The records outside this model that explain it, such as `jira:EX-1`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ExternalRef"
@@ -931,7 +931,7 @@
           }
         },
         "refs": {
-          "description": "The records outside this model that explain it, such as `jira:DEV-630`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
+          "description": "The records outside this model that explain it, such as `jira:EX-1`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ExternalRef"
@@ -1020,7 +1020,7 @@
           ]
         },
         "refs": {
-          "description": "The records outside this model that explain it, such as `jira:DEV-630`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
+          "description": "The records outside this model that explain it, such as `jira:EX-1`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ExternalRef"
@@ -1310,7 +1310,7 @@
           }
         },
         "refs": {
-          "description": "The records outside this model that explain it, such as `jira:DEV-630`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
+          "description": "The records outside this model that explain it, such as `jira:EX-1`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ExternalRef"

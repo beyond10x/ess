@@ -1,6 +1,6 @@
 task: [test-xtask] env -u CARGO_ENCODED_RUSTFLAGS RUSTUP_TOOLCHAIN=1.98.1 RUSTFLAGS='-C link-arg=-fuse-ld=lld' RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER= CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_PROFILE_DEV_INCREMENTAL=false CARGO_PROFILE_TEST_INCREMENTAL=false cargo test --package ess-xtask --locked
     Blocking waiting for file lock on build directory
-   Compiling ess-xtask v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/edge/ess-xtask)
+   Compiling ess-xtask v0.38.0 (<tree>/crates/edge/ess-xtask)
     Finished `test` profile [unoptimized] target(s) in 1m 26s
      Running unittests src/main.rs (target/debug/deps/ess_xtask-d9c02bffbec36a2f)
 

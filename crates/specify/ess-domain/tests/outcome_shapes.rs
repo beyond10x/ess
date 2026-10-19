@@ -3,8 +3,8 @@
 //!
 //! Five constructs, each admitted under `ess/15` and refused below it with
 //! `unsupported_format_version`, each with the rules the design page states for it. The model is
-//! the neutral telephony shape the issues describe: a call announced by an external plane, answered,
-//! and removed at the end of its lifecycle.
+//! the neutral shape the issues describe: a call announced by an external plane, answered, and
+//! removed at the end of its lifecycle.
 
 use ess_domain::command::{Effect, OutcomeCondition, RawOutcome};
 use ess_domain::Specification;

@@ -12,7 +12,7 @@ Read the story: `aep plan artifact show story:cli-binding-globals-config-and-out
 ## The triple
 
 ```
-worktree:  ~/.local/state/worktree/trees/b10x/ess/ess-wave-20261007c-c1
+worktree:  <tree>
 build dir: <worktree>/target   (created by the coordinator with Cargo's CACHEDIR.TAG)
 scratch:   <worktree>/target/wave-scratch/c1
 ```
@@ -25,7 +25,7 @@ scratch:   <worktree>/target/wave-scratch/c1
 | **not yours** | everything else; `CHANGELOG.md` and `.engineering/**` are the coordinator's |
 
 Invariants: `.engineering/waves/2026-10-07c/invariants.md` in the integration tree
-(`~/.local/state/worktree/trees/b10x/ess/ess-wave-20261007c`). Read it first.
+(`<tree>`). Read it first.
 
 Decided: `ess-cli/2` and `ess-cli-plan/2`; `config` and `output` optional, `state` required; the reader keeps `ess-cli/1`; an `ess-cli/1` binding compiles to the same plan bytes as today; a generated CLI without `output` prints JSON only; `null`, `~` and `""` refuse naming the global. Spec first: declare the formats where the repository declares formats before code. Release notes must name both formats.
 

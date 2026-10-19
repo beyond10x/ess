@@ -2,15 +2,14 @@
   "apiVersion": "policy/v1",
   "kind": "PodDisruptionBudget",
   "metadata": {
-    "name": "storefront-server",
+    "name": "worker-agent",
     "namespace": "shop"
   },
   "spec": {
     "maxUnavailable": 1,
     "selector": {
       "matchLabels": {
-        "app.kubernetes.io/instance": "storefront-server",
-        "app.kubernetes.io/name": "storefront-server"
+        "app": "worker-agent"
       }
     }
   }

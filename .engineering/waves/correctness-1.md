@@ -28,7 +28,7 @@ Nothing else: no tag, no version bump, no release.
 |---|---|
 | branch | `integrate/ess-next` (was `integrate/correctness-1`) |
 | base | `46e367ab2` (origin/main, ESS 0.38.0 + #184) |
-| worktree | managed `ess-wave-c1` → `~/.local/state/worktree/trees/b10x/ess/ess-wave-c1` |
+| worktree | managed `ess-wave-c1` → `<tree>` |
 | build dir | `~/.cache/b10x-target/ess-c1-int` |
 | scratch | `~/.cache/ess-wave-c1/int` |
 

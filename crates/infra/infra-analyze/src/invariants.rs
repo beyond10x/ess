@@ -92,7 +92,7 @@ impl From<PropCode> for String {
 /// finding against the member.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Exception {
-    /// The nonconforming object, as an IR path: `workloads/shop/deployment/queue-redis`.
+    /// The nonconforming object, as an IR path: `workloads/shop/deployment/cache-redis`.
     pub subject: String,
     /// What it does instead, one line: ``image `redis:7-alpine` pulls from the default registry``.
     pub detail: String,
@@ -103,7 +103,7 @@ pub struct Exception {
 pub struct InvariantCandidate {
     /// The stable code a harness matches on.
     pub code: PropCode,
-    /// The uniformity claim, concrete: ``all images pull from registry `localhost:31721` ``.
+    /// The uniformity claim, concrete: ``all images pull from registry `registry.example.test` ``.
     pub statement: String,
     /// How many of the population conform.
     pub holds_for: u32,

@@ -423,14 +423,7 @@ mod tests {
             // `.tile` for a while, which is a leak this list did not catch because it only looked
             // for system names.
             for word in [
-                "softphone",
-                "acd",
-                "billing",
-                "invoice",
-                "phone",
-                "bezel",
-                "dialpad",
-                "keypad",
+                "handset", "queue", "billing", "invoice", "phone", "bezel", "dialpad", "keypad",
             ] {
                 assert!(
                     !asset.to_lowercase().contains(word),

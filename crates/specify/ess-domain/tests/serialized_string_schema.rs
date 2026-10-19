@@ -1,7 +1,7 @@
 //! The committed document schema describes `ExternalRef` and `Period` as the strings they serialize to.
 //!
 //! `story:schema-describes-serialized-strings`. Both types are structs in Rust and strings on the
-//! wire — `jira:DEV-630`, `PT2S` — and the derived schema described the Rust shape: an object with
+//! wire — `jira:EX-1`, `PT2S` — and the derived schema described the Rust shape: an object with
 //! `provider` and `reference`, and a bare integer. An editor holding that schema refuses every
 //! document ESS reads and offers the author a shape ESS refuses.
 //!
@@ -53,9 +53,9 @@ fn assert_parity(validator: &jsonschema::Validator, candidate: &str, parses: boo
 fn an_external_reference_validates_as_the_provider_key_string_it_serializes_to() {
     let validator = validator("ExternalRef");
     for written in [
-        "jira:DEV-630",
+        "jira:EX-1",
         "zendesk:204519",
-        "wiki:space:Runbooks/ACD",
+        "wiki:space:Runbooks/Billing",
         "a-1:x",
     ] {
         let serialized =
@@ -68,7 +68,7 @@ fn an_external_reference_validates_as_the_provider_key_string_it_serializes_to()
         );
     }
     assert!(
-        !validator.is_valid(&json!({"provider": "jira", "reference": "DEV-630"})),
+        !validator.is_valid(&json!({"provider": "jira", "reference": "EX-1"})),
         "the Rust field shape is not a document ESS reads, so the schema must refuse it"
     );
 }
@@ -77,8 +77,8 @@ fn an_external_reference_validates_as_the_provider_key_string_it_serializes_to()
 fn the_external_reference_schema_admits_exactly_what_the_parser_reads() {
     let validator = validator("ExternalRef");
     for candidate in [
-        "jira:DEV-630",
-        "wiki:space:Runbooks/ACD",
+        "jira:EX-1",
+        "wiki:space:Runbooks/Billing",
         "jira:a",
         "jira: x",
         "jira:x ",
@@ -93,13 +93,13 @@ fn the_external_reference_schema_admits_exactly_what_the_parser_reads() {
         "jira:x:",
         "jira::",
         "jira:",
-        ":DEV-630",
-        "DEV-630",
+        ":EX-1",
+        "EX-1",
         "",
-        "Jira:DEV-630",
-        "ji ra:DEV-630",
+        "Jira:EX-1",
+        "ji ra:EX-1",
         "jira_x:1",
-        "https://tracker.example/DEV-630",
+        "https://tracker.example/EX-1",
         "jira://x",
         "jira:/x",
         "jira:x//y",

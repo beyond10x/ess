@@ -73,16 +73,16 @@
 //! ```yaml
 //! timeline:
 //!   - at: 2026-01-05T09:00:13Z
-//!     command: acd.routing.BridgeEntry
+//!     command: queue.routing.BridgeEntry
 //!     mark: bridged
 //!
 //!   - at: 2026-01-05T09:00:33Z
-//!     command: acd.routing.EnterQueue
+//!     command: queue.routing.EnterQueue
 //!     elapsed:
 //!       - since: bridged
 //!         not_before: PT20S
 //!       - since: bridged
-//!         quiet: {for: PT20S, events: [acd.routing.CallEnded]}
+//!         quiet: {for: PT20S, events: [queue.routing.CallEnded]}
 //! ```
 //!
 //! Three bounds, one per window, and each names the instant it opens at:
@@ -118,7 +118,7 @@
 //!
 //! ```yaml
 //! assert:
-//!   - view: acd.matching.SlotOrder
+//!   - view: queue.matching.SlotOrder
 //!     params: {group_id: {$instance: group}}
 //!     halts_after: 2
 //! ```

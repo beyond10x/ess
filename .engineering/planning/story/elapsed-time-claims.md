@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance/src/scenario.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/target.rs
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-04T12:23:25Z", actor: "human:timo", revision: 2, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-04T12:23:25Z", actor: "human:timo", revision: 3, imported: true}
@@ -34,14 +34,14 @@ records as deliberate. The consequence is that a scenario cannot claim *this mus
 *this must not happen for N*, or *this expires after N* — and for a call-distribution system several
 of the most valuable claims are exactly those.
 
-A migration of forty-five ACD scenarios into the format reported it as its one class of loss, and
+A migration of an existing scenario suite into the format reported it as its one class of loss, and
 enumerated the losses:
 
 | duration | scenario | what is lost |
 |---|---|---|
-| 20 s hold before a blind transfer | `acd-requeue-after-hold-never-dialed` | the experiment: ~20 passes of a 1 Hz trigger sweep against a bridged call is DEV-741's independent variable, and it is the only thing the scenario adds to one that already passes |
-| `WithWrapUp(5)`, `WithWrapUp(20)` | `acd-wrapup`, `acd-wrapup-no-reoffer` | the window; its ends' transitions are asserted and the window is not |
-| `ExitWhen("call.duration", Gt, "1")` | `acd-queue-exit-on-duration` | the threshold that causes the exit |
+| 20 s hold before a blind transfer | `requeue-after-hold-never-dialed` | the experiment: ~20 passes of a 1 Hz trigger sweep are its independent variable, and it is the only thing the scenario adds to one that already passes |
+| `WithWrapUp(5)`, `WithWrapUp(20)` | `wrapup`, `wrapup-no-reoffer` | the window; its ends' transitions are asserted and the window is not |
+| `ExitWhen("call.duration", Gt, "1")` | `queue-exit-on-duration` | the threshold that causes the exit |
 | `CallbackTTL(1*time.Minute)` | `callback-expires-no-agent` | the TTL; the expiry is asserted and the minute is not |
 | 5 s transfer-teardown margin | `callback-transfer-to-queue` | a margin that has to outlive a real backend timer |
 

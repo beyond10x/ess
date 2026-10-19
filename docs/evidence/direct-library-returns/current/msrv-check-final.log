@@ -1,8 +1,8 @@
    Compiling serde_json v1.0.151
     Checking schemars v0.8.22
-    Checking ess-primitives v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-primitives)
-    Checking ess-domain v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-domain)
-    Checking ess-compiler v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-compiler)
+    Checking ess-primitives v0.38.0 (<tree>/crates/specify/ess-primitives)
+    Checking ess-domain v0.38.0 (<tree>/crates/specify/ess-domain)
+    Checking ess-compiler v0.38.0 (<tree>/crates/specify/ess-compiler)
 warning: function `same` is never used
    --> crates/specify/ess-compiler/src/resolve.rs:413:14
     |
@@ -18,6 +18,6 @@ warning: function `distinct` is never used
     |              ^^^^^^^^
 
 warning: `ess-compiler` (lib) generated 2 warnings
-    Checking ess-gen v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-gen)
-    Checking ess-conformance v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/verify/ess-conformance)
+    Checking ess-gen v0.38.0 (<tree>/crates/generate/ess-gen)
+    Checking ess-conformance v0.38.0 (<tree>/crates/verify/ess-conformance)
     Finished `dev` profile [unoptimized] target(s) in 20.25s

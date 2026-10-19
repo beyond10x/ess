@@ -2,14 +2,14 @@
   "apiVersion": "policy/v1",
   "kind": "PodDisruptionBudget",
   "metadata": {
-    "name": "queue-redis",
+    "name": "cache-redis",
     "namespace": "shop"
   },
   "spec": {
     "maxUnavailable": 1,
     "selector": {
       "matchLabels": {
-        "app": "queue-redis"
+        "app": "cache-redis"
       }
     }
   }

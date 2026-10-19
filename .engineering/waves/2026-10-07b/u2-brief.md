@@ -15,7 +15,7 @@ Issue: https://github.com/beyond10x/ess/issues/483.
 ## The triple
 
 ```
-worktree:  ~/.local/state/worktree/trees/b10x/ess/ess-wave-20261007b-u2
+worktree:  <tree>
 build dir: <worktree>/target
 scratch:   <worktree>/target/wave-scratch/u2
 ```
@@ -28,7 +28,7 @@ scratch:   <worktree>/target/wave-scratch/u2
 | **not yours** | everything else; `CHANGELOG.md` and `.engineering/**` are the coordinator's; `Cargo.toml` and `Cargo.lock` at the root |
 
 Invariants: `.engineering/waves/2026-10-07b/invariants.md` in the integration tree
-(`~/.local/state/worktree/trees/b10x/ess/ess-wave-20261007b`). Read it before anything else.
+(`<tree>`). Read it before anything else.
 
 ## The design (from the story)
 

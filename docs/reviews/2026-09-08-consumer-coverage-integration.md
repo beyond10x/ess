@@ -40,7 +40,7 @@ All 157,122 final cell records equal the accepted correction2 result. Seven chec
 images and seven separate root copies were completely hashed and read back, alongside the actual
 coverage producer images and source snapshots. No imported green receipt substitutes for execution.
 
-Root readback: `~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/integration-preparation/final-integration-readback/readback.json`, SHA256 `6c62998a3c951d26d6df63efdb6837d803bde1cad2240ce3f239c47a543fbfa5`.
+Root readback: `<tree>/target/review-boundaries-18/integration-preparation/final-integration-readback/readback.json`, SHA256 `6c62998a3c951d26d6df63efdb6837d803bde1cad2240ce3f239c47a543fbfa5`.
 It verifies all 1,215 tracked source files, every lane's own direct status and full log hash,
 the actual consumer command streams and case counts, source/provider equality and retained native
 bytes. The readback took 4.863672 seconds (5.410664 seconds for the direct command). Original full gate records live at

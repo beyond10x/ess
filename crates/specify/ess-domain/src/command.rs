@@ -2506,7 +2506,7 @@ pub struct Outcome {
     pub one_time_response: Vec<String>,
     /// One line for generated documentation and for the generated scenario's title.
     pub summary: Option<String>,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
@@ -2699,7 +2699,7 @@ pub struct CommandSpec {
     pub outcomes: Vec<Outcome>,
     /// What it is called on the wire and shown as.
     pub naming: Naming,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
@@ -6270,7 +6270,7 @@ pub struct RawCommandSpec {
     /// What it is called on the wire and shown as.
     #[serde(default, skip_serializing_if = "Naming::is_empty")]
     pub naming: Naming,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
@@ -6687,7 +6687,7 @@ pub struct RawOutcome {
     /// One line for generated documentation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
@@ -8056,8 +8056,8 @@ outcomes:
     #[test]
     fn a_branch_that_accepts_a_wrong_state_needs_no_error_and_may_not_name_one() {
         // The other answer, and the reason the key exists rather than `error:` simply becoming
-        // optional. A command can be deliberately idempotent — ACD's `EndCall` on a call that has
-        // already ended answers and does nothing — and a specification with no way to write that
+        // optional. A command can be deliberately idempotent — ending a call that has already
+        // ended answers and does nothing — and a specification with no way to write that
         // either claims a refusal the implementation never makes or says nothing about the state.
         let accepting = |error: Option<QualifiedName>| Outcome {
             replays: None,

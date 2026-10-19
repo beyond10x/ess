@@ -2,14 +2,14 @@
   "format": "infra-simulation/1",
   "reports": [
     {
-      "claim": "deployment/shop/storefront-server exists",
-      "id": "storefront-exists",
+      "claim": "deployment/shop/web-server exists",
+      "id": "web-exists",
       "kind": "workload_exists",
       "outcomes": [],
       "scope": "cluster",
-      "statement": "the storefront deployment is the reason this cluster exists",
+      "statement": "the web deployment is the reason this cluster exists",
       "subjects": [
-        "workloads/shop/deployment/storefront-server"
+        "workloads/shop/deployment/web-server"
       ],
       "verdict": "true"
     },
@@ -36,12 +36,12 @@
     },
     {
       "claim": "replicas within [2, 4]",
-      "id": "storefront-replicas",
+      "id": "web-replicas",
       "kind": "replicas_within",
       "outcomes": [],
-      "scope": "workloads matching app.kubernetes.io/name=storefront-server",
+      "scope": "workloads matching app.kubernetes.io/name=web-server",
       "subjects": [
-        "workloads/shop/deployment/storefront-server"
+        "workloads/shop/deployment/web-server"
       ],
       "verdict": "true"
     },
@@ -54,7 +54,7 @@
           "gap": "replicas_outside_range",
           "have": 1,
           "outcome": "gap",
-          "subject": "workloads/shop/deployment/flaky-agent",
+          "subject": "workloads/shop/deployment/cache-redis",
           "want_max": 4,
           "want_min": 2
         },
@@ -62,17 +62,17 @@
           "gap": "replicas_outside_range",
           "have": 1,
           "outcome": "gap",
-          "subject": "workloads/shop/deployment/queue-redis",
+          "subject": "workloads/shop/deployment/worker-agent",
           "want_max": 4,
           "want_min": 2
         }
       ],
       "scope": "namespace shop",
       "subjects": [
-        "workloads/shop/deployment/flaky-agent",
-        "workloads/shop/deployment/queue-redis",
-        "workloads/shop/deployment/storefront-server",
-        "workloads/shop/statefulset/switchboard"
+        "workloads/shop/deployment/cache-redis",
+        "workloads/shop/deployment/web-server",
+        "workloads/shop/deployment/worker-agent",
+        "workloads/shop/statefulset/relay"
       ],
       "verdict": "false"
     },
@@ -97,12 +97,12 @@
     },
     {
       "claim": "requests and limits declared",
-      "id": "storefront-resources",
+      "id": "web-resources",
       "kind": "resources_declared",
       "outcomes": [],
-      "scope": "workloads matching app.kubernetes.io/name=storefront-server",
+      "scope": "workloads matching app.kubernetes.io/name=web-server",
       "subjects": [
-        "workloads/shop/deployment/storefront-server"
+        "workloads/shop/deployment/web-server"
       ],
       "verdict": "true"
     },
@@ -112,28 +112,28 @@
       "kind": "resources_declared",
       "outcomes": [
         {
-          "container": "agent",
-          "gap": "resources_absent",
-          "limits_missing": true,
-          "outcome": "gap",
-          "requests_missing": true,
-          "subject": "workloads/shop/deployment/flaky-agent"
-        },
-        {
           "container": "redis",
           "gap": "resources_absent",
           "limits_missing": true,
           "outcome": "gap",
           "requests_missing": true,
-          "subject": "workloads/shop/deployment/queue-redis"
+          "subject": "workloads/shop/deployment/cache-redis"
+        },
+        {
+          "container": "agent",
+          "gap": "resources_absent",
+          "limits_missing": true,
+          "outcome": "gap",
+          "requests_missing": true,
+          "subject": "workloads/shop/deployment/worker-agent"
         }
       ],
       "scope": "namespace shop",
       "subjects": [
-        "workloads/shop/deployment/flaky-agent",
-        "workloads/shop/deployment/queue-redis",
-        "workloads/shop/deployment/storefront-server",
-        "workloads/shop/statefulset/switchboard"
+        "workloads/shop/deployment/cache-redis",
+        "workloads/shop/deployment/web-server",
+        "workloads/shop/deployment/worker-agent",
+        "workloads/shop/statefulset/relay"
       ],
       "verdict": "false"
     },
@@ -170,61 +170,61 @@
       "kind": "probes_declared",
       "outcomes": [
         {
-          "container": "agent",
-          "gap": "probe_absent",
-          "liveness_missing": true,
-          "outcome": "gap",
-          "readiness_missing": false,
-          "subject": "workloads/shop/deployment/flaky-agent"
-        },
-        {
           "container": "redis",
           "gap": "probe_absent",
           "liveness_missing": true,
           "outcome": "gap",
           "readiness_missing": false,
-          "subject": "workloads/shop/deployment/queue-redis"
+          "subject": "workloads/shop/deployment/cache-redis"
         },
         {
-          "container": "storefront-server",
+          "container": "web-server",
           "gap": "probe_absent",
           "liveness_missing": true,
           "outcome": "gap",
           "readiness_missing": false,
-          "subject": "workloads/shop/deployment/storefront-server"
+          "subject": "workloads/shop/deployment/web-server"
         },
         {
-          "container": "switchboard",
+          "container": "agent",
           "gap": "probe_absent",
           "liveness_missing": true,
           "outcome": "gap",
           "readiness_missing": false,
-          "subject": "workloads/shop/statefulset/switchboard"
+          "subject": "workloads/shop/deployment/worker-agent"
+        },
+        {
+          "container": "relay",
+          "gap": "probe_absent",
+          "liveness_missing": true,
+          "outcome": "gap",
+          "readiness_missing": false,
+          "subject": "workloads/shop/statefulset/relay"
         }
       ],
       "scope": "namespace shop",
       "subjects": [
-        "workloads/shop/deployment/flaky-agent",
-        "workloads/shop/deployment/queue-redis",
-        "workloads/shop/deployment/storefront-server",
-        "workloads/shop/statefulset/switchboard"
+        "workloads/shop/deployment/cache-redis",
+        "workloads/shop/deployment/web-server",
+        "workloads/shop/deployment/worker-agent",
+        "workloads/shop/statefulset/relay"
       ],
       "verdict": "false"
     },
     {
       "claim": "image registry in [registry.example.com]",
-      "id": "switchboard-registry",
+      "id": "relay-registry",
       "kind": "image_registry",
       "outcomes": [],
-      "scope": "workloads matching app.kubernetes.io/name=devspace-app",
+      "scope": "workloads matching app.kubernetes.io/name=tooling-app",
       "subjects": [
-        "workloads/shop/statefulset/switchboard"
+        "workloads/shop/statefulset/relay"
       ],
       "verdict": "true"
     },
     {
       "claim": "image registry in [registry.example.com]",
-      "id": "flaky-agent-registry",
+      "id": "worker-agent-registry",
       "kind": "image_registry",
       "outcomes": [
         {
@@ -233,20 +233,20 @@
           ],
           "container": "agent",
           "gap": "image_registry_not_allowed",
-          "have": "registry.local",
-          "image": "registry.local/flaky-agent",
+          "have": "registry.example.test",
+          "image": "registry.example.test/worker-agent",
           "outcome": "gap",
-          "subject": "workloads/shop/deployment/flaky-agent"
+          "subject": "workloads/shop/deployment/worker-agent"
         }
       ],
-      "scope": "workloads matching app=flaky-agent",
+      "scope": "workloads matching app=worker-agent",
       "subjects": [
-        "workloads/shop/deployment/flaky-agent"
+        "workloads/shop/deployment/worker-agent"
       ],
       "verdict": "false"
     },
     {
-      "claim": "image registry in [registry.example.com, localhost:31721, registry.local]",
+      "claim": "image registry in [registry.example.com, registry.example.test:31721, registry.example.test]",
       "id": "shop-registry",
       "kind": "image_registry",
       "outcomes": [
@@ -254,26 +254,26 @@
           "field": "containers[redis].image registry",
           "outcome": "undecidable",
           "reason": "field_absent",
-          "subject": "workloads/shop/deployment/queue-redis"
+          "subject": "workloads/shop/deployment/cache-redis"
         }
       ],
       "scope": "namespace shop",
       "subjects": [
-        "workloads/shop/deployment/flaky-agent",
-        "workloads/shop/deployment/queue-redis",
-        "workloads/shop/deployment/storefront-server",
-        "workloads/shop/statefulset/switchboard"
+        "workloads/shop/deployment/cache-redis",
+        "workloads/shop/deployment/web-server",
+        "workloads/shop/deployment/worker-agent",
+        "workloads/shop/statefulset/relay"
       ],
       "verdict": "unknown"
     },
     {
       "claim": "image tag is not `latest`",
-      "id": "storefront-tag",
+      "id": "web-tag",
       "kind": "image_tag_not_latest",
       "outcomes": [],
-      "scope": "workloads matching app.kubernetes.io/name=storefront-server",
+      "scope": "workloads matching app.kubernetes.io/name=web-server",
       "subjects": [
-        "workloads/shop/deployment/storefront-server"
+        "workloads/shop/deployment/web-server"
       ],
       "verdict": "true"
     },
@@ -285,26 +285,26 @@
         {
           "container": "agent",
           "gap": "image_tag_is_latest",
-          "image": "registry.local/flaky-agent",
+          "image": "registry.example.test/worker-agent",
           "outcome": "gap",
-          "subject": "workloads/shop/deployment/flaky-agent",
+          "subject": "workloads/shop/deployment/worker-agent",
           "tag": null
         },
         {
-          "container": "switchboard",
+          "container": "relay",
           "gap": "image_tag_is_latest",
-          "image": "registry.example.com/services/switchboard-8:latest",
+          "image": "registry.example.com/services/relay-8:latest",
           "outcome": "gap",
-          "subject": "workloads/shop/statefulset/switchboard",
+          "subject": "workloads/shop/statefulset/relay",
           "tag": "latest"
         }
       ],
       "scope": "namespace shop",
       "subjects": [
-        "workloads/shop/deployment/flaky-agent",
-        "workloads/shop/deployment/queue-redis",
-        "workloads/shop/deployment/storefront-server",
-        "workloads/shop/statefulset/switchboard"
+        "workloads/shop/deployment/cache-redis",
+        "workloads/shop/deployment/web-server",
+        "workloads/shop/deployment/worker-agent",
+        "workloads/shop/statefulset/relay"
       ],
       "verdict": "false"
     },
@@ -314,41 +314,41 @@
       "kind": "image_pinned_by_digest",
       "outcomes": [
         {
-          "container": "agent",
-          "gap": "image_not_pinned",
-          "image": "registry.local/flaky-agent",
-          "outcome": "gap",
-          "subject": "workloads/shop/deployment/flaky-agent"
-        },
-        {
           "container": "redis",
           "gap": "image_not_pinned",
           "image": "redis:7-alpine",
           "outcome": "gap",
-          "subject": "workloads/shop/deployment/queue-redis"
+          "subject": "workloads/shop/deployment/cache-redis"
         },
         {
-          "container": "storefront-server",
+          "container": "web-server",
           "gap": "image_not_pinned",
-          "image": "localhost:31721/apps/storefront-server:AtqQlTV",
+          "image": "registry.example.test:31721/apps/web-server:AtqQlTV",
           "outcome": "gap",
-          "subject": "workloads/shop/deployment/storefront-server"
+          "subject": "workloads/shop/deployment/web-server"
         },
         {
-          "container": "switchboard",
+          "container": "agent",
           "gap": "image_not_pinned",
-          "image": "registry.example.com/services/switchboard-8:latest",
+          "image": "registry.example.test/worker-agent",
           "outcome": "gap",
-          "subject": "workloads/shop/statefulset/switchboard"
+          "subject": "workloads/shop/deployment/worker-agent"
+        },
+        {
+          "container": "relay",
+          "gap": "image_not_pinned",
+          "image": "registry.example.com/services/relay-8:latest",
+          "outcome": "gap",
+          "subject": "workloads/shop/statefulset/relay"
         }
       ],
       "scope": "namespace shop",
       "statement": "nothing in this cluster is digest-pinned, and the report should say which",
       "subjects": [
-        "workloads/shop/deployment/flaky-agent",
-        "workloads/shop/deployment/queue-redis",
-        "workloads/shop/deployment/storefront-server",
-        "workloads/shop/statefulset/switchboard"
+        "workloads/shop/deployment/cache-redis",
+        "workloads/shop/deployment/web-server",
+        "workloads/shop/deployment/worker-agent",
+        "workloads/shop/statefulset/relay"
       ],
       "verdict": "false"
     },
@@ -372,15 +372,15 @@
           "gap": "disruption_budget_absent",
           "outcome": "gap",
           "replicas": 2,
-          "subject": "workloads/shop/deployment/storefront-server"
+          "subject": "workloads/shop/deployment/web-server"
         }
       ],
       "scope": "namespace shop",
       "subjects": [
-        "workloads/shop/deployment/flaky-agent",
-        "workloads/shop/deployment/queue-redis",
-        "workloads/shop/deployment/storefront-server",
-        "workloads/shop/statefulset/switchboard"
+        "workloads/shop/deployment/cache-redis",
+        "workloads/shop/deployment/web-server",
+        "workloads/shop/deployment/worker-agent",
+        "workloads/shop/statefulset/relay"
       ],
       "verdict": "false"
     },
@@ -411,11 +411,11 @@
       ],
       "scope": "namespace shop",
       "subjects": [
+        "services/shop/cache-redis-master",
         "services/shop/lost-lookup",
-        "services/shop/queue-redis-master",
-        "services/shop/storefront-server",
-        "services/shop/switchboard-client",
-        "services/shop/switchboard-headless"
+        "services/shop/relay-client",
+        "services/shop/relay-headless",
+        "services/shop/web-server"
       ],
       "verdict": "false"
     },
@@ -440,16 +440,16 @@
           "gap": "reference_unresolved",
           "outcome": "gap",
           "site": "containers[agent].env[AGENT_TOKEN]",
-          "subject": "workloads/shop/deployment/flaky-agent",
+          "subject": "workloads/shop/deployment/worker-agent",
           "target": "secret agent-credentials"
         }
       ],
       "scope": "namespace shop",
       "subjects": [
-        "workloads/shop/deployment/flaky-agent",
-        "workloads/shop/deployment/queue-redis",
-        "workloads/shop/deployment/storefront-server",
-        "workloads/shop/statefulset/switchboard"
+        "workloads/shop/deployment/cache-redis",
+        "workloads/shop/deployment/web-server",
+        "workloads/shop/deployment/worker-agent",
+        "workloads/shop/statefulset/relay"
       ],
       "verdict": "false"
     },
@@ -462,10 +462,10 @@
       "subjects": [
         "workloads/kube-system/daemonset/svclb-traefik-2290261f",
         "workloads/kube-system/deployment/coredns",
-        "workloads/shop/deployment/flaky-agent",
-        "workloads/shop/deployment/queue-redis",
-        "workloads/shop/deployment/storefront-server",
-        "workloads/shop/statefulset/switchboard"
+        "workloads/shop/deployment/cache-redis",
+        "workloads/shop/deployment/web-server",
+        "workloads/shop/deployment/worker-agent",
+        "workloads/shop/statefulset/relay"
       ],
       "verdict": "true"
     },
@@ -498,21 +498,21 @@
       "subjects": [
         "workloads/kube-system/daemonset/svclb-traefik-2290261f",
         "workloads/kube-system/deployment/coredns",
-        "workloads/shop/deployment/flaky-agent",
-        "workloads/shop/deployment/queue-redis",
-        "workloads/shop/deployment/storefront-server",
-        "workloads/shop/statefulset/switchboard"
+        "workloads/shop/deployment/cache-redis",
+        "workloads/shop/deployment/web-server",
+        "workloads/shop/deployment/worker-agent",
+        "workloads/shop/statefulset/relay"
       ],
       "verdict": "false"
     },
     {
       "claim": "workload.containers == 1",
-      "id": "flaky-agent-one-container",
+      "id": "worker-agent-one-container",
       "kind": "workload_predicate",
       "outcomes": [],
-      "scope": "workloads matching app=flaky-agent",
+      "scope": "workloads matching app=worker-agent",
       "subjects": [
-        "workloads/shop/deployment/flaky-agent"
+        "workloads/shop/deployment/worker-agent"
       ],
       "verdict": "true"
     },
@@ -528,7 +528,7 @@
           "gap": "predicate_false",
           "outcome": "gap",
           "predicate": "workload.replicas >= 2",
-          "subject": "workloads/shop/deployment/flaky-agent"
+          "subject": "workloads/shop/deployment/cache-redis"
         },
         {
           "facts": {
@@ -537,15 +537,15 @@
           "gap": "predicate_false",
           "outcome": "gap",
           "predicate": "workload.replicas >= 2",
-          "subject": "workloads/shop/deployment/queue-redis"
+          "subject": "workloads/shop/deployment/worker-agent"
         }
       ],
       "scope": "namespace shop",
       "subjects": [
-        "workloads/shop/deployment/flaky-agent",
-        "workloads/shop/deployment/queue-redis",
-        "workloads/shop/deployment/storefront-server",
-        "workloads/shop/statefulset/switchboard"
+        "workloads/shop/deployment/cache-redis",
+        "workloads/shop/deployment/web-server",
+        "workloads/shop/deployment/worker-agent",
+        "workloads/shop/statefulset/relay"
       ],
       "verdict": "false"
     },
@@ -562,7 +562,7 @@
           "outcome": "undecidable",
           "path": "workload.ready_pods",
           "reason": "fact_withheld",
-          "subject": "workloads/shop/deployment/flaky-agent"
+          "subject": "workloads/shop/deployment/cache-redis"
         },
         {
           "because": {
@@ -572,7 +572,7 @@
           "outcome": "undecidable",
           "path": "workload.ready_pods",
           "reason": "fact_withheld",
-          "subject": "workloads/shop/deployment/queue-redis"
+          "subject": "workloads/shop/deployment/web-server"
         },
         {
           "because": {
@@ -582,7 +582,7 @@
           "outcome": "undecidable",
           "path": "workload.ready_pods",
           "reason": "fact_withheld",
-          "subject": "workloads/shop/deployment/storefront-server"
+          "subject": "workloads/shop/deployment/worker-agent"
         },
         {
           "because": {
@@ -592,15 +592,15 @@
           "outcome": "undecidable",
           "path": "workload.ready_pods",
           "reason": "fact_withheld",
-          "subject": "workloads/shop/statefulset/switchboard"
+          "subject": "workloads/shop/statefulset/relay"
         }
       ],
       "scope": "namespace shop",
       "subjects": [
-        "workloads/shop/deployment/flaky-agent",
-        "workloads/shop/deployment/queue-redis",
-        "workloads/shop/deployment/storefront-server",
-        "workloads/shop/statefulset/switchboard"
+        "workloads/shop/deployment/cache-redis",
+        "workloads/shop/deployment/web-server",
+        "workloads/shop/deployment/worker-agent",
+        "workloads/shop/statefulset/relay"
       ],
       "verdict": "unknown"
     },
@@ -622,7 +622,7 @@
   ],
   "snapshot": {
     "context": "k3d-dev-cluster",
-    "digest": "73b68c18c311bd81a36d76b50238ae08ffb0621ae16753ff54b7329778deb785"
+    "digest": "cc80082ad1d7daaf379c946dc8bec0461bc664653b2921d70415de5df5f5cdeb"
   },
   "specification": "k3d dev cluster, as it ought to be",
   "summary": {

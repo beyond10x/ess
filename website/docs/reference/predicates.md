@@ -405,7 +405,7 @@ owed, and Entity Runtime refuses it as `Utf8BytesUnsupported`.
 From `ess/27` (beyond10x/ess#584) a command outcome's guard — `when:`, `when_subject:`,
 `when_related:` — may compare with a fact read through a function, written unquoted on the right:
 
-```yaml
+```text
 - name: mismatch                           # RFC 7636 PKCE S256
   when_subject:
     predicate:

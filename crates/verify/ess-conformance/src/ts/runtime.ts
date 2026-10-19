@@ -2791,7 +2791,7 @@ class FatalSignal extends Error {}
  * suiteDocument reads the suite beside this module.
  *
  * A file rather than a string constant, for the reason the Go package embeds one: a generated
- * purpose reads `` `acd.backend.ConnectAgent` answers `requested` `` and stays diffable as a file,
+ * purpose reads `` `queue.backend.ConnectAgent` answers `requested` `` and stays diffable as a file,
  * where a constant would be one unreadable escaped line.
  *
  * `../` reaches the package root from `src/` before compilation and from `dist/` after it, so the

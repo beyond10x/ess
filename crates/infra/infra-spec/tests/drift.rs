@@ -55,22 +55,22 @@ fn every_change_kind_the_pair_was_built_to_exercise_appears_exactly_where_it_sho
 fn a_workloads_replica_count_image_and_labels_each_arrive_as_their_own_typed_change() {
     let report = example_drift();
     assert!(report.changes.contains(&InfraChange::ReplicasChanged {
-        subject: "shop/statefulset/switchboard".to_owned(),
+        subject: "shop/statefulset/relay".to_owned(),
         from: Some(2),
         to: Some(3),
     }));
     assert!(report.changes.contains(&InfraChange::ImageChanged {
-        subject: "shop/deployment/storefront-server".to_owned(),
-        container: "storefront-server".to_owned(),
-        from: "localhost:31721/apps/storefront-server:AtqQlTV".to_owned(),
-        to: "localhost:31721/apps/storefront-server:Bx7pQr2".to_owned(),
+        subject: "shop/deployment/web-server".to_owned(),
+        container: "web-server".to_owned(),
+        from: "registry.example.test:31721/apps/web-server:AtqQlTV".to_owned(),
+        to: "registry.example.test:31721/apps/web-server:Bx7pQr2".to_owned(),
     }));
     assert!(report.changes.contains(&InfraChange::WorkloadFieldChanged {
         subject: "kube-system/deployment/coredns".to_owned(),
         field: WorkloadField::Labels,
     }));
     assert!(report.changes.contains(&InfraChange::ServiceFieldChanged {
-        subject: "shop/queue-redis-master".to_owned(),
+        subject: "shop/cache-redis-master".to_owned(),
         field: ServiceField::Ports,
     }));
 }
@@ -87,7 +87,7 @@ fn a_configuration_change_names_the_keys_and_never_a_value() {
                 subject,
                 changed_keys,
                 ..
-            } if subject == "shop/storefront-env" => Some(changed_keys.clone()),
+            } if subject == "shop/web-env" => Some(changed_keys.clone()),
             _ => None,
         })
         .expect("the fixture changes one configmap value");
@@ -114,7 +114,7 @@ fn a_configuration_change_names_the_keys_and_never_a_value() {
 #[test]
 fn a_reference_change_is_only_reported_for_a_holder_present_in_both_snapshots() {
     let report = example_drift();
-    // `flaky-agent` was removed and took its required dangling secret with it; `lost-lookup` was
+    // `worker-agent` was removed and took its required dangling secret with it; `lost-lookup` was
     // removed and took its dangling selector. Neither is a reference event — the removal already
     // says what happened, and counting both would double-count one change.
     for change in &report.changes {
@@ -122,7 +122,7 @@ fn a_reference_change_is_only_reported_for_a_holder_present_in_both_snapshots() 
         | InfraChange::ReferenceBroke { subject, .. } = change
         {
             assert!(
-                !subject.contains("flaky-agent") && !subject.contains("lost-lookup"),
+                !subject.contains("worker-agent") && !subject.contains("lost-lookup"),
                 "{change} names a holder that only exists on one side"
             );
         }
@@ -134,7 +134,7 @@ fn a_reference_change_is_only_reported_for_a_holder_present_in_both_snapshots() 
     assert!(report.changes.iter().any(|change| matches!(
         change,
         InfraChange::ReferenceBroke { subject, .. }
-            if subject == "workloads/shop/deployment/queue-redis"
+            if subject == "workloads/shop/deployment/cache-redis"
     )));
 }
 
@@ -159,7 +159,7 @@ fn a_secret_value_rotation_is_never_reported_even_between_legacy_digests() {
     );
     let before: serde_json::Value = serde_json::from_str(&frozen).expect("frozen legacy IR");
     let mut after = before.clone();
-    let token = &mut after["model"]["secrets"]["shop/storefront-server"]["keys"]["turn-secret"];
+    let token = &mut after["model"]["secrets"]["shop/web-server"]["keys"]["tunnel-secret"];
     assert!(
         token["sha256"].is_string(),
         "the legacy document carries a digest to rotate"

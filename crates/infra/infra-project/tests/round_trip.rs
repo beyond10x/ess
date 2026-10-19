@@ -220,7 +220,7 @@ fn a_corrupted_patch_value_is_caught_and_the_regressed_expectation_is_named() {
     let spec = support::example_spec();
     let bundle = support::read("examples/k3d-dev-cluster/observation.json");
     let failures = round_trip(&spec, &bundle, |files| {
-        let corrupted = "patches/shop.deployment.flaky-agent.strategic.json";
+        let corrupted = "patches/shop.deployment.worker-agent.strategic.json";
         let mut document: Value =
             serde_json::from_str(&files[corrupted]).expect("the emitted patch is JSON");
         document["spec"]["replicas"] = Value::from(1);
@@ -230,7 +230,7 @@ fn a_corrupted_patch_value_is_caught_and_the_regressed_expectation_is_named() {
         failures
             .iter()
             .any(|failure| failure.contains("shop-replicas")
-                && failure.contains("workloads/shop/deployment/flaky-agent")),
+                && failure.contains("workloads/shop/deployment/worker-agent")),
         "a patch corrupted back to the observed value must name the expectation that no longer \
          closes:\n{}",
         failures.join("\n")

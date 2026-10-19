@@ -52,7 +52,7 @@ retain direct exit/output and report; do not clean unrelated work to make room.
 
 Planned managed ID: `ess-browser-replay-fidelity`.
 Planned branch: `impl/review-browser-replay-fidelity`.
-Planned worktree: `~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity`.
+Planned worktree: `<tree>`.
 Build directory: that tree's default `target`.
 Implementor scratch: `target/review-boundaries-15/browser-replay` in that tree.
 Adversary scratch: `target/review-boundaries-15/adversary-pass-1` in that tree.

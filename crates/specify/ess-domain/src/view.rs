@@ -942,8 +942,8 @@ pub struct ViewSpec {
     /// What the caller must supply to ask for this view, in declaration order.
     ///
     /// Empty is the common case: most views are one answer the whole system shares, and a reader
-    /// asks for the lot. A parameter is for the view that has no such answer — ACD's position in a
-    /// queue is *per queue*, and one ranked list of every queued call is a different thing from
+    /// asks for the lot. A parameter is for the view that has no such answer — a call's position
+    /// in a queue is *per queue*, and one ranked list of every queued call is a different thing from
     /// what the implementation can be asked. Before this, a specification with a parameterised
     /// read either declared the unparameterised view and generated scenarios nothing could answer,
     /// or did not declare it.
@@ -2245,8 +2245,8 @@ consistency: read_your_writes
     #[test]
     fn a_view_may_be_asked_about_one_value_the_caller_supplies() {
         // Most views are one answer the whole system shares. A parameter is for the view that has
-        // no such answer — ACD's position in a queue is *per queue*, and one ranked list of every
-        // queued call is a different thing from what the implementation can be asked. Without
+        // no such answer — a call's position in a queue is *per queue*, and one ranked list of
+        // every queued call is a different thing from what the implementation can be asked. Without
         // this, a specification either declared the unparameterised view and generated scenarios
         // nothing could answer, or did not declare it.
         let view = parameterised(ONE_PARAM, "customer_email == param.customer_email");

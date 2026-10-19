@@ -32,7 +32,7 @@
 //! # Read rather than inlined
 //!
 //! `suite.json` is a file `src/runtime.ts` reads, not a string constant, for the reason the Go
-//! target embeds rather than inlines: a generated purpose reads `` `acd.backend.ConnectAgent`
+//! target embeds rather than inlines: a generated purpose reads `` `queue.backend.ConnectAgent`
 //! answers `requested` `` — backticks — so a TypeScript template literal cannot hold it unescaped,
 //! and an interpreted literal would need the whole document escaped into one unreadable line. As a
 //! file it stays diffable, and `git diff` on a model change shows which scenarios moved.

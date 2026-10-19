@@ -492,7 +492,7 @@ test('admission keeps an integer token exactly rather than through binary64', ()
 
 test('a scenario identity is one of the seven shapes', () => {
   assert.doesNotThrow(() => scenarioIdentity('billing.CreateInvoice/outcome/created'));
-  assert.doesNotThrow(() => scenarioIdentity('acd.Agent/state/Ready/refuses/acd.Hangup'));
+  assert.doesNotThrow(() => scenarioIdentity('queue.Agent/state/Ready/refuses/queue.Hangup'));
   assert.doesNotThrow(() => scenarioIdentity('pay-gateway/binding/delivery'));
   assert.throws(() => scenarioIdentity('nope'), /malformed scenario ID/);
   assert.throws(() => scenarioIdentity('pay-gateway/binding/other'), /malformed scenario ID/);

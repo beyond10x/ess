@@ -579,10 +579,10 @@ fn declared_names() -> Vec<(String, String, usize)> {
 
 #[test]
 fn an_entity_invariant_comparing_an_enum_field_to_an_undeclared_variant_is_refused_with_its_file() {
-    // The defect story's own reproduction, on the example rather than on a copy of ACD: `channel`
-    // is `billing.invoice.Channel`, whose variants are `Email`, `Post` and `Portal`. An invariant
-    // comparing it to a name the enum does not declare constrains nothing, so it is refused — and a
-    // refusal a reader cannot open the file of is a refusal they have to grep for.
+    // The defect story's own reproduction, on the example rather than on a downstream model:
+    // `channel` is `billing.invoice.Channel`, whose variants are `Email`, `Post` and `Portal`. An
+    // invariant comparing it to a name the enum does not declare constrains nothing, so it is
+    // refused — and a refusal a reader cannot open the file of is a refusal they have to grep for.
     let diagnostics = refused_with("      - reminder_count >= 0", "      - channel == Fax");
     let refused = only(&diagnostics, codes::ENTITY_UNDECLARED_REFERENCE);
     let span = refused.span.as_ref().expect("a span");
