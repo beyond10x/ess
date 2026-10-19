@@ -350,21 +350,43 @@ fn system_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChang
 
 /// Every domain one revision declares and the other does not (beyond10x/ess#469).
 ///
-/// Only presence is compared. A domain's member sets follow each construct's own `domain`, which
-/// that construct's family compares, and the naming of a domain both sides declare is still read
-/// by the residual. The `domains:` list's order is not in the IR, so reordering it is no change.
+/// Presence, and for a domain both sides declare its display name and summary (downstream report,
+/// 2026-10-19, finding 18): documentation, as every other construct's are. A domain's member sets
+/// follow each construct's own `domain`, which that construct's family compares, and its wire name
+/// is still read by the residual, since it reaches every path addressed through the domain. The
+/// `domains:` list's order is not in the IR, so reordering it is no change.
 fn domain_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChange>) {
     for name in keys(before.domains(), after.domains()) {
-        let moved = match (before.domains().get(name), after.domains().get(name)) {
-            (None, Some(_)) => DomainChange::Added,
-            (Some(_), None) => DomainChange::Removed,
-            (Some(_), Some(_)) => continue,
-            (None, None) => unreachable!("a key came from one of the two maps"),
+        let mut push = |changed| {
+            changes.push(SemanticChange::Domain {
+                subject: DomainRef::new(name.clone()),
+                changed,
+            });
         };
-        changes.push(SemanticChange::Domain {
-            subject: DomainRef::new(name.clone()),
-            changed: moved,
-        });
+        match (before.domains().get(name), after.domains().get(name)) {
+            (None, Some(_)) => push(DomainChange::Added),
+            (Some(_), None) => push(DomainChange::Removed),
+            (Some(was), Some(is)) => {
+                let fallback = name.local();
+                let (old, new) = (
+                    display_name(&was.naming, fallback),
+                    display_name(&is.naming, fallback),
+                );
+                if old != new {
+                    push(DomainChange::DisplayNameChanged {
+                        before: old.to_owned(),
+                        after: new.to_owned(),
+                    });
+                }
+                if was.naming.summary != is.naming.summary {
+                    push(DomainChange::SummaryChanged {
+                        before: was.naming.summary.clone(),
+                        after: is.naming.summary.clone(),
+                    });
+                }
+            }
+            (None, None) => unreachable!("a key came from one of the two maps"),
+        }
     }
 }
 
@@ -2405,14 +2427,15 @@ fn residual(mut value: serde_json::Value) -> serde_json::Value {
                 .get_mut("naming")
                 .and_then(serde_json::Value::as_object_mut)
             {
+                // Its display name and summary are compared as `domain/<name>/…` (ess-diff/20).
+                naming.remove("display");
+                naming.remove("summary");
                 let fallback = name.rsplit('.').next().unwrap_or(name);
-                for key in ["wire", "display"] {
-                    if naming
-                        .get(key)
-                        .is_some_and(|value| value.is_null() || value.as_str() == Some(fallback))
-                    {
-                        naming.remove(key);
-                    }
+                if naming
+                    .get("wire")
+                    .is_some_and(|value| value.is_null() || value.as_str() == Some(fallback))
+                {
+                    naming.remove("wire");
                 }
             }
         }

@@ -254,7 +254,7 @@ impl RawRelatedGuard {
                 return Err(at(
                     ValidationCode::TypeMismatch,
                     not_an_input(name, &via),
-                    INPUT_HINT,
+                    &via_hint(&via),
                 ))
             }
         };
@@ -328,6 +328,24 @@ fn read_predicates(
 /// The hint of the refusal of a `via` that names no input field, through ess/21.
 const INPUT_HINT: &str = "write `via: input.<field>`, naming the input field typed as the other \
                           entity's identity";
+
+/// The hint of the refusal of a written `via` that names no row: [`INPUT_HINT`] through ess/21,
+/// and from ess/22, which reads a bare stored field of the addressed subject (beyond10x/ess#304),
+/// both forms — `subject.<field>` named as the bare `<field>` it means (downstream report,
+/// 2026-10-19, finding 10).
+fn via_hint(via: &str) -> String {
+    if !super::READS_INPUT_NAMESPACE.with(std::cell::Cell::get) {
+        return INPUT_HINT.to_owned();
+    }
+    let field = via
+        .strip_prefix("subject.")
+        .filter(|field| is_bare_field(field))
+        .unwrap_or("<field>");
+    format!(
+        "write `via: input.<field>`, naming the input field typed as the other entity's identity, \
+         or `via: {field}`, naming a stored field of the addressed subject typed as one"
+    )
+}
 
 /// The refusal message of a `via` that names no input field: the one every format through ess/21
 /// gives, kept for those formats (beyond10x/ess#304).

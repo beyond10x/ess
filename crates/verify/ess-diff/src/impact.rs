@@ -36,7 +36,7 @@
 //! | 3 | [`SemanticChange::subject`] returns `Option`, and the `None` arm — a change to the specification itself, which names no construct — is [`Whole`](Invalidation::Whole) | a change the graph cannot seed a closure from cannot fall through as *nothing* |
 //! | 4 | a suite whose dependency set names a construct **neither** revision's graph has a node for is [`Whole`](Invalidation::Whole) | an incomplete graph walk cannot silently make a scenario unreachable, which is the one way a narrowing could be wrong and look right |
 //! | 5 | [`impact()`] runs the comparison itself, from the same two [`EssIr`]s it builds the graph from, and refuses a suite whose digest is not the `before` revision's | a delta and a graph cannot be about different pairs, and a suite cannot be narrowed against a revision it was not produced from |
-//! | 6 | [`impact()`] compares the canonical form of everything the delta does **not** read — the conversions, the workloads, and each domain's naming — and any difference there is [`Whole`](Invalidation::Whole) | a change to an uncompared construct cannot arrive as an empty delta narrowing to nothing, which would be a survival claim about a model that moved. W7.2 moved entities, commands, views and bindings out of this arm and into change entries; what remains here is what still has no family |
+//! | 6 | [`impact()`] compares the canonical form of everything the delta does **not** read — the conversions, the workloads, and each domain's naming (its display name and summary reported as `domain/<name>/…` from `ess-diff/20`, its wire name residual) — and any difference there is [`Whole`](Invalidation::Whole) | a change to an uncompared construct cannot arrive as an empty delta narrowing to nothing, which would be a survival claim about a model that moved. W7.2 moved entities, commands, views and bindings out of this arm and into change entries; what remains here is what still has no family |
 //!
 //! `tests/impact.rs` breaks each of 3, 4, 5 and 6 and watches it fail.
 //!
@@ -877,6 +877,9 @@ fn impact_value(
     // any difference owes everything: an empty delta over two different models would otherwise be
     // a narrowing to nothing, which is a survival claim nothing here is entitled to make. One
     // comparison feeds both answers — the suite's and the artifacts' — because it is one fact.
+    // A domain's display name or summary is a change of its own from `ess-diff/20`, decided as
+    // documentation, but no dependency edge reads a domain's naming, so it still owes everything here
+    // exactly as it did while it was residual.
     let uncompared_moved = delta.changes().iter().any(|change| {
         matches!(
             change,
@@ -884,7 +887,7 @@ fn impact_value(
                 changed: crate::change::SystemChange::UnclassifiedChanged,
                 ..
             }
-        )
+        ) || matches!(change, SemanticChange::Domain { changed, .. } if changed.is_naming())
     });
 
     let mut impacts = Vec::new();

@@ -205,12 +205,14 @@ fn reordering_the_domains_list_is_no_change() {
 }
 
 /// Only the one-sided entry leaves the residual: a domain both revisions declare is still
-/// compared there, so its naming edit stays `unclassified-changed` beside the added domain.
+/// compared there, so its wire name edit stays `unclassified-changed` beside the added domain. A
+/// wire name reaches every path a caller or reader addresses through the domain; its display name
+/// and summary are decided (`a_domain_summary_edit_is_documentation`).
 #[test]
 fn a_naming_edit_on_a_domain_both_sides_declare_stays_unclassified_beside_an_added_domain() {
     let renamed = SHIPMENT.replacen(
         "domain: warehouse.shipment\n",
-        "domain: warehouse.shipment\nnaming:\n  display: Outbound shipments\n",
+        "domain: warehouse.shipment\nnaming:\n  wire: outbound\n",
         1,
     );
     assert_ne!(renamed, SHIPMENT);
@@ -225,5 +227,101 @@ fn a_naming_edit_on_a_domain_both_sides_declare_stays_unclassified_beside_an_add
         [UNCLASSIFIED, ADDED],
         "{}",
         delta.to_canonical_json()
+    );
+}
+
+/// One document naming its domain and its summary at the top, as a single-file specification
+/// writes it: the summary is the system's and the domain's.
+fn single_file(summary: &str) -> EssIr {
+    let text = format!(
+        "format: ess/25
+system: cascade
+version: v1
+domain: cascade.feed
+summary: {summary}
+entities:
+  - name: cascade.feed.Feed
+    identity: {{name: feed_id, type: Uuid}}
+    fields:
+      - {{name: label, type: String}}
+    lifecycle: {{initial: Open, states: [Open], terminal: [Open]}}
+"
+    );
+    ir(&[("system.yaml", &text)])
+}
+
+/// A domain's display name and summary are documentation, compatible for callers, readers and
+/// history, as every other construct's are (downstream report, 2026-10-19, finding 18): before,
+/// they fell to the residual as `system/<name>/unclassified-changed`, `unknown`, and a summary
+/// edit failed `--fail-on breaking-or-unknown`. The kinds are `ess-diff/20` vocabulary.
+#[test]
+fn a_domain_summary_edit_is_documentation() {
+    const DISPLAY: &str = "domain/warehouse.shipment/display-name-changed";
+    const SUMMARY: &str = "domain/warehouse.shipment/summary-changed";
+    let compatible = Compatibility::Compatible;
+
+    // The downstream shape: one document, its top-level summary edited.
+    let delta = classified(
+        &single_file("Cancelling a feed discards its pending items."),
+        &single_file("Cancelling a feed discards every item still pending in it."),
+    )
+    .unwrap();
+    let json = delta.to_canonical_json();
+    assert_eq!(
+        ids(&delta),
+        [
+            "system/cascade/summary-changed",
+            "domain/cascade.feed/summary-changed"
+        ],
+        "{json}"
+    );
+    assert_eq!(
+        verdict_of(&delta, "domain/cascade.feed/summary-changed"),
+        (compatible, compatible, compatible),
+        "{json}"
+    );
+    let outcome = Gate::new(FailOn::BreakingOrUnknown)
+        .judge(&delta, None)
+        .unwrap();
+    assert!(outcome.passed(), "{:?}\n{json}", outcome.failing());
+
+    // A domain both revisions declare, its display name and summary declared.
+    let named = SHIPMENT.replacen(
+        "domain: warehouse.shipment\n",
+        "domain: warehouse.shipment\nnaming:\n  display: Outbound shipments\n  summary: What leaves the warehouse.\n",
+        1,
+    );
+    let after = ir(&[("system.yaml", ONE), ("domains/shipment.yaml", &named)]);
+    let delta = classified(&shipment_only(), &after).unwrap();
+    let json = delta.to_canonical_json();
+    assert_eq!(ids(&delta), [DISPLAY, SUMMARY], "{json}");
+    for id in [DISPLAY, SUMMARY] {
+        assert_eq!(
+            verdict_of(&delta, id),
+            (compatible, compatible, compatible),
+            "{json}"
+        );
+    }
+    let outcome = Gate::new(FailOn::BreakingOrUnknown)
+        .judge(&delta, None)
+        .unwrap();
+    assert!(outcome.passed(), "{:?}\n{json}", outcome.failing());
+    let text = ess_diff::render::text(&delta);
+    assert!(
+        text.contains("display name `shipment` → `Outbound shipments`"),
+        "{text}"
+    );
+
+    // `ess-diff/20` vocabulary: it reads back, and an earlier format refuses it.
+    let delta = diff(&shipment_only(), &after).unwrap();
+    let json = delta.to_canonical_json();
+    assert_eq!(delta.format.to_string(), "ess-diff/20", "{json}");
+    let raw: RawEssDelta = serde_json::from_str(&json).unwrap();
+    assert_eq!(EssDelta::try_from(raw).unwrap(), delta, "it reads back");
+    assert!(
+        delta
+            .to_canonical_json_for("ess-diff/19".parse().unwrap())
+            .is_err(),
+        "ess-diff/19 refuses `{SUMMARY}`"
     );
 }

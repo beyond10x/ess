@@ -4604,6 +4604,8 @@ pub fn validate_sets(
             }
         }
     }
+    // And the literals a branch writes, against the invariants of the entity they land in.
+    errors.extend(validate_literal_invariants(commands, entities, types));
     errors
 }
 
@@ -4754,6 +4756,164 @@ pub fn validate_created_invariant_fields(
         }
     }
     errors
+}
+
+/// Refuses a branch whose literal writes break an invariant of the entity whose row they land in
+/// (downstream report, 2026-10-19, finding 16).
+///
+/// The entity's counterpart of a newtype's invariant over a `sets:` literal, which is refused where
+/// the literal is read. Decided only where the literals settle it: an invariant every field of
+/// which the branch writes with a literal — the subject's `sets:`, a set subject's, or an
+/// `affects:` entry's — and whose `state`, where it reads one, is the state the branch arrives in
+/// (a created row's initial or `into:` state, a move's target). A field the branch leaves alone
+/// keeps a value nobody wrote here, and one read from the input is the run's to decide: whether a
+/// guard implies the invariant is not decidable in general. A literal its own type already refuses
+/// is left to that refusal.
+fn validate_literal_invariants(
+    commands: &BTreeMap<QualifiedName, CommandSpec>,
+    entities: &BTreeMap<QualifiedName, crate::entity::EntitySpec>,
+    types: &TypeRegistry,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    for command in commands.values() {
+        for outcome in &command.outcomes {
+            for (entity, sets, at, arrives) in literal_rows(command, outcome, entities) {
+                let mut written: Vec<(&str, &TypeRef, Node, &str)> = Vec::new();
+                for (target, source) in sets {
+                    let (PayloadSource::Literal { value } | PayloadSource::Scalar { value, .. }) =
+                        source
+                    else {
+                        continue;
+                    };
+                    let Some(held) = entity.field(target) else {
+                        continue;
+                    };
+                    if layered_literal(held, value, types).is_some() {
+                        continue;
+                    }
+                    let terminal = types.newtype_layers(&held.type_ref).terminal;
+                    if let Some((node, _)) = terminal_literal(types, &terminal, value) {
+                        written.push((target.as_str(), &held.type_ref, node, value.as_str()));
+                    }
+                }
+                if written.is_empty() {
+                    continue;
+                }
+                let members: Vec<(&str, &TypeRef, &Node)> = written
+                    .iter()
+                    .map(|(name, declared, node, _)| (*name, *declared, node))
+                    .collect();
+                let mut facts = LiteralFacts::of(types, &members);
+                if let (Some(state), Ok(path)) =
+                    (arrives, ess_primitives::facts::FactPath::new("state"))
+                {
+                    facts.set(path, FactValue::text(state.as_str()));
+                }
+                for invariant in &entity.invariants {
+                    let reads = invariant.predicate.fact_paths();
+                    let settled = !reads.is_empty()
+                        && reads.iter().all(|path| {
+                            (path.namespace() == "state" && arrives.is_some())
+                                || written.iter().any(|(name, ..)| *name == path.namespace())
+                        });
+                    if !settled || facts.truth(invariant) != ess_primitives::predicate::Truth::False
+                    {
+                        continue;
+                    }
+                    let literals = written
+                        .iter()
+                        .filter(|(name, ..)| reads.iter().any(|path| path.namespace() == *name))
+                        .map(|(name, _, _, value)| format!("`{value}` into `{name}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    errors.push(
+                        ValidationError::at(
+                            at.clone(),
+                            ValidationCode::ConflictingDeclaration,
+                            format!(
+                                "outcome `{}` of `{}` writes {literals}{}, which breaks the \
+                                 invariant `{invariant}` of `{}`: every row this branch writes \
+                                 is refused by it",
+                                outcome.name,
+                                command.name,
+                                arrives
+                                    .filter(|_| {
+                                        reads.iter().any(|path| path.namespace() == "state")
+                                    })
+                                    .map(|state| format!(" and leaves the row in `{state}`"))
+                                    .unwrap_or_default(),
+                                entity.name,
+                            ),
+                        )
+                        .with_hint(
+                            "write a literal the entity's invariants hold for, or set the field \
+                             from the input",
+                        ),
+                    );
+                }
+            }
+        }
+    }
+    errors
+}
+
+/// One row a branch writes `sets:` into: the entity, its `sets:`, where they are written, and the
+/// state the row arrives in where the branch says.
+type LiteralRow<'a> = (
+    &'a crate::entity::EntitySpec,
+    &'a BTreeMap<String, PayloadSource>,
+    ConstructRef,
+    Option<&'a crate::entity::StateName>,
+);
+
+/// The rows one branch writes `sets:` into, for [`validate_literal_invariants`].
+fn literal_rows<'a>(
+    command: &CommandSpec,
+    outcome: &'a Outcome,
+    entities: &'a BTreeMap<QualifiedName, crate::entity::EntitySpec>,
+) -> Vec<LiteralRow<'a>> {
+    let branch = command.site().key("outcomes").named(outcome.name.as_str());
+    let moved = |entity: &'a crate::entity::EntitySpec, transition: &str| {
+        entity
+            .states
+            .transition(transition)
+            .map(|transition| &transition.to)
+    };
+    let own = outcome
+        .subject
+        .as_ref()
+        .map(|subject| (&subject.entity, &subject.effect, subject.into.as_ref()))
+        .or(outcome
+            .set_effects
+            .instances
+            .as_ref()
+            .map(|set| (&set.entity, &set.effect, None)));
+    let mut rows = Vec::new();
+    if let Some((name, effect, into)) = own {
+        if let Some(entity) = entities.get(name) {
+            let arrives = match effect {
+                Effect::Creates => Some(into.unwrap_or(&entity.states.initial)),
+                Effect::Moves { transition } => moved(entity, transition),
+                _ => None,
+            };
+            rows.push((entity, &outcome.sets, branch.clone().key("sets"), arrives));
+        }
+    }
+    for (index, affect) in outcome.set_effects.affects.iter().enumerate() {
+        if let Some(entity) = entities.get(&affect.entity) {
+            let arrives = affect
+                .moves
+                .as_deref()
+                .and_then(|transition| moved(entity, transition));
+            rows.push((
+                entity,
+                &affect.sets,
+                branch.clone().key("affects").index(index).key("sets"),
+                arrives,
+            ));
+        }
+    }
+    rows
 }
 
 /// A payload literal, against the representation of the event field it fills.
@@ -5856,7 +6016,24 @@ fn layered_literal(held: &Field, value: &str, types: &TypeRegistry) -> Option<Li
     if layers.newtypes.is_empty() {
         return None;
     }
-    let (node, fact) = match &layers.terminal {
+    let (node, fact) = terminal_literal(types, &layers.terminal, value)?;
+    example_layers(&layers.newtypes, &node, &fact, false, Held::Literal)
+        .err()
+        .map(|(_, reason, hint)| LiteralRefusal {
+            reason,
+            hint: hint.to_owned(),
+        })
+}
+
+/// The value a `sets:` literal's text spells in the scalar `terminal` its field's newtype layers
+/// wrap: a `Boolean`, a number, a text or an enum variant; `None` for a terminal no literal spells
+/// and for text that is no number where one is held.
+fn terminal_literal(
+    types: &TypeRegistry,
+    terminal: &TypeRef,
+    value: &str,
+) -> Option<(Node, FactValue)> {
+    Some(match terminal {
         TypeRef::Primitive(Primitive::Boolean) => {
             let flag = value == "true";
             (Node::Bool(flag), FactValue::Bool(flag))
@@ -5877,13 +6054,7 @@ fn layered_literal(held: &Field, value: &str, types: &TypeRegistry) -> Option<Li
             (Node::Text(value.to_owned()), FactValue::text(value))
         }
         _ => return None,
-    };
-    example_layers(&layers.newtypes, &node, &fact, false, Held::Literal)
-        .err()
-        .map(|(_, reason, hint)| LiteralRefusal {
-            reason,
-            hint: hint.to_owned(),
-        })
+    })
 }
 
 /// Every newtype layer's alphabet and invariants, held against one example read as `value`.
