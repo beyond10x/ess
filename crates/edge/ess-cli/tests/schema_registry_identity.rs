@@ -742,6 +742,78 @@ mod projected {
         }
     }
 
+    /// The issue's newtype, projected with identities and validated through an envelope: a value
+    /// outside the alphabet is refused by the pattern the projection now carries.
+    #[test]
+    fn issue_592_validate_refuses_a_value_outside_the_alphabet() {
+        const HEX: &str =
+            "https://schemas.example.org/codes/types/example.codes.Sha256Hex.schema.json";
+        const SUBMISSION: &str = "urn:example:digest-submission:1";
+        let fixture = Fixture::new("projected-alphabet");
+        fixture.write(
+            "codes.yaml",
+            "format: ess/15\nsystem: example\nversion: v1\ndomain: example.codes\ntypes:\n  - name: \
+             example.codes.Sha256Hex\n    kind: newtype\n    of: String\n    alphabet: \
+             \"0123456789abcdef\"\n",
+        );
+        let generated = fixture.run(&[
+            "generate",
+            "--path",
+            "codes.yaml",
+            "--kind",
+            "schema",
+            "--out",
+            "gen",
+            "--schema-id-base",
+            "https://schemas.example.org/codes/",
+        ]);
+        assert_eq!(generated.status.code(), Some(0), "{generated:?}");
+        fixture.write(
+            "registry/example.codes.Sha256Hex.schema.json",
+            fs::read(
+                fixture
+                    .root
+                    .join("gen/schema/types/example.codes.Sha256Hex.schema.json"),
+            )
+            .unwrap(),
+        );
+        fixture.json(
+            "registry/envelope.schema.json",
+            &json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": SUBMISSION,
+                "type": "object",
+                "required": ["schema", "payload"],
+                "properties": {"schema": {"const": SUBMISSION}, "payload": {"$ref": HEX}},
+                "additionalProperties": false
+            }),
+        );
+        fixture.json(
+            "inside.json",
+            &json!({"schema": SUBMISSION, "payload": "0123456789abcdef"}),
+        );
+        let accepted = report(&fixture.validate("inside.json"), 0);
+        assert_eq!(accepted["issues"], json!([]), "{accepted}");
+
+        fixture.json(
+            "outside.json",
+            &json!({"schema": SUBMISSION, "payload": "ZZZb0123456789abcdef"}),
+        );
+        let refused = report(&fixture.validate("outside.json"), 1);
+        assert_eq!(
+            refused["issues"][0]["code"], "invalid_instance",
+            "{refused}"
+        );
+        assert_eq!(refused["issues"][0]["instance_path"], "/payload");
+        assert!(
+            refused["issues"][0]["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("^[0-9a-f]*$"),
+            "the refusal names the pattern: {refused}"
+        );
+    }
+
     #[test]
     fn issue_593_a_projected_document_imports_and_validates_a_yaml_instance() {
         let fixture = Fixture::new("projected-bundle");

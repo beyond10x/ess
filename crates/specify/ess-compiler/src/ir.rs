@@ -2885,6 +2885,14 @@ pub struct EssIr {
     /// its `spec_digest`.
     #[serde(skip_serializing_if = "BTreeSet::is_empty")]
     undeclared_fields_ignored: BTreeSet<QualifiedName>,
+    /// The struct types that may be written as one of their fields alone, `shorthand: <field>`
+    /// (`ess/27`, beyond10x/ess#594), each with that field's declared name.
+    ///
+    /// Beside the types, as [`Self::undeclared_fields_ignored`] is and for the same reason, and left
+    /// out of the document when empty, so a model with no shorthand keeps its bytes and its
+    /// `spec_digest`. A reader asks [`EssIr::shorthand`].
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    shorthands: BTreeMap<QualifiedName, String>,
     /// Every crossing the specification permits.
     conversions: Vec<ResolvedConversion>,
     /// Every entity, by name.
@@ -2947,6 +2955,7 @@ pub(crate) struct EssIrParts {
     pub(crate) domains: BTreeMap<QualifiedName, ResolvedDomain>,
     pub(crate) types: BTreeMap<QualifiedName, ResolvedType>,
     pub(crate) undeclared_fields_ignored: BTreeSet<QualifiedName>,
+    pub(crate) shorthands: BTreeMap<QualifiedName, String>,
     pub(crate) conversions: Vec<ResolvedConversion>,
     pub(crate) entities: BTreeMap<QualifiedName, ResolvedEntity>,
     pub(crate) commands: BTreeMap<QualifiedName, ResolvedCommand>,
@@ -2972,6 +2981,7 @@ impl EssIr {
             domains: parts.domains,
             types: parts.types,
             undeclared_fields_ignored: parts.undeclared_fields_ignored,
+            shorthands: parts.shorthands,
             conversions: parts.conversions,
             entities: parts.entities,
             commands: parts.commands,
@@ -3051,6 +3061,16 @@ impl EssIr {
     /// Every struct type that ignores the fields it does not declare (`ess/24`), by name.
     pub fn undeclared_fields_ignored(&self) -> &BTreeSet<QualifiedName> {
         &self.undeclared_fields_ignored
+    }
+    /// The declared name of the field a value of the struct type `declared` may be written as
+    /// alone (`ess/27`, beyond10x/ess#594), or `None` where it declares no shorthand or is no
+    /// struct.
+    pub fn shorthand(&self, declared: &QualifiedName) -> Option<&str> {
+        self.shorthands.get(declared).map(String::as_str)
+    }
+    /// Every struct type with a shorthand (`ess/27`), by name, each with its field.
+    pub fn shorthands(&self) -> &BTreeMap<QualifiedName, String> {
+        &self.shorthands
     }
     /// Every permitted type crossing.
     pub fn conversions(&self) -> &[ResolvedConversion] {

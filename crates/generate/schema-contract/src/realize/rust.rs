@@ -7,7 +7,7 @@ use super::native::{nullable, string_values};
 
 use super::{
     children, finding, path, Field, Finding, IntegerWidth, Node, Plan, Realization, Refused,
-    Report, Shape, TargetConfiguration, UnionMode,
+    Report, Shape, ShortKind, Shorthand, TargetConfiguration, UnionMode,
 };
 
 const DERIVE: &str =
@@ -272,11 +272,21 @@ impl Emitter<'_> {
             self.errors.insert(finding(pointer, "rust_raw_json_open_record", "raw JSON text in a record with declared fields and additional values requires raw-token object decoding, which this Rust target does not support"));
             return;
         }
+        let short = self.plan.shorthands.get(pointer);
+        if short.is_some_and(|short| short.kind == ShortKind::Number) {
+            self.errors.insert(finding(pointer, "rust_shorthand_number", "a struct written as a number alone is not decoded: serde_json's arbitrary_precision hands a number to a visitor as a map, indistinguishable from the record, so the short form's number cannot be read soundly"));
+            return;
+        }
         out.push_str(if raw_map {
             "#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]\n"
         } else {
             DERIVE
         });
+        // The derived codecs become `{name}::serialize` and `{name}::deserialize`, the record's
+        // own; the trait impls below decode the short form beside it.
+        if short.is_some() {
+            out.push_str("#[serde(remote = \"Self\")]\n");
+        }
         let closed = matches!(additional.shape, Shape::Never);
         if closed {
             out.push_str("#[serde(deny_unknown_fields)]\n");
@@ -306,8 +316,14 @@ impl Emitter<'_> {
                 writeln!(out, "    #[serde(default, skip_serializing_if = \"EssPresence::is_absent\")]\n    pub {field_name}: EssPresence<{ty}>,").expect("String write");
             }
         }
+        let mut codecs = String::new();
+        if let Some(short) = short {
+            let ty = self.ty(&fields[&short.wire].value);
+            short_form(&mut codecs, name, fields, short, &ty, closed);
+        }
         if closed {
             out.push_str("}\n");
+            out.push_str(&codecs);
             return;
         }
         let extra = self.ty(additional);
@@ -326,6 +342,7 @@ impl Emitter<'_> {
             writeln!(out, "impl<'de> ::serde::Deserialize<'de> for {name} {{\n    fn deserialize<D: ::serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {{\n        let ess_extra = <::std::collections::BTreeMap<::std::string::String, {extra}> as ::serde::Deserialize>::deserialize(deserializer)?;\n        Ok(Self {{ ess_extra }})\n    }}\n}}").expect("String write");
         }
         self.report.obligations.insert(finding(pointer, "open_object_storage", "preserve ess_extra when constructing or transforming the record; serialization rejects declared-key collisions"));
+        out.push_str(&codecs);
     }
 
     fn union(&mut self, out: &mut String, name: &str, variants: &[Node], pointer: &str) {
@@ -589,4 +606,79 @@ fn checked_text(
         .expect("String write");
     }
     writeln!(output, "        None\n    }}\n}}\n\nimpl<'de> ::serde::Deserialize<'de> for {name} {{\n    fn deserialize<D: ::serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {{\n        let value = Self(<::std::string::String as ::serde::Deserialize>::deserialize(deserializer)?);\n        match value.broken_constraint() {{\n            Some(expected) => Err(::serde::de::Error::custom(::std::format_args!(\"{}: expected {{expected}}\"))),\n            None => Ok(value),\n        }}\n    }}\n}}", pointer.escape_debug().to_string().replace('{', "{{").replace('}', "}}")).expect("String write");
+}
+
+/// The trait codecs of a struct `name` with a shorthand (`ess/27`, beyond10x/ess#594), whose
+/// derived record codecs are its inherent `serialize` and `deserialize` (`serde(remote = "Self")`).
+/// It encodes the record. It decodes the record from a JSON object and, from the short form's
+/// scalar, the struct with only `short`'s field filled, through one `deserialize_any`: nothing is
+/// buffered, so raw-token fields of the record decode as they do without a shorthand.
+fn short_form(
+    out: &mut String,
+    name: &str,
+    fields: &BTreeMap<String, Field>,
+    short: &Shorthand,
+    ty: &str,
+    closed: bool,
+) {
+    let mut filled = String::new();
+    for wire in fields.keys() {
+        let field = field_name(wire);
+        if *wire == short.wire {
+            write!(
+                filled,
+                " {field}: <{ty} as ::serde::Deserialize>::deserialize(deserializer)?,"
+            )
+            .expect("String write");
+        } else {
+            write!(filled, " {field}: ::std::default::Default::default(),").expect("String write");
+        }
+    }
+    if !closed {
+        filled.push_str(" ess_extra: ::std::default::Default::default(),");
+    }
+    let (method, value) = match short.kind {
+        ShortKind::Boolean => ("visit_bool", "bool"),
+        // Numbers are refused before this is written (`rust_shorthand_number`).
+        ShortKind::String | ShortKind::Number => ("visit_str", "&str"),
+    };
+    let expecting = format!(
+        "the `{}` value alone or the {name} record",
+        short.wire.escape_debug()
+    );
+    writeln!(
+        out,
+        "impl ::serde::Serialize for {name} {{
+    fn serialize<S: ::serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {{
+        {name}::serialize(self, serializer)
+    }}
+}}
+
+impl {name} {{
+    /// The struct its short form writes: the shorthand field alone.
+    fn ess_short_form<'de, D: ::serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {{
+        Ok(Self {{{filled} }})
+    }}
+}}
+
+impl<'de> ::serde::Deserialize<'de> for {name} {{
+    fn deserialize<D: ::serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {{
+        struct EssShortOrRecord;
+        impl<'de> ::serde::de::Visitor<'de> for EssShortOrRecord {{
+            type Value = {name};
+            fn expecting(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {{
+                formatter.write_str({expecting:?})
+            }}
+            fn {method}<E: ::serde::de::Error>(self, value: {value}) -> Result<{name}, E> {{
+                {name}::ess_short_form(::serde::de::IntoDeserializer::<E>::into_deserializer(value))
+            }}
+            fn visit_map<A: ::serde::de::MapAccess<'de>>(self, map: A) -> Result<{name}, A::Error> {{
+                {name}::deserialize(::serde::de::value::MapAccessDeserializer::new(map))
+            }}
+        }}
+        ::serde::Deserializer::deserialize_any(deserializer, EssShortOrRecord)
+    }}
+}}"
+    )
+    .expect("String write");
 }

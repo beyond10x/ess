@@ -1222,3 +1222,6 @@ fn a_literal_naming_an_undeclared_member_is_refused_by_every_reader() {
     let _ = std::fs::remove_dir_all(package.parent().unwrap());
     assert!(report.is_none(), "TypeScript admitted it: {log}");
 }
+
+#[path = "undeclared_fields/shorthand.rs"]
+mod shorthand;

@@ -1129,15 +1129,21 @@ fn every_message_accepts_an_instance_of_itself_and_refuses_one_that_is_wrong() {
     }
 }
 
+/// How a pattern's class spells a character other than an ASCII letter or digit: its UTF-16 code
+/// unit as a four-digit escape, read alike with and without the `u` flag (beyond10x/ess#592).
+fn escaped(character: char) -> String {
+    format!("{}u{:04X}", '\\', u32::from(character))
+}
+
 /// The keypad of beyond10x/ess#103: an alphabet on the newtype, and an example on the input.
 const KEYPAD: &str = include_str!("../../../verify/ess-conformance/tests/fixtures/keypad.yaml");
 
-/// `x-ess-alphabet` is an annotation beside `x-ess-invariants`, and no `pattern` is invented: an
-/// ECMA-262 character class is not certainly right for supplementary-plane characters without the
-/// `u` flag (`docs/design/string-alphabet-and-length.md`, section 1). An input's example is the JSON
-/// Schema `examples` of its property, which every validator ignores.
+/// `x-ess-alphabet` stays beside `x-ess-invariants`, and the alphabet is asserted by an anchored
+/// `pattern` whose class escapes every character that is not an ASCII letter or digit
+/// (beyond10x/ess#592, `docs/design/string-alphabet-and-length.md`, section 1). An input's example
+/// is the JSON Schema `examples` of its property, which every validator ignores.
 #[test]
-fn an_alphabet_is_an_annotation_on_its_type_and_an_example_on_its_input_property() {
+fn an_alphabet_is_a_pattern_on_its_type_and_an_example_on_its_input_property() {
     let model = KEYPAD.replacen(
         "      - {name: keys, type: keypad.dial.KeySequence}\n    outcomes:",
         "      - {name: keys, type: keypad.dial.KeySequence, example: \"12#\"}\n    outcomes:",
@@ -1153,9 +1159,10 @@ fn an_alphabet_is_an_annotation_on_its_type_and_an_example_on_its_input_property
         definition["x-ess-alphabet"].as_str(),
         Some("0123456789*#ABCD")
     );
-    assert!(
-        definition.get("pattern").is_none(),
-        "an invented pattern: {definition}"
+    assert_eq!(
+        definition["pattern"],
+        serde_json::json!(format!("^[{}{}0-9A-D]*$", escaped('#'), escaped('*'))),
+        "{definition}"
     );
 
     let input = document(
@@ -1289,5 +1296,114 @@ mod schema_id_base {
         ] {
             assert!(IdentifiedJsonSchema::new(admitted).is_ok(), "{admitted:?}");
         }
+    }
+}
+
+/// A `String` newtype's `alphabet:` is asserted by its projected schema as an anchored `pattern`
+/// beside the `x-ess-alphabet` annotation, combined with its `prefix:` into one pattern
+/// (beyond10x/ess#592).
+mod alphabet_pattern {
+    use super::{artifacts, compiled, document};
+    use serde_json::{json, Value};
+
+    /// The projected document of the one newtype `demo.codes.Code`, declared with `alphabet` and,
+    /// where given, `prefix`.
+    fn schema(alphabet: &str, prefix: Option<&str>) -> Value {
+        let prefix = prefix.map_or_else(String::new, |prefix| format!("    prefix: {prefix:?}\n"));
+        let text = format!(
+            "format: ess/15\nsystem: demo\nversion: v1\ndomain: demo.codes\ntypes:\n  - name: \
+             demo.codes.Code\n    kind: newtype\n    of: String\n    alphabet: {alphabet:?}\n{prefix}"
+        );
+        document(
+            &artifacts(&compiled(&text)),
+            "schema/types/demo.codes.Code.schema.json",
+        )
+    }
+
+    fn definition(schema: &Value) -> &Value {
+        &schema["$defs"]["demo.codes.Code"]
+    }
+
+    fn validator(schema: &Value) -> jsonschema::Validator {
+        jsonschema::validator_for(schema).unwrap_or_else(|error| panic!("a usable schema: {error}"))
+    }
+
+    #[test]
+    fn issue_592_an_alphabet_projects_an_anchored_class_pattern() {
+        let hex = schema("0123456789abcdef", None);
+        assert_eq!(definition(&hex)["pattern"], json!("^[0-9a-f]*$"), "{hex:#}");
+        assert_eq!(
+            definition(&hex)["x-ess-alphabet"],
+            json!("0123456789abcdef"),
+            "the annotation stays for the importer and the realizer"
+        );
+        let check = validator(&hex);
+        assert!(check.is_valid(&json!("deadbeef0123")));
+        assert!(
+            check.is_valid(&json!("")),
+            "length is not the alphabet's to bound"
+        );
+        assert!(
+            !check.is_valid(&json!("ZZZb0123")),
+            "the issue's instance: {hex:#}"
+        );
+        assert!(!check.is_valid(&json!("DEADBEEF")), "no case folding");
+        assert!(
+            !check.is_valid(&json!("ab\ncd")),
+            "`$` is the end of the text"
+        );
+
+        let prefixed = schema("0123456789abcdefx", Some("0x"));
+        assert_eq!(
+            definition(&prefixed)["pattern"],
+            json!("^0x[0-9a-fx]*$"),
+            "the prefix and the alphabet are one anchored pattern: {prefixed:#}"
+        );
+        let check = validator(&prefixed);
+        assert!(check.is_valid(&json!("0xff")));
+        assert!(check.is_valid(&json!("0x")));
+        assert!(
+            !check.is_valid(&json!("ff")),
+            "the prefix is still asserted"
+        );
+        assert!(
+            !check.is_valid(&json!("0xZZ")),
+            "the alphabet is asserted after the prefix"
+        );
+
+        // Every character a class could misread is escaped, so each is read as itself.
+        let symbols = schema("a]\\^-[.", None);
+        assert_eq!(
+            definition(&symbols)["pattern"],
+            json!(format!(
+                "^[{}{}{}-{}a]*$",
+                super::escaped('-'),
+                super::escaped('.'),
+                super::escaped('['),
+                super::escaped('^')
+            )),
+            "{symbols:#}"
+        );
+        let check = validator(&symbols);
+        assert!(check.is_valid(&json!("a]\\^-[.")), "{symbols:#}");
+        assert!(!check.is_valid(&json!("b")), "{symbols:#}");
+        assert!(!check.is_valid(&json!("/")), "`-` is a member, not a range");
+    }
+
+    #[test]
+    fn issue_592_a_supplementary_alphabet_keeps_the_annotation_only() {
+        let wide = schema("ab\u{1F600}", None);
+        assert!(
+            definition(&wide).get("pattern").is_none(),
+            "no class reads a supplementary character alike with and without the `u` flag: {wide:#}"
+        );
+        assert_eq!(definition(&wide)["x-ess-alphabet"], json!("ab\u{1F600}"));
+
+        let prefixed = schema("ab\u{1F600}", Some("a"));
+        assert_eq!(
+            definition(&prefixed)["pattern"],
+            json!("^a"),
+            "the prefix keeps its own pattern: {prefixed:#}"
+        );
     }
 }

@@ -300,6 +300,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     crate::failure::binary64(ir, plan, crate::Target::Web)?;
     crate::failure::input_absent(ir, plan, crate::Target::Web)?;
     crate::failure::one_time_response(ir, plan, crate::Target::Web)?;
+    crate::failure::shorthand(ir, plan, crate::Target::Web)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Web)?;
     crate::paging::refuse(ir, plan, crate::Target::Web)?;
     crate::failure::binding_policies(ir, plan, crate::Target::Web)?;

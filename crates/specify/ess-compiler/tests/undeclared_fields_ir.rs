@@ -227,3 +227,8 @@ fn the_billing_example_keeps_its_committed_compiled_digest() {
     let ir = compile(&spec, &SourceMap::new()).unwrap_or_else(|errors| panic!("{errors}"));
     assert_eq!(ir.source_digest(), committed_billing_digest());
 }
+
+/// `shorthand: <field>` on a struct (`ess/27`, beyond10x/ess#594), read beside the body as
+/// `undeclared_fields:` is.
+#[path = "undeclared_fields_ir/shorthand.rs"]
+mod shorthand;

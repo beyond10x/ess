@@ -1,4 +1,4 @@
-#	models=257	commands=493
+#	models=258	commands=494
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -523,6 +523,8 @@ crates/verify/ess-conformance/tests/fixtures/one-time-caller/without-caller.yaml
 crates/verify/ess-conformance/tests/fixtures/one-time-caller/without-caller.yaml	keys.api.IssueKey	default: issued
 crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml	ir=e1adf075661567026afe7fd1544929ec38dfc636c00f623acaff407892846f00:1197
 crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml	credentials.api.Issue	default: issued
+crates/verify/ess-conformance/tests/fixtures/one-time-coverage-53/model.yaml	ir=e1adf075661567026afe7fd1544929ec38dfc636c00f623acaff407892846f00:1197
+crates/verify/ess-conformance/tests/fixtures/one-time-coverage-53/model.yaml	credentials.api.Issue	default: issued
 crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml	ir=e0025ea080b66f2bd4c475cef54f63ee37d555bc2081aa084acc61482d1332ea:8455
 crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml	demo.notes.SubmitNote	input_refusal: account-missing | default: submitted
 crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	ir=084b1edd33300649c91aa2dcf022cbed42eedf0ce2f99e25a663554399f9464f:8609

@@ -289,3 +289,6 @@ fn an_unmoved_open_struct_raises_nothing() {
     let delta = diff(&opened, &opened).unwrap();
     assert!(delta.is_empty(), "{}", delta.to_canonical_json());
 }
+
+#[path = "undeclared_fields/shorthand.rs"]
+mod shorthand;

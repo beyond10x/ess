@@ -2,86 +2,109 @@
 format: aep.planning-md/3
 id: story:json-type-discriminated-union
 kind: story
-status: draft
+status: active
 title: A short-or-long wire form told apart by JSON type can be declared, or is refused by name
-summary: 'Assessment of #594 (untagged String-or-struct union): deferred to a design decision'
+summary: A struct may be written as its one scalar shorthand field (#594, option c, ess/27)
 refs:
 - provider: github
   reference: beyond10x/ess#594
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-17T10:08:03Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-10-17T10:08:03Z", actor: "human:timo", revision: 5}
 ---
 ## Outcome
 
-A value whose wire form is one of several JSON shapes told apart by JSON type alone — a string
-short form beside an object long form — can be declared in a specification, or ESS states by name
-why it cannot. Assessed from beyond10x/ess#594; deferred to a design decision, recorded in
-decision-blocker:json-type-discriminated-union.
+A `kind: struct` type may name one of its fields as its shorthand, and a value of that struct may
+then be written as that field's scalar alone: with `shorthand: op`, `getIssue` is the value
+`{op: getIssue}`. Every target that projects or decodes the struct admits both forms and reads the
+short one as the long one, or refuses the model by name. Assessed from beyond10x/ess#594.
 
 ## Fit review
 
 Tree `2c0378386`; binary run: ess 0.61.0. Reproduction `~/.cache/ess-schema-tools/repro/untagged/system.yaml`
 (brand-free; not the adopter's file).
 
-1. **Need.** An entry of a data file is either a bare name or an object with options; the two are
-   distinguishable by JSON type. Declaring `routes.table.Entry` as a `union` of `String` and a
-   struct is refused at parse: `system.yaml: missing field 'tag'`. Requester's proposed syntax,
-   labelled as theirs: "an untagged union whose variants differ by JSON type (string vs object vs
-   array), refused when two variants share a JSON type".
-2. **Class.** *Gap* for a retrofit (`ess:retrofitting`): an existing format with a short and a long
-   form (a compose-style `ports` entry, a manifest `bin` that is a string or a map, a CI `runs-on`
-   that is a string or a list) cannot be described as it is. *Convenience* for a format the author
-   is still designing: the long form alone can be declared today.
-3. **Already expressible?** Only by changing the data format to the long form everywhere, or by
-   authoring the JSON Schema by hand and importing it (`ess generate schema import-document`,
-   `docs/design/types-only-realizations.md:184-187, 202-205`), which moves the type out of the
-   specification: refused as an idiom by policy 1 of `docs/design/generic-language-features.md:468-473`.
-4. **Fit.** The model has one union form, adjacently tagged, on purpose: "Tagged only, with the tag
-   field named in the model. If untagged is wanted later it can be added as a distinct form with its
-   own name and its own warnings" (`docs/design/ess-review-v0.1.md:192-198`); the projector's
-   branch comment says the same (`crates/generate/ess-gen/src/types.rs:850-857`, "it offers no
-   untagged form at all"). The generic-language design's four decisions (G1–G4) and its two grids
-   are about expressions, row queries, aggregates and guard precedence
-   (`generic-language-features.md:46-66`); a type body form is in none of their rows or columns, so
-   no open format can carry it (policy 2, `:474-480`). Every target would need a decoder by JSON
-   type: Rust and Go structural codecs, TypeScript, web, the interpreter, synthesis (one witness per
-   variant), `ess verify diff` (variant added/removed/retyped), the entity runtime, generated docs,
-   JSON Schema/OpenAPI (`oneOf` without a `const`), and the wire-type collision rule must say what
-   counts as one JSON type (`Decimal` and `Timestamp` are strings on the wire; `Optional` adds
-   `null`; a newtype inherits its representation's type; `Integer` and `Binary64` are both numbers).
-5. **Second adopter.** A retrofit of an existing configuration format whose `ports` entries are
-   `"8080:80"` or `{target: 80, published: 8080}`; a package manifest whose `bin` is a path or a map
-   of names to paths.
-6. **Cost.** A new authored form (a key on `union` or a new kind), one source format, schema
-   regeneration, a diff kind, a decoder and a synthesis witness per target, a refusal per target
-   that cannot decode by JSON type, and the collision rule above.
-7. **Designs considered.** (a) Change nothing: the long form is always expressible — weakest for a
-   retrofit. (b) As proposed: a union variant set discriminated by JSON type, refused when two
-   variants share one. (c) A narrower "short form" on a struct: a struct may also be written as one
-   scalar that fills one named field (`short: op`), which keeps one type, one decoder rule and no
-   variant set — fits the reported case and the `ports` case, not a string-or-list case. No choice
-   is made here.
+1. **Need.** An entry of a data file is either a bare name or an object with options, told apart
+   by JSON type. A `union` of `String` and a struct is refused at parse: `missing field 'tag'`.
+   Requester's proposed syntax, labelled as theirs: "an untagged union whose variants differ by
+   JSON type (string vs object vs array), refused when two variants share a JSON type".
+2. **Class.** *Gap* for a retrofit (`ess:retrofitting`); *convenience* for a format still being
+   designed.
+3. **Already expressible?** Only by changing the data to the long form everywhere, or by importing a
+   hand-written JSON Schema, which moves the type out of the specification.
+4. **Fit.** The model keeps one union form, adjacently tagged (`docs/design/ess-review-v0.1.md:192-198`).
+   A struct shorthand adds no variant set: one type, one decoder rule, and two wire forms that a
+   scalar and an object tell apart.
+5. **Second adopter.** A compose-style `ports` entry, `"8080:80"` or `{target: 80, published: 8080}`.
+6. **Designs considered.** (a) change nothing; (b) a union told apart by JSON type; (c) a struct
+   shorthand. (c) was chosen; it does not cover a string-or-list value.
 
 ## Decisions
 
-**Defer.** The need is real for a retrofit, but the design needs a decision nobody has made: whether
-ESS admits a second union form (or a struct short form), what one JSON type is for the collision
-rule, and which source format carries it outside G1–G4. Recorded as
-decision-blocker:json-type-discriminated-union, which blocks this story. No implementation, no
-format allocation, no reply promising a syntax. Reply to the requester: deferred; the long form is
-the way to write it today.
+Option (c), decided by the operator; decision-blocker:json-type-discriminated-union is cleared.
+
+1. **Syntax.** `shorthand: <field>` on a `kind: struct` type, read beside the body as
+   `undeclared_fields:` is. Its value names exactly one declared field; a list or mapping is
+   refused as it is read.
+2. **Format.** Source format `ess/27`. Below it the key is refused as `unsupported_format_version`
+   naming `ess/27`. A model without the key keeps its IR bytes and `spec_digest`: the IR records the
+   shorthands beside the types, omitted when empty.
+3. **What the field must be.** A declared field of the struct, required (not `Optional`), whose
+   type is a scalar on the wire: a primitive other than `Json`, `List`, `Map` and `Optional`, an
+   enum, or a newtype over one of those. Every other field of the struct is `Optional`, because the
+   short form fills nothing else. Each breach is refused by name at `<type>.shorthand`.
+4. **Where it is admitted.** On a `kind: struct` type only. On a newtype, an enum or a union, and on
+   an entity, an event, an error, a view or an actor, it is refused as `unsupported_construct`.
+5. **Meaning.** The short form is the long form with only the shorthand field written. The struct's
+   invariants apply to the value it normalizes to. Every writer the model generates writes the long
+   form.
+6. **Instance validation** is the JSON Schema projection: the struct's definition is
+   `oneOf: [<the field's schema>, <the object>]`, annotated `x-ess-shorthand: <wire name>`. The two
+   branches differ by JSON type, so exactly one matches. OpenAPI and AsyncAPI share the definition.
+7. **Decoders.** Model type realization (`ess generate types`): Rust and Go decode either form into
+   the struct and encode the long form; TypeScript declares the wire union of the scalar and the
+   object, with a report obligation to normalize. Bundle realization is unchanged. Targets that do
+   not decode the short form yet refuse a model that reaches a shorthand struct, by name: the
+   synthesized Rust and Go servers and web app, and conformance synthesis wherever a target's
+   answer would be observed (a response, an event, a view row).
+8. **Diff.** `ess verify diff` classifies a shorthand added (`expanded`) and removed or moved
+   (`narrowed`) on a struct.
 
 ## Acceptance
 
-Once the blocker is cleared, the chosen design's acceptance replaces this section. Until then:
-`ess specify validate` on `~/.cache/ess-schema-tools/repro/untagged/system.yaml` keeps refusing with
-`missing field 'tag'` — no target silently admits an untagged union.
+Each scenario is a named test in an existing test binary.
+
+- `shorthand_struct_validates_at_ess_27`: a struct with `shorthand: op`, `op: String`, every other
+  field `Optional`, validates under `ess/27`, and its IR names the shorthand.
+- `shorthand_below_ess_27_is_refused`: the same under `ess/26` is refused as
+  `unsupported_format_version` naming `ess/27`.
+- `shorthand_on_a_non_struct_is_refused`: on a newtype, enum or union, `unsupported_construct`.
+- `shorthand_outside_types_is_refused`: on an event, `unsupported_construct` at its key.
+- `shorthand_naming_no_field_is_refused`, `shorthand_on_a_non_scalar_field_is_refused` (a
+  struct, a `List`, an `Optional`), `shorthand_beside_a_required_field_is_refused`,
+  `shorthand_naming_two_fields_is_refused`.
+- `ir_without_shorthand_keeps_its_bytes`: a model that does not write the key keeps its IR bytes.
+- `schema_projects_shorthand_as_one_of_scalar_and_object`: the JSON Schema definition is `oneOf`
+  of the field's schema and the closed object, with `x-ess-shorthand`, and `ess generate schema
+  validate` admits `getIssue` and `{op: getIssue, paging: token}` and refuses `7` and `[getIssue]`.
+- `rust_types_decode_the_short_form`, `go_types_decode_the_short_form`: the realized library
+  decodes `"getIssue"` to the struct with `op` set and encodes the long form.
+- `typescript_types_declare_the_wire_union`: the declaration is the scalar or the object.
+- `synthesis_refuses_a_shorthand_struct_by_name`: Rust, Go and web synthesis refuse naming
+  `shorthand`.
+- `diff_classifies_a_shorthand_change`: added is `expanded`, removed is `narrowed`.
 
 ## Scope
 
-None until the decision. Inferred, if accepted: `crates/specify/ess-domain/src/types.rs` (union
-body), `crates/specify/ess-compiler`, `crates/generate/ess-gen/src/types.rs` (`variant`),
-`crates/generate/schema-contract/src/realize*`, `crates/generate/ess-synth`, `crates/verify/ess-diff`,
-`crates/verify/ess-conformance` (synthesis and interpreter), `website/docs/reference/spec-versions.md`.
+`crates/specify/ess-domain` (`types.rs`, a `shorthand` module beside `undeclared_fields.rs`,
+`spec.rs`, `system.rs`), `crates/specify/ess-compiler` (`ir.rs`, `resolve.rs`),
+`crates/generate/ess-gen` (`types.rs`, `docs.rs`), `crates/generate/schema-contract/src/realize*`,
+`crates/generate/ess-synth`, `crates/verify/ess-conformance` (synthesis refusal),
+`crates/verify/ess-diff`, `crates/edge/ess-cli` tests, `models/toolchain/domains/specify.yaml`,
+`schemas/generated/ess.schema.json`, `website/docs/reference/{formats,spec-versions}.md`.
+Not here: a short-form witness in conformance suites and short-form decoding in the synthesized
+servers and observers.

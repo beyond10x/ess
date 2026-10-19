@@ -294,6 +294,11 @@ from one `ConstructRef` helper, so it adds no head literal below.
 location as `unsupported_format_version`, naming `ess/27`, beside the selection refusals that were
 already string-located there.
 
+`shorthand.rs` is new with beyond10x/ess#594, six typed sites and no string-located one: the
+`ess/27` key `shorthand:` is refused at `<kind> <name>.shorthand` on a type that is no struct, on
+any other declaration, below `ess/27`, naming no declared field, naming a field that is not a
+required scalar, and beside another required field, each from one `ConstructRef` helper.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
@@ -307,6 +312,7 @@ expression.rs 1 0
 outcome_group.rs 17 0
 primitive_admission.rs 16 8
 selection.rs 3 0
+shorthand.rs 0 6
 spec.rs 7 0
 system.rs 10 0
 topology.rs 10 0

@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: decision-blocker:json-type-discriminated-union
 kind: decision-blocker
-status: open
+status: cleared
 title: Decide whether and how a value told apart by JSON type is declared
 relations:
 - blocks: story:json-type-discriminated-union
-revision: 1
+revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-17T10:07:59Z", actor: "human:timo", revision: 3}
 ---
 ## Approved requirement blocked
 
@@ -27,3 +29,12 @@ an adjacent `tag`.
 
 Evidence: the story's fit review; `docs/design/ess-review-v0.1.md:192-198` (tagged-only, untagged as
 a separate form later).
+
+## Decided
+
+(c): a struct type may also be written as one scalar that fills one named field, its shorthand:
+`issue.get: getIssue` reads as `{op: getIssue}`. ESS admits no general untagged union and no
+second union form; question 2 (what one JSON type is) does not arise, because the two wire forms
+are a scalar and an object. The key is `shorthand: <field>` on a `kind: struct` type, in source
+format `ess/27`, the next unused number on this base. The design and its acceptance are in
+story:json-type-discriminated-union.

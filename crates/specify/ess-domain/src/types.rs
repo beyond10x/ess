@@ -1162,6 +1162,11 @@ pub enum TypeBody {
         /// beyond10x/ess#500). `None` where the declaration does not say, which is `refused`.
         #[serde(skip_serializing_if = "Option::is_none")]
         undeclared_fields: Option<UndeclaredFields>,
+        /// The field a value of this struct may be written as alone, as written (`ess/27`,
+        /// beyond10x/ess#594): with `shorthand: op`, the scalar `getIssue` is `{op: getIssue}`.
+        /// `None` where the declaration does not say, which is the long form only.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        shorthand: Option<String>,
     },
     /// One of a fixed set of names.
     Enum {
@@ -1907,6 +1912,7 @@ impl RawTypeBody {
                 fields,
                 invariants: RawInvariant::read_all(invariants, at, errors),
                 undeclared_fields: None,
+                shorthand: None,
             },
             Self::Enum {
                 variants,
@@ -2239,6 +2245,21 @@ impl schemars::JsonSchema for RawNamedType {
              default, or `ignored`, which admits fields beyond the declared ones while every \
              declared field stays required and typed (`ess/24`, beyond10x/ess#500).",
         );
+        let shorthand = {
+            let mut field = schemars::schema::SchemaObject {
+                instance_type: Some(schemars::schema::InstanceType::String.into()),
+                ..Default::default()
+            };
+            field.string().pattern = Some(Field::PATTERN.to_owned());
+            field.metadata().description = Some(
+                "The one field a value of this struct may be written as alone: with `shorthand: \
+                 op`, the scalar `getIssue` is the value `{op: getIssue}`. The field is required \
+                 and a scalar on the wire, and every other field is `Optional` (`ess/27`, \
+                 beyond10x/ess#594)."
+                    .to_owned(),
+            );
+            schemars::schema::Schema::Object(field)
+        };
 
         let object = schema.object();
         object.properties.insert("name".to_owned(), name.clone());
@@ -2269,6 +2290,11 @@ impl schemars::JsonSchema for RawNamedType {
                 object
                     .properties
                     .insert(UndeclaredFields::KEY.to_owned(), undeclared_fields.clone());
+                // And name the field a value may be written as alone (`ess/27`,
+                // beyond10x/ess#594), read beside the body as well (`crate::shorthand`).
+                object
+                    .properties
+                    .insert(crate::shorthand::KEY.to_owned(), shorthand.clone());
             }
         }
 
@@ -2579,6 +2605,8 @@ impl TypeRegistry {
                     errors.push(refused);
                 }
             }
+            // A struct's `shorthand:` (`ess/27`, beyond10x/ess#594), against every declared type.
+            errors.extend(crate::shorthand::validate(declared, self));
         }
         errors
     }
@@ -2767,6 +2795,7 @@ mod tests {
                     ],
                     invariants: vec![Invariant::parse("amount >= 0").expect("a predicate")],
                     undeclared_fields: None,
+                    shorthand: None,
                 },
                 naming: Naming::default(),
             })
@@ -2939,6 +2968,7 @@ mod tests {
                 ],
                 invariants: Vec::new(),
                 undeclared_fields: None,
+                shorthand: None,
             },
             naming: Naming::default(),
         };
