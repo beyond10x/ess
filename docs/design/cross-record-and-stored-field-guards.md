@@ -836,6 +836,40 @@ of its own:
 6. accepting and external branches in declaration order (#217), every external branch but one
    marked `before_row: true`.
 
+### From `ess/27`: the one rule
+
+A document in `ess/27` or later reads one rule instead of the six steps above
+([`generic-language-features.md` § G4](generic-language-features.md#g4-one-precedence-rule)): a
+branch answers in the order of what it must read — the request alone; then whether the addressed
+record exists; then what it holds; then the rows around it; then the causes outside the
+specification — and within one step the first declared whose condition holds. Below `ess/27` every
+command keeps the six steps and its answers.
+
+| step | answers | the plan's phase (`selection-plan.md`) |
+|---|---|---|
+| 0 | `input_absent:` | `InputAbsent` |
+| 1 — the request alone | input-guarded refusals, and `external:` marked `before_row: true`, in declaration order | `InputRefusal` |
+| 2 — existence of the addressed record | `existing_instance:` on every command, also one reading a related row or a row set; then `unknown_instance:` | `Existence` |
+| 3 — the held state | `when_subject_state:`, `when_state_changes:`, `when_subject:`, then `wrong_state:` | `HeldState` |
+| 4 — the rows around it | every `exists: false` over a row the input or a stored field names, in declaration order; then every present related row's and row set's refusal, in declaration order, whatever else the command declares; then a row-set upsert's `unknown_instance:` | `PresentRelated` |
+| 5 — acceptance and external causes | accepting `when:`, `external:`, accepting `when_related:` and row-set branches, in declaration order | `Accepting` |
+| 6 | `otherwise:` | `Default` |
+
+The one move from the six steps is a missing row the input names: step 1 there, step 4 here, after
+the addressed record's existence and held state, as a stored reference's already was. Request-only
+refusals stay first (the record's answer 1). `RelatedRow` holds nothing under the rule.
+
+Every pair the six steps left unordered is admitted under the rule, and the rule orders it:
+`when_related:` beside `when_subject:`, `when_subject_state:`, `when_state_changes:`,
+`unknown_instance:`, `input_absent:`, `wrong_state:` in any composition and a `before_row:`
+external (the case [below](#an-external-refusal-answered-before-the-row-ess25-beyond10xess534) left
+undesigned); `when_subject:` beside `when_subject_state:`; `wrong_state:` beside explicit
+subject-state guards, last in step 3; two refusals over one related row, the first declared. Each
+pair stays refused below `ess/27`, its hint naming `ess/27`. `wrong_state:` answers for the branch
+step 5 selects: where only a related branch moves and the related row is missing, step 5 selects
+nothing and the missing row answers. `crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml`
+holds one command per pair.
+
 Validation refuses an accepting or external branch declared before a branch step 4 selects where
 one request can satisfy both input guards (beyond10x/ess#486, `ConflictingDeclaration`, naming
 both). Guards the finite prover shows disjoint may come in either order; a branch with no input

@@ -5,6 +5,7 @@
 //! shapes read the same subject at the same point — the row the command addresses, immediately
 //! before selection — and both enter one joint partition here: the stored fields the guards name,
 //! crossed with the input fields the `when:` guards name.
+use super::precedence::Composition;
 use super::{finite, CommandSpec, Effect, InstanceSurface, Outcome, OutcomeCondition, Subject};
 use crate::{
     entity::EntitySpec,
@@ -19,9 +20,10 @@ use std::fmt::Write as _;
 /// command (beyond10x/ess#461): the held state read as `state` in the fact strategy's predicate
 /// (ess/18) states the same command, and declaration order gives the refusal its precedence.
 pub(crate) const LIFECYCLE_MIX_HINT: &str =
-    "read the held state in the predicate instead: replace `when_subject_state:` with \
-     `when_subject: {predicate: state == Active}`, or refuse every other state with \
-     `when_subject: {predicate: state != Active}` declared before the default";
+    "declare `format: ess/27`, where the one precedence rule reads both at its held-state step in \
+     declaration order, or read the held state in the predicate instead: replace \
+     `when_subject_state:` with `when_subject: {predicate: state == Active}`, or refuse every other \
+     state with `when_subject: {predicate: state != Active}` declared before the default";
 
 /// Whether any branch of this command reads the existing subject's stored fields.
 pub fn uses(command: &CommandSpec) -> bool {
@@ -200,10 +202,11 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 _ => {}
             }
         }
-        if command
-            .outcomes
-            .iter()
-            .any(|outcome| outcome.condition.reads_held_state())
+        if !admits_state_from(types, super::precedence::ONE_RULE)
+            && command
+                .outcomes
+                .iter()
+                .any(|outcome| outcome.condition.reads_held_state())
         {
             errors.push(
                 ValidationError::at(
@@ -247,7 +250,12 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
             }
         }
         if let (true, Some(entity)) = (shared, spec.entities().get(&common.entity)) {
-            errors.extend(validate_partition(command, entity, types));
+            errors.extend(validate_partition(
+                command,
+                entity,
+                types,
+                Composition::of(command, spec.system().format),
+            ));
         }
     }
     errors
@@ -518,12 +526,18 @@ fn check(
 /// non-optional paths — and an open one, `weight_kg > 20`, makes it decline; the command then needs
 /// a genuine default, as an open input guard does. Where it proves, every joint assignment must
 /// select exactly one branch, the default counting where none of the guarded ones does.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one partition proof: the branches it counts, the cases and the refusal of each"
+)]
 fn validate_partition(
     command: &CommandSpec,
     entity: &EntitySpec,
     types: &TypeRegistry,
+    composition: Composition,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
+    let one_rule = composition.reads_one_rule();
     let guarded: Vec<&Outcome> = command
         .outcomes
         .iter()
@@ -538,6 +552,12 @@ fn validate_partition(
                         | OutcomeCondition::InputAbsent
                         | OutcomeCondition::ExistingInstance
                 )
+                // Under the one rule the related row's branches are its partition's.
+                && (!one_rule
+                    || !matches!(
+                        outcome.condition,
+                        OutcomeCondition::Related { .. } | OutcomeCondition::RelatedSet { .. }
+                    ))
         })
         .collect();
     let stored: Vec<_> = guarded
@@ -586,11 +606,19 @@ fn validate_partition(
         }
     };
     for case in cases {
-        let selected: Vec<&Outcome> = if case.selected.is_empty() {
+        let mut selected: Vec<&Outcome> = if case.selected.is_empty() {
             default.into_iter().collect()
         } else {
             case.selected.iter().map(|index| guarded[*index]).collect()
         };
+        // Under the one rule the branch the plan reads first answers, within a step the first
+        // declared (`docs/design/generic-language-features.md` § G4).
+        if one_rule {
+            selected = command
+                .read_first(composition, &selected)
+                .into_iter()
+                .collect();
+        }
         if selected.len() == 1 {
             continue;
         }

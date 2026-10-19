@@ -184,6 +184,10 @@ fn guarded(command: &ResolvedCommand) -> impl Iterator<Item = &ResolvedOutcome> 
                     | ResolvedCondition::UnknownInstance
                     | ResolvedCondition::InputAbsent
                     | ResolvedCondition::ExistingInstance
+                    // Under the one rule (ess/27) a related row is read after the stored row's
+                    // fields, at step 4: its branches are the related row's family's.
+                    | ResolvedCondition::Related { .. }
+                    | ResolvedCondition::RelatedSet { .. }
             )
     })
 }
@@ -2062,6 +2066,11 @@ fn selects<'a>(
     let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
     let mut selected = Vec::new();
     for branch in guarded(command) {
+        // Under the one rule (ess/27) a literal held-state guard sits beside the stored-field ones
+        // at step 3: it holds where it admits the row's state.
+        if !super::admits_held_state(&branch.condition, &arrangement.state) {
+            continue;
+        }
         if let Some(predicate) = stored(&branch.condition) {
             match guard_truth_with(
                 ir,
@@ -2093,7 +2102,8 @@ fn selects<'a>(
             .iter()
             .copied()
             .filter(|branch| {
-                super::precedence::first_before_held_and_accepting(command, &[branch]).is_some()
+                super::precedence::first_before_held_and_accepting(ir.format(), command, &[branch])
+                    .is_some()
             })
             .collect();
         if !first.is_empty() {
@@ -2120,14 +2130,14 @@ fn selects<'a>(
 }
 
 /// Of `several` branches of `command`, the one the precedence plan, built in the IR's format, reads
-/// before every other ([`precedence::answers_before_in`](super::precedence::answers_before_in)).
+/// before every other ([`precedence::answers_before`](super::precedence::answers_before)).
 fn first_read<'a>(
     ir: &EssIr,
     command: &'a ResolvedCommand,
     several: &[&'a ResolvedOutcome],
 ) -> Option<&'a ResolvedOutcome> {
     several.iter().copied().find(|branch| {
-        let before = super::precedence::answers_before_in(command, ir.format(), branch);
+        let before = super::precedence::answers_before(ir.format(), command, branch);
         !several
             .iter()
             .any(|other| before.iter().any(|earlier| earlier.name == other.name))
@@ -2318,7 +2328,15 @@ pub(super) fn external_witness(
     let (mut arrangement, input) = match searched {
         Ok(found) => found,
         Err(cause) if tried.get() == 0 => return Err(cause),
-        Err(_) => return Err(external_claimed(command, outcome, entity, tried.get())),
+        Err(_) => {
+            return Err(external_claimed(
+                ir.format(),
+                command,
+                outcome,
+                entity,
+                tried.get(),
+            ))
+        }
     };
     // Its writes moved off what the row holds, as every plain witness's are (beyond10x/ess#161),
     // where the moved input still leaves the branch to answer.
@@ -2488,12 +2506,13 @@ pub(super) fn external_step(
 /// `ESS-SYNTH-003` for [`external_witness`]: every branch the stored row selects, with its guards,
 /// as what claimed each of the `tried` inputs on every row searched.
 fn external_claimed(
+    format: ess_domain::system::FormatVersion,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     entity: &EntityHandle,
     tried: usize,
 ) -> RefusalCause {
-    let claiming: Vec<String> = answered_before(command, outcome)
+    let claiming: Vec<String> = answered_before(format, command, outcome)
         .into_iter()
         .filter_map(|branch| {
             let held = stored(&branch.condition)?;
@@ -2556,11 +2575,12 @@ fn external_inputs(
 /// declaration order. For an external branch under the precedence order, every branch the stored
 /// row selects: those sit in the held-state phase, read before the accepting one.
 fn answered_before<'c>(
+    format: ess_domain::system::FormatVersion,
     command: &'c ResolvedCommand,
     outcome: &ResolvedOutcome,
 ) -> Vec<&'c ResolvedOutcome> {
     let competing: BTreeSet<&OutcomeName> = guarded(command).map(|branch| &branch.name).collect();
-    super::precedence::answers_before(command, outcome)
+    super::precedence::answers_before(format, command, outcome)
         .into_iter()
         .filter(|branch| competing.contains(&branch.name))
         .collect()
@@ -2586,15 +2606,18 @@ fn leaves_external(
             return Ok(false);
         }
     }
-    let refusals: Vec<&Predicate> = super::sibling_refusals(command, outcome)
+    let refusals: Vec<&Predicate> = super::sibling_refusals(ir.format(), command, outcome)
         .filter_map(when)
         .collect();
     if !decides(&facts, &refusals, false)?
-        || super::claimed_by(&facts, &super::earlier_accepting(command, outcome))
+        || super::claimed_by(
+            &facts,
+            &super::earlier_accepting(ir.format(), command, outcome),
+        )
     {
         return Ok(false);
     }
-    for branch in answered_before(command, outcome) {
+    for branch in answered_before(ir.format(), command, outcome) {
         let Some(predicate) = stored(&branch.condition) else {
             continue;
         };
@@ -5153,7 +5176,7 @@ fn shadowed_at(
         }
         let facts = flatten(ir, command, &input).map_err(RefusalCause::WitnessRejected)?;
         if decides(&facts, &own_input, true)? {
-            shadow.record(command, outcome, &facts)?;
+            shadow.record(ir.format(), command, outcome, &facts)?;
         }
     }
     Ok(())
@@ -6033,7 +6056,7 @@ fn unknown_identity_refusal(
             inputs.push(input);
         }
     }
-    let earlier: Vec<&Predicate> = super::sibling_refusals(command, outcome)
+    let earlier: Vec<&Predicate> = super::sibling_refusals(ir.format(), command, outcome)
         .filter_map(when)
         .collect();
     let command_ref = CommandRef::new(command.name.clone());
@@ -7485,7 +7508,7 @@ fn overlaps(
     let entity = &read.entity;
     let hints = hints(command);
     let fields = read_fields(ir, entity, &hints);
-    let refusals: Vec<&Predicate> = super::sibling_refusals(command, outcome)
+    let refusals: Vec<&Predicate> = super::sibling_refusals(ir.format(), command, outcome)
         .filter_map(when)
         .collect();
     // As in `boundaries`: a command comparing a link with an input is decided with the input bound

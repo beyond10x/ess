@@ -19,6 +19,24 @@ use super::{
 };
 use crate::system::FormatVersion;
 
+/// The first source format whose precedence plan reads the one rule
+/// (`docs/design/generic-language-features.md` § G4): a branch answers in the order of what it must
+/// read — the request alone; then whether the addressed record exists; then what it holds; then the
+/// rows around it; then the causes outside the specification — and within one step the first
+/// declared whose condition holds.
+///
+/// Under the rule the phases keep their names and their order; what moves is where three kinds of
+/// branch are placed ([`place`]): `existing_instance:` answers at [`Phase::Existence`] on every
+/// command, an `exists: false` over a row the input names leads [`Phase::PresentRelated`] beside one
+/// a stored field names, and every present-related refusal answers there, whatever else the
+/// command declares. [`Phase::RelatedRow`] holds nothing.
+pub const ONE_RULE: FormatVersion = FormatVersion::V27;
+
+/// Whether a document in source format `format` reads the one rule ([`ONE_RULE`]).
+pub fn reads_one_rule(format: FormatVersion) -> bool {
+    format.major() >= ONE_RULE.major()
+}
+
 /// A phase of the precedence order.
 ///
 /// No `Ord`: the order phases are read in is [`phase_order`], which a test may exchange, and a
@@ -28,7 +46,8 @@ pub enum Phase {
     /// A request with no input document (`input_absent:`), before any input field is read.
     InputAbsent,
     /// Step 1: on a command reading a related row or a row set, `existing_instance:`; then each
-    /// `exists: false` over a row the input names, in declaration order.
+    /// `exists: false` over a row the input names, in declaration order. Empty under the one rule
+    /// ([`ONE_RULE`]).
     RelatedRow,
     /// Step 2: the input-guarded refusals, the first declared whose guard holds, and from ess/25 the
     /// external refusals marked `before_row: true`, among them in declaration order.
@@ -39,7 +58,9 @@ pub enum Phase {
     /// `wrong_state:`.
     HeldState,
     /// Step 5: the present-related refusals the command's composition orders before every
-    /// accepting branch, and `exists: false` over a stored reference.
+    /// accepting branch, and `exists: false` over a stored reference. Under the one rule
+    /// ([`ONE_RULE`]) step 4: every `exists: false`, over a row the input or a stored field names,
+    /// then every present-related refusal.
     PresentRelated,
     /// Step 6: the accepting and external branches, in declaration order.
     Accepting,
@@ -70,6 +91,25 @@ impl Phase {
             Self::HeldState => Some(4),
             Self::PresentRelated => Some(5),
             Self::Accepting => Some(6),
+        }
+    }
+
+    /// The step of the precedence order this phase holds in source format `format`: [`Self::step`]
+    /// below [`ONE_RULE`]; from it the rule's steps, `0` for `input_absent:` to `6` for the default,
+    /// and `None` for [`Self::RelatedRow`], which holds nothing there.
+    pub fn step_in(self, format: FormatVersion) -> Option<u8> {
+        if !reads_one_rule(format) {
+            return self.step();
+        }
+        match self {
+            Self::InputAbsent => Some(0),
+            Self::RelatedRow => None,
+            Self::InputRefusal => Some(1),
+            Self::Existence => Some(2),
+            Self::HeldState => Some(3),
+            Self::PresentRelated => Some(4),
+            Self::Accepting => Some(5),
+            Self::Default => Some(6),
         }
     }
 
@@ -265,6 +305,10 @@ enum ReadFirst {
 
 /// What the rest of a command declares that moves a branch between phases: the facts [`place`]
 /// reads, decided once per command.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "one flag per fact of the command the classification reads, not a state machine"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Composition {
     /// A branch reads a related row, through the input or a stored field, or a row set: its
@@ -275,6 +319,8 @@ pub struct Composition {
     /// What the interpreter answers for before `select` begins: on a stored reference or a row
     /// set, a `when:` refusal step 2 does not hold answers after it, at step 5.
     read_first: ReadFirst,
+    /// The document reads the one rule ([`ONE_RULE`]).
+    one_rule: bool,
     /// A creation takes, from the input, the identity the command's acting branches address (an
     /// upsert, beyond10x/ess#462): on a row-set command an absent addressed row is left to the row
     /// sets, so `unknown_instance:` answers after them.
@@ -289,7 +335,8 @@ impl Composition {
     /// Its present-related refusals answer at step 5, after the addressed row's existence and
     /// held state and before every accepting branch: on a row-set command; from `ess/22` beside
     /// `wrong_state:` (beyond10x/ess#282) or over several input rows (#283); from `ess/27` beside
-    /// `unknown_instance:`; and through a stored reference (#304).
+    /// `unknown_instance:`; and through a stored reference (#304). Under the one rule
+    /// ([`ONE_RULE`]) every present-related refusal answers there.
     pub fn new(branches: &[BranchShape], input_rows: usize, format: FormatVersion) -> Self {
         let any = |test: fn(&BranchShape) -> bool| branches.iter().any(test);
         let row_set = any(|branch| matches!(branch.condition, ConditionShape::RelatedSet));
@@ -300,7 +347,8 @@ impl Composition {
             )
         });
         let present_related_refusal = any(|branch| branch.present_related_refusal());
-        let ordered = if row_set {
+        let one_rule = reads_one_rule(format);
+        let ordered = if row_set || one_rule {
             present_related_refusal
         } else {
             format.major() >= FormatVersion::V22.major()
@@ -328,6 +376,7 @@ impl Composition {
                 ReadFirst::Nothing
             },
             upsert: false,
+            one_rule,
         }
     }
 
@@ -363,6 +412,11 @@ impl Composition {
     /// Whether the command's present-related refusals answer at step 5 ([`Self::new`]).
     pub fn orders_present_related_refusals(&self) -> bool {
         self.orders_present_related_refusals
+    }
+
+    /// Whether the command's document reads the one rule ([`ONE_RULE`]).
+    pub fn reads_one_rule(&self) -> bool {
+        self.one_rule
     }
 }
 
@@ -412,12 +466,18 @@ pub fn place(branch: &BranchShape, command: &Composition) -> Place {
     match branch.condition {
         ConditionShape::InputAbsent => at(Phase::InputAbsent, Rank::Declared),
         ConditionShape::ExistingInstance => {
-            if command.reads_related {
+            if command.reads_related && !command.one_rule {
                 at(Phase::RelatedRow, Rank::Lead)
             } else {
                 at(Phase::Existence, Rank::Lead)
             }
         }
+        // Under the one rule a row the input names is around the addressed record, as one a stored
+        // field names is: its absence answers at step 4, after existence and the held state.
+        ConditionShape::Related {
+            stored: false,
+            absent: true,
+        } if command.one_rule => at(Phase::PresentRelated, Rank::Lead),
         ConditionShape::Related {
             stored: false,
             absent: true,

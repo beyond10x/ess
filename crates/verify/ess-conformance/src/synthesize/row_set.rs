@@ -124,9 +124,13 @@ pub(super) fn uses(command: &ResolvedCommand) -> bool {
 /// Whether this strategy arranges the scenario for `outcome`: every branch of a row-set command
 /// the rows decide — all of them but an input-guarded refusal, which answers before any row is
 /// read, and the branches their own families file.
-pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
+pub(super) fn routes(
+    format: ess_domain::system::FormatVersion,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> bool {
     uses(command)
-        && rows_decide(command, outcome)
+        && rows_decide(format, command, outcome)
         && outcome.replays.is_none()
         && !(outcome.error.is_some() && matches!(outcome.condition, ResolvedCondition::When { .. }))
         && !matches!(
@@ -148,12 +152,16 @@ pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bo
 /// other command's branch is, and what the row-set arrangement cannot do for a sibling — a head
 /// whose key the target mints, rows a binding changes — does not take it away
 /// (<https://github.com/beyond10x/ess/issues/552>).
-fn rows_decide(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
+fn rows_decide(
+    format: ess_domain::system::FormatVersion,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> bool {
     let guarded =
         |branch: &ResolvedOutcome| matches!(branch.condition, ResolvedCondition::RelatedSet { .. });
     guarded(outcome)
         || !reads(outcome).is_empty()
-        || precedence::answers_before(command, outcome)
+        || precedence::answers_before(format, command, outcome)
             .into_iter()
             .any(guarded)
 }
@@ -524,7 +532,7 @@ pub(super) fn input_for(
         ResolvedCondition::RelatedSet { input, .. } => input.as_ref(),
         _ => None,
     };
-    let refute: Vec<&Predicate> = precedence::answers_before(command, outcome)
+    let refute: Vec<&Predicate> = precedence::answers_before(ir.format(), command, outcome)
         .into_iter()
         .filter_map(when)
         .collect();
@@ -1060,7 +1068,7 @@ fn consistent(
         }
     }
     // A branch no row bears on is decided without reading one (beyond10x/ess#552).
-    if !rows_decide(command, expected) {
+    if !rows_decide(ir.format(), command, expected) {
         return Ok(());
     }
     let reading = Reading::new(ir, command, supplied, rows)?.for_outcome(expected);
@@ -1068,7 +1076,7 @@ fn consistent(
     // precedence order the row-set refusals in declaration order, then the accepting branches in
     // declaration order, then the default. Every row set is still read, in declaration order, so
     // a row set the rows cannot decide is the error it always was.
-    let before: BTreeSet<&OutcomeName> = precedence::answers_before(command, expected)
+    let before: BTreeSet<&OutcomeName> = precedence::answers_before(ir.format(), command, expected)
         .into_iter()
         .map(|other| &other.name)
         .collect();

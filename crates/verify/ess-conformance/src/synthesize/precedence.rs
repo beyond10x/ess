@@ -13,41 +13,25 @@
 //! The answers come in declaration order, which is the order every search walked before it read the
 //! plan; the plan decides membership.
 //!
-//! The plan is built in the newest format. A command's format moves only a `when_related:`
-//! predicate refusal between the present-related and the accepting phase (`Composition::new`); the
-//! searches here ask about input-guarded refusals, accepting `when:`, external and held-state
-//! branches, whose places do not depend on it. A search asking about a related refusal's place
-//! builds its plan in the IR's format with [`answers_before_in`].
+//! Every plan is built in the document's own source format: a command's format moves a
+//! `when_related:` predicate refusal between the present-related and the accepting phase
+//! (`Composition::new`), and from the one rule (`ess_domain::command::precedence::ONE_RULE`) a
+//! missing row the input names and `existing_instance:` beside a related row too.
 use std::collections::BTreeSet;
 
 use ess_compiler::ir::{PrecedencePlan, ResolvedCommand, ResolvedOutcome};
 use ess_domain::command::precedence::Phase;
 use ess_domain::command::OutcomeName;
-use ess_domain::system::{FormatVersion, SUPPORTED_FORMATS};
+use ess_domain::system::FormatVersion;
 
-/// The format [`answers_before`] and [`answers_after`] build their plan in: the newest.
-fn newest() -> FormatVersion {
-    let major = *SUPPORTED_FORMATS
-        .last()
-        .expect("this build supports at least one format");
-    FormatVersion::new(major).expect("a supported format is not zero")
-}
-
-/// Every branch of `command` the precedence plan reads before `outcome`, in declaration order.
+/// Every branch of `command`, declared in source format `format`, the precedence plan reads before
+/// `outcome`, in declaration order.
 ///
 /// Where `command` declares no branch named as `outcome` (a clone that dropped it), every other
 /// branch.
 pub(crate) fn answers_before<'c>(
-    command: &'c ResolvedCommand,
-    outcome: &ResolvedOutcome,
-) -> Vec<&'c ResolvedOutcome> {
-    answers_before_in(command, newest(), outcome)
-}
-
-/// [`answers_before`], with the plan built in `format`.
-pub(crate) fn answers_before_in<'c>(
-    command: &'c ResolvedCommand,
     format: FormatVersion,
+    command: &'c ResolvedCommand,
     outcome: &ResolvedOutcome,
 ) -> Vec<&'c ResolvedOutcome> {
     let plan = PrecedencePlan::new(command, format);
@@ -63,13 +47,14 @@ pub(crate) fn answers_before_in<'c>(
         .collect()
 }
 
-/// Every branch of `command` the precedence plan reads after `outcome`, in declaration order; none
-/// where `command` declares no branch named as `outcome`.
+/// Every branch of `command`, declared in source format `format`, the precedence plan reads after
+/// `outcome`, in declaration order; none where `command` declares no branch named as `outcome`.
 pub(crate) fn answers_after<'c>(
+    format: FormatVersion,
     command: &'c ResolvedCommand,
     outcome: &ResolvedOutcome,
 ) -> Vec<&'c ResolvedOutcome> {
-    let plan = PrecedencePlan::new(command, newest());
+    let plan = PrecedencePlan::new(command, format);
     let after: BTreeSet<&OutcomeName> = plan
         .iter()
         .map(|(_, branch)| &branch.name)
@@ -92,10 +77,11 @@ pub(crate) fn answers_after<'c>(
 /// one answer, so a witness among them is one no other of them claims, and only a phase read before
 /// both decides by order.
 pub(crate) fn first_before_held_and_accepting<'c>(
+    format: FormatVersion,
     command: &ResolvedCommand,
     branches: &[&'c ResolvedOutcome],
 ) -> Option<&'c ResolvedOutcome> {
-    let plan = PrecedencePlan::new(command, newest());
+    let plan = PrecedencePlan::new(command, format);
     let pair = Phase::HeldState.position().min(Phase::Accepting.position());
     let first = plan
         .iter()

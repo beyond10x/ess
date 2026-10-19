@@ -32,12 +32,56 @@ pub(super) fn stored(spec: &ResolvedCommand) -> Option<(&str, &EntityHandle)> {
         })
 }
 
+/// Whether the plan's `phase` holds an `exists: false` branch over a row the input names: the phase
+/// a missing such row is answered in — [`Phase::RelatedRow`], or under the one rule
+/// [`Phase::PresentRelated`] (`docs/design/generic-language-features.md` § G4).
+pub(super) fn reads_missing(plan: &PrecedencePlan<'_>, phase: Phase) -> bool {
+    plan.branches(phase).iter().any(|outcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::Related {
+                via: ResolvedRelatedVia::Input { .. },
+                test: ess_compiler::ir::ResolvedRelatedTest::Absent,
+                ..
+            }
+        )
+    })
+}
+
+/// Whether the row `condition` names through the input is missing: the request names an identity
+/// and no row of the entity carries it. `false` for any other condition, and for an absent Optional
+/// reference or an identity the request does not carry, which name no row.
+pub(super) fn missing(
+    ir: &EssIr,
+    store: &State,
+    input: &BTreeMap<String, Node>,
+    condition: &ResolvedCondition,
+) -> bool {
+    let ResolvedCondition::Related {
+        via: ResolvedRelatedVia::Input { field, type_ref },
+        entity,
+        ..
+    } = condition
+    else {
+        return false;
+    };
+    if absent_optional(type_ref, input.get(field)) {
+        return false;
+    }
+    input.get(field).is_some_and(|identity| {
+        store
+            .instance_typed(&ir.entity(entity).name, identity)
+            .is_none()
+    })
+}
+
 /// One branch per related row the command reads, in the order its rows are read when looking for a
-/// missing one: each row's `exists: false` branch in the order the plan's [`Phase::RelatedRow`]
-/// reads them, then the first declared branch of any row declaring none (beyond10x/ess#283). One
-/// branch on a command reading one row.
+/// missing one: each row's `exists: false` branch in the order the plan's `phase` reads them, then
+/// the first declared branch of any row declaring none (beyond10x/ess#283). One branch on a command
+/// reading one row.
 pub(super) fn reads_in_order<'c>(
     plan: &PrecedencePlan<'c>,
+    phase: Phase,
     spec: &'c ResolvedCommand,
 ) -> Vec<&'c ResolvedOutcome> {
     fn row(outcome: &ResolvedOutcome) -> Option<&str> {
@@ -48,12 +92,7 @@ pub(super) fn reads_in_order<'c>(
     }
     let mut ordered: Vec<&ResolvedOutcome> = Vec::new();
     let mut seen: Vec<&str> = Vec::new();
-    for outcome in plan
-        .branches(Phase::RelatedRow)
-        .iter()
-        .copied()
-        .chain(&spec.outcomes)
-    {
+    for outcome in plan.branches(phase).iter().copied().chain(&spec.outcomes) {
         if let Some(field) = row(outcome) {
             if !seen.contains(&field) {
                 seen.push(field);

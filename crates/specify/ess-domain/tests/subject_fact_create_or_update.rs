@@ -291,3 +291,71 @@ fn the_creating_branch_may_be_declared_first() {
         "{errors:#?}"
     );
 }
+
+// ---- `when_subject:` beside `unknown_instance:` under the one precedence rule (G4) ---------
+
+const READ_ONLY: &str =
+    include_str!("../../ess-compiler/tests/fixtures/read-only-unknown-instance.yaml");
+
+/// `READ_ONLY` at `ess/27` with one more command, `demo.desk.Touch`, whose `outcomes` are `body`
+/// with every `GUARD(<state>)` written by `guard`.
+fn touch(body: &str, guard: fn(&str) -> String) -> String {
+    let mut outcomes = String::new();
+    for line in body.lines() {
+        if let Some(rest) = line.trim_start().strip_prefix("GUARD(") {
+            outcomes.push_str("        ");
+            outcomes.push_str(&guard(rest.trim_end_matches(')')));
+        } else {
+            outcomes.push_str(line);
+        }
+        outcomes.push('\n');
+    }
+    let text = READ_ONLY
+        .replacen("format: ess/24\n", "format: ess/27\n", 1)
+        .replacen(
+            "    may: [demo.desk.TakeSeat, demo.desk.CloseSeat, demo.desk.Ring]\n",
+            "    may: [demo.desk.TakeSeat, demo.desk.CloseSeat, demo.desk.Ring, demo.desk.Touch]\n",
+            1,
+        )
+        .replacen(
+            "views:\n",
+            &format!(
+                "  - name: demo.desk.Touch\n    input: [{{name: user_id, type: String}}]\n    outcomes:\n{outcomes}views:\n"
+            ),
+            1,
+        );
+    assert!(text.contains("demo.desk.Touch\n    input"));
+    text
+}
+
+/// Every shape in which `when_subject_state:` sits beside an `unknown_instance:` branch —
+/// refusing or creating, the held-state branches refusing, preserving or moving — also validates
+/// with each literal held-state guard written as a `when_subject:` predicate over `state`: under
+/// the one rule both answer at step 3, after the existence step that `unknown_instance:` answers
+/// at (`docs/design/generic-language-features.md` § G4).
+#[test]
+fn format_a_when_subject_admits_unknown_instance_wherever_when_subject_state_does() {
+    let refusing = "      - {name: no-seat, unknown_instance: true, error: demo.desk.NoSeat}\n";
+    let creating = "      - name: no-seat\n        unknown_instance: true\n        creates: demo.desk.Seat\n        instance: user_id\n        emits: [demo.desk.SeatTaken]\n        payload:\n          demo.desk.SeatTaken: {user_id: input.user_id}\n";
+    let shut = "      - name: shut\n        GUARD(Closed)\n        error: demo.desk.NoSeat\n";
+    let kept = "      - name: kept\n        preserves: demo.desk.Seat\n        instance: user_id\n";
+    let closing = "      - name: closing\n        GUARD(Open)\n        moves: demo.desk.Seat.close\n        instance: user_id\n        emits: [demo.desk.SeatClosed]\n        payload:\n          demo.desk.SeatClosed: {user_id: input.user_id}\n";
+    let shapes = [
+        format!("{refusing}{shut}{kept}"),
+        format!("{creating}{shut}{kept}"),
+        format!("{refusing}{closing}{shut}"),
+        format!("{creating}{closing}{shut}"),
+    ];
+    for shape in &shapes {
+        let literal = touch(shape, |state| format!("when_subject_state: {state}"));
+        if let Err(errors) = assemble(&literal) {
+            panic!("the when_subject_state shape validates:\n{errors}\n{shape}");
+        }
+        let stored = touch(shape, |state| {
+            format!("when_subject: {{predicate: state == {state}}}")
+        });
+        if let Err(errors) = assemble(&stored) {
+            panic!("the when_subject shape validates too:\n{errors}\n{shape}");
+        }
+    }
+}

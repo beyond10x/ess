@@ -24,7 +24,7 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 |---|---|---|
 | a command outcome's `when` | the command's input fields | A branch without `when` is the default. |
 | a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch; from `ess/15` also the command's input, as `input.<field>` | `state` from `ess/18`, the held lifecycle state; not before. The input only through the `input.` prefix; see [comparing with the input](#comparing-a-stored-field-with-the-input). Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
-| a command outcome's `when_related: {via: input.<field>, predicate: …}` (`ess/18`) | the declared stored fields of the row of another entity whose identity `input.<field>` carries, read just before the command selects a branch, and the command's input as `input.<field>` | `state` from `ess/20`, the related row's held lifecycle state; not before. From `ess/22` `input.<field>` may be `Optional<…>`: checked only when present, and an absent reference selects no `when_related` branch; and `via` may be a bare stored field of the addressed subject, read as it was before the branch (see [a stored reference](#a-stored-reference)). Keyed by that entity's identity only, one hop; from `ess/22` a lookup by any other field is the row-set form below. A missing row makes the predicate unknown, so it selects only the sibling `when_related: {via: …, exists: false}` branch, which the command must declare. Any branch may carry it, a `creates:` or a refusal naming no subject included; conjunctive with `when` except on the `exists: false` branch, which answers a missing row before any other; never beside a `when_subject*` guard; from `ess/27` beside an `unknown_instance:` branch, which answers after `exists: false` and before the predicate refusals. See [a guard over another entity's row](#a-guard-over-another-entitys-row). |
+| a command outcome's `when_related: {via: input.<field>, predicate: …}` (`ess/18`) | the declared stored fields of the row of another entity whose identity `input.<field>` carries, read just before the command selects a branch, and the command's input as `input.<field>` | `state` from `ess/20`, the related row's held lifecycle state; not before. From `ess/22` `input.<field>` may be `Optional<…>`: checked only when present, and an absent reference selects no `when_related` branch; and `via` may be a bare stored field of the addressed subject, read as it was before the branch (see [a stored reference](#a-stored-reference)). Keyed by that entity's identity only, one hop; from `ess/22` a lookup by any other field is the row-set form below. A missing row makes the predicate unknown, so it selects only the sibling `when_related: {via: …, exists: false}` branch, which the command must declare. Any branch may carry it, a `creates:` or a refusal naming no subject included; conjunctive with `when` except on the `exists: false` branch, which answers a missing row before any other below `ess/27`, and after the input refusals, the addressed record's existence and its held state from `ess/27` (the one precedence rule); from `ess/27` beside `unknown_instance:`, `when_subject:`, `when_subject_state:`, `when_state_changes:`, `input_absent:`, `wrong_state:` in any composition and an `external:` marked `before_row: true`, below it beside none of them. See [a guard over another entity's row](#a-guard-over-another-entitys-row). |
 | a command outcome's `when_related: {entity, where, …}` (`ess/22`) | the rows of `entity` that `where` selects: each candidate row's declared fields, identity and held lifecycle state `state` bare, the command's input as `input.<field>`, the addressed subject as it was before the branch as `subject.<field>`, and `now` as the decision's one instant; `forall` reads the same over each selected row | The rows are the store just before the branch is selected; no row the outcome writes is one of them. `exists` is a Boolean, `count` one comparison (`eq`, `ne`, `lt`, `lte`, `gt`, `gte`) with a whole number, `forall` a second predicate, true of no rows. Conjunctive with `when`; never beside `via` or a `when_subject*` guard. See [a guard over the rows a selector selects](#a-guard-over-the-rows-a-selector-selects). |
 | an entity's `invariants` | the entity's own fields and its lifecycle `state` | Checked after every branch that creates or changes the entity. A required field an invariant reads must be set by every `creates:` branch, or declared `Optional<…>`; otherwise validate refuses it with `ESS-COMMAND-018`. |
 | a struct type's `invariants` | the struct's own fields | Same grammar, checked against the type. |
@@ -1140,11 +1140,16 @@ input: an `exists: false` branch therefore carries no `when:`, and an accepting 
 overlap it. The one answer before it is `existing_instance:`, which may sit in the same command: an
 identity a record already carries is refused as taken before the related row is read.
 
-From `ess/27` a command that addresses a row through its input may answer an identity no row
-carries with `unknown_instance:` beside its related guards. It answers at step 3 of the precedence
-order: after `exists: false` over the related row and the input-guarded refusals, before the held
-state, the related row's predicate refusals and every accepting branch. So a missing related row is
-answered first, then a missing addressed row, then a present related row's predicate:
+From `ess/27` one precedence rule orders every guard a command declares
+(`docs/design/cross-record-and-stored-field-guards.md`, "From `ess/27`: the one rule"): a branch answers in the order of what it must read — the request alone (step
+1: input-guarded refusals, an `external:` marked `before_row: true`), whether the addressed record
+exists (step 2: `existing_instance:`, `unknown_instance:`), what it holds (step 3:
+`when_subject_state:`, `when_state_changes:`, `when_subject:`, then `wrong_state:`), the rows around
+it (step 4: every `exists: false`, then every related row's and row set's refusal), then the
+accepting and external branches (step 5) — and within one step the first declared whose condition
+holds. So a command that addresses a row through its input may answer an identity no row carries
+with `unknown_instance:` beside its related guards, and a missing related row is answered after the
+input refusals, the missing addressed row and its held state:
 
 ```text
 - {name: unknown-seat, unknown_instance: true, error: demo.seats.UnknownSeat}
@@ -1160,12 +1165,22 @@ answered first, then a missing addressed row, then a present related row's predi
 ```
 
 Synthesis sends the `unknown_instance:` branch an identity no row carries beside a present related
-row that selects the first predicate refusal (else the first predicate branch), so a target that
-reads the related row before the addressed row's existence answers that refusal and fails. Generated
-Rust and Go check the addressed row's existence before the predicate refusals; Entity Runtime still
-refuses `when_related:` by name. Under `ess/26` and earlier the pairing is refused as
-`conflicting_declaration`, its hint naming `ess/27`. `when_subject:`, `when_subject_state:`,
-`when_state_changes:` and `input_absent:` stay refused beside a related guard in every format.
+row that selects the first predicate refusal (else the first predicate branch), and again beside a
+related row no record carries; the `exists: false` branch first sends every input refusal's input
+for the missing row, each answered by that refusal; a held-state branch is sent on a related row no
+record carries. So a target that reads the related row before the input, the addressed row's
+existence or its held state fails. Generated Rust and Go check the addressed row's existence and
+held state before the related row; Entity Runtime still refuses `when_related:` by name. Under
+`ess/26` and earlier a missing related row answers first, and `unknown_instance:`, `when_subject:`,
+`when_subject_state:`, `when_state_changes:`, `input_absent:`, a `before_row:` external and
+`wrong_state:` outside the `ess/22` composition are refused beside a related guard as
+`conflicting_declaration`, each hint naming `ess/27`.
+
+From `ess/27` two refusals over one related row that both hold answer in declaration order (below
+it the pair is refused as two branches selected), `when_subject:` sits beside `when_subject_state:`
+(below it `conflicting_declaration`, "subject fact and lifecycle guards cannot be combined"), and
+`wrong_state:` beside explicit subject-state guards closes step 3 (below it "explicit subject-state
+guards cannot also declare wrong_state precedence"); each refusal below `ess/27` names `ess/27`.
 
 Synthesis sends the `exists: false` branch an identity no row carries, beside two rows of the entity
 that carry others and with an input an accepting `when:` branch would take. It sends every other

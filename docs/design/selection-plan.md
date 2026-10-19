@@ -1,8 +1,10 @@
 # One derived precedence plan per command
 
-Status: type and classification only (`story:selection-plan-design-and-type`, epic
-`epic:one-selection-plan`, review finding 2 of beyond10x/ess#470). No consumer reads the plan yet;
-the stories that follow move each one onto it. No source, IR or suite format changes.
+Status: every consumer reads the plan — validation, the model interpreter, synthesis, the Rust and
+Go emitters and the Entity Runtime lowering (epic `epic:one-selection-plan`). From `ess/27` the plan
+places branches by the one rule of
+[`generic-language-features.md` § G4](generic-language-features.md#g4-one-precedence-rule)
+([below](#under-the-one-rule-ess27)); no IR or suite format changes with it.
 
 ## Why
 
@@ -27,6 +29,27 @@ Eight phases. Six are the six steps of the precedence order; two sit outside the
 | `PresentRelated` | 5 | where the composition below orders them: `when_related:` predicate refusals and row-set refusals; `exists: false` over a stored reference; an unguarded refusal on a command reading a stored reference or a row set; `unknown_instance:` on a row-set upsert | stored `exists: false` first, then the unguarded refusal, then the refusals in declaration order, then `unknown_instance:` |
 | `Accepting` | 6 | `when:` without `error:`, `external:` (with or without `when:`), accepting `when_related:` and row-set branches, and every `when_related:` predicate refusal step 5 does not hold | declaration order |
 | `Default` | after 6 | `otherwise:` | — (at most one) |
+
+### Under the one rule (`ess/27`)
+
+`precedence::ONE_RULE` (`ess/27`) keeps the eight phases and their order and moves three placements
+(`precedence::place`); `Phase::step_in` numbers the phases by the rule's steps.
+
+| phase | step | what changes from the table above |
+|---|---|---|
+| `InputAbsent` | 0 | — |
+| `RelatedRow` | — | holds nothing |
+| `InputRefusal` | 1 | — |
+| `Existence` | 2 | `existing_instance:` on every command, also one reading a related row or a row set |
+| `HeldState` | 3 | — |
+| `PresentRelated` | 4 | `exists: false` over a row the input names leads it, beside a stored one, in declaration order; every `when_related:` predicate refusal and row-set refusal, whatever the composition |
+| `Accepting` | 5 | no `when_related:` predicate refusal |
+| `Default` | 6 | — |
+
+The interpreter reads a missing input-named row at `PresentRelated`, after the step-4 look-ahead
+(`subject_refusals_before_present_related`) has answered the addressed row's existence and held
+state; the rows gathered before it leave such a row out. The Rust and Go emitters read the row,
+emit the same look-ahead, then its `exists: false`.
 
 Each phase is the interpreter's (`crates/verify/ess-conformance/src/interpret/execute.rs`) reading
 of its step:
@@ -132,14 +155,15 @@ branch by its condition and sits in `HeldState`; no composition moves it.
 
 ### Where the plan's reading and the written ones part
 
-The plan reproduces the interpreter. One place where the precedence page's wording does not decide
-the case, for the page's owner to settle; no repository command exercises it. Step 1 names
-`existing_instance` "on a command with a `when_related:` branch reading an input", and step 3 "on
-commands without `when_related`". A command reading its related row through a stored field, or
-guarded by a row set, is neither. The interpreter, and so the plan, answers it in step 1. It answers
-differently from step 3 only on such a command that also declares an input refusal;
+The plan reproduces the interpreter. Below `ess/27` one place where the precedence page's wording
+does not decide the case; no repository command exercises it. Step 1 names `existing_instance` "on
+a command with a `when_related:` branch reading an input", and step 3 "on commands without
+`when_related`". A command reading its related row through a stored field, or guarded by a row
+set, is neither. The interpreter, and so the plan, answers it in step 1. It answers differently
+from step 3 only on such a command that also declares an input refusal;
 `filtered-related-reads.md` ("Subject borrowing and precedence") orders input refusals first for a
-row set.
+row set. From `ess/27` the one rule settles it: `existing_instance:` answers at step 2, existence,
+on every command, after the input refusals.
 
 Validation reads one composition apart from the interpreter, for the story that moves validation
 onto the plan: `related_guard::orders_present_refusals` does not order a stored reference's

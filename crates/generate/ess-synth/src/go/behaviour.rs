@@ -1894,8 +1894,9 @@ impl<'a> Writer<'a> {
                     for outcome in branches {
                         match outcome.condition {
                             ResolvedCondition::ExistingInstance => self.existing_lookup(outcome),
-                            // Answered where a row is read (`unknown_arm`).
-                            ResolvedCondition::UnknownInstance => {}
+                            // Answered where a row is read (`unknown_arm`); under the one rule
+                            // (ess/27) also here, at step 2 (`addressed_existence`).
+                            ResolvedCondition::UnknownInstance => self.addressed_existence(),
                             _ => unreachable!(
                                 "the plan holds only `existing_instance:` and `unknown_instance:` \
                                  at step 3, not `{}`",
@@ -1990,6 +1991,48 @@ impl<'a> Writer<'a> {
         });
     }
 
+    /// Under the one rule (ess/27), the addressed record's existence at step 2: the record the
+    /// command's acting branches address through the input, read, and `unknown_instance:` taken
+    /// where no row carries it. Nothing below the rule, on a command a creation upserts, one guarded
+    /// by a row set, or one reading a stored reference, whose own reads answer it.
+    fn addressed_existence(&mut self) {
+        let command = self.command;
+        if !ess_domain::command::precedence::reads_one_rule(self.ir.format())
+            || command.outcomes.iter().any(|outcome| {
+                matches!(
+                    outcome.condition,
+                    ResolvedCondition::RelatedSet { .. }
+                        | ResolvedCondition::Related {
+                            via: ResolvedRelatedVia::Subject { .. },
+                            ..
+                        }
+                ) || outcome
+                    .subject
+                    .as_ref()
+                    .is_some_and(|subject| subject.effect == ResolvedEffect::Creates)
+            })
+        {
+            return;
+        }
+        let Some(subject) = determined::addressed_subject(command) else {
+            return;
+        };
+        let ResolvedInstance::Supplied { field } = &subject.instance else {
+            return;
+        };
+        let entity = self.ir.entity(&subject.entity);
+        let identity = self.input_member(&field.name);
+        self.lines
+            .push("// The addressed row's existence, at step 2 of the one precedence rule.");
+        self.lines.open("{");
+        self.get(entity, &identity);
+        self.lines.open(&format!("if !{} {{", self.locals.found));
+        self.unknown_arm();
+        self.lines.close("}");
+        self.lines.push(&format!("_ = {}", self.locals.held));
+        self.lines.close("}");
+    }
+
     /// Step 4: the addressed row, read where a branch of the phase selects by it, then the
     /// phase's branches in order. `wrong_state:` is answered where the branch taken moves from a
     /// state the row does not hold, not by a block of its own. Where the row is read afterwards.
@@ -2051,23 +2094,67 @@ impl<'a> Writer<'a> {
     /// the addressed row's existence and held state for the branch the request selects without
     /// them (beyond10x/ess#282, #304). `unknown_instance:` on a row-set upsert is answered where
     /// the branch taken reads its row.
+    ///
+    /// Under the one rule (`docs/design/generic-language-features.md` § G4) step 4 also leads with
+    /// the row the input names: it is read, the addressed row's existence and held state answer for
+    /// the branch the request selects, and then its `exists: false` for an identity no row carries.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one phase of the plan, each branch it holds in its own arm"
+    )]
     fn present_related(&mut self, branches: &[&ResolvedOutcome]) {
         let command = self.command;
-        if branches.iter().any(|outcome| {
-            outcome.error.is_some()
-                && matches!(
-                    outcome.condition,
-                    ResolvedCondition::Related {
-                        via: ResolvedRelatedVia::Input { .. },
-                        test: ResolvedRelatedTest::Holds { .. },
-                        ..
-                    }
-                )
-        }) {
+        let missing = branches.iter().copied().find(|outcome| {
+            matches!(
+                outcome.condition,
+                ResolvedCondition::Related {
+                    via: ResolvedRelatedVia::Input { .. },
+                    test: ResolvedRelatedTest::Absent,
+                    ..
+                }
+            )
+        });
+        if let Some(missing) = missing {
+            let ResolvedCondition::Related {
+                via: ResolvedRelatedVia::Input { field, type_ref },
+                entity,
+                ..
+            } = &missing.condition
+            else {
+                unreachable!("an input row's `exists: false`")
+            };
+            let member = self.input_member(field);
+            let reference = if type_ref.is_optional() {
+                member
+            } else {
+                format!("&{member}")
+            };
+            self.related_fetch(entity, &reference, &format!("input.{field}"));
+            let related = self.locals.related.clone();
+            self.lines.push(&format!("_ = {related}"));
+        }
+        if missing.is_some()
+            || branches.iter().any(|outcome| {
+                outcome.error.is_some()
+                    && matches!(
+                        outcome.condition,
+                        ResolvedCondition::Related {
+                            via: ResolvedRelatedVia::Input { .. },
+                            test: ResolvedRelatedTest::Holds { .. },
+                            ..
+                        }
+                    )
+            })
+        {
             self.precheck(true);
         }
         for outcome in branches {
             match &outcome.condition {
+                ResolvedCondition::Related {
+                    via: ResolvedRelatedVia::Input { .. },
+                    test: ResolvedRelatedTest::Absent,
+                    ..
+                } => self.missing_answer(outcome),
                 ResolvedCondition::Related {
                     via: ResolvedRelatedVia::Subject { field, type_ref },
                     entity,
@@ -2486,6 +2573,15 @@ impl<'a> Writer<'a> {
         named: &str,
         absent: &ResolvedOutcome,
     ) {
+        self.related_fetch(entity, reference, named);
+        self.missing_answer(absent);
+        let related = self.locals.related.clone();
+        self.lines.push(&format!("_ = {related}"));
+    }
+
+    /// The read of [`Self::related_read`], declaring the reference and the related row, with no
+    /// answer.
+    fn related_fetch(&mut self, entity: &EntityHandle, reference: &str, named: &str) {
         let declared = self.ir.entity(entity);
         let storage = self.storage(&declared.name);
         let snapshot = self.emit.qualify(
@@ -2515,6 +2611,12 @@ impl<'a> Writer<'a> {
         self.lines.push(&format!("{related} = &{row}"));
         self.lines.close("}");
         self.lines.close("}");
+    }
+
+    /// The answer of [`Self::related_read`]: `absent` taken where the reference names an identity
+    /// no row carries.
+    fn missing_answer(&mut self, absent: &ResolvedOutcome) {
+        let (local, related) = (self.locals.reference.clone(), self.locals.related.clone());
         self.lines.push(&format!(
             "// `{}`: the reference names an identity no row carries.",
             absent.name
@@ -2523,7 +2625,6 @@ impl<'a> Writer<'a> {
             .open(&format!("if {local} != nil && {related} == nil {{"));
         self.take(absent, Held::None);
         self.lines.close("}");
-        self.lines.push(&format!("_ = {related}"));
     }
 
     /// The reading of a `when_related:` predicate branch over the present row `related`, with

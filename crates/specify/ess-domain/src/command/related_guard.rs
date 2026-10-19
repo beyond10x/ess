@@ -585,12 +585,19 @@ pub fn validate_shape(command: &CommandSpec, types: Option<&TypeRegistry>) -> Va
         .outcomes
         .iter()
         .any(|outcome| matches!(outcome.condition, OutcomeCondition::UnknownInstance));
+    let other = command
+        .outcomes
+        .iter()
+        .any(|outcome| other_authority(&outcome.condition).is_some());
     let Some(types) = types else {
-        if unknown_instance {
+        if other {
             return errors;
         }
-        return validate_declared(command, errors);
+        return validate_declared(command, errors, false);
     };
+    // Under the one rule (`ess/27`) every guard the related row shares a command with answers at
+    // its own step, so no pair is refused for want of an order.
+    let one_rule = types.format().is_none_or(precedence::reads_one_rule);
     let admits_unknown_instance = types
         .format()
         .is_none_or(|format| format.major() >= crate::system::FormatVersion::V27.major());
@@ -613,13 +620,19 @@ pub fn validate_shape(command: &CommandSpec, types: Option<&TypeRegistry>) -> Va
         );
         return errors;
     }
-    validate_declared(command, errors)
+    validate_declared(command, errors, one_rule)
 }
 
-/// [`validate_shape`] once an `unknown_instance:` branch is admitted or absent.
-fn validate_declared(command: &CommandSpec, mut errors: ValidationErrors) -> ValidationErrors {
+/// [`validate_shape`] once an `unknown_instance:` branch is admitted or absent; `one_rule` where
+/// the document reads the one precedence rule, which orders every other guard beside the related
+/// row.
+fn validate_declared(
+    command: &CommandSpec,
+    mut errors: ValidationErrors,
+    one_rule: bool,
+) -> ValidationErrors {
     if let Some(other) = command.outcomes.iter().find_map(|outcome| {
-        (!matches!(outcome.condition, OutcomeCondition::UnknownInstance))
+        (!one_rule && !matches!(outcome.condition, OutcomeCondition::UnknownInstance))
             .then(|| other_authority(&outcome.condition))
             .flatten()
     }) {
@@ -634,8 +647,9 @@ fn validate_declared(command: &CommandSpec, mut errors: ValidationErrors) -> Val
                 ),
             )
             .with_hint(
-                "guard the command on the related row alone, or split the other guard into a \
-                 command of its own",
+                "declare `format: ess/27`, where the one precedence rule orders the two, guard the \
+                 command on the related row alone, or split the other guard into a command of its \
+                 own",
             ),
         );
         return errors;
@@ -949,6 +963,11 @@ fn orders_present_refusals(
             .outcomes
             .iter()
             .any(|outcome| matches!(outcome.condition, OutcomeCondition::UnknownInstance));
+    // Under the one rule every present related row's refusal answers at step 4, after the held
+    // state and before every accepting branch, whatever else the command declares.
+    if precedence::reads_one_rule(spec.system().format) {
+        return Ok(present_related_count > 0 || matches!(via, RelatedVia::Subject(_)));
+    }
     let orders = (matches!(via, RelatedVia::Subject(_)) && !accepting_related_move)
         || ((has_wrong_state || has_unknown_instance)
             && spec.system().format.major() >= crate::system::FormatVersion::V22.major()
@@ -964,7 +983,7 @@ fn orders_present_refusals(
             ),
         )
         .with_hint(
-            "guard the command on the related row alone, or split the other guard into a command of its own",
+            "declare `format: ess/27`, where the one precedence rule orders the two, guard the command on the related row alone, or split the other guard into a command of its own",
         ));
     }
     Ok(orders)
@@ -1576,6 +1595,10 @@ fn check(
 ///
 /// Where the prover declines — an open domain, a comparison with the input — the command needs a
 /// genuine default, as an open input guard does.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one partition proof: the branches it counts, the cases and the refusal of each"
+)]
 fn validate_partition(
     command: &CommandSpec,
     entity: &EntitySpec,
@@ -1584,12 +1607,21 @@ fn validate_partition(
     composition: Composition,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
+    let one_rule = composition.reads_one_rule();
     let guarded: Vec<&super::Outcome> = command
         .outcomes
         .iter()
         .filter(|outcome| {
             !outcome.is_unconditional()
                 && outcome.condition.cause().is_none()
+                // Under the one rule a branch answered before the rows around the addressed
+                // record — the request with no document, existence, the held state — is not the
+                // related row's to partition.
+                && !(one_rule
+                    && matches!(
+                        precedence::place(&BranchShape::of(outcome), &composition).phase,
+                        Phase::InputAbsent | Phase::Existence | Phase::HeldState
+                    ))
                 // A marker with no guard over the row or the input: it answers whether the
                 // command's own identity is held, which this partition does not prove.
                 && outcome.condition != OutcomeCondition::ExistingInstance
@@ -1661,7 +1693,7 @@ fn validate_partition(
                     .collect::<Vec<_>>()
                     .join(", ")
             };
-        errors.push(ValidationError::at(
+        let refusal = ValidationError::at(
             command.site().key("outcomes"),
             if selected == 0 {
                 ValidationCode::NonExhaustiveBranches
@@ -1678,7 +1710,15 @@ fn validate_partition(
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
-        ));
+        );
+        errors.push(if selected > 1 && !one_rule {
+            refusal.with_hint(
+                "declare `format: ess/27`, where the one precedence rule answers the branch it \
+                 reads first, within one step the first declared, or make the guards disjoint",
+            )
+        } else {
+            refusal
+        });
     }
     errors
 }
@@ -2232,6 +2272,11 @@ fn selected_count(
     let Some(composition) = ordered else {
         return selected.len();
     };
+    // Under the one rule (`ess/27`) the branch the plan reads first answers every request the
+    // selected branches hold for: an earlier step first, and within a step the first declared.
+    if composition.reads_one_rule() {
+        return 1;
+    }
     let related_refusals: Vec<usize> = selected
         .iter()
         .copied()

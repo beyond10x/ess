@@ -38,8 +38,16 @@ a command's output, or says "I don't know". An answer with no citation is not an
 3. **Can it already be expressed?** Search the language before designing: `docs/design/`, the
    reference pages under `website/docs/reference/`, `ess specify validate` on a minimal attempt, and
    the existing constructs a sibling concept uses. If an idiom exists, the answer is the idiom — show
-   it running.
-4. **Does the design fit what is already there?** Check each:
+   it running — with one condition: an idiom is a valid answer only if the suite still checks the
+   figure the specification's reader sees. An idiom that moves a checked figure out of the
+   specification (into an `external:` cause, an adapter, a comment) is no answer: the request is
+   then absorbed into a generic feature, or refused as out of the language with the reason, and the
+   fit review says which (`docs/design/generic-language-features.md` § Policy, policy 1).
+4. **Does the design fit what is already there?** First triage the request onto cells of the
+   language grids (`docs/design/language-grids.md`: grid R, what can be read where; grid O, which
+   operation applies to which type; and the effect × target grid of G2): a decision opens or
+   refuses the whole row or column a cell sits in, never one cell, and a refusal of a whole row or
+   column names why. Then check each:
    - it reuses existing vocabulary, key shapes and naming (the same concept is spelled the same way
      in guards, bindings, views, outcomes and formats);
    - it composes with the constructs it will meet: guards (`when:`, `when_subject`, `when_related`),
@@ -53,7 +61,12 @@ a command's output, or says "I don't know". An answer with no citation is not an
 6. **What does it cost?** Format version bumps, new keywords, new diagnostics, a migration for
    existing documents, new diff classifications, generated-API changes (breaking for whom).
    Prefer the design that adds no surface, then the one that extends an existing construct, then a
-   new construct.
+   new construct. One source format per design decision, not per request: a request lands in the
+   open format only if its grid row or column is the one that format opens, otherwise it waits for
+   the next decision, and a construct for one request gets no format of its own. A release in the
+   middle of a decision ships the format as it stands and the rest moves to the next format,
+   counted under the same decision (`docs/design/generic-language-features.md` § Policy, policy 2,
+   and § "Open questions, answered", answer 2).
 7. **What else was considered?** At least two designs, one of them "change nothing". Say why the
    chosen one wins, and why the requester's proposal was taken, changed or refused.
 

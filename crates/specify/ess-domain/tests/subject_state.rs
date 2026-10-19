@@ -134,3 +134,46 @@ fn open_input_with_default_still_refuses_a_guard_outside_the_move_source() {
         "{error}"
     );
 }
+
+// ---- the one precedence rule (G4): the guard-pair corpus ------------------------------------
+
+const PAIRS: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml");
+
+/// The guard-pair corpus in `format`: every command validates in `ess/27`; below it, each pair
+/// keeps the refusal it had.
+fn pairs_at(
+    format: &str,
+) -> Result<ess_domain::Specification, ess_primitives::error::ValidationErrors> {
+    let text = PAIRS.replacen("format: ess/27\n", &format!("format: {format}\n"), 1);
+    assert!(text.starts_with(&format!("format: {format}\n")));
+    let raw = ess_domain::spec::RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}"));
+    ess_domain::Specification::assemble([(ess_domain::system::Source::new("pairs.yaml"), raw)])
+}
+
+/// The refusals of the corpus one format below the rule that name `command`, each with its hint.
+fn pair_refusals(command: &str) -> Vec<String> {
+    let Err(errors) = pairs_at("ess/26") else {
+        panic!("below ess/27 the corpus is refused");
+    };
+    errors
+        .as_slice()
+        .iter()
+        .filter(|error| error.to_string().contains(&format!("command.{command}")))
+        .map(ToString::to_string)
+        .collect()
+}
+
+/// Under the one rule `wrong_state:` closes step 3 after the explicit subject-state guards; below
+/// it the pair keeps its refusal, the hint naming `ess/27`.
+#[test]
+fn format_a_admits_wrong_state_beside_explicit_subject_state_guards() {
+    pairs_at("ess/27").unwrap_or_else(|errors| panic!("the corpus validates at ess/27: {errors}"));
+    let refusals = pair_refusals("demo.pairs.StateBesideWrongState");
+    assert!(
+        refusals.iter().any(|refusal| refusal
+            .contains("explicit subject-state guards cannot also declare wrong_state precedence")
+            && refusal.contains("ess/27")),
+        "{refusals:#?}"
+    );
+}

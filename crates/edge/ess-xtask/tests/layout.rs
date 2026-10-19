@@ -441,3 +441,52 @@ fn no_published_crate_depends_on_serde_yaml_or_unsafe_libyaml() {
         findings.into_iter().collect::<Vec<_>>().join("\n")
     );
 }
+
+/// The fit-review skill answers a request with an idiom only where the suite still checks the
+/// figure the specification's reader sees, triages a request onto the grids and cites the grids
+/// page (`docs/design/generic-language-features.md` § Policy, policies 1 and 2).
+#[test]
+fn the_fit_review_skill_states_the_idiom_condition_and_cites_the_grids_page() {
+    let root = workspace_root();
+    let skill =
+        fs::read_to_string(root.join(".agents/skills/assessing-external-requests/SKILL.md"))
+            .expect("the fit-review skill");
+    // Read as prose: a line break inside a sentence is a space.
+    let skill = skill.split_whitespace().collect::<Vec<_>>().join(" ");
+    for needle in [
+        "an idiom is a valid answer only if the suite still checks the figure the specification's reader sees",
+        "docs/design/language-grids.md",
+        "one source format per design decision",
+    ] {
+        assert!(
+            skill.to_lowercase().contains(&needle.to_lowercase()),
+            "the skill says `{needle}`"
+        );
+    }
+    assert!(
+        root.join("docs/design/language-grids.md").is_file(),
+        "the grids page the skill cites exists"
+    );
+}
+
+/// Grids R and O live on one page; the record that decided them links it instead of keeping a
+/// copy of its own.
+#[test]
+fn the_record_links_the_grids_page_instead_of_copying_it() {
+    let root = workspace_root();
+    let grids =
+        fs::read_to_string(root.join("docs/design/language-grids.md")).expect("the grids page");
+    let record = fs::read_to_string(root.join("docs/design/generic-language-features.md"))
+        .expect("the record");
+    for heading in ["### Grid R", "### Grid O"] {
+        assert!(grids.contains(heading), "the grids page holds `{heading}`");
+        assert!(
+            !record.contains(heading),
+            "the record no longer copies `{heading}`"
+        );
+    }
+    assert!(
+        record.contains("(language-grids.md)"),
+        "the record links the grids page"
+    );
+}

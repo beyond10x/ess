@@ -365,3 +365,80 @@ fn a_read_only_command_without_unknown_instance_keeps_every_scenario_it_had() {
         );
     }
 }
+
+// ---- create-or-preserve under the one precedence rule (G4) --------------------------------
+
+/// `READ_ONLY`'s `Ring` at `ess/27` with its `unknown_instance:` branch creating the seat: "ensure
+/// the seat exists", a creation beside a branch that only preserves it (the one precedence rule,
+/// `docs/design/generic-language-features.md` § G4).
+fn create_or_preserve() -> String {
+    let text = READ_ONLY.replacen("format: ess/24\n", "format: ess/27\n", 1).replacen(
+        "      - name: no-seat\n        unknown_instance: true\n        error: demo.desk.NoSeat\n      - name: closed\n",
+        "      - name: no-seat\n        unknown_instance: true\n        creates: demo.desk.Seat\n        instance: user_id\n        emits: [demo.desk.SeatTaken]\n        payload:\n          demo.desk.SeatTaken: {user_id: input.user_id}\n      - name: closed\n",
+        1,
+    );
+    assert!(text.contains("format: ess/27") && text.contains("creates: demo.desk.Seat\n        instance: user_id\n        emits: [demo.desk.SeatTaken]\n        payload:\n          demo.desk.SeatTaken: {user_id: input.user_id}\n      - name: closed"));
+    text
+}
+
+/// Synthesis witnesses the creation on an identity no record carries, the seat then read back, and
+/// the preserving branch on a stored seat; the interpreted target passes both.
+#[test]
+fn create_or_preserve_is_witnessed_on_an_unknown_and_a_stored_identity() {
+    use ess_conformance::interpret::Interpreted;
+    use ess_conformance::report::Status;
+    use ess_conformance::{AdmittedSuite, Runner};
+
+    let text = create_or_preserve();
+    let result = synthesis(&text);
+    assert!(result.refusals.is_empty(), "{:#?}", result.refusals);
+    let created = scenario(&result.suite, RING_NO_SEAT);
+    assert!(
+        !created.steps.iter().any(|step| matches!(
+            step,
+            ScenarioStep::ExecuteCommand { command, .. } if command.to_string() == "demo.desk.TakeSeat"
+        )),
+        "no seat is taken before the creation:\n{:#?}",
+        created.steps
+    );
+    let ScenarioStep::ExecuteCommand { command, input, .. } = &created.steps[0] else {
+        panic!("the command is the first step:\n{:#?}", created.steps);
+    };
+    assert_eq!(command.to_string(), "demo.desk.Ring");
+    assert!(
+        matches!(input.get("user_id"), Some(ScenarioValue::Literal { .. })),
+        "an identity no record carries: {input:#?}"
+    );
+    assert!(
+        created.steps.iter().any(|step| matches!(
+            step,
+            ScenarioStep::ExpectEvent { event, .. } if event.to_string() == "demo.desk.SeatTaken"
+        )),
+        "the creation publishes its event:\n{:#?}",
+        created.steps
+    );
+    let kept = scenario(&result.suite, "demo.desk.Ring/outcome/rung");
+    // The seat is stored first — by the creation itself or any creator — and captured; the
+    // preserving branch is then sent naming it.
+    assert!(
+        kept.steps.iter().any(|step| matches!(
+            step,
+            ScenarioStep::ExecuteCommand { command, input, .. }
+                if command.to_string() == "demo.desk.Ring"
+                    && matches!(input.get("user_id"), Some(ScenarioValue::Instance { .. }))
+        )),
+        "the preserving branch is sent for a stored seat:\n{:#?}",
+        kept.steps
+    );
+    let admitted =
+        AdmittedSuite::from_suite(&result.suite).unwrap_or_else(|error| panic!("{error}"));
+    let failed: Vec<String> = Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, &Interpreted::for_model(ir(&text)))
+        .into_report()
+        .scenarios
+        .into_iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+        .map(|scenario| format!("{:?} {:?}", scenario.scenario, scenario.status))
+        .collect();
+    assert!(failed.is_empty(), "{failed:#?}");
+}

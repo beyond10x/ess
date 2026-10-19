@@ -217,8 +217,9 @@ fn wrong_state_beside_related_acceptance() -> String {
 
 const R2_REFUSAL: &str = "command.demo.release.PublishRelease.outcomes: \
     `demo.release.PublishRelease` selects on a related row (`when_related`) and on a `wrong_state` \
-    branch; which of the two answers first is not stated (hint: guard the command on the related \
-    row alone, or split the other guard into a command of its own)";
+    branch; which of the two answers first is not stated (hint: declare `format: ess/27`, where \
+    the one precedence rule orders the two, guard the command on the related row alone, or split \
+    the other guard into a command of its own)";
 
 /// R2 stays validation's verdict: refused in the default order, and inside every override that
 /// moves the phases its branches answer in.

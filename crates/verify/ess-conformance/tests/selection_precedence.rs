@@ -208,3 +208,91 @@ fn declared_first_the_held_state_branch_answers_before_the_accepting_one() {
         one("accepted")
     );
 }
+
+// ---- the one precedence rule (G4) ----------------------------------------------------------
+
+const RULE: &str =
+    include_str!("../../../specify/ess-compiler/tests/fixtures/precedence-rule-format-a.yaml");
+
+/// The suite `precedence-rule-format-a.yaml` synthesizes under the one rule witnesses every branch
+/// of `ChangeTier`, refuses none, and the interpreted target passes every scenario; the generated
+/// Rust and Go targets run the same suite in `ess-synth`'s
+/// `related_guard_unknown_instance_served.rs`.
+#[test]
+fn format_a_fixture_suite_passes_on_the_interpreted_target() {
+    use ess_conformance::interpret::Interpreted;
+    use ess_conformance::report::Status;
+    use ess_conformance::synthesize::synthesize;
+    use ess_conformance::{AdmittedSuite, AdvancingClock, Ids, Runner, RunnerConfig};
+
+    let model = ir(RULE);
+    let synthesis = synthesize(&model);
+    assert!(
+        synthesis.refusals.is_empty(),
+        "nothing is refused: {:#?}",
+        synthesis.refusals
+    );
+    let ids: Vec<String> = synthesis
+        .suite
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .collect();
+    for branch in [
+        "blank-reason",
+        "unknown-seat",
+        "unknown-tier",
+        "tier-closed",
+        "changed",
+    ] {
+        let id = format!("demo.rule.ChangeTier/outcome/{branch}");
+        assert!(ids.contains(&id), "{id}: {ids:#?}");
+    }
+    // `wrong_state:` is witnessed in each state no move of the command starts from.
+    for state in ["Moved", "Released"] {
+        let id = format!("demo.rule.Seat/state/{state}/refuses/demo.rule.ChangeTier");
+        assert!(ids.contains(&id), "{id}: {ids:#?}");
+    }
+    // The missing tier's scenario first sends the blank reason for it, answered by the input
+    // refusal at step 1: a target reading the tier first answers `unknown-tier` there and fails.
+    let missing = synthesis
+        .suite
+        .scenarios
+        .iter()
+        .find(|(id, _)| id.to_string() == "demo.rule.ChangeTier/outcome/unknown-tier")
+        .map(|(_, scenario)| scenario)
+        .expect("synthesized");
+    let expected: Vec<String> = missing
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ess_conformance::ScenarioStep::ExpectOutcome { outcome } => Some(outcome.to_string()),
+            _ => None,
+        })
+        .filter(|outcome| outcome.starts_with("demo.rule.ChangeTier/"))
+        .collect();
+    assert_eq!(
+        expected,
+        [
+            "demo.rule.ChangeTier/blank-reason",
+            "demo.rule.ChangeTier/unknown-tier"
+        ],
+        "{:#?}",
+        missing.steps
+    );
+    let admitted =
+        AdmittedSuite::from_suite(&synthesis.suite).unwrap_or_else(|error| panic!("{error}"));
+    let report = Runner::new(
+        RunnerConfig::default(),
+        AdvancingClock::default(),
+        Ids::for_suite(&synthesis.suite),
+    )
+    .run_admitted(&admitted, &Interpreted::for_model(model))
+    .into_report();
+    let failed: Vec<_> = report
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+        .collect();
+    assert!(failed.is_empty(), "{failed:#?}");
+}

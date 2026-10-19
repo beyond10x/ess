@@ -1737,6 +1737,7 @@ fn value_at(value: &Written, path: &str) -> String {
 /// model interpreter answers. Whatever else a branch reads — the held state, a stored or related
 /// row, a provider — is not decided, and a `when:` the literals leave undecided claims nothing.
 fn not_taken(
+    format: ess_domain::system::FormatVersion,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     decided: &impl Fn(&Predicate) -> Option<bool>,
@@ -1746,12 +1747,13 @@ fn not_taken(
 
     // The accepting `when:` branches the precedence plan answers before this one: the claimers of
     // beyond10x/ess#217. Which branches they answer before is the plan's.
-    let earlier_accepting = crate::synthesize::precedence::answers_before(command, outcome)
+    let earlier_accepting = crate::synthesize::precedence::answers_before(format, command, outcome)
         .into_iter()
         .filter(|other| {
             other.error.is_none() && matches!(other.condition, ResolvedCondition::When { .. })
         });
-    let before = crate::synthesize::sibling_refusals(command, outcome).chain(earlier_accepting);
+    let before =
+        crate::synthesize::sibling_refusals(format, command, outcome).chain(earlier_accepting);
     for first in before {
         let Some(guard) = when(first) else {
             continue;
@@ -3165,7 +3167,7 @@ impl<'a> Compiler<'a> {
         };
         let mut reasons = Vec::new();
         for outcome in candidates {
-            match not_taken(command, outcome, &decided) {
+            match not_taken(self.ir.format(), command, outcome, &decided) {
                 Some(reason) => reasons.push(reason),
                 None => return,
             }

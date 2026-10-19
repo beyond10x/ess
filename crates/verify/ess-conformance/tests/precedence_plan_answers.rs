@@ -254,3 +254,383 @@ fn the_row_set_refusal_answers_before_the_updating_branch() {
         interpreter
     );
 }
+
+// ---- the one precedence rule (G4) ----------------------------------------------------------
+
+const RULE: &str =
+    include_str!("../../../specify/ess-compiler/tests/fixtures/precedence-rule-format-a.yaml");
+
+/// A tier no row carries.
+const NO_TIER: &str = "00000000-0000-4000-8000-0000000000aa";
+/// A seat no row carries.
+const NO_SEAT: &str = "00000000-0000-4000-8000-0000000000bb";
+
+/// `RULE` one format below the rule, without the `unknown_instance:` branch that is itself an
+/// `ess/27` spelling beside `when_related:`.
+fn below_the_rule() -> String {
+    let below = RULE.replacen("format: ess/27", "format: ess/26", 1).replacen(
+        "      - name: unknown-seat\n        unknown_instance: true\n        error: demo.rule.UnknownSeat\n",
+        "",
+        1,
+    );
+    assert!(below.contains("ess/26") && !below.contains("unknown-seat"));
+    below
+}
+
+/// An open tier, a held seat and a released seat, and the identities of the two seats.
+fn seats(ir: &EssIr) -> (Store, String, String) {
+    let defined = step(
+        ir,
+        &Store::default(),
+        "demo.rule.DefineTier",
+        &[("open", Node::Bool(true))],
+    );
+    let tier = minted(&defined, "demo.rule.TierDefined");
+    let held = step(
+        ir,
+        &defined.next,
+        "demo.rule.Issue",
+        &[("tier_id", text(&tier))],
+    );
+    let held_seat = minted(&held, "demo.rule.Issued");
+    let other = step(
+        ir,
+        &held.next,
+        "demo.rule.Issue",
+        &[("tier_id", text(&tier))],
+    );
+    let released_seat = minted(&other, "demo.rule.Issued");
+    let released = step(
+        ir,
+        &other.next,
+        "demo.rule.Release",
+        &[("seat_id", text(&released_seat))],
+    );
+    assert_eq!(answered(&released), "released");
+    (released.next, held_seat, released_seat)
+}
+
+fn change(ir: &EssIr, store: &Store, seat: &str, tier: &str, reason: &str) -> String {
+    answered(&step(
+        ir,
+        store,
+        "demo.rule.ChangeTier",
+        &[
+            ("seat_id", text(seat)),
+            ("tier_id", text(tier)),
+            ("reason", text(reason)),
+        ],
+    ))
+}
+
+/// A tier no row carries, sent beside each earlier step's question holding: the blank reason
+/// (step 1), the unknown seat (step 2) and the released seat (step 3) each answer before the
+/// missing tier (step 4), which answers only for a held seat and a reason. Below the rule the
+/// missing tier answered first in every case.
+#[test]
+fn format_a_answers_a_missing_input_named_row_after_unknown_instance_and_held_state() {
+    let ir = ir_of(RULE);
+    let (store, held, released) = seats(&ir);
+    let cases = [
+        (
+            held.as_str(),
+            "",
+            "blank-reason",
+            &["blank-reason", "unknown-tier", "changed"][..],
+        ),
+        (
+            NO_SEAT,
+            "moving",
+            "unknown-seat",
+            &["unknown-seat", "unknown-tier", "changed"][..],
+        ),
+        (
+            released.as_str(),
+            "moving",
+            "not-held",
+            &["not-held", "unknown-tier", "changed"][..],
+        ),
+        (
+            held.as_str(),
+            "moving",
+            "unknown-tier",
+            &["unknown-tier", "changed"][..],
+        ),
+    ];
+    for (seat, reason, expected, holding) in cases {
+        let interpreter = change(&ir, &store, seat, NO_TIER, reason);
+        assert_eq!(interpreter, expected, "{seat} {reason:?}");
+        assert_eq!(
+            plan_first(&ir, "demo.rule.ChangeTier", holding),
+            interpreter
+        );
+    }
+
+    let below = ir_of(&below_the_rule());
+    let (store, held, released) = seats(&below);
+    for (seat, reason) in [(held.as_str(), ""), (released.as_str(), "moving")] {
+        assert_eq!(
+            change(&below, &store, seat, NO_TIER, reason),
+            "unknown-tier",
+            "{seat} {reason:?}"
+        );
+    }
+}
+
+/// A below-rule model whose plan the one rule would change: `PublishRelease` declares the accepting
+/// `rushed` before the related refusal `not-accepted`, which below the rule answers among the
+/// accepting branches in declaration order, and under it before them. Synthesis builds the plans its
+/// searches read in the document's format, not the newest: the witness of `not-accepted` refutes
+/// `rushed`, and the interpreter passes every scenario.
+#[test]
+fn synthesis_plans_read_the_documents_format_not_the_newest() {
+    use ess_conformance::interpret::Interpreted;
+    use ess_conformance::report::Status;
+    use ess_conformance::synthesize::synthesize;
+    use ess_conformance::{
+        AdmittedSuite, AdvancingClock, Ids, Runner, RunnerConfig, ScenarioStep, ScenarioValue,
+    };
+
+    let release = include_str!("fixtures/related-guard-release.yaml");
+    let model = release
+        .replacen(
+            "      - {name: candidate, type: demo.release.CandidateId}\n    outcomes:\n",
+            "      - {name: candidate, type: demo.release.CandidateId}\n      - {name: rush, type: Boolean}\n    outcomes:\n",
+            1,
+        )
+        .replacen(
+            "      - name: not-accepted\n",
+            "      - name: rushed\n        when: rush == true\n        moves: demo.release.Release.publish\n        instance: release_id\n        emits: [demo.release.ReleasePublished]\n        payload: {demo.release.ReleasePublished: {release_id: input.release_id}}\n      - name: not-accepted\n",
+            1,
+        );
+    assert!(model.contains("name: rushed") && model.contains("name: rush,"));
+    let ir = ir_of(&model);
+    assert!(ir.format().major() < ess_domain::command::precedence::ONE_RULE.major());
+    let synthesis = synthesize(&ir);
+    let scenario = synthesis
+        .suite
+        .scenarios
+        .iter()
+        .find(|(id, _)| id.to_string() == "demo.release.PublishRelease/outcome/not-accepted")
+        .map_or_else(
+            || panic!("synthesized: {:#?}", synthesis.refusals),
+            |(_, scenario)| scenario,
+        );
+    let rushes: Vec<Option<&ScenarioValue>> = scenario
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExecuteCommand { command, input, .. }
+                if command.to_string() == "demo.release.PublishRelease" =>
+            {
+                Some(input.get("rush"))
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(
+        !rushes.is_empty()
+            && rushes.iter().all(|rush| *rush
+                == Some(&ScenarioValue::Literal {
+                    value: Node::Bool(false)
+                })),
+        "the witness of `not-accepted` refutes the accepting branch declared before it: {rushes:?}"
+    );
+    let admitted =
+        AdmittedSuite::from_suite(&synthesis.suite).unwrap_or_else(|error| panic!("{error}"));
+    let report = Runner::new(
+        RunnerConfig::default(),
+        AdvancingClock::default(),
+        Ids::for_suite(&synthesis.suite),
+    )
+    .run_admitted(&admitted, &Interpreted::for_model(ir))
+    .into_report();
+    let failed: Vec<_> = report
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+        .collect();
+    assert!(failed.is_empty(), "{failed:#?}");
+}
+
+// ---- the guard-pair corpus (G4) -----------------------------------------------------------
+
+const PAIRS: &str = include_str!("fixtures/guard-pair-corpus.yaml");
+
+/// A tier of `openness` and `load`, a held seat, a released one and a retired one, a VIP held seat
+/// and a VIP released one, by name.
+fn pair_rows(ir: &EssIr, openness: &str, load: &str) -> (Store, BTreeMap<&'static str, String>) {
+    let defined = step(
+        ir,
+        &Store::default(),
+        "demo.pairs.DefineTier",
+        &[("openness", text(openness)), ("load", text(load))],
+    );
+    let tier = minted(&defined, "demo.pairs.TierDefined");
+    let mut store = defined.next;
+    let mut rows = BTreeMap::from([("tier", tier.clone())]);
+    for (name, kind, moves) in [
+        ("held", "plain", &[][..]),
+        ("released", "plain", &["demo.pairs.Release"][..]),
+        (
+            "retired",
+            "plain",
+            &["demo.pairs.Release", "demo.pairs.Retire"][..],
+        ),
+        ("vip-held", "vip", &[][..]),
+        ("vip-released", "vip", &["demo.pairs.Release"][..]),
+    ] {
+        let issued = step(
+            ir,
+            &store,
+            "demo.pairs.Issue",
+            &[("tier_id", text(&tier)), ("kind", text(kind))],
+        );
+        let seat = minted(&issued, "demo.pairs.Issued");
+        store = issued.next;
+        for command in moves {
+            store = step(ir, &store, command, &[("seat_id", text(&seat))]).next;
+        }
+        rows.insert(name, seat);
+    }
+    (store, rows)
+}
+
+/// Every command of the guard-pair corpus validates at `ess/27`; synthesis witnesses every branch
+/// and refuses none, the interpreted target passes the suite, and the interpreter answers each pair
+/// in the rule's order where both guards hold: the earlier step first, within a step the first
+/// declared.
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one corpus: its suite, then each pair's overlap asked of the interpreter"
+)]
+fn guard_pair_corpus_answers_by_the_rule() {
+    use ess_conformance::interpret::Interpreted;
+    use ess_conformance::report::Status;
+    use ess_conformance::synthesize::synthesize;
+    use ess_conformance::{AdmittedSuite, AdvancingClock, Ids, Runner, RunnerConfig};
+
+    let ir = ir_of(PAIRS);
+    let synthesis = synthesize(&ir);
+    let refused: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .map(|refusal| format!("{:?}: {:?}", refusal.subject, refusal.cause))
+        .collect();
+    assert!(
+        refused.is_empty(),
+        "synthesis refuses no branch: {refused:#?}"
+    );
+    let admitted =
+        AdmittedSuite::from_suite(&synthesis.suite).unwrap_or_else(|error| panic!("{error}"));
+    let report = Runner::new(
+        RunnerConfig::default(),
+        AdvancingClock::default(),
+        Ids::for_suite(&synthesis.suite),
+    )
+    .run_admitted(&admitted, &Interpreted::for_model(ir.clone()))
+    .into_report();
+    let failed: Vec<String> = report
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+        .map(|scenario| format!("{:?} {:?}", scenario.scenario, scenario.status))
+        .collect();
+    assert!(failed.is_empty(), "{failed:#?}");
+
+    let send = |store: &Store, command: &str, input: &[(&str, Node)]| {
+        answered(&step(&ir, store, command, input))
+    };
+    let (open, rows) = pair_rows(&ir, "Open", "Spare");
+    let (shut_full, full_rows) = pair_rows(&ir, "Shut", "Full");
+    let seat = |name: &str| text(&rows[name]);
+    let missing = || text(NO_TIER);
+    // step 3 before step 4
+    for (command, seat_name, expected) in [
+        ("demo.pairs.StateBesideRelated", "released", "released"),
+        ("demo.pairs.StateBesideRelated", "held", "unknown-tier"),
+        ("demo.pairs.SubjectBesideRelated", "vip-held", "vip"),
+        ("demo.pairs.SubjectBesideRelated", "held", "unknown-tier"),
+        (
+            "demo.pairs.WrongStateBesideRelatedMove",
+            "held",
+            "unknown-tier",
+        ),
+    ] {
+        assert_eq!(
+            send(
+                &open,
+                command,
+                &[("seat_id", seat(seat_name)), ("tier_id", missing())]
+            ),
+            expected,
+            "{command} {seat_name}"
+        );
+    }
+    // `wrong_state:` answers for the branch step 5 selects: on an open tier the move, which does
+    // not start from a released seat; on a missing one no branch, so the missing tier answers.
+    assert_eq!(
+        send(
+            &open,
+            "demo.pairs.WrongStateBesideRelatedMove",
+            &[
+                ("seat_id", seat("released")),
+                ("tier_id", text(&rows["tier"]))
+            ]
+        ),
+        "not-held"
+    );
+    assert_eq!(
+        send(
+            &open,
+            "demo.pairs.WrongStateBesideRelatedMove",
+            &[("seat_id", seat("released")), ("tier_id", missing())]
+        ),
+        "unknown-tier"
+    );
+    // within step 3, the first declared; `wrong_state:` last
+    for (command, seat_name, expected) in [
+        ("demo.pairs.SubjectBesideState", "vip-released", "released"),
+        ("demo.pairs.SubjectBesideState", "vip-held", "vip"),
+        ("demo.pairs.StateBesideWrongState", "released", "parked"),
+        ("demo.pairs.StateBesideWrongState", "retired", "not-held"),
+    ] {
+        assert_eq!(
+            send(
+                &open,
+                command,
+                &[("seat_id", seat(seat_name)), ("kind", text("plain"))]
+            ),
+            expected,
+            "{command} {seat_name}"
+        );
+    }
+    // within step 4, the first declared
+    assert_eq!(
+        send(
+            &shut_full,
+            "demo.pairs.TwoRefusalsOneRow",
+            &[
+                ("seat_id", text(&full_rows["held"])),
+                ("tier_id", text(&full_rows["tier"]))
+            ]
+        ),
+        "closed"
+    );
+    // step 1 before step 4
+    let forced = execute(
+        &ir,
+        &open,
+        &"demo.pairs.BeforeRowBesideRelated".parse().unwrap(),
+        &BTreeMap::from([
+            ("seat_id".to_owned(), seat("held")),
+            ("tier_id".to_owned(), missing()),
+            ("secret".to_owned(), text("s")),
+        ]),
+        &Externals::Forced(ess_domain::command::OutcomeName::new("bad-secret").unwrap()),
+    )
+    .unwrap_or_else(|why| panic!("{why}"));
+    assert_eq!(forced.len(), 1);
+    assert_eq!(answered(&forced[0]), "bad-secret");
+}
