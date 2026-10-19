@@ -1,0 +1,127 @@
+format: ess/26
+system: repro559
+version: v1
+domain: repro559.ledger
+summary: Two independent state axes on one record, written as one owned entity per axis.
+types:
+  - {name: repro559.ledger.CaseId, kind: newtype, of: Uuid}
+  - {name: repro559.ledger.ReviewId, kind: newtype, of: Uuid}
+entities:
+  - name: repro559.ledger.Case
+    identity: {name: case_id, type: repro559.ledger.CaseId}
+    fields:
+      - {name: title, type: String}
+    lifecycle:
+      initial: Detected
+      states: [Detected, Resolved, Sealed]
+      terminal: [Sealed]
+      transitions:
+        - {name: resolve, from: [Detected], to: Resolved}
+        - {name: seal, from: [Resolved], to: Sealed}
+  - name: repro559.ledger.Review
+    identity: {name: review_id, type: repro559.ledger.ReviewId}
+    fields:
+      - {name: case_id, type: repro559.ledger.CaseId}
+    relations:
+      - {name: case, kind: references, target: repro559.ledger.Case, cardinality: one, via: case_id}
+    lifecycle:
+      initial: Pending
+      states: [Pending, Approved]
+      terminal: [Approved]
+      transitions:
+        - {name: approve, from: [Pending], to: Approved}
+errors:
+  - {name: repro559.ledger.NoCase, summary: No case carries the identity., fields: []}
+  - {name: repro559.ledger.NoReview, summary: No review carries the identity., fields: []}
+  - {name: repro559.ledger.ReviewNotApproved, summary: The review is not approved., fields: []}
+  - {name: repro559.ledger.WrongState, summary: The case is not in a state the command admits., fields: []}
+events:
+  - name: repro559.ledger.CaseReported
+    fields: [{name: case_id, type: repro559.ledger.CaseId}]
+  - name: repro559.ledger.CaseResolved
+    fields: [{name: case_id, type: repro559.ledger.CaseId}]
+  - name: repro559.ledger.ReviewOpened
+    fields: [{name: review_id, type: repro559.ledger.ReviewId}]
+  - name: repro559.ledger.ReviewApproved
+    fields: [{name: review_id, type: repro559.ledger.ReviewId}]
+  - name: repro559.ledger.CaseSealed
+    fields: [{name: case_id, type: repro559.ledger.CaseId}]
+actors:
+  - name: repro559.ledger.Operator
+    may: [repro559.ledger.Report, repro559.ledger.Resolve, repro559.ledger.OpenReview, repro559.ledger.Approve, repro559.ledger.Seal]
+commands:
+  - name: repro559.ledger.Report
+    input:
+      - {name: title, type: String}
+    outcomes:
+      - name: reported
+        creates: repro559.ledger.Case
+        instance: case_id
+        emits: [repro559.ledger.CaseReported]
+        payload: {repro559.ledger.CaseReported: {case_id: {generated: true}}}
+        sets: {title: input.title}
+  - name: repro559.ledger.Resolve
+    input:
+      - {name: case_id, type: repro559.ledger.CaseId}
+    outcomes:
+      - name: resolved
+        moves: repro559.ledger.Case.resolve
+        instance: case_id
+        emits: [repro559.ledger.CaseResolved]
+        payload: {repro559.ledger.CaseResolved: {case_id: input.case_id}}
+      - {name: wrong-state, wrong_state: true, error: repro559.ledger.WrongState}
+  - name: repro559.ledger.OpenReview
+    input:
+      - {name: case_id, type: repro559.ledger.CaseId}
+    outcomes:
+      - name: no-case
+        when_related: {via: input.case_id, exists: false}
+        error: repro559.ledger.NoCase
+      - name: opened
+        creates: repro559.ledger.Review
+        instance: review_id
+        emits: [repro559.ledger.ReviewOpened]
+        payload: {repro559.ledger.ReviewOpened: {review_id: {generated: true}}}
+        sets: {case_id: input.case_id}
+  - name: repro559.ledger.Approve
+    input:
+      - {name: review_id, type: repro559.ledger.ReviewId}
+    outcomes:
+      - name: approved
+        moves: repro559.ledger.Review.approve
+        instance: review_id
+        emits: [repro559.ledger.ReviewApproved]
+        payload: {repro559.ledger.ReviewApproved: {review_id: input.review_id}}
+      - {name: wrong-state, wrong_state: true, error: repro559.ledger.WrongState}
+  - name: repro559.ledger.Seal
+    input:
+      - {name: case_id, type: repro559.ledger.CaseId}
+      - {name: review_id, type: repro559.ledger.ReviewId}
+    outcomes:
+      - name: no-review
+        when_related: {via: input.review_id, exists: false}
+        error: repro559.ledger.NoReview
+      - name: not-approved
+        when_related: {via: input.review_id, predicate: state != Approved}
+        error: repro559.ledger.ReviewNotApproved
+      - name: sealed
+        moves: repro559.ledger.Case.seal
+        instance: case_id
+        emits: [repro559.ledger.CaseSealed]
+        payload: {repro559.ledger.CaseSealed: {case_id: input.case_id}}
+      - {name: wrong-state, wrong_state: true, error: repro559.ledger.WrongState}
+views:
+  - name: repro559.ledger.Cases
+    source: repro559.ledger.Case
+    consistency: read_your_writes
+    fields:
+      - {name: case_id, type: repro559.ledger.CaseId}
+      - {name: title, type: String}
+      - {name: state, type: repro559.ledger.Case.State}
+  - name: repro559.ledger.Reviews
+    source: repro559.ledger.Review
+    consistency: read_your_writes
+    fields:
+      - {name: review_id, type: repro559.ledger.ReviewId}
+      - {name: case_id, type: repro559.ledger.CaseId}
+      - {name: state, type: repro559.ledger.Review.State}

@@ -125,10 +125,23 @@ everyone who regenerates, pin it in `ess-inputs.yaml` with `requires: ess X.Y.Z`
 
 ## Generated schemas in a local registry
 
-The generated contract schemas and `schemas/generated/ess.schema.json` have no root `$id`.
-They are usable by schema tooling, but passing either original to `ess generate schema validate`
+By default the generated contract schemas and `schemas/generated/ess.schema.json` have no root
+`$id`. They are usable by schema tooling, but passing either original to `ess generate schema validate`
 as a registry resource produces `missing_schema_id`. ESS does not assign them a public schema
 endpoint. To use this registry, the adopter chooses resource IDs and supplies the resources locally.
+
+`ess generate --kind schema --schema-id-base <URI>` writes the contract schemas with IDs: every
+document gets a root `$id` of the base followed by its path under `schema/`, placed after
+`$schema`. The base is an absolute URI ending in `/` or `:` with no query or fragment, such as
+`https://schemas.example.org/billing/` (giving
+`https://schemas.example.org/billing/types/billing.invoice.Money.schema.json`) or
+`urn:example:billing:`. The base is yours to choose and keep; pass the same one to `--check`.
+Only `--kind schema` takes it. Without it, nothing in the output moves.
+
+Instances may be written in YAML: a file ending `.yaml` or `.yml` is read as the JSON value it
+denotes, by the YAML reader ESS sources are read with. A tag, a key that is not a string, a
+number that is not finite, a key written twice or a second document has no JSON value and is
+refused, naming the file. The same holds for `validate-bundle`.
 
 This example runs from an ESS repository checkout with `ess` and `jq` installed. It reads the
 committed generated schemas and creates separate copies, adding only a root `$id` to each.
@@ -272,8 +285,12 @@ are rewritten only at schema positions, never inside defaults or examples. Const
 nullability, unions, tuple schemas and object openness retain JSON Schema 2020-12 semantics.
 Defaults and formats are annotations; validation neither fills missing fields nor enables
 the optional format-assertion vocabulary. `x-ess-source` records the projected contract's
-qualification. Unknown keywords, nested resource/anchor declarations and unresolved or
-references outside the selected source collection are refused without a partial successful artifact.
+qualification. The `x-ess-*` annotations ESS itself projects are retained as written and never
+asserted, so a document `ess generate --kind schema` wrote imports as it stands. An `x-ess-*`
+keyword the projector does not write (`x-ess-binary64`, `x-ess-source`) is refused, so an import
+cannot mint a codec or an import record. Other unknown keywords, nested resource/anchor
+declarations and unresolved or references outside the selected source collection are refused
+without a partial successful artifact.
 
 When the source is a complete JSON Schema document, keep its root as well as its
 definitions. The document adapter assigns an explicit root identity:

@@ -14,7 +14,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:generic-row-queries
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -84,3 +84,17 @@ the binding design.
   only rows whose far row is in that state, witnessed with a decoy.
 - `absent_reference_reads_absent_everywhere`: an absent reference reads absent in a payload, a view
   field and a filter.
+
+## Downstream report 2026-10-19
+
+Error-payload case from a downstream specification report (2026-10-19, finding 9): `current:
+{related: {via: input.<id>, field: state}}` beside `when_related: {via: input.<id>, predicate:
+state != Open}` is refused `[undeclared_reference] … 'state' is not a field of …` (ESS-COMMAND-001)
+on 0.60.0, 0.62.0 and the integration build (`.engineering/repro/related-state-value/system.yaml`).
+Until this story lands the idiom is an error field carrying the state the guard required, or a
+literal where one state is left (`.engineering/repro/related-state-value/idiom-literal.yaml`: 8
+scenarios, 0 refusals). Closed https://github.com/beyond10x/ess/issues/557 is the same need.
+
+Second hop (finding 10): a guard on a port reads the state of the board that owns the port's node. This story says one hop; `docs/design/generic-language-features.md:553-557` (wave 4 item 2) says navigation through declared references at any depth. The acceptance should state which depth ships.
+
+Conjunction over two identity-addressed rows in one branch (finding 11): `E[input.a].direction == E[input.b].direction`. `when_related` takes no `all:` ("unknown field `all`" on the integration build); the per-row refusal branches idiom (`website/docs/reference/predicates.md`, "Several related rows") covers a disjunction only. Reproduction: `.engineering/repro/two-rows-one-branch/all.yaml`.

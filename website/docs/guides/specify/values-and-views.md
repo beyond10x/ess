@@ -1,10 +1,10 @@
 ---
-title: Values, credentials and views
+title: Values and credentials
 sidebar_position: 5
-description: Value expressions, the caller's credential, inputs present after defaulting, and view consistency and paging.
+description: Value expressions, the caller's credential and inputs present after defaulting.
 ---
 
-# Values, credentials and views
+# Values and credentials
 
 ## Value expressions
 
@@ -37,7 +37,7 @@ the input or a literal:
 | `{input: <field>, else: {generated: true}}` | `payload:`, `sets:` | the input is `Optional<…>` |
 | `{input: <field>, else: <literal>}` | `payload:`, `sets:` | source `ess/16`; the input is `Optional<…>` and the literal is one the target admits |
 | `{related: {via: <field>, field: <field>}}` | `payload:`, `sets:` | source `ess/16`; `via` is a field of an existing subject, or `input.<field>`, typed as exactly one entity's identity; from `ess/22` also `Optional<…>` of it, or a list of two references |
-| `{related: {entity: <Entity>, where: <predicate>, field: <field>}}` | `payload:`, `sets:` | source `ess/22`; `field` of the one row of `<Entity>` that `where` selects, read before the outcome, at the field's declared type the target admits; none or several selected rows supply no value. `where` reads as a [row-set guard](../../reference/predicates.md#a-guard-over-the-rows-a-selector-selects)'s; below `ess/22` the same mapping is the nested mapping it always was |
+| `{related: {entity: <Entity>, where: <predicate>, field: <field>}}` | `payload:`, `sets:` | source `ess/22`; `field` of the one row of `<Entity>` that `where` selects, read before the outcome, at the field's declared type the target admits; none or several selected rows supply no value. `where` reads as a [row-set guard](../../reference/predicates.md#a-guard-over-the-rows-a-selector-selects)'s, and from `ess/27` may [test each candidate's related rows](../../reference/predicates.md#from-ess27-a-test-over-each-candidates-related-rows); below `ess/22` the same mapping is the nested mapping it always was |
 | `{caller: <attribute>}` | `payload:`, `sets:` | source `ess/16`; every actor that may invoke the command declares the attribute, at one type the target admits |
 | a nested mapping | `payload:`, `sets:` | the target is a struct; every struct field has a source |
 | `{generated: true}` | `sets:` | always (`payload:` has admitted it since `ess/4`) |
@@ -169,6 +169,60 @@ value an obligation.
 A literal over a `Decimal` target is admitted in every format, quoted (`'0.25'`) or unquoted
 (`0.25`): an optional `-`, digits without a leading zero, optionally a point and digits.
 
+### From `ess/27`: a computed value
+
+Source `ess/27` computes a value with an expression, `{expr: "<expression>"}`, in `sets:`, an
+event's `payload:` and an error's `payload:`, and computes a view field from its source row with
+`expr:` beside the field's type (beyond10x/ess#560):
+
+```yaml
+- name: recorded
+  creates: demo.ledger.Incident
+  instance: incident_id
+  emits: [demo.ledger.IncidentRecorded]
+  payload:
+    demo.ledger.IncidentRecorded:
+      incident_id: {generated: true}
+      duration: {expr: "input.ended_at - input.started_at"}           # a Duration
+      share: {expr: "coalesce(round(input.affected / input.total, 2, half_even), 0)"}
+  sets:
+    duration: {expr: "input.ended_at - input.started_at"}
+views:
+  - name: demo.ledger.Incidents
+    source: demo.ledger.Incident
+    fields:
+      - {name: incident_id, type: demo.ledger.IncidentId}
+      - {name: elapsed, type: Duration, expr: "ended_at - started_at"}  # from the row
+```
+
+| Form | Over | Gives |
+|---|---|---|
+| `a + b`, `a - b`, `a * b` | Integer, Decimal | an Integer over two Integers, otherwise a Decimal; exact, and unknown past 128 bits |
+| `a / b` | Integer, Decimal | an `Optional<Decimal>` at six places, half-even; absent where `b` is zero |
+| `round(x, digits, half_even \| half_up \| down)` | Integer, Decimal | a Decimal; a quotient inside is rounded once, at these digits and this mode |
+| `abs(x)`, `min(a, b)`, `max(a, b)` | Integer, Decimal, Duration; `min`/`max` also Timestamp and String | the operand's type |
+| `coalesce(a, b)` | one type | `a` where it is present, otherwise `b` |
+| `t1 - t2` | two Timestamps | a Duration of elapsed seconds |
+| `t + d`, `t - d`, `d1 + d2`, `d * n` | Timestamp, Duration, Integer | a Timestamp; a Duration |
+| `60s`, `5m`, `1h` | — | Duration literals; there are no days |
+
+An expression in a command outcome reads `input.<path>` and, where the outcome acts on a subject
+that exists before it, `subject.<field>` as the row held it; a view field reads its source row's
+fields by name. The expression is typed by what it reads and held to the field it fills:
+`ended_at - started_at` into an `Integer` is refused as `type_mismatch` naming the `Duration`, and
+a quotient into a required field is refused naming `coalesce(…, 0)`. `now` is refused as a value,
+and so are an expression in a set effect's `sets:` and a computed field in an aggregate view.
+
+The interpreter and synthesis compute the value with one shared evaluator. Synthesis asserts it on
+the event and the row, and runs the branch again on inputs worth checking the figure on: every
+input the expression reads moved apart from the others, so a target computing `started_at -
+ended_at` fails; each divisor read directly from the input at `0`; and each such quotient on a
+rounding tie at its digits, once on an even and once on an odd neighbour, so a target rounding by
+another mode fails one. The generated Rust and Go behaviours and queries, and Entity Runtime
+lowering, keep such a command or view an obligation named by the expression. Below `ess/27`
+`{expr: …}` is the nested mapping it always was, and `expr:` on a view field is refused naming
+`ess/27`.
+
 ### A relation the model only implies
 Where a stored field is typed as exactly one entity's named identity, or a `when_related:` row is settled by that type alone, and no relation says so, `ess specify validate` prints a warning, `ESS-ENTITY-019` (`ESS-COMMAND-019` for the guard): declare a `references` relation on the field, or the target's `owns`. A warning changes neither the exit status nor the compiled model; a bare primitive identity such as `Uuid`, and a row set selector (`entity`, `where`), are not linted ([how to read it](./layout-and-validation.md#a-relation-the-model-only-implies)).
 
@@ -229,172 +283,5 @@ caller by name fails. Entity Runtime lowering refuses a caller read with `Caller
 
 This section has its own page: [an input refused when absent is present afterwards](./narrowed-inputs.md).
 
-## A view declares its consistency
-
-`consistency: eventual` on a view is what decides that a generated assertion is `eventually` rather
-than immediate. Getting it wrong produces a suite that passes on a laptop and flakes in CI.
-
-When several views expose the same row, declare the row once as a named struct and reference it with
-`shape:`:
-
-```yaml
-types:
-  - name: todo.list.ItemRow
-    kind: struct
-    fields:
-      - name: item_id
-        type: todo.list.ItemId
-      - name: list_id
-        type: todo.list.ListId
-      - name: state
-        type: todo.list.Item.State
-
-views:
-  - name: todo.list.ItemById
-    source: todo.list.Item
-    shape: todo.list.ItemRow
-    consistency: read_your_writes
-
-  - name: todo.list.ListItems
-    source: todo.list.Item
-    shape: todo.list.ItemRow
-    consistency: read_your_writes
-```
-
-A view declares exactly one of `shape` or inline `fields`. The named type must be a struct, and ESS
-still checks each of its fields against the source entity. Compiled IR carries both the shape handle
-and the checked expansion; OpenAPI uses the handle as a real `$ref`, so the row schema is emitted
-once rather than copied per view.
-
-## A view served from a replica
-
-One service may accept writes at one central instance while every other environment reads from a
-local replica that trails it. Model it as one component: its commands are the writes, and its views
-are declared `consistency: eventual`, so the suite asserts their reads with `eventually`. A `role`
-setting says which instance an environment runs, and the store the instances share is a `requires:`
-entry on a `stateless: true` workload:
-
-```yaml
-types:
-  - {name: directory.accounts.Role, kind: enum, variants: [Primary, Replica]}
-views:
-  - name: directory.accounts.Accounts
-    source: directory.accounts.Account
-    consistency: eventual                                # a replica may trail the write
-    fields: [{name: account_id, type: Uuid}, {name: email, type: String}]
-components:
-  - component: directory                                 # one component, every environment
-    owns: {domains: [directory.accounts]}
-    settings:
-      - {name: role, type: directory.accounts.Role, required: true}
-      - {name: write-endpoint, type: Optional<String>}   # absent on the primary
-topology:
-  workloads:
-    directory: {stateless: true, replicas: {min: 2}, requires: [{postgres: directory-store}]}
-```
-
-Placed beside a domain that declares `directory.accounts.Account`, this validates. Each
-environment's values belong to its `ess-environment/1` document. Which instance is the
-write-primary, and read-your-writes at a named instance, are out of scope for the specification: a
-component is a logical boundary, not a placement, and a view declares one consistency. A workload
-has no `environments:` key; two stateful instances with no shared store are `ESS-TOPOLOGY-004`; a
-second component for the replica that owns nothing is `ESS-COMPONENT-007`.
-
-## Who may read a view
-
-From source `ess/22` an actor's `may:` names the views it may read as well as the commands it may
-invoke. There is one grant table: a view named there is read-granted, and only the actors naming it
-may read it.
-
-```yaml
-actors:
-  - name: desk.tickets.Clerk
-    may:
-      - desk.tickets.OpenTicket
-      - desk.tickets.Board
-  - name: desk.tickets.Watcher
-    may:
-      - desk.tickets.OpenTicket
-```
-
-Here the Clerk may read `Board` and the Watcher may not. A view no actor names stays open to every
-caller, so a specification that names no view means what it meant before. A grant naming something
-that is neither a command nor a view is refused as `undeclared_reference`. Under `ess/21` and
-earlier a grant naming a view is refused with `unsupported_format_version`, naming `ess/22`. A
-served component refuses a read the grant does not admit with the same `403` it answers an
-ungranted command; see [synthesis](../synthesize.md).
-
-## A view can be paged
-
-A list endpoint that answers one page of its rows at a time declares `paging:` beside its
-`order_by:`. It needs `format: ess/16`.
-
-```yaml
-views:
-  - name: demo.jobs.JobList
-    source: demo.jobs.Job
-    consistency: read_your_writes
-    params:
-      - {name: type, type: Optional<demo.jobs.JobType>}
-      - {name: page, type: Integer}
-      - {name: size, type: Integer}
-    filter: type == param.type
-    order_by: [job_id asc]
-    paging: {page: page, size: size, total: true}
-    fields:
-      - {name: job_id, type: demo.jobs.JobId}
-      - {name: type, type: demo.jobs.JobType}
-```
-
-`page` and `size` name two declared parameters, each `Integer`, a newtype of it or
-`Optional<Integer>`. A paged read answers `size` rows of the rows the filter admits, in `order_by:`
-order, starting at `page * size`; `first_page: 1` numbers pages from 1, so the first row is at
-`(page - 1) * size`. With `total: true` the answer also carries how many rows the filter admits. A
-read that sends neither parameter answers every row, in order. A filter may not read a paging
-parameter, and a view without `order_by:` cannot be paged: a slice of an unordered view names no
-particular rows. Below `ess/16`, `paging:` is refused with `unsupported_format_version`.
-
-The synthesized suite arranges four rows and reads two pages of one row, two pages of two rows,
-and one page larger than all of them, which must hold at least those rows: each page holds exactly
-its size, the total is at least the rows the scenario made, and the second page
-continues the first — ranked no earlier, and not the same row. Each claim holds on a target other
-users share. A free-form filter expression the caller supplies is not something `paging:` or
-`params:` can declare; a closed set of filter fields can still be declared one optional parameter
-at a time. [Design](https://github.com/beyond10x/ess/blob/main/docs/design/view-paging.md).
-
-## A view field derived from the lifecycle state
-
-A status read often answers a value that follows from the lifecycle state: `live`, true in every
-state but `Closed`. A view field names a field of its source entity, so declare the value as a
-stored field, write it with `sets:` on every branch that enters a state with a different value, and
-state the mapping as invariants over `state`. The view projects the field:
-
-```yaml
-domain: desk.tickets
-entities:
-  - name: desk.tickets.Ticket
-    identity: {name: ticket_id, type: Uuid}
-    fields: [{name: live, type: Boolean}]          # the stored field
-    invariants:                                    # one value per state, checked after every branch
-      - {any: [state != Closed, live == false]}
-      - {any: [state == Closed, live == true]}
-    lifecycle:
-      initial: Open
-      states: [Open, Waiting, Closed]
-      terminal: [Closed]
-      transitions:
-        - {name: wait, from: [Open], to: Waiting}
-        - {name: close, from: [Open, Waiting], to: Closed}
-views:
-  - name: desk.tickets.Status
-    source: desk.tickets.Ticket
-    consistency: read_your_writes
-    fields: [{name: ticket_id, type: Uuid}, {name: live, type: Boolean}]
-```
-
-The branch that creates a ticket writes `sets: {live: true}`, the `close` outcome writes
-`sets: {live: false}`, and `wait` writes nothing because the value does not change. Synthesis checks
-the invariants after every outcome, so the mapping is checked in every state some branch enters. A
-branch that forgets its `sets:` still validates; the model's interpreter reports a broken invariant,
-naming the one over `state`, when it runs that branch. See
-[where a predicate is accepted](../../reference/predicates.md#where-a-predicate-is-accepted).
+Views (consistency, replicas, who may read them, paging and fields derived from the lifecycle
+state) have [a page of their own](views.md).

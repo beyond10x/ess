@@ -161,7 +161,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-diff", 17, Some("0.57.0")),
     ("ess-diff", 18, Some("0.58.0")),
     ("ess-diff", 19, Some("0.60.0")),
+    ("ess-diff", 20, Some("0.63.0")),
     ("ess-diff-acknowledgements", 1, Some("0.53.0")),
+    ("ess-suite-diff", 1, Some("0.63.0")),
     ("ess-conformance", 1, Some("0.1.0")),
     ("ess-conformance", 2, Some("0.7.0")),
     ("ess-conformance", 3, Some("0.16.0")),
@@ -219,6 +221,10 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     // A held `now` for one command (beyond10x/ess#586).
     ("ess-conformance", 50, Some("0.62.0")),
     ("ess-conformance", 51, Some("0.62.0")),
+    // A value type's invariants observed at a wrapped view position (`value_invariants`), and
+    // awaiting a command the system issues itself (beyond10x/ess#542).
+    ("ess-conformance", 52, Some("0.63.0")),
+    ("ess-conformance", 53, Some("0.63.0")),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),
@@ -508,6 +514,7 @@ pub fn run(root: &Path) -> Result<String, String> {
         ));
     }
     refusals.extend(readme_refusal(root, &newest)?);
+    refusals.extend(count_line_refusals(&changelog));
     if !refusals.is_empty() {
         return Err(refusals.join("\n\n"));
     }
@@ -652,6 +659,147 @@ fn newest_release(changelog: &str) -> Result<String, String> {
         .find(|version| !versions_in(version).is_empty())
         .map(str::to_owned)
         .ok_or_else(|| "CHANGELOG.md has no dated release heading".to_owned())
+}
+
+/// The first minor whose dated changelog section, where it changes the source language, ends with
+/// the count line (`docs/design/generic-language-features.md` § Policy, policy 3): the first
+/// release cut after the policy landed. Every section before it is read as written.
+const COUNT_LINE_FROM_MINOR: u64 = 63;
+
+/// The record's baseline the cumulative share starts from (`docs/design/generic-language-features.md`
+/// § Policy; the analysis of 2026-10-13, § 3): general, one-to-one and part entries.
+const COUNT_BASELINE: (u64, u64, u64) = (18, 59, 4);
+
+/// One counted section's figures, as its count line states them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CountLine {
+    general: u64,
+    one_to_one: u64,
+    part: u64,
+    share: u64,
+    cumulative: u64,
+}
+
+/// `numerator / denominator` as a whole percentage, a half rounded up; `0` of nothing.
+fn percent(numerator: u64, denominator: u64) -> u64 {
+    if denominator == 0 {
+        return 0;
+    }
+    (200 * numerator + denominator) / (2 * denominator)
+}
+
+/// Reads `Language: G general, S one-to-one, P part (general share X%; cumulative Y%).`
+fn count_line(line: &str) -> Option<CountLine> {
+    let rest = line.trim().strip_prefix("Language: ")?;
+    let (general, rest) = rest.split_once(" general, ")?;
+    let (one_to_one, rest) = rest.split_once(" one-to-one, ")?;
+    let (part, rest) = rest.split_once(" part (general share ")?;
+    let (share, rest) = rest.split_once("%; cumulative ")?;
+    let cumulative = rest.strip_suffix("%).")?;
+    Some(CountLine {
+        general: general.parse().ok()?,
+        one_to_one: one_to_one.parse().ok()?,
+        part: part.parse().ok()?,
+        share: share.parse().ok()?,
+        cumulative: cumulative.parse().ok()?,
+    })
+}
+
+/// Whether a `### Added` or `### Changed` entry of `section` admits a source spelling: names a
+/// source format, `ess/<N>`. Defects (`### Fixed`), tooling and refusal-only entries are not
+/// counted, and a section holding no such entry needs no count line.
+fn changes_the_source_language(section: &str) -> bool {
+    let mut counted = false;
+    for line in section.lines() {
+        if let Some(heading) = line.strip_prefix("### ") {
+            counted = matches!(heading.trim(), "Added" | "Changed");
+            continue;
+        }
+        if counted && names_a_source_format(line) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether `line` names a source format, `ess/` followed by a digit.
+fn names_a_source_format(line: &str) -> bool {
+    line.match_indices("ess/").any(|(at, _)| {
+        line.as_bytes().get(at + 4).is_some_and(u8::is_ascii_digit)
+            && (at == 0 || !line.as_bytes()[at - 1].is_ascii_alphanumeric())
+    })
+}
+
+/// Every dated section of `changelog`, oldest first: its version and its text.
+fn dated_sections(changelog: &str) -> Vec<(String, String)> {
+    let mut sections: Vec<(String, String)> = Vec::new();
+    let mut current: Option<(String, String)> = None;
+    for line in changelog.lines() {
+        if let Some(heading) = line.strip_prefix("## [") {
+            if let Some(done) = current.take() {
+                sections.push(done);
+            }
+            let version = heading.split(']').next().unwrap_or_default();
+            if heading.contains('—') && !versions_in(version).is_empty() {
+                current = Some((version.to_owned(), String::new()));
+            }
+            continue;
+        }
+        if let Some((_, text)) = current.as_mut() {
+            text.push_str(line);
+            text.push('\n');
+        }
+    }
+    sections.extend(current);
+    sections.reverse();
+    sections
+}
+
+/// The refusals of the language policy's count line (`docs/design/generic-language-features.md`
+/// § Policy, policy 3): from [`COUNT_LINE_FROM_MINOR`], a dated section that changes the source
+/// language ends with `Language: G general, S one-to-one, P part (general share X%; cumulative
+/// Y%).`, its share following from its own counts and its cumulative from [`COUNT_BASELINE`] and
+/// every counted section before it.
+fn count_line_refusals(changelog: &str) -> Vec<String> {
+    let mut refusals = Vec::new();
+    let (mut general, one_to_one, part) = COUNT_BASELINE;
+    let mut total = general + one_to_one + part;
+    for (version, text) in dated_sections(changelog) {
+        if minor(&version).is_none_or(|minor| minor < COUNT_LINE_FROM_MINOR) {
+            continue;
+        }
+        if !changes_the_source_language(&text) {
+            continue;
+        }
+        let last = text.lines().rev().find(|line| !line.trim().is_empty());
+        let Some(counted) = last.and_then(count_line) else {
+            refusals.push(format!(
+                "CHANGELOG.md {version} changes the source language and does not end with \
+                 `Language: G general, S one-to-one, P part (general share X%; cumulative Y%).`"
+            ));
+            continue;
+        };
+        let entries = counted.general + counted.one_to_one + counted.part;
+        let share = percent(counted.general, entries);
+        if entries == 0 || counted.share != share {
+            refusals.push(format!(
+                "CHANGELOG.md {version}: {} general of {entries} counted entries is a general \
+                 share of {share}%, not {}%",
+                counted.general, counted.share
+            ));
+        }
+        general += counted.general;
+        total += entries;
+        let cumulative = percent(general, total);
+        if counted.cumulative != cumulative {
+            refusals.push(format!(
+                "CHANGELOG.md {version}: the cumulative general share is {general} of {total}, \
+                 {cumulative}%, not {}%",
+                counted.cumulative
+            ));
+        }
+    }
+    refusals
 }
 
 /// Every phrasing `website/docs` has used to call a format unreleased.
@@ -1319,6 +1467,121 @@ mod tests {
         assert_eq!(versions_in("ess-0.27.0-aarch64"), Vec::<String>::new());
         assert_eq!(versions_in("0.13.2.1"), Vec::<String>::new());
         assert_eq!(versions_in("draft 2020-12"), Vec::<String>::new());
+    }
+
+    // ---- the language policy's count line (`docs/design/generic-language-features.md` § Policy)
+
+    /// A changelog of `sections`, newest first, under an `[Unreleased]` heading.
+    fn changelog(sections: &[&str]) -> String {
+        let mut text = "# Changelog\n\n## [Unreleased]\n\n".to_owned();
+        for section in sections {
+            text.push_str(section);
+            text.push('\n');
+        }
+        text
+    }
+
+    /// One dated section admitting a new source spelling, ending with `line` where one is given.
+    fn language_section(version: &str, line: Option<&str>) -> String {
+        let mut section = format!(
+            "## [{version}] — 2026-11-01\n\n### Added\n\n- Format `ess/27`: a guard reads a new \
+             root at every command position (grid R, column caller).\n\n### Fixed\n\n- A defect.\n"
+        );
+        if let Some(line) = line {
+            section.push('\n');
+            section.push_str(line);
+            section.push('\n');
+        }
+        section
+    }
+
+    #[test]
+    fn a_release_changing_the_source_language_needs_the_count_line() {
+        let refusals = count_line_refusals(&changelog(&[&language_section("0.63.0", None)]));
+        assert_eq!(refusals.len(), 1, "{refusals:#?}");
+        assert!(
+            refusals[0].contains("0.63.0") && refusals[0].contains("Language:"),
+            "{refusals:#?}"
+        );
+        let malformed = language_section("0.63.0", Some("Language: two general, none."));
+        let refusals = count_line_refusals(&changelog(&[&malformed]));
+        assert_eq!(refusals.len(), 1, "{refusals:#?}");
+    }
+
+    #[test]
+    fn a_count_line_whose_share_does_not_follow_from_its_counts_is_refused() {
+        // 2 of 3 is 67%, not 50%; the cumulative (18 + 2) / (81 + 3) is 24%.
+        let wrong = language_section(
+            "0.63.0",
+            Some("Language: 2 general, 1 one-to-one, 0 part (general share 50%; cumulative 24%)."),
+        );
+        let refusals = count_line_refusals(&changelog(&[&wrong]));
+        assert_eq!(refusals.len(), 1, "{refusals:#?}");
+        assert!(refusals[0].contains("67%"), "{refusals:#?}");
+        let right = language_section(
+            "0.63.0",
+            Some("Language: 2 general, 1 one-to-one, 0 part (general share 67%; cumulative 24%)."),
+        );
+        assert_eq!(
+            count_line_refusals(&changelog(&[&right])),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn the_cumulative_follows_the_baseline_and_every_counted_release() {
+        // Baseline 18 general of 81 (22%); 0.63.0 adds 2 of 3: 20 of 84 (24%); 0.64.0 adds 0 of 4:
+        // 20 of 88 (23%).
+        let first = language_section(
+            "0.63.0",
+            Some("Language: 2 general, 1 one-to-one, 0 part (general share 67%; cumulative 24%)."),
+        );
+        let second = language_section(
+            "0.64.0",
+            Some("Language: 0 general, 3 one-to-one, 1 part (general share 0%; cumulative 23%)."),
+        );
+        assert_eq!(
+            count_line_refusals(&changelog(&[&second, &first])),
+            Vec::<String>::new()
+        );
+        let drifted = language_section(
+            "0.64.0",
+            Some("Language: 0 general, 3 one-to-one, 1 part (general share 0%; cumulative 22%)."),
+        );
+        let refusals = count_line_refusals(&changelog(&[&drifted, &first]));
+        assert_eq!(refusals.len(), 1, "{refusals:#?}");
+        assert!(
+            refusals[0].contains("0.64.0") && refusals[0].contains("23%"),
+            "{refusals:#?}"
+        );
+    }
+
+    #[test]
+    fn releases_before_the_policy_need_no_count_line() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
+        assert_eq!(count_line_refusals(&changelog), Vec::<String>::new());
+        // Every dated section up to 0.62.0, a language change or not, passes without the line.
+        let old = language_section("0.62.0", None).replace("2026-11-01", "2026-10-16");
+        assert_eq!(
+            count_line_refusals(&changelog_with(&old)),
+            Vec::<String>::new()
+        );
+    }
+
+    /// A changelog of one dated section.
+    fn changelog_with(section: &str) -> String {
+        changelog(&[section])
+    }
+
+    #[test]
+    fn a_section_with_only_defects_tooling_or_refusals_needs_no_count_line() {
+        let fixed = "## [0.63.0] — 2026-11-01\n\n### Fixed\n\n- `ess/27` documents a refusal \
+                     they always had.\n\n### Added\n\n- `ess verify conform diff` reads two suites.\n";
+        assert_eq!(
+            count_line_refusals(&changelog_with(fixed)),
+            Vec::<String>::new()
+        );
     }
 
     #[test]

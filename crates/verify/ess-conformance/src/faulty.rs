@@ -116,6 +116,9 @@ use ess_primitives::facts::Number;
 use ess_primitives::ids::CorrelationId;
 use ess_primitives::node::Node;
 
+mod await_faults;
+pub use await_faults::{AwaitFault, AwaitFaulty};
+
 use crate::record::{Call, Interleaved, Subject, Workload};
 use crate::reference::{
     Billing, Oracle, Retained, CANCEL_INVOICE, CREATE_INVOICE, INVALID_AMOUNT, INVOICE_BY_ID,
@@ -811,6 +814,15 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
         request: InvocationObservationRequest,
     ) -> Result<Vec<ObservedInvocation>, TargetError> {
         self.inner.observe_invocations(request)
+    }
+
+    /// Forwarded unchanged: no fault of this matrix is about a step the system takes itself
+    /// ([`AwaitFault`] is that family). Falling back to the default would hide the capability.
+    fn await_outcome(
+        &self,
+        request: crate::target::AwaitRequest,
+    ) -> Result<crate::target::AwaitAnswer, TargetError> {
+        self.inner.await_outcome(request)
     }
 
     fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {

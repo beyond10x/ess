@@ -350,6 +350,14 @@ fn import_source(
         if document_root == Some(name.as_str()) {
             if let Some(object) = transformed.as_object_mut() {
                 object.remove("$defs");
+                // The document's identity (`ess generate --kind schema --schema-id-base`,
+                // beyond10x/ess#590): inert here, since the bundle names its roots itself and
+                // keeps the source's bytes and digest. Retained, it would move the base every
+                // rewritten local reference resolves against. An `$id` anywhere below the root is
+                // still refused, by the keyword arm of `transform`.
+                if object.remove("$id").is_some_and(|id| !id.is_string()) {
+                    errors.push(diagnostic("/$id", "document `$id` must be a string"));
+                }
             }
         }
         let mut required = BTreeSet::new();
@@ -587,7 +595,20 @@ fn transform(
             | "type" | "enum" | "const" | "required" | "dependentRequired" | "minimum"
             | "maximum" | "exclusiveMinimum" | "exclusiveMaximum" | "multipleOf" | "minLength"
             | "maxLength" | "pattern" | "minItems" | "maxItems" | "uniqueItems" | "minContains"
-            | "maxContains" | "minProperties" | "maxProperties" => {}
+            | "maxContains" | "minProperties" | "maxProperties"
+            // The annotations `ess generate --kind schema` writes beside the assertions
+            // (beyond10x/ess#593), named one by one. Retained as written and never descended into,
+            // since a value here is a record rather than a schema. They are inert here: no
+            // validator asserts them, and a bundle realization refuses them, because only a
+            // checked model (`Plan::from_model`) reads them as identity, wire mapping or
+            // obligations. Every other `x-ess-` keyword stays refused, above all those that would
+            // carry authority if an import could mint them: `x-ess-binary64` (a finite codec is
+            // the compiler's `binary64_locations`, never an annotation) and `x-ess-source` (the
+            // import record this module writes itself). Any other `x-` keyword is still refused:
+            // it is a vocabulary this importer has no account of.
+            | "x-ess-provenance" | "x-ess-name" | "x-ess-kind" | "x-ess-field" | "x-ess-map-key"
+            | "x-ess-union-tag" | "x-ess-attributes" | "x-ess-alphabet" | "x-ess-invariants"
+            | "x-ess-relation" | "x-ess-reading" | "x-ess-one-time-response" | "x-ess-shorthand" => {}
             other => errors.push(diagnostic(
                 &location,
                 format!("unsupported schema keyword `{other}`"),

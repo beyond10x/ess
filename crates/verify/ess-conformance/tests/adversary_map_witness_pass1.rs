@@ -1205,7 +1205,7 @@ fn adv196_every_example_still_synthesizes_to_its_committed_suite() {
         for refusal in &synthesis.refusals {
             let text = refusal.to_string();
             // The ESS-SYNTH-013 help text lists "a list, a map, a union" whatever the model holds.
-            let reason = text.replace("outside a list, a map, a union", "");
+            let reason = text.replace("inside a list, a map, a union", "");
             if reason.to_lowercase().contains("map") {
                 drift.push(format!("{example}: refusal names a map: {text}"));
             }

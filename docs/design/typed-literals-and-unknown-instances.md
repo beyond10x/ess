@@ -191,9 +191,18 @@ A `when_subject:` refusal reads the subject a sibling branch addresses, so a com
 that sibling, and the sibling decides. A command with no input-addressed branch at all keeps
 `unreachable_branch`.
 
-The create-or-update pairing (`outcome-shapes.md`, ess/16) is unchanged: a creating
+The create-or-update pairing (`outcome-shapes.md`, ess/16) is unchanged below `ess/27`: a creating
 `unknown_instance:` still needs a sibling `moves:` or `updates:` on the same entity, so one beside
-a `preserves:` branch alone is refused `conflicting_declaration`.
+a `preserves:` branch alone is refused `conflicting_declaration`, the hint naming `ess/27`.
+
+From `ess/27` (the one precedence rule, `generic-language-features.md` § G4) the creation pairs
+with a `preserves:` branch too — "ensure the record exists": the creation answers at step 2 for an
+identity no record carries, the preserving branch and any `when_subject:` refusal beside it every
+stored one. A `deletes:` sibling stays refused in every format: a create-or-delete toggle is not
+the construct. Wherever `when_subject_state:` admits an `unknown_instance:` branch, refusing or
+creating, `when_subject:` admits it as well; #530's create-or-update is `ess/25`'s special case.
+Entity Runtime keeps refusing a creation selected by existence by name
+(`ExistenceSelectionUnsupported`).
 
 ### Witness
 

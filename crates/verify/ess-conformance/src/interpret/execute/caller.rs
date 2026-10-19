@@ -159,4 +159,7 @@ impl FactSource for Facts<'_> {
     fn now(&self) -> Option<ess_primitives::time::Rfc3339Instant> {
         self.now
     }
+    fn rows(&self, entity: &str) -> Option<Vec<Box<dyn FactSource + '_>>> {
+        self.base.rows(entity)
+    }
 }

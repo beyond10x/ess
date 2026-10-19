@@ -131,6 +131,9 @@ fn scalar(emit: &Emit<'_>, ty: &ResolvedTypeRef, value: &str) -> String {
             }
             _ => unreachable!("admitted predicate scalar"),
         },
+        ResolvedTypeRef::Primitive {
+            name: ess_domain::Primitive::Boolean,
+        } => format!("if {value} {{ return \"true\", true, true }}; return \"false\", true, true"),
         ResolvedTypeRef::Primitive { .. } => format!("return {value}, true, true"),
         _ => unreachable!("admitted predicate scalar"),
     };
@@ -148,9 +151,14 @@ fn predicate(predicate: &Predicate, reads: &BTreeMap<String, usize>) -> String {
             right: Operand::Literal(value),
             ..
         } => {
-            let ess_primitives::facts::FactValue::Text(value) = value else {
-                unreachable!()
+            // A Boolean leaf (ess/27) is read as the text `true` or `false`, so its literal is
+            // compared as that text.
+            let value = match value {
+                ess_primitives::facts::FactValue::Text(value) => value.clone(),
+                ess_primitives::facts::FactValue::Bool(flag) => flag.to_string(),
+                ess_primitives::facts::FactValue::Number(_) => unreachable!(),
             };
+            let value = &value;
             let id = reads[&path.to_string()];
             format!(
                 "selectionCompare(read{id}, present{id}, {}, {})",

@@ -22,7 +22,7 @@ scope:
   path: crates/specify/ess-domain/src/view.rs
 - confidence: cited
   path: crates/specify/ess-domain/tests/expression.rs
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-12T04:18:24Z", actor: "human:timo", revision: 7, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-12T04:18:25Z", actor: "human:timo", revision: 8, imported: true}
@@ -33,17 +33,17 @@ transitions:
 An entity invariant may compare an enum-typed field to a variant the enum does not declare, and
 `ess specify validate` accepts it.
 
-Reproduced 2026-09-04 against `ess 0.15.0`, on a copy of the ACD model in `acd/specs`:
+Reproduced 2026-09-04 against `ess 0.15.0`, on a copy of a downstream model:
 
 ```console
 $ sed -i '242s/line_status == selected/line_status == NOT_A_VARIANT_AT_ALL/' domains/routing.yaml
 $ ess specify validate --path .
-acd v3 — 4 file(s), valid
+queue v3 — 4 file(s), valid
 $ echo $?
 0
 ```
 
-`line_status` is `acd.routing.LineStatus`, an enum with nine declared variants.
+`line_status` is `queue.routing.LineStatus`, an enum with nine declared variants.
 `NOT_A_VARIANT_AT_ALL` is not one of them.
 
 **View filters are checked.** The same comparison in a view's `filter:` is refused. So the machinery
@@ -56,7 +56,7 @@ active-call status is not available*, *Selected implies an agent*. Every one of 
 to a variant, and every one is a place a typo turns into an invariant that is never violated because
 nothing can match it. It reads as a passing constraint and it constrains nothing.
 
-This was found while modelling ACD's routing core, where the whole point of the exercise was to lift
+This was found while modelling a downstream routing core, where the whole point of the exercise was to lift
 invariants out of Go regression tests named after outages. An invariant that silently checks nothing
 is worse than the test it replaced.
 

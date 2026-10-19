@@ -254,7 +254,7 @@ impl RawRelatedGuard {
                 return Err(at(
                     ValidationCode::TypeMismatch,
                     not_an_input(name, &via),
-                    INPUT_HINT,
+                    &via_hint(&via),
                 ))
             }
         };
@@ -328,6 +328,24 @@ fn read_predicates(
 /// The hint of the refusal of a `via` that names no input field, through ess/21.
 const INPUT_HINT: &str = "write `via: input.<field>`, naming the input field typed as the other \
                           entity's identity";
+
+/// The hint of the refusal of a written `via` that names no row: [`INPUT_HINT`] through ess/21,
+/// and from ess/22, which reads a bare stored field of the addressed subject (beyond10x/ess#304),
+/// both forms — `subject.<field>` named as the bare `<field>` it means (downstream report,
+/// 2026-10-19, finding 10).
+fn via_hint(via: &str) -> String {
+    if !super::READS_INPUT_NAMESPACE.with(std::cell::Cell::get) {
+        return INPUT_HINT.to_owned();
+    }
+    let field = via
+        .strip_prefix("subject.")
+        .filter(|field| is_bare_field(field))
+        .unwrap_or("<field>");
+    format!(
+        "write `via: input.<field>`, naming the input field typed as the other entity's identity, \
+         or `via: {field}`, naming a stored field of the addressed subject typed as one"
+    )
+}
 
 /// The refusal message of a `via` that names no input field: the one every format through ess/21
 /// gives, kept for those formats (beyond10x/ess#304).
@@ -573,13 +591,69 @@ fn site(command: &CommandSpec, outcome: &super::Outcome) -> ConstructRef {
 /// Local declaration checks, which need no registry and no entity: one default at most, one
 /// `exists: false` branch at most per related row, one stored-field row per command, a branch a
 /// scenario can reach, and no second selection strategy beside this one.
-pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
+///
+/// From `ess/27` an `unknown_instance:` branch sits beside the related guards: the precedence order
+/// answers it at step 3, after an `exists: false` over a row the input names and the input-guarded
+/// refusals, and before the held state and every present related row's predicate. Below `ess/27`
+/// the pairing is refused as before, the hint naming `ess/27`. Where `types` is not yet known the
+/// format is not either, so a command declaring one is left to the pass that knows it.
+pub fn validate_shape(command: &CommandSpec, types: Option<&TypeRegistry>) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
-    if let Some(other) = command
+    let unknown_instance = command
         .outcomes
         .iter()
-        .find_map(|outcome| other_authority(&outcome.condition))
-    {
+        .any(|outcome| matches!(outcome.condition, OutcomeCondition::UnknownInstance));
+    let other = command
+        .outcomes
+        .iter()
+        .any(|outcome| other_authority(&outcome.condition).is_some());
+    let Some(types) = types else {
+        if other {
+            return errors;
+        }
+        return validate_declared(command, errors, false);
+    };
+    // Under the one rule (`ess/27`) every guard the related row shares a command with answers at
+    // its own step, so no pair is refused for want of an order.
+    let one_rule = types.format().is_none_or(precedence::reads_one_rule);
+    let admits_unknown_instance = types
+        .format()
+        .is_none_or(|format| format.major() >= crate::system::FormatVersion::V27.major());
+    if unknown_instance && !admits_unknown_instance {
+        errors.push(
+            ValidationError::at(
+                command.site().key("outcomes"),
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "`{}` selects on a related row (`when_related`) and on an `unknown_instance` \
+                     branch; which of the two answers first is not stated before `ess/27`",
+                    command.name
+                ),
+            )
+            .with_hint(
+                "declare `format: ess/27`, where the unknown addressed identity answers after an \
+                 `exists: false` over the input's row and before the related row's predicates, or \
+                 split the other guard into a command of its own",
+            ),
+        );
+        return errors;
+    }
+    validate_declared(command, errors, one_rule)
+}
+
+/// [`validate_shape`] once an `unknown_instance:` branch is admitted or absent; `one_rule` where
+/// the document reads the one precedence rule, which orders every other guard beside the related
+/// row.
+fn validate_declared(
+    command: &CommandSpec,
+    mut errors: ValidationErrors,
+    one_rule: bool,
+) -> ValidationErrors {
+    if let Some(other) = command.outcomes.iter().find_map(|outcome| {
+        (!one_rule && !matches!(outcome.condition, OutcomeCondition::UnknownInstance))
+            .then(|| other_authority(&outcome.condition))
+            .flatten()
+    }) {
         errors.push(
             ValidationError::at(
                 command.site().key("outcomes"),
@@ -591,8 +665,9 @@ pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
                 ),
             )
             .with_hint(
-                "guard the command on the related row alone, or split the other guard into a \
-                 command of its own",
+                "declare `format: ess/27`, where the one precedence rule orders the two, guard the \
+                 command on the related row alone, or split the other guard into a command of its \
+                 own",
             ),
         );
         return errors;
@@ -898,8 +973,21 @@ fn orders_present_refusals(
                 .as_ref()
                 .is_some_and(|subject| matches!(subject.effect, super::Effect::Moves { .. }))
     });
+    // From ess/27 an unknown addressed identity answers at step 3, before the present related row's
+    // refusals, exactly as the held state does beside `wrong_state:`.
+    let has_unknown_instance = spec.system().format.major()
+        >= crate::system::FormatVersion::V27.major()
+        && command
+            .outcomes
+            .iter()
+            .any(|outcome| matches!(outcome.condition, OutcomeCondition::UnknownInstance));
+    // Under the one rule every present related row's refusal answers at step 4, after the held
+    // state and before every accepting branch, whatever else the command declares.
+    if precedence::reads_one_rule(spec.system().format) {
+        return Ok(present_related_count > 0 || matches!(via, RelatedVia::Subject(_)));
+    }
     let orders = (matches!(via, RelatedVia::Subject(_)) && !accepting_related_move)
-        || (has_wrong_state
+        || ((has_wrong_state || has_unknown_instance)
             && spec.system().format.major() >= crate::system::FormatVersion::V22.major()
             && present_related_count > 0
             && all_present_related_refuse);
@@ -913,7 +1001,7 @@ fn orders_present_refusals(
             ),
         )
         .with_hint(
-            "guard the command on the related row alone, or split the other guard into a command of its own",
+            "declare `format: ess/27`, where the one precedence rule orders the two, guard the command on the related row alone, or split the other guard into a command of its own",
         ));
     }
     Ok(orders)
@@ -1487,6 +1575,12 @@ fn check(
     }
     let checked = crate::expression::check_predicate(&environment, predicate, &owner);
     for error in &checked.errors {
+        if let Some(refused) = error.path.as_ref().and_then(|path| {
+            super::published_operand::guard_refusal(types, path, error.segment.as_deref(), site)
+        }) {
+            errors.push(refused);
+            continue;
+        }
         let mut diagnostic = error.validation_error();
         if let Some(path) = &error.path {
             if error.segment.as_deref() == Some(path.namespace())
@@ -1519,6 +1613,10 @@ fn check(
 ///
 /// Where the prover declines — an open domain, a comparison with the input — the command needs a
 /// genuine default, as an open input guard does.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one partition proof: the branches it counts, the cases and the refusal of each"
+)]
 fn validate_partition(
     command: &CommandSpec,
     entity: &EntitySpec,
@@ -1527,12 +1625,21 @@ fn validate_partition(
     composition: Composition,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
+    let one_rule = composition.reads_one_rule();
     let guarded: Vec<&super::Outcome> = command
         .outcomes
         .iter()
         .filter(|outcome| {
             !outcome.is_unconditional()
                 && outcome.condition.cause().is_none()
+                // Under the one rule a branch answered before the rows around the addressed
+                // record — the request with no document, existence, the held state — is not the
+                // related row's to partition.
+                && !(one_rule
+                    && matches!(
+                        precedence::place(&BranchShape::of(outcome), &composition).phase,
+                        Phase::InputAbsent | Phase::Existence | Phase::HeldState
+                    ))
                 // A marker with no guard over the row or the input: it answers whether the
                 // command's own identity is held, which this partition does not prove.
                 && outcome.condition != OutcomeCondition::ExistingInstance
@@ -1604,7 +1711,7 @@ fn validate_partition(
                     .collect::<Vec<_>>()
                     .join(", ")
             };
-        errors.push(ValidationError::at(
+        let refusal = ValidationError::at(
             command.site().key("outcomes"),
             if selected == 0 {
                 ValidationCode::NonExhaustiveBranches
@@ -1621,7 +1728,15 @@ fn validate_partition(
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
-        ));
+        );
+        errors.push(if selected > 1 && !one_rule {
+            refusal.with_hint(
+                "declare `format: ess/27`, where the one precedence rule answers the branch it \
+                 reads first, within one step the first declared, or make the guards disjoint",
+            )
+        } else {
+            refusal
+        });
     }
     errors
 }
@@ -2175,6 +2290,11 @@ fn selected_count(
     let Some(composition) = ordered else {
         return selected.len();
     };
+    // Under the one rule (`ess/27`) the branch the plan reads first answers every request the
+    // selected branches hold for: an earlier step first, and within a step the first declared.
+    if composition.reads_one_rule() {
+        return 1;
+    }
     let related_refusals: Vec<usize> = selected
         .iter()
         .copied()

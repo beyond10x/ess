@@ -144,15 +144,16 @@ fn adv_e_u7_byte_identity_probe() {
         compiled += 1;
         let synthesis = ess_conformance::synthesize::synthesize(&ir);
         // The coordinator's decision (F5, final review decision 1): a text's `.count` is asserted
-        // on view rows only in an invariant that already needs suite /40 — an offset or a tagged
-        // instant comparison here — which moves that suite from /34 to /40. A `.count` alone, and
-        // a member named `utf8_bytes` in either format, select nothing and keep their bytes.
+        // on view rows, which moves that suite from /34 to /40 — beside an offset or a tagged
+        // instant comparison, and since the downstream report of 2026-10-18 alone as well, the
+        // model telling the text's length from a member named `count`. A member named
+        // `utf8_bytes`, in either format, selects nothing and keeps its bytes.
         let version = synthesis.suite.provenance.suite_version.to_string();
         let json = synthesis
             .suite
             .to_canonical_json()
             .unwrap_or_else(|error| format!("ERR {error}"));
-        if name.starts_with("lift-") {
+        if name.starts_with("lift-") || name == "count-alone" {
             assert_eq!(version, "ess-conformance/40", "{name}");
             assert!(
                 json.contains("label.count"),

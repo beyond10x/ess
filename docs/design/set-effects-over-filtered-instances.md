@@ -148,9 +148,9 @@ the scenario is refused by name. `ess-diff/9`'s
 which rows move where. A transition only such an entry takes is performed by its branch in the
 mutation audit's component scoping.
 
-Entity Runtime and the Rust, Go, Web and Clap targets refuse the moving form by name as they refuse
-every `affects:` (below): a generated seam acts on the one instance its request names, so the
-effect stays an obligation the conformance suite checks.
+Entity Runtime refuses the moving form by name as it refuses every `affects:` (below). The Rust,
+Go, Web and Clap targets emit the command as an owed behaviour whose contract names the rows it
+moves (below, "Targets"), so the effect stays an obligation the conformance suite checks.
 
 ## Deleting the selected rows (ess/23, beyond10x/ess#452)
 
@@ -188,8 +188,8 @@ conjunct left out, the command, then each removed row read absent from every imm
 entity with `deletes:`'s absence check (`expect_subject_absent`, `ess-conformance/22`) and each
 other row read as arranged; the bulk form then sends the command again under an input selecting
 nothing, with a count of 0 and every row as the first call left it. No suite step is new. The
-interpreter removes the rows. Entity Runtime refuses both with `SetEffectUnsupported`, and Rust,
-Go, Web and Clap as `MissingRepresentation`, as for every set effect. `ess-diff`'s
+interpreter removes the rows. Entity Runtime refuses both with `SetEffectUnsupported`; Rust, Go,
+Web and Clap owe the command, as for every set effect (below, "Targets"). `ess-diff`'s
 `outcome-set-effect-changed` line names the deletion, and the generated documentation says which
 rows are removed.
 
@@ -238,7 +238,8 @@ validate refuses with `missing_declaration` naming the list and the member.
 
 **Refusals.** `each:` beside `where:`, `moves:` or `deletes:` in one entry is
 `conflicting_declaration`: the entry creates or updates the rows its elements name and selects,
-moves or removes no other. So are `instance:` without `each:` and an element read writing the
+moves or removes no other (from `ess/27` `moves:` and `deletes:` are admitted beside it: "Moves and
+deletes per element", below). So are `instance:` without `each:` and an element read writing the
 identity, which comes from `instance:` alone; `each:` without `instance:`, or an entry with neither
 `where:` nor `each:`, is `missing_declaration`. `in:` other than `input.<field>` is
 `unsupported_construct`, an undeclared input or member `undeclared_reference`, and an input not
@@ -284,10 +285,85 @@ no new suite step is taken: a suite carrying the entry keeps the format its othe
 
 **Targets.** The interpreter writes the rows after the subject, element by element in list order,
 skipping an element that names the subject.
-Entity Runtime refuses the entry with `SetEffectUnsupported`, and Rust, Go, Web and Clap synthesis
-as `MissingRepresentation`, as for every `affects:`. `ess-diff`'s `outcome-set-effect-changed` line
+Entity Runtime refuses the entry with `SetEffectUnsupported`; Rust, Go, Web and Clap synthesis owe
+the command, as for every `affects:` (below, "Targets"). `ess-diff`'s `outcome-set-effect-changed` line
 names the entry and its list, and the generated documentation says it writes one row per element of
 the list.
+
+## Moves and deletes per element (ess/27, beyond10x/ess#596)
+
+A batch is applied in one call, and an external system answers per row (`applied`, `refused`,
+`invalid`); each row takes its own transition by that answer. Before `ess/27` no spelling stated it.
+The reproduction (`.engineering/repro/596/each-moves.yaml`, neutralised as
+`crates/verify/ess-conformance/tests/fixtures/each-moves.yaml`) wrote one `each:` entry moving the
+row each answer names, and `ess specify validate` refused it:
+`[conflicting_declaration] command.demo.batch.Apply.outcomes.applied.affects[0].each: outcome
+applied declares each: and moves: in affects[0]; an each: entry creates or updates the row each
+element names, and selects, moves or removes no other` (ESS-COMMAND-004). The per-row command, one
+call per answer with three `when:` branches, stays the way to write an answer that arrives one row
+at a time.
+
+From `ess/27` an `each:` entry may declare `moves: <Entity>.<transition>` or `deletes: <Entity>`, and
+`each:` may carry a `where:` over the element, so the element carries the per-row answer and the
+entry its effect:
+
+```yaml
+affects:
+  - {entity: demo.batch.Proposal, each: {in: input.answers, as: a, where: a.verdict == applied},
+     instance: a.proposal_id, moves: demo.batch.Proposal.apply}
+  - {entity: demo.batch.Proposal, each: {in: input.answers, as: a, where: a.verdict == refused},
+     instance: a.proposal_id, moves: demo.batch.Proposal.refuse}
+```
+
+**Semantics.** The entries apply in the order written, and each walks its list in order. An element
+its `where:` does not select is passed over; a `where:` reads `<as>.<member>` and `input.<field>`,
+checked as a guard over the element's struct, and only a filter that holds selects. For a selected
+element the row `instance:` names takes the entry's move, comes to hold its `sets:` and element
+reads, or is removed. An element naming no row is skipped: a run-time answer validation cannot see,
+and a skip rather than a refusal because an element naming no row is what a row outside the move's
+`from` states already is under `instances:` — a row the effect does not reach — and a declared
+refusal for it is already expressible (`when_related:` over the list is later work, not this cut). A
+`{count: skipped}` is not added; no consumer asked to read it. A row resting outside the move's
+`from` states is skipped, as a row under `instances:` is. Entries with `moves:` or `deletes:` create
+nothing, so the invariant-fields rule of a creating entry does not apply to them. An element naming
+the subject is skipped, as before. As every outcome keeps, a refused run moves nothing.
+
+**Order and one transition per entity.** Two `each:` entries moving rows of one entity are
+admitted: they apply in the order written, so a row an earlier entry moved rests where a later
+entry's move may not start from, and its result is defined. A moving `each:` entry beside a `where:`
+entry moving the same entity keeps the refusal of two moving entries; a deleting entry beside any
+other over its entity keeps its refusal too, and element reads beside `deletes:` are refused as
+`sets:` beside it is.
+
+**Distinct.** The `distinct:` requirement is unchanged: the member `instance:` reads is held
+distinct across the list by a declared `distinct:`.
+
+**Refusals.** `where:` on the entry beside `each:` stays `conflicting_declaration`. Below `ess/27`
+an `each:` entry's `moves:` or `deletes:` keeps its refusal (`conflicting_declaration` at
+`affects[<n>].each`), its hint naming `ess/27`, and a `where:` inside `each:` is
+`unsupported_format_version` naming `ess/27`; each is taken off before conversion, a refused move
+recorded so its transition is not also reported as one nothing takes. A filter that does not parse
+is refused at `affects[<n>].each.where`, and one reading an undeclared member or a value its member's
+type does not hold by the guard checker's own codes.
+
+**Conformance.** One segment appended to the branch's own scenario. Per entry a row resting where
+its move starts, named by an element its `where:` selects and, where the witness offers one, no
+other entry's: read back as the entries leave it, so a target moving every named row by the first
+element's verdict fails. For the first moving entry a row resting outside its `from` states (another
+state than its arrival preferred), named by an element it selects: read back unmoved, so a target
+ignoring `from` fails. Where no plain arrangement leaves a row there, a first call of the command,
+for a further subject, moves one there through another entry. A decoy no element names is read
+unchanged; a removed row is read absent. The list names the arranged rows by their captured
+identities (`ScenarioValue::List` of `Members`, suite `/32` and above), so no new step and no new
+suite major is taken. This cut witnesses such entries over one list and one entity other than the
+subject's as the branch's only entries; any other shape is refused by name (`NoWitness`).
+
+**Targets.** The interpreter applies the entries element by element as above. Entity Runtime refuses
+the outcome with `SetEffectUnsupported`, as every `affects:`; Rust, Go, Web and Clap owe the command,
+its contract naming the list, the element filter and the move or removal. `ess verify diff` reports
+a change under `outcome-set-effect-changed`, its line naming the element filter and the move;
+generated documentation says which named rows move where. An entry without `moves:`, `deletes:` or
+an element `where:` keeps its IR, diff line and documentation bytes.
 
 ## One event per changed row (ess/25, beyond10x/ess#531)
 
@@ -391,8 +467,12 @@ names each per-row event and its state filter.
 ## Targets
 
 Entity Runtime refuses both with `SetEffectUnsupported`: an entity-core operation acts on the one
-instance its request names. Rust, Go, Web and Clap synthesis refuse both by name as
-`MissingRepresentation`. OpenAPI and AsyncAPI change nothing on the wire; the generated
+instance its request names. Rust, Go, Web and Clap synthesis emit the workspace and keep the command
+an owed behaviour, its obligation naming `instances:` or `affects:` and its contract naming the rows
+each set effect changes, its move or removal and the fields it writes. Until beyond10x/ess#547 they
+refused both by name as `MissingRepresentation`; that refusal predated owed behaviour, and the
+generated seam already takes only the input, so nothing in it confines the behaviour to one row
+(`docs/design/set-effect-identity-filters.md`, D4). OpenAPI and AsyncAPI change nothing on the wire; the generated
 documentation says which rows a branch changes. `ess-diff/9` adds `outcome-set-effect-changed`,
 carrying one line per construct on each side.
 

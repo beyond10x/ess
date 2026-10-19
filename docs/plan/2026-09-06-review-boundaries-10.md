@@ -92,7 +92,7 @@ The story is active revision11; opening formatting, action,157-artifact planning
 checks each exited0. Planning retains the known24 empty-findings advisories unchanged.
 Provisioning sampled15344922624free bytes and created the unit at that exact opening head.
 
-Worktree: ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity.
+Worktree: <tree>.
 Branch: impl/review-schema-resource-identity. Build: that worktree's target directory.
 Scratch: target/review-boundaries-10/schema-resource-identity beneath the unit; TMPDIR is its
 tmp directory. Its assigned Cargo home is scratch/cargo-home, with existing registry/git
@@ -197,7 +197,7 @@ revision17. Validation returned0 for165artifacts with28retained empty-review adv
 
 AEP coverage reader source658cf76e6371b1628f6de69548e724b52803f5c2 is published after its
 green16-step gate. Reuse its already provisioned, root-owned Website support checkout
-~/.local/state/worktree/trees/b10x/website/aep-coverage-website-verification,
+<tree>,
 lease ess-review-aep-website, exact runtimefc4571534765c098ed861bc326da4d3da0d1df63,
 scratch target/ess-conformance-coverage. Its npm setup passed; no dependency source changed.
 The short assigned external TMPDIR is ~/.cache/aep-cov-website-tmp.

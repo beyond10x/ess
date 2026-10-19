@@ -16,7 +16,7 @@ Issue: https://github.com/beyond10x/ess/issues/484. Design page:
 ## The triple
 
 ```
-worktree:  ~/.local/state/worktree/trees/b10x/ess/ess-wave-20261007b-u3
+worktree:  <tree>
 build dir: <worktree>/target   (already created, with Cargo's CACHEDIR.TAG)
 scratch:   <worktree>/target/wave-scratch/u3
 ```
@@ -29,7 +29,7 @@ scratch:   <worktree>/target/wave-scratch/u3
 | **not yours** | everything else; `CHANGELOG.md` and `.engineering/**` are the coordinator's |
 
 Invariants: `.engineering/waves/2026-10-07b/invariants.md` in the integration tree
-(`~/.local/state/worktree/trees/b10x/ess/ess-wave-20261007b`). Read it first. `AGENTS.md`
+(`<tree>`). Read it first. `AGENTS.md`
 "Determinism and formats" applies in full: a new state format version, an old-reader compatibility
 test, and ordered collections only.
 

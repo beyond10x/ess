@@ -131,6 +131,12 @@ pub struct RawSpecFile {
     #[serde(skip)]
     #[schemars(skip)]
     pub(crate) undeclared_fields: crate::undeclared_fields::Written,
+    /// The `shorthand:` each type and each other non-command declaration of this file wrote,
+    /// taken out of it by [`Self::parse`] (`ess/27`, `crate::shorthand`). Never part of the
+    /// document's typed fields, its schema or its bytes.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub(crate) shorthand: crate::shorthand::Written,
 }
 
 /// Everything a specification declares, indexed by identity.
@@ -185,6 +191,8 @@ impl RawSpecFile {
         // A type's `undeclared_fields:` is read beside its body rather than in it (`ess/24`), and
         // every other declaration's is read so it can be refused at its line.
         let undeclared_fields = crate::undeclared_fields::Written::take(&mut document)?;
+        // So is a struct's `shorthand:` (`ess/27`).
+        let shorthand = crate::shorthand::Written::take(&mut document)?;
         // A file that names its format reads the operand grammar of that format; one that does
         // not reads what its caller set, `ess/22`'s when nobody did (see `parse_all`).
         let format = written_format(&document);
@@ -199,6 +207,7 @@ impl RawSpecFile {
         }?;
         file.spelled = spelled;
         file.undeclared_fields = undeclared_fields;
+        file.shorthand = shorthand;
         Ok(file)
     }
 
@@ -278,6 +287,12 @@ impl Specification {
         &self.actors
     }
 
+    /// Whether `command` is system-issued: granted by at least one actor, every one of which is
+    /// declared `system: true` (ess/27, beyond10x/ess#542, [`crate::system_issued`]).
+    pub fn is_system_issued(&self, command: &QualifiedName) -> bool {
+        crate::system_issued::is_system_issued(self.actors.values(), command)
+    }
+
     /// Every component, indexed by identity.
     pub fn components(
         &self,
@@ -326,7 +341,11 @@ impl Specification {
             &mut collected.refused.moves,
         );
         crate::command::set_effects::refuse_deletions(&mut files, &mut errors);
-        crate::command::set_effects::refuse_each(&mut files, &mut errors);
+        crate::command::set_effects::refuse_each(
+            &mut files,
+            &mut errors,
+            &mut collected.refused.moves,
+        );
         crate::command::set_effects::refuse_per_row_events(&mut files, &mut errors);
 
         // A guard reads `input.<field>` only in an `ess/22` source, named by its one header.
@@ -376,6 +395,9 @@ impl Specification {
             return Err(errors);
         };
 
+        // A present mint and a payload read are `ess/27` sources (beyond10x/ess#545); below it each
+        // mapping is the nested one it was.
+        crate::command::minted_value::read_below_ess_27(system.format, &mut collected.commands);
         // A filtered read is an `ess/22` source; below it the same mapping is the nested one it was.
         crate::command::row_set::read_below_ess_22(
             system.format,
@@ -459,17 +481,24 @@ impl Specification {
         self.validate_after(&Refused::default())
     }
 
+    /// The binding constructs checked across the whole specification: periodic causes, delivery
+    /// contexts, retries, conditions and refusals.
+    fn validate_bindings(&self) -> ValidationErrors {
+        let mut errors = crate::binding::periodic::validate_specification(self);
+        errors.extend(crate::binding::context::validate_specification(self));
+        errors.extend(crate::binding::retry::validate_specification(self));
+        errors.extend(crate::binding::condition::validate_specification(self));
+        errors.extend(crate::binding::refusal::validate_specification(self));
+        errors
+    }
+
     /// Checks every reference, treating the names `refused` holds as declared: their own
     /// conversion already said what is wrong with them, and a reference to one is not a second
     /// fault.
     fn validate_after(&self, refused: &Refused) -> ValidationErrors {
         let mut errors = crate::primitive_admission::specification(self);
         errors.extend(crate::wire::validate(self));
-        errors.extend(crate::binding::periodic::validate_specification(self));
-        errors.extend(crate::binding::context::validate_specification(self));
-        errors.extend(crate::binding::retry::validate_specification(self));
-        errors.extend(crate::binding::condition::validate_specification(self));
-        errors.extend(crate::binding::refusal::validate_specification(self));
+        errors.extend(self.validate_bindings());
 
         // Entities contribute the enum their lifecycle forms, so a view projecting `state` and a
         // filter comparing it are checked against the same set of names.
@@ -547,6 +576,9 @@ impl Specification {
         for actor in self.actors.values() {
             errors.extend(actor.validate_grants(&command_names, &view_names, self.system.format));
         }
+        // An actor that is the system itself, and what it makes of the commands it alone is
+        // granted (ess/27, beyond10x/ess#542).
+        errors.extend(crate::system_issued::validate_specification(self));
 
         errors.extend(self.validate_components(&command_names, &event_names, refused));
 
@@ -581,6 +613,7 @@ impl Specification {
             &registry,
             &self.conversions,
             refused,
+            self.system.format,
         ));
 
         let component_names: BTreeSet<crate::component::ComponentName> = Refused::with(
@@ -1175,6 +1208,7 @@ impl Collected {
     /// Kinds are taken in the order `Assembly::absorb_domain` claims them — types, entities,
     /// commands, events, errors, views, actors — so that [`Collected::write`] names the same first
     /// copy the assembly would.
+    #[allow(clippy::too_many_lines)] // One pass over the kinds, in the assembly's claim order.
     fn absorb(
         &mut self,
         source: &Source,
@@ -1187,10 +1221,12 @@ impl Collected {
         // The owner every member of this file is claimed for, as `Assembly::claim` will claim it.
         let owner = file.domain.clone();
         let owner = owner.as_ref();
-        // `undeclared_fields:` on a declaration other than a struct type or a command (`ess/24`):
-        // refused at its line, the declaration itself kept.
+        // `undeclared_fields:` (`ess/24`) on a declaration other than a struct type or a command,
+        // and `shorthand:` (`ess/27`) on one other than a type: refused at its line, kept.
         errors.extend(crate::undeclared_fields::refused_outside_types(&file));
+        errors.extend(file.shorthand.refused_outside_types(&file));
         let undeclared_fields = file.undeclared_fields;
+        let shorthand = file.shorthand;
         for (index, mut raw) in file.types.into_iter().enumerate() {
             // An invariant that does not parse, or a boolean written as a variant, is refused and
             // withheld, not the type: a refused type would make every field declared with it a
@@ -1199,9 +1235,10 @@ impl Collected {
             let name = raw.name.clone();
             let converted = match NamedType::try_from(raw) {
                 Ok(mut declared) => {
-                    // A struct's `undeclared_fields:` (`ess/24`) is set beside its body; on any
-                    // other kind it is refused and the type kept.
+                    // A struct's `undeclared_fields:` (`ess/24`) and `shorthand:` (`ess/27`) are
+                    // set beside its body; on any other kind each is refused and the type kept.
                     errors.extend(undeclared_fields.apply_to_type(index, &mut declared));
+                    errors.extend(shorthand.apply_to_type(index, &mut declared));
                     Some(declared)
                 }
                 Err(type_errors) => {

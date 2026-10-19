@@ -23,12 +23,16 @@ func decodeStep(raw []byte, exact bool) (Step, error) {
 		Shape       json.RawMessage `json:"shape"`
 		Expectation json.RawMessage `json:"expectation"`
 		Response    json.RawMessage `json:"response"`
+		Instance    json.RawMessage `json:"instance"`
 	}{plain: (*plain)(&value)}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	if exact {
 		decoder.UseNumber()
 	}
 	if err := decoder.Decode(&decoded); err != nil {
+		return Step{}, err
+	}
+	if err := value.stepInstance(decoded.Instance, exact); err != nil {
 		return Step{}, err
 	}
 	if len(decoded.Response) > 0 {
@@ -88,7 +92,7 @@ func decodeExactSuiteSteps(suite *Suite) error {
 			Steps []json.RawMessage `json:"steps"`
 		} `json:"scenarios"`
 	}
-	if err := json.Unmarshal([]byte(suite.original), &raw); err != nil {
+	if err := json.Unmarshal([]byte(suite.decoded), &raw); err != nil {
 		return err
 	}
 	for id, scenario := range suite.Scenarios {

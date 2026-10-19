@@ -15,7 +15,7 @@ refs:
   reference: beyond10x/ess#572
 relations:
 - serves: vision:O2
-revision: 1
+revision: 3
 ---
 ## Outcome
 
@@ -78,3 +78,12 @@ response guide by `story:one-time-disclosure-inventory-is-published`.
 - `conform_diff_groups_changes_by_construct`: two suites from two revisions yield added, removed and
   changed scenario ids per construct, in text and JSON.
 - `commit_guide_names_the_ir_suite`: the commit table has a `--target ir` row with its reason.
+
+## Order
+
+Wave 4 of `release-plan:ess-063-downstream`, independent of the source format. The suite-level catalog is a
+suite format change: it rides the batch's open pair `ess-conformance/52`,`/53` if it lands before
+the release closes them (the pair then carries the await steps, the wrapped-invariant observations
+and the once-per-suite rules together), otherwise it opens `/54`,`/55`. The Go and TypeScript
+runners and the interpreter read the new envelope; `ess verify conform synthesize --check` and the
+suite diff command need no format. Not in flight on 2026-10-18; no branch holds any of it.

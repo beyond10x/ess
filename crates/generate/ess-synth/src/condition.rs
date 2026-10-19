@@ -49,6 +49,8 @@ pub(crate) enum End<'a> {
     String,
     /// A declared enum.
     Enum(&'a TypeHandle),
+    /// A Boolean, compared with `true` or `false` (ess/27).
+    Boolean,
     /// Anything else: only `defined(...)` reads it.
     Other,
 }
@@ -117,6 +119,7 @@ pub(crate) fn walk<'a>(
         (Leaf::String, _) => End::String,
         (Leaf::Enum { .. }, ResolvedTypeRef::Declared { name }) => End::Enum(name),
         (Leaf::Enum { .. }, _) => return None,
+        (Leaf::Boolean, _) => End::Boolean,
         (Leaf::Other, _) => End::Other,
     };
     Some(Walk { root, steps, end })

@@ -286,3 +286,43 @@ fn wrong_state_stays_at_step_four_beside_an_accepting_branch_that_updates() {
         ])
     );
 }
+
+const RULE: &str = include_str!("fixtures/precedence-rule-format-a.yaml");
+
+/// The plan of a document in the rule's format reads the one rule
+/// (`docs/design/generic-language-features.md` § G4): the request alone, then the addressed
+/// record's existence, then its held state, then the rows around it, the missing tier the input
+/// names among them. The same command one format below reads that missing tier first.
+#[test]
+fn precedence_plan_reads_the_rule_from_format_a() {
+    assert_eq!(
+        plan(RULE, "demo.rule.ChangeTier"),
+        expect(&[
+            (Phase::InputRefusal, &["blank-reason"]),
+            (Phase::Existence, &["unknown-seat"]),
+            (Phase::HeldState, &["not-held"]),
+            (Phase::PresentRelated, &["unknown-tier", "tier-closed"]),
+            (Phase::Default, &["changed"]),
+        ])
+    );
+    // `unknown_instance:` beside `when_related:` is itself an `ess/27` spelling: below it the
+    // command is read without that branch.
+    let below = RULE
+        .replacen("format: ess/27", "format: ess/26", 1)
+        .replacen(
+            "      - name: unknown-seat\n        unknown_instance: true\n        error: demo.rule.UnknownSeat\n",
+            "",
+            1,
+        );
+    assert!(below.contains("ess/26") && !below.contains("unknown-seat"));
+    assert_eq!(
+        plan(&below, "demo.rule.ChangeTier"),
+        expect(&[
+            (Phase::RelatedRow, &["unknown-tier"]),
+            (Phase::InputRefusal, &["blank-reason"]),
+            (Phase::HeldState, &["not-held"]),
+            (Phase::PresentRelated, &["tier-closed"]),
+            (Phase::Default, &["changed"]),
+        ])
+    );
+}

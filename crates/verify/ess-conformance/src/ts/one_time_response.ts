@@ -694,7 +694,10 @@ export function admitDisclosureId(
     // And ignored undeclared response fields (beyond10x/ess#500).
     !['ess-conformance/48', 'ess-conformance/49'].includes(version) &&
     // And a held `now` (beyond10x/ess#586).
-    !['ess-conformance/50', 'ess-conformance/51'].includes(version)
+    !['ess-conformance/50', 'ess-conformance/51'].includes(version) &&
+    // And a wrapped value-invariant observation, and awaiting a system-issued command
+    // (beyond10x/ess#542).
+    !['ess-conformance/52', 'ess-conformance/53'].includes(version)
   ) {
     return fail();
   }
@@ -954,4 +957,199 @@ export class DisclosureCaptures {
       this.#observed.has(`${origin.command}/${origin.outcome}`),
     );
   }
+}
+
+// ---- rules a suite/52 or /53 states once (beyond10x/ess#570) ------------------------------------
+
+const has = (value: { [key: string]: Node }, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(value, key);
+
+/** compactEvents reads a list of catalog event names that must appear in catalog order. */
+function compactEvents(value: Node, catalog: string[]): string[] {
+  const names: string[] = [];
+  let at = -1;
+  for (const raw of array(value)) {
+    const event = text(raw);
+    const found = catalog.indexOf(event, at + 1);
+    if (found < 0) throw new Error('an event list leaves out catalog events in catalog order');
+    at = found;
+    names.push(event);
+  }
+  if (names.length >= catalog.length)
+    throw new Error('an event list keeps at least one catalog event');
+  return names;
+}
+
+/** compactKept is every catalog event outside except, in catalog order. */
+function compactKept(catalog: string[], except: string[]): string[] {
+  return catalog.filter((event) => !except.includes(event));
+}
+
+/**
+ * expandCompactSuite expands, in place and before any admission reads a scenario, what a suite/52
+ * or /53 states once at its root: each scenario's unpublished-event lists and absent-event runs
+ * into its steps, and each compact one-time trace into the complete trace with the catalog events
+ * among its sources. The Go runtime does the same, so both admit the same documents.
+ */
+export function expandCompactSuite(root: { [key: string]: Node }, major: number): void {
+  const hasEvents = has(root, 'events'),
+    hasCatalog = has(root, 'one_time_response');
+  if ((hasEvents || hasCatalog) && major < 52)
+    throw new Error('a suite-level event or one-time catalog requires suite/52 or /53');
+  const scenarios = root.scenarios;
+  if (!isObject(scenarios)) return;
+  const catalog: string[] = [];
+  if (hasEvents) {
+    for (const value of array(root.events)) {
+      name(value, false);
+      const event = value as string;
+      const last = catalog.at(-1);
+      if (last !== undefined && last >= event)
+        throw new Error('the event catalog lists each event once, in name order');
+      catalog.push(event);
+    }
+  }
+  const commands: { command: string; response: Node; outcomes: { [key: string]: Node }[] }[] = [];
+  if (hasCatalog) {
+    const body = closed(root.one_time_response, 'commands', '');
+    for (const value of array(body.commands)) {
+      const entry = closed(value, 'command response outcomes', '');
+      name(entry.command, false);
+      const command = entry.command as string;
+      const last = commands.at(-1);
+      if (last !== undefined && last.command >= command)
+        throw new Error('the one-time catalog lists each command once, in name order');
+      const outcomes = array(entry.outcomes);
+      if (outcomes.length === 0)
+        throw new Error('the one-time catalog lists each command with an outcome');
+      commands.push({
+        command,
+        response: entry.response,
+        outcomes: outcomes.map((outcome) => closed(outcome, 'outcome fields', '')),
+      });
+    }
+  }
+  const operations = new Set([
+    'execute_command',
+    'execute_command_without_input',
+    'query_view',
+    'eventually_view',
+  ]);
+  const used = new Set<string>();
+  let referred = false;
+  for (const id of Object.keys(scenarios).sort()) {
+    const scenario = scenarios[id];
+    if (!isObject(scenario)) continue;
+    const patched = has(scenario, 'unpublished_events'),
+      inserted = has(scenario, 'absent_events');
+    const trace = scenario.one_time_response;
+    const compactTrace = isObject(trace) && has(trace, 'within_ms');
+    if (!patched && !inserted && !compactTrace) continue;
+    if (major < 52)
+      throw new Error(
+        'absent-event runs, unpublished-event lists and compact traces require suite/52 or /53',
+      );
+    if (!hasEvents) throw new Error(`${id}: a compact spelling requires the suite event catalog`);
+    let steps = array(scenario.steps);
+    referred = true;
+    if (patched) {
+      const list = array(scenario.unpublished_events);
+      if (list.length === 0) throw new Error('an empty unpublished_events is written as none');
+      let previous = -1n;
+      for (const value of list) {
+        const patch = closed(value, 'step except', '');
+        const index = unsigned(patch.step);
+        if (index <= previous || index >= BigInt(steps.length))
+          throw new Error('unpublished-event lists name written steps in ascending order');
+        previous = index;
+        const step = steps[Number(index)];
+        if (!isObject(step) || step.step !== 'expect_not_granted')
+          throw new Error('an unpublished-event list names an expect_not_granted step');
+        if (
+          has(step, 'unpublished') &&
+          !(Array.isArray(step.unpublished) && step.unpublished.length === 0)
+        )
+          throw new Error('an unpublished-event list completes a step written without one');
+        step.unpublished = compactKept(catalog, compactEvents(patch.except, catalog));
+      }
+      delete scenario.unpublished_events;
+    }
+    if (inserted) {
+      const list = array(scenario.absent_events);
+      if (list.length === 0) throw new Error('an empty absent_events is written as none');
+      const expanded: Node[] = [];
+      let next = 0;
+      for (const value of list) {
+        const run = closed(value, 'before except', '');
+        const before = unsigned(run.before);
+        if (before < BigInt(next) || before > BigInt(steps.length))
+          throw new Error('absent-event runs stand at ascending positions within the steps');
+        expanded.push(...steps.slice(next, Number(before)));
+        next = Number(before);
+        for (const event of compactKept(catalog, compactEvents(run.except, catalog)))
+          expanded.push({ step: 'expect_no_event', event });
+      }
+      expanded.push(...steps.slice(next));
+      steps = expanded;
+      scenario.steps = steps;
+      delete scenario.absent_events;
+    }
+    if (compactTrace) {
+      if (!hasCatalog)
+        throw new Error(`${id}: a compact one-time trace requires the suite one-time catalog`);
+      const body = closed(trace, 'required_origins within_ms', '');
+      const within = unsigned(body.within_ms);
+      const invoked = new Set<string>();
+      const positions: number[] = [];
+      for (const [index, step] of steps.entries()) {
+        if (!isObject(step)) continue;
+        if (
+          (step.step === 'execute_command' || step.step === 'execute_command_without_input') &&
+          typeof step.command === 'string'
+        )
+          invoked.add(step.command);
+        if (typeof step.step === 'string' && operations.has(step.step)) positions.push(index);
+      }
+      for (const command of invoked) used.add(command);
+      const lengths = within === 0n ? [0n] : [0n, within];
+      if (catalog.length * positions.length * lengths.length > 65536)
+        throw new Error('one-time trace authority bound');
+      const origins: Node[] = [];
+      for (const entry of commands) {
+        if (!invoked.has(entry.command)) continue;
+        for (const outcome of entry.outcomes)
+          origins.push({
+            command: entry.command,
+            outcome: { command: entry.command, outcome: outcome.outcome },
+            response: entry.response,
+            fields: outcome.fields,
+          });
+      }
+      const number = (value: bigint | number) => new JsonNumber(String(value));
+      const events: Node[] = [],
+        windows: Node[] = [];
+      for (const event of catalog) {
+        events.push({ event, within_ms: number(within) });
+        for (const position of positions)
+          for (const length of lengths)
+            windows.push({ event, after_step: number(position), within_ms: number(length) });
+      }
+      scenario.one_time_response = {
+        origins,
+        required_origins: body.required_origins,
+        events,
+        event_windows: windows,
+      };
+      const sources = array(scenario.source);
+      for (const event of catalog)
+        if (!sources.some((ref) => isObject(ref) && ref.kind === 'event' && ref.name === event))
+          sources.push({ kind: 'event', name: event });
+    }
+  }
+  if (hasEvents && !referred)
+    throw new Error('the suite event catalog is written only where a scenario refers to it');
+  if (commands.some((entry) => !used.has(entry.command)))
+    throw new Error('the one-time catalog carries authority no compact trace uses');
+  delete root.events;
+  delete root.one_time_response;
 }

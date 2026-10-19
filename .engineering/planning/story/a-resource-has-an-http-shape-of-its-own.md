@@ -6,7 +6,7 @@ status: archived
 title: A resource has an HTTP shape of its own
 relations:
 - decomposes: epic:specification-runs-as-a-fake-backend
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "archived", at: "2026-09-14T22:49:51Z", actor: "human:timo", revision: 3, imported: true}
 ---
@@ -15,7 +15,7 @@ transitions:
 `ess generate --kind openapi` projects one path per command:
 
 ```
-/telephony/commands/PurgeStaleCall:
+/billing/commands/CancelInvoice:
   post: …
 ```
 

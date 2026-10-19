@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:generic-guard-precedence
 - serves: vision:O2
-revision: 1
+revision: 3
 ---
 ## Outcome
 
@@ -86,7 +86,7 @@ model below format A answers exactly as before. Each line names the failing test
   `format_a_fixture_suite_passes_on_the_interpreted_rust_and_go_targets`.
 - `crates/generate/ess-entity-runtime/tests/selection_precedence.rs`:
   `format_a_related_row_existence_lowers_in_plan_order_or_is_refused_by_name`.
-- `crates/specify/ess-domain/tests/format_history.rs`: `format_a_is_open_and_names_the_rule`.
+- `crates/specify/ess-domain/tests/format_history.rs`: `format_a_shipped_in_0_63_0_and_names_the_rule`.
 - Tests are modules of existing test binaries; no new tests/*.rs file.
 
 ## Scope
@@ -120,3 +120,13 @@ model below format A answers exactly as before. Each line names the failing test
 First in the wave: it opens format A, and stories 2, 3 and 4 gate their admissions on it. It runs
 in parallel with story 5 (`story:the-language-policy-is-counted-and-cited`), which shares no file
 with it except `CHANGELOG.md` `[Unreleased]` (different lines).
+
+## Format A after 0.62.0
+
+`ess/26` shipped in 0.62.0 (#587) and `ess/27` is the format `release-plan:ess-063-downstream` opens for its
+batch (U3, the #542–#552 port, #594, #551, #596). Format A is therefore `ess/27` if this story's
+wave lands before 0.63.0 closes it, and `ess/28` otherwise; the integrator decides at dispatch and
+the `FORMAT_HISTORY` row names the rule either way. This wave runs after
+`task:land-the-2026-10-13-port` and `task:salvage-the-related-rows-quantifier-tree`, which rewrite
+`crates/specify/ess-domain/src/command.rs`, `command/related_guard.rs`, `command/row_set.rs` and
+`crates/verify/ess-conformance/src/synthesize/precedence.rs`'s neighbours.

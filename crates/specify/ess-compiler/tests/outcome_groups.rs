@@ -144,7 +144,7 @@ fn line_of(text: &str, needle: &str) -> usize {
 }
 
 const OUTCOME: &str =
-    "    outcomes:\n      - {name: lost, external: the service drops it, error: tel.session.Expired}\n";
+    "    outcomes:\n      - {name: lost, external: the service drops it, error: desk.session.Expired}\n";
 
 /// A group named `flaky-link` in the calls file, with this membership and these outcomes.
 fn flaky(body: &str) -> Vec<(&'static str, String)> {
@@ -179,8 +179,8 @@ fn c3_g2_no_membership() {
 fn c3_g3_two_membership_forms() {
     assert_cited(
         &flaky(&format!(
-            "    actor: tel.calls.Agent
-    domain: tel.calls
+            "    actor: desk.calls.Agent
+    domain: desk.calls
 {OUTCOME}"
         )),
         "ESS-COMMAND-004",
@@ -192,7 +192,7 @@ fn c3_g3_two_membership_forms() {
 fn c3_g4_an_undeclared_listed_command() {
     assert_cited(
         &flaky(&format!(
-            "    commands: [tel.calls.Nope]
+            "    commands: [desk.calls.Nope]
 {OUTCOME}"
         )),
         "ESS-COMMAND-001",
@@ -204,7 +204,7 @@ fn c3_g4_an_undeclared_listed_command() {
 fn c3_g5_an_undeclared_actor() {
     assert_cited(
         &flaky(&format!(
-            "    actor: tel.calls.Nobody
+            "    actor: desk.calls.Nobody
 {OUTCOME}"
         )),
         "ESS-COMMAND-001",
@@ -216,7 +216,7 @@ fn c3_g5_an_undeclared_actor() {
 fn c3_g6_an_undeclared_domain() {
     assert_cited(
         &flaky(&format!(
-            "    domain: tel.nowhere
+            "    domain: desk.nowhere
 {OUTCOME}"
         )),
         "ESS-COMMAND-001",
@@ -228,8 +228,8 @@ fn c3_g6_an_undeclared_domain() {
 fn c3_g7_except_beside_a_list() {
     assert_cited(
         &flaky(&format!(
-            "    commands: [tel.calls.Hold]
-    except: [tel.calls.Dial]
+            "    commands: [desk.calls.Hold]
+    except: [desk.calls.Dial]
 {OUTCOME}"
         )),
         "ESS-COMMAND-004",
@@ -241,8 +241,8 @@ fn c3_g7_except_beside_a_list() {
 fn c3_g8a_an_undeclared_exception() {
     assert_cited(
         &flaky(&format!(
-            "    actor: tel.calls.Agent
-    except: [tel.calls.Park, tel.calls.Nope]
+            "    actor: desk.calls.Agent
+    except: [desk.calls.Park, desk.calls.Nope]
 {OUTCOME}"
         )),
         "ESS-COMMAND-001",
@@ -254,8 +254,8 @@ fn c3_g8a_an_undeclared_exception() {
 fn c3_g8b_an_exception_that_excludes_nothing() {
     assert_cited(
         &flaky(&format!(
-            "    actor: tel.calls.Agent
-    except: [tel.calls.Park, tel.calls.Dial]
+            "    actor: desk.calls.Agent
+    except: [desk.calls.Park, desk.calls.Dial]
 {OUTCOME}"
         )),
         "ESS-COMMAND-004",
@@ -268,14 +268,14 @@ fn c3_g9_an_empty_membership() {
     assert_cited(
         &{
             let mut files = flaky(&format!(
-                "    actor: tel.calls.Observer
+                "    actor: desk.calls.Observer
 {OUTCOME}"
             ));
             files[1].1 = files[1].1.replace(
                 "actors:
 ",
                 "actors:
-  - name: tel.calls.Observer
+  - name: desk.calls.Observer
 ",
             );
             files
@@ -289,7 +289,7 @@ fn c3_g9_an_empty_membership() {
 fn c3_g10_no_outcomes() {
     assert_cited(
         &flaky(
-            "    commands: [tel.calls.Hold]
+            "    commands: [desk.calls.Hold]
 ",
         ),
         "ESS-COMMAND-007",
@@ -301,12 +301,12 @@ fn c3_g10_no_outcomes() {
 fn c3_g11_a_repeated_outcome_name() {
     assert_cited(
         &flaky(
-            "    commands: [tel.calls.Hold]
+            "    commands: [desk.calls.Hold]
     outcomes:
       \
-         - {name: lost, external: one, error: tel.session.Expired}
+         - {name: lost, external: one, error: desk.session.Expired}
       \
-         - {name: lost, external: two, error: tel.session.Expired}
+         - {name: lost, external: two, error: desk.session.Expired}
 ",
         ),
         "ESS-COMMAND-006",
@@ -318,10 +318,10 @@ fn c3_g11_a_repeated_outcome_name() {
 fn c3_g12_a_blank_cause() {
     assert_cited(
         &flaky(
-            "    commands: [tel.calls.Hold]
+            "    commands: [desk.calls.Hold]
     outcomes:
       \
-         - {name: lost, external: ' ', error: tel.session.Expired}
+         - {name: lost, external: ' ', error: desk.session.Expired}
 ",
         ),
         "ESS-COMMAND-012",
@@ -333,10 +333,10 @@ fn c3_g12_a_blank_cause() {
 fn c3_g13_an_undeclared_error_once_for_three_members() {
     assert_cited(
         &flaky(
-            "    commands: [tel.calls.Hold, tel.calls.Resume, tel.calls.Dial]
+            "    commands: [desk.calls.Hold, desk.calls.Resume, desk.calls.Dial]
     outcomes:
       \
-         - {name: lost, external: it drops, error: tel.session.Nope}
+         - {name: lost, external: it drops, error: desk.session.Nope}
 ",
         ),
         "ESS-COMMAND-001",
@@ -348,10 +348,10 @@ fn c3_g13_an_undeclared_error_once_for_three_members() {
 fn c3_g14_a_member_declaring_the_same_outcome() {
     assert_cited(
         &flaky(
-            "    commands: [tel.calls.Park]
+            "    commands: [desk.calls.Park]
     outcomes:
       \
-         - {name: parked, external: it drops, error: tel.session.Expired}
+         - {name: parked, external: it drops, error: desk.session.Expired}
 ",
         ),
         "ESS-COMMAND-006",
@@ -364,16 +364,16 @@ fn c3_g15_two_groups_giving_one_command_one_outcome() {
     assert_cited(
         &with_groups(
             "  - name: flaky-link
-    commands: [tel.calls.Hold]
+    commands: [desk.calls.Hold]
     outcomes:
       \
-         - {name: lost, external: it drops, error: tel.session.Expired}
+         - {name: lost, external: it drops, error: desk.session.Expired}
 ",
             "  - name: audited
-    commands: [tel.calls.Hold]
+    commands: [desk.calls.Hold]
     outcomes:
       \
-         - {name: lost, external: it drops too, error: tel.session.Expired}
+         - {name: lost, external: it drops too, error: desk.session.Expired}
 ",
         ),
         "ESS-COMMAND-006",
@@ -386,7 +386,7 @@ fn c3_g16_a_group_below_the_format() {
     assert_cited(
         &{
             let mut files = flaky(&format!(
-                "    commands: [tel.calls.Hold]
+                "    commands: [desk.calls.Hold]
 {OUTCOME}"
             ));
             files[0].1 = files[0].1.replace("format: ess/12", "format: ess/10");
@@ -400,8 +400,8 @@ fn c3_g16_a_group_below_the_format() {
 #[test]
 fn c3_g1_a_group_declared_twice_is_a_command_code_with_no_single_line() {
     let files = with_groups(
-        &format!("  - name: twice\n    commands: [tel.calls.Hold]\n{OUTCOME}"),
-        &format!("  - name: twice\n    commands: [tel.calls.Dial]\n{OUTCOME}"),
+        &format!("  - name: twice\n    commands: [desk.calls.Hold]\n{OUTCOME}"),
+        &format!("  - name: twice\n    commands: [desk.calls.Dial]\n{OUTCOME}"),
     );
     // `name: twice` is written twice, and the locator reports a line only for a needle written once.
     assert_eq!(

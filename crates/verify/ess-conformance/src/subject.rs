@@ -122,8 +122,12 @@ pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
     let mut queried = None;
     for step in steps {
         match step {
+            // A step the system takes itself, awaited or required not to happen, is the one
+            // command a complete comparison brackets as a sent one is (beyond10x/ess#542).
             ScenarioStep::ExecuteCommand { .. }
-            | ScenarioStep::ExecuteCommandWithoutInput { .. } => {
+            | ScenarioStep::ExecuteCommandWithoutInput { .. }
+            | ScenarioStep::AwaitOutcome { .. }
+            | ScenarioStep::ExpectNotIssued { .. } => {
                 if snapshots.values().any(|(at, _)| *at < invocation) {
                     return Err("command interrupted complete subject comparison".into());
                 }

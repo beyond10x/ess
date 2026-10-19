@@ -145,7 +145,7 @@ fn no_emitted_byte_carries_a_secrets_digest_or_key_name() {
 
 #[test]
 fn a_dangling_secret_reference_is_owed_and_the_obligation_says_why_nothing_can_write_it() {
-    // The one place the projection is *asked* for a secret: the fixture's `flaky-agent` reads a
+    // The one place the projection is *asked* for a secret: the fixture's `worker-agent` reads a
     // secret nobody observed. The honest answer is an obligation that names the reason — the
     // snapshot holds a secret's key names, never its value — rather than an empty secret manifest
     // that would look like progress and break the pod differently.

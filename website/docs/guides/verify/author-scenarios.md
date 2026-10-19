@@ -315,6 +315,28 @@ Synthesis makes the same comparison wherever the arrangement determines an ident
 carries: an input sent as a captured instance, the subject's own identity (`{subject: <identity>}`),
 and a related row's identity read through `{related: …}`.
 
+## Leave a generated value to the implementation
+
+A field the outcome marks `{generated: true}` is minted by the implementation, so an act that
+claims one exact value for it passes only where the implementation happens to mint that value. It
+is refused as `ESS-AUTHOR-042`, naming the field and the branch that mints it:
+
+```yaml
+    outcome: selected
+    events:
+      - event: relay.desk.EntryAgentSelected
+        payload: {agent_id: a1, connect_seq: 7}   # refused: the outcome mints connect_seq
+```
+
+The same holds for an error's fields, for a member of a struct the outcome fills member by member,
+for `{input: f, else: {generated: true}}` where the act sends no `f`, for `{generated: true,
+present: true}`, and for a view row's stored field that every branch the scenario reaches mints,
+including one a `sets:` entry reads from a minted payload field with `{payload: <Event>.<field>}`.
+Drop the field from the expectation, and the suite still checks its presence and type, or state
+its relation to another value with a reference: `{$observed: {event: …, field: …}}` in a view row,
+or `capture:` on the event. A value a `setup:` states, or one a branch fills from the input, keeps
+its exact claim.
+
 ## Where the observation sections went
 
 What a suite observes beyond an act's own answer is on [Observations](observations.md). Each

@@ -263,7 +263,20 @@ impl Emitter<'_> {
             let null = allows_null(additional, self.plan, &mut BTreeSet::new());
             writeln!(out, "\t\tencoded, err := essEncode(value, {null})\n\t\tif err != nil {{\n\t\t\treturn nil, err\n\t\t}}\n\t\tobject[key] = encoded\n\t}}").expect("String write");
         }
-        writeln!(out, "\treturn json.Marshal(object)\n}}\n\nfunc (v *{name}) UnmarshalJSON(data []byte) error {{\n\tvar object map[string]json.RawMessage\n\tif err := essDecode(data, &object, false); err != nil {{\n\t\treturn err\n\t}}\n\tvar decoded {name}").expect("String write");
+        writeln!(
+            out,
+            "\treturn json.Marshal(object)\n}}\n\nfunc (v *{name}) UnmarshalJSON(data []byte) error {{"
+        )
+        .expect("String write");
+        // A struct with a shorthand (`ess/27`, beyond10x/ess#594) is also written as its one
+        // field's value alone: anything but a JSON object fills that field and nothing else.
+        if let Some(short) = self.plan.shorthands.get(pointer) {
+            let field = &fields[&short.wire];
+            let id = declaration_name(&short.wire);
+            let null = allows_null(&field.value, self.plan, &mut BTreeSet::new());
+            writeln!(out, "\tif trimmed := bytes.TrimLeft(data, \" \\t\\r\\n\"); len(trimmed) != 0 && trimmed[0] != '{{' {{\n\t\tvar decoded {name}\n\t\tif err := essDecode(data, &decoded.{id}, {null}); err != nil {{\n\t\t\treturn fmt.Errorf(\"short form %s: %w\", {}, err)\n\t\t}}\n\t\t*v = decoded\n\t\treturn nil\n\t}}", quote(&short.wire)).expect("String write");
+        }
+        writeln!(out, "\tvar object map[string]json.RawMessage\n\tif err := essDecode(data, &object, false); err != nil {{\n\t\treturn err\n\t}}\n\tvar decoded {name}").expect("String write");
         for (wire, field) in fields {
             self.decode_field(out, wire, field);
         }

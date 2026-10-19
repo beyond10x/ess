@@ -1,0 +1,107 @@
+format: ess/25
+system: wiring
+version: v1
+domain: wiring.board
+summary: A port is renamed only while its node is open, and no other port of that node holds the name.
+types:
+  - {name: wiring.board.NodeId, kind: newtype, of: Uuid}
+  - {name: wiring.board.PortId, kind: newtype, of: Uuid}
+entities:
+  - name: wiring.board.Node
+    identity: {name: node_id, type: wiring.board.NodeId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Sealed]
+      terminal: [Sealed]
+      transitions:
+        - {name: seal, from: [Open], to: Sealed}
+  - name: wiring.board.Port
+    identity: {name: port_id, type: wiring.board.PortId}
+    fields:
+      - {name: node_id, type: wiring.board.NodeId}
+      - {name: name, type: String}
+    relations:
+      - {name: node, kind: references, target: wiring.board.Node, cardinality: one, via: node_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+errors:
+  - {name: wiring.board.NodeNotFound, summary: No node carries this identity., fields: []}
+  - {name: wiring.board.NodeSealed, summary: The node is sealed., fields: []}
+  - {name: wiring.board.NameTaken, summary: Another port of the node holds the name., fields: []}
+  - {name: wiring.board.WrongState, summary: The node is not open., fields: []}
+events:
+  - name: wiring.board.NodeAdded
+    fields: [{name: node_id, type: wiring.board.NodeId}]
+  - name: wiring.board.NodeWasSealed
+    fields: [{name: node_id, type: wiring.board.NodeId}]
+  - name: wiring.board.PortAdded
+    fields: [{name: port_id, type: wiring.board.PortId}]
+  - name: wiring.board.PortRenamed
+    fields: [{name: port_id, type: wiring.board.PortId}]
+actors:
+  - name: wiring.board.Operator
+    may: [wiring.board.AddNode, wiring.board.Seal, wiring.board.AddPort, wiring.board.Rename]
+commands:
+  - name: wiring.board.AddNode
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: added
+        creates: wiring.board.Node
+        instance: node_id
+        emits: [wiring.board.NodeAdded]
+        payload: {wiring.board.NodeAdded: {node_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: wiring.board.Seal
+    input:
+      - {name: node_id, type: wiring.board.NodeId}
+    outcomes:
+      - name: sealed
+        moves: wiring.board.Node.seal
+        instance: node_id
+        emits: [wiring.board.NodeWasSealed]
+        payload: {wiring.board.NodeWasSealed: {node_id: input.node_id}}
+      - {name: wrong-state, wrong_state: true, error: wiring.board.WrongState}
+  - name: wiring.board.AddPort
+    input:
+      - {name: node_id, type: wiring.board.NodeId}
+      - {name: name, type: String}
+    outcomes:
+      - name: added
+        creates: wiring.board.Port
+        instance: port_id
+        emits: [wiring.board.PortAdded]
+        payload: {wiring.board.PortAdded: {port_id: {generated: true}}}
+        sets: {node_id: input.node_id, name: input.name}
+  - name: wiring.board.Rename
+    input:
+      - {name: port_id, type: wiring.board.PortId}
+      - {name: name, type: String}
+    outcomes:
+      - name: name-taken
+        when_related:
+          entity: wiring.board.Port
+          where: {all: [node_id == subject.node_id, port_id != subject.port_id, name == input.name]}
+          exists: true
+        error: wiring.board.NameTaken
+      - name: renamed
+        updates: wiring.board.Port
+        instance: port_id
+        emits: [wiring.board.PortRenamed]
+        payload: {wiring.board.PortRenamed: {port_id: input.port_id}}
+        sets: {name: input.name}
+views:
+  - name: wiring.board.Ports
+    source: wiring.board.Port
+    consistency: read_your_writes
+    fields:
+      - {name: port_id, type: wiring.board.PortId}
+      - {name: node_id, type: wiring.board.NodeId}
+      - {name: name, type: String}
+  - name: wiring.board.Nodes
+    source: wiring.board.Node
+    consistency: read_your_writes
+    fields:
+      - {name: node_id, type: wiring.board.NodeId}
+      - {name: state, type: wiring.board.Node.State}

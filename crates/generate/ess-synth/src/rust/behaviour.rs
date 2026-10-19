@@ -1364,12 +1364,14 @@ impl<'a> Writer<'a> {
     }
 
     /// Step 3: `existing_instance:` on a command reading no related row. `unknown_instance:` is
-    /// answered where a row is read ([`Self::unknown_arm`]), not by a block of its own.
+    /// answered where a row is read ([`Self::unknown_arm`]), not by a block of its own; under the
+    /// one rule (ess/27) also here, at step 2, for the record the command addresses through its
+    /// input, whatever branch a later step selects ([`Self::addressed_existence`]).
     fn existence(&mut self, out: &mut String, branches: &[&ResolvedOutcome]) {
         for outcome in branches {
             match outcome.condition {
                 ResolvedCondition::ExistingInstance => out.push_str(&self.existing_lookup(outcome)),
-                ResolvedCondition::UnknownInstance => {}
+                ResolvedCondition::UnknownInstance => out.push_str(&self.addressed_existence()),
                 _ => unreachable!(
                     "the plan holds only `existing_instance:` and `unknown_instance:` at step 3, \
                      not `{}`",
@@ -1377,6 +1379,45 @@ impl<'a> Writer<'a> {
                 ),
             }
         }
+    }
+
+    /// Under the one rule (ess/27), the addressed record's existence at step 2: the record the
+    /// command's acting branches address through the input, read, and `unknown_instance:` taken
+    /// where no row carries it. Nothing below the rule, on a command a creation upserts, one guarded
+    /// by a row set, or one reading a stored reference, whose own reads answer it.
+    fn addressed_existence(&mut self) -> String {
+        let command = self.command;
+        if !ess_domain::command::precedence::reads_one_rule(self.ir.format())
+            || command.outcomes.iter().any(|outcome| {
+                matches!(
+                    outcome.condition,
+                    ResolvedCondition::RelatedSet { .. }
+                        | ResolvedCondition::Related {
+                            via: ResolvedRelatedVia::Subject { .. },
+                            ..
+                        }
+                ) || outcome
+                    .subject
+                    .as_ref()
+                    .is_some_and(|subject| subject.effect == ResolvedEffect::Creates)
+            })
+        {
+            return String::new();
+        }
+        let Some(subject) = determined::addressed_subject(command) else {
+            return String::new();
+        };
+        let ResolvedInstance::Supplied { field } = &subject.instance else {
+            return String::new();
+        };
+        let entity = self.ir.entity(&subject.entity);
+        let storage = self.storage(&entity.name);
+        let unknown = self.unknown_arm(12);
+        format!(
+            "        // The addressed row's existence, at step 2 of the one precedence rule.\n        \
+             if {storage}::get(&self.ports, &input.{}).is_none() {{\n{unknown}        }}\n",
+            name::value_ident(&field.name)
+        )
     }
 
     /// Step 4: the addressed row, read where a branch of the phase selects by it, then the
@@ -1443,23 +1484,60 @@ impl<'a> Writer<'a> {
     /// the addressed row's existence and held state for the branch the request selects without
     /// them (beyond10x/ess#282, #304); a re-key's collision refusal (ess/23, beyond10x/ess#429).
     /// `unknown_instance:` on a row-set upsert is answered where the branch taken reads its row.
+    ///
+    /// Under the one rule (`docs/design/generic-language-features.md` § G4) step 4 also leads with
+    /// the row the input names: it is read, the addressed row's existence and held state answer for
+    /// the branch the request selects, and then its `exists: false` for an identity no row carries.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one phase of the plan, each branch it holds in its own arm"
+    )]
     fn present_related(&mut self, out: &mut String, branches: &[&ResolvedOutcome]) {
         let command = self.command;
-        if branches.iter().any(|outcome| {
-            outcome.error.is_some()
-                && matches!(
-                    outcome.condition,
-                    ResolvedCondition::Related {
-                        via: ResolvedRelatedVia::Input { .. },
-                        test: ResolvedRelatedTest::Holds { .. },
-                        ..
-                    }
-                )
-        }) {
+        let missing = branches
+            .iter()
+            .copied()
+            .find(|outcome| input_absent(outcome));
+        if let Some(missing) = missing {
+            let ResolvedCondition::Related {
+                via: ResolvedRelatedVia::Input { field, type_ref },
+                entity,
+                ..
+            } = &missing.condition
+            else {
+                unreachable!("an input row's `exists: false`")
+            };
+            let field = name::value_ident(field);
+            let reference = if type_ref.is_optional() {
+                format!("input.{field}.as_ref()")
+            } else {
+                format!("Some(&input.{field})")
+            };
+            out.push_str(&self.related_fetch(entity, &reference, &format!("input.{field}")));
+            out.push_str("        let _ = &related;\n");
+        }
+        if missing.is_some()
+            || branches.iter().any(|outcome| {
+                outcome.error.is_some()
+                    && matches!(
+                        outcome.condition,
+                        ResolvedCondition::Related {
+                            via: ResolvedRelatedVia::Input { .. },
+                            test: ResolvedRelatedTest::Holds { .. },
+                            ..
+                        }
+                    )
+            })
+        {
             out.push_str(&self.precheck(true));
         }
         for outcome in branches {
             match &outcome.condition {
+                ResolvedCondition::Related {
+                    via: ResolvedRelatedVia::Input { .. },
+                    test: ResolvedRelatedTest::Absent,
+                    ..
+                } => out.push_str(&self.missing_answer(outcome)),
                 ResolvedCondition::Related {
                     via: ResolvedRelatedVia::Subject { field, type_ref },
                     entity,
@@ -1712,24 +1790,34 @@ impl<'a> Writer<'a> {
         named: &str,
         absent: &ResolvedOutcome,
     ) -> String {
+        let mut out = self.related_fetch(entity, reference, named);
+        out.push_str(&self.missing_answer(absent));
+        out.push_str("        let _ = &related;\n");
+        out
+    }
+
+    /// The read of [`Self::related_read`], binding `reference` and `related`, with no answer.
+    fn related_fetch(&mut self, entity: &EntityHandle, reference: &str, named: &str) -> String {
         let related = self.ir.entity(entity);
         let storage = self.storage(&related.name);
-        let mut out = format!(
+        format!(
             "        // `when_related:` reads the `{}` row `{named}` names, through its storage \
              port; an absent\n        // reference reads no row and selects no related \
              branch.\n        let reference = {reference};\n        let related = \
              reference.and_then(|identity| {storage}::get(&self.ports, identity));\n",
             related.name
-        );
+        )
+    }
+
+    /// The answer of [`Self::related_read`]: `absent` taken where `reference` names an identity no
+    /// row carries.
+    fn missing_answer(&mut self, absent: &ResolvedOutcome) -> String {
         let taken = self.take(absent, Held::None);
-        let _ = write!(
-            out,
+        format!(
             "        // `{}`: the reference names an identity no row carries.\n        if \
              reference.is_some() && related.is_none() {{\n{taken}        }}\n",
             absent.name
-        );
-        out.push_str("        let _ = &related;\n");
-        out
+        )
     }
 
     /// The guard of a `when_related:` predicate branch over the present row `related`, with its
@@ -2116,7 +2204,13 @@ impl<'a> Writer<'a> {
                     "            let Some(held) = {storage}::get(&self.ports, &input.{identity}) \
                      else {{\n{unknown}            }};\n            let _ = &held;"
                 );
-                let reads_before = outcome_reads_before(outcome);
+                out.push_str(&self.affected_reads(outcome, entity, &identity));
+                let reads_before = outcome_reads_before(outcome)
+                    || outcome
+                        .affects
+                        .iter()
+                        .flat_map(|affect| &affect.sets)
+                        .any(|set| reads_subject(&set.value));
                 let reads_state = outcome_reads_state(outcome);
                 let mut commit = String::new();
                 match effect {
@@ -2191,6 +2285,7 @@ impl<'a> Writer<'a> {
                         unreachable!("a creation whose identity is supplied is an obligation")
                     }
                 }
+                self.affected_changes(&mut out, &mut commit, outcome);
                 let answer = self.variant(outcome, held, None);
                 let _ = writeln!(
                     out,
@@ -2202,6 +2297,184 @@ impl<'a> Writer<'a> {
             }
         }
         out
+    }
+
+    /// The rows `outcome`'s `affects:` entries pin (ess/27, beyond10x/ess#547, D5), each read by
+    /// identity through its entity's storage port as `affected_<n>`: an `Option` of the identity
+    /// and the row, read from the subject `held` as it was before the outcome, or from the input,
+    /// and read before anything is written. An absent reference, an identity no row carries and,
+    /// over the subject's own entity, the subject's own identity read none. `subject` is the
+    /// subject's entity and `identity` the input field naming it.
+    fn affected_reads(
+        &mut self,
+        outcome: &ResolvedOutcome,
+        subject: &ResolvedEntity,
+        identity: &str,
+    ) -> String {
+        let mut out = String::new();
+        for (index, affect) in outcome.affects.iter().enumerate() {
+            let filter = affect
+                .filter
+                .as_ref()
+                .expect("a generated `affects:` entry has a filter");
+            let pin = determined::pin(self.ir, &affect.entity, filter)
+                .expect("a generated `affects:` entry pins the identity");
+            let entity = self.ir.entity(&affect.entity);
+            let storage = self.storage(&entity.name);
+            let (place, optional, named) = match pin.source {
+                determined::PinSource::Subject(field) => (
+                    format!("held.data.{}", name::value_ident(field)),
+                    subject
+                        .field(field)
+                        .is_some_and(|field| field.type_ref.is_optional()),
+                    format!("subject.{field}"),
+                ),
+                determined::PinSource::Input(field) => (
+                    format!("input.{}", name::value_ident(field)),
+                    self.command
+                        .input
+                        .iter()
+                        .any(|input| input.name == field && input.type_ref.is_optional()),
+                    format!("input.{field}"),
+                ),
+            };
+            let reference = if optional {
+                format!("{place}.as_ref()")
+            } else {
+                format!("Some(&{place})")
+            };
+            // Every `affects:` entry excepts the subject (`set-effects-over-filtered-instances.md`).
+            let except = if affect.entity == *Self::subject_entity(outcome) {
+                format!(".filter(|identity| *identity != input.{identity})")
+            } else {
+                String::new()
+            };
+            let _ = writeln!(
+                out,
+                "            // `affects[{index}]`: the `{}` row `{named}` names, read through its \
+                 storage port before\n            // any write; a reference naming no row changes \
+                 nothing.\n            let affected_{index} = {reference}.cloned(){except}\
+                 .and_then(|identity| {storage}::get(&self.ports, &identity).map(|row| (identity, \
+                 row)));",
+                entity.name
+            );
+        }
+        out
+    }
+
+    /// The entity of `outcome`'s subject.
+    fn subject_entity(outcome: &ResolvedOutcome) -> &EntityHandle {
+        &outcome
+            .subject
+            .as_ref()
+            .expect("an `affects:` branch has a subject")
+            .entity
+    }
+
+    /// What each row [`Self::affected_reads`] read becomes, computed before any write — the other
+    /// conjuncts hold on it, a move takes it from one of its `from` states, `sets:` is written and
+    /// the entity's invariants checked — and, appended to `commit` after the subject's own write,
+    /// the writes in the order the entries are written: `put`, or `delete` for `deletes:`. A row
+    /// the other conjuncts leave out, or resting outside the move's `from` states, is left as it is.
+    fn affected_changes(
+        &mut self,
+        out: &mut String,
+        commit: &mut String,
+        outcome: &ResolvedOutcome,
+    ) {
+        let command = self.command;
+        for (index, affect) in outcome.affects.iter().enumerate() {
+            let filter = affect
+                .filter
+                .as_ref()
+                .expect("a generated `affects:` entry has a filter");
+            let pin = determined::pin(self.ir, &affect.entity, filter)
+                .expect("a generated `affects:` entry pins the identity");
+            let entity = self.ir.entity(&affect.entity);
+            let storage = self.storage(&entity.name);
+            let truths: Vec<String> = pin
+                .rest
+                .iter()
+                .map(|conjunct| {
+                    self.guards_on("row")
+                        .predicate(&Env::Subject(command, entity), conjunct)
+                })
+                .collect();
+            let selects = match truths.as_slice() {
+                [] => String::new(),
+                [only] => format!(" if matches!({only}, Some(true))"),
+                _ => {
+                    self.uses.helpers.insert("all");
+                    format!(" if matches!(all(&[{}]), Some(true))", truths.join(", "))
+                }
+            };
+            let variable = format!("affected_{index}");
+            if affect.deletes {
+                let _ = writeln!(
+                    out,
+                    "            let {variable} = match {variable} {{\n                \
+                     Some((identity, row)){selects} => {{\n                    let _ = &row;\n    \
+                                     Some(identity)\n                }}\n                _ => \
+                     None,\n            }};"
+                );
+                let _ = writeln!(
+                    commit,
+                    "            if let Some(identity) = {variable} {{\n                \
+                     {storage}::delete(&mut self.ports, &identity);\n            }}"
+                );
+                continue;
+            }
+            let mut written = String::new();
+            for set in &affect.sets {
+                let value = self.value(set, Some("before"));
+                let _ = writeln!(
+                    written,
+                    "                    next.data.{} = {value};",
+                    name::value_ident(&set.target)
+                );
+            }
+            let check = Self::invariant_check(entity, "next.data");
+            let mutable = if affect.sets.is_empty() { "" } else { "mut " };
+            // The row the change starts from: the row itself, or the row moved where it rests in
+            // one of the move's `from` states, and `None` elsewhere.
+            let start = match &affect.moves {
+                Some(transition) => {
+                    let any = format!(
+                        "crate::{}::Any{}",
+                        self.layout.module(self.layout.owner(&entity.name)),
+                        self.layout.type_name(&entity.name)
+                    );
+                    let mut arms = String::new();
+                    for from in &transition.from {
+                        let _ = writeln!(
+                            arms,
+                            "                    {any}::{from}(instance) => \
+                             Some({any}::{}(instance.{}()).snapshot()),",
+                            transition.to,
+                            name::value_ident(&transition.name)
+                        );
+                    }
+                    if transition.from.len() < entity.lifecycle.states.len() {
+                        arms.push_str("                    _ => None,\n");
+                    }
+                    format!("match row.refine() {{\n{arms}                }}")
+                }
+                None => "Some(row)".to_owned(),
+            };
+            let _ = writeln!(
+                out,
+                "            let {variable} = match {variable} {{\n                Some((_, \
+                 row)){selects} => {start},\n                _ => None,\n            }};\n            \
+                 let {variable} = match {variable} {{\n                Some(start) => {{\n            \
+                 let {mutable}next = start;\n{written}{check}            Some(next)\n               \
+                 }}\n                None => None,\n            }};"
+            );
+            let _ = writeln!(
+                commit,
+                "            if let Some(next) = {variable} {{\n                \
+                 {storage}::put(&mut self.ports, next);\n            }}"
+            );
+        }
     }
 
     /// Whether the wrong-state answer reads the held state, and whether it reads stored fields.
@@ -2551,7 +2824,12 @@ impl<'a> Writer<'a> {
             ResolvedPayloadValue::Literal { value } => literal(self.ir, self.layout, target, value),
             // The implementation supplies the value, an optional one included: its port answers
             // `Option<T>`, `None` where there is nothing to report (beyond10x/ess#467).
-            ResolvedPayloadValue::Generated => self.generate(target),
+            // A present mint (ess/27, beyond10x/ess#545) asks the required port and wraps its
+            // answer present.
+            ResolvedPayloadValue::Generated { present: true } if target.is_optional() => {
+                format!("Some({})", self.generate(target.required()))
+            }
+            ResolvedPayloadValue::Generated { .. } => self.generate(target),
             ResolvedPayloadValue::Cleared => "None".to_owned(),
             ResolvedPayloadValue::Increment { by } => increment(
                 self.ir,
@@ -2642,7 +2920,10 @@ impl<'a> Writer<'a> {
             }
             ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::ChangedCount
+            | ResolvedPayloadValue::PayloadRead { .. }
+            | ResolvedPayloadValue::Expression { .. }
             | ResolvedPayloadValue::ChangedField { .. }
             | ResolvedPayloadValue::ChangedState { .. }
             | ResolvedPayloadValue::ResponseField { .. } => {
@@ -3190,4 +3471,17 @@ fn increment(
         },
         _ => unreachable!("the plan admits `{{increment:}}` of an Integer only"),
     }
+}
+
+/// Whether `outcome` is an `exists: false` over a row the input names: under the one rule
+/// (`docs/design/generic-language-features.md` § G4) it leads step 4 of the plan.
+fn input_absent(outcome: &ResolvedOutcome) -> bool {
+    matches!(
+        outcome.condition,
+        ResolvedCondition::Related {
+            via: ResolvedRelatedVia::Input { .. },
+            test: ResolvedRelatedTest::Absent,
+            ..
+        }
+    )
 }

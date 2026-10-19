@@ -1,0 +1,60 @@
+format: ess/25
+system: pool
+version: v1
+domain: pool.slots
+summary: A pool always has room for at least one slot; draining it writes a literal that breaks that.
+types:
+  - {name: pool.slots.PoolId, kind: newtype, of: Uuid}
+  - {name: pool.slots.Capacity, kind: newtype, of: Integer, invariants: [value > 0]}
+entities:
+  - name: pool.slots.Pool
+    identity: {name: pool_id, type: pool.slots.PoolId}
+    fields:
+      - {name: capacity, type: pool.slots.Capacity}
+    lifecycle:
+      initial: Open
+      states: [Open, Drained]
+      terminal: [Drained]
+      transitions:
+        - {name: drain, from: [Open], to: Drained}
+errors:
+  - {name: pool.slots.TooSmall, summary: The capacity is not above zero., fields: []}
+  - {name: pool.slots.WrongState, summary: The pool is not open., fields: []}
+events:
+  - name: pool.slots.PoolOpened
+    fields: [{name: pool_id, type: pool.slots.PoolId}]
+  - name: pool.slots.PoolDrained
+    fields: [{name: pool_id, type: pool.slots.PoolId}]
+actors:
+  - name: pool.slots.Keeper
+    may: [pool.slots.OpenPool, pool.slots.DrainPool]
+commands:
+  - name: pool.slots.OpenPool
+    input:
+      - {name: capacity, type: pool.slots.Capacity}
+    outcomes:
+      - name: opened
+        creates: pool.slots.Pool
+        instance: pool_id
+        emits: [pool.slots.PoolOpened]
+        payload: {pool.slots.PoolOpened: {pool_id: {generated: true}}}
+        sets: {capacity: input.capacity}
+  - name: pool.slots.DrainPool
+    input:
+      - {name: pool_id, type: pool.slots.PoolId}
+    outcomes:
+      - name: drained
+        moves: pool.slots.Pool.drain
+        instance: pool_id
+        emits: [pool.slots.PoolDrained]
+        payload: {pool.slots.PoolDrained: {pool_id: input.pool_id}}
+        sets: {capacity: 0}
+      - {name: wrong-state, wrong_state: true, error: pool.slots.WrongState}
+views:
+  - name: pool.slots.Pools
+    source: pool.slots.Pool
+    consistency: read_your_writes
+    fields:
+      - {name: pool_id, type: pool.slots.PoolId}
+      - {name: capacity, type: pool.slots.Capacity}
+      - {name: state, type: pool.slots.Pool.State}

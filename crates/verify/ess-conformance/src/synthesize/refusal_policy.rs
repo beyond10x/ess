@@ -122,7 +122,7 @@ fn witness(
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Built {
     let command = CommandRef::new(invoked.name.clone());
-    let forced_ref = forcible(invoked, outcome)?;
+    let forced_ref = forcible(ir.format(), invoked, outcome)?;
     let alternative = super::bounded_retry::clean_trigger(ir, binding, trigger, actors)?;
     let trigger = alternative.as_ref().map_or(trigger, |(run, _)| run);
     let mut source: BTreeSet<EssSemanticRef> = [command.clone().into(), forced_ref.clone().into()]
@@ -160,6 +160,7 @@ fn witness(
 /// The refusal as a scenario forces it: an `external:` branch whose eligibility needs no
 /// observation of the mapped input, or the gap that names why not.
 fn forcible(
+    format: ess_domain::system::FormatVersion,
     invoked: &ResolvedCommand,
     outcome: &ess_domain::command::OutcomeName,
 ) -> Result<OutcomeRef, BindingGap> {
@@ -172,7 +173,7 @@ fn forcible(
         .ok_or_else(|| BindingGap::RefusalUnforcible {
             outcome: forced_ref.clone(),
         })?;
-    if let Some(gap) = super::forced_eligibility(invoked, forced) {
+    if let Some(gap) = super::forced_eligibility(format, invoked, forced) {
         return Err(gap);
     }
     Ok(forced_ref)
@@ -193,7 +194,7 @@ fn retried(
     prepared: &Result<super::binding_effects::Prepared<'_>, BindingGap>,
     event: &EventRef,
 ) -> Built {
-    let forced_ref = forcible(invoked, outcome)?;
+    let forced_ref = forcible(ir.format(), invoked, outcome)?;
     let prepared = prepared.as_ref().map_err(Clone::clone)?;
     let reached = prepared.reached.clone()?;
     let published = publishes(invoked, reached)?;

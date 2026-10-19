@@ -60,7 +60,7 @@ No old task unit or its assigned build directory is carried into this wave.
 
 Planned unit ID: `ess-conformance-coverage-writer`.
 Planned branch: `impl/review-conformance-coverage`.
-Planned worktree: `~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer`.
+Planned worktree: `<tree>`.
 Build: the unit's `target` directory. Scratch: `target/review-boundaries-11/coverage-writer`
 inside that unit; TMP and Cargo home remain beneath scratch. The manager's creation result must
 match this triple before dispatch. A separate coordinator-owned producer preparation directory

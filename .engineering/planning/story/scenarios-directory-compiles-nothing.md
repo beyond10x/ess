@@ -17,7 +17,7 @@ scope:
   path: crates/edge/ess-cli/tests/authored_scenarios.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/authored_scenarios_adversary.rs
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-06T00:03:53Z", actor: "human:timo", revision: 8, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-06T00:03:53Z", actor: "human:timo", revision: 9, imported: true}
@@ -28,8 +28,8 @@ transitions:
 `--scenarios <dir>` reads the files directly in that directory and does not descend. A directory
 holding only subdirectories therefore compiles **nothing**, reports the run as normal and exits 0.
 
-Observed 2026-09-04 against `acd/specs` at `d87c009`, whose 67 authored scenarios live in
-`authored/routing/`, `authored/slotmatcher/` and `authored/e2e/`:
+Observed 2026-09-04 against a downstream specification, whose 67 authored scenarios live in
+`authored/routing/`, `authored/matcher/` and `authored/e2e/`:
 
 ```console
 $ ess verify conform synthesize --path model --scenarios authored --target go --out <dir>
@@ -49,7 +49,7 @@ result over a suite holding none of the corpus.
 
 ## Why it matters here
 
-`acd/specs/.gitlab-ci.yml` names each of the three areas as a separate invocation and asserts a
+That specification's CI configuration names each of the three areas as a separate invocation and asserts a
 scenario count, which is the workaround, arrived at by hitting this. Nothing warned; the count
 assertion caught it.
 

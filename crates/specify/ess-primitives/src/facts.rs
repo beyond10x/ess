@@ -264,6 +264,11 @@ impl Number {
         }
     }
 
+    /// The exact value as `(units, scale)` — `units × 10^-scale` — when there is one.
+    pub const fn exact_parts(self) -> Option<(i128, u8)> {
+        self.exact()
+    }
+
     /// The exact value as `(units, scale)`, when there is one.
     const fn exact(self) -> Option<(i128, u8)> {
         match self.0 {
@@ -1237,6 +1242,17 @@ pub trait FactSource {
             FactValue::Number(number) => whole_count(number.get()),
             _ => None,
         }
+    }
+
+    /// Every row of the entity named `entity`, each as a source of its own fields, or `None` when
+    /// this source knows no rows of it: what a quantifier over `in: {entity: <E>}` walks
+    /// (`ess/27`, beyond10x/ess#551, `docs/design/related-rows-quantifier.md`).
+    ///
+    /// `None` by default, and the quantifier is then `Unknown`: a source that knows no store can
+    /// never answer `False` for a test over rows nobody looked at. A source wrapping another
+    /// forwards it.
+    fn rows(&self, _entity: &str) -> Option<Vec<Box<dyn FactSource + '_>>> {
+        None
     }
 }
 

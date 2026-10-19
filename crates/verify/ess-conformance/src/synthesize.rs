@@ -185,9 +185,12 @@ mod bounded_retry;
 mod caller;
 mod delivery_context;
 mod disclosure;
+mod established;
 mod existence;
+mod expression;
 mod grant;
 mod identity;
+mod ordered_head;
 mod paging;
 pub(crate) mod precedence;
 mod refusal_policy;
@@ -197,8 +200,11 @@ mod repeated_identity;
 mod row_set;
 mod seeds;
 mod set_effects;
+mod shorthand;
 mod singleton;
 mod subject_fact;
+pub(crate) mod system_issued;
+mod value_invariant;
 mod view_grant;
 
 pub use seeds::{AdmittedSeeds, SeedAdmissionError, SeedSelection};
@@ -636,6 +642,15 @@ pub struct Refusal {
     /// The scenario `scenario` names was written and stands; this refusal names a row of it that
     /// could not be arranged — a held state a complete refusal claims (ess/23, beyond10x/ess#461).
     pub stands: bool,
+    /// The refused scenario whose cause this refusal repeats, where this one is of a derived
+    /// scenario: for a disclosure cell, the ordinary `<command>/outcome/<outcome>` scenario it
+    /// sends, or arranges through, refused for the same cause; failing that, the first cell of the
+    /// same marked field and aspect refused for the same reason. `None` for a refusal that is its
+    /// own cause.
+    ///
+    /// The derived refusal is still listed, one per scenario id, so nothing counted by id
+    /// disappears; the link lets a reader print one block per cause rather than one per cell.
+    pub caused_by: Option<ScenarioId>,
 }
 
 impl Refusal {
@@ -646,6 +661,16 @@ impl Refusal {
             scenario: Some(id.clone()),
             cause,
             stands: false,
+            caused_by: None,
+        }
+    }
+
+    /// The family of the derived scenario this refusal is about, as a reader names it: `disclosure`
+    /// for a one-time-response cell. `None` for an ordinary scenario, or for no scenario.
+    pub fn derived_family(&self) -> Option<&'static str> {
+        match self.scenario.as_ref()? {
+            ScenarioId::Disclosure { .. } => Some("disclosure"),
+            _ => None,
         }
     }
 
@@ -863,8 +888,8 @@ pub enum RefusalCause {
         /// [`unassertable`](Self::InvariantUnobservable::unassertable) is not here: a view does
         /// publish its field.
         unpublished: Vec<FactPath>,
-        /// The `.count` reads — of a list or of a text — whose field some view does publish, and
-        /// which no view-row assertion in this suite format can carry
+        /// The reads whose field some view does publish and no view-row assertion carries: a
+        /// list's `.count`, and a list read whole or through a quantifier
         /// (`docs/design/string-alphabet-and-length.md`, section 3). Before this field they were
         /// reported as published by no view, which blamed the view for the suite format.
         unassertable: Vec<FactPath>,
@@ -1034,7 +1059,45 @@ pub enum RefusalCause {
         /// The input the step sends, by field, as it reads.
         input: String,
     },
+    /// A scenario needs a step of a command the system issues itself whose outcome addresses no
+    /// existing record — it creates one, or it names no `instance:` — so there is no instance to
+    /// await its outcome on, and the command is never driven in its place (beyond10x/ess#542,
+    /// `docs/design/system-issued-commands.md`, *The instance*).
+    SystemIssuedUnaddressed {
+        /// The system-issued command.
+        command: CommandRef,
+        /// Why it names no one existing record.
+        reason: crate::system_issued::Unaddressed,
+    },
+    /// A refusal of a command the system issues itself that its input, or the rows its input
+    /// names, decides (beyond10x/ess#542, *Which branches a scenario can claim*): the system
+    /// chooses that input, so a refusal another choice would avoid is not an obligation a scenario
+    /// can claim.
+    SystemDecidedRefusal {
+        /// The refusing branch.
+        outcome: OutcomeRef,
+        /// What decides it, as the specification spells it.
+        decided_by: &'static str,
+    },
 }
+
+/// `RefusalCause::SystemIssuedUnaddressed`'s number in the `SYNTH` family, the next after
+/// [`CHILD_UNWITNESSED`] (beyond10x/ess#542).
+pub const SYSTEM_ISSUED_UNADDRESSED: u16 = 23;
+
+/// `RefusalCause::SystemDecidedRefusal`'s number in the `SYNTH` family, the next after
+/// [`SYSTEM_ISSUED_UNADDRESSED`] (beyond10x/ess#542).
+pub const SYSTEM_DECIDED_REFUSAL: u16 = 24;
+
+/// The repair for a system-issued step with no existing record to await (beyond10x/ess#542).
+const UNADDRESSED_REPAIR: &str = "a step the system takes to create a record, or over rows with \
+     no subject, is not awaited in this release; grant the command to a caller as well to keep it \
+     driven, or move the step onto an existing record that its outcomes name with `instance:`";
+
+/// The repair for a refusal of a system-issued command its input decides (beyond10x/ess#542).
+const SYSTEM_DECIDED_REPAIR: &str = "cover the refusal with an authored scenario \
+     (ess-scenario/1) that arranges the rows the system chooses among, so that every choice is \
+     refused, and expects nothing to be issued";
 
 /// `RefusalCause::PrecedenceContradicted`'s number in the `SYNTH` family, the next after
 /// [`COUNT_UNWITNESSED`].
@@ -1051,6 +1114,25 @@ pub const INSTANT_UNTAGGED: u16 = 21;
 /// `RefusalCause::ChildUnwitnessed`'s number in the `SYNTH` family, the next after
 /// [`INSTANT_UNTAGGED`] (<https://github.com/beyond10x/ess/issues/501>).
 pub const CHILD_UNWITNESSED: u16 = 22;
+
+/// The entries of [`RefusalCause::CATALOGUE`] a coverage inventory records as `check_not_emitted`:
+/// the candidate was written, and a check inside it was left out. Every other entry is
+/// `candidate_not_emitted`.
+///
+/// One list for the writer (`coverage_build`) and the Rust reader (`coverage`); the Go, TypeScript
+/// and browser readers restate it, and `tests/coverage_refusal_catalogue.rs` holds each of them to
+/// this one for every code of the catalogue.
+pub const CHECK_NOT_EMITTED: [u16; 9] = [
+    5,
+    11,
+    12,
+    14,
+    crate::aggregate::UNSCOPED,
+    crate::aggregate::UNWITNESSED,
+    ABSENCE_UNWITNESSED,
+    INSTANT_UNTAGGED,
+    CHILD_UNWITNESSED,
+];
 
 /// The repair for a family asked to send a command guarded by a related row (ess/18, #211): only the
 /// command's own outcome scenarios and its drivers arrange that row, and any other family has none
@@ -1128,6 +1210,12 @@ impl RefusalCause {
     #[allow(clippy::too_many_lines)]
     pub fn hint(&self) -> &'static str {
         match self {
+            // A struct a target may answer in its short form (beyond10x/ess#594).
+            Self::NoWitness(gap) if gap.reason == shorthand::OBSERVED => {
+                "no runner decodes a struct's short form yet: keep the struct out of what a \
+                 response, an event, an error or a view carries, or drop `shorthand:` until one \
+                 does"
+            }
             // A gap in what a view lets a scenario observe is repaired by declaring a view, not by
             // changing a value type (beyond10x/ess#132). Every such reason names the view it needs,
             // and says `immediate` where only a `read_your_writes` one will do, or names the
@@ -1157,6 +1245,42 @@ impl RefusalCause {
                 "the guards on the identity leave every row this scenario arranges one value; cover \
                  the branch with an authored scenario (ess-scenario/1) that names each row by an \
                  identity of its own"
+            }
+            // Rows a filter selects, not a value of an input type (downstream report,
+            // 2026-10-18): what is missing is a command that writes the field the filter reads.
+            Self::NoWitness(gap) if gap.reason == set_effects::UNWRITTEN => {
+                "declare a `sets:` for the field on a command that creates the entity, from an \
+                 input or from a caller attribute (`{caller: <attribute>}`), so the arranged rows \
+                 can hold values on both sides of the filter"
+            }
+            Self::NoWitness(gap) if set_effects::UNARRANGED.contains(&gap.reason) => {
+                "let a command that creates the entity write each field the filter reads from an \
+                 input or from a caller attribute (`{caller: <attribute>}`) rather than from a \
+                 literal or a generated value, so the arranged rows can hold values on both sides \
+                 of the filter"
+            }
+            // A value type reached through itself (downstream report, 2026-10-18): what is missing
+            // is the observation of a recursive position, not a value of an input type.
+            // An authored scenario states no invariant expectation (review 2026-10-19): what it
+            // can do at such a position is expect the row's exact value there.
+            Self::NoWitness(gap) if gap.reason == value_invariant::RECURSIVE => {
+                "the type reaches itself through this field; the invariant is still observed at \
+                 every position outside the recursion, and no scenario checks it at a recursive \
+                 one: an authored scenario (ess-scenario/1) can expect the exact value a row \
+                 holds there"
+            }
+            Self::NoWitness(gap) if gap.reason == value_invariant::OVERFLOW => {
+                "split the field's type so the view publishes fewer nested positions; an authored \
+                 scenario (ess-scenario/1) does not check the invariant, but can expect the exact \
+                 value a row holds at a position"
+            }
+            Self::NoWitness(gap) if gap.type_ref == disclosure::INVENTORY => {
+                "the line above names what the cell lacks; a `read/<view>` cell for an actor not \
+                 granted the originating command is refused by design and needs no change"
+            }
+            // A head no scenario arranges refuses its branch alone (beyond10x/ess#552).
+            Self::NoWitness(gap) if ordered_head::unarranged(gap.reason) => {
+                ordered_head::HEAD_REPAIR
             }
             Self::NoWitness(_) => {
                 "give the field a type that has a finite value, or drop it from the command's input"
@@ -1201,8 +1325,10 @@ impl RefusalCause {
                 ..
             } => {
                 if !unassertable.is_empty() {
-                    "a `.count` is not asserted on a view row in this suite format; the value is \
-                     held to it where it is built, on command input and setup"
+                    "a view row does not assert a list read this way; the value is held to it \
+                     where it is built, on command input and setup. A rule of every element is \
+                     observed on rows when the element's type declares it: an `invariants:` on \
+                     the element's newtype or struct"
                 } else if unpublished.is_empty() {
                     "declare a view that holds an instance in this state, or the invariant cannot \
                      be read after this branch"
@@ -1221,13 +1347,13 @@ impl RefusalCause {
                  timestamp}}`"
             }
             Self::ValueInvariantUnwitnessed { at: None, .. } => {
-                "publish a field that holds a value of this type in some view — outside a list, a \
-                 map, a union and an `Optional` — or state the claim as an entity invariant over \
-                 what a view already publishes"
+                "publish a field that holds a value of this type in some view, directly or inside \
+                 a list, a map, a union or an `Optional`: every position a view publishes is \
+                 observed"
             }
             Self::ValueInvariantUnwitnessed { at: Some(_), .. } => {
-                "declare an outcome that leaves an instance in a state this view's filter holds, \
-                 or widen the filter"
+                "declare an outcome that leaves an instance in a state this view's filter holds \
+                 and sets this field from a value the command sends, or widen the filter"
             }
             Self::DuplicateScenario => {
                 "two declarations produced one scenario id; rename one of them"
@@ -1260,6 +1386,8 @@ impl RefusalCause {
             }
             Self::AbsenceUnwitnessed { .. } => ABSENCE_REPAIR,
             Self::ChildUnwitnessed { .. } => CHILD_REPAIR,
+            Self::SystemIssuedUnaddressed { .. } => UNADDRESSED_REPAIR,
+            Self::SystemDecidedRefusal { .. } => SYSTEM_DECIDED_REPAIR,
         }
     }
 }
@@ -1285,7 +1413,9 @@ crate::authored::diagnostic_catalogue! {
             "No value of the command's declared input type could be constructed at all.",
             "give the field a type that has a finite value, or drop it from the command's input; \
              where the reason names a view, declare the view of the entity it asks for, \
-             projecting its identity, its state and the fields named";
+             projecting its identity, its state and the fields named; where it names rows a \
+             filter selects, let a command that creates the entity write each field the filter \
+             reads, from an input or from a caller attribute";
         Self::GuardUnevaluable(_) => 2,
             "The guard could not be decided against a candidate, and no other candidate would \
              change it.",
@@ -1357,9 +1487,10 @@ crate::authored::diagnostic_catalogue! {
              it answers in are already declared, as the states its transitions do not run from";
         Self::ValueInvariantUnwitnessed { .. } => 13,
             "A value object's declared invariants, with nowhere observable to read them.",
-            "publish a field that holds a value of this type in some view, outside a list, a \
-             map, a union and an `Optional`; or declare an outcome that leaves an instance in a \
-             state the view's filter holds";
+            "publish a field that holds a value of this type in some view, directly or inside a \
+             list, a map, a union or an `Optional`; where one is published, declare an outcome \
+             that leaves an instance the view shows, with that field set from a value the command \
+             sends";
         Self::OrderUnwitnessed { .. } => 14,
             "A view declares an order and the scenario cannot put two rows in it.",
             "declare an outcome that can leave a second instance where this view shows one, or \
@@ -1408,6 +1539,15 @@ crate::authored::diagnostic_catalogue! {
             "No input was found where one child of an `any`/`all` alone decides it and it decides \
              the guard; the branch's scenario stands without that input.",
             CHILD_REPAIR;
+        Self::SystemIssuedUnaddressed { .. } => SYSTEM_ISSUED_UNADDRESSED,
+            "A command the system issues itself, whose outcome addresses no existing record \
+             (`creates:`, or no `instance:`), has no awaited scenario, and is not driven in its \
+             place.",
+            UNADDRESSED_REPAIR;
+        Self::SystemDecidedRefusal { .. } => SYSTEM_DECIDED_REFUSAL,
+            "A refusal of a command the system issues itself is decided by its input, or by rows \
+             its input names, which the system chooses; no scenario claims it.",
+            SYSTEM_DECIDED_REPAIR;
     }
 }
 
@@ -1415,6 +1555,18 @@ impl fmt::Display for RefusalCause {
     #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            // A disclosure cell's own reason, which is no input type at all: the path is the
+            // cell's id and the reason, and the id already heads the refusal.
+            Self::NoWitness(gap) if gap.type_ref == disclosure::INVENTORY => {
+                let detail = gap
+                    .path
+                    .split_once(": ")
+                    .map_or(gap.path.as_str(), |(_, why)| why);
+                write!(
+                    f,
+                    "the disclosure cell cannot be arranged or observed: {detail}"
+                )
+            }
             Self::NoWitness(gap) => write!(f, "no witness: {gap}"),
             Self::GuardUnevaluable(refusal) => write!(f, "{refusal}"),
             Self::GuardUnsatisfiable { predicate, tried } => write!(
@@ -1557,6 +1709,20 @@ impl fmt::Display for RefusalCause {
                 f,
                 "no solved candidate of the {tried} tried satisfies `{predicate}`"
             ),
+            Self::SystemIssuedUnaddressed { command, reason } => write!(
+                f,
+                "`{command}` is issued by the system itself, and {reason}; a scenario awaits a \
+                 system-issued step on an existing record and never drives one"
+            ),
+            Self::SystemDecidedRefusal {
+                outcome,
+                decided_by,
+            } => write!(
+                f,
+                "`{outcome}` refuses a step the system issues itself, and {decided_by} decides \
+                 it: the system chooses that input, so a refusal another choice would avoid is \
+                 not observable as an obligation"
+            ),
             Self::InvariantUnobservable { .. } => invariant_unobservable(f, self),
             Self::ValueInvariantUnwitnessed {
                 value,
@@ -1599,10 +1765,18 @@ fn invariant_unobservable(f: &mut fmt::Formatter<'_>, cause: &RefusalCause) -> f
         )?;
     }
     for path in unassertable {
-        write!(
-            f,
-            "\n  - `{path}` is a `.count`, which a view row does not assert in this suite format"
-        )?;
+        if path.segments().last().is_some_and(|last| last == "count") {
+            write!(
+                f,
+                "\n  - `{path}` is a list's `.count`, which a view row does not assert"
+            )?;
+        } else {
+            write!(
+                f,
+                "\n  - `{path}` is published, and read as a whole or element by element (a \
+                 `forall` or `exists` over it), which a view row does not assert"
+            )?;
+        }
     }
     for path in unpublished {
         write!(f, "\n  - `{path}` is published by no view of the entity")?;
@@ -1633,34 +1807,13 @@ fn value_unwitnessed(
     at: Option<&(ViewRef, String)>,
 ) -> fmt::Result {
     match at {
-        None => {
-            write!(
-                f,
-                "no view publishes a field position that can answer what `{value}` declares of \
-                 every value"
-            )?;
-            // A `.count` is never projectable onto a row, so an invariant reading one has no
-            // position whatever the views publish; saying so names the real limit.
-            let counts: BTreeSet<String> = invariants
-                .iter()
-                .filter_map(|statement| Predicate::parse_expression(statement).ok())
-                .flat_map(|predicate| {
-                    predicate
-                        .fact_paths()
-                        .into_iter()
-                        .filter(|path| path.segments().last().is_some_and(|last| last == "count"))
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                })
-                .collect();
-            if !counts.is_empty() {
-                write!(
-                    f,
-                    "; `{}` is a `.count`, which a view row does not assert in this suite format",
-                    counts.into_iter().collect::<Vec<_>>().join("`, `")
-                )?;
-            }
-        }
+        // A wrapped position and a `.count` are both observed now (suite/40 and /52), so the one
+        // reason left is that no view publishes a value of the type at all.
+        None => write!(
+            f,
+            "no view publishes a field position that can answer what `{value}` declares of every \
+             value"
+        )?,
         Some((view, field)) => write!(
             f,
             "`{view}.{field}` holds a `{value}` and no declared outcome leaves a row there for \
@@ -2247,6 +2400,8 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     // Nor any other row created twice under one literal identity, which a target answers as
     // existing (beyond10x/ess#480).
     repeated_identity::withdraw_repeated_identities(ir, &mut synthesis);
+    // Nor any scenario observing a struct a target may answer in its short form (beyond10x/ess#594).
+    shorthand::withdraw_observed(ir, &mut synthesis);
     // A scenario requiring a branch for an input an input-guarded refusal answers first fails every
     // target that honours the specification, so it is withdrawn and refused (beyond10x/ess#280).
     for refusal in precedence_contradictions(ir, &synthesis.suite) {
@@ -2275,17 +2430,22 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
 /// naming a scenario the suite does not hold points at nothing.
 fn withdraw(synthesis: &mut Synthesis, id: &ScenarioId, cause: RefusalCause) {
     synthesis.suite.scenarios.remove(id);
-    synthesis.notes.retain(|note| match note {
+    synthesis.notes.retain(|note| !about_scenario(note, id));
+    synthesis.refusals.push(Refusal::about(id, cause));
+}
+
+/// Whether `note` is about the scenario `id`.
+fn about_scenario(note: &Note, id: &ScenarioId) -> bool {
+    match note {
         Note::PartialObservation { scenario, .. }
         | Note::UnseparatedSources { scenario, .. }
         | Note::UnwitnessedOverlap { scenario, .. }
         | Note::UnswappedCallers { scenario, .. }
         | Note::CrossCallerUnswapped { scenario, .. }
         | Note::CrossCallerUnwitnessed { scenario, .. }
-        | Note::UnaccompaniedRelatedCopy { scenario, .. } => scenario != id,
-        _ => true,
-    });
-    synthesis.refusals.push(Refusal::about(id, cause));
+        | Note::UnaccompaniedRelatedCopy { scenario, .. } => scenario == id,
+        _ => false,
+    }
 }
 
 /// Which scenarios a synthesis writes.
@@ -2332,7 +2492,7 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     for (path, subject) in ess_compiler::binary64::uses(ir) {
-        refusals.push(Refusal { subject, scenario: None, stands: false, cause: RefusalCause::NoWitness(WitnessGap {
+        refusals.push(Refusal { subject, scenario: None, stands: false, caused_by: None, cause: RefusalCause::NoWitness(WitnessGap {
             path, type_ref: "Binary64".to_owned(), reason: "requires a qualified finite Binary64 suite and codec that this conformance format does not admit",
         }) });
     }
@@ -2470,6 +2630,13 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
                 });
             }
         }
+    }
+    // A command the system issues itself is awaited, never driven: the last rewrite of the suite,
+    // over every family's scenarios and the grant refusals built from them (beyond10x/ess#542).
+    for (id, cause) in system_issued::await_system_issued(ir, &mut suite) {
+        notes.retain(|note| !about_scenario(note, &id));
+        refusals.retain(|refusal| !(refusal.stands && refusal.scenario.as_ref() == Some(&id)));
+        refusals.push(Refusal::about(&id, cause));
     }
     suite.select_fresh_format_for(ir);
 
@@ -2665,7 +2832,11 @@ pub(crate) fn needs_of(
             | ScenarioStep::ExpectInvocation { command, .. }
             | ScenarioStep::ExpectEveryInvocation { command, .. }
             | ScenarioStep::ExpectNoInvocation { command, .. }
-            | ScenarioStep::ExecuteCommandWithoutInput { command, .. } => {
+            | ScenarioStep::ExecuteCommandWithoutInput { command, .. }
+            // The component the system's own scheduler sends the command to still serves it
+            // (beyond10x/ess#542).
+            | ScenarioStep::AwaitOutcome { command, .. }
+            | ScenarioStep::ExpectNotIssued { command, .. } => {
                 if !handles(ir, component, command.name()) {
                     needs.insert(command.clone().into());
                 }
@@ -2791,6 +2962,8 @@ fn outcome_scenario_noting(
     let id = ScenarioId::Outcome {
         outcome: OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()),
     };
+    // Every further run below is this branch again (beyond10x/ess#546).
+    let _under_test = crate::witness::under_test(models.arrangement, command, outcome);
     let (mut steps, mut source, run) = exercise_as(
         models,
         command,
@@ -2808,7 +2981,7 @@ fn outcome_scenario_noting(
     }
     // A row-set branch is witnessed on the rows its own arrangement selects (ess/22,
     // beyond10x/ess#228, #299): no further witness sends it without them.
-    if row_set::routes(command, outcome) {
+    if row_set::routes(models.arrangement.format(), command, outcome) {
         return Some((
             id,
             ConformanceScenario::new(purpose(command, outcome), steps, source),
@@ -2841,7 +3014,7 @@ fn outcome_scenario_noting(
     // target asking the provider only after every input refusal answers the later refusal there.
     // An input no target can send to both answers nothing about the order, so none is refused.
     if outcome.before_row {
-        for nth in 0..later_refusals(command, outcome).count() {
+        for nth in 0..later_refusals(models.arrangement.format(), command, outcome).count() {
             if let Some((more, depends, _)) = exercise_as(
                 models,
                 command,
@@ -2902,6 +3075,25 @@ fn outcome_scenario_noting(
                 &id,
                 &mut Vec::new(),
                 Witness::UnionVariant(nth),
+            ) {
+                steps.extend(more);
+                source.extend(depends);
+            }
+        }
+    }
+    // ess/27 (#560): a branch computing a value with `{expr: …}` is run once more per point its
+    // expressions are worth checking on — the reads apart, a zero divisor, a rounding tie — so a
+    // target computing the figure otherwise fails one. A model without one keeps its suite's bytes.
+    if again {
+        for nth in 0..expression::point_bound(outcome) {
+            if let Some((more, depends, _)) = exercise_as(
+                models,
+                command,
+                outcome,
+                actors,
+                &id,
+                &mut Vec::new(),
+                Witness::ExpressionPoint(nth),
             ) {
                 steps.extend(more);
                 source.extend(depends);
@@ -3149,6 +3341,10 @@ enum Witness {
     /// it sends (ess/22, beyond10x/ess#418, [`arranged_with_union_variant`]), so a synthesized suite
     /// sends each variant and not only the first label.
     UnionVariant(usize),
+    /// A further instance whose input is the `n`th point the branch's expression values are checked
+    /// on (ess/27, beyond10x/ess#560, [`expression::points`]): the reads apart, a zero divisor, a
+    /// rounding tie.
+    ExpressionPoint(usize),
     /// A further invocation of an external refusal answered before the row (`before_row: true`,
     /// ess/25, beyond10x/ess#534), sent an identity no row carries ([`arranged_unstored`]), so a
     /// target that reads the row first answers the unknown identity instead and fails.
@@ -3194,6 +3390,9 @@ fn exercise_as(
     refusals: &mut Vec<Refusal>,
     witness: Witness,
 ) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, Run)> {
+    // The branch run here is the one the scenario observes: an Optional input it copies is sent
+    // present, while the steps arranging it leave theirs absent (beyond10x/ess#546).
+    let _under_test = crate::witness::under_test(models.arrangement, command, outcome);
     let run = match run_as(models, command, outcome, actors, witness) {
         Ok(run) => run,
         Err(cause) => {
@@ -3256,7 +3455,9 @@ fn exercise_run_in(
     let mut steps = run.steps();
     let held = held_before(ir, command, outcome, &run);
     if let Some(error) = &outcome.error {
-        steps.push(expect_error(ir, outcome, error, &run.input, &held));
+        let mut expected = expect_error(ir, outcome, error, &run.input, &held);
+        established::name_instances(ir, command, outcome, &run.input, &steps, &mut expected);
+        steps.push(expected);
     }
     for event in &emitted {
         let literals = determined_payload(ir, outcome, event, &run.input, &held);
@@ -3579,14 +3780,19 @@ fn run_as(
     let related = related_guard::routes(command, outcome);
     // A command guarded by a row set, or reading a selected row (ess/22, beyond10x/ess#228, #299),
     // is arranged with the rows its selector selects, for every branch they decide.
-    let rows = row_set::routes(command, outcome);
+    let rows = row_set::routes(ir.format(), command, outcome);
     let mut related_at = Distinction::PLAIN;
+    // ess/27 (beyond10x/ess#543): the ties of a ranked head no creating input steers, each a gap
+    // the scenario stands with.
+    let mut row_gaps: Vec<RefusalCause> = Vec::new();
     let (setup, input) =
         if rows {
             if witness != Witness::Full {
                 return Err(row_set::unarranged());
             }
-            row_set::prepare(models, command, outcome, actors)?
+            let (setup, input, gaps) = row_set::prepare(models, command, outcome, actors)?;
+            row_gaps = gaps;
+            (setup, input)
         } else if related {
             match witness {
                 Witness::Full => related_guard::prepare_at_in(
@@ -3622,6 +3828,7 @@ fn run_as(
                 | Witness::Listed(_)
                 | Witness::RelatedValueAbsent(_)
                 | Witness::UnionVariant(_)
+                | Witness::ExpressionPoint(_)
                 | Witness::Unstored
                 | Witness::InsideLaterRefusal(_) => return Err(related_guard::unarranged()),
             }
@@ -3741,6 +3948,11 @@ fn run_as(
             related_at = fallback_distinction(run);
             true
         }
+        // ess/27 (#560): a further run of a branch computing a value, on its own row.
+        Witness::ExpressionPoint(nth) => {
+            related_at = expression_distinction(nth);
+            true
+        }
         _ => false,
     };
     if related || captured || rows {
@@ -3765,7 +3977,7 @@ fn run_as(
     if (subject_fact::uses(command) || related || rows) && outcome.error.is_none() {
         invoke.push(ScenarioStep::ExpectNoError);
     }
-    let (mut after_steps, refused, unclaimed, mut unobserved) = if routed {
+    let (mut after_steps, mut refused, unclaimed, mut unobserved) = if routed {
         let around = subject_fact::around(models, command, outcome, actors, &mut setup, &supplied)?;
         (
             around.steps,
@@ -3776,6 +3988,7 @@ fn run_as(
     } else {
         (Vec::new(), Vec::new(), Vec::new(), BTreeSet::new())
     };
+    refused.extend(row_gaps);
     accepts_nothing(ir, outcome, &mut setup, &mut invoke, &mut after_steps);
     collision_witness(
         ir,
@@ -3809,7 +4022,14 @@ fn run_as(
     let mut source = setup.source;
     if has_subject_guards(command) {
         if let (Some(instance), Some(state)) = (&setup.instance, &setup.after) {
-            let (observed, view) = observe_subject_state(ir, outcome, instance, state)?;
+            // A branch naming no subject of its own reads the row its siblings name, as a
+            // stored-field refusal beside the held-state guards does under the one rule (ess/27).
+            let (observed, view) = match outcome.subject.as_ref().or(reads) {
+                Some(subject) => {
+                    observe_selection_subject(ir, subject, instance, state, outcome.name.as_str())?
+                }
+                None => observe_subject_state(ir, outcome, instance, state)?,
+            };
             invoke.extend(observed);
             source.insert(view.into());
         }
@@ -3872,6 +4092,22 @@ fn arranged(
     if outcome.test_strategy == TestStrategy::InjectFault {
         return unclaimed_external(ir, command, outcome, actors, setup, input);
     }
+    // A row-set command answers the row its input addresses before any row set is read: an
+    // identity no row carries takes its existence refusal (`docs/design/filtered-related-reads.md`,
+    // "Subject borrowing and precedence"). An accepting branch naming no subject of its own that no
+    // row set answers before (beyond10x/ess#552, [`row_set::routes`]) is still sent for a row
+    // that exists, as the row-set arrangement sent it.
+    if row_set::uses(command)
+        && !row_set::routes(ir.format(), command, outcome)
+        && outcome.subject.is_none()
+        && outcome.error.is_none()
+        && matches!(
+            outcome.condition,
+            ResolvedCondition::When { .. } | ResolvedCondition::Otherwise
+        )
+    {
+        return Ok((addressed_row(ir, command, actors, setup), input));
+    }
     Ok((setup, input))
 }
 
@@ -3922,7 +4158,7 @@ fn unclaimed_external(
     match &held {
         Some(held) => {
             let facts = flatten(ir, command, &input).map_err(RefusalCause::WitnessRejected)?;
-            if held_state_claims(command, outcome, held, &facts).is_empty() {
+            if held_state_claims(ir.format(), command, outcome, held, &facts).is_empty() {
                 return Ok((setup, input));
             }
         }
@@ -3945,7 +4181,7 @@ fn unclaimed_external(
     let mut tried = 0;
     for state in states {
         // A sibling with no input guard claims every input in this state.
-        let Some(refuted) = held_state_refuted(command, outcome, &state) else {
+        let Some(refuted) = held_state_refuted(ir.format(), command, outcome, &state) else {
             tried += 1;
             continue;
         };
@@ -4234,12 +4470,12 @@ fn reaches_external(
         ResolvedCondition::ExternalWhen { predicate, .. } => vec![predicate],
         _ => Vec::new(),
     };
-    let refusals: Vec<&Predicate> = sibling_refusals(command, outcome)
+    let refusals: Vec<&Predicate> = sibling_refusals(ir.format(), command, outcome)
         .filter_map(when)
         .collect();
     decides(&facts, &own, true).unwrap_or(false)
         && decides(&facts, &refusals, false).unwrap_or(false)
-        && !claimed_by(&facts, &earlier_accepting(command, outcome))
+        && !claimed_by(&facts, &earlier_accepting(ir.format(), command, outcome))
         && decides(&facts, held, false).unwrap_or(false)
 }
 
@@ -4248,12 +4484,13 @@ fn reaches_external(
 /// which the precedence plan answers before `outcome` ([`held_state_before`]), whose input guard,
 /// where it declares one, holds or is not decided.
 fn held_state_claims<'c>(
+    format: ess_domain::system::FormatVersion,
     command: &'c ResolvedCommand,
     outcome: &ResolvedOutcome,
     held: &StateName,
     facts: &crate::InputFacts<'_>,
 ) -> Vec<&'c ResolvedOutcome> {
-    held_state_before(command, outcome, held)
+    held_state_before(format, command, outcome, held)
         .into_iter()
         .filter(|branch| {
             held_state_guard(branch)
@@ -4275,11 +4512,12 @@ fn held_state_guard(branch: &ResolvedOutcome) -> Option<&Predicate> {
 /// sibling selected by that held state. `None` where one declares no input guard, and so claims
 /// every input there.
 fn held_state_refuted<'c>(
+    format: ess_domain::system::FormatVersion,
     command: &'c ResolvedCommand,
     outcome: &ResolvedOutcome,
     held: &StateName,
 ) -> Option<Vec<&'c Predicate>> {
-    held_state_before(command, outcome, held)
+    held_state_before(format, command, outcome, held)
         .into_iter()
         .map(held_state_guard)
         .collect()
@@ -4290,11 +4528,12 @@ fn held_state_refuted<'c>(
 /// on a row resting in `held`, the siblings an external branch's witness steps out of
 /// (beyond10x/ess#464).
 fn held_state_before<'c>(
+    format: ess_domain::system::FormatVersion,
     command: &'c ResolvedCommand,
     outcome: &ResolvedOutcome,
     held: &StateName,
 ) -> Vec<&'c ResolvedOutcome> {
-    precedence::answers_before(command, outcome)
+    precedence::answers_before(format, command, outcome)
         .into_iter()
         .filter(|branch| {
             matches!(
@@ -4740,11 +4979,11 @@ fn replay_eligibility(
     // An accepting `when:` branch declared before an external one answers first (beyond10x/ess#217).
     let eligible = match &outcome.condition {
         ResolvedCondition::External { .. } => {
-            !claimed_by(&facts, &earlier_accepting(command, outcome))
+            !claimed_by(&facts, &earlier_accepting(ir.format(), command, outcome))
         }
         ResolvedCondition::ExternalWhen { predicate, .. } => {
             decides(&facts, &[predicate], true)?
-                && !claimed_by(&facts, &earlier_accepting(command, outcome))
+                && !claimed_by(&facts, &earlier_accepting(ir.format(), command, outcome))
         }
         _ => {
             let mut selected = Vec::new();
@@ -5919,10 +6158,10 @@ fn driven_unclaimed(
         return Some(input);
     };
     let facts = flatten(ir, driver.command, &input).ok()?;
-    if held_state_claims(driver.command, driver.outcome, held, &facts).is_empty() {
+    if held_state_claims(ir.format(), driver.command, driver.outcome, held, &facts).is_empty() {
         return Some(input);
     }
-    let refuted = held_state_refuted(driver.command, driver.outcome, held)?;
+    let refuted = held_state_refuted(ir.format(), driver.command, driver.outcome, held)?;
     reach_external_beside(ir, driver.command, driver.outcome, distinction, &refuted).ok()
 }
 
@@ -6360,7 +6599,7 @@ fn admitted_states(condition: &ResolvedCondition) -> Option<BTreeSet<&StateName>
 ///
 /// A condition that reads no state admits every state, which is why the `None` case answers `true`:
 /// the question being asked is whether this branch is *excluded* there.
-fn admits_held_state(condition: &ResolvedCondition, held: &StateName) -> bool {
+pub(super) fn admits_held_state(condition: &ResolvedCondition, held: &StateName) -> bool {
     admitted_states(condition).is_none_or(|states| states.contains(held))
 }
 
@@ -6398,7 +6637,7 @@ fn reach_in_state(
         let inputs = inputs?;
         for input in &inputs {
             let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
-            if selected_in_state(command, outcome, held, &facts)? {
+            if selected_in_state(ir.format(), command, outcome, held, &facts)? {
                 return Ok(input.clone());
             }
         }
@@ -6413,6 +6652,7 @@ fn reach_in_state(
 
 /// Whether `outcome` is the one branch these input facts select while the subject rests in `held`.
 fn selected_in_state(
+    format: ess_domain::system::FormatVersion,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     held: &StateName,
@@ -6449,7 +6689,7 @@ fn selected_in_state(
     // an input refusal (beyond10x/ess#227), as the partition in `ess_domain::command::subject_state`
     // counts it — answers first; of two, the first the plan reads, which is the first declared, as
     // Entity Runtime takes it. Among the rest the witness is the one branch selected.
-    if let Some(first) = precedence::first_before_held_and_accepting(command, &selected) {
+    if let Some(first) = precedence::first_before_held_and_accepting(format, command, &selected) {
         selected = vec![first];
     }
     if selected.is_empty() {
@@ -6609,12 +6849,12 @@ fn reach_external_beside(
     // An input-guarded refusal is taken before the external decision is asked for (beyond10x/ess
     // #178), so the witness refutes every one; searched first over the branch's own guard, as it
     // always was, and over the refusals' guards as well only where that finds none.
-    let refusals: Vec<&Predicate> = sibling_refusals(command, outcome)
+    let refusals: Vec<&Predicate> = sibling_refusals(ir.format(), command, outcome)
         .filter_map(when)
         .collect();
     // An accepting `when:` branch declared before it answers an input its guard claims, whatever
     // the provider says (beyond10x/ess#217), so the witness refutes those as well; searched last.
-    let earlier = earlier_accepting(command, outcome);
+    let earlier = earlier_accepting(ir.format(), command, outcome);
     let mut searches = vec![guards.clone()];
     let mut widened = guards.clone();
     if !refusals.is_empty() {
@@ -6644,7 +6884,7 @@ fn reach_external_beside(
             {
                 return Ok(input.clone());
             }
-            shadow.record(command, outcome, &facts)?;
+            shadow.record(ir.format(), command, outcome, &facts)?;
         }
         tried = tried.max(inputs.len());
     }
@@ -6711,7 +6951,7 @@ fn reach(
     let (guards, satisfy) = plain_guards(command, outcome)?;
     let mut tried = 0;
     let mut shadow = Shadow::default();
-    let searches = searched_guards(command, outcome, &guards, satisfy);
+    let searches = searched_guards(ir.format(), command, outcome, &guards, satisfy);
     if satisfy {
         if let Some(input) =
             outside_later_refusals(ir, command, outcome, &guards, &searches, distinction)
@@ -6723,11 +6963,11 @@ fn reach(
         let inputs = inputs?;
         for input in &inputs {
             let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
-            if admits_plain(command, outcome, &facts, &guards, satisfy)? {
+            if admits_plain(ir.format(), command, outcome, &facts, &guards, satisfy)? {
                 return Ok(input.clone());
             }
             if satisfy && decides(&facts, &guards, true)? {
-                shadow.record(command, outcome, &facts)?;
+                shadow.record(ir.format(), command, outcome, &facts)?;
             }
         }
         tried = tried.max(inputs.len());
@@ -6761,12 +7001,12 @@ pub(super) fn reach_pinned(
             return Ok(false);
         }
         let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
-        admits_plain(command, outcome, &facts, &guards, satisfy)
+        admits_plain(ir.format(), command, outcome, &facts, &guards, satisfy)
     };
     if selects(&mut input)? {
         return Ok(Some(input));
     }
-    let searches = searched_guards(command, outcome, &guards, satisfy);
+    let searches = searched_guards(ir.format(), command, outcome, &guards, satisfy);
     for inputs in searched_candidates(ir, command, searches, Distinction::PLAIN) {
         for mut input in inputs? {
             if selects(&mut input)? {
@@ -6794,7 +7034,9 @@ fn outside_later_refusals(
     searches: &[Vec<&Predicate>],
     distinction: Distinction,
 ) -> Option<BTreeMap<String, Node>> {
-    let later: Vec<&Predicate> = later_refusals(command, outcome).filter_map(when).collect();
+    let later: Vec<&Predicate> = later_refusals(ir.format(), command, outcome)
+        .filter_map(when)
+        .collect();
     if later.is_empty() {
         return None;
     }
@@ -6813,7 +7055,7 @@ fn outside_later_refusals(
         let inputs = inputs.ok()?;
         for input in inputs {
             let facts = flatten(ir, command, &input).ok()?;
-            if admits_plain(command, outcome, &facts, guards, true).ok()?
+            if admits_plain(ir.format(), command, outcome, &facts, guards, true).ok()?
                 && decides(&facts, &later, false).ok()?
             {
                 return Some(input);
@@ -6845,6 +7087,7 @@ pub(super) struct Shadow {
 impl Shadow {
     pub(super) fn record(
         &mut self,
+        format: ess_domain::system::FormatVersion,
         command: &ResolvedCommand,
         outcome: &ResolvedOutcome,
         facts: &crate::InputFacts<'_>,
@@ -6855,7 +7098,7 @@ impl Shadow {
         }
         self.refusal |= is_input_guarded_refusal(outcome);
         let mut claimed = false;
-        for refusal in sibling_refusals(command, outcome) {
+        for refusal in sibling_refusals(format, command, outcome) {
             let Some(guard) = when(refusal) else {
                 continue;
             };
@@ -6865,7 +7108,7 @@ impl Shadow {
             }
         }
         if !claimed {
-            for earlier in earlier_accepting_branches(command, outcome) {
+            for earlier in earlier_accepting_branches(format, command, outcome) {
                 let Some(guard) = when(earlier) else {
                     continue;
                 };
@@ -6941,6 +7184,7 @@ impl Shadow {
 /// the refusals' guards as well, which puts `5` on `count`'s ladder. An input-guarded refusal
 /// refutes its sibling refusals too, so it is searched the same way.
 fn searched_guards<'c>(
+    format: ess_domain::system::FormatVersion,
     command: &'c ResolvedCommand,
     outcome: &'c ResolvedOutcome,
     guards: &[&'c Predicate],
@@ -6950,7 +7194,7 @@ fn searched_guards<'c>(
     if satisfy && (outcome.error.is_none() || is_input_guarded_refusal(outcome)) {
         let mut widened = guards.to_vec();
         widened.extend(
-            sibling_refusals(command, outcome)
+            sibling_refusals(format, command, outcome)
                 .filter_map(when)
                 .filter(|guard| !guards.contains(guard)),
         );
@@ -6964,7 +7208,7 @@ fn searched_guards<'c>(
             .outcomes
             .iter()
             .any(|other| other.test_strategy == TestStrategy::DefaultBranch);
-        let earlier: Vec<&Predicate> = earlier_accepting(command, outcome)
+        let earlier: Vec<&Predicate> = earlier_accepting(format, command, outcome)
             .into_iter()
             .filter(|guard| !widened.contains(guard))
             .collect();
@@ -7006,10 +7250,11 @@ pub(crate) fn accepting_input_half(outcome: &ResolvedOutcome) -> Option<&Predica
 /// every one answers before the held state and the accepting branches. A witness refutes these and
 /// needs to refute nothing the plan reads after it.
 pub(crate) fn sibling_refusals<'c>(
+    format: ess_domain::system::FormatVersion,
     command: &'c ResolvedCommand,
     outcome: &'c ResolvedOutcome,
 ) -> impl Iterator<Item = &'c ResolvedOutcome> {
-    precedence::answers_before(command, outcome)
+    precedence::answers_before(format, command, outcome)
         .into_iter()
         .filter(|other| is_input_guarded_refusal(other))
 }
@@ -7018,10 +7263,11 @@ pub(crate) fn sibling_refusals<'c>(
 /// ([`precedence::answers_after`]), in declaration order: the refusals an input refusal answers
 /// before wherever both guards hold (beyond10x/ess#455).
 fn later_refusals<'c>(
+    format: ess_domain::system::FormatVersion,
     command: &'c ResolvedCommand,
     outcome: &'c ResolvedOutcome,
 ) -> impl Iterator<Item = &'c ResolvedOutcome> {
-    precedence::answers_after(command, outcome)
+    precedence::answers_after(format, command, outcome)
         .into_iter()
         .filter(|other| is_input_guarded_refusal(other))
 }
@@ -7076,13 +7322,17 @@ fn first_candidate(
 /// Why a binding cannot force `forced` without observing the input its mapping supplies, if it
 /// cannot: its eligibility is a guard over that input, or an accepting `when:` branch declared
 /// before it answers an input that guard claims whatever the provider says (beyond10x/ess#217).
-fn forced_eligibility(invoked: &ResolvedCommand, forced: &ResolvedOutcome) -> Option<BindingGap> {
+fn forced_eligibility(
+    format: ess_domain::system::FormatVersion,
+    invoked: &ResolvedCommand,
+    forced: &ResolvedOutcome,
+) -> Option<BindingGap> {
     if matches!(forced.condition, ResolvedCondition::ExternalWhen { .. }) {
         return Some(BindingGap::AccessorObservation {
             reason: "GuardedExternalEligibility: fault eligibility requires an observation of the binding-mapped input".into(),
         });
     }
-    if !earlier_accepting(invoked, forced).is_empty() {
+    if !earlier_accepting(format, invoked, forced).is_empty() {
         return Some(BindingGap::AccessorObservation {
             reason: "PrecededExternalEligibility: an accepting branch declared before the forced one decides the binding-mapped input first".into(),
         });
@@ -7111,10 +7361,11 @@ fn is_external(outcome: &ResolvedOutcome) -> bool {
 /// precedence order, the accepting branches declared after them and the default, and never a
 /// refusal or a held-state branch, whose phases are read first.
 fn earlier_accepting_branches<'c>(
+    format: ess_domain::system::FormatVersion,
     command: &'c ResolvedCommand,
     outcome: &'c ResolvedOutcome,
 ) -> Vec<&'c ResolvedOutcome> {
-    precedence::answers_before(command, outcome)
+    precedence::answers_before(format, command, outcome)
         .into_iter()
         .filter(|other| is_input_guarded_accepting(other))
         .collect()
@@ -7122,10 +7373,11 @@ fn earlier_accepting_branches<'c>(
 
 /// The guards of [`earlier_accepting_branches`].
 fn earlier_accepting<'c>(
+    format: ess_domain::system::FormatVersion,
     command: &'c ResolvedCommand,
     outcome: &'c ResolvedOutcome,
 ) -> Vec<&'c Predicate> {
-    earlier_accepting_branches(command, outcome)
+    earlier_accepting_branches(format, command, outcome)
         .into_iter()
         .filter_map(when)
         .collect()
@@ -7155,7 +7407,7 @@ fn selects_branch(
     let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
     if outcome.test_strategy == TestStrategy::InjectFault {
         // An accepting `when:` branch declared before it answers first (beyond10x/ess#217).
-        if claimed_by(&facts, &earlier_accepting(command, outcome)) {
+        if claimed_by(&facts, &earlier_accepting(ir.format(), command, outcome)) {
             return Ok(false);
         }
         return match &outcome.condition {
@@ -7172,7 +7424,7 @@ fn selects_branch(
             .filter(|held| state.contains(held))
             .or_else(|| state.iter().next())
             .expect("a held-state guard names at least one state");
-        return selected_in_state(command, outcome, held, &facts);
+        return selected_in_state(ir.format(), command, outcome, held, &facts);
     }
     // An input refusal beside held-state branches (beyond10x/ess#227) is decided by its input alone
     // where no held state is given: it is answered before the state is read.
@@ -7183,10 +7435,10 @@ fn selects_branch(
         let held = held.ok_or(RefusalCause::StrategyWithoutGuard {
             strategy: outcome.test_strategy,
         })?;
-        return selected_in_state(command, outcome, held, &facts);
+        return selected_in_state(ir.format(), command, outcome, held, &facts);
     }
     let (guards, satisfy) = plain_guards(command, outcome)?;
-    admits_plain(command, outcome, &facts, &guards, satisfy)
+    admits_plain(ir.format(), command, outcome, &facts, &guards, satisfy)
 }
 
 /// The guards a stateless branch's input is decided against, and whether it must satisfy them
@@ -7245,6 +7497,7 @@ fn plain_guards<'c>(
 /// an input satisfying both reaches the refusal, and a scenario requiring the accepting branch for
 /// it would fail a target that honours the precedence.
 fn admits_plain(
+    format: ess_domain::system::FormatVersion,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     facts: &crate::InputFacts<'_>,
@@ -7264,7 +7517,7 @@ fn admits_plain(
     {
         // A refusal the plan reads after an input-guarded refusal never answers before it, so it
         // is not refuted (beyond10x/ess#227 adversary pass 1).
-        let after: Vec<&OutcomeName> = later_refusals(command, outcome)
+        let after: Vec<&OutcomeName> = later_refusals(format, command, outcome)
             .map(|after| &after.name)
             .collect();
         let later = |other: &ResolvedOutcome| after.contains(&&other.name);
@@ -7279,10 +7532,10 @@ fn admits_plain(
         // selects, the first declared answers ([`sibling_refusals`]). A branch is not reached by an
         // input an accepting `when:` branch the plan reads before it claims (beyond10x/ess#217).
         // Under the precedence order that is none for a refusal.
-        if claimed_by(facts, &earlier_accepting(command, outcome)) {
+        if claimed_by(facts, &earlier_accepting(format, command, outcome)) {
             return Ok(false);
         }
-        sibling_refusals(command, outcome)
+        sibling_refusals(format, command, outcome)
             .filter_map(when)
             .collect()
     } else {
@@ -7507,8 +7760,10 @@ fn determined_fields(
             // matched with the other two that determine nothing rather than by a wildcard, so a
             // fifth source has to be decided rather than silently ignored.
             ResolvedPayloadValue::ResponseField { .. }
-            | ResolvedPayloadValue::Generated
+            | ResolvedPayloadValue::Generated { .. }
             | ResolvedPayloadValue::Cleared
+            // ess/27 (#545): a `sets:` source only, refused in a payload by `ess-domain`.
+            | ResolvedPayloadValue::PayloadRead { .. }
             // ess/16 (#167): the rows one scenario changed, asserted by `set_effects` alone.
             | ResolvedPayloadValue::ChangedCount
             // ess/25 (#531): the row one occurrence is for, asserted by `set_effects` alone.
@@ -7535,7 +7790,10 @@ fn determined_fields(
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
-            | ResolvedPayloadValue::CallerAttribute { .. } => {
+            | ResolvedPayloadValue::RelatedHead { .. }
+            | ResolvedPayloadValue::CallerAttribute { .. }
+            // ess/27 (#560): computed forwards by the shared evaluator.
+            | ResolvedPayloadValue::Expression { .. } => {
                 if let Some(ScenarioValue::Literal { value }) =
                     expression_value(ir, field, supplied, before)
                 {
@@ -7880,6 +8138,16 @@ fn view_expectations(
         out.source.extend(companion.source.iter().cloned());
     }
 
+    // ess/27 (#545): the events a step before the branch under test may already have published,
+    // which a row claim reading the published value must not name.
+    let earlier = earlier_events(
+        ir,
+        run.setup.iter().chain(
+            companions
+                .iter()
+                .flat_map(|companion| companion.steps.iter()),
+        ),
+    );
     for (view, admits_subject) in &decided {
         let name = ViewRef::new(view.name.clone());
         let fields = naming(view);
@@ -7890,7 +8158,9 @@ fn view_expectations(
             // that reads them. It is sound on a target §8 permits to be shared, where a claim
             // about which row comes *first* would not be: a row this scenario did not make cannot
             // stop one it did from holding what it was given.
-            subject_row(ir, view, outcome, run, &subject.entity, &fields, state)
+            let mut row = subject_row(ir, view, outcome, run, &subject.entity, &fields, state);
+            row.extend(minted_row(view, outcome, &fields, &earlier));
+            row
         } else {
             // A cancelled invoice that stays in `OutstandingInvoices` is the defect the positive
             // assertion cannot see, and an entity that has not reached the filtered state yet is
@@ -8685,6 +8955,20 @@ fn expression_value_at(
         } => before
             .get(&row_set::key(selection, read))
             .map(|held| held.value.clone()),
+        // ess/27 (#543): the head's value, which `row_set` settled where the rows it arranged rank
+        // one row first.
+        ResolvedPayloadValue::RelatedHead {
+            selection,
+            order_by,
+            field: read,
+            ..
+        } => before
+            .get(&ordered_head::key(selection, order_by, read))
+            .map(|held| held.value.clone()),
+        // ess/27 (#560): the shared evaluator over what the scenario sent and what the row held.
+        ResolvedPayloadValue::Expression { expr, .. } => {
+            crate::synthesize::expression::expected(expr, supplied, before)
+        }
         ResolvedPayloadValue::Increment { by } => {
             let Node::Number(held) = before_literal_at(before, target_location)? else {
                 return None;
@@ -8734,8 +9018,10 @@ fn expression_value_at(
         ResolvedPayloadValue::Literal { .. }
         | ResolvedPayloadValue::InputField { .. }
         | ResolvedPayloadValue::ResponseField { .. }
-        | ResolvedPayloadValue::Generated
+        | ResolvedPayloadValue::Generated { .. }
         | ResolvedPayloadValue::Cleared
+        // ess/27 (#545): the published value, which `subject_row` claims where it is safe to.
+        | ResolvedPayloadValue::PayloadRead { .. }
         // ess/16 (#168): read only through `caller::synthesize`, which writes the caller's value in.
         | ResolvedPayloadValue::CallerAttribute { .. }
         | ResolvedPayloadValue::ChangedCount => None,
@@ -8931,7 +9217,11 @@ fn arranged_as(
     witness: Witness,
 ) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
     match witness {
-        Witness::Full => arranged(ir, command, outcome, actors, routed),
+        Witness::Full => {
+            let (setup, input) = arranged(ir, command, outcome, actors, routed)?;
+            let input = expression_spelled(ir, command, outcome, setup.before.as_ref(), input);
+            Ok((setup, input))
+        }
         Witness::LiteralFallbacks(run) => {
             arranged_without_fallbacks(ir, command, outcome, actors, run)
         }
@@ -8941,6 +9231,9 @@ fn arranged_as(
         }
         Witness::UnionVariant(nth) => {
             arranged_with_union_variant(ir, command, outcome, actors, nth)
+        }
+        Witness::ExpressionPoint(nth) => {
+            arranged_at_expression_point(ir, command, outcome, actors, nth)
         }
         Witness::Unstored => arranged_unstored(ir, command, outcome),
         Witness::InsideLaterRefusal(nth) => arranged_inside_later(ir, command, outcome, nth),
@@ -9009,7 +9302,7 @@ pub(super) fn reaches_before_row(
         wanted.push(predicate);
     }
     wanted.extend(inside);
-    let earlier: Vec<&Predicate> = sibling_refusals(command, outcome)
+    let earlier: Vec<&Predicate> = sibling_refusals(ir.format(), command, outcome)
         .filter_map(when)
         .collect();
     let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
@@ -9032,7 +9325,7 @@ fn arranged_inside_later(
     if !outcome.before_row {
         return Err(unarranged());
     }
-    let guard = later_refusals(command, outcome)
+    let guard = later_refusals(ir.format(), command, outcome)
         .nth(nth)
         .and_then(when)
         .ok_or_else(unarranged)?;
@@ -9041,7 +9334,7 @@ fn arranged_inside_later(
         wanted.push(predicate);
     }
     let mut widened = wanted.clone();
-    widened.extend(sibling_refusals(command, outcome).filter_map(when));
+    widened.extend(sibling_refusals(ir.format(), command, outcome).filter_map(when));
     let mut tried = 0;
     for inputs in searched_candidates(
         ir,
@@ -9336,6 +9629,92 @@ fn arranged_with_union_variant(
     Ok((setup, input))
 }
 
+/// The distinction the expression points (ess/27, beyond10x/ess#560) are counted from: past every
+/// union-variant witness, so their rows and identities are their own.
+const EXPRESSION_POINT_WITNESS: usize = 3 * ABSENT_REFERENCE_WITNESS;
+
+/// The witness the `nth` expression point is arranged under.
+fn expression_distinction(nth: usize) -> Distinction {
+    Distinction::further(EXPRESSION_POINT_WITNESS + nth)
+}
+
+/// The arrangement and input of [`Witness::ExpressionPoint`] (ess/27, beyond10x/ess#560): a further
+/// instance, its input the plain witness at that distinction with the `nth` point's values in
+/// place ([`expression::points`]), where the branch is still the one the input selects.
+///
+/// Only for a branch its input selects, as for [`Witness::LiteralFallbacks`].
+fn arranged_at_expression_point(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    nth: usize,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    if subject_fact::routes(command, outcome) || has_subject_guards(command) {
+        return Err(no_expression_run(command));
+    }
+    let distinction = expression_distinction(nth);
+    let setup = prepare_in(ir, outcome, actors, None, distinction)?;
+    let input = reach(ir, command, outcome, distinction)?;
+    let input = existence::fresh_created(ir, command, outcome, input, true)?;
+    let mut input = freshened(
+        ir,
+        command,
+        outcome,
+        input,
+        setup.before.as_ref(),
+        &setup.settled,
+    );
+    let points = expression::points(outcome, &input);
+    let point = points.get(nth).ok_or_else(|| no_expression_run(command))?;
+    for (field, value) in point {
+        input.insert(field.clone(), value.clone());
+    }
+    if !expression::spelled_at(outcome, &input)
+        || !admitted(ir, command, &input)
+        || !selects_branch(ir, command, outcome, setup.before.as_ref(), &input).unwrap_or(false)
+    {
+        return Err(no_expression_run(command));
+    }
+    Ok((setup, input))
+}
+
+/// `input`, or where an expression value of the branch has no value its field can hold over it — a
+/// witness sending `ended_at` before `started_at` — `input` with the reads moved apart
+/// ([`expression::apart`]), where the branch is still selected (ess/27, beyond10x/ess#560). A
+/// branch without an expression keeps its input.
+fn expression_spelled(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    before: Option<&StateName>,
+    input: BTreeMap<String, Node>,
+) -> BTreeMap<String, Node> {
+    if expression::spelled_at(outcome, &input) {
+        return input;
+    }
+    let mut moved = input.clone();
+    moved.extend(expression::apart(outcome, &input));
+    if expression::spelled_at(outcome, &moved)
+        && admitted(ir, command, &moved)
+        && selects_branch(ir, command, outcome, before, &moved).unwrap_or(false)
+    {
+        moved
+    } else {
+        input
+    }
+}
+
+/// Why [`Witness::ExpressionPoint`] builds nothing. Never reported: the full invocation is the
+/// scenario, and this run only adds to it.
+fn no_expression_run(command: &ResolvedCommand) -> RefusalCause {
+    RefusalCause::NoWitness(WitnessGap {
+        path: command.name.to_string(),
+        type_ref: "expression".into(),
+        reason: "no further point to check an expression value on",
+    })
+}
+
 /// Why [`Witness::UnionVariant`] builds nothing. Never reported: the full invocation is the
 /// scenario, and this run only adds to it.
 fn no_union_variant_run(command: &ResolvedCommand) -> RefusalCause {
@@ -9403,19 +9782,31 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
                 reads(leaf, out);
             }
         }
-        // A selector reads its inputs to select the row, not as the value.
-        ResolvedPayloadValue::RelatedSelection { selection, .. } => {
+        // A selector reads its inputs to select the row, not as the value; a ranked one too.
+        ResolvedPayloadValue::RelatedSelection { selection, .. }
+        | ResolvedPayloadValue::RelatedHead { selection, .. } => {
             out.extend(row_set::input_reads(&selection.filter).map(|field| (field, Read::Needed)));
+        }
+        // ess/27 (#560): every input an expression reads is sent; an omission run would only
+        // assert its absence, which the expression's own witnesses arrange.
+        ResolvedPayloadValue::Expression { expr, .. } => {
+            out.extend(
+                crate::synthesize::expression::input_reads(expr)
+                    .into_iter()
+                    .map(|field| (field, Read::Needed)),
+            );
         }
         ResolvedPayloadValue::Literal { .. }
         | ResolvedPayloadValue::ResponseField { .. }
-        | ResolvedPayloadValue::Generated
+        | ResolvedPayloadValue::Generated { .. }
         | ResolvedPayloadValue::Cleared
         | ResolvedPayloadValue::SubjectField { .. }
         | ResolvedPayloadValue::RelatedField { .. }
         | ResolvedPayloadValue::Increment { .. }
         | ResolvedPayloadValue::SubjectState { .. }
         | ResolvedPayloadValue::CallerAttribute { .. }
+        // ess/27 (#545): what the payload field reads is collected from the payload itself.
+        | ResolvedPayloadValue::PayloadRead { .. }
         | ResolvedPayloadValue::ChangedField { .. }
         | ResolvedPayloadValue::ChangedState { .. }
         | ResolvedPayloadValue::ChangedCount => {}
@@ -9748,11 +10139,98 @@ fn subject_row(
     state: &StateName,
 ) -> Vec<ViewExpectation> {
     let mut row = shown(view, identity.clone(), &run.settled);
+    unclaimed_absence(view, outcome, &mut row);
     let required = shown_leaves(ir, view, outcome, &run.input, &run.before_settled, &mut row);
     row.extend(lifecycle_state(ir, entity, view, state));
     let mut expectations = vec![ViewExpectation::Contains { fields: row }];
     expectations.extend(present_leaves(identity, required));
     expectations
+}
+
+/// What a branch under test that mints into its row claims of a view showing it (ess/27,
+/// beyond10x/ess#545, `docs/design/minted-value-sources.md`):
+///
+/// * a `{payload: <Event>.<field>}` entry: the row holds the value the event published, an
+///   [`ScenarioValue::Observed`] the runner resolves against the event's first occurrence in the
+///   scenario — so only where no earlier step may have published that event;
+/// * a `{generated: true, present: true}` entry: the row does not hold the field null.
+///
+/// Nothing where the view does not project the identity (the claim would be about every row) or
+/// shows the field at another type.
+fn minted_row(
+    view: &ResolvedView,
+    outcome: &ResolvedOutcome,
+    identity: &BTreeMap<String, ScenarioValue>,
+    earlier: &BTreeSet<QualifiedName>,
+) -> Vec<ViewExpectation> {
+    if identity.is_empty() {
+        return Vec::new();
+    }
+    let mut claims = Vec::new();
+    for set in &outcome.sets {
+        if set.conversion.is_some()
+            || view.field(&set.target).map(|shown| &shown.type_ref) != Some(&set.target_type)
+        {
+            continue;
+        }
+        match &set.value {
+            ResolvedPayloadValue::PayloadRead { event, field, .. }
+                if !earlier.contains(event.name()) =>
+            {
+                let mut fields = identity.clone();
+                fields.insert(
+                    set.target.clone(),
+                    ScenarioValue::observed(EventRef::from(event), field.clone()),
+                );
+                claims.push(ViewExpectation::Contains { fields });
+            }
+            ResolvedPayloadValue::Generated { present: true } => {
+                let mut fields = identity.clone();
+                fields.insert(set.target.clone(), ScenarioValue::literal(Node::Null));
+                claims.push(ViewExpectation::Excludes { fields });
+            }
+            _ => {}
+        }
+    }
+    claims
+}
+
+/// The events the commands these steps send may publish, and every event a binding's command may
+/// publish, since a binding may run on any of them (ess/27, #545).
+fn earlier_events<'s>(
+    ir: &EssIr,
+    steps: impl Iterator<Item = &'s ScenarioStep>,
+) -> BTreeSet<QualifiedName> {
+    let emitted = |command: &ResolvedCommand| -> Vec<QualifiedName> {
+        command
+            .outcomes
+            .iter()
+            .flat_map(|outcome| outcome.emits.iter().map(|event| event.name().clone()))
+            .collect()
+    };
+    let mut events = BTreeSet::new();
+    let mut sent = false;
+    for step in steps {
+        let (ScenarioStep::ExecuteCommand { command, .. }
+        | ScenarioStep::ExecuteCommandWithoutInput { command, .. }) = step
+        else {
+            continue;
+        };
+        sent = true;
+        if let Some(declared) = ir
+            .commands()
+            .values()
+            .find(|declared| declared.name.to_string() == command.to_string())
+        {
+            events.extend(emitted(declared));
+        }
+    }
+    if sent {
+        for binding in ir.bindings().values() {
+            events.extend(emitted(ir.command(&binding.command)));
+        }
+    }
+    events
 }
 
 /// One `Excludes` per always-present undetermined leaf: no row of **this** subject holds that leaf
@@ -9859,13 +10337,20 @@ fn settled(
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
-            | ResolvedPayloadValue::CallerAttribute { .. } => {
+            | ResolvedPayloadValue::RelatedHead { .. }
+            | ResolvedPayloadValue::CallerAttribute { .. }
+            // ess/27 (#560): computed forwards by the shared evaluator.
+            | ResolvedPayloadValue::Expression { .. } => {
                 match expression_value(ir, field, supplied, before) {
                     Some(value) => value,
                     None => continue,
                 }
             }
-            ResolvedPayloadValue::Generated
+            // ess/27 (#545): the published value is a reference to an observation, which
+            // `subject_row` claims for the branch under test alone; carried forward as a settled
+            // value it would name another act's occurrence of the event.
+            ResolvedPayloadValue::Generated { .. }
+            | ResolvedPayloadValue::PayloadRead { .. }
             | ResolvedPayloadValue::ResponseField { .. }
             // ess/25 (#531): an event payload source only, never a row's.
             | ResolvedPayloadValue::ChangedField { .. }
@@ -10498,13 +10983,41 @@ fn shown(
     settled: &BTreeMap<String, Determined>,
 ) -> BTreeMap<String, ScenarioValue> {
     for (name, determined) in settled {
+        if view.computed.contains_key(name) {
+            continue;
+        }
         if view.field(name).map(|field| &field.type_ref) == Some(&determined.type_ref) {
             fields
                 .entry(name.clone())
                 .or_insert_with(|| determined.value.clone());
         }
     }
+    // ess/27 (#560): a computed field, where every field it reads is determined, is the shared
+    // evaluator's value over them.
+    for (name, expr) in &view.computed {
+        if let Some(value) = expression::computed_field(expr, &fields, settled) {
+            fields.entry(name.clone()).or_insert(value);
+        }
+    }
     fields
+}
+
+/// Drops from `row` each field the arrangement left absent and `outcome` does not write, where the
+/// view field declares no `null_when_absent`: an absent value may be published left out or as
+/// `null`, and a plain field name is compared exactly, so the row does not claim the spelling (as
+/// an event payload does not, beyond10x/ess#285). An `Optional` input an arranging step left out
+/// (beyond10x/ess#546) leaves such a field absent. A field the branch writes keeps its claim.
+fn unclaimed_absence(
+    view: &ResolvedView,
+    outcome: &ResolvedOutcome,
+    row: &mut BTreeMap<String, ScenarioValue>,
+) {
+    row.retain(|name, value| {
+        !matches!(value, ScenarioValue::Literal { value: Node::Null })
+            || outcome.sets.iter().any(|set| set.target == *name)
+            || view.field(name).and_then(|field| field.naming.presence)
+                == Some(ess_domain::types::Presence::NullWhenAbsent)
+    });
 }
 
 /// The lifecycle state a row of this view is required to carry, where the view projects it.
@@ -11705,6 +12218,8 @@ fn lifecycle(
                         driver.outcome.name.clone(),
                     ),
                 };
+                // The move's further sources are this branch again (beyond10x/ess#546).
+                let _under_test = crate::witness::under_test(ir, driver.command, driver.outcome);
                 let Some((mut steps, mut source, run)) = exercise_as(
                     models,
                     driver.command,
@@ -12096,6 +12611,57 @@ fn refused_here(
                 steps.extend(after.iter().cloned());
             }
         }
+        // Under the one rule the held state answers before a missing row the input names: the row
+        // is also sent naming a related row no record carries, and still takes `refusal`, where a
+        // branch reading no related row moves it (`wrong_state:` answers for the branch step 5
+        // selects, and with the related row missing no related branch is selected).
+        let moves_without_row = attempt.command.outcomes.iter().any(|outcome| {
+            outcome.error.is_none()
+                && !matches!(
+                    outcome.condition,
+                    ResolvedCondition::Related { .. } | ResolvedCondition::RelatedSet { .. }
+                )
+                && outcome
+                    .subject
+                    .as_ref()
+                    .is_some_and(|subject| subject.effect.transition().is_some())
+        });
+        if let Some((missing, unbound)) =
+            related_guard::missing_row_send(ir, attempt.command, &input, &bound)
+                .filter(|_| moves_without_row)
+        {
+            let supplied = supply(
+                ir,
+                attempt.command,
+                &missing,
+                attempt.outcome.subject.as_ref(),
+                Some(&arrangement.instance),
+                &unbound,
+            );
+            steps.push(ScenarioStep::ExecuteCommand {
+                caller: std::collections::BTreeMap::new(),
+                command: command_ref.clone(),
+                actor: actors.get(command).cloned(),
+                input: supplied.clone(),
+            });
+            steps.push(ScenarioStep::ExpectOutcome {
+                outcome: OutcomeRef::new(command_ref.clone(), refusal.name.clone()),
+            });
+            if let Some(error) = &refusal.error {
+                steps.push(expect_error(
+                    ir,
+                    refusal,
+                    error,
+                    &supplied,
+                    &arrangement.settled,
+                ));
+            }
+            for event in &forbidden {
+                steps.push(ScenarioStep::ExpectNoEvent {
+                    event: event.clone(),
+                });
+            }
+        }
     }
     source.extend(forbidden.into_iter().map(EssSemanticRef::from));
 
@@ -12327,19 +12893,42 @@ pub(crate) fn declared_not_found<'a>(
     }
 }
 
-/// The scenario itself: the command, sent for an identity no record carries, answering `declared`.
-///
-/// The input is the one that reaches a branch acting on an existing instance, for the reason
-/// [`refused_here`] gives: a branch decided by input first (`PayInvoice/rejected`) answers its
-/// own error whatever the instance names, and sending that input would prove nothing about the
-/// rule. The identity in it is then replaced by one no other scenario sends.
-fn unknown_instance(
+/// A declared `unknown_instance:` beside a guard over the row a required input names (ess/27): that
+/// row arranged present — `exists: false` answers first — and selecting a present-related branch,
+/// which the unknown identity answers before; its steps, the input chosen on it and the input
+/// pointed at it. `None` for every other command and answer, which [`unknown_instance`] reaches as
+/// it did.
+#[allow(clippy::type_complexity)]
+fn unknown_beside_related(
     ir: &EssIr,
     command: &ResolvedCommand,
-    acting: &[&ResolvedOutcome],
     declared: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
-) -> Result<ConformanceScenario, RefusalCause> {
+) -> Option<
+    Result<
+        (
+            Arrangement,
+            (BTreeMap<String, Node>, BTreeMap<String, InstanceName>),
+        ),
+        RefusalCause,
+    >,
+> {
+    (declared.condition == ResolvedCondition::UnknownInstance
+        && related_guard::uses(command)
+        && !related_guard::optional(command)
+        && related_guard::stored::field(command).is_none())
+    .then(|| related_guard::unknown_identity_overlap(ir, command, actors))
+}
+
+/// The first branch of `acting` an input reaches, and that input, for [`unknown_instance`]: by the
+/// reference left out where the related row is read only when present or after existence, by the
+/// row-set search's input, and otherwise as [`reach`] reaches it.
+fn unknown_reached<'c>(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    acting: &[&'c ResolvedOutcome],
+    declared: &ResolvedOutcome,
+) -> Result<(&'c ResolvedOutcome, BTreeMap<String, Node>), RefusalCause> {
     let mut last = None;
     let mut reached = None;
     for outcome in acting {
@@ -12356,6 +12945,27 @@ fn unknown_instance(
             // (`docs/design/filtered-related-reads.md`, "Subject borrowing and precedence"), so
             // the branch is reached by its input alone and no row is arranged.
             row_set::input_for(ir, command, outcome, Distinction::PLAIN)
+        } else if has_subject_guards(command)
+            && !is_state_input_refusal(command, outcome)
+            && ess_domain::command::precedence::reads_one_rule(ir.format())
+        {
+            // Under the one rule (ess/27) a held-state command: an input the branch is selected
+            // by in some held state. No row carries the identity sent, and the addressed
+            // record's existence answers at step 2, so the state reached decides nothing it
+            // answers.
+            let lifecycle = outcome
+                .subject
+                .as_ref()
+                .map(|subject| &ir.entity(&subject.entity).lifecycle);
+            lifecycle
+                .into_iter()
+                .flat_map(|lifecycle| lifecycle.states.iter())
+                .find_map(|held| {
+                    reach_in_state(ir, command, outcome, held, Distinction::PLAIN).ok()
+                })
+                .ok_or(RefusalCause::StrategyWithoutGuard {
+                    strategy: outcome.test_strategy,
+                })
         } else {
             reach(ir, command, outcome, Distinction::PLAIN)
         };
@@ -12367,10 +12977,37 @@ fn unknown_instance(
             Err(cause) => last = Some(cause),
         }
     }
-    let Some((attempt, mut input)) = reached else {
-        return Err(last.unwrap_or(RefusalCause::StrategyWithoutGuard {
+    reached.ok_or_else(|| {
+        last.unwrap_or(RefusalCause::StrategyWithoutGuard {
             strategy: declared.test_strategy,
-        }));
+        })
+    })
+}
+
+/// The scenario itself: the command, sent for an identity no record carries, answering `declared`.
+///
+/// The input is the one that reaches a branch acting on an existing instance, for the reason
+/// [`refused_here`] gives: a branch decided by input first (`PayInvoice/rejected`) answers its
+/// own error whatever the instance names, and sending that input would prove nothing about the
+/// rule. The identity in it is then replaced by one no other scenario sends.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arrangement, read in the order the precedence plan answers its branches"
+)]
+fn unknown_instance(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    acting: &[&ResolvedOutcome],
+    declared: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<ConformanceScenario, RefusalCause> {
+    let related_row = unknown_beside_related(ir, command, declared, actors).transpose()?;
+    let (attempt, mut input) = match &related_row {
+        Some((_, (input, _))) => (
+            *acting.first().ok_or_else(related_guard::unarranged)?,
+            input.clone(),
+        ),
+        None => unknown_reached(ir, command, acting, declared)?,
     };
     let field = names_existing(attempt)
         .or_else(|| preserves_supplied(attempt))
@@ -12380,8 +13017,12 @@ fn unknown_instance(
 
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
-    let supplied = supply(ir, command, &input, None, None, &BTreeMap::new());
-    let mut steps = vec![
+    let (mut steps, mut source, bound) = match related_row {
+        Some((row, (_, bound))) => (row.steps, row.source, bound),
+        None => (Vec::new(), BTreeSet::new(), BTreeMap::new()),
+    };
+    let supplied = supply(ir, command, &input, None, None, &bound);
+    steps.extend([
         ScenarioStep::ExecuteCommand {
             caller: std::collections::BTreeMap::new(),
             command: command_ref.clone(),
@@ -12391,9 +13032,8 @@ fn unknown_instance(
         ScenarioStep::ExpectOutcome {
             outcome: branch.clone(),
         },
-    ];
-    let mut source: BTreeSet<EssSemanticRef> = BTreeSet::new();
-    source.insert(command_ref.into());
+    ]);
+    source.insert(command_ref.clone().into());
     source.insert(branch.into());
     if let Some(subject) = &attempt.subject {
         source.insert(EntityRef::from(&subject.entity).into());
@@ -12423,6 +13063,36 @@ fn unknown_instance(
         steps.push(ScenarioStep::ExpectNoEvent {
             event: event.clone(),
         });
+    }
+    // Under the one rule a missing row the input names answers after existence: the same identity
+    // is also sent naming a row no record carries, and still takes `declared`.
+    if let Some((missing, unbound)) = related_guard::missing_row_send(ir, command, &input, &bound) {
+        let supplied = supply(ir, command, &missing, None, None, &unbound);
+        steps.extend([
+            ScenarioStep::ExecuteCommand {
+                caller: std::collections::BTreeMap::new(),
+                command: command_ref.clone(),
+                actor: actors.get(&command.name).cloned(),
+                input: supplied.clone(),
+            },
+            ScenarioStep::ExpectOutcome {
+                outcome: OutcomeRef::new(command_ref.clone(), declared.name.clone()),
+            },
+        ]);
+        if let Some(error) = declared.error.as_ref().filter(|_| declared.refuses) {
+            steps.push(expect_error(
+                ir,
+                declared,
+                error,
+                &supplied,
+                &BTreeMap::new(),
+            ));
+        }
+        for event in &forbidden {
+            steps.push(ScenarioStep::ExpectNoEvent {
+                event: event.clone(),
+            });
+        }
     }
     // A held-state input refusal answers after existence (beyond10x/ess#454): the same identity is
     // also sent an input each such refusal claims, and still takes `declared`.
@@ -13090,8 +13760,7 @@ fn fresh_identity(
             .map(|inputs| {
                 inputs
                     .into_iter()
-                    .next()
-                    .and_then(|input| input.get(field).cloned())
+                    .find_map(|input| input.get(field).cloned())
             })
     };
     let unfresh = || {
@@ -13416,6 +14085,7 @@ fn from_source(
         }
         let identity = identifying(ir, subject, Some(&arrangement.instance), view);
         let mut row = shown(view, identity.clone(), &left);
+        unclaimed_absence(view, outcome, &mut row);
         let required = shown_leaves(ir, view, outcome, &supplied, &before, &mut row);
         row.extend(lifecycle_state(ir, &subject.entity, view, to));
         let name = ViewRef::new(view.name.clone());
@@ -14254,13 +14924,14 @@ impl<'c> Overlap<'c> {
 
 /// Every [`Overlap`] `outcome` is the `first` of, in declaration order of the other branch.
 pub(super) fn overlaps<'c>(
+    format: ess_domain::system::FormatVersion,
     command: &'c ResolvedCommand,
     outcome: &'c ResolvedOutcome,
 ) -> Vec<Overlap<'c>> {
     let Some(own) = when(outcome) else {
         return Vec::new();
     };
-    let refusals: Vec<&Predicate> = sibling_refusals(command, outcome)
+    let refusals: Vec<&Predicate> = sibling_refusals(format, command, outcome)
         .filter_map(when)
         .collect();
     if is_input_guarded_refusal(outcome) {
@@ -14281,7 +14952,7 @@ pub(super) fn overlaps<'c>(
         return Vec::new();
     }
     let mut refuted = refusals;
-    refuted.extend(earlier_accepting(command, outcome));
+    refuted.extend(earlier_accepting(format, command, outcome));
     command
         .outcomes
         .iter()
@@ -14343,9 +15014,9 @@ fn overlap_inputs(
     outcome: &ResolvedOutcome,
 ) -> Vec<BTreeMap<String, Node>> {
     let mut rows = Vec::new();
-    for overlap in overlaps(command, outcome)
+    for overlap in overlaps(ir.format(), command, outcome)
         .into_iter()
-        .chain(refusal_pair_overlaps(command, outcome))
+        .chain(refusal_pair_overlaps(ir.format(), command, outcome))
     {
         if let Some(input) = overlap_witness(ir, command, &overlap, &[], |_| true)
             .filter(|input| !rows.contains(input))
@@ -14365,7 +15036,7 @@ pub(super) fn refusal_pair_inputs(
     outcome: &ResolvedOutcome,
 ) -> Vec<BTreeMap<String, Node>> {
     let mut rows = Vec::new();
-    for overlap in refusal_pair_overlaps(command, outcome) {
+    for overlap in refusal_pair_overlaps(ir.format(), command, outcome) {
         if let Some(input) = overlap_witness(ir, command, &overlap, &[], |_| true)
             .filter(|input| !rows.contains(input))
         {
@@ -14384,16 +15055,17 @@ pub(super) fn refusal_pair_inputs(
 /// Kept apart from [`overlaps`], which [`unwitnessed_overlaps`] and the held-state rows read: this
 /// pair is sent only from the stateless boundary rows.
 fn refusal_pair_overlaps<'c>(
+    format: ess_domain::system::FormatVersion,
     command: &'c ResolvedCommand,
     outcome: &'c ResolvedOutcome,
 ) -> Vec<Overlap<'c>> {
     let Some(own) = when(outcome).filter(|_| is_input_guarded_refusal(outcome)) else {
         return Vec::new();
     };
-    let refusals: Vec<&Predicate> = sibling_refusals(command, outcome)
+    let refusals: Vec<&Predicate> = sibling_refusals(format, command, outcome)
         .filter_map(when)
         .collect();
-    later_refusals(command, outcome)
+    later_refusals(format, command, outcome)
         .filter_map(|other| {
             when(other).map(|guard| Overlap {
                 first: outcome,
@@ -14419,7 +15091,7 @@ fn overlap_inputs_in_state(
 ) -> Vec<BTreeMap<String, Node>> {
     let guards: Vec<&Predicate> = command.outcomes.iter().filter_map(when).collect();
     let mut rows = Vec::new();
-    for overlap in overlaps(command, outcome) {
+    for overlap in overlaps(ir.format(), command, outcome) {
         let competing = |facts: &crate::InputFacts<'_>| {
             command.outcomes.iter().any(|branch| {
                 branch.name != overlap.first.name
@@ -14555,8 +15227,8 @@ fn contradicted(ir: &EssIr, steps: &[ScenarioStep]) -> Option<RefusalCause> {
         };
         // Every branch answered before it: the input-guarded refusals, then the accepting `when:`
         // branches declared before an accepting `when:` or external one (beyond10x/ess#217).
-        let before =
-            sibling_refusals(command, outcome).chain(earlier_accepting_branches(command, outcome));
+        let before = sibling_refusals(ir.format(), command, outcome)
+            .chain(earlier_accepting_branches(ir.format(), command, outcome));
         for first in before {
             let Some(guard) = when(first) else {
                 continue;
@@ -14603,7 +15275,7 @@ fn unwitnessed_overlaps(ir: &EssIr, suite: &ConformanceSuite) -> Vec<Note> {
             .and_then(|inputs| inputs.into_iter().next())
             .unwrap_or_default();
         for outcome in &command.outcomes {
-            let found = overlaps(command, outcome);
+            let found = overlaps(ir.format(), command, outcome);
             if found.is_empty() {
                 continue;
             }
@@ -14723,7 +15395,7 @@ fn boundaries(
     // its scenario arranged (beyond10x/ess#217).
     let held = if has_subject_guards(command) {
         match &run.before {
-            Some(held) if !overlaps(command, outcome).is_empty() => Some(held.clone()),
+            Some(held) if !overlaps(ir.format(), command, outcome).is_empty() => Some(held.clone()),
             _ => return out,
         }
     } else {
@@ -15084,11 +15756,20 @@ fn value_object_invariants(
             continue;
         }
         let positions = positions_of(ir, declared, invariants);
-        if positions.is_empty() {
+        // Every other site — inside a `List`, a `Map`, an `Optional` or a `Union`, or a direct
+        // one whose predicates a row cannot answer — is observed by `value_invariants` (suite/52).
+        let direct: BTreeSet<(QualifiedName, String)> = positions
+            .iter()
+            .map(|(view, field)| (view.name.clone(), field.clone()))
+            .collect();
+        let wrapped =
+            value_invariant::wrapped(ir, declared, invariants, &direct, actors, suite, refusals);
+        if positions.is_empty() && wrapped == 0 {
             refusals.push(Refusal {
                 subject: DeclaredTypeRef::new(declared.name.clone()).into(),
                 scenario: None,
                 stands: false,
+                caused_by: None,
                 cause: RefusalCause::ValueInvariantUnwitnessed {
                     value: DeclaredTypeRef::new(declared.name.clone()),
                     invariants: invariants
@@ -15284,8 +15965,9 @@ fn map_paths(predicate: &Predicate, onto: &dyn Fn(&FactPath) -> FactPath) -> Pre
                     onto(path)
                 }
             };
+            // A rows collection names an entity, not a path, and does not move.
             let mapped = Box::new(Quantified {
-                over: onto(&quantified.over),
+                over: quantified.over.map_fact(|over| onto(over)),
                 bind: quantified.bind.clone(),
                 body: map_paths(&quantified.body, &inner),
             });
@@ -15441,9 +16123,10 @@ fn witnesses_for<'a>(
         .collect()
 }
 
-/// Every path an invariant reads that no view of the entity resolves to a scalar, split in two:
-/// those no view declares at all, and those some view declares as a collection or a text length —
-/// a `.count` no view-row assertion in this suite format carries.
+/// Every path an invariant reads that no view of the entity resolves to a scalar or a text length,
+/// split in two: those no view declares at all, and those some view publishes and no view-row
+/// assertion carries — a list's `.count`, or a list read whole or through a quantifier. A text's
+/// `.count` is asserted on a row (suite `/40`, [`crate::input::lifted_text_length`]).
 ///
 /// The difference between "no view holds a row here" and "no view could ever answer this", which is
 /// the difference between a filter an author might widen and a field an author has to publish —
@@ -15466,16 +16149,22 @@ fn unobserved(
     .filter(|read| read.free)
     .map(|read| read.path)
     .filter(|path| {
-        !views
-            .iter()
-            .any(|view| resolve_path(ir, &view.fields, path).is_scalar())
-    })
-    .collect();
-    reads.into_iter().partition(|path| {
         !views.iter().any(|view| {
             matches!(
                 resolve_path(ir, &view.fields, path),
-                crate::input::Target::Aggregate("a collection" | "a text length")
+                crate::input::Target::Scalar | crate::input::Target::Aggregate("a text length")
+            )
+        })
+    })
+    .collect();
+    // Unpublished only where no view declares the path at all: a list some view publishes and the
+    // invariant reads through a quantifier, or a list's `.count`, is published and unassertable,
+    // not "published by no view" (downstream report, 2026-10-18).
+    reads.into_iter().partition(|path| {
+        views.iter().all(|view| {
+            matches!(
+                resolve_path(ir, &view.fields, path),
+                crate::input::Target::Undeclared(_)
             )
         })
     })
@@ -15579,6 +16268,7 @@ fn bindings(
                 subject: subject.clone().into(),
                 scenario: None,
                 stands: false,
+                caused_by: None,
                 cause: RefusalCause::BindingUnobservable {
                     binding: subject,
                     gap: BindingGap::NothingPublishes {
@@ -15601,6 +16291,7 @@ fn bindings(
                 subject: subject.into(),
                 scenario: None,
                 stands: false,
+                caused_by: None,
                 cause,
             }),
         }
@@ -15707,6 +16398,7 @@ fn conditioned(
                 subject: subject.into(),
                 scenario: None,
                 stands: false,
+                caused_by: None,
                 cause,
             });
             return;
@@ -15826,7 +16518,7 @@ fn never_invoked(
     let event_handle = binding.cause.event().expect("event cause");
     let published: Vec<_> = triggers
         .iter()
-        .map(|trigger| binding_condition::published(trigger, event_handle))
+        .map(|trigger| binding_condition::published(ir, trigger, event_handle))
         .collect();
     let complete: Vec<_> = published
         .iter()
@@ -16158,11 +16850,14 @@ fn on_failure(
     let forced = invoked
         .outcomes
         .iter()
-        .find(|outcome| outcome.test_strategy == TestStrategy::InjectFault)
+        // A refusal: an `external:` branch that accepts is no failure to force.
+        .find(|outcome| {
+            outcome.test_strategy == TestStrategy::InjectFault && outcome.error.is_some()
+        })
         .ok_or_else(|| BindingGap::NoForcibleFailure {
             command: CommandRef::new(invoked.name.clone()),
         })?;
-    if let Some(gap) = forced_eligibility(invoked, forced) {
+    if let Some(gap) = forced_eligibility(ir.format(), invoked, forced) {
         return Err(gap);
     }
     let prepared = prepared.as_ref().map_err(Clone::clone)?;
@@ -16432,7 +17127,8 @@ fn subject_of(id: &ScenarioId) -> EssSemanticRef {
         ScenarioId::Refusal { entity, .. } | ScenarioId::Invariant { entity, .. } => {
             entity.clone().into()
         }
-        ScenarioId::ValueInvariant { value, .. } => value.clone().into(),
+        ScenarioId::ValueInvariant { value, .. }
+        | ScenarioId::ValueInvariantWrapped { value, .. } => value.clone().into(),
         ScenarioId::Binding { binding, .. } | ScenarioId::BindingRefusal { binding, .. } => {
             binding.clone().into()
         }
@@ -16556,6 +17252,7 @@ mod tests {
             },
             scenario: None,
             stands: false,
+            caused_by: None,
             cause: RefusalCause::InstanceRequired {
                 entity: EntityRef::new(
                     QualifiedName::new("billing.invoice.Invoice").expect("valid"),

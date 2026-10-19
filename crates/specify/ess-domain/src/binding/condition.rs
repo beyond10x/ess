@@ -16,12 +16,14 @@
 //! | `where:` on a periodic cause | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
 //! | a construct outside the bounded vocabulary | [`UnsupportedConstruct`](ValidationCode::UnsupportedConstruct) |
 //! | a root other than `event`, or a member the event does not declare | [`UnobservableFact`](ValidationCode::UnobservableFact) |
-//! | a comparison of a leaf that is not String or an enum, or a literal that is not one of its variants | [`TypeMismatch`](ValidationCode::TypeMismatch) |
+//! | a comparison of a leaf that is not String, an enum or (from ess/27) a Boolean, or a literal that is not one of its values | [`TypeMismatch`](ValidationCode::TypeMismatch) |
+//! | a Boolean leaf compared with `true` or `false` below ess/27 | [`UnsupportedFormatVersion`](ValidationCode::UnsupportedFormatVersion) |
 //!
 //! The vocabulary is the bounded selection fragment with root `event` instead of `item`: Always,
-//! Never, `defined(...)`, `==`/`!=` of a declared String or enum leaf against a literal, and `all`,
-//! `any`, `not`. A path names one to three declared members after `event`, through structs and
-//! Optional structs, never through a union.
+//! Never, `defined(...)`, `==`/`!=` of a declared String or enum leaf against a text literal, and
+//! from ess/27 of a declared Boolean leaf against `true` or `false`, and `all`, `any`, `not`. A
+//! path names one to three declared members after `event`, through structs and Optional structs,
+//! never through a union. A bare Boolean path is no comparison and stays outside the fragment.
 //!
 //! # Evaluation
 //!
@@ -57,6 +59,10 @@ pub const MAX_MEMBERS: usize = 3;
 pub const MAX_NODES: usize = crate::selection::MAX_PREDICATE_NODES;
 /// The first source format that admits `where:` on a binding cause.
 pub const FORMAT: FormatVersion = FormatVersion::V22;
+/// The first source format whose binding conditions and selections compare a Boolean leaf with
+/// `true` or `false` (downstream report, 2026-10-18). Below it a Boolean leaf resolves as
+/// [`Leaf::Other`], so the IR of every earlier document keeps its bytes.
+pub const BOOLEAN_FORMAT: FormatVersion = FormatVersion::V27;
 
 /// What a condition path ends at when a comparison reads it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -69,6 +75,8 @@ pub enum Leaf {
         /// The variants, in declaration order.
         variants: Vec<String>,
     },
+    /// `true` or `false`, compared with a Boolean literal (from ess/27, [`BOOLEAN_FORMAT`]).
+    Boolean,
     /// Anything else: only `defined(...)` reads it.
     Other,
 }
@@ -135,6 +143,21 @@ fn transparent<'a>(mut ty: &'a TypeRef, types: &'a TypeRegistry) -> Option<(&'a 
     None
 }
 
+/// What a path ends at, once its Optional and newtype wrappers are stripped.
+fn leaf_of(present: &TypeRef, types: &TypeRegistry) -> Leaf {
+    match present {
+        TypeRef::Primitive(crate::Primitive::String) => Leaf::String,
+        TypeRef::Primitive(crate::Primitive::Boolean) => Leaf::Boolean,
+        TypeRef::Named(name) => match types.get(name).map(|declared| &declared.body) {
+            Some(TypeBody::Enum { variants }) => Leaf::Enum {
+                variants: variants.iter().map(|v| v.name().to_owned()).collect(),
+            },
+            _ => Leaf::Other,
+        },
+        _ => Leaf::Other,
+    }
+}
+
 /// Resolves one path against the event, or the refusal that says why it names nothing.
 pub fn resolve_path(
     path: &FactPath,
@@ -194,20 +217,10 @@ pub fn resolve_path(
         let (present, may_miss) = transparent(ty, types).ok_or_else(unknown)?;
         optional.push(may_miss);
         if index + 1 == members.len() {
-            let leaf = match present {
-                TypeRef::Primitive(crate::Primitive::String) => Leaf::String,
-                TypeRef::Named(name) => match types.get(name).map(|declared| &declared.body) {
-                    Some(TypeBody::Enum { variants }) => Leaf::Enum {
-                        variants: variants.iter().map(|v| v.name().to_owned()).collect(),
-                    },
-                    _ => Leaf::Other,
-                },
-                _ => Leaf::Other,
-            };
             return Ok(ConditionRead {
                 members: members.to_vec(),
                 optional,
-                leaf,
+                leaf: leaf_of(present, types),
             });
         }
         let next = &members[index + 1];
@@ -245,13 +258,23 @@ pub fn resolve_path(
 }
 
 impl ConditionPlan {
-    /// Admits `predicate` against `event`: the bounded vocabulary, every path, every literal.
+    /// Admits `predicate` against `event` under the document's `format`: the bounded vocabulary,
+    /// every path, every literal. A Boolean leaf is [`Leaf::Boolean`] from [`BOOLEAN_FORMAT`] and
+    /// [`Leaf::Other`] below it.
     pub fn resolve(
         predicate: &Predicate,
         event: &EventSpec,
         types: &TypeRegistry,
         at: &str,
+        format: FormatVersion,
     ) -> Result<Self, ValidationErrors> {
+        let booleans = format.major() >= BOOLEAN_FORMAT.major();
+        let held = |mut read: ConditionRead| {
+            if !booleans && read.leaf == Leaf::Boolean {
+                read.leaf = Leaf::Other;
+            }
+            read
+        };
         let mut errors = ValidationErrors::new();
         let mut reads = BTreeMap::new();
         let mut pending = vec![predicate];
@@ -272,7 +295,7 @@ impl ConditionPlan {
                 Predicate::Not(child) => pending.push(child),
                 Predicate::Defined(path) => match resolve_path(path, event, types, at) {
                     Ok(read) => {
-                        reads.insert(path.to_string(), read);
+                        reads.insert(path.to_string(), held(read));
                     }
                     Err(error) => errors.push(error),
                 },
@@ -283,10 +306,10 @@ impl ConditionPlan {
                     kind: CompareKind::Value,
                 } => match resolve_path(path, event, types, at) {
                     Ok(read) => {
-                        if let Err(error) = literal_fits(&read, literal, at) {
+                        if let Err(error) = literal_fits(&read, literal, at, booleans) {
                             errors.push(error);
                         }
-                        reads.insert(path.to_string(), read);
+                        reads.insert(path.to_string(), held(read));
                     }
                     Err(error) => errors.push(error),
                 },
@@ -298,8 +321,9 @@ impl ConditionPlan {
                     )
                     .with_hint(
                         "a binding condition admits true, false, defined(event.<path>), \
-                         `event.<path> == <literal>` and `!=` over a String or enum leaf, and \
-                         all/any/not of those",
+                         `event.<path> == <literal>` and `!=` over a String or enum leaf, from \
+                         ess/27 `== true`/`== false` and `!=` over a Boolean leaf, and all/any/not \
+                         of those",
                     ),
                 ),
             }
@@ -341,6 +365,9 @@ impl ConditionPlan {
             match value {
                 None | Some(Node::Null) => {}
                 Some(Node::Text(text)) => store.set(path, FactValue::Text(text.clone())),
+                Some(Node::Bool(flag)) if read.leaf == Leaf::Boolean => {
+                    store.set(path, FactValue::Bool(*flag));
+                }
                 Some(_) => store.mark_present(path),
             }
         }
@@ -352,8 +379,35 @@ fn literal_fits(
     read: &ConditionRead,
     literal: &FactValue,
     at: &str,
+    booleans: bool,
 ) -> Result<(), ValidationError> {
     let mismatch = |message: String| refused(ValidationCode::TypeMismatch, at, message);
+    match (literal, &read.leaf) {
+        (FactValue::Bool(_), Leaf::Boolean) if booleans => return Ok(()),
+        (FactValue::Bool(_), Leaf::Boolean) => {
+            return Err(refused(
+                ValidationCode::UnsupportedFormatVersion,
+                at,
+                format!(
+                    "`{}` is a Boolean compared with `{literal}`; a binding condition compares a \
+                     Boolean leaf with `true` or `false` from specification format ess/{}",
+                    read.path(),
+                    BOOLEAN_FORMAT.major()
+                ),
+            )
+            .with_hint(format!(
+                "declare `format: ess/{}`, or test presence with `defined(...)`",
+                BOOLEAN_FORMAT.major()
+            )))
+        }
+        (FactValue::Text(text), Leaf::Boolean) => {
+            return Err(mismatch(format!(
+                "`{}` is a Boolean, and `{text}` is text; compare it with `true` or `false`",
+                read.path()
+            )))
+        }
+        _ => {}
+    }
     let FactValue::Text(text) = literal else {
         return Err(mismatch(format!(
             "`{}` is compared with `{literal}`, which is not text; a binding condition compares \
@@ -369,7 +423,7 @@ fn literal_fits(
             read.path(),
             variants.join(", ")
         ))),
-        Leaf::Other => Err(mismatch(format!(
+        Leaf::Other | Leaf::Boolean => Err(mismatch(format!(
             "`{}` is not a String or enum leaf, so it cannot be compared; `defined(...)` may test \
              its presence",
             read.path()

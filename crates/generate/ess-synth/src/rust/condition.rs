@@ -117,7 +117,9 @@ fn predicate(
                     types_path(layout, types, of.name()),
                     name::pascal(literal)
                 ),
-                End::Other => unreachable!("admission compares String and enum leaves only"),
+                End::Boolean | End::Other => {
+                    unreachable!("admission compares String and enum leaves with text only")
+                }
             };
             let test = if *op == CompareOp::Ne {
                 format!("!({equal})")
@@ -125,6 +127,17 @@ fn predicate(
                 equal
             };
             format!("{}.map(|value| {test})", read(walk))
+        }
+        // A Boolean leaf (ess/27): the stored flag against the literal.
+        Predicate::Compare {
+            left: Operand::Fact(path),
+            op,
+            right: Operand::Literal(FactValue::Bool(literal)),
+            ..
+        } => {
+            let walk = &walks[&path.to_string()];
+            let operator = if *op == CompareOp::Ne { "!=" } else { "==" };
+            format!("{}.map(|value| *value {operator} {literal})", read(walk))
         }
         other => unreachable!("`{other}` is outside the admitted binding condition"),
     }

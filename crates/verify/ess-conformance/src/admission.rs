@@ -188,8 +188,12 @@ impl AdmittedSuite {
     }
 }
 
+/// The optional members of a suite root and of a scenario.
+const ROOT_OPTIONAL: [&str; 3] = ["coverage", "events", "one_time_response"];
+const SCENARIO_OPTIONAL: [&str; 3] = ["one_time_response", "absent_events", "unpublished_events"];
+
 fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
-    let root = value.closed(&["provenance", "scenarios"], &["coverage"])?;
+    let root = value.closed(&["provenance", "scenarios"], &ROOT_OPTIONAL)?;
     let p = root["provenance"].closed(
         &[
             "suite_version",
@@ -202,11 +206,12 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    // The majors every execution reader admits, the generated runtimes' own table.
+    // The majors every execution reader admits: the generated runtimes' own table, which the Rust
+    // reader shares since the await pair reached them (beyond10x/ess#542, stage 2).
     if !crate::go::admitted_major(version.major()) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–51",
+            "execution readers admit suite majors 1–53",
         ));
     }
     match p.get("synthesis_seeds") {
@@ -266,26 +271,56 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
             | 47
             | 49
             | 51
+            | 53
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /51",
+            "coverage is required exactly for odd suite majors from /5 through /53",
         ));
     }
+    compact_spellings(value, version.major())?;
     for scenario in root["scenarios"].object()?.values() {
-        let s = scenario.closed(&["purpose", "steps", "source"], &["one_time_response"])?;
-        if version.major() < 34 && s.contains_key("one_time_response") {
-            return Err(scenario.error(
-                "UnsupportedVocabulary",
-                "one-time response authority requires suite/34 or /35",
-            ));
-        }
+        let s = scenario.closed(&["purpose", "steps", "source"], &SCENARIO_OPTIONAL)?;
         for step in s["steps"].array()? {
             step_value(step, version.major())?;
         }
         for source in s["source"].array()? {
             semantic_reference(source)?;
+        }
+    }
+    Ok(())
+}
+/// One-time authority arrived in suite/34 and /35; the suite-level catalogs and the scenario
+/// spellings that refer to them in suite/52 and /53 (beyond10x/ess#570).
+fn compact_spellings(value: &Json, major: u32) -> Result<(), AdmissionError> {
+    let root = value.object()?;
+    for scenario in root["scenarios"].object()?.values() {
+        if major < 34 && scenario.object()?.contains_key("one_time_response") {
+            return Err(scenario.error(
+                "UnsupportedVocabulary",
+                "one-time response authority requires suite/34 or /35",
+            ));
+        }
+    }
+    if major >= crate::one_time_response::compact::ORDINARY {
+        return Ok(());
+    }
+    for key in ["events", "one_time_response"] {
+        if let Some(catalog) = root.get(key) {
+            return Err(catalog.error(
+                "UnsupportedVocabulary",
+                "a suite-level event or one-time catalog requires suite/52 or /53",
+            ));
+        }
+    }
+    for scenario in root["scenarios"].object()?.values() {
+        let s = scenario.object()?;
+        if s.contains_key("absent_events") || s.contains_key("unpublished_events") {
+            return Err(scenario.error(
+                "UnsupportedVocabulary",
+                "absent-event runs and unpublished-event lists require suite/52 or /53",
+            ));
         }
     }
     Ok(())
@@ -305,85 +340,94 @@ pub(crate) fn semantic_reference(value: &Json) -> Result<(), AdmissionError> {
 }
 fn values(value: &Json, major: u32, accessors: bool) -> Result<(), AdmissionError> {
     for v in value.object()?.values() {
-        let object = v.object()?;
-        let tag = object
-            .get("kind")
-            .ok_or_else(|| v.error("MissingField", "kind"))?
-            .text()?;
-        match tag {
-            "fixture" if major >= crate::fixtures::ORDINARY => {
-                let fields = v.closed(&["kind", "fixture"], &[])?;
-                ess_domain::command::fixture_inputs::FixtureName::new(fields["fixture"].text()?)
-                    .map_err(|error| v.error("InvalidFixtureName", error.to_string()))?;
-            }
-            "literal" => {
-                let f = v.closed(&["kind", "value"], &[])?;
-                f["value"].payload()?;
-            }
-            "instance" => {
-                v.closed(&["kind", "instance"], &[])?;
-            }
-            "list" | "members" if major >= crate::structured_values::ORDINARY => {
-                structured_value(v, 1)?;
-            }
-            "observed_selection" => {
-                if major < 6 || !accessors {
-                    return Err(v.error(
-                        "UnsupportedVocabulary",
-                        "observed_selection requires suite/6 or /7 invocation input",
-                    ));
-                }
-                let fields = v.closed(&["kind", "event", "selection"], &[])?;
-                if fields["selection"].raw.len() > 2_097_152 {
-                    return Err(v.error(
-                        "SelectionResource",
-                        "selection observation exceeds byte bound",
-                    ));
-                }
-                let _: crate::selection::Observation =
-                    serde_json::from_str(&fields["selection"].raw)
-                        .map_err(|error| v.error("InvalidSelection", error.to_string()))?;
-                crate::quoted_predicate_format::admit_selection(&fields["selection"].raw, major)?;
-                crate::text_match_format::admit_selection(&fields["selection"].raw, major)?;
-                crate::expression_format::admit_selection(&fields["selection"].raw, major)?;
-            }
-            "observed_accessor" => {
-                if major < 6 || !accessors {
-                    return Err(v.error(
-                        "UnsupportedVocabulary",
-                        "observed_accessor requires suite/6 or /7 invocation input",
-                    ));
-                }
-                let fields = v.closed(&["kind", "event", "accessor"], &[])?;
-                let raw = fields["accessor"].closed(&["plan", "target", "types"], &[])?;
-                if raw["plan"].raw.len() > ess_domain::accessor::MAX_BYTES * 2 {
-                    return Err(v.error(
-                        "AccessorResource",
-                        "serialized accessor exceeds admission byte bound",
-                    ));
-                }
-                let _: crate::accessor::Observation = serde_json::from_str(&fields["accessor"].raw)
-                    .map_err(|e| v.error("InvalidAccessor", e.to_string()))?;
-            }
-            "observed" => {
-                v.closed(&["kind", "event", "field"], &[])?;
-            }
-            "now_offset" if major >= crate::now_offset::ORDINARY => {
-                let fields = v.closed(&["kind", "seconds"], &[])?;
-                let seconds: i64 = serde_json::from_str(&fields["seconds"].raw)
-                    .map_err(|error| v.error("InvalidNowOffset", error.to_string()))?;
-                if seconds.unsigned_abs() > crate::now_offset::MAX_SECONDS.unsigned_abs() {
-                    return Err(v.error(
-                        "InvalidNowOffset",
-                        format!(
-                            "now_offset exceeds {} seconds either way",
-                            crate::now_offset::MAX_SECONDS
-                        ),
-                    ));
-                }
-            }
-            _ => return Err(v.error("UnsupportedScenarioValue", tag)),
+        scenario_value(v, major, accessors)?;
+    }
+    Ok(())
+}
+/// One scenario value, of any kind the suite's major admits.
+fn scenario_value(v: &Json, major: u32, accessors: bool) -> Result<(), AdmissionError> {
+    let object = v.object()?;
+    let tag = object
+        .get("kind")
+        .ok_or_else(|| v.error("MissingField", "kind"))?
+        .text()?;
+    match tag {
+        "fixture" if major >= crate::fixtures::ORDINARY => {
+            let fields = v.closed(&["kind", "fixture"], &[])?;
+            ess_domain::command::fixture_inputs::FixtureName::new(fields["fixture"].text()?)
+                .map_err(|error| v.error("InvalidFixtureName", error.to_string()))?;
         }
+        "literal" => {
+            let f = v.closed(&["kind", "value"], &[])?;
+            f["value"].payload()?;
+        }
+        "instance" => {
+            v.closed(&["kind", "instance"], &[])?;
+        }
+        "list" | "members" if major >= crate::structured_values::ORDINARY => {
+            structured_value(v, 1)?;
+        }
+        "observed_selection" => {
+            if major < 6 || !accessors {
+                return Err(v.error(
+                    "UnsupportedVocabulary",
+                    "observed_selection requires suite/6 or /7 invocation input",
+                ));
+            }
+            let fields = v.closed(&["kind", "event", "selection"], &[])?;
+            if fields["selection"].raw.len() > 2_097_152 {
+                return Err(v.error(
+                    "SelectionResource",
+                    "selection observation exceeds byte bound",
+                ));
+            }
+            let _: crate::selection::Observation =
+                serde_json::from_str(&fields["selection"].raw)
+                    .map_err(|error| v.error("InvalidSelection", error.to_string()))?;
+            crate::quoted_predicate_format::admit_selection(&fields["selection"].raw, major)?;
+            crate::text_match_format::admit_selection(&fields["selection"].raw, major)?;
+            crate::expression_format::admit_selection(&fields["selection"].raw, major)?;
+        }
+        "observed_accessor" => {
+            if major < 6 || !accessors {
+                return Err(v.error(
+                    "UnsupportedVocabulary",
+                    "observed_accessor requires suite/6 or /7 invocation input",
+                ));
+            }
+            let fields = v.closed(&["kind", "event", "accessor"], &[])?;
+            let raw = fields["accessor"].closed(&["plan", "target", "types"], &[])?;
+            if raw["plan"].raw.len() > ess_domain::accessor::MAX_BYTES * 2 {
+                return Err(v.error(
+                    "AccessorResource",
+                    "serialized accessor exceeds admission byte bound",
+                ));
+            }
+            let _: crate::accessor::Observation = serde_json::from_str(&fields["accessor"].raw)
+                .map_err(|e| v.error("InvalidAccessor", e.to_string()))?;
+        }
+        "observed" => {
+            v.closed(&["kind", "event", "field"], &[])?;
+        }
+        // The input an awaited answer carried (suite/52, beyond10x/ess#542).
+        crate::system_issued::AWAITED if major >= crate::system_issued::ORDINARY => {
+            v.closed(&["kind", "field"], &[])?["field"].text()?;
+        }
+        "now_offset" if major >= crate::now_offset::ORDINARY => {
+            let fields = v.closed(&["kind", "seconds"], &[])?;
+            let seconds: i64 = serde_json::from_str(&fields["seconds"].raw)
+                .map_err(|error| v.error("InvalidNowOffset", error.to_string()))?;
+            if seconds.unsigned_abs() > crate::now_offset::MAX_SECONDS.unsigned_abs() {
+                return Err(v.error(
+                    "InvalidNowOffset",
+                    format!(
+                        "now_offset exceeds {} seconds either way",
+                        crate::now_offset::MAX_SECONDS
+                    ),
+                ));
+            }
+        }
+        _ => return Err(v.error("UnsupportedScenarioValue", tag)),
     }
     Ok(())
 }
@@ -518,6 +562,7 @@ fn expectation(value: &Json, major: u32) -> Result<(), AdmissionError> {
         }
         "changed_by" => crate::aggregate_delta::admit_json(value)?,
         "page" => crate::view_paging::admit_json(value)?,
+        crate::value_invariant::TAG => crate::value_invariant::admit_json(value, major)?,
         _ => return Err(value.error("UnsupportedViewExpectation", tag)),
     }
     Ok(())
@@ -547,6 +592,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         || crate::refusal_policy::needs_newer(tag, major)
         || (major < crate::grant::ORDINARY && tag == "expect_not_granted")
         || crate::view_grant::needs_newer(tag, major)
+        || crate::system_issued::needs_newer(tag, major)
     {
         return Err(value.error("UnsupportedVocabulary", "step requires a newer suite major"));
     }
@@ -568,6 +614,9 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         }
         _ if crate::bounded_retry::step_keys(tag, major).is_some() => {
             crate::bounded_retry::step_keys(tag, major).unwrap_or_default()
+        }
+        _ if crate::system_issued::step_keys(tag).is_some() => {
+            crate::system_issued::step_keys(tag).unwrap_or_default()
         }
         "resolve_fixtures" => (&["step", "fixtures"], &[]),
         "expect_event_values" => (&["step", "event", "payload"], &["shape"]),
@@ -634,6 +683,17 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
             "force" | "outcome" => {
                 field.closed(&["command", "outcome"], &[])?;
             }
+            // The awaited record and the declared bound (suite/52, beyond10x/ess#542).
+            "instance" if crate::system_issued::step_keys(tag).is_some() => {
+                awaited_instance(field, major)?;
+            }
+            "identity" if crate::system_issued::step_keys(tag).is_some() => {
+                field.text()?;
+            }
+            "within" if crate::system_issued::step_keys(tag).is_some() => {
+                ess_domain::binding::periodic::Period::parse(field.text()?)
+                    .map_err(|error| field.error("InvalidBound", error.to_string()))?;
+            }
             "times" | "count" => crate::bounded_retry::admit_positive(&field.raw)
                 .map_err(|reason| field.error("InvalidRepetition", reason))?,
             "input" | "params" | "subject" | "selecting" => values(
@@ -672,6 +732,22 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         }
     }
     Ok(())
+}
+
+/// The instance an await step addresses: a captured instance or a literal identity.
+fn awaited_instance(field: &Json, major: u32) -> Result<(), AdmissionError> {
+    let tag = field
+        .object()?
+        .get("kind")
+        .ok_or_else(|| field.error("MissingField", "kind"))?
+        .text()?;
+    match tag {
+        "instance" | "literal" => scenario_value(field, major, false),
+        _ => Err(field.error(
+            "UnsupportedScenarioValue",
+            "an awaited instance is a captured instance or a literal identity",
+        )),
+    }
 }
 
 fn response_observation(field: &Json, direct: bool, major: u32) -> Result<(), AdmissionError> {
@@ -768,6 +844,8 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::direct_response::admit(suite)?;
     crate::undeclared_fields::admit(suite)?;
     crate::hold_now::admit(suite)?;
+    crate::value_invariant::admit(suite)?;
+    crate::system_issued::admit(suite)?;
     crate::delivery_context::admit(suite)?;
     crate::no_invocation::admit(suite)?;
     crate::refusal_policy::admit(suite)?;

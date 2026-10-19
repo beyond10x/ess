@@ -14,7 +14,7 @@ from the integration tree). Its Decisions and Acceptance sections are the contra
 ## The triple
 
 ```
-worktree:  ~/.local/state/worktree/trees/b10x/ess/ess-wave-20261008e-e2
+worktree:  <tree>
 build dir: <worktree>/target
 scratch:   the TMPDIR named in the go message (outside every Git checkout)
 ```

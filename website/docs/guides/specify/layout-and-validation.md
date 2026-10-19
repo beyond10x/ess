@@ -150,7 +150,7 @@ same model, which on a large one is far longer than validating; text mode does n
 
 | Key | What it lists | `ess verify conform synthesize` prints it as |
 |---|---|---|
-| `unscenarioed` | each construct synthesis gives no scenario: `code` (such as `ESS-SYNTH-011`), `subject`, `scenario` | `refused:` |
+| `unscenarioed` | each construct synthesis gives no scenario: `code` (such as `ESS-SYNTH-011`), `subject`, `scenario`, and `caused_by` on a derived scenario refused for the cause of the scenario it names | `refused:`, one block per cause |
 | `outside` | with `--component <name>`, each scenario that component's suite does not hold: `scenario`, `needs` | `outside:` |
 | `unanswered` | each question the specification does not answer, so no scenario is owed for it | `note:` |
 | `counts` | one count per list; `unscenarioed` equals the `refusal(s)` figure | the summary line |

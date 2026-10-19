@@ -34,7 +34,7 @@ use ess_domain::entity::{Cardinality, RelationKind};
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
 use ess_primitives::facts::{FactPath, FactValue};
-use ess_primitives::predicate::{CompareOp, Operand, Predicate, Quantified, TextOp};
+use ess_primitives::predicate::{Collection, CompareOp, Operand, Predicate, Quantified, TextOp};
 use ess_service_contract::{ServiceDiagnostic, ServiceIr};
 use ess_synth::{PlannedCapability, SynthesisPlan};
 use serde_json::{Map, Number, Value};
@@ -539,6 +539,10 @@ pub enum LoweringCode {
     /// beyond10x/ess#429): an entity-core operation acts on the instance its request names, and has
     /// no move of an instance to another identity.
     IdentityChangeUnsupported,
+    /// A guard reads a fact through a function, `challenge != base64url(sha256(ascii(input.v)))`
+    /// (ess/27, beyond10x/ess#584): entity-core has no digest or encoding operand, and lowering the
+    /// comparison as a read of the fact would decide a different rule.
+    FunctionCallUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -733,6 +737,23 @@ impl Projector<'_> {
         }
     }
 
+    /// Refuse a test over the rows of another entity (`exists: {in: {entity: <E>}, …}`, ess/27,
+    /// beyond10x/ess#551) by name, as the row set it stands in: entity-core has no query over rows.
+    fn refuse_related_rows(&mut self, predicate: &Predicate, at: &str) {
+        if ess_domain::command::related_rows::walks_rows(predicate) {
+            self.diagnostic_naming(
+                LoweringCode::RowSetUnsupported,
+                subset::ROW_SET,
+                at,
+                format!(
+                    "`{predicate}` tests the rows of another entity (`in: {{entity: …}}`, ess/27), \
+                     and Entity Runtime has no query over the rows of an entity; any lowering \
+                     would decide a different rule"
+                ),
+            );
+        }
+    }
+
     /// Refuse every text length `predicate` reads over `fields` that entity-core cannot address.
     /// entity-core 0.27.0 reads `<path>.count` on a declared `string` only along its run-time walk
     /// from a schema root, which carries each field's declaration through members and list
@@ -785,6 +806,18 @@ impl Projector<'_> {
                     "`{predicate}` requires distinct list members, and Entity Runtime has no \
                      condition that compares keys across a list's elements; a quantifier over one \
                      element at a time would decide a different rule"
+                ),
+            );
+        }
+        self.refuse_related_rows(predicate, at);
+        if predicate.reads_call() {
+            self.diagnostic(
+                LoweringCode::FunctionCallUnsupported,
+                at,
+                format!(
+                    "`{predicate}` reads a fact through a function, and Entity Runtime has no \
+                     digest or encoding operand; lowering it as a read of the fact would decide a \
+                     different rule"
                 ),
             );
         }
@@ -1661,8 +1694,9 @@ impl Projector<'_> {
                     LoweringCode::RowSetUnsupported,
                     format!("{}.{}.when_related", command.name, outcome.name.as_str()),
                     "a branch reading the rows a selector selects (ess/22, `when_related: {entity, \
-                     where, …}` or `{related: {entity, where, field}}`) has no Entity Runtime \
-                     definition; an entity-core operation reads its arguments and the one row its \
+                     where, …}` or `{related: {entity, where, field}}`), or the head of an ordered \
+                     selection (ess/27, `{related: {entity, where, order_by, first}}`), has no \
+                     Entity Runtime definition; an entity-core operation reads its arguments and the one row its \
                      request names, and has no query over other rows",
                 );
                 refused = true;
@@ -2309,7 +2343,7 @@ impl Projector<'_> {
                 let (source, requirement_kind) = match mapping {
                     None => (BoundSource::Identity, SlotRequirement::Identity),
                     Some(mapped) => match &mapped.value {
-                        ResolvedPayloadValue::Generated => (
+                        ResolvedPayloadValue::Generated { .. } => (
                             BoundSource::Generated,
                             SlotRequirement::Generated {
                                 target: target.clone(),
@@ -2356,7 +2390,10 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::Struct { .. }
                         | ResolvedPayloadValue::RelatedField { .. }
                         | ResolvedPayloadValue::RelatedSelection { .. }
+                        | ResolvedPayloadValue::RelatedHead { .. }
                         | ResolvedPayloadValue::CallerAttribute { .. }
+                        | ResolvedPayloadValue::PayloadRead { .. }
+                        | ResolvedPayloadValue::Expression { .. }
                         | ResolvedPayloadValue::ChangedField { .. }
                         | ResolvedPayloadValue::ChangedState { .. }
                         | ResolvedPayloadValue::ChangedCount => {
@@ -3125,7 +3162,11 @@ impl Projector<'_> {
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
-            | ResolvedPayloadValue::RelatedSelection { .. }) => {
+            | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. }
+            | ResolvedPayloadValue::Generated { present: true }
+            | ResolvedPayloadValue::PayloadRead { .. }
+            | ResolvedPayloadValue::Expression { .. }) => {
                 self.diagnostic_naming(
                     LoweringCode::ValueExpressionUnsupported,
                     subset::value_expression(value),
@@ -3221,7 +3262,7 @@ impl Projector<'_> {
                     })
                 }
             }
-            ResolvedPayloadValue::Generated => {
+            ResolvedPayloadValue::Generated { .. } => {
                 let slot = slots.allocate(
                     None,
                     BoundValue {
@@ -4046,6 +4087,13 @@ fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. }
+            // ess/27 (beyond10x/ess#545): entity-core has no present mint and no read of the
+            // value a payload publishes.
+            | ResolvedPayloadValue::Generated { present: true }
+            | ResolvedPayloadValue::PayloadRead { .. }
+            // ess/27 (beyond10x/ess#560): entity-core computes no expression.
+            | ResolvedPayloadValue::Expression { .. }
     ) || is_input_path(value)
 }
 
@@ -4057,11 +4105,13 @@ fn is_input_path(value: &ResolvedPayloadValue) -> bool {
         if ess_domain::command::input_path::is_path(field))
 }
 
-/// Whether any value of `outcome` reads the one row a selector selects (ess/22).
+/// Whether any value of `outcome` reads the one row a selector selects (ess/22), or the first row
+/// it ranks (ess/27, beyond10x/ess#543).
 fn outcome_reads_selection(outcome: &ResolvedOutcome) -> bool {
     fn reads(value: &ResolvedPayloadValue) -> bool {
         match value {
-            ResolvedPayloadValue::RelatedSelection { .. } => true,
+            ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. } => true,
             ResolvedPayloadValue::Struct { fields } => {
                 fields.iter().any(|field| reads(&field.value))
             }
@@ -4370,8 +4420,14 @@ fn lower_quantified(
         outer: Box::new(rewrite.clone()),
         binder: quantified.bind.clone(),
     };
+    let over = match &quantified.over {
+        Collection::Fact(over) => over,
+        // Refused before lowering (`RowSetUnsupported`), so no definition carrying this is ever
+        // returned; entity-core has no rows to walk, and no lowering stands in for them.
+        Collection::Rows { .. } => return Condition::Literal(false),
+    };
     let closed = Quantifier {
-        over: rewrite.path(&quantified.over),
+        over: rewrite.path(over),
         bind: quantified.bind.clone(),
         body: Box::new(lower_typed(&quantified.body, &nested, typing)),
     };

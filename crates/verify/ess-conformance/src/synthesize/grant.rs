@@ -26,6 +26,12 @@
 //!   actor synthesis chose, because its scenarios' expectations are read for that actor's values;
 //!   a [`Note::GrantRotationSkipped`] names each such command.
 //!
+//! A command the system issues itself (ess/27, beyond10x/ess#542) is awaited rather than sent, so
+//! its system actors get no `grant/admitted` scenario and no rotation: the await is their witness.
+//! Its refusal is still sent, as the lowest-named actor lacking the grant that is not the system
+//! itself where there is one, because an outside caller must not be able to issue the system's
+//! step.
+//!
 //! A model that declares actors and serves nothing gets one [`Note::GrantEnforcedByCaller`]
 //! instead: no surface answers the refusal, and enforcing a grant is the caller's. A model that
 //! declares no actor says nothing about who may invoke what, and gets none of this.
@@ -61,10 +67,16 @@ pub(super) fn denied(
             continue;
         }
         let command_ref = CommandRef::new(command.name.clone());
-        let Some(sender) = ir
-            .actors()
-            .values()
-            .find(|actor| !grants(actor, &command.name))
+        // A refusal of the system's own step is asked of an outside caller where one lacks the
+        // grant: the system is no caller of its own surface (beyond10x/ess#542).
+        let lacking = || {
+            ir.actors()
+                .values()
+                .filter(|actor| !grants(actor, &command.name))
+        };
+        let Some(sender) = lacking()
+            .find(|actor| command.system_issued && !actor.system)
+            .or_else(|| lacking().next())
         else {
             notes.push(Note::GrantedToEveryActor {
                 command: command_ref,
@@ -90,6 +102,62 @@ pub(super) fn denied(
     }
 }
 
+/// Each refusal [`denied`] withheld for want of an accepting send, built where a scenario added to
+/// the suite since sends the command into an accepting branch: rows arranged by callers chosen for
+/// them (`caller::arranged`, downstream report, 2026-10-18). `stamp` sends the refused send as the
+/// caller its actor carries; the note goes with the refusal it named.
+pub(super) fn denied_since(
+    ir: &EssIr,
+    suite: &mut ConformanceSuite,
+    refusals: &mut Vec<Refusal>,
+    notes: &mut Vec<Note>,
+    stamp: &dyn Fn(&mut ScenarioStep),
+) {
+    let unwitnessed: Vec<CommandRef> = notes
+        .iter()
+        .filter_map(|note| match note {
+            Note::GrantDeniedUnwitnessed { command } => Some(command.clone()),
+            _ => None,
+        })
+        .collect();
+    for command_ref in unwitnessed {
+        let Some(command) = ir.commands().get(command_ref.name()) else {
+            continue;
+        };
+        let Some(sender) = ir
+            .actors()
+            .values()
+            .find(|actor| !grants(actor, &command.name))
+        else {
+            continue;
+        };
+        let sender = ActorRef::new(sender.name.clone());
+        let Some(mut scenario) = refused_from_template(ir, command, &sender, suite) else {
+            continue;
+        };
+        // The refused send only: every step before it keeps the caller it was arranged as.
+        let refused = scenario
+            .steps
+            .iter()
+            .position(|step| matches!(step, ScenarioStep::ExpectNotGranted { .. }))
+            .and_then(|at| at.checked_sub(1));
+        if let Some(send) = refused.and_then(|at| scenario.steps.get_mut(at)) {
+            stamp(send);
+        }
+        notes.retain(|note| {
+            !matches!(note, Note::GrantDeniedUnwitnessed { command } if *command == command_ref)
+        });
+        insert(
+            suite,
+            ScenarioId::Grant {
+                command: command_ref,
+            },
+            scenario,
+            refusals,
+        );
+    }
+}
+
 /// The commands whose scenarios [`admit_every_granted_actor`] sends in turn as each actor granted
 /// them: served, held by two actors or more, none of them carrying attributes. Which actor one such
 /// scenario is sent as depends on every other scenario of the suite sending the command, so a
@@ -100,6 +168,7 @@ pub(super) fn rotated(ir: &EssIr) -> BTreeSet<QualifiedName> {
     }
     served_commands(ir)
         .into_iter()
+        .filter(|command| !system_issued(ir, command))
         .filter(|command| {
             let holders: Vec<&ess_compiler::ir::ResolvedActor> = ir
                 .actors()
@@ -109,6 +178,13 @@ pub(super) fn rotated(ir: &EssIr) -> BTreeSet<QualifiedName> {
             holders.len() >= 2 && holders.iter().all(|actor| actor.attributes.is_empty())
         })
         .collect()
+}
+
+/// Whether the system issues `command` itself (beyond10x/ess#542).
+fn system_issued(ir: &EssIr, command: &QualifiedName) -> bool {
+    ir.commands()
+        .get(command)
+        .is_some_and(|declared| declared.system_issued)
 }
 
 /// The commands a served component accepts.
@@ -328,7 +404,9 @@ fn admit_every_granted_actor(
     notes: &mut Vec<Note>,
 ) {
     for command in ir.commands().values() {
-        if !served.contains(&command.name) {
+        // A system actor's grant is witnessed by the await of the step it issues, never by a send
+        // (beyond10x/ess#542).
+        if !served.contains(&command.name) || command.system_issued {
             continue;
         }
         let holders: Vec<&ess_compiler::ir::ResolvedActor> = ir

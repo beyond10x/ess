@@ -178,6 +178,8 @@ fn values_use(values: &BTreeMap<String, ScenarioValue>, test: fn(&Predicate) -> 
 fn expectation_uses(expectation: &ViewExpectation, test: fn(&Predicate) -> bool) -> bool {
     match expectation {
         ViewExpectation::Satisfies { predicate } => test(predicate),
+        // A declared invariant carried by the observation is a suite predicate like any other.
+        ViewExpectation::ValueInvariants(observed) => observed.predicates().any(test),
         ViewExpectation::Contains { fields }
         | ViewExpectation::Excludes { fields }
         | ViewExpectation::At { fields, .. } => values_use(fields, test),
@@ -200,4 +202,43 @@ fn step_carries(step: &ScenarioStep, test: fn(&Predicate) -> bool) -> bool {
         } => values_use(params, test) || expectation_uses(expectation, test),
         _ => false,
     }
+}
+
+/// Whether some `satisfies` of a typed suite reads a text's `.count` off a view row
+/// (`crate::input::lifted_text_length`): a leaf only `/40` and `/41` carry to a row, which no
+/// untyped reading of the predicate can tell from a declared member named `count`, so the model
+/// decides it. A view the model does not declare reads nothing here.
+pub fn text_lengths_used_by(ir: &ess_compiler::EssIr, suite: &ConformanceSuite) -> bool {
+    let reads_length = |view: &crate::scenario::ViewRef, predicate: &Predicate| {
+        let Some(declared) = ir
+            .views()
+            .values()
+            .find(|declared| declared.name == *view.name())
+        else {
+            return false;
+        };
+        ess_compiler::expression::check_predicate(
+            ir,
+            &declared.fields,
+            predicate,
+            "conformance projection",
+        )
+        .reads
+        .iter()
+        .any(|read| crate::input::lifted_text_length(ir, read))
+    };
+    suite.scenarios.values().any(|scenario| {
+        scenario.steps.iter().any(|step| match step {
+            ScenarioStep::ExpectView {
+                view,
+                expectation: ViewExpectation::Satisfies { predicate },
+            }
+            | ScenarioStep::EventuallyView {
+                view,
+                expectation: ViewExpectation::Satisfies { predicate },
+                ..
+            } => reads_length(view, predicate),
+            _ => false,
+        })
+    })
 }

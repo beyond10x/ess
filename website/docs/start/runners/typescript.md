@@ -82,6 +82,7 @@ export interface Target {
   beginScenario(scenario: ScenarioContext): Answer<void>;
   endScenario(scenario: ScenarioContext): Answer<void>;
   executeCommand(request: CommandRequest): Answer<CommandResult>;
+  awaitOutcome?(request: AwaitRequest): Answer<AwaitAnswer>;
   executeCommandWithoutInput?(request: AbsentInputRequest): Answer<CommandResult>;
   queryView(request: ViewRequest): Answer<ViewResult>;
   observeEvents(request: EventObservationRequest): Answer<ObservedEvent[]>;
@@ -100,6 +101,7 @@ export interface Target {
 | `identity` | the implementation's name and version, for the report |
 | `beginScenario`, `endScenario` | bracket one scenario; state from one scenario must not satisfy another |
 | `executeCommand` | run one command; return the outcome taken, the declared error if it refused, and the events it emitted directly |
+| `awaitOutcome` | for a command every actor of which is declared `system: true`, which is never sent: the outcome the system reached on the requested instance, the input it issued the command with and what it published, or `{reached: false}`; hold the system's step until the runner awaits it, and report your clock's reading in `elapsedMillis` where the request carries `within` |
 | `queryView` | read one view; a `read_your_writes` view must already show the command that just returned |
 | `observeEvents` | the events seen for one activity, away from the command that caused them |
 | `configureExternalOutcome` | force the next answer of an outcome declared `external:` |

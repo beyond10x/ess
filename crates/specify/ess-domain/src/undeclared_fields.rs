@@ -43,7 +43,8 @@ use crate::types::{TypeBody, UndeclaredFields};
 
 /// A declaration list of a document that [`Written::take`] reads the key out of.
 ///
-/// Commands are not here: a command reads the key as its own field.
+/// [`Self::Commands`] is not among [`Self::ALL`]: a command reads `undeclared_fields:` as its own
+/// field, and only `shorthand:` is taken out of it (`crate::shorthand`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Section {
     /// `types:`.
@@ -58,11 +59,13 @@ pub(crate) enum Section {
     Views,
     /// `actors:`.
     Actors,
+    /// `commands:`, read for `shorthand:` alone.
+    Commands,
 }
 
 impl Section {
     /// Every list, in the order a document is read.
-    const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 6] = [
         Self::Types,
         Self::Entities,
         Self::Events,
@@ -72,7 +75,7 @@ impl Section {
     ];
 
     /// The key the list is written under.
-    fn key(self) -> &'static str {
+    pub(crate) fn key(self) -> &'static str {
         match self {
             Self::Types => "types",
             Self::Entities => "entities",
@@ -80,11 +83,12 @@ impl Section {
             Self::Errors => "errors",
             Self::Views => "views",
             Self::Actors => "actors",
+            Self::Commands => "commands",
         }
     }
 
     /// The construct a declaration of this list is.
-    fn kind(self) -> ConstructKind {
+    pub(crate) fn kind(self) -> ConstructKind {
         match self {
             Self::Types => ConstructKind::Type,
             Self::Entities => ConstructKind::Entity,
@@ -92,11 +96,12 @@ impl Section {
             Self::Errors => ConstructKind::Error,
             Self::Views => ConstructKind::View,
             Self::Actors => ConstructKind::Actor,
+            Self::Commands => ConstructKind::Command,
         }
     }
 
     /// What a declaration of this list is called in a refusal.
-    fn noun(self) -> &'static str {
+    pub(crate) fn noun(self) -> &'static str {
         match self {
             Self::Types => "type",
             Self::Entities => "entity",
@@ -104,6 +109,7 @@ impl Section {
             Self::Errors => "error",
             Self::Views => "view",
             Self::Actors => "actor",
+            Self::Commands => "command",
         }
     }
 }
@@ -191,7 +197,8 @@ pub(crate) fn refused_outside_types(file: &crate::spec::RawSpecFile) -> Validati
         .outside_types()
         .filter_map(|(section, index)| {
             let name = match section {
-                Section::Types => None,
+                // Commands read `undeclared_fields:` as their own field, so none is taken from one.
+                Section::Types | Section::Commands => None,
                 Section::Entities => file.entities.get(index).map(|it| it.name.to_string()),
                 Section::Events => file.events.get(index).map(|it| it.name.to_string()),
                 Section::Errors => file.errors.get(index).map(|it| it.name.to_string()),

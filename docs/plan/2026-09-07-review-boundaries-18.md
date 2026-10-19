@@ -69,7 +69,7 @@ Unrelated ESS wt-c465ed5c6cd3, primary checkouts and excluded Website work remai
 |---|---|
 | Managed id | ess-consumer-coverage-wave18 |
 | Branch | impl/review-consumer-coverage-wave18 |
-| Worktree | ~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18 |
+| Worktree | <tree> |
 | Build | Unit's default target directory |
 | Scratch | target/review-boundaries-18/consumer-coverage |
 | Assigned TMP | ~/.cache/ess-w18-consumer-tmp |

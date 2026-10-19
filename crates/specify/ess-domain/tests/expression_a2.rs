@@ -300,7 +300,7 @@ fn a2_newtypes_optionals_dotted_bases_and_binders_resolve() {
     assert_eq!(
         guard(&spec),
         Predicate::Forall(Box::new(Quantified {
-            over: path("slots"),
+            over: ess_primitives::predicate::Collection::Fact(path("slots")),
             bind: "slot".to_owned(),
             body: compare(
                 "slot.high",

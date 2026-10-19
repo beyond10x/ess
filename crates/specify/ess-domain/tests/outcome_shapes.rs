@@ -3,8 +3,8 @@
 //!
 //! Five constructs, each admitted under `ess/15` and refused below it with
 //! `unsupported_format_version`, each with the rules the design page states for it. The model is
-//! the neutral telephony shape the issues describe: a call announced by an external plane, answered,
-//! and removed at the end of its lifecycle.
+//! the neutral shape the issues describe: a call announced by an external plane, answered, and
+//! removed at the end of its lifecycle.
 
 use ess_domain::command::{Effect, OutcomeCondition, RawOutcome};
 use ess_domain::Specification;
@@ -739,5 +739,61 @@ fn a_precondition_must_select_exactly_one_branch_that_reports_no_error() {
         &refused(&guarded("")),
         ValidationCode::MissingDeclaration,
         "locked",
+    );
+}
+
+// ---- create-or-preserve under the one precedence rule (G4) --------------------------------
+
+/// `Ring` with its `unknown_instance:` branch creating the seat it would otherwise refuse: "ensure
+/// the seat exists", the creation beside a branch that only preserves the seat, in `format`.
+fn create_or_preserve(format: &str) -> String {
+    let text = READ_ONLY.replacen("format: ess/24\n", &format!("format: {format}\n"), 1);
+    let text = text.replacen(
+        "      - name: no-seat\n        unknown_instance: true\n        error: demo.desk.NoSeat\n      - name: closed\n",
+        "      - name: no-seat\n        unknown_instance: true\n        creates: demo.desk.Seat\n        instance: user_id\n        emits: [demo.desk.SeatTaken]\n        payload:\n          demo.desk.SeatTaken: {user_id: input.user_id}\n      - name: closed\n",
+        1,
+    );
+    assert!(text.contains("creates: demo.desk.Seat\n        instance: user_id\n        emits: [demo.desk.SeatTaken]\n        payload:\n          demo.desk.SeatTaken: {user_id: input.user_id}\n      - name: closed"));
+    text
+}
+
+/// Under the one rule (`ess/27`) the creation answers at step 2 for an identity no seat carries,
+/// and the preserving branch every stored one (beyond10x/ess#535's residue).
+#[test]
+fn format_a_admits_a_creating_unknown_instance_beside_a_preserving_branch() {
+    let spec = admitted(&create_or_preserve("ess/27"));
+    let created = answer_outcome(&spec, "demo.desk.Ring", "no-seat");
+    assert_eq!(created.condition, OutcomeCondition::UnknownInstance);
+    assert_eq!(
+        created.subject.as_ref().map(|subject| &subject.effect),
+        Some(&Effect::Creates)
+    );
+}
+
+/// A create-or-delete toggle is not the construct, in every format.
+#[test]
+fn a_creating_unknown_instance_beside_a_deleting_branch_stays_refused() {
+    let deleting = create_or_preserve("ess/27").replacen(
+        "      - name: rung\n        preserves: demo.desk.Seat\n",
+        "      - name: rung\n        deletes: demo.desk.Seat\n",
+        1,
+    );
+    assert!(deleting.contains("deletes: demo.desk.Seat"));
+    let errors = refused(&deleting);
+    assert_code(&errors, ValidationCode::ConflictingDeclaration, "no-seat");
+}
+
+/// Below `ess/27` the creation beside a preserving branch keeps its refusal, the hint naming
+/// `ess/27`.
+#[test]
+fn below_format_a_create_or_preserve_keeps_its_refusal_naming_format_a() {
+    let errors = refused(&create_or_preserve("ess/26"));
+    assert!(
+        errors.as_slice().iter().any(|error| {
+            error.code == ValidationCode::ConflictingDeclaration
+                && error.to_string().contains("no-seat")
+                && error.to_string().contains("format: ess/27")
+        }),
+        "{errors}"
     );
 }

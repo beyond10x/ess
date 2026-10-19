@@ -12,7 +12,7 @@ Read the story: `aep plan artifact show story:test-scratch-directories-are-remov
 ## The triple
 
 ```
-worktree:  ~/.local/state/worktree/trees/b10x/ess/ess-wave-20261008d-d3
+worktree:  <tree>
 build dir: <worktree>/target
 scratch:   <worktree>/target/wave-scratch/d3
 ```
@@ -25,7 +25,7 @@ scratch:   <worktree>/target/wave-scratch/d3
 | **not yours** | everything else; `CHANGELOG.md` and `.engineering/**` are the coordinator's |
 
 Invariants: `.engineering/waves/2026-10-08d/invariants.md` in the integration tree
-(`~/.local/state/worktree/trees/b10x/ess/ess-wave-20261008d`). Read it first.
+(`<tree>`). Read it first.
 
 Your part: ess-conformance integration tests only; `src/` is not yours. Every directory a test creates under `std::env::temp_dir()` is removed by a drop guard, also when the test panics. Write one guard in a test support module and use it everywhere. Phase 1 needs no build: edit, then stop with `verdict: blocked`, `needs-coordinator: build slot`, naming the test binaries you changed. Phase 2 (when the coordinator resumes you) runs them one at a time with `TMPDIR` set to an empty directory under your scratch, and shows it empty afterwards.
 

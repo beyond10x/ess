@@ -192,6 +192,39 @@ fn each_entry_diff_line_names_the_entry() {
     );
 }
 
+/// `Apply` moves the row each answer names by its verdict, through three `each:` entries (ess/27,
+/// beyond10x/ess#596): which verdict takes which move is part of the set effect.
+#[test]
+fn each_moves_change_is_classified() {
+    const ANSWERS: &str = include_str!("../../ess-conformance/tests/fixtures/each-moves.yaml");
+    let (refused, invalid) = (
+        "where: a.verdict == refused}",
+        "where: a.verdict == invalid}",
+    );
+    assert!(ANSWERS.contains(refused) && ANSWERS.contains(invalid));
+    let swapped = ANSWERS
+        .replacen(refused, "where: SWAP}", 1)
+        .replacen(invalid, refused, 1)
+        .replacen("where: SWAP}", invalid, 1);
+    assert_ne!(swapped, ANSWERS);
+    let delta = diff(&ir(ANSWERS), &ir(&swapped)).unwrap();
+    let json = delta.to_canonical_json();
+    assert!(
+        json.contains(r#""kind": "outcome-set-effect-changed""#),
+        "{json}"
+    );
+    assert!(
+        delta.changes().iter().any(|change| {
+            let line = change.describe();
+            line.contains("`perrow.batch.Proposal`")
+                && line.contains("input.answers")
+                && line.contains("a.verdict == refused")
+                && line.contains("`refuse`")
+        }),
+        "the element filter and the move are on the line that changed: {json}"
+    );
+}
+
 /// One event per changed row (ess/25, beyond10x/ess#531): a per-row event and its state filter are
 /// part of the set effect, so changing the filter is `outcome-set-effect-changed`, naming it.
 #[test]

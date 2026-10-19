@@ -1,0 +1,32 @@
+type: ess-scenario/1
+domain: cascade.feed
+scenario: cancel-discards-pending
+summary: Cancelling a feed discards the item posted to it.
+arrange:
+  - instance: feed
+    entity: cascade.feed.Feed
+  - instance: item
+    entity: cascade.feed.Item
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: cascade.feed.Open
+    actor: cascade.feed.Operator
+    input: {label: morning}
+    outcome: opened
+    capture: {instance: feed, event: cascade.feed.FeedOpened, field: feed_id}
+  - at: 2026-01-05T09:00:01Z
+    command: cascade.feed.Post
+    actor: cascade.feed.Operator
+    input: {feed_id: {$instance: feed}}
+    outcome: posted
+    capture: {instance: item, event: cascade.feed.ItemPosted, field: item_id}
+  - at: 2026-01-05T09:00:02Z
+    command: cascade.feed.Cancel
+    actor: cascade.feed.Operator
+    input: {feed_id: {$instance: feed}}
+    outcome: cancelled
+assert:
+  - view: cascade.feed.Feeds
+    contains: {feed_id: {$instance: feed}, state: Cancelled}
+  - view: cascade.feed.Items
+    contains: {item_id: {$instance: item}, state: Discarded}

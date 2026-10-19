@@ -49,7 +49,9 @@ use ess_primitives::predicate::{Predicate, WrittenPredicate};
 
 use super::{CommandSpec, Effect, Outcome, OutcomeName, PayloadSource, PayloadTable, Subject};
 use crate::entity::EntitySpec;
-use crate::expression::{CurrentTimeAdmission, DomainEnvironment, Shape, TypeEnvironment};
+use crate::expression::{
+    CurrentTimeAdmission, DomainEnvironment, RelatedRows, Shape, TypeEnvironment,
+};
 use crate::name::QualifiedName;
 use crate::system::FormatVersion;
 use crate::types::{Field, Primitive, TypeRef, TypeRegistry};
@@ -131,10 +133,16 @@ pub struct RawEach {
     /// The name each element is read under.
     #[serde(rename = "as")]
     pub binder: String,
+    /// The elements the entry acts on: a predicate over `<as>.<member>` and `input.<field>`
+    /// (ess/27, beyond10x/ess#596); every element where absent.
+    #[serde(rename = "where", default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<WrittenPredicate>,
 }
 
 /// One row per element of an input list (ess/23, beyond10x/ess#459): for each element, the row
-/// whose identity `member` holds is updated if held and created in `initial` if not.
+/// whose identity `member` holds is updated if held and created in `initial` if not. From ess/27
+/// (beyond10x/ess#596) the entry may instead move or remove that row, a held one only, and act only
+/// on the elements its [`Self::filter`] selects.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Each {
     /// The input field holding the list.
@@ -146,6 +154,10 @@ pub struct Each {
     /// The entity fields written from a member of the element: field, then member.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub reads: BTreeMap<String, String>,
+    /// The elements the entry acts on, over `<binder>.<member>` and `input.<field>` (ess/27,
+    /// beyond10x/ess#596); `None` where it acts on every element.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<Predicate>,
 }
 
 /// The rows a `moves:`, `updates:` or — from ess/23 — `deletes:` outcome changes, selected by a
@@ -423,7 +435,7 @@ pub(crate) fn refuse_per_row_events(
                     }
                     for field in &mut table.0 {
                         if matches!(field.source, PayloadSource::ChangedField { .. }) {
-                            field.source = PayloadSource::Generated;
+                            field.source = PayloadSource::Generated { present: false };
                         }
                     }
                 }
@@ -804,7 +816,8 @@ fn instance_without_each(name: &str, index: usize, at: String, below_23: bool) -
                  requires specification format ess/23"
             ),
             "drop `instance:`, or declare `format: ess/23` and write one row per element with \
-             `each:` and `instance:`",
+             `each:` and `instance:`; to change one existing row by its identity, write `where: \
+             <identity> == subject.<field>` (ess/27)",
         )
     } else {
         (
@@ -813,7 +826,8 @@ fn instance_without_each(name: &str, index: usize, at: String, below_23: bool) -
                  rows by `where:`; `instance:` names the row an element of `each:` writes"
             ),
             "drop `instance:`, or write one row per element with `each: {in: input.<list>, as: \
-             <name>}` and `instance: <name>.<member>` in place of `where:`",
+             <name>}` and `instance: <name>.<member>` in place of `where:`; to change one existing \
+             row by its identity, write `where: <identity> == subject.<field>` (ess/27)",
         )
     };
     ValidationError::new(ValidationCode::ConflictingDeclaration, at, message).with_hint(hint)
@@ -857,10 +871,11 @@ fn set_twice(name: &OutcomeName, index: usize, target: &str) -> ValidationErrors
 
 /// The `each:` of one `affects:` entry as written (ess/23, beyond10x/ess#459): the list it reads,
 /// its binder, the member naming each row, and every `sets:` source reading `<as>.<member>`, taken
-/// out of `raw.sets`; `None` where the entry selects by `where:`. Refused: `each:` beside `where:`,
-/// `moves:` or `deletes:`, neither `each:` nor `where:`, `instance:` without `each:` or `each:`
-/// without it, a list that is not `input.<field>`, and a binder or a member read that is not one
-/// name.
+/// out of `raw.sets`, and the element filter; `None` where the entry selects by `where:`. Refused:
+/// `each:` beside `where:`, neither `each:` nor `where:`, `instance:` without `each:` or `each:`
+/// without it, a list that is not `input.<field>`, a binder or a member read that is not one name,
+/// and an element filter that does not parse. `moves:` and `deletes:` beside `each:` are read here
+/// under every format; below ess/27 [`refuse_each`] and [`validate`] refuse them.
 fn each_entry(
     name: &OutcomeName,
     index: usize,
@@ -873,24 +888,19 @@ fn each_entry(
     let Some(each) = raw.each.take() else {
         return selected_by_filter(name, index, raw).map(|()| None);
     };
-    for (beside, present) in [
-        ("where:", raw.filter.is_some()),
-        ("moves:", raw.moves.is_some()),
-        ("deletes:", raw.deletes.is_some()),
-    ] {
-        if present {
-            return refused(
-                ".each",
-                ValidationCode::ConflictingDeclaration,
-                format!(
-                    "outcome `{name}` declares `each:` and `{beside}` in `affects[{index}]`; an \
-                     `each:` entry creates or updates the row each element names, and selects, \
-                     moves or removes no other"
-                ),
-                "keep `each:` with `instance:` and `sets:`, or write the other effect as an entry \
-                 of its own",
-            );
-        }
+    // From ess/27 (beyond10x/ess#596) the entry may move or remove the row each element names;
+    // below it [`refuse_each`] and [`validate`] keep the refusal, naming ess/27.
+    if raw.filter.is_some() {
+        return refused(
+            ".each",
+            ValidationCode::ConflictingDeclaration,
+            format!(
+                "outcome `{name}` declares `each:` and `where:` in `affects[{index}]`; an `each:` \
+                 entry acts on the row each element names, and selects no other"
+            ),
+            "select the elements with `each: {in: …, as: <name>, where: <predicate>}`, or write \
+             the selection as an entry of its own",
+        );
     }
     let list = each
         .list
@@ -950,12 +960,19 @@ fn each_entry(
             &format!("write `instance: {binder}.<member>`"),
         );
     };
+    // A filter that does not parse is refused at the element's `where` (beyond10x/ess#596).
+    let filter = each
+        .filter
+        .map(|filter| filter.read(format!("outcomes.{name}.affects[{index}].each.where")))
+        .transpose()
+        .map_err(ValidationErrors::from)?;
     let reads = element_reads(name, index, &binder, &mut raw.sets)?;
     Ok(Some(Each {
         list: list.to_owned(),
         binder,
         member: identity,
         reads,
+        filter,
     }))
 }
 
@@ -1140,6 +1157,7 @@ pub(super) fn written(
                 each: affect.each.map(|each| RawEach {
                     list: format!("input.{}", each.list),
                     binder: each.binder,
+                    filter: each.filter.map(Into::into),
                 }),
                 entity: affect.entity,
                 sets: PayloadTable(sets),
@@ -1272,7 +1290,17 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                             ));
                         }
                     }
-                    errors.extend(check_filter(command, entity, None, types, &set.filter, &at));
+                    errors.extend(check_filter(
+                        spec,
+                        command,
+                        entity,
+                        None,
+                        types,
+                        &set.filter,
+                        &at,
+                        &at.clone().key("where"),
+                        format,
+                    ));
                     errors.extend(identity_set(
                         entity,
                         &site.clone().key("sets"),
@@ -1316,16 +1344,43 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                         }
                     }
                     if let Some(filter) = &affect.filter {
+                        let at = at.clone().key("where");
                         errors.extend(check_filter(
-                            command,
-                            entity,
-                            subject,
-                            types,
-                            filter,
-                            &at.clone().key("where"),
+                            spec, command, entity, subject, types, filter, &at, &at, format,
                         ));
+                        // A pin is read from ess/27; below it the read is refused alone, above.
+                        if format.major() >= FormatVersion::V27.major() {
+                            if let Some(refused) = outcome.subject.as_ref().and_then(|written| {
+                                pins_the_subject(entity, written, filter, &outcome.name, index, &at)
+                            }) {
+                                errors.push(refused);
+                            }
+                        }
                     }
                     if let Some(each) = &affect.each {
+                        if format.major() < FormatVersion::V27.major() {
+                            // A backstop for a specification assembled without the one header
+                            // [`refuse_each`] reads (beyond10x/ess#596).
+                            let site = at.clone().key("each");
+                            for (beside, present) in [
+                                ("moves:", affect.moves.is_some()),
+                                ("deletes:", affect.deletes),
+                            ] {
+                                if present {
+                                    errors.push(each_effect_below_ess_27(
+                                        outcome.name.as_str(),
+                                        index,
+                                        beside,
+                                        site.render(),
+                                    ));
+                                }
+                            }
+                            if each.filter.is_some() {
+                                errors.push(element_filter_below_ess_27(
+                                    site.clone().key("where").render(),
+                                ));
+                            }
+                        }
                         errors.extend(each_rules(
                             spec, command, outcome, entity, affect, each, &at,
                         ));
@@ -1735,26 +1790,164 @@ pub(super) fn count_elsewhere(at: &ConstructRef) -> ValidationError {
     .with_hint("fill this field another way")
 }
 
-/// The filter, checked over `entity`'s fields, the command's input under `input.`, and — for an
-/// `affects:` entry — the subject's fields under `subject.`.
+/// The filter, checked over `entity`'s fields and its identity, the command's input under
+/// `input.`, and — for an `affects:` entry — the subject's fields under `subject.`.
+///
+/// The identity is read from `ess/27` (beyond10x/ess#547, `docs/design/set-effect-identity-filters.md`,
+/// D1), as a row-set selector reads it (`super::row_set::candidate_fields`). Below it a read of the
+/// identity is refused at `gate` as `unsupported_format_version` naming `ess/27`; the check runs
+/// over the identity either way, so that refusal comes alone rather than beside an
+/// `unobservable_fact` for the same read. `state` stays unreadable.
+#[allow(clippy::too_many_arguments)]
 fn check_filter(
+    spec: &Specification,
     command: &CommandSpec,
     entity: &EntitySpec,
     subject: Option<&EntitySpec>,
     types: &TypeRegistry,
     filter: &Predicate,
     at: &ConstructRef,
+    gate: &ConstructRef,
+    format: FormatVersion,
 ) -> ValidationErrors {
-    check_row_predicate(
+    let mut errors = check_row_predicate(
+        spec,
         command,
         entity,
-        &entity.fields,
+        &with_identity(entity),
         subject,
         types,
         filter,
-        at,
-        false,
-    )
+        (at, super::published_operand::Site::Effect),
+        (false, false),
+    );
+    if format.major() < FormatVersion::V27.major() && reads_identity(entity, filter) {
+        let identity = &entity.identity.name;
+        errors.push(
+            ValidationError::at(
+                gate.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                format!(
+                    "`{identity}` is the identity of `{}`; a set effect's filter reads it from \
+                     ess/27",
+                    entity.name
+                ),
+            )
+            .with_hint("declare `format: ess/27`"),
+        );
+    }
+    errors
+}
+
+/// `entity`'s stored fields and its identity: what a set effect's filter reads of a candidate row
+/// (from `ess/27`, beyond10x/ess#547).
+pub(crate) fn with_identity(entity: &EntitySpec) -> Vec<Field> {
+    let mut fields = entity.fields.clone();
+    if !fields
+        .iter()
+        .any(|field| field.name == entity.identity.name)
+    {
+        fields.push(entity.identity.clone());
+    }
+    fields
+}
+
+/// Whether `filter` reads `entity`'s identity: a path rooted at its name, which no stored field
+/// shares.
+fn reads_identity(entity: &EntitySpec, filter: &Predicate) -> bool {
+    !entity
+        .fields
+        .iter()
+        .any(|field| field.name == entity.identity.name)
+        && filter
+            .fact_paths()
+            .iter()
+            .any(|path| path.namespace() == entity.identity.name)
+}
+
+/// The operand `filter` pins `entity`'s identity to: `<identity> == <operand>` on either side, alone
+/// or as the one such conjunct of a top-level `all:`, where the operand reads `subject.` or
+/// `input.` (`docs/design/set-effect-identity-filters.md`, "A pin"). `None` where it pins none.
+fn pinned_operand<'p>(
+    entity: &EntitySpec,
+    filter: &'p Predicate,
+) -> Option<&'p ess_primitives::facts::FactPath> {
+    let identity = entity.identity.name.as_str();
+    let pin = |predicate: &'p Predicate| {
+        let Predicate::Compare {
+            left: ess_primitives::predicate::Operand::Fact(left),
+            op: ess_primitives::predicate::CompareOp::Eq,
+            right: ess_primitives::predicate::Operand::Fact(right),
+            ..
+        } = predicate
+        else {
+            return None;
+        };
+        let bare = |path: &ess_primitives::facts::FactPath| matches!(path.segments(), [only] if only == identity);
+        let operand = |path: &'p ess_primitives::facts::FactPath| {
+            (path.segments().len() > 1
+                && [SUBJECT_NAMESPACE, super::subject_fact::INPUT_NAMESPACE]
+                    .contains(&path.namespace()))
+            .then_some(path)
+        };
+        if bare(left) {
+            operand(right)
+        } else if bare(right) {
+            operand(left)
+        } else {
+            None
+        }
+    };
+    match filter {
+        Predicate::All(children) => {
+            let mut pins = children.iter().filter_map(pin);
+            let first = pins.next()?;
+            pins.next().is_none().then_some(first)
+        }
+        other => pin(other),
+    }
+}
+
+/// The refusal of an `affects:` entry over the subject's own entity whose filter pins the identity
+/// to the subject's own (`subject.<identity>`, or the input field the outcome's `instance:` names):
+/// it selects only the subject, which every entry excepts (beyond10x/ess#547).
+fn pins_the_subject(
+    entity: &EntitySpec,
+    subject: &Subject,
+    filter: &Predicate,
+    outcome: &OutcomeName,
+    index: usize,
+    at: &ConstructRef,
+) -> Option<ValidationError> {
+    if subject.entity != entity.name
+        || entity.fields.iter().any(|field| {
+            [SUBJECT_NAMESPACE, super::subject_fact::INPUT_NAMESPACE].contains(&field.name.as_str())
+        })
+    {
+        return None;
+    }
+    let operand = pinned_operand(entity, filter)?;
+    let identity = &entity.identity.name;
+    let names_subject = match operand.segments() {
+        [namespace, field] if namespace == SUBJECT_NAMESPACE => field == identity,
+        [namespace, rest @ ..] if namespace == super::subject_fact::INPUT_NAMESPACE => {
+            !matches!(subject.effect, Effect::Creates) && rest.join(".") == subject.instance
+        }
+        _ => false,
+    };
+    names_subject.then(|| {
+        ValidationError::at(
+            at.clone(),
+            ValidationCode::ConflictingDeclaration,
+            format!(
+                "`affects[{index}]` of outcome `{outcome}` pins the identity of `{}` to \
+                 `{operand}`, the subject's own, so it selects only the subject, which every \
+                 `affects:` entry excepts",
+                entity.name
+            ),
+        )
+        .with_hint("drop the entry, or write the change in the outcome's own `sets:`".to_owned())
+    })
 }
 
 /// `predicate` checked over `fields` of a row of `entity`, the command's input under `input.`
@@ -1762,18 +1955,28 @@ fn check_filter(
 /// subject's fields under `subject.` (unless the entity declares a field named `subject`). With
 /// `current_time`, `now` reads the decision's one instant, as over a stored row (ess/22, A3): the
 /// environment a row set's selector and `forall` are checked in (`super::row_set`).
+///
+/// From `ess/27` (beyond10x/ess#549) `site` decides `payload.<Event>.<field>`: a value source
+/// reads what its outcome publishes there ([`super::published_operand`]), and every other site
+/// refuses it by name. A candidate field named `payload` keeps being read as itself.
+///
+/// With `rows`, a quantifier may walk the rows of a declared entity (ess/27, beyond10x/ess#551,
+/// [`super::related_rows`]): a selector's environment. A set effect's filter admits none, and the
+/// checker refuses them there by name.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn check_row_predicate(
+    spec: &Specification,
     command: &CommandSpec,
     entity: &EntitySpec,
     fields: &[Field],
     subject: Option<&EntitySpec>,
     types: &TypeRegistry,
     filter: &Predicate,
-    at: &ConstructRef,
-    current_time: bool,
+    (at, site): (&ConstructRef, super::published_operand::Site<'_>),
+    (current_time, rows): (bool, bool),
 ) -> ValidationErrors {
     let owner = at.render();
+    let published = super::published_operand::classify(spec, fields, filter, site, at);
     let mut inner = DomainEnvironment::new(types, fields);
     if current_time {
         inner = inner.with_stored_current_time();
@@ -1798,10 +2001,19 @@ pub(super) fn check_row_predicate(
         }),
         identity: subject.map(|subject| &subject.identity),
         current_time,
+        published: (!published.admitted.is_empty()).then_some(&published.admitted),
+        rows: rows.then_some(spec),
     };
     let checked = crate::expression::check_predicate(&environment, filter, &owner);
-    let mut errors = ValidationErrors::new();
+    let mut errors = published.errors;
     for error in &checked.errors {
+        if error
+            .path
+            .as_ref()
+            .is_some_and(|path| published.refused.contains(&path))
+        {
+            continue;
+        }
         errors.push(ValidationError::at(
             at.clone(),
             error.code,
@@ -1811,11 +2023,18 @@ pub(super) fn check_row_predicate(
     errors
 }
 
-/// A type the filter environment reads: one of the specification's, or the subject row.
+/// A type the filter environment reads: one of the specification's, the subject row, or a step of
+/// a published read (`payload.<Event>.<field>`, ess/27).
 #[derive(Clone)]
 enum Read {
     Declared(TypeRef),
     Subject,
+    /// The segments after `payload` read so far, a prefix of an admitted event's name.
+    Published(Vec<String>),
+    /// The payload of an admitted event.
+    PublishedEvent(QualifiedName),
+    /// A row of a declared entity, under a quantifier over its rows (ess/27, beyond10x/ess#551).
+    Row(QualifiedName),
 }
 
 impl fmt::Display for Read {
@@ -1823,11 +2042,22 @@ impl fmt::Display for Read {
         match self {
             Self::Declared(type_ref) => type_ref.fmt(f),
             Self::Subject => f.write_str("the subject"),
+            Self::Published(prefix) => {
+                f.write_str(super::published_operand::ROOT)?;
+                prefix
+                    .iter()
+                    .try_for_each(|segment| write!(f, ".{segment}"))
+            }
+            Self::PublishedEvent(event) => {
+                write!(f, "{}.{event}", super::published_operand::ROOT)
+            }
+            Self::Row(entity) => write!(f, "a row of {entity}"),
         }
     }
 }
 
-/// [`DomainEnvironment`], with `subject.<field>` reading the subject's declared fields.
+/// [`DomainEnvironment`], with `subject.<field>` reading the subject's declared fields and, in a
+/// value source's selector, `payload.<Event>.<field>` the values its outcome publishes.
 struct WithSubject<'a> {
     inner: DomainEnvironment<'a>,
     /// The subject's fields, and whether the filtered entity declares a field named `subject`
@@ -1836,13 +2066,18 @@ struct WithSubject<'a> {
     identity: Option<&'a Field>,
     /// Whether `now` is admitted, as over a stored row: a row set's selector (ess/22).
     current_time: bool,
+    /// The published reads admitted, where there are any (ess/27, beyond10x/ess#549).
+    published: Option<&'a super::published_operand::Admitted>,
+    /// Where a quantifier may walk the rows of an entity, the specification declaring them: a
+    /// selector's environment (ess/27, beyond10x/ess#551).
+    rows: Option<&'a Specification>,
 }
 
 impl WithSubject<'_> {
     fn declared(read: &Read) -> Option<&TypeRef> {
         match read {
             Read::Declared(type_ref) => Some(type_ref),
-            Read::Subject => None,
+            Read::Subject | Read::Published(_) | Read::PublishedEvent(_) | Read::Row(_) => None,
         }
     }
 }
@@ -1864,10 +2099,22 @@ fn lifted(shape: Shape<TypeRef>) -> Shape<Read> {
 impl TypeEnvironment for WithSubject<'_> {
     type Type = Read;
 
+    fn admits_calls(&self) -> bool {
+        self.inner.admits_calls()
+    }
+    /// A selector reads candidate rows, and a function of a fact is a command guard's operand only
+    /// in this release (ess/27, beyond10x/ess#584).
+    fn calls_here(&self) -> bool {
+        false
+    }
+
     fn root(&self, name: &str) -> Option<Read> {
         match (self.inner.root(name), self.subject) {
             (Some(found), _) => Some(Read::Declared(found)),
             (None, Some((_, false))) if name == SUBJECT_NAMESPACE => Some(Read::Subject),
+            (None, _) if name == super::published_operand::ROOT && self.published.is_some() => {
+                Some(Read::Published(Vec::new()))
+            }
             _ => None,
         }
     }
@@ -1877,7 +2124,9 @@ impl TypeEnvironment for WithSubject<'_> {
     fn shape(&self, reference: &Read) -> Result<Shape<Read>, String> {
         match reference {
             Read::Declared(type_ref) => self.inner.shape(type_ref).map(lifted),
-            Read::Subject => Ok(Shape::Struct),
+            Read::Subject | Read::Published(_) | Read::PublishedEvent(_) | Read::Row(_) => {
+                Ok(Shape::Struct)
+            }
         }
     }
     fn is_clock_reading(&self, reference: &Read) -> bool {
@@ -1922,7 +2171,35 @@ impl TypeEnvironment for WithSubject<'_> {
                     .find(|field| field.name == name)
                     .map(|field| Read::Declared(field.type_ref.clone()))
             }
+            Read::Published(prefix) => match self.published?.step(prefix, name)? {
+                super::published_operand::Step::Namespace(segments) => {
+                    Some(Read::Published(segments))
+                }
+                super::published_operand::Step::Event(event) => Some(Read::PublishedEvent(event)),
+            },
+            Read::PublishedEvent(event) => self
+                .published?
+                .field(event, name)
+                .map(|type_ref| Read::Declared(type_ref.clone())),
+            // What a selector reads of its own candidate: identity, declared fields, `state`.
+            Read::Row(entity) => self
+                .rows?
+                .entities()
+                .get(entity)
+                .map(super::row_set::candidate_fields)?
+                .into_iter()
+                .find(|field| field.name == name)
+                .map(|field| Read::Declared(field.type_ref)),
         }
+    }
+    fn related_rows(&self, entity: &str) -> RelatedRows<Read> {
+        let Some(spec) = self.rows else {
+            return RelatedRows::NotHere;
+        };
+        // Below the format or naming no declared entity, `super::related_rows` refuses it.
+        super::related_rows::admitted(spec, entity).map_or(RelatedRows::Reported, |declared| {
+            RelatedRows::Admitted(Read::Row(declared.name.clone()))
+        })
     }
     fn has_parameters(&self) -> bool {
         self.inner.has_parameters()
@@ -1987,7 +2264,7 @@ pub(crate) fn refuse_below_ess_16(
                                     format!("{at}.payload.{event}.{}", field.target),
                                     "{count: changed}",
                                 ));
-                                field.source = PayloadSource::Generated;
+                                field.source = PayloadSource::Generated { present: false };
                             }
                         }
                     }
@@ -2232,7 +2509,12 @@ fn deletion_shapes(
     let affects = &outcome.set_effects.affects;
     for (index, affect) in affects.iter().enumerate() {
         let at = site.clone().key("affects").index(index);
-        if affect.deletes && !affect.sets.is_empty() {
+        // An element read is a `sets:` entry as written (ess/27, beyond10x/ess#596).
+        let reads = affect
+            .each
+            .as_ref()
+            .is_some_and(|each| !each.reads.is_empty());
+        if affect.deletes && (!affect.sets.is_empty() || reads) {
             errors.push(
                 ValidationError::at(
                     at.clone().key("sets"),
@@ -2353,7 +2635,7 @@ pub(crate) fn refuse_deletions(
                         for (_, table) in &mut outcome.payload.0 {
                             for field in &mut table.0 {
                                 if field.source == PayloadSource::ChangedCount {
-                                    field.source = PayloadSource::Generated;
+                                    field.source = PayloadSource::Generated { present: false };
                                 }
                             }
                         }
@@ -2571,6 +2853,36 @@ fn each_below_ess_23(at: String) -> ValidationError {
     .with_hint("declare `format: ess/23`")
 }
 
+/// The refusal of `moves:` or `deletes:` (`beside`) in an `each:` entry below ess/27, at `at`
+/// (beyond10x/ess#596): the code and message it had before ess/27, the hint naming the format
+/// that admits it.
+fn each_effect_below_ess_27(name: &str, index: usize, beside: &str, at: String) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::ConflictingDeclaration,
+        at,
+        format!(
+            "outcome `{name}` declares `each:` and `{beside}` in `affects[{index}]`; an `each:` \
+             entry creates or updates the row each element names, and selects, moves or removes \
+             no other, below specification format ess/27"
+        ),
+    )
+    .with_hint(
+        "keep `each:` with `instance:` and `sets:`, or write the other effect as an entry of its \
+         own; from `format: ess/27` the entry may move or delete the row each element names",
+    )
+}
+
+/// The refusal of a `where:` inside `each:` below ess/27, at `at` (beyond10x/ess#596).
+fn element_filter_below_ess_27(at: String) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::UnsupportedFormatVersion,
+        at,
+        "an `each:` entry acting only on the elements a filter selects — `each: {in: …, as: \
+         <name>, where: <predicate>}` — requires specification format ess/27",
+    )
+    .with_hint("declare `format: ess/27`")
+}
+
 /// Refuses, before any outcome is converted, under one header from `ess/16` (beyond10x/ess#459):
 /// below `ess/23` each `each:` inside an `affects:` entry, naming `ess/23`; and in every such format
 /// an entry without `each:` that declares `instance:` or no `where:`, naming `ess/23` below it. The
@@ -2584,9 +2896,15 @@ fn each_below_ess_23(at: String) -> ValidationError {
 /// `type_mismatch` for an element read, and no `empty_declaration`. Below `ess/16` the whole
 /// `affects:` is [`refuse_below_ess_16`]'s; a specification of several headers keeps
 /// [`validate`]'s refusal.
+///
+/// From `ess/23` below `ess/27` (beyond10x/ess#596) an `each:` entry's `moves:` or `deletes:` is
+/// refused as it always was, the hint naming `ess/27`, and a `where:` inside `each:` is refused
+/// naming `ess/27`. Each is taken off, the move recorded in `refused_moves`, so the entry converts as
+/// the create-or-update entry it was and the refusal is not followed by an uncaused transition.
 pub(crate) fn refuse_each(
     files: &mut [(crate::system::Source, crate::spec::RawSpecFile)],
     errors: &mut ValidationErrors,
+    refused_moves: &mut std::collections::BTreeSet<QualifiedName>,
 ) {
     let headers: Vec<Option<FormatVersion>> = files
         .iter()
@@ -2601,6 +2919,7 @@ pub(crate) fn refuse_each(
         return;
     }
     let below_23 = major < FormatVersion::V23.major();
+    let below_27 = major < FormatVersion::V27.major();
     for (_, file) in files.iter_mut() {
         for command in &mut file.commands {
             for outcome in &mut command.outcomes {
@@ -2616,7 +2935,34 @@ pub(crate) fn refuse_each(
                             .get_or_insert_with(|| Predicate::Always.into());
                         continue;
                     }
-                    if affect.each.is_some() {
+                    if let Some(each) = affect.each.as_mut() {
+                        if below_27 {
+                            if each.filter.take().is_some() {
+                                errors
+                                    .push(element_filter_below_ess_27(format!("{at}.each.where")));
+                            }
+                            if let Some(moved) = affect.moves.take() {
+                                errors.push(each_effect_below_ess_27(
+                                    &name,
+                                    index,
+                                    "moves:",
+                                    format!("{at}.each"),
+                                ));
+                                refused_moves.insert(if moved.namespace().is_some() {
+                                    moved
+                                } else {
+                                    affect.entity.child(moved.local())
+                                });
+                            }
+                            if affect.deletes.take().is_some() {
+                                errors.push(each_effect_below_ess_27(
+                                    &name,
+                                    index,
+                                    "deletes:",
+                                    format!("{at}.each"),
+                                ));
+                            }
+                        }
                         continue;
                     }
                     if affect.instance.take().is_some() {
@@ -2699,6 +3045,25 @@ fn each_rules(
         );
         return errors;
     };
+    // The element filter reads the element under its binder and the command's input (ess/27,
+    // beyond10x/ess#596).
+    if let Some(filter) = &each.filter {
+        let at = site.clone().key("where");
+        let bound = [Field::new(
+            binder.clone(),
+            TypeRef::Named(element.name.clone()),
+        )];
+        let environment =
+            DomainEnvironment::new(&spec.system().types, &bound).with_input(&command.input);
+        let checked = crate::expression::check_predicate(&environment, filter, &at.render());
+        for error in &checked.errors {
+            errors.push(ValidationError::at(
+                at.clone(),
+                error.code,
+                error.message.clone(),
+            ));
+        }
+    }
     let instance = at.clone().key("instance");
     match element.field(&each.member) {
         None => errors.push(
@@ -2831,7 +3196,10 @@ fn each_rules(
             }
         });
     }
-    for field in &entity.fields {
+    // An entry that moves or removes the row an element names creates none (ess/27,
+    // beyond10x/ess#596).
+    let creates = affect.moves.is_none() && !affect.deletes;
+    for field in entity.fields.iter().filter(|_| creates) {
         if field.type_ref.is_optional()
             || affect.sets.contains_key(&field.name)
             || each.reads.contains_key(&field.name)
@@ -2962,20 +3330,29 @@ fn identity_set(
 
 /// One transition per entity per outcome (beyond10x/ess#229): a second `affects:` entry declaring
 /// `moves:` over an entity an earlier entry already moves is refused at its `moves`, since a row
-/// both select would have to take two, and no order between their moves is defined.
+/// both select would have to take two, and no order between their moves is defined. Two `each:`
+/// entries are the exception (ess/27, beyond10x/ess#596): they apply in the order written.
 fn one_move_per_entity(
     command: &CommandSpec,
     outcome: &Outcome,
     site: &ConstructRef,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
-    let mut moving: BTreeMap<&QualifiedName, usize> = BTreeMap::new();
-    for (index, affect) in outcome.set_effects.affects.iter().enumerate() {
+    let mut moving: BTreeMap<&QualifiedName, Vec<usize>> = BTreeMap::new();
+    let affects = &outcome.set_effects.affects;
+    for (index, affect) in affects.iter().enumerate() {
         if affect.moves.is_none() {
             continue;
         }
-        let Some(first) = moving.get(&affect.entity) else {
-            moving.insert(&affect.entity, index);
+        let earlier = moving.entry(&affect.entity).or_default();
+        // Entries naming their rows by the elements of a list (ess/27, beyond10x/ess#596) apply in
+        // the order written, each to the rows its elements name, so a row an earlier one moved
+        // rests where a later one's move may not start from: their order is defined.
+        let Some(&first) = earlier
+            .iter()
+            .find(|&&other| affects[other].each.is_none() || affect.each.is_none())
+        else {
+            earlier.push(index);
             continue;
         };
         errors.push(

@@ -73,16 +73,16 @@
 //! ```yaml
 //! timeline:
 //!   - at: 2026-01-05T09:00:13Z
-//!     command: acd.routing.BridgeEntry
+//!     command: queue.routing.BridgeEntry
 //!     mark: bridged
 //!
 //!   - at: 2026-01-05T09:00:33Z
-//!     command: acd.routing.EnterQueue
+//!     command: queue.routing.EnterQueue
 //!     elapsed:
 //!       - since: bridged
 //!         not_before: PT20S
 //!       - since: bridged
-//!         quiet: {for: PT20S, events: [acd.routing.CallEnded]}
+//!         quiet: {for: PT20S, events: [queue.routing.CallEnded]}
 //! ```
 //!
 //! Three bounds, one per window, and each names the instant it opens at:
@@ -118,7 +118,7 @@
 //!
 //! ```yaml
 //! assert:
-//!   - view: acd.matching.SlotOrder
+//!   - view: queue.matching.SlotOrder
 //!     params: {group_id: {$instance: group}}
 //!     halts_after: 2
 //! ```
@@ -247,7 +247,7 @@ use std::fmt;
 use ess_compiler::diagnostic::Code;
 use ess_compiler::ir::{
     EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedField, ResolvedOutcome,
-    ResolvedTypeRef,
+    ResolvedPayload, ResolvedPayloadField, ResolvedPayloadValue, ResolvedTypeRef,
 };
 use ess_domain::command::{fixture_inputs::FixtureName, OutcomeName, TestStrategy};
 use ess_domain::name::QualifiedName;
@@ -265,6 +265,8 @@ use crate::scenario::{
     ScenarioId, ScenarioPurpose, ScenarioStep, ScenarioValue, ViewExpectation, ViewRef,
 };
 use crate::synthesize::{payload_shape, reachable_types};
+
+mod ties;
 
 // ---- the diagnostic catalogue ------------------------------------------------------------------
 
@@ -1314,6 +1316,71 @@ pub enum Cause {
         /// Why each branch the claim could mean is not taken, in declaration order.
         reasons: Vec<String>,
     },
+    /// An act states an exact value for a field the model leaves to the implementation
+    /// (beyond10x/ess#544, `docs/design/authored-generated-values.md`).
+    ///
+    /// The field is an event's or an error's, or a stored field a view row shows, and every
+    /// outcome that fills it here marks it `{generated: true}`, or `{input: f, else: {generated:
+    /// true}}` where the act sends no `f`. A claim of one value passes only where the
+    /// implementation happens to mint it.
+    GeneratedValuePinned {
+        /// Where the value is written.
+        surface: Surface,
+        /// The field, or the dotted path of a struct leaf.
+        field: String,
+        /// The value the act writes, as it reads.
+        value: String,
+        /// The outcomes that mint it, as `command/branch`.
+        outcomes: Vec<String>,
+        /// How the first of them marks it.
+        marked: String,
+    },
+    /// An act reads the head of an ordered selection declaring `ties: unordered`, and the rows the
+    /// scenario arranges tie on every key and rank first (beyond10x/ess#543,
+    /// `docs/design/ordered-related-head.md`, "Declared-unordered ties").
+    ///
+    /// The model leaves which of them is the head to the implementation, so any head the act claims
+    /// passes only where the implementation happens to pick it, and the model interpreter answers
+    /// `unsupported`. Decided by replaying the file's own literals; an act the replay cannot
+    /// follow claims nothing.
+    UnorderedTie {
+        /// The command the act invokes.
+        command: CommandRef,
+        /// The entity whose rows tie.
+        entity: String,
+        /// The ranking keys, as written.
+        order: String,
+    },
+    /// An act sends a command the system issues itself as a system actor (beyond10x/ess#542,
+    /// `docs/design/system-issued-commands.md`). No caller can be the system: the act names no
+    /// actor and is awaited, or names one the specification does not grant the command and expects
+    /// `refused: not_granted`.
+    SystemActorSends {
+        /// The system actor named.
+        actor: ActorRef,
+        /// The system-issued command.
+        command: CommandRef,
+    },
+    /// An act awaiting a command the system issues itself names no record to await it on: it
+    /// states no value for the identity input, or the command's outcomes address no one existing
+    /// record (beyond10x/ess#542).
+    AwaitedWithoutInstance {
+        /// The system-issued command.
+        command: CommandRef,
+        /// Why no record is named.
+        reason: String,
+    },
+    /// An act expects a refusing outcome of a command the system issues itself, which is read as
+    /// nothing issued within the bound, and claims what only an issued command answers
+    /// (beyond10x/ess#542).
+    NotIssuedClaims {
+        /// The system-issued command.
+        command: CommandRef,
+        /// The refusing outcome the act expects.
+        outcome: String,
+        /// What it claims besides, as written.
+        claims: Vec<String>,
+    },
 }
 
 /// Whether `code` is one a refusal of one authored file can carry: every cause [`Cause::code`]
@@ -1389,6 +1456,270 @@ fn in_order<'a>(names: impl Iterator<Item = &'a String>) -> Vec<String> {
     once
 }
 
+/// A branch an act can answer with, or one a binding invokes from what it publishes.
+struct Reached<'ir> {
+    command: &'ir ResolvedCommand,
+    outcome: &'ir ResolvedOutcome,
+    /// A branch of the act's own command, which reads the input the act sends.
+    own: bool,
+}
+
+/// The branches an act can reach: `written`, or with none every branch of `command`, and every
+/// branch of a command a binding invokes from what those publish, transitively, each once.
+fn reachable_branches<'ir>(
+    ir: &'ir EssIr,
+    command: &'ir ResolvedCommand,
+    written: Option<&'ir ResolvedOutcome>,
+) -> Vec<Reached<'ir>> {
+    let mut found: Vec<Reached<'ir>> = written.map_or_else(
+        || {
+            command
+                .outcomes
+                .iter()
+                .map(|outcome| Reached {
+                    command,
+                    outcome,
+                    own: true,
+                })
+                .collect()
+        },
+        |outcome| {
+            vec![Reached {
+                command,
+                outcome,
+                own: true,
+            }]
+        },
+    );
+    let mut seen: BTreeSet<(QualifiedName, OutcomeName)> = found
+        .iter()
+        .map(|it| (it.command.name.clone(), it.outcome.name.clone()))
+        .collect();
+    let mut next = 0;
+    while next < found.len() {
+        let emits = &found[next].outcome.emits;
+        next += 1;
+        let mut more = Vec::new();
+        for emitted in emits {
+            for binding in ir.bindings().values() {
+                if binding
+                    .cause
+                    .event()
+                    .is_none_or(|it| it.name() != emitted.name())
+                {
+                    continue;
+                }
+                let Some(invoked) = ir.commands().get(binding.command.name()) else {
+                    continue;
+                };
+                for outcome in &invoked.outcomes {
+                    if seen.insert((invoked.name.clone(), outcome.name.clone())) {
+                        more.push(Reached {
+                            command: invoked,
+                            outcome,
+                            own: false,
+                        });
+                    }
+                }
+            }
+        }
+        found.extend(more);
+    }
+    found
+}
+
+/// How one branch fills a record: its `payload:` entries for an event or an error, or its
+/// `sets:` for a row, with the input the act sends where the branch is the act's own.
+struct Fill<'a> {
+    /// The branch, as `command/branch`.
+    outcome: String,
+    fills: &'a [ResolvedPayloadField],
+    /// The branch's `payload:` entries, which a `{payload: <Event>.<field>}` in `sets:` reads.
+    published: &'a [ResolvedPayload],
+    /// `None` for a branch a binding invokes, whose input a mapping fills.
+    sent: Option<&'a BTreeMap<String, Written>>,
+}
+
+/// A [`Fill`] kept across acts, until the scenario's view rows are read.
+struct OwnedFill<'ir> {
+    outcome: String,
+    fills: &'ir [ResolvedPayloadField],
+    published: &'ir [ResolvedPayload],
+    sent: Option<BTreeMap<String, Written>>,
+}
+
+/// A write of stored fields some act of the scenario makes.
+enum RowWrite<'ir> {
+    /// Fields whose values the file can know: a `setup:` states them, or an `each:` reads them
+    /// from an element the act sends.
+    Stated {
+        entity: QualifiedName,
+        fields: BTreeSet<String>,
+    },
+    /// A branch's `sets:` on a row of the entity.
+    Branch {
+        entity: QualifiedName,
+        fill: OwnedFill<'ir>,
+    },
+}
+
+/// Whether an act pins the value it writes: a literal does, and so does a fixture, whose whole
+/// value the suite resolves before the run; a reference states a relation and does not.
+fn pins(value: &Written) -> bool {
+    matches!(value, Written::Literal(_) | Written::Fixture(_))
+}
+
+/// The literal an act writes, walked leaf by leaf; `None` for a fixture, pinned whole.
+fn literal(value: &Written) -> Option<&Node> {
+    match value {
+        Written::Literal(node) => Some(node),
+        _ => None,
+    }
+}
+
+/// The leaves of the value written for `field` that every one of `fills` leaves to the
+/// implementation, each with how the first marks it. Empty where there is no fill, or where one
+/// fill does not determine `field` as minted.
+fn minted_by_every(
+    field: &str,
+    pinned: Option<&Node>,
+    fills: &[Fill<'_>],
+) -> BTreeMap<String, String> {
+    let mut common: Option<BTreeMap<String, String>> = None;
+    for fill in fills {
+        let mut found = BTreeMap::new();
+        if let Some(entry) = fill.fills.iter().find(|it| it.target == field) {
+            minted_leaves(
+                &entry.value,
+                pinned,
+                field,
+                fill.sent,
+                fill.published,
+                &mut found,
+            );
+        }
+        common = Some(match common {
+            None => found,
+            Some(mut kept) => {
+                kept.retain(|path, _| found.contains_key(path));
+                kept
+            }
+        });
+    }
+    common.unwrap_or_default()
+}
+
+/// Where `value` leaves the value an act writes to the implementation, by the leaf's dotted path.
+///
+/// `written` is the act's literal, walked through a struct the branch fills member by member; `None`
+/// pins the whole value. `sent` is the act's input where the branch reads it.
+fn minted_leaves(
+    value: &ResolvedPayloadValue,
+    written: Option<&Node>,
+    path: &str,
+    sent: Option<&BTreeMap<String, Written>>,
+    published: &[ResolvedPayload],
+    found: &mut BTreeMap<String, String>,
+) {
+    match value {
+        ResolvedPayloadValue::Generated { present } => {
+            let marked = if *present {
+                "`{generated: true, present: true}`"
+            } else {
+                "`{generated: true}`"
+            };
+            found.insert(path.to_owned(), marked.to_owned());
+        }
+        // `ess/27` (beyond10x/ess#545): the row stores what this branch publishes, so a mint there
+        // is the same mint here.
+        ResolvedPayloadValue::PayloadRead { event, field, .. } => {
+            let read = published
+                .iter()
+                .filter(|payload| payload.event.name() == event.name())
+                .flat_map(|payload| &payload.fields)
+                .find(|it| it.target == *field);
+            if let Some(read) = read {
+                let mut minted = BTreeMap::new();
+                minted_leaves(&read.value, written, path, sent, &[], &mut minted);
+                for (at, how) in minted {
+                    found.insert(
+                        at,
+                        format!(
+                            "`{{payload: {}.{field}}}`, which reads a payload field marked {how}",
+                            event.name()
+                        ),
+                    );
+                }
+            }
+        }
+        ResolvedPayloadValue::InputOrGenerated {
+            field,
+            otherwise: None,
+            ..
+        } if sent.is_some_and(|sent| !sends(sent, field)) => {
+            found.insert(
+                path.to_owned(),
+                format!("`{{input: {field}, else: {{generated: true}}}}` and the act sends no `{field}`"),
+            );
+        }
+        ResolvedPayloadValue::Struct { fields } => {
+            for member in fields {
+                let inner = match written {
+                    None => None,
+                    Some(node) => match node.as_map().and_then(|map| map.get(&member.target)) {
+                        Some(inner) => Some(inner),
+                        None => continue,
+                    },
+                };
+                let at = format!("{path}.{}", member.target);
+                minted_leaves(&member.value, inner, &at, sent, published, found);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Whether `sent` carries a value along the input route `field` (`opening.label`): a reference or
+/// a fixture does; an absent or `null` segment does not.
+fn sends(sent: &BTreeMap<String, Written>, field: &str) -> bool {
+    let mut segments = field.split('.');
+    let Some(top) = segments.next().and_then(|first| sent.get(first)) else {
+        return false;
+    };
+    let Written::Literal(node) = top else {
+        return true;
+    };
+    let mut node = node;
+    for segment in segments {
+        match node.as_map().and_then(|map| map.get(segment)) {
+            Some(inner) => node = inner,
+            None => return false,
+        }
+    }
+    !matches!(node, Node::Null)
+}
+
+/// What `value` writes at the dotted `path`, as it reads in a refusal.
+fn value_at(value: &Written, path: &str) -> String {
+    match value {
+        Written::Literal(node) => {
+            let mut node = node;
+            for segment in path.split('.').skip(1) {
+                if let Some(inner) = node.as_map().and_then(|map| map.get(segment)) {
+                    node = inner;
+                }
+            }
+            // Text quoted, so an empty one still reads as one; a number as the document wrote it.
+            match node {
+                Node::Text(text) => serde_json::to_string(text).unwrap_or_else(|_| text.clone()),
+                other => other.to_string(),
+            }
+        }
+        Written::Fixture(name) => format!("{{{}: {name}}}", Written::FIXTURE),
+        Written::Instance(_) | Written::Observed { .. } => String::new(),
+    }
+}
+
 /// Why `command` decidedly does not take `outcome` for an input, where `decided` reads its guards
 /// that way; `None` where the input leaves it open (beyond10x/ess#222). `decided` answers whether a
 /// guard holds at every run ([`at_every_run`]), and `None` where it is not one answer.
@@ -1406,6 +1737,7 @@ fn in_order<'a>(names: impl Iterator<Item = &'a String>) -> Vec<String> {
 /// model interpreter answers. Whatever else a branch reads — the held state, a stored or related
 /// row, a provider — is not decided, and a `when:` the literals leave undecided claims nothing.
 fn not_taken(
+    format: ess_domain::system::FormatVersion,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     decided: &impl Fn(&Predicate) -> Option<bool>,
@@ -1415,12 +1747,13 @@ fn not_taken(
 
     // The accepting `when:` branches the precedence plan answers before this one: the claimers of
     // beyond10x/ess#217. Which branches they answer before is the plan's.
-    let earlier_accepting = crate::synthesize::precedence::answers_before(command, outcome)
+    let earlier_accepting = crate::synthesize::precedence::answers_before(format, command, outcome)
         .into_iter()
         .filter(|other| {
             other.error.is_none() && matches!(other.condition, ResolvedCondition::When { .. })
         });
-    let before = crate::synthesize::sibling_refusals(command, outcome).chain(earlier_accepting);
+    let before =
+        crate::synthesize::sibling_refusals(format, command, outcome).chain(earlier_accepting);
     for first in before {
         let Some(guard) = when(first) else {
             continue;
@@ -1597,7 +1930,7 @@ impl Cause {
     }
 }
 
-// One arm per cause, and long because there are forty-one of them. A reader comparing two
+// One arm per cause, and long because there are forty-three of them. A reader comparing two
 // repairs reads them side by side or not at all, and splitting the list would put half of it
 // somewhere else. The meaning is the variant's own first line of documentation.
 diagnostic_catalogue! {
@@ -1762,6 +2095,36 @@ diagnostic_catalogue! {
              claims, or expect the branch that input takes: input-guarded refusals answer first, \
              the first declared of them, then accepting `when:` and external branches in \
              declaration order, and the default only where no `when:` holds";
+        Self::GeneratedValuePinned { .. } => 42,
+            "An act states an exact value for a field the outcome marks `{generated: true}`.",
+            "the implementation mints a `{generated: true}` field, so an exact value passes only \
+             where it happens to mint that one: drop the field from the expectation, and the \
+             suite still checks its presence and type, or state its relation to another value \
+             with a reference, `{$observed: {event: …, field: …}}` in a view row or `capture:` \
+             on the event";
+        Self::UnorderedTie { .. } => 43,
+            "An act reads the head of an order declaring `ties: unordered`, and the arranged rows \
+             tie on every key and rank first.",
+            "the model leaves the order of tying rows to the implementation, so a head chosen \
+             among them is no particular row: arrange the rows so that one ranks first on the \
+             keys alone, or declare a total order ending in the identity where the model fixes \
+             how ties break";
+        Self::SystemActorSends { .. } => 44,
+            "An act sends a command the system issues itself as a system actor.",
+            "no caller can be the system: name no `actor:`, and the act awaits the system's step; \
+             to check that an outside caller cannot issue it, name an actor the specification \
+             does not grant it, with `refused: not_granted`";
+        Self::AwaitedWithoutInstance { .. } => 45,
+            "An act awaiting a command the system issues itself names no record to await it on.",
+            "state the input the outcomes name as `instance:` under `input:`, a literal or \
+             `{$instance: name}`; a step the system takes to create a record, or over rows with \
+             no subject, is not awaited in this release";
+        Self::NotIssuedClaims { .. } => 46,
+            "An act expects a refusal of a command the system issues itself and claims what only \
+             an issued command answers.",
+            "a refusal of the system's own step is checked as nothing issued within the bound, \
+             none of its events published: state only the instance under `input:`, and drop \
+             `error`, `response`, `events` and `capture`";
     }
 }
 
@@ -1836,6 +2199,52 @@ impl fmt::Display for Cause {
                 "`{command}` is expected to answer {claim} for {input}, which its guards decide \
                  otherwise: {}",
                 reasons.join("; ")
+            ),
+            Self::GeneratedValuePinned {
+                surface,
+                field,
+                value,
+                outcomes,
+                marked,
+            } => {
+                let (minting, verb) = if outcomes.len() == 1 {
+                    (format!("`{}`", outcomes[0]), "marks")
+                } else {
+                    (format!("`{}`", outcomes.join("` and `")), "each mark")
+                };
+                write!(
+                    f,
+                    "{surface} pins `{field}` to {value}, a value {minting} {verb} {marked}"
+                )
+            }
+            Self::UnorderedTie {
+                command,
+                entity,
+                order,
+            } => write!(
+                f,
+                "`{command}` reads the head of the `{entity}` rows ranked by `{order}`, and the \
+                 rows this scenario arranges tie on every key and rank first; the order declares \
+                 `ties: unordered`, so which is the head is the implementation's choice"
+            ),
+            Self::SystemActorSends { actor, command } => write!(
+                f,
+                "`{command}` is sent as `{actor}`, which is the system itself; the system issues \
+                 it, so the act names no actor and the scenario awaits it"
+            ),
+            Self::AwaitedWithoutInstance { command, reason } => write!(
+                f,
+                "`{command}` is issued by the system and awaited on a record, and {reason}"
+            ),
+            Self::NotIssuedClaims {
+                command,
+                outcome,
+                claims,
+            } => write!(
+                f,
+                "`{command}` is expected to refuse with `{outcome}`, which is read as nothing \
+                 issued within the bound and contradicts {}",
+                claims.join(", ")
             ),
             Self::UndeclaredEvent { event } => {
                 write!(f, "`{event}` is not an event this specification declares")
@@ -2158,7 +2567,9 @@ pub(crate) fn compile_one(
         identities: BTreeMap::new(),
         observed: BTreeSet::new(),
         marked: BTreeMap::new(),
+        row_writes: Vec::new(),
         steps: Vec::new(),
+        replay: ties::Replay::new(ir),
         source: BTreeSet::new(),
         types: BTreeSet::new(),
     };
@@ -2278,12 +2689,17 @@ struct Compiler<'a> {
     observed: BTreeSet<EventRef>,
     /// The instant each earlier act marked, and where the file puts it.
     marked: BTreeMap<InstantName, Moment>,
+    /// Every stored field the arrangement or a branch an act reaches writes, for the view rows'
+    /// check against a minted value (beyond10x/ess#544).
+    row_writes: Vec<RowWrite<'a>>,
     steps: Vec<ScenarioStep>,
+    /// The store the file's literals build, for a head its rows leave tied (beyond10x/ess#543).
+    replay: ties::Replay,
     source: BTreeSet<EssSemanticRef>,
     types: BTreeSet<DeclaredTypeRef>,
 }
 
-impl Compiler<'_> {
+impl<'a> Compiler<'a> {
     /// Records a refusal about the scenario being compiled.
     fn refuse(&mut self, cause: Cause) {
         self.refusals.push(Refusal {
@@ -2367,6 +2783,16 @@ impl Compiler<'_> {
                 self.bound.insert(arrangement.instance.clone());
                 self.identities
                     .insert(arrangement.instance.clone(), setup.identity.clone());
+                self.row_writes.push(RowWrite::Stated {
+                    entity: entity.name().clone(),
+                    fields: setup.fields.keys().cloned().collect(),
+                });
+                self.replay.establish(
+                    entity.name().clone(),
+                    setup.identity.clone(),
+                    setup.fields.clone(),
+                    setup.state.clone(),
+                );
                 self.steps.push(ScenarioStep::EstablishEntity {
                     instance: arrangement.instance.clone(),
                     entity,
@@ -2422,42 +2848,38 @@ impl Compiler<'_> {
             self.refused_act(act, &command_ref, &input_fields);
             return;
         }
-        let (actor, caller) = self.sender(act, &command_ref);
-        let refused_before = self.refusals.len();
-        let input = self.values(
-            &act.input,
-            &input_fields,
-            &Surface::Input(command_ref.clone()),
-            Completeness::Total,
-        );
-        let sent = (self.refusals.len() == refused_before).then(|| input.clone());
+        let (step, sent) = if command.system_issued {
+            // A command the system issues itself is awaited, never sent (beyond10x/ess#542).
+            let Some(step) = self.awaited(act, &command_ref, command, &input_fields) else {
+                self.mark(act);
+                return;
+            };
+            (step, None)
+        } else {
+            let (actor, caller) = self.sender(act, &command_ref);
+            let refused_before = self.refusals.len();
+            let input = self.values(
+                &act.input,
+                &input_fields,
+                &Surface::Input(command_ref.clone()),
+                Completeness::Total,
+            );
+            let sent = (self.refusals.len() == refused_before).then(|| input.clone());
+            let step = ScenarioStep::ExecuteCommand {
+                caller,
+                command: command_ref.clone(),
+                actor,
+                input,
+            };
+            (step, sent)
+        };
         self.external_answer(&command_ref, command, act);
-        self.steps.push(ScenarioStep::ExecuteCommand {
-            caller,
-            command: command_ref.clone(),
-            actor,
-            input,
-        });
+        self.steps.push(step);
+        self.unordered_tie(&command_ref, command, act, sent.as_ref());
 
-        if let Some(written) = &act.outcome {
-            match OutcomeName::new(written)
-                .ok()
-                .filter(|outcome| outcomes.contains(outcome))
-            {
-                Some(outcome) => {
-                    let reference = OutcomeRef::new(command_ref.clone(), outcome);
-                    self.source.insert(reference.clone().into());
-                    self.steps
-                        .push(ScenarioStep::ExpectOutcome { outcome: reference });
-                }
-                None => self.refuse(Cause::UndeclaredOutcome {
-                    command: command_ref.clone(),
-                    outcome: written.clone(),
-                    declared: outcomes.iter().map(ToString::to_string).collect(),
-                }),
-            }
-        }
+        self.expected_outcome(&command_ref, &outcomes, act);
         self.guarded_outcome(&command_ref, command, act, sent.as_ref());
+        self.generated_claims(command, act);
 
         if let Some(claim) = &act.error {
             self.error(claim);
@@ -2505,6 +2927,156 @@ impl Compiler<'_> {
             self.capture(capture);
         }
         self.mark(act);
+    }
+
+    /// The step an act naming a command the system issues itself compiles to (beyond10x/ess#542,
+    /// `docs/design/system-issued-commands.md`, *Every lane*): `await_outcome` on the record its
+    /// identity input names, with the rest of its `input:` as the stated, partial input, where it
+    /// expects an accepting or `external:` outcome, or none.
+    ///
+    /// `None` where the act is refused, or where it expects a refusing outcome: that is read as
+    /// nothing issued within the bound, and the `expect_not_issued` it compiles to is pushed here,
+    /// with every event the command emits, and those under `no_events:`, unpublished. A claim only
+    /// an issued command answers is refused beside it (`ESS-AUTHOR-046`).
+    fn awaited(
+        &mut self,
+        act: &Act,
+        command_ref: &CommandRef,
+        command: &'a ResolvedCommand,
+        input_fields: &[ResolvedField],
+    ) -> Option<ScenarioStep> {
+        if let Some(written) = &act.actor {
+            if let Some((name, declared)) = self.declared(written, self.ir.actors(), |actor| {
+                Cause::UndeclaredActor { actor }
+            }) {
+                let actor = ActorRef::new(name);
+                let command = command_ref.clone();
+                // Every grant of a system-issued command is a system actor's: any other actor is
+                // simply not granted it.
+                self.refuse(if declared.system {
+                    Cause::SystemActorSends { actor, command }
+                } else {
+                    Cause::ActorMayNot { actor, command }
+                });
+            }
+            return None;
+        }
+        let mut stated = self.values(
+            &act.input,
+            input_fields,
+            &Surface::Input(command_ref.clone()),
+            Completeness::Partial,
+        );
+        let identity = match crate::system_issued::identity_input(command) {
+            Ok(identity) => identity,
+            Err(reason) => {
+                self.refuse(Cause::AwaitedWithoutInstance {
+                    command: command_ref.clone(),
+                    reason: reason.to_string(),
+                });
+                return None;
+            }
+        };
+        let Some(instance) = stated.remove(identity) else {
+            // A value written and refused is reported already.
+            if !act.input.contains_key(identity) {
+                self.refuse(Cause::AwaitedWithoutInstance {
+                    command: command_ref.clone(),
+                    reason: format!(
+                        "it states no value for `{identity}`, the input naming the record"
+                    ),
+                });
+            }
+            return None;
+        };
+        let refusing = act.outcome.as_ref().and_then(|written| {
+            command.outcomes.iter().find(|outcome| {
+                outcome.name.as_str() == written && outcome.error.is_some() && !is_external(outcome)
+            })
+        });
+        let Some(refusing) = refusing else {
+            return Some(ScenarioStep::AwaitOutcome {
+                command: command_ref.clone(),
+                instance,
+                identity: identity.to_owned(),
+                within: command.await_within,
+                input: stated,
+                shape: crate::synthesize::system_issued::input_shape(self.ir, command),
+            });
+        };
+        let mut claims: Vec<String> = stated
+            .keys()
+            .map(|field| format!("a value for `{field}`"))
+            .collect();
+        for (key, written) in [
+            ("error", act.error.is_some()),
+            ("response", act.response.is_some()),
+            ("events", !act.events.is_empty()),
+            ("capture", act.capture.is_some()),
+        ] {
+            if written {
+                claims.push(format!("`{key}:`"));
+            }
+        }
+        if !claims.is_empty() {
+            self.refuse(Cause::NotIssuedClaims {
+                command: command_ref.clone(),
+                outcome: refusing.name.to_string(),
+                claims,
+            });
+            return None;
+        }
+        self.source
+            .insert(OutcomeRef::new(command_ref.clone(), refusing.name.clone()).into());
+        let mut unpublished = crate::synthesize::system_issued::emitted_by(command);
+        for written in &act.no_events {
+            if let Some((name, _)) = self.declared(written, self.ir.events(), |event| {
+                Cause::UndeclaredEvent { event }
+            }) {
+                let event = EventRef::new(name);
+                self.source.insert(event.clone().into());
+                if !unpublished.contains(&event) {
+                    unpublished.push(event);
+                }
+            }
+        }
+        unpublished.sort();
+        self.steps.push(ScenarioStep::ExpectNotIssued {
+            command: command_ref.clone(),
+            instance,
+            within: command.await_within,
+            unpublished,
+        });
+        None
+    }
+
+    /// Refuses an act whose head read, under `ties: unordered`, ranks two of the rows the file's
+    /// literals arrange first (beyond10x/ess#543). The replay stops at the file's first refusal
+    /// and at an input that is not wholly literal.
+    fn unordered_tie(
+        &mut self,
+        command_ref: &CommandRef,
+        command: &ResolvedCommand,
+        act: &Act,
+        sent: Option<&BTreeMap<String, ScenarioValue>>,
+    ) {
+        let input = match sent {
+            Some(input) if self.refusals.is_empty() => input,
+            _ => {
+                self.replay = ties::Replay::stopped();
+                return;
+            }
+        };
+        if let Some(tie) = self
+            .replay
+            .act(self.ir, command, input, act.outcome.as_deref())
+        {
+            self.refuse(Cause::UnorderedTie {
+                command: command_ref.clone(),
+                entity: tie.entity,
+                order: tie.order,
+            });
+        }
     }
 
     /// Arms the answer an act naming an external branch states, immediately before its call.
@@ -2595,7 +3167,7 @@ impl Compiler<'_> {
         };
         let mut reasons = Vec::new();
         for outcome in candidates {
-            match not_taken(command, outcome, &decided) {
+            match not_taken(self.ir.format(), command, outcome, &decided) {
                 Some(reason) => reasons.push(reason),
                 None => return,
             }
@@ -3276,6 +3848,227 @@ impl Compiler<'_> {
             .is_some_and(|declared| declared.type_ref.required() == identity.required())
     }
 
+    /// The branch `act` expects under `outcome:`, one of `outcomes`, the branches of
+    /// `command_ref`; refused where the command declares no such branch.
+    fn expected_outcome(&mut self, command_ref: &CommandRef, outcomes: &[OutcomeName], act: &Act) {
+        let Some(written) = &act.outcome else {
+            return;
+        };
+        match OutcomeName::new(written)
+            .ok()
+            .filter(|outcome| outcomes.contains(outcome))
+        {
+            Some(outcome) => {
+                let reference = OutcomeRef::new(command_ref.clone(), outcome);
+                self.source.insert(reference.clone().into());
+                self.steps
+                    .push(ScenarioStep::ExpectOutcome { outcome: reference });
+            }
+            None => self.refuse(Cause::UndeclaredOutcome {
+                command: command_ref.clone(),
+                outcome: written.clone(),
+                declared: outcomes.iter().map(ToString::to_string).collect(),
+            }),
+        }
+    }
+
+    /// Refuses each exact value `act` claims, in an error's fields or an event's payload, for a
+    /// field every branch that can answer it leaves to the implementation, and records the stored
+    /// fields those branches write for the view rows (beyond10x/ess#544). A misnamed branch was
+    /// refused already and reaches none.
+    fn generated_claims(&mut self, command: &'a ResolvedCommand, act: &Act) {
+        let written = act
+            .outcome
+            .as_ref()
+            .map(|name| command.outcomes.iter().find(|it| it.name.as_str() == name));
+        let reached = match written {
+            Some(None) => Vec::new(),
+            Some(Some(outcome)) => reachable_branches(self.ir, command, Some(outcome)),
+            None => reachable_branches(self.ir, command, None),
+        };
+        self.record_writes(&reached, &act.input);
+        if let Some(claim) = &act.error {
+            if let Ok(name) = QualifiedName::new(&claim.name) {
+                // An error is the act's own command's answer: a binding's failure is not reported
+                // to the act.
+                let reporting: Vec<Fill<'_>> = reached
+                    .iter()
+                    .filter(|it| {
+                        it.own
+                            && it
+                                .outcome
+                                .error
+                                .as_ref()
+                                .is_some_and(|error| *error.name() == name)
+                    })
+                    .map(|it| Fill {
+                        outcome: branch(it.command, it.outcome),
+                        fills: &it.outcome.error_payload,
+                        sent: Some(&act.input),
+                        published: &it.outcome.payload,
+                    })
+                    .collect();
+                self.minted_claims(
+                    &Surface::Error(ErrorRef::new(name)),
+                    &claim.fields,
+                    &reporting,
+                );
+            }
+        }
+        for claim in &act.events {
+            let Ok(name) = QualifiedName::new(&claim.event) else {
+                continue;
+            };
+            // Every branch that can publish the occurrence this act claims, whichever does.
+            let publishing: Vec<Fill<'_>> = reached
+                .iter()
+                .filter(|it| it.outcome.emits.iter().any(|event| *event.name() == name))
+                .map(|it| Fill {
+                    outcome: branch(it.command, it.outcome),
+                    fills: it
+                        .outcome
+                        .payload
+                        .iter()
+                        .find(|payload| *payload.event.name() == name)
+                        .map_or(&[][..], |payload| &payload.fields),
+                    sent: it.own.then_some(&act.input),
+                    published: &it.outcome.payload,
+                })
+                .collect();
+            self.minted_claims(
+                &Surface::Payload(EventRef::new(name)),
+                &claim.payload,
+                &publishing,
+            );
+        }
+    }
+
+    /// Every stored field the branches `reached` write, with the input the act's own ones read.
+    fn record_writes(&mut self, reached: &[Reached<'a>], sent: &BTreeMap<String, Written>) {
+        for branch_reached in reached {
+            let outcome = branch_reached.outcome;
+            let sent = branch_reached.own.then(|| sent.clone());
+            let label = branch(branch_reached.command, outcome);
+            let subject = outcome
+                .subject
+                .as_ref()
+                .map(|subject| &subject.entity)
+                .or(outcome.instances.as_ref().map(|set| &set.entity));
+            if let Some(entity) = subject {
+                self.row_writes.push(RowWrite::Branch {
+                    entity: entity.name().clone(),
+                    fill: OwnedFill {
+                        outcome: label.clone(),
+                        fills: &outcome.sets,
+                        sent: sent.clone(),
+                        published: &outcome.payload,
+                    },
+                });
+            }
+            for affect in &outcome.affects {
+                self.row_writes.push(RowWrite::Branch {
+                    entity: affect.entity.name().clone(),
+                    fill: OwnedFill {
+                        outcome: label.clone(),
+                        fills: &affect.sets,
+                        sent: sent.clone(),
+                        published: &outcome.payload,
+                    },
+                });
+                if let Some(each) = &affect.each {
+                    self.row_writes.push(RowWrite::Stated {
+                        entity: affect.entity.name().clone(),
+                        fields: each.reads.iter().map(|read| read.target.clone()).collect(),
+                    });
+                }
+            }
+        }
+    }
+
+    /// Refuses each exact value in `written` that every one of `fills` leaves to the
+    /// implementation (beyond10x/ess#544). No fill claims nothing.
+    fn minted_claims(
+        &mut self,
+        surface: &Surface,
+        written: &BTreeMap<String, Written>,
+        fills: &[Fill<'_>],
+    ) {
+        for (field, value) in written {
+            if !pins(value) {
+                continue;
+            }
+            let pinned = literal(value);
+            let minted = minted_by_every(field, pinned, fills);
+            for (path, marked) in minted {
+                self.refuse(Cause::GeneratedValuePinned {
+                    surface: surface.clone(),
+                    value: value_at(value, &path),
+                    field: path,
+                    outcomes: in_order(fills.iter().map(|fill| &fill.outcome)),
+                    marked,
+                });
+            }
+        }
+    }
+
+    /// Refuses each exact value a row claim of `view` writes for a stored field of `entity` that
+    /// every write of it in this scenario mints, and no `setup:` states.
+    fn minted_row(
+        &mut self,
+        view: &ViewRef,
+        entity: &QualifiedName,
+        written: &BTreeMap<String, Written>,
+    ) {
+        let Some(declared) = self.ir.entities().get(entity) else {
+            return;
+        };
+        for (field, value) in written {
+            if !declared.fields.iter().any(|it| it.name == *field) {
+                continue;
+            }
+            if !pins(value) {
+                continue;
+            }
+            let pinned = literal(value);
+            let mut fills = Vec::new();
+            let mut stated = false;
+            for write in &self.row_writes {
+                match write {
+                    RowWrite::Stated { entity: at, fields }
+                        if at == entity && fields.contains(field) =>
+                    {
+                        stated = true;
+                    }
+                    RowWrite::Branch { entity: at, fill }
+                        if at == entity && fill.fills.iter().any(|it| it.target == *field) =>
+                    {
+                        fills.push(Fill {
+                            outcome: fill.outcome.clone(),
+                            fills: fill.fills,
+                            sent: fill.sent.as_ref(),
+                            published: fill.published,
+                        });
+                    }
+                    _ => {}
+                }
+            }
+            if stated {
+                continue;
+            }
+            let minted = minted_by_every(field, pinned, &fills);
+            let outcomes = in_order(fills.iter().map(|fill| &fill.outcome));
+            for (path, marked) in minted {
+                self.refuse(Cause::GeneratedValuePinned {
+                    surface: Surface::Row(view.clone()),
+                    value: value_at(value, &path),
+                    field: path,
+                    outcomes: outcomes.clone(),
+                    marked,
+                });
+            }
+        }
+    }
+
     /// Binding an identity an act published.
     fn capture(&mut self, capture: &Capture) {
         let Some(entity) = self.arranged.get(&capture.instance).cloned() else {
@@ -3332,6 +4125,16 @@ impl Compiler<'_> {
                 stated,
             });
             return;
+        }
+        if declared.aggregation.is_none() {
+            let row = assertion
+                .contains
+                .as_ref()
+                .or(assertion.excludes.as_ref())
+                .or(assertion.at.as_ref().map(|at| &at.fields));
+            if let Some(row) = row {
+                self.minted_row(&view, declared.source.name(), row);
+            }
         }
         let bound = self.values(
             &assertion.params,
@@ -3487,7 +4290,7 @@ impl Compiler<'_> {
             for read in &checked.reads {
                 if !projection_target(self.ir, &read.resolution).is_scalar()
                     && !crate::input::aggregate_presence(self.ir, read, &presence)
-                    && !crate::input::lifted_text_length(self.ir, read, predicate)
+                    && !crate::input::lifted_text_length(self.ir, read)
                 {
                     self.refuse(Cause::UnreadablePredicate {
                         view: view.clone(),

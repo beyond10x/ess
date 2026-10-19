@@ -12,7 +12,7 @@ Read the story: `aep plan artifact show story:interpreter-default-outcome-beside
 ## The triple
 
 ```
-worktree:  ~/.local/state/worktree/trees/b10x/ess/ess-wave-20261007c-c4
+worktree:  <tree>
 build dir: <worktree>/target   (created by the coordinator with Cargo's CACHEDIR.TAG)
 scratch:   <worktree>/target/wave-scratch/c4
 ```
@@ -25,7 +25,7 @@ scratch:   <worktree>/target/wave-scratch/c4
 | **not yours** | everything else; `CHANGELOG.md` and `.engineering/**` are the coordinator's |
 
 Invariants: `.engineering/waves/2026-10-07c/invariants.md` in the integration tree
-(`~/.local/state/worktree/trees/b10x/ess/ess-wave-20261007c`). Read it first.
+(`<tree>`). Read it first.
 
 Reported on 0.53.0: build the reproducer from the issue (it describes the entity, enums, event, error, actor and view in prose) and run it with `ess verify conform run --target interpreted` on 0.55.0 first.
 

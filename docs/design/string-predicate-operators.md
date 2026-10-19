@@ -7,9 +7,9 @@ written against (integration base `bb7718889`). A line marked *inferred* was not
 
 ## Behavior and authority
 
-A trial specified a telephony backend whose routing rules are written in a small condition
-language. Three of its rules have no ESS form: "caller number starts with +44", "dialled number ends
-with 0", "subject contains 'urgent'". Each is recorded as `UNMAPPED:` today, and no conformance
+A trial specified a backend whose routing rules are written in a small condition
+language. Three of its rules have no ESS form: a field that starts with "+44", one that ends
+with "0", and "subject contains 'urgent'". Each is recorded as `UNMAPPED:` today, and no conformance
 scenario checks it.
 
 Measured with `ess 0.32.1` (`ess specify validate`) on the model of the predicate reference page,

@@ -31,9 +31,9 @@ fn a_legacy_graph_digest_and_the_converted_ir_three_do_not_confirm_a_secret_gues
     // A legacy IR/1 of a cluster whose three Secret keys hold low-entropy values, exactly as an
     // `infra-observation/1` scanner would have digested them.
     let truth = [
-        ("shop/devspace-cache-acd", "cache", "hunter2"),
+        ("shop/cache-secret", "cache", "hunter2"),
         ("shop/sa-token-legacy", "token", "letmein"),
-        ("shop/storefront-server", "turn-secret", "changeme"),
+        ("shop/web-server", "tunnel-secret", "changeme"),
     ];
     let mut legacy: serde_json::Value = serde_json::from_str(LEGACY).expect("frozen legacy IR");
     assert_eq!(legacy["format"], "infra-ir/1");

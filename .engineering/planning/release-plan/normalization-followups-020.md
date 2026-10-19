@@ -3,18 +3,18 @@ format: aep.planning-md/3
 id: release-plan:normalization-followups-020
 kind: release-plan
 status: implemented
-title: Release ESS normalization followups as 0.20.0 and qualify IVR adoption
+title: Release ESS normalization followups as 0.20.0 and qualify downstream adoption
 relations:
 - depends_on: story:typescript-normalization-target
 - serves: vision:O2
-revision: 13
+revision: 15
 transitions:
 - {from: "draft", to: "active", at: "2026-09-06T15:34:33Z", actor: "agent:normalization-coordinator", revision: 6, imported: true}
 - {from: "active", to: "implemented", at: "2026-09-06T17:39:32Z", actor: "agent:normalization-coordinator", revision: 12, decided_on: {"recorded":{"test_result":2}}, imported: true}
 ---
 ## Purpose and authority
 
-Prepare a concrete 0.20.0 ESS release containing the completed normalization followups, then adopt its verified binaries in the relocated `specs/services/ivr` consumer. The continuing operator instructions authorize owned integration, a version containing the ESS changes, publication, managed cleanup and a final personal status message. This record is agent-authored release preparation, not a new human approval, a claim that a tag exists, or a waiver of the exact-source gates.
+Prepare a concrete 0.20.0 ESS release containing the completed normalization followups, then adopt its verified binaries in a downstream consumer. The continuing operator instructions authorize owned integration, a version containing the ESS changes, publication, managed cleanup and a final personal status message. This record is agent-authored release preparation, not a new human approval, a claim that a tag exists, or a waiver of the exact-source gates.
 
 The current public release is 0.19.0 at `5201daf4ea6fe1e254d73a3e858abd06a8a71715`. Main checkpoint `b55efa4cd6c379217f60b98fb30f28f70e526ee6` has successful local workspace/site gates and remote CI; its binary still prints 0.19.0 and is explicitly unreleased. TypeScript normalization is active in its isolated unit and must pass implementation, independent review and integration gates before release preparation changes the version.
 
@@ -22,7 +22,7 @@ The current public release is 0.19.0 at `5201daf4ea6fe1e254d73a3e858abd06a8a7171
 
 Include source-pinned normalization formats 2–6, Rust/Go execution and the reviewed native TypeScript target; model-owned roots, retained JSON capture and strict base64 composition; finite Binary64 model/normalization semantics and supported structural Rust/Go codecs; checked positional arrays; the conformance/admission corrections already integrated since 0.19.0. Preserve every other published main change. The final changelog is rewritten from the actual integrated diff and review outcomes, and explicitly names the fallible pre-1.0 API changes and admitted target limits.
 
-No released source-specific decoder parity is inferred from generated types or a green ESS suite. IVR candidates still require concrete regeneration and reference/native evidence after the released binary is downloaded and verified. ACD currently remains on its own 0.18.0 specification pin; changing that pin requires an actual adoption delta and validation, not a namespace change.
+No released source-specific decoder parity is inferred from generated types or a green ESS suite. Candidates of a second downstream system still require concrete regeneration and reference/native evidence after the released binary is downloaded and verified. A downstream system currently remains on its own 0.18.0 specification pin; changing that pin requires an actual adoption delta and validation, not a namespace change.
 
 ## Producer-version compatibility qualification
 
@@ -39,7 +39,7 @@ After the actual version bump and actual generator rebuild, retain separate raw 
 3. Change root workspace version and its eighteen internal path constraints to 0.20.0. Let Cargo update workspace package versions in Cargo.lock without dependency upgrades. Supply a dated, complete 0.20.0 changelog. Use authoritative generation commands only for real projection drift; preserve semantic provenance unaffected by build version.
 4. Run release verification, the qualified post-bump native/witness lanes, the full `task check` and `task site-build` on the exact commit to be tagged. Record each actual exit and any setup/error correction. Do not tag an untested metadata followup.
 5. Publish the bot-authored release commit to main, confirm remote ancestry, create the annotated bare tag 0.20.0 on that main commit, and push it. Observe the release workflow through completion. On completion or failure run `task release-status`; preserve failures rather than calling a tag a binary release.
-6. Verify release assets/checksums and an actual downloaded binary. Regenerate and qualify the relocated IVR adopter with that binary, including model roots and recipes, then publish its validated source and successful GitLab pipeline. Record the precise ACD outcome separately.
+6. Verify release assets/checksums and an actual downloaded binary. Regenerate and qualify the relocated second downstream adopter with that binary, including model roots and recipes, then publish its validated source and successful GitLab pipeline. Record the precise outcome for the other downstream system separately.
 7. Refresh the bounded ESS release observation in Atlas, regenerate projections, run its required fences, preserve external workspace findings and publish owned records. Verify the exact ESS source bundle reaches the normal Atlas documentation publication and live provenance.
 8. Publish remaining owned evidence; preserve wanted scratch and use managed finish, reviewed GC and exact IDs for remaining task worktrees. Send Timo the authorized Slack DM with concrete canonical GitLab links, release/pipeline evidence and any remaining mapping boundaries.
 
@@ -61,11 +61,11 @@ Earlier Atlas Gate 34045010123 failed at the generated documentation contract st
 
 A separate team subsequently published the Eventlog baseline and documentation-source reconciliation on Atlas main b89e5b835b384965818eccf0703c8a548ebdbe47, preserving this delivery's 78d96cc release observation. [Atlas Gate 34048651627](https://github.com/beyond10x/atlas/actions/runs/34048651627) for b89e5b83 completed successfully, independently read back through the API. That later success supersedes the earlier remote pin-drift failure; the original failed run and local workspace fence findings remain historical evidence. The coordinator refreshed its clean managed authority to the newer published main after verifying the bot wrapper bytes were unchanged. No claim is made that this normalization unit implemented the other team's reconciliation.
 
-The released feature/adopter delivery is complete at the bounded canonical subset described above. Broader original decoder, default, Flow, family and runtime consumer-cutover boundaries remain in their existing drafts; no gapfree service-conformance claim is made. ACD retains its separately validated published checkpoint and ESS 0.18.0 pin. Owned operational cleanup and the explicitly authorized operator notification follow this final planning-only publication, with receipts preserved privately; this record does not claim those later actions have already happened.
+The released feature/adopter delivery is complete at the bounded canonical subset described above. Broader original decoder, default, Flow, family and runtime consumer-cutover boundaries remain in their existing drafts; no gapfree service-conformance claim is made. The other downstream system retains its separately validated published checkpoint and ESS 0.18.0 pin. Owned operational cleanup and the explicitly authorized operator notification follow this final planning-only publication, with receipts preserved privately; this record does not claim those later actions have already happened.
 
 ## Module identity during adoption
 
-The published namespace relocation at IVR cf1a9657298760af53b50fe9f5abd0eea3a1c222, docs/namespace-relocation.md:12–15, explicitly retains generated Go module declarations under an internal specification host for compatibility. These are import identities, while origin fetch/push and navigation use specs/services/ivr. The ESS release adoption preserves those module identities. A later module cutover must coordinate generator and consumer pins together; an earlier private preparation note suggesting a generator-only namespace replacement is superseded by this source-backed rule.
+The published namespace relocation of the second downstream system explicitly retains generated Go module declarations under an internal specification host for compatibility. These are import identities, while origin fetch/push and navigation use its relocated repository path. The ESS release adoption preserves those module identities. A later module cutover must coordinate generator and consumer pins together; an earlier private preparation note suggesting a generator-only namespace replacement is superseded by this source-backed rule.
 
 ## Orthogonal pre-bump qualification
 

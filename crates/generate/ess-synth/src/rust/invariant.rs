@@ -22,7 +22,7 @@ use ess_domain::entity::Invariant;
 use ess_domain::Primitive;
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{
-    CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp, TextOperand,
+    Collection, CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp, TextOperand,
 };
 
 use super::{name, Emit};
@@ -589,7 +589,15 @@ impl<'a> Check<'a> {
 
     /// `forall` or `exists`: the collection's values, and the body under a fresh binder.
     fn quantified(&mut self, which: &str, quantified: &Quantified) -> Result<String, String> {
-        let (reach, terminal) = match self.walk(&quantified.over)? {
+        // Validation keeps a test over rows out of every invariant (ess/27, beyond10x/ess#551), so
+        // this is unreachable from an admitted specification; it is refused by name, never walked.
+        let Collection::Fact(over) = &quantified.over else {
+            return Err(format!(
+                "`{}` walks the rows of an entity, which an invariant cannot read",
+                quantified.over
+            ));
+        };
+        let (reach, terminal) = match self.walk(over)? {
             Walked::Value { reach, terminal } => (reach, terminal),
             Walked::Count(_) | Walked::Absent => {
                 return Err(format!("`{}` is not a collection", quantified.over));

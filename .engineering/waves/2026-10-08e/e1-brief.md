@@ -8,14 +8,14 @@ branch: unit/ess-wave-20261008e-e1   forked from integrate/ess-wave-20261008e
 ```
 
 Read the story: `aep plan artifact show story:response-string-newtype-constraints-checked-not-refused`
-(from the integration tree `~/.local/state/worktree/trees/b10x/ess/ess-wave-20261008e`). Its
+(from the integration tree `<tree>`). Its
 `## Decisions`, `## Acceptance` and `## Scope` sections are the contract. Reproducers:
 `.engineering/repro/499/`.
 
 ## The triple
 
 ```
-worktree:  ~/.local/state/worktree/trees/b10x/ess/ess-wave-20261008e-e1
+worktree:  <tree>
 build dir: <worktree>/target
 scratch:   the TMPDIR named in the go message (outside every Git checkout)
 ```

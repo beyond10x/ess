@@ -38,9 +38,9 @@ negative-total fault was **caught by 6 of 29 scenarios before, and 13 after**.
 ## `refuses: false` — a branch that accepts
 
 `wrong_state:` could say one thing: the command refuses here, and reports this error. A command that
-is deliberately idempotent had no way to be written down. ACD's `EndCall` on a call that has already
+is deliberately idempotent had no way to be written down. An `EndCall` on a call that has already
 ended answers and does nothing, on purpose and documented — and its specification claimed a refusal
-the code never makes, which was filed as a defect against ACD before anybody read the code.
+the code never makes, which was filed as a defect before anybody read the code.
 
 It is a key rather than "leave `error:` out", and the distinction matters. A branch missing its error
 is a mistake the validator has caught since `wrong_state:` shipped. Making the omission mean

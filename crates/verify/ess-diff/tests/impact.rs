@@ -551,6 +551,9 @@ fn a_domains_naming_moving_owes_the_whole_suite_because_no_family_compares_a_dom
     let report = impact(&before, &after, Some(&suite), None)
         .expect("one system, and the earlier one's suite");
 
+    // From `ess-diff/20` the display name is a domain change of its own, decided as documentation
+    // (downstream report, 2026-10-19, finding 18); no dependency edge reads it, so it still owes
+    // everything.
     assert_eq!(
         report
             .delta
@@ -558,8 +561,8 @@ fn a_domains_naming_moving_owes_the_whole_suite_because_no_family_compares_a_dom
             .iter()
             .map(ess_diff::SemanticChange::kind)
             .collect::<Vec<_>>(),
-        ["unclassified-changed"],
-        "v2 records the unclassified change while retaining whole invalidation"
+        ["display-name-changed"],
+        "ess-diff/20 records the domain's own change while retaining whole invalidation"
     );
     let Some(Invalidation::Whole { because }) = &report.invalidation else {
         panic!(

@@ -1421,8 +1421,13 @@ fn typescript_one_time_fields_windows_and_original_coverage35_match_native() {
     use disclosure_fields::FieldMode;
     use support_typescript_prerequisite::DisclosureHost;
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-    for group in ["one-time-fields", "one-time-coverage", "one-time-windows"] {
-        let covered = group == "one-time-coverage";
+    for group in [
+        "one-time-fields",
+        "one-time-coverage",
+        "one-time-coverage-53",
+        "one-time-windows",
+    ] {
+        let covered = group.starts_with("one-time-coverage");
         let directory = fixtures.join(group);
         let input = directory.join(if covered { "input.json" } else { "suite.json" });
         let original = std::fs::read_to_string(&input).unwrap();
@@ -1431,7 +1436,7 @@ fn typescript_one_time_fields_windows_and_original_coverage35_match_native() {
             assert_eq!(carrier.parents().len(), 1);
             assert_eq!(
                 carrier.selected().suite().provenance.suite_version.major(),
-                35
+                if group == "one-time-coverage" { 35 } else { 53 }
             );
             carrier.selected().clone()
         } else {
@@ -1680,7 +1685,7 @@ fn typescript_one_time_malformed_and_old_authority_refuses_before_callbacks() {
     assert!(checked >= 20, "the malformed vector inventory actually ran");
     let original =
         std::fs::read_to_string(fixture_root.join("one-time-response/valid-string.json")).unwrap();
-    for version in ["ess-conformance/32", "ess-conformance/52"] {
+    for version in ["ess-conformance/32", "ess-conformance/54"] {
         let raw = original.replace("ess-conformance/34", version);
         refused_depth_document(
             &raw,

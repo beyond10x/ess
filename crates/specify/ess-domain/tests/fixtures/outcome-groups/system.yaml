@@ -1,7 +1,7 @@
 format: ess/12
-system: tel
+system: desk
 version: v1
 summary: Calls carried out by a remote service on the caller's behalf.
 domains:
-  - tel.calls
-  - tel.session
+  - desk.calls
+  - desk.session

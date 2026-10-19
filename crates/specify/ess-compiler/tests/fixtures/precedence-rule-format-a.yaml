@@ -1,0 +1,130 @@
+format: ess/27
+system: demo
+version: v1
+domain: demo.rule
+summary: A held seat moved to an open tier; a blank reason, an unknown seat, a seat no longer held, an unknown tier and a closed tier are refused, in the order of what each reads.
+types:
+  - {name: demo.rule.SeatId, kind: newtype, of: Uuid}
+  - {name: demo.rule.TierId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.rule.Tier
+    identity: {name: tier_id, type: demo.rule.TierId}
+    fields:
+      - {name: open, type: Boolean}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.rule.Seat
+    identity: {name: seat_id, type: demo.rule.SeatId}
+    fields:
+      - {name: tier_id, type: demo.rule.TierId}
+    relations:
+      - {name: tier, kind: references, target: demo.rule.Tier, cardinality: one, via: tier_id}
+    lifecycle:
+      initial: Held
+      states: [Held, Moved, Released]
+      terminal: [Moved, Released]
+      transitions:
+        - {name: move, from: [Held], to: Moved}
+        - {name: release, from: [Held], to: Released}
+actors:
+  - name: demo.rule.Operator
+    may: [demo.rule.DefineTier, demo.rule.Issue, demo.rule.Release, demo.rule.ChangeTier]
+errors:
+  - {name: demo.rule.BlankReason, summary: The reason is blank., fields: []}
+  - {name: demo.rule.UnknownSeat, summary: No seat carries the identity., fields: []}
+  - {name: demo.rule.SeatNotHeld, summary: The seat is no longer held., fields: []}
+  - {name: demo.rule.UnknownTier, summary: No tier carries the identity., fields: []}
+  - {name: demo.rule.TierClosed, summary: The tier is closed., fields: []}
+events:
+  - name: demo.rule.TierDefined
+    fields:
+      - {name: tier_id, type: demo.rule.TierId}
+  - name: demo.rule.Issued
+    fields:
+      - {name: seat_id, type: demo.rule.SeatId}
+  - name: demo.rule.Released
+    fields:
+      - {name: seat_id, type: demo.rule.SeatId}
+  - name: demo.rule.TierChanged
+    fields:
+      - {name: seat_id, type: demo.rule.SeatId}
+commands:
+  - name: demo.rule.DefineTier
+    input:
+      - {name: open, type: Boolean}
+    outcomes:
+      - name: defined
+        creates: demo.rule.Tier
+        instance: tier_id
+        sets: {open: input.open}
+        emits: [demo.rule.TierDefined]
+        payload:
+          demo.rule.TierDefined: {tier_id: {generated: true}}
+  - name: demo.rule.Issue
+    input:
+      - {name: tier_id, type: demo.rule.TierId}
+    outcomes:
+      - name: issued
+        creates: demo.rule.Seat
+        instance: seat_id
+        sets: {tier_id: input.tier_id}
+        emits: [demo.rule.Issued]
+        payload:
+          demo.rule.Issued: {seat_id: {generated: true}}
+  - name: demo.rule.Release
+    input:
+      - {name: seat_id, type: demo.rule.SeatId}
+    outcomes:
+      - name: release-unknown
+        unknown_instance: true
+        error: demo.rule.UnknownSeat
+      - name: release-not-held
+        wrong_state: true
+        error: demo.rule.SeatNotHeld
+      - name: released
+        moves: demo.rule.Seat.release
+        instance: seat_id
+        emits: [demo.rule.Released]
+        payload:
+          demo.rule.Released: {seat_id: input.seat_id}
+  - name: demo.rule.ChangeTier
+    input:
+      - {name: seat_id, type: demo.rule.SeatId}
+      - {name: tier_id, type: demo.rule.TierId}
+      - {name: reason, type: String}
+    outcomes:
+      - name: blank-reason
+        when: 'reason == ""'
+        error: demo.rule.BlankReason
+      - name: unknown-seat
+        unknown_instance: true
+        error: demo.rule.UnknownSeat
+      - name: not-held
+        wrong_state: true
+        error: demo.rule.SeatNotHeld
+      - name: unknown-tier
+        when_related: {via: input.tier_id, exists: false}
+        error: demo.rule.UnknownTier
+      - name: tier-closed
+        when_related: {via: input.tier_id, predicate: open == false}
+        error: demo.rule.TierClosed
+      - name: changed
+        moves: demo.rule.Seat.move
+        instance: seat_id
+        sets: {tier_id: input.tier_id}
+        emits: [demo.rule.TierChanged]
+        payload:
+          demo.rule.TierChanged: {seat_id: input.seat_id}
+views:
+  - name: demo.rule.Seats
+    source: demo.rule.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: seat_id, type: demo.rule.SeatId}
+      - {name: state, type: demo.rule.Seat.State}
+      - {name: tier_id, type: demo.rule.TierId}
+  - name: demo.rule.Tiers
+    source: demo.rule.Tier
+    consistency: read_your_writes
+    fields:
+      - {name: tier_id, type: demo.rule.TierId}
+      - {name: open, type: Boolean}

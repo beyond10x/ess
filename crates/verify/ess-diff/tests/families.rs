@@ -1956,7 +1956,7 @@ fn review_residual_refs_cannot_hide_beside_a_classified_change() {
     for classified in [false, true] {
         let mut system = edited_system(
             "    summary: Runs orders.",
-            "    summary: Runs orders.\n    refs: [jira:DEV-630]",
+            "    summary: Runs orders.\n    refs: [jira:EX-1]",
         );
         if classified {
             system = system.replace("Runs orders.", "Runs revised orders.");

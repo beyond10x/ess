@@ -118,7 +118,7 @@ fn billing_with_outcome_ref(index: usize, classified: bool) -> ess_compiler::Ess
         for outcome in &mut command.outcomes {
             outcome.refs.clear();
         }
-        command.outcomes[index].refs = vec![ExternalRef::parse("jira:DEV-630").unwrap()];
+        command.outcomes[index].refs = vec![ExternalRef::parse("jira:EX-1").unwrap()];
         if classified {
             command.naming.summary = Some("A classified change beside the moved reference.".into());
         }

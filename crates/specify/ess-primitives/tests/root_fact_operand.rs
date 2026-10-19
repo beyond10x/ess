@@ -87,10 +87,10 @@ fn a_dotted_fact_keeps_its_compact_bytes() {
 fn a1_binder_shadowing_compact_bytes_at_the_writer() {
     // `b` is the inner binder: compact, as #289 shipped it, and no root fact is read.
     let predicate = Predicate::Forall(Box::new(Quantified {
-        over: path("tags"),
+        over: ess_primitives::predicate::Collection::Fact(path("tags")),
         bind: "a".to_owned(),
         body: Predicate::Forall(Box::new(Quantified {
-            over: path("banned"),
+            over: ess_primitives::predicate::Collection::Fact(path("banned")),
             bind: "b".to_owned(),
             body: facts("a", CompareOp::Ne, "b"),
         })),
@@ -106,7 +106,7 @@ fn a1_binder_shadowing_compact_bytes_at_the_writer() {
     // Outside the binder's scope the same word is a root fact again.
     let outside = Predicate::all(vec![
         Predicate::Forall(Box::new(Quantified {
-            over: path("banned"),
+            over: ess_primitives::predicate::Collection::Fact(path("banned")),
             bind: "b".to_owned(),
             body: facts("b", CompareOp::Ne, "x"),
         })),
@@ -138,7 +138,7 @@ fn display_tells_a_root_fact_from_the_text_it_is_spelled_like() {
     assert_eq!(text.to_string(), "task_id == depends_on");
     assert_ne!(fact.to_string(), text.to_string());
     let bound = Predicate::Exists(Box::new(Quantified {
-        over: path("banned"),
+        over: ess_primitives::predicate::Collection::Fact(path("banned")),
         bind: "b".to_owned(),
         body: facts("tag", CompareOp::Eq, "b"),
     }));

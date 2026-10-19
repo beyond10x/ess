@@ -1091,3 +1091,287 @@ mod issue_459 {
             .unwrap_or_else(|errors| panic!("the fenced model validates: {errors}\n{fence}"));
     }
 }
+
+/// One call takes each named row to its own transition (beyond10x/ess#596): from ess/27 an `each:`
+/// entry may move or delete the row each element names, and `each:` may carry a `where:` over the
+/// element, so the answer the input carries for a row picks the entry that moves it.
+mod issue_596 {
+    use super::*;
+
+    const EACH: &str =
+        include_str!("../../../verify/ess-conformance/tests/fixtures/each-moves.yaml");
+    const APPLY: &str = "Apply.outcomes.applied.affects[0]";
+    const FIRST_WHERE: &str = "each: {in: input.answers, as: a, where: a.verdict == applied}";
+
+    fn each_edited(from: &str, to: &str) -> String {
+        assert!(EACH.contains(from), "the fixture holds:\n{from}");
+        EACH.replacen(from, to, 1)
+    }
+
+    const LIFECYCLE: &str = "      initial: Approved\n      states: [Approved, Applied, Refused, Invalid]\n      terminal: [Applied, Refused, Invalid]\n      transitions:\n        - {name: apply, from: [Approved], to: Applied}\n        - {name: refuse, from: [Approved], to: Refused}\n        - {name: invalidate, from: [Approved], to: Invalid}\n";
+    const ONE_MOVE: &str = "      initial: Approved\n      states: [Approved, Applied]\n      terminal: [Applied]\n      transitions:\n        - {name: apply, from: [Approved], to: Applied}\n";
+
+    /// The fixture with only its first entry, no element `where:`, and the one transition it takes.
+    fn one_entry() -> String {
+        let start = EACH
+            .find("          - entity: perrow.batch.Proposal\n            each: {in: input.answers, as: a, where: a.verdict == refused}")
+            .expect("the second entry");
+        let end = EACH
+            .find("      - {name: wrong-state")
+            .expect("the wrong-state branch");
+        let model = format!("{}{}", &EACH[..start], &EACH[end..]);
+        assert!(model.contains(LIFECYCLE), "{model}");
+        model
+            .replacen(FIRST_WHERE, "each: {in: input.answers, as: a}", 1)
+            .replacen(LIFECYCLE, ONE_MOVE, 1)
+    }
+
+    fn applied(spec: &Specification) -> &ess_domain::command::Outcome {
+        spec.commands()
+            .get(&"perrow.batch.Apply".parse().unwrap())
+            .expect("Apply")
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.name.as_str() == "applied")
+            .expect("applied")
+    }
+
+    fn refused_at(
+        errors: &ValidationErrors,
+        code: ValidationCode,
+        at: &str,
+    ) -> ess_primitives::error::ValidationError {
+        errors
+            .as_slice()
+            .iter()
+            .find(|error| error.code == code && error.location.ends_with(at))
+            .unwrap_or_else(|| panic!("expected {code:?} at `{at}`, got:\n{errors}"))
+            .clone()
+    }
+
+    #[test]
+    fn each_entry_with_moves_validates_at_ess_27() {
+        let model = one_entry();
+        let spec = admitted(&model);
+        let outcome = applied(&spec);
+        let [entry] = outcome.set_effects.affects.as_slice() else {
+            panic!("one entry: {:#?}", outcome.set_effects)
+        };
+        let each = entry.each.as_ref().expect("the entry reads each element");
+        assert_eq!(each.member, "proposal_id");
+        assert_eq!(entry.moves.as_deref(), Some("apply"), "{entry:#?}");
+        assert!(each.filter.is_none(), "{each:#?}");
+        let written = ess_yaml::to_string(&RawOutcome::from(outcome.clone())).unwrap();
+        assert!(
+            written.contains("moves: perrow.batch.Proposal.apply"),
+            "{written}"
+        );
+        let read: RawOutcome = ess_yaml::from_str(&written).unwrap();
+        let back = ess_domain::command::Outcome::try_from(read)
+            .unwrap_or_else(|errors| panic!("{errors}\n{written}"));
+        assert_eq!(back.set_effects, outcome.set_effects, "{written}");
+        // The `distinct:` requirement is unchanged.
+        let errors = refused(&model.replacen(
+            "      - name: duplicated\n        when: {not: {distinct: {in: answers, as: a, by: a.proposal_id}}}\n        error: perrow.batch.Duplicate\n",
+            "",
+            1,
+        ));
+        refused_at(
+            &errors,
+            ValidationCode::MissingDeclaration,
+            &format!("{APPLY}.each"),
+        );
+    }
+
+    #[test]
+    fn each_entry_with_an_element_where_validates() {
+        let spec = admitted(EACH);
+        let outcome = applied(&spec);
+        assert_eq!(outcome.set_effects.affects.len(), 3, "{outcome:#?}");
+        for (entry, (transition, verdict)) in outcome.set_effects.affects.iter().zip([
+            ("apply", "applied"),
+            ("refuse", "refused"),
+            ("invalidate", "invalid"),
+        ]) {
+            assert_eq!(entry.moves.as_deref(), Some(transition), "{entry:#?}");
+            let filter = entry
+                .each
+                .as_ref()
+                .and_then(|each| each.filter.as_ref())
+                .unwrap_or_else(|| panic!("an element filter: {entry:#?}"));
+            assert!(filter.to_string().contains(verdict), "{filter}");
+        }
+        let written = ess_yaml::to_string(&RawOutcome::from(outcome.clone())).unwrap();
+        assert!(written.contains("a.verdict == refused"), "{written}");
+        let read: RawOutcome = ess_yaml::from_str(&written).unwrap();
+        let back = ess_domain::command::Outcome::try_from(read)
+            .unwrap_or_else(|errors| panic!("{errors}\n{written}"));
+        assert_eq!(back.set_effects, outcome.set_effects, "{written}");
+        // The element `where:` reads declared members of the element, at their types.
+        let errors = refused(&each_edited(
+            FIRST_WHERE,
+            "each: {in: input.answers, as: a, where: a.missing == applied}",
+        ));
+        // The predicate checker's code for a path no declaration publishes.
+        refused_at(
+            &errors,
+            ValidationCode::UnobservableFact,
+            &format!("{APPLY}.each.where"),
+        );
+        let errors = refused(&each_edited(
+            FIRST_WHERE,
+            "each: {in: input.answers, as: a, where: a.verdict == maybe}",
+        ));
+        let refusal = errors
+            .as_slice()
+            .iter()
+            .find(|error| error.location.ends_with(&format!("{APPLY}.each.where")))
+            .unwrap_or_else(|| panic!("a refusal at the element filter:\n{errors}"));
+        assert!(refusal.message.contains("maybe"), "{refusal}");
+        // A filter that does not parse is refused at the element's `where`.
+        let errors = refused(&each_edited(
+            FIRST_WHERE,
+            "each: {in: input.answers, as: a, where: {all: 3}}",
+        ));
+        assert!(
+            errors
+                .as_slice()
+                .iter()
+                .any(|error| error.location.ends_with(&format!("{APPLY}.each.where"))),
+            "{errors}"
+        );
+        // Two entries moving rows of one entity by one list are admitted, applied in order.
+        assert!(
+            errors
+                .as_slice()
+                .iter()
+                .all(|error| !error.message.contains("one transition per entity")),
+            "{errors}"
+        );
+    }
+
+    #[test]
+    fn each_entry_with_deletes_validates_at_ess_27() {
+        let model = one_entry().replacen(
+            "            moves: perrow.batch.Proposal.apply\n",
+            "            deletes: perrow.batch.Proposal\n",
+            1,
+        );
+        // No transition is left for a command to take: the entry removes the rows instead.
+        let model = model.replacen(
+            ONE_MOVE,
+            "      initial: Approved\n      states: [Approved]\n      terminal: [Approved]\n",
+            1,
+        );
+        let spec = admitted(&model);
+        let [entry] = applied(&spec).set_effects.affects.as_slice() else {
+            panic!("one entry")
+        };
+        assert!(entry.deletes, "{entry:#?}");
+        assert!(entry.each.is_some(), "{entry:#?}");
+    }
+
+    #[test]
+    fn below_ess_27_each_with_moves_keeps_its_refusal_naming_ess_27() {
+        let below = one_entry().replacen("format: ess/27", "format: ess/26", 1);
+        let errors = refused(&below);
+        let refusal = refused_at(
+            &errors,
+            ValidationCode::ConflictingDeclaration,
+            &format!("{APPLY}.each"),
+        );
+        assert!(refusal.message.contains("`each:`"), "{refusal}");
+        assert!(refusal.message.contains("moves:"), "{refusal}");
+        let hint = refusal.hint.as_deref().unwrap_or_default();
+        assert!(
+            refusal.message.contains("ess/27") || hint.contains("ess/27"),
+            "names ess/27: {refusal}"
+        );
+        let deleting = below.replacen(
+            "            moves: perrow.batch.Proposal.apply\n",
+            "            deletes: perrow.batch.Proposal\n",
+            1,
+        );
+        let errors = refused(&deleting);
+        let refusal = refused_at(
+            &errors,
+            ValidationCode::ConflictingDeclaration,
+            &format!("{APPLY}.each"),
+        );
+        let hint = refusal.hint.as_deref().unwrap_or_default();
+        assert!(
+            refusal.message.contains("ess/27") || hint.contains("ess/27"),
+            "names ess/27: {refusal}"
+        );
+        // An element `where:` below ess/27 is refused naming ess/27.
+        let errors = refused(&EACH.replacen("format: ess/27", "format: ess/26", 1));
+        let refusal = refused_at(
+            &errors,
+            ValidationCode::UnsupportedFormatVersion,
+            &format!("{APPLY}.each.where"),
+        );
+        assert!(refusal.message.contains("ess/27"), "{refusal}");
+    }
+
+    #[test]
+    fn set_effects_note_records_moves_per_element() {
+        let note = repository_file("docs/design/set-effects-over-filtered-instances.md");
+        let heading = "## Moves and deletes per element (ess/27, beyond10x/ess#596)";
+        let body = section(&note, heading);
+        let at = note.find(heading).expect("found above");
+        let each = note
+            .find("\n## One row per element of an input list")
+            .expect("the each section");
+        let per_row = note
+            .find("\n## One event per changed row")
+            .expect("the per-row section");
+        assert!(
+            each < at && at < per_row,
+            "`{heading}` follows the each section"
+        );
+        contains_all(
+            heading,
+            body,
+            &[
+                "ESS-COMMAND-004",
+                "element naming no row is skipped",
+                "in the order written",
+                "`distinct:`",
+                "unchanged",
+                "`ess/27`",
+                "a refused run moves nothing",
+            ],
+        );
+        let page = repository_file("website/docs/guides/specify/selection-effects.md");
+        let guide = section(&page, "## Move each named record by its own answer");
+        contains_all(
+            "the guide section",
+            guide,
+            &["`each:`", "`where:`", "skipped"],
+        );
+        let fence = guide
+            .split("```yaml\n")
+            .nth(1)
+            .and_then(|rest| rest.split("```").next())
+            .expect("a fenced model");
+        assemble(fence)
+            .unwrap_or_else(|errors| panic!("the fenced model validates: {errors}\n{fence}"));
+    }
+
+    #[test]
+    fn each_beside_where_on_the_entry_stays_refused() {
+        let model = one_entry().replacen(
+            "            instance: a.proposal_id\n",
+            "            instance: a.proposal_id\n            where: batch_id == subject.batch_id\n",
+            1,
+        );
+        let errors = refused(&model);
+        let refusal = refused_at(
+            &errors,
+            ValidationCode::ConflictingDeclaration,
+            &format!("{APPLY}.each"),
+        );
+        assert!(refusal.message.contains("`each:`"), "{refusal}");
+        assert!(refusal.message.contains("where:"), "{refusal}");
+    }
+}

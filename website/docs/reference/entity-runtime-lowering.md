@@ -70,6 +70,7 @@ The last column says what lowering the construct would need. *entity-core* means
 | `{input: …, else: …}` | `ValueExpressionUnsupported` | entity-core: a value expression with a fallback |
 | a value read through an input path (`input.<path>`) | `ValueExpressionUnsupported` | entity-core: a read of a member of a structured argument, absent where an `Optional` on the way is |
 | a struct of sources | `ValueExpressionUnsupported` | entity-core: a value assembled from several sources |
+| an expression value (`{expr: …}`, ess/27) | `ValueExpressionUnsupported` | entity-core: arithmetic, time and digest functions over the arguments and the stored row |
 | `equals_ignore_case`, `in_ignore_case` | `CaseFoldUnsupported` | entity-core: a condition that folds ASCII case |
 | `trimmed:` | `TrimmedTextUnsupported` | entity-core: a condition that removes surrounding ASCII whitespace |
 | `deletes:` | `OutcomeShapeUnsupported` | entity-core: removal of an instance |
@@ -83,10 +84,11 @@ The last column says what lowering the construct would need. *entity-core* means
 | one constant offset (`upper == lower + 5`, `issued_at - 24h`) | `OffsetUnsupported` | entity-core: an operand that moves a value by a constant |
 | distinct list members (`distinct: {in, as, by}`) | `DistinctUnsupported` | entity-core: a condition that compares keys across a list's elements |
 | the UTF-8 byte length of a text (`label.utf8_bytes`) | `Utf8BytesUnsupported` | entity-core: an address for the UTF-8 byte length of a text |
-| a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`) | `RowSetUnsupported` | entity-core: a query over the rows of an entity, read atomically in one decision |
+| a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`, `{related: {entity, where, order_by, first}}`) | `RowSetUnsupported` | entity-core: a query over the rows of an entity, read atomically in one decision |
 | a calendar window (`window: {at, days, from, to, offset}`, ess/22) | `CalendarWindowUnsupported` | entity-core: a weekday and time-of-day operand at a fixed offset, and a clock operand for `at: now` |
 | a refusal that compensates (`compensates: true`, ess/22) | `CompensatingRefusalUnsupported` | entity-core: a refusal that changes the instance it answers for |
 | a re-key (`updates:` writing the identity, ess/23) | `IdentityChangeUnsupported` | entity-core: an operation that moves the instance it names to another identity |
+| a function of a fact in a guard (`sha256(…)`, `base64url(…)`, `ascii(…)`, ess/27) | `FunctionCallUnsupported` | entity-core: a digest and encoding operand: SHA-256, base64url, ASCII bytes |
 
 ## Every code
 
@@ -129,9 +131,10 @@ A harness matches on the code. The construct is the one a diagnostic under that 
 | `OffsetUnsupported` | one constant offset (`upper == lower + 5`, `issued_at - 24h`) | A predicate compares a fact with one constant offset of another. |
 | `DistinctUnsupported` | distinct list members (`distinct: {in, as, by}`) | A predicate requires that no two elements of a list share a key. |
 | `Utf8BytesUnsupported` | the UTF-8 byte length of a text (`label.utf8_bytes`) | A predicate compares the UTF-8 byte length of a text. |
-| `RowSetUnsupported` | a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`) | A branch reads the rows a selector selects, or one value of the one row it selects. |
+| `RowSetUnsupported` | a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`, `{related: {entity, where, order_by, first}}`) | A branch reads the rows a selector selects, or one value of the one row it selects. |
 | `CalendarWindowUnsupported` | a calendar window (`window: {at, days, from, to, offset}`, ess/22) | A guard holds an instant to a weekly window at a fixed offset. |
 | `CompensatingRefusalUnsupported` | a refusal that compensates (`compensates: true`, ess/22) | A refusal changes its addressed instance before answering its error. |
 | `IdentityChangeUnsupported` | a re-key (`updates:` writing the identity, ess/23) | An update writes the identity and re-keys its record. |
+| `FunctionCallUnsupported` | a function of a fact in a guard (`sha256(…)`, `base64url(…)`, `ascii(…)`, ess/27) | A guard reads a fact through a digest or encoding function. |
 
 [ess-lowering-end]: #

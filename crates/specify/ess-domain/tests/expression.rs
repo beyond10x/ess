@@ -22,6 +22,7 @@ fn registry() -> TypeRegistry {
                 ],
                 invariants: vec![],
                 undeclared_fields: None,
+                shorthand: None,
             },
         ),
         (
@@ -72,6 +73,7 @@ fn registry() -> TypeRegistry {
                 ],
                 invariants: vec![],
                 undeclared_fields: None,
+                shorthand: None,
             },
         ),
         (
@@ -143,7 +145,7 @@ fn compare(left: &str, right: &str) -> Predicate {
 }
 fn quantified(over: &str, bind: &str, body: Predicate) -> Predicate {
     Predicate::Forall(Box::new(Quantified {
-        over: path(over),
+        over: ess_primitives::predicate::Collection::Fact(path(over)),
         bind: bind.into(),
         body,
     }))
@@ -659,7 +661,7 @@ fn enum_literal_cases(variant: &str) -> Vec<(String, Predicate)> {
         (
             "under exists, over a map".to_owned(),
             Predicate::Exists(Box::new(Quantified {
-                over: path("mapping"),
+                over: ess_primitives::predicate::Collection::Fact(path("mapping")),
                 bind: "entry".into(),
                 body: against("entry.state"),
             })),

@@ -41,6 +41,7 @@ fn is_coverage_version(version: &str) -> bool {
             | "ess-conformance/47"
             | "ess-conformance/49"
             | "ess-conformance/51"
+            | "ess-conformance/53"
     )
 }
 /// Carrier retaining exact selected and parent documents.
@@ -360,6 +361,23 @@ fn require(condition: bool, detail: &str) -> Result<(), AdmissionError> {
         Err(error(detail))
     }
 }
+/// The effect a generated refusal of catalogue number `code` carries, or `None` for a number the
+/// synthesis catalogue does not hold: every entry of
+/// [`RefusalCause::CATALOGUE`](crate::synthesize::RefusalCause::CATALOGUE) is admitted, so a code
+/// a newer synthesis writes is never refused by a reader that was not told about it.
+pub(crate) fn generated_refusal_effect(code: u16) -> Option<Effect> {
+    crate::synthesize::RefusalCause::CATALOGUE
+        .iter()
+        .any(|entry| entry.key == code)
+        .then(|| {
+            if crate::synthesize::CHECK_NOT_EMITTED.contains(&code) {
+                Effect::CheckNotEmitted
+            } else {
+                Effect::CandidateNotEmitted
+            }
+        })
+}
+
 fn refusal_cmp(a: &Refusal, b: &Refusal) -> std::cmp::Ordering {
     a.origin
         .cmp(&b.origin)
@@ -418,6 +436,18 @@ impl Inventory {
             "aggregate view refusals require suite/17",
         )
     }
+    /// A refusal of a system-issued command (`ESS-SYNTH-023`, `-024`) needs coverage suite/53
+    /// (beyond10x/ess#542).
+    fn system_issued_refusals(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+        require(
+            suite.provenance.suite_version.major() >= crate::system_issued::COVERAGE
+                || !self
+                    .refused
+                    .iter()
+                    .any(|r| crate::system_issued::is_refusal(&r.code)),
+            "system-issued command refusals require suite/53",
+        )
+    }
     pub(crate) fn validate(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
         require(
             suite.provenance.suite_version.major() >= 7
@@ -425,6 +455,7 @@ impl Inventory {
             "accessor observation refusals require suite/7",
         )?;
         self.aggregate_refusals(suite)?;
+        self.system_issued_refusals(suite)?;
         let component = match &self.selection.scope {
             Scope::System => None,
             Scope::Component { component } => Some(component.as_str()),
@@ -578,17 +609,11 @@ impl Inventory {
                     r.subject.is_some() && r.source.is_none(),
                     "generated refusal requires subject and null source",
                 )?;
-                let expected = (1..=crate::aggregate::UNWITNESSED)
-                    .find(|n| r.code == format!("ESS-SYNTH-{n:03}"))
+                let effect = crate::synthesize::RefusalCause::CATALOGUE
+                    .iter()
+                    .find(|entry| r.code == format!("ESS-SYNTH-{:03}", entry.key))
+                    .and_then(|entry| generated_refusal_effect(entry.key))
                     .ok_or_else(|| error("unknown generated refusal code"))?;
-                let effect = if matches!(expected, 5 | 11 | 12 | 14)
-                    || [crate::aggregate::UNSCOPED, crate::aggregate::UNWITNESSED]
-                        .contains(&expected)
-                {
-                    Effect::CheckNotEmitted
-                } else {
-                    Effect::CandidateNotEmitted
-                };
                 require(
                     r.effect == effect,
                     "generated refusal effect contradicts code",
@@ -895,8 +920,8 @@ impl AdmittedInput {
 
 #[derive(Serialize)]
 struct Document<'a> {
-    provenance: &'a crate::SuiteProvenance,
-    scenarios: &'a BTreeMap<ScenarioId, crate::ConformanceScenario>,
+    #[serde(flatten)]
+    suite: &'a ConformanceSuite,
     coverage: &'a Inventory,
 }
 
@@ -905,11 +930,7 @@ pub(crate) fn suite_document(
     coverage: &Inventory,
 ) -> Result<String, AdmissionError> {
     crate::admission::suite(suite)?;
-    canonical(&Document {
-        provenance: &suite.provenance,
-        scenarios: &suite.scenarios,
-        coverage,
-    })
+    canonical(&Document { suite, coverage })
 }
 
 /// Write a freshly produced coverage suite compactly, retaining its entire inventory.
@@ -923,12 +944,8 @@ pub fn compact_suite_document(
 ) -> Result<String, AdmissionError> {
     crate::admission::suite(suite)?;
     coverage.validate(suite)?;
-    let mut value = serde_json::to_value(Document {
-        provenance: &suite.provenance,
-        scenarios: &suite.scenarios,
-        coverage,
-    })
-    .map_err(|e| error(e.to_string()))?;
+    let mut value =
+        serde_json::to_value(Document { suite, coverage }).map_err(|e| error(e.to_string()))?;
     value.sort_all_objects();
     let mut text = serde_json::to_string(&value).map_err(|e| error(e.to_string()))?;
     text.push('\n');

@@ -9,10 +9,13 @@
 use std::collections::BTreeMap;
 
 use ess_compiler::ir::{
-    ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedEntity, ResolvedInstance,
-    ResolvedRowSelection, ResolvedRowSetTest, RowMember, Selected,
+    ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedEntity, ResolvedField,
+    ResolvedInstance, ResolvedRowSelection, ResolvedRowSetTest, ResolvedTypeRef, RowMember,
+    Selected,
 };
+use ess_domain::command::ordered_head::Ties;
 use ess_domain::command::OutcomeName;
+use ess_domain::view::{Direction, Ranking};
 use ess_primitives::facts::FactSource;
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Predicate, Truth};
@@ -34,7 +37,14 @@ pub(super) struct Reader<'a> {
     facts: input::InputFacts<'a>,
     now: Option<crate::occurrence_clock::DecisionInstant>,
     subject: Subject<'a>,
+    /// The values the outcome publishes that its selectors read (ess/27, beyond10x/ess#549),
+    /// resolved before any of them is read; `None` for a guard, which reads none.
+    published: Option<&'a super::Published>,
 }
+
+/// The values one selector reads from its outcome's payload, each under its own root, and the
+/// fields typing them.
+type PublishedHeld = (Vec<ResolvedField>, BTreeMap<String, super::Value>);
 
 /// The subject a selector's `subject.` reads.
 enum Subject<'a> {
@@ -61,7 +71,51 @@ impl<'a> Reader<'a> {
             facts,
             now: input.now,
             subject: subject(ir, spec, store, input),
+            published: None,
         })
+    }
+
+    /// The same reader, its selectors reading the values `published` holds for their listed
+    /// `payload.<Event>.<field>` operands (ess/27, beyond10x/ess#549).
+    pub(super) fn with_published(mut self, published: &'a super::Published) -> Self {
+        self.published = Some(published);
+        self
+    }
+
+    /// The values `selection` reads from its outcome's payload, each under its own root, and the
+    /// fields typing them; `None` where it reads none. A listed read the outcome has not resolved
+    /// is a gap, never an absent operand: validation and `publish_reads` resolve every one first.
+    fn published_facts(
+        &self,
+        selection: &ResolvedRowSelection,
+    ) -> Result<Option<PublishedHeld>, Undetermined> {
+        if selection.reads.is_empty() {
+            return Ok(None);
+        }
+        let mut fields = Vec::with_capacity(selection.reads.len());
+        let mut values = BTreeMap::new();
+        for (index, read) in selection.reads.iter().enumerate() {
+            let slot = set_effects::Published::slot(index);
+            let value = self
+                .published
+                .and_then(|published| {
+                    published.get(&(read.event.name().clone(), read.field.clone()))
+                })
+                .ok_or_else(|| Undetermined::NotInterpreted {
+                    construct: format!(
+                        "the published `{}.{}` a selector reads, before it is resolved",
+                        read.event.name(),
+                        read.field
+                    ),
+                })?;
+            fields.push(ResolvedField {
+                name: slot.clone(),
+                type_ref: read.type_ref.clone(),
+                naming: ess_domain::Naming::default(),
+            });
+            values.insert(slot, value.clone().unwrap_or(super::Value::Absent));
+        }
+        Ok(Some((fields, values)))
     }
 
     /// Every candidate row of `selection`'s entity, with whether it is selected and — where
@@ -72,6 +126,17 @@ impl<'a> Reader<'a> {
         satisfies: Option<&Predicate>,
     ) -> Result<Vec<(&'a Node, &'a Row, RowMember)>, Undetermined> {
         let entity = self.ir.entity(&selection.entity);
+        let published_held = self.published_facts(selection)?;
+        let published_facts = published_held
+            .as_ref()
+            .map(|(fields, values)| super::history::Facts::new(self.ir, fields, values))
+            .transpose()?;
+        let published = published_facts
+            .as_ref()
+            .map(|facts| set_effects::Published {
+                facts,
+                reads: &selection.reads,
+            });
         let fields = set_effects::fields(entity);
         let subject_fields;
         let held = match &self.subject {
@@ -88,6 +153,33 @@ impl<'a> Reader<'a> {
             Subject::None | Subject::Missing => None,
         };
         let subject = held.as_ref().map(|facts| facts as &dyn FactSource);
+        // The rows each rows quantifier of the selector or `satisfies` walks (ess/27,
+        // beyond10x/ess#551): every stored row of its entity, from the same snapshot as the
+        // candidates, read once per decision.
+        let walked: Vec<(&str, &ResolvedEntity, Vec<ResolvedField>)> =
+            std::iter::once(&selection.filter)
+                .chain(satisfies)
+                .flat_map(ess_domain::command::related_rows::walked)
+                .collect::<std::collections::BTreeSet<&str>>()
+                .into_iter()
+                .filter_map(|name| {
+                    let entity = self.ir.entities().get(&name.parse().ok()?)?;
+                    Some((name, entity, set_effects::fields(entity)))
+                })
+                .collect();
+        let mut related = set_effects::Related::new();
+        for (name, entity, fields) in &walked {
+            let mut rows = Vec::new();
+            for (_, key, row) in self
+                .store
+                .instances()
+                .filter(|(held, _, _)| **held == entity.name)
+            {
+                rows.push(set_effects::row_facts(self.ir, fields, entity, key, row)?);
+            }
+            related.insert((*name).to_owned(), rows);
+        }
+        let related = (!walked.is_empty()).then_some(&related);
         if subject.is_none()
             && (reads_subject(&selection.filter) || satisfies.is_some_and(reads_subject))
         {
@@ -109,6 +201,8 @@ impl<'a> Reader<'a> {
                         row: candidate,
                         input: &self.facts,
                         subject,
+                        published,
+                        related,
                     };
                     predicate.evaluate(&caller::Facts::new(&read, None, &[], self.now))
                 })
@@ -169,6 +263,149 @@ impl<'a> Reader<'a> {
             }),
         }
     }
+
+    /// The first row `selection` selects, ranked by `order_by` (ess/27, beyond10x/ess#543,
+    /// `docs/design/ordered-related-head.md`), or why there is none to read.
+    ///
+    /// The rows are ranked with the comparator a view's order uses, so the two cannot disagree.
+    /// A total order's last key is the identity, so exactly one row is first. Under `ties:
+    /// unordered` two rows may tie on every key and rank first, and then the head is the
+    /// implementation's choice: [`Undetermined::UnorderedTie`], and no row is picked. Sound and
+    /// deliberately weak over a history: a row whose membership is unknown, or a selected row
+    /// whose key the store does not hold, leaves the head undecidable, unless one row is selected
+    /// and no other may be.
+    pub(super) fn head(
+        &self,
+        selection: &ResolvedRowSelection,
+        order_by: &[Ranking],
+        ties: Ties,
+    ) -> Result<(&'a Node, &'a Row), Undetermined> {
+        let members = self.members(selection, None)?;
+        let entity = self.ir.entity(&selection.entity);
+        let undecidable = |why: &str| Undetermined::Undecidable {
+            outcome: format!("ordered read of {}", entity.name),
+            guard: format!(
+                "the first row by `{}` of those `{}` selects: {why}",
+                order_by
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                selection.filter
+            ),
+        };
+        if members
+            .iter()
+            .any(|(.., member)| member.selected == Truth::Unknown)
+        {
+            return Err(undecidable("a row's membership is unknown"));
+        }
+        let selected: Vec<(&'a Node, &'a Row)> = members
+            .iter()
+            .filter(|(.., member)| member.selected == Truth::True)
+            .map(|(key, row, _)| (*key, *row))
+            .collect();
+        match selected.as_slice() {
+            [] => {
+                return Err(Undetermined::NoValue {
+                    what: format!(
+                        "a field of the first `{}` the selector selects: none is",
+                        entity.name
+                    ),
+                })
+            }
+            [one] => return Ok(*one),
+            _ => {}
+        }
+        let types: Vec<ResolvedTypeRef> = order_by
+            .iter()
+            .map(|ranking| key_type(entity, &ranking.field))
+            .collect();
+        let mut ranked = Vec::with_capacity(selected.len());
+        for (key, row) in selected {
+            let mut values = Vec::with_capacity(order_by.len());
+            for ranking in order_by {
+                let Some(value) = key_value(entity, key, row, &ranking.field) else {
+                    return Err(undecidable(&format!(
+                        "the store does not hold `{}` of a selected row",
+                        ranking.field
+                    )));
+                };
+                values.push(value);
+            }
+            ranked.push((key, row, values));
+        }
+        let order = |left: &[Node], right: &[Node]| {
+            for ((ranking, ty), (left, right)) in order_by
+                .iter()
+                .zip(&types)
+                .zip(left.iter().zip(right.iter()))
+            {
+                let compare = super::super::views::compare(self.ir, ty, Some(left), Some(right));
+                if !compare.is_eq() {
+                    return if ranking.direction == Direction::Descending {
+                        compare.reverse()
+                    } else {
+                        compare
+                    };
+                }
+            }
+            std::cmp::Ordering::Equal
+        };
+        ranked.sort_by(|(.., left), (.., right)| order(left, right));
+        if let [(.., first), (.., second), ..] = ranked.as_slice() {
+            if order(first, second).is_eq() {
+                // Two rows rank first. A total order ends in the identity, which no two rows share,
+                // so a tie under one is no answer the model gives either.
+                if ties.is_total() {
+                    return Err(undecidable("two rows tie on every key"));
+                }
+                return Err(Undetermined::UnorderedTie {
+                    entity: entity.name.to_string(),
+                    order: order_by
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                });
+            }
+        }
+        ranked
+            .into_iter()
+            .next()
+            .map(|(key, row, _)| (key, row))
+            .ok_or_else(|| undecidable("no row is first"))
+    }
+}
+
+/// The type a ranking key of `entity` ranks at: a declared field's, the identity's, or the
+/// entity's `State` for `state`.
+fn key_type(entity: &ResolvedEntity, name: &str) -> ResolvedTypeRef {
+    entity
+        .fields
+        .iter()
+        .chain(std::iter::once(&entity.identity))
+        .find(|field| field.name == name)
+        .map_or_else(
+            || entity.state_field().type_ref,
+            |field| field.type_ref.clone(),
+        )
+}
+
+/// The value of the ranking key `name` on the row `key` names, as the store holds it: a declared
+/// field, the identity, or the held state's name; `None` where the store holds none.
+fn key_value(entity: &ResolvedEntity, key: &Node, row: &Row, name: &str) -> Option<Node> {
+    if entity.fields.iter().any(|field| field.name == name) {
+        return match row.fields.get(name) {
+            Some(super::Value::Known(value)) => Some(value.clone()),
+            _ => None,
+        };
+    }
+    if entity.identity.name == name {
+        return Some(key.clone());
+    }
+    (name == ess_domain::entity::EntitySpec::STATE)
+        .then(|| Node::Text(row.state.as_str().to_owned()))
 }
 
 /// Whether `predicate` reads the addressed subject.

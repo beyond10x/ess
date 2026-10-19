@@ -7,12 +7,28 @@ Review `consumer-wrapped-invariant-design-v3` approved it with no findings; the 
 executed no runtime tests. The design resolves WVI-D2-1/2/3 through canonical semantic
 numeric work, one logical charging schedule, and incomplete-inventory serialization guards.
 
-Implementation remains pending, sequenced with the generated-history proof work and the
-browser conformance product. The integration owner must reconcile the proposed format
-numbers and exact generated carriers before implementation; this document reserves none.
+Implementation was sequenced with the generated-history proof work and the browser conformance
+product; it is partial, as the status below records. The integration owner reconciled the
+proposed format numbers; this document reserves none.
 The implementation and browser audit paths below define the proposed change boundaries,
 not permission to edit another owner's active work. Existing release publication holds
 and the single held-bundle delivery boundary remain in force.
+
+Implementation status (2026-10-18, downstream report). The proposed 36/37 pair was allocated to
+other work; the expectation landed as suite `ess-conformance/52` (ordinary) and `/53` (coverage).
+Landed: the closed DTO with every form below (`crates/verify/ess-conformance/src/value_invariant.rs`),
+raw and typed admission with the id-digest check, closure, position walk and closed members; the
+native observer for `site` positions under `any_observed_occurrence` and `projected_identity`,
+with S/O/F/P work accounting summed per snapshot; synthesis of every acyclic site through `List`,
+`Map`, `Optional`, `Union` and struct routes (`src/synthesize/value_invariant.rs`), proved by
+running the observer over the row the scenario determined; the interpreted target and browser
+product through the shared runner; Go and TypeScript admission with an `unsupported` verdict
+naming the expectation. Not landed: execution of `recursive` positions and `identity_query`
+witnesses (admitted, reported `unsupported`; synthesis refuses recursive obligations by name,
+ESS-SYNTH-001), arrangement goals inside the witness builder (a position whose row the scenario
+does not determine is refused, ESS-SYNTH-013), the incomplete-inventory marker and checked
+`Serialize` (an expansion past 16384 edges is refused instead), typed `now` for predicates, exact
+cross-runtime event traces, and Go/TypeScript execution of the observer.
 
 Source inspection used runtime `c2c4f01c6cfe99c6a16db5670669fb9774ab6bb9` and the browser
 product's uncommitted source based on `d849ea01c00af9360d574e06ff864d01c2564954`.

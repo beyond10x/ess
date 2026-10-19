@@ -141,7 +141,7 @@ raw output is in composition/preparation/review-record-validate.log under this w
 Opening commit e176858010e45bada104ebb10e9b69e2232e0ac0 has verified bot author and committer.
 The manager created ess-composition-contract at that exact commit. Its branch is
 impl/review-composition-contract; worktree is
-~/.local/state/worktree/trees/b10x/ess/ess-composition-contract, build is that path's
+<tree>, build is that path's
 target directory, scratch is target/review-boundaries-9, and TMPDIR is that scratch's tmp
 directory. No external scratch is assigned. The live lease is ess-review-wave9-composition.
 Root wrote the complete unit-brief.md and copied actual9-case baseline/source-scope evidence
@@ -199,7 +199,7 @@ retained against its original source and is not extended to the incoming normali
 
 The manager-created support id ess-wave9-website-verification is detached at the effective
 Atlas-pinned Website runtime fc4571534765c098ed861bc326da4d3da0d1df63. Its worktree is
-~/.local/state/worktree/trees/b10x/website/ess-wave9-website-verification, its build and
+<tree>, its build and
 scratch root is target/review-boundaries-9, and TMPDIR/npm cache are beneath that scratch.
 Lease ess-review-wave9-website covers this task-owned path. Root read this exact AGENTS.md.
 Node24 `npm ci --ignore-scripts` exited0 in17.742seconds, preserving package and lock hashes;

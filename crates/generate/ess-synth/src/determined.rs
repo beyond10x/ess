@@ -199,7 +199,7 @@ fn outcome(
         return Err("a set outcome over filtered rows (`instances:`)".to_owned());
     }
     if !outcome.affects.is_empty() {
-        return Err("effects on filtered rows (`affects:`)".to_owned());
+        affects(ir, command, outcome)?;
     }
     let selection_entity = selection.map(|subject| ir.entity(&subject.entity));
     match &outcome.condition {
@@ -415,16 +415,53 @@ fn value(
     }
     let target = &field.target_type;
     match &field.value {
-        ResolvedPayloadValue::InputField { type_ref, .. }
-        | ResolvedPayloadValue::CallerAttribute { type_ref, .. } => {
+        ResolvedPayloadValue::InputField {
+            type_ref,
+            field: read,
+        } => {
+            // A read its branch proves present (ess/16, ess/27) is typed `T` over a declared
+            // `Optional<T>`: the generated behaviours read the declared `Optional` and copy no
+            // value out of it, so the command stays owed, named by the read.
+            let declared = command
+                .input
+                .iter()
+                .find(|input| input.name == *read)
+                .map(|input| &input.type_ref);
+            if declared.is_some_and(|declared| declared.is_optional() && !type_ref.is_optional()) {
+                return Err(format!(
+                    "a narrowed read of the Optional input `{read}`, which its branch proves \
+                     present, for `{}`",
+                    field.target
+                ));
+            }
             if !assignable(type_ref, target) {
                 return Err(format!("a value of another type for `{}`", field.target));
             }
         }
-        ResolvedPayloadValue::SubjectField { type_ref, .. } => {
-            if held.is_none() {
+        ResolvedPayloadValue::CallerAttribute { type_ref, .. } => {
+            if !assignable(type_ref, target) {
+                return Err(format!("a value of another type for `{}`", field.target));
+            }
+        }
+        ResolvedPayloadValue::SubjectField {
+            type_ref,
+            field: read,
+        } => {
+            let Some(held) = held else {
                 return Err(format!(
                     "`{{subject:}}` for `{}` on a branch that holds no subject",
+                    field.target
+                ));
+            };
+            // As for a narrowed input (ess/27, beyond10x/ess#556): the row's field is `Optional`.
+            let declared = std::iter::once(&held.identity)
+                .chain(&held.fields)
+                .find(|declared| declared.name == *read)
+                .map(|declared| &declared.type_ref);
+            if declared.is_some_and(|declared| declared.is_optional() && !type_ref.is_optional()) {
+                return Err(format!(
+                    "a narrowed read of the subject's Optional `{read}`, which its branch proves \
+                     present, for `{}`",
                     field.target
                 ));
             }
@@ -445,7 +482,7 @@ fn value(
             }
         }
         ResolvedPayloadValue::Literal { value } => literal(ir, target, value)?,
-        ResolvedPayloadValue::Generated | ResolvedPayloadValue::Cleared => {}
+        ResolvedPayloadValue::Generated { .. } | ResolvedPayloadValue::Cleared => {}
         ResolvedPayloadValue::Increment { by } => {
             if held.is_none() || !sets {
                 return Err(format!(
@@ -524,8 +561,37 @@ fn value(
                 field.target
             ));
         }
+        // Nor does it rank them (ess/27, beyond10x/ess#543): the head is owed, as the filtered
+        // read is, until generated storage enumerates a selector's rows.
+        ResolvedPayloadValue::RelatedHead { .. } => {
+            return Err(format!(
+                "a read of the first row of an ordered selection (`{{related: {{entity, where, \
+                 order_by, first}}}}`) for `{}`",
+                field.target
+            ));
+        }
         ResolvedPayloadValue::ResponseField { .. } => {
             return Err(format!("a response field for `{}`", field.target));
+        }
+        // The generated behaviours compute no expression yet (ess/27, beyond10x/ess#560): the
+        // command stays owed, named by the value it would compute, rather than computed otherwise
+        // than the shared evaluator computes it.
+        ResolvedPayloadValue::Expression { expr, .. } => {
+            return Err(format!(
+                "an expression value (`{{expr: \"{expr}\"}}`) for `{}`",
+                field.target
+            ));
+        }
+        // Generated code would have to order the payload's value before the row; owed in this cut
+        // (ess/27, beyond10x/ess#545, `docs/design/minted-value-sources.md`).
+        ResolvedPayloadValue::PayloadRead {
+            event, field: read, ..
+        } => {
+            return Err(format!(
+                "a `sets:` value read from the outcome's payload (`{{payload: {}.{read}}}`) for `{}`",
+                event.name(),
+                field.target
+            ));
         }
     }
     let _ = command;
@@ -1019,7 +1085,18 @@ pub(crate) fn resolve_derived(
             "`{derived}`, a byte length the generated view query does not compare"
         ));
     }
-    let Derived::Utf8Bytes(parent) = derived;
+    // The generated behaviours compute no function of a fact yet (ess/27, beyond10x/ess#584): the
+    // command stays owed, named by the expression, rather than decided otherwise than the shared
+    // evaluator decides it.
+    let parent = match derived {
+        Derived::Utf8Bytes(parent) => parent,
+        Derived::Call(expr) => {
+            return Err(format!(
+                "a guard reading `{}` through a function (`{expr}`)",
+                derived.parent()
+            ))
+        }
+    };
     let mut resolved = resolve(ir, env, parent)?;
     if resolved.kind != Kind::Text || leaf_primitive(ir, &resolved) != Some(Primitive::String) {
         return Err(format!(
@@ -1534,11 +1611,15 @@ fn related_composition(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Stri
                 .to_owned(),
         );
     }
+    // An external refusal answered before the row (`before_row: true`) is read from the request
+    // alone, before any row (the one precedence rule, ess/27, admits it beside `when_related:`); any
+    // other stays owed.
     if command.outcomes.iter().any(|outcome| {
-        matches!(
-            outcome.condition,
-            ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
-        )
+        !outcome.before_row
+            && matches!(
+                outcome.condition,
+                ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+            )
     }) {
         return Err("`external:` beside `when_related:` in one command".to_owned());
     }
@@ -1563,6 +1644,176 @@ fn related_composition(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Stri
             return Err(
                 "a stored `when_related:` reference on no subject the input names".to_owned(),
             );
+        }
+    }
+    Ok(())
+}
+
+// ---- a set effect pinning the row's identity (ess/27, beyond10x/ess#547) ------------------------
+
+/// Where a pinned filter reads the identity it compares the row's with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PinSource<'a> {
+    /// `subject.<field>`: a stored field of the subject, as read before the outcome.
+    Subject(&'a str),
+    /// `input.<field>`: a top-level input field.
+    Input(&'a str),
+}
+
+/// A filter that **pins** the row's identity (`docs/design/set-effect-identity-filters.md`,
+/// "A pin", D5): `<identity> == subject.<field>` or `== input.<field>`, either way round, alone or
+/// as the one such conjunct of a top-level `all:`. It selects at most one row, which a generated
+/// behaviour reads by identity through the entity's storage port.
+#[derive(Debug, Clone)]
+pub(crate) struct Pin<'a> {
+    pub(crate) source: PinSource<'a>,
+    /// The filter's other conjuncts, evaluated on the row read; empty where there are none.
+    pub(crate) rest: Vec<&'a Predicate>,
+}
+
+/// The pin `filter` declares over a row of `entity`, or `None` where it is not one.
+pub(crate) fn pin<'a>(ir: &EssIr, entity: &EntityHandle, filter: &'a Predicate) -> Option<Pin<'a>> {
+    let identity = ir.entity(entity).identity.name.as_str();
+    let reads = |predicate: &Predicate| {
+        predicate
+            .fact_paths()
+            .into_iter()
+            .any(|path| path.segments() == [identity])
+    };
+    let pinned = |predicate: &'a Predicate| -> Option<PinSource<'a>> {
+        let Predicate::Compare {
+            left: Operand::Fact(left),
+            op: CompareOp::Eq,
+            right: Operand::Fact(right),
+            ..
+        } = predicate
+        else {
+            return None;
+        };
+        let other = if left.segments() == [identity] {
+            right
+        } else if right.segments() == [identity] {
+            left
+        } else {
+            return None;
+        };
+        match other.segments() {
+            [root, field] if root == ess_domain::command::set_effects::SUBJECT_NAMESPACE => {
+                Some(PinSource::Subject(field))
+            }
+            [root, field] if root == ess_domain::command::subject_fact::INPUT_NAMESPACE => {
+                Some(PinSource::Input(field))
+            }
+            _ => None,
+        }
+    };
+    if let Some(source) = pinned(filter) {
+        return Some(Pin {
+            source,
+            rest: Vec::new(),
+        });
+    }
+    let Predicate::All(conjuncts) = filter else {
+        return None;
+    };
+    let mut source = None;
+    let mut rest = Vec::new();
+    for conjunct in conjuncts {
+        match pinned(conjunct) {
+            Some(found) if source.is_none() => source = Some(found),
+            _ if reads(conjunct) => return None,
+            _ => rest.push(conjunct),
+        }
+    }
+    source.map(|source| Pin { source, rest })
+}
+
+/// `Ok` where every `affects:` entry of `outcome` is one a generated behaviour executes (D5): its
+/// filter pins the row's identity, its other conjuncts and `sets:` are renderable, its entity is
+/// stored where the command is accepted, and no two entries name one entity. `Err` names what
+/// keeps the command owed; an unpinned filter, `each:` and `instances:` stay owed, as generated
+/// storage enumerates no rows by a selector.
+fn affects(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutcome) -> Result<(), String> {
+    const OWED: &str = "effects on filtered rows (`affects:`)";
+    let Some(subject) = &outcome.subject else {
+        return Err(OWED.to_owned());
+    };
+    let ResolvedInstance::Supplied { .. } = &subject.instance else {
+        return Err(OWED.to_owned());
+    };
+    if subject.effect == ResolvedEffect::Creates {
+        return Err(OWED.to_owned());
+    }
+    let held = ir.entity(&subject.entity);
+    let mut entities: Vec<&EntityHandle> = Vec::new();
+    for affect in &outcome.affects {
+        let Some(filter) = &affect.filter else {
+            return Err(OWED.to_owned());
+        };
+        let Some(pin) = pin(ir, &affect.entity, filter) else {
+            return Err(OWED.to_owned());
+        };
+        let entity = ir.entity(&affect.entity);
+        if entities.contains(&&affect.entity) {
+            return Err(format!(
+                "two `affects:` entries over `{}`, whose pinned rows may be one",
+                entity.name
+            ));
+        }
+        entities.push(&affect.entity);
+        let identity = &entity.identity.type_ref;
+        let operand = match pin.source {
+            PinSource::Subject(field) => held.field(field).map(|field| &field.type_ref),
+            PinSource::Input(field) => command
+                .input
+                .iter()
+                .find(|input| input.name == field)
+                .map(|input| &input.type_ref),
+        };
+        let pins_identity = operand.is_some_and(|operand| {
+            operand == identity
+                || matches!(operand, ResolvedTypeRef::Optional { of } if **of == *identity)
+        });
+        if !pins_identity {
+            return Err(format!(
+                "an `affects:` pin on `{}` read from a value of another type",
+                entity.name
+            ));
+        }
+        let unstored = ir.components().values().any(|component| {
+            component
+                .accepts
+                .iter()
+                .any(|accepted| accepted.name() == &command.name)
+                && !component.owns.contains(&entity.domain)
+        });
+        if unstored {
+            return Err(format!(
+                "an `affects:` row of `{}`, which no component accepting the command stores",
+                entity.name
+            ));
+        }
+        for conjunct in &pin.rest {
+            supported(ir, &Env::Subject(command, entity), conjunct)?;
+        }
+        for set in &affect.sets {
+            if !matches!(
+                set.value,
+                ResolvedPayloadValue::InputField { .. }
+                    | ResolvedPayloadValue::Literal { .. }
+                    | ResolvedPayloadValue::SubjectField { .. }
+                    | ResolvedPayloadValue::Cleared
+            ) {
+                return Err(format!(
+                    "a `sets:` source on an `affects:` entry that a generated set effect does not \
+                     render (`{}`)",
+                    set.value.describe()
+                ));
+            }
+            entity.field(&set.target).ok_or_else(|| {
+                format!("a `sets:` of `{}`, not a field of the entity", set.target)
+            })?;
+            value(ir, command, set, Some(held), true)?;
         }
     }
     Ok(())

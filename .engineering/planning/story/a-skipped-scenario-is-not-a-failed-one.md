@@ -24,7 +24,7 @@ scope:
   path: website/docs/guides/verify-conformance.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 24
+revision: 25
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-06T09:36:22Z", actor: "human:timo", revision: 15, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-06T09:36:24Z", actor: "human:timo", revision: 16, imported: true}
@@ -61,7 +61,7 @@ Measured on `an adopting project`, 2026-09-03, ess 0.11.0:
 {"status": "inconclusive", "scenarios_total": 24, "scenarios_failed": 9}
 ```
 
-Nothing failed. Nine scenarios were skipped, all of them `acd.routing.DispatchCall`, which that
+Nothing failed. Nine scenarios were skipped, all of them `queue.routing.DispatchCall`, which that
 implementation exposes no surface for.
 
 ## Why it is worth fixing rather than documenting
@@ -84,8 +84,7 @@ even be the wanted rule, but it is being enforced by the wrong fact. `ess_confor
 already false for an `inconclusive` run and already carries that claim; `scenarios.failed` is
 supposed to carry a different one and does not.
 
-Recorded downstream in `an adopting project` at
-`.engineering/planning/executable-system-specification/acd-v3.md`, where the consequence is that
+Recorded downstream in `an adopting project`, where the consequence is that
 the artifact cannot honestly be moved to `conforming` and the reason is two-thirds wording.
 
 ## Historical requested checks

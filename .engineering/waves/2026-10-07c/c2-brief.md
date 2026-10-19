@@ -12,7 +12,7 @@ Read the story: `aep plan artifact show story:synthesis-covers-input-guards-besi
 ## The triple
 
 ```
-worktree:  ~/.local/state/worktree/trees/b10x/ess/ess-wave-20261007c-c2
+worktree:  <tree>
 build dir: <worktree>/target   (created by the coordinator with Cargo's CACHEDIR.TAG)
 scratch:   <worktree>/target/wave-scratch/c2
 ```
@@ -25,7 +25,7 @@ scratch:   <worktree>/target/wave-scratch/c2
 | **not yours** | everything else; `CHANGELOG.md` and `.engineering/**` are the coordinator's |
 
 Invariants: `.engineering/waves/2026-10-07c/invariants.md` in the integration tree
-(`~/.local/state/worktree/trees/b10x/ess/ess-wave-20261007c`). Read it first.
+(`<tree>`). Read it first.
 
 This unit also carries story:synthesis-witnesses-stay-unique-per-arranged-instance (https://github.com/beyond10x/ess/issues/480): same surface. Write failing tests for both issues, from their reproducers (issue bodies carry them in full).
 

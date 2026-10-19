@@ -280,7 +280,7 @@ pub struct RawBindingSpec {
     /// What it is for, in one line.
     #[serde(default)]
     pub summary: Option<String>,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
@@ -1184,7 +1184,7 @@ pub struct BindingSpec {
     pub refusals: Option<refusal::RefusalPolicy>,
     /// What it is called on the wire, and what a person is shown.
     pub naming: Naming,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
@@ -1630,6 +1630,10 @@ fn cause_of(name: &BindingName, when: RawTrigger) -> Result<BindingCause, Valida
 /// [`Specification::validate`](crate::spec::Specification::validate) already holds, and a missing
 /// end stops only the checks that needed it — an event nobody declares is reported once, not once
 /// per mapping entry underneath it.
+///
+/// The format is the one `types` records it serves ([`TypeRegistry::format`]), so a registry of
+/// an older document is held to that document's rules; a registry recording none is read as
+/// [`condition::BOOLEAN_FORMAT`].
 pub fn validate_bindings(
     bindings: &BTreeMap<BindingName, BindingSpec>,
     events: &BTreeMap<QualifiedName, EventSpec>,
@@ -1644,12 +1648,14 @@ pub fn validate_bindings(
         types,
         conversions,
         &crate::spec::Refused::default(),
+        types.format().unwrap_or(condition::BOOLEAN_FORMAT),
     )
 }
 
 /// [`validate_bindings`], after some declarations were refused by their own conversion: a binding
 /// naming a refused event or command is not refused again for naming an undeclared one
-/// (beyond10x/ess#79).
+/// (beyond10x/ess#79). `format` is the document's: it decides whether a condition or a selection
+/// may compare a Boolean leaf ([`condition::BOOLEAN_FORMAT`]).
 pub(crate) fn validate_bindings_after(
     bindings: &BTreeMap<BindingName, BindingSpec>,
     events: &BTreeMap<QualifiedName, EventSpec>,
@@ -1657,6 +1663,7 @@ pub(crate) fn validate_bindings_after(
     types: &TypeRegistry,
     conversions: &ConversionRegistry,
     refused: &crate::spec::Refused,
+    format: crate::system::FormatVersion,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let mut account = crate::accessor::Account::default();
@@ -1673,6 +1680,7 @@ pub(crate) fn validate_bindings_after(
                 types,
                 conversions,
                 &format!("binding.{}.selections", binding.name),
+                format,
             ) {
                 for input in &plan.inputs {
                     if let crate::selection::InputSource::Accessor { plan } = &input.source {
@@ -1740,6 +1748,7 @@ pub(crate) fn validate_bindings_after(
                 conversions,
                 inhabitation: &inhabitation,
                 refused,
+                format,
             }
             .check(),
         );
@@ -1763,6 +1772,8 @@ struct Ends<'a> {
     /// Declarations refused by their own conversion, which a reference here is not refused for
     /// naming again.
     refused: &'a crate::spec::Refused,
+    /// The document's source format.
+    format: crate::system::FormatVersion,
 }
 
 impl Ends<'_> {
@@ -1784,7 +1795,7 @@ impl Ends<'_> {
     fn proved(&self) -> std::collections::BTreeSet<Vec<String>> {
         match (&self.binding.condition, self.event()) {
             (Some(condition), Some(event)) => {
-                condition::ConditionPlan::resolve(condition, event, self.types, "")
+                condition::ConditionPlan::resolve(condition, event, self.types, "", self.format)
                     .map(|plan| plan.proves_present())
                     .unwrap_or_default()
             }
@@ -1871,6 +1882,7 @@ impl Ends<'_> {
                 event,
                 self.types,
                 &self.at("when.where"),
+                self.format,
             ) {
                 errors.extend(refused);
             }
@@ -1883,6 +1895,7 @@ impl Ends<'_> {
                 self.types,
                 self.conversions,
                 &self.at("selections"),
+                self.format,
             ) {
                 errors.push(error);
             }
@@ -2123,6 +2136,7 @@ impl Ends<'_> {
             self.types,
             self.conversions,
             at,
+            self.format,
         ) {
             match plan.projection(selection, path, self.types, at) {
                 Ok((_, _, ty)) => {
@@ -2665,7 +2679,7 @@ when: {event: billing.invoice.InvoiceCreated}
 invoke: {command: billing.email.SendEmail}
 delivery: at_least_once
 on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
-refs: [jira:DEV-630, zendesk:204519]
+refs: [jira:EX-1, zendesk:204519]
 ";
         let raw: RawBindingSpec = ess_yaml::from_str(document).expect("parses");
         let binding = BindingSpec::try_from(raw).expect("a valid binding");
@@ -2675,12 +2689,12 @@ refs: [jira:DEV-630, zendesk:204519]
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>(),
-            vec!["jira:DEV-630".to_owned(), "zendesk:204519".to_owned()],
+            vec!["jira:EX-1".to_owned(), "zendesk:204519".to_owned()],
             "order is the author's: the first reference is usually why the thing exists"
         );
 
         let written = ess_yaml::to_string(&binding).expect("writes");
-        assert!(written.contains("jira:DEV-630"), "{written}");
+        assert!(written.contains("jira:EX-1"), "{written}");
     }
 
     #[test]
@@ -2740,6 +2754,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
                     ],
                     invariants: Vec::new(),
                     undeclared_fields: None,
+                    shorthand: None,
                 },
             ),
             (
@@ -2796,6 +2811,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
                 .collect(),
             response: Vec::new(),
             undeclared_fields: None,
+            await_within: None,
             fixture_inputs: BTreeMap::new(),
             outcomes: Vec::new(),
             naming: Naming::default(),

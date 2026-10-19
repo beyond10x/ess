@@ -53,6 +53,17 @@ import (
 
 // ---- exact coverage inventory and original parent admission ----------------------------------
 
+// newestGeneratedRefusal and newestAuthoredRefusal are the last entries of the ESS-SYNTH and
+// ESS-AUTHOR catalogues a coverage inventory may name, and checkNotEmitted the generated codes
+// whose effect is check_not_emitted (ess_conformance's synthesize::CHECK_NOT_EMITTED).
+// tests/coverage_refusal_catalogue.rs holds all three to the Rust catalogues, vector by vector.
+const (
+	newestGeneratedRefusal = 24
+	newestAuthoredRefusal  = 46
+)
+
+var checkNotEmitted = map[int]bool{5: true, 11: true, 12: true, 14: true, 16: true, 17: true, 20: true, 21: true, 22: true}
+
 func coverageError() error             { return fmt.Errorf("inconsistent closed coverage inventory") }
 func originalDigest(raw string) string { return fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(raw))) }
 func sourceIdentity(value any) error {
@@ -90,7 +101,7 @@ func suiteReference(value any) error {
 //
 // Keep this aligned with the emitter's capability boundary. New majors require admission,
 // execution and report parity; changing this number alone supplies none of those semantics.
-const newestSuiteMajor = 51
+const newestSuiteMajor = 53
 
 // suiteMajorsNotRead are the majors below newestSuiteMajor that other work has allocated and this
 // runtime has no reader for yet. A suite labelled with one is refused by version, never read as
@@ -334,7 +345,7 @@ func checkedRefusal(value any, selection map[string]any, sources map[string]any,
 			return nil, coverageError()
 		}
 		number := 0
-		for n := 1; n <= 17; n++ {
+		for n := 1; n <= newestGeneratedRefusal; n++ {
 			if code == fmt.Sprintf("ESS-SYNTH-%03d", n) {
 				number = n
 			}
@@ -343,7 +354,7 @@ func checkedRefusal(value any, selection map[string]any, sources map[string]any,
 			return nil, coverageError()
 		}
 		effect := "candidate_not_emitted"
-		if number == 5 || number == 11 || number == 12 || number == 14 || number == 16 || number == 17 {
+		if checkNotEmitted[number] {
 			effect = "check_not_emitted"
 		}
 		if r["effect"] != effect {
@@ -354,7 +365,7 @@ func checkedRefusal(value any, selection map[string]any, sources map[string]any,
 			return nil, err
 		}
 		valid := false
-		for n := 1; n <= 41; n++ {
+		for n := 1; n <= newestAuthoredRefusal; n++ {
 			if n == 36 {
 				continue
 			}
@@ -1164,9 +1175,9 @@ type Target interface {
 	// ExecuteCommand invokes one command and reports the branch it took, the error it declared and
 	// the events it emitted directly.
 	//
-	// Return ErrUnsupported where the implementation offers no way to invoke it — a command whose
-	// actor is the implementation itself has no caller a target can be. The scenario is reported
-	// as skipped, which is a different fact from the command being wrong.
+	// Return ErrUnsupported where the implementation offers no way to invoke it. The scenario is
+	// reported as skipped, which is a different fact from the command being wrong. A command whose
+	// every actor is declared `system: true` is never invoked: the runner awaits it (AwaitTarget).
 	ExecuteCommand(request CommandRequest) (CommandResult, error)
 
 	// QueryView reads one view at the consistency the request demands. A read_your_writes view must
@@ -1272,6 +1283,56 @@ type RepeatedOutcomeTarget interface {
 	ConfigureExternalOutcomeRepeatedly(control ExternalOutcomeControl, times int) error
 }
 
+// AwaitTarget is what a target implements to report a step its system takes itself (suite/52 and
+// /53, ess/27 `system: true`, beyond10x/ess#542). A command every grant of which is a system actor
+// is never invoked: no caller can be the system. The runner asks for the outcome the system
+// reached on Instance after the scenario's preceding steps — the outcome with the input it issued
+// the command with and what it published, or that nothing was reached.
+//
+// The hold: a target that implements this does not let its system take the step on a scenario's
+// records until the runner awaits it — a controlled scheduler, or a tick the target drives. It is
+// a test adapter control, as ConfigureExternalOutcome is. A target that cannot hold its system
+// returns ErrUnsupported: a step taken early satisfies no await.
+//
+// The bound: with Within, report the reading of the target's own clock in ElapsedMillis, as
+// ObserveElapsed does — a reached outcome no later than Within, or nothing reached once at least
+// Within has passed. Without it, return when the step is taken or when Deadline runs out; the
+// runner asks again while its own deadline has not.
+//
+// Optional: a target that does not implement it, or returns ErrUnsupported, has each scenario that
+// awaits reported unsupported, never passed.
+type AwaitTarget interface {
+	AwaitOutcome(request AwaitRequest) (AwaitAnswer, error)
+}
+
+// AwaitRequest asks for the outcome the system itself reached for a command it issues.
+type AwaitRequest struct {
+	// Command is the system-issued command.
+	Command string
+	// Instance is the identity of the record the outcome addresses, resolved by the runner.
+	Instance Node
+	// Within is the declared bound in whole seconds (`await_within:`), zero where there is none.
+	Within int
+	// Deadline is the runner's budget, where there is no declared bound.
+	Deadline Deadline
+	// Compared names the input fields whose values the scenario will compare: names only, never
+	// values. A real target ignores it.
+	Compared    []string
+	Correlation string
+}
+
+// AwaitAnswer is what the system did about an awaited command.
+type AwaitAnswer struct {
+	// Reached says the system issued the command and reached Result.
+	Reached bool
+	// Result is the branch, its error and what the command published, as an invoked command's.
+	Result CommandResult
+	// Input is the input the system issued the command with, by declared field name.
+	Input map[string]Node
+	// ElapsedMillis is the target's clock reading since the await began, nil where it keeps none.
+	ElapsedMillis *int64
+}
+
 // CommandResult is what one command did.
 type CommandResult struct {
 	// Response is the actual returned, declared command response.
@@ -1326,7 +1387,7 @@ type ViewRequest struct {
 	// Params is the value bound to each parameter the view declares, resolved.
 	//
 	// Empty for a view with no `params:`, which is most of them. A view that declares them is one
-	// the implementation cannot answer without them — ACD's position in a queue is per queue — and
+	// the implementation cannot answer without them — a call's position in a queue is per queue — and
 	// the runner refuses to send a request with a parameter it could not resolve rather than
 	// reading a different set of rows and asserting against those.
 	Params map[string]Node
@@ -1600,6 +1661,7 @@ type Suite struct {
 	Provenance Provenance          `json:"provenance"`
 	Scenarios  map[string]Scenario `json:"scenarios"`
 	original   string
+	decoded    string
 	document   map[string]any
 	coverage   map[string]any
 	oneTime    map[string]*oneTimeTrace
@@ -1690,6 +1752,34 @@ type Step struct {
 	// Count is the exact number of invocations an `expect_invocation` requires (suite/26); zero
 	// for "at least one".
 	Count int `json:"count,omitempty"`
+	// Within is a system-issued command's declared bound, `PT<seconds>S`, empty where it declares
+	// none (`await_outcome`, `expect_not_issued`, suite/52, beyond10x/ess#542).
+	Within string `json:"within,omitempty"`
+	// Awaited is the record an await step addresses: a captured instance or a literal identity.
+	// The two await steps write it under `instance`, which every other step spells as a name, so
+	// decodeStep decodes it apart (stepInstance).
+	Awaited *Value `json:"-"`
+}
+
+// stepInstance sets the step's `instance`: a name everywhere, and the addressed record on the two
+// await steps (beyond10x/ess#542).
+func (s *Step) stepInstance(raw json.RawMessage, exact bool) error {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	if raw[0] == '"' {
+		return json.Unmarshal(raw, &s.Instance)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	if exact {
+		decoder.UseNumber()
+	}
+	var value Value
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	s.Awaited = &value
+	return nil
 }
 
 // Held is what one declared payload field must hold.
@@ -1800,7 +1890,7 @@ func Run(t *testing.T, newTarget func() Target) {
 		t.Fatalf("suite admission: %v", err)
 	}
 	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
-		t.Fatalf("suite/8 through /51 require explicit ESS_REPORT_FORMAT=2 before execution")
+		t.Fatalf("suite/8 through /53 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -2057,6 +2147,9 @@ type run struct {
 	readRefusalExpected bool
 	readAnswer          *readAnswer
 
+	// awaited is the input the most recent `await_outcome` answer carried, nil before one: what a
+	// `{kind: awaited}` value reads (suite/52, beyond10x/ess#542).
+	awaited map[string]Node
 	// instances are what `capture_instance` bound, by name.
 	instances   map[string]Node
 	established []EntitySetupRequest
@@ -2189,8 +2282,9 @@ func (r *run) execute(id string, scenario Scenario) {
 			}
 		}
 		// A command opens an act: no claim of it is made yet, and its claims are kept for matching
-		// them to the occurrences the command publishes (beyond10x/ess#427).
-		if step.Step == "execute_command" || step.Step == "execute_command_without_input" {
+		// them to the occurrences the command publishes (beyond10x/ess#427). An awaited command
+		// opens one too (beyond10x/ess#542).
+		if step.Step == "execute_command" || step.Step == "execute_command_without_input" || step.Step == "await_outcome" {
 			r.claimed = map[string]map[int]bool{}
 			r.assigned = map[string][]int{}
 			r.claims = actClaims(scenario.Steps[index+1:])
@@ -2261,6 +2355,10 @@ func (r *run) step(index int, step Step) bool {
 		r.fixNowOffsets(step)
 	}
 	switch step.Step {
+	case "await_outcome":
+		return r.awaitOutcome(index, step)
+	case "expect_not_issued":
+		return r.expectNotIssued(index, step)
 	case "hold_now":
 		return r.holdNow(index, step)
 	case "execute_command_without_input":
@@ -2910,6 +3008,13 @@ func (r *run) snapshotSubject(index int, step Step) bool {
 }
 
 func (r *run) expectView(index int, step Step, retry bool) bool {
+	// A value type's invariants at a wrapped position (suite/52) are observed by the reference
+	// runner, which carries the typed observer; this runtime admits the expectation and reports the
+	// scenario unsupported, naming it, rather than passing or guessing.
+	if step.Expectation != nil && step.Expectation.Expect == "value_invariants" {
+		r.skip("step %d: this runner does not observe `value_invariants` expectations", index)
+		return false
+	}
 	if !retry && r.unreadableView == step.View {
 		return r.assertionFailure(
 			index,
@@ -3523,6 +3628,16 @@ func (r *run) resolve(value Value) (Node, error) {
 			}
 		}
 		return nil, fmt.Errorf("`%s` was not observed carrying `%s`", value.Event, value.Field)
+	case "awaited":
+		// What the system reported it issued its own command with (beyond10x/ess#542).
+		if r.awaited == nil {
+			return nil, fmt.Errorf("`{kind: awaited, field: %s}` is read before any await_outcome", value.Field)
+		}
+		carried, ok := r.awaited[value.Field]
+		if !ok {
+			return nil, fmt.Errorf("the awaited answer carried no `%s`", value.Field)
+		}
+		return carried, nil
 	default:
 		return nil, fmt.Errorf("`%s` is a value kind this generated runner does not implement", value.Kind)
 	}
@@ -4341,6 +4456,7 @@ func unsigned(value any) (uint64, error) {
 
 var qualifiedName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z][A-Za-z0-9_-]*)*$`)
 var kebabName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+var positionDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
 var stateName = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
 var modelDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
@@ -4389,6 +4505,9 @@ func scenarioIdentity(id string) error {
 		valid = q(p[0]) && q(p[3]) && k(p[4])
 	case len(p) == 5 && p[1] == "invariant" && p[2] == "at":
 		valid = q(p[0]) && q(p[3]) && p[4] != ""
+	case len(p) == 6 && p[1] == "invariant-wrapped" && p[2] == "at":
+		// A value type's invariants at a wrapped view position (suite/52): the position's digest.
+		valid = q(p[0]) && q(p[3]) && p[4] != "" && positionDigest.MatchString(p[5])
 	case len(p) == 2 && p[1] == "aggregate":
 		valid = q(p[0])
 	case len(p) == 3 && p[1] == "grant":
@@ -4419,7 +4538,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	if err != nil {
 		return suite, err
 	}
-	root, err := closed(value, "provenance scenarios", "coverage")
+	root, err := closed(value, "provenance scenarios", "coverage events one_time_response")
 	if err != nil {
 		return suite, err
 	}
@@ -4441,6 +4560,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	}
 	if _, present := root["coverage"]; present != coverageMajor(major) {
 		return suite, fmt.Errorf("coverage is required exactly for the odd suite majors from /5")
+	}
+	decoded, err := expandCompactSuite(root, major, raw)
+	if err != nil {
+		return suite, err
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -4484,6 +4607,11 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		// A read of a read-granted view (beyond10x/ess#286) arrived in suite/34 and /35.
 		if strings.Contains(id, "/grant/read/") && major < 34 {
 			return suite, fmt.Errorf("a read sent as an actor requires suite/34 or /35")
+		}
+		// A value type's invariants at a wrapped view position arrived in suite/52 and /53, as the
+		// TypeScript runtime reads it.
+		if strings.Contains(id, "/invariant-wrapped/at/") && major < 52 {
+			return suite, fmt.Errorf("a wrapped value-invariant scenario requires suite/52 or /53")
 		}
 		s, err := closed(scenario, "purpose steps source", "one_time_response")
 		if err != nil {
@@ -4562,6 +4690,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 				if row, ok := item.(map[string]any); ok && (row["code"] == "ESS-SYNTH-016" || row["code"] == "ESS-SYNTH-017") && major < 17 {
 					return suite, fmt.Errorf("aggregate view refusals require suite/17")
 				}
+				// A refusal of a system-issued command (beyond10x/ess#542).
+				if row, ok := item.(map[string]any); ok && (row["code"] == "ESS-SYNTH-023" || row["code"] == "ESS-SYNTH-024") && major < 53 {
+					return suite, fmt.Errorf("system-issued command refusals require suite/53")
+				}
 			}
 		}
 		if selection, ok := coverage["selection"].(map[string]any); ok {
@@ -4580,7 +4712,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			return suite, fmt.Errorf("explicit suite requires complete input parents")
 		}
 	}
-	suite.original, suite.document = raw, root
+	suite.original, suite.decoded, suite.document = raw, decoded, root
 	if coverageMajor(major) {
 		suite.coverage = root["coverage"].(map[string]any)
 		// Original admission includes parents which will never execute. Retain their exact
@@ -4598,11 +4730,11 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		return suite, nil
 	}
 	if major == 12 || major == 14 || major == 16 || major == 18 {
-		decoder := json.NewDecoder(strings.NewReader(raw))
+		decoder := json.NewDecoder(strings.NewReader(decoded))
 		decoder.UseNumber()
 		err = decoder.Decode(&suite)
 	} else {
-		err = json.Unmarshal([]byte(raw), &suite)
+		err = json.Unmarshal([]byte(decoded), &suite)
 	}
 	if err == nil {
 		err = decodeExactSuiteSteps(&suite)
@@ -4619,11 +4751,11 @@ func executionSuite(suite Suite) (Suite, error) {
 		}
 		var err error
 		if suiteMajor(suite.Provenance.SuiteVersion) >= 13 {
-			decoder := json.NewDecoder(strings.NewReader(suite.original))
+			decoder := json.NewDecoder(strings.NewReader(suite.decoded))
 			decoder.UseNumber()
 			err = decoder.Decode(&suite)
 		} else {
-			err = json.Unmarshal([]byte(suite.original), &suite)
+			err = json.Unmarshal([]byte(suite.decoded), &suite)
 		}
 		if err != nil {
 			return Suite{}, fmt.Errorf("exact selected metadata exceeds the inherited Go execution view: %w", err)
@@ -4807,6 +4939,17 @@ func admitValues(value any, major int, accessors bool) error {
 			if _, err := text(f["field"]); err != nil {
 				return err
 			}
+		case "awaited":
+			// The input an awaited answer carried (suite/52, beyond10x/ess#542).
+			if major < 52 {
+				return fmt.Errorf("awaiting a system-issued command requires suite/52 or /53")
+			}
+			if _, err := closed(v, "kind field", ""); err != nil {
+				return err
+			}
+			if _, err := text(f["field"]); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unsupported scenario value %s", kind)
 		}
@@ -4918,6 +5061,18 @@ func admitExpectation(value any, major int) error {
 			return fmt.Errorf("a page of a paged view requires suite/26 or /27")
 		}
 		return admitPage(value)
+	case "value_invariants":
+		// Admitted by its closed members; the scenario carrying it is reported unsupported.
+		if major < 52 {
+			return fmt.Errorf("value_invariants expectations require suite/52 or /53")
+		}
+		if _, err := closed(value, "expect root declarations value position witness work_limit", ""); err != nil {
+			return err
+		}
+		if _, err := unsigned(f["work_limit"]); err != nil {
+			return err
+		}
+		return nil
 	}
 	required, optional := "expect", ""
 	switch tag {
@@ -5356,6 +5511,18 @@ func admitStep(value any, major int) error {
 		required += " view"
 	case "expect_outcome":
 		required += " outcome"
+	case "await_outcome":
+		if major < 52 {
+			return fmt.Errorf("awaiting a system-issued command requires suite/52 or /53")
+		}
+		required += " command instance identity"
+		optional = "within input shape"
+	case "expect_not_issued":
+		if major < 52 {
+			return fmt.Errorf("awaiting a system-issued command requires suite/52 or /53")
+		}
+		required += " command instance"
+		optional = "within unpublished"
 	case "expect_not_granted":
 		if major < 26 {
 			return fmt.Errorf("the refusal an ungranted actor gets requires suite/26 or /27")
@@ -5455,7 +5622,29 @@ func admitStep(value any, major int) error {
 	if _, err := closed(value, required, optional); err != nil {
 		return err
 	}
+	awaiting := tag == "await_outcome" || tag == "expect_not_issued"
 	for key, v := range f {
+		switch {
+		// The record an await addresses, the input naming it, the declared bound and what the
+		// window must not publish (suite/52, beyond10x/ess#542).
+		case awaiting && key == "instance":
+			err = admitAwaitInstance(v, major)
+		case awaiting && key == "identity":
+			_, err = text(v)
+		case awaiting && key == "within":
+			var within string
+			if within, err = text(v); err == nil {
+				_, err = awaitSeconds(within)
+			}
+		case awaiting && key == "unpublished":
+			err = admitUnpublished(v)
+		}
+		if err != nil {
+			return err
+		}
+		if awaiting && (key == "instance" || key == "identity" || key == "within" || key == "unpublished") {
+			continue
+		}
 		switch key {
 		case "capture":
 			err = admitReplay(v)
@@ -7986,10 +8175,6 @@ func (s selectionObservation) checkPredicate(condition predicate, reads map[stri
 				return fmt.Errorf("selection requires fact/literal Eq/Ne")
 			}
 			path = condition.left.path
-			literal, ok := condition.right.literal.(string)
-			if !ok {
-				return fmt.Errorf("selection literal must be text")
-			}
 			plan, ok := reads[path]
 			if !ok || plan.Start < 0 || plan.Start >= len(plan.Nodes) || plan.Nodes[plan.Start].Leaf == nil {
 				return fmt.Errorf("selection read is undeclared")
@@ -8006,6 +8191,14 @@ func (s selectionObservation) checkPredicate(condition predicate, reads map[stri
 					continue
 				}
 				break
+			}
+			// A Boolean item leaf (ess/27) is compared with `true` or `false`, every other leaf
+			// with text.
+			literal, text := condition.right.literal.(string)
+			if _, flag := condition.right.literal.(bool); ty == "Boolean" && !flag {
+				return fmt.Errorf("selection Boolean leaf needs a Boolean literal")
+			} else if ty != "Boolean" && !text {
+				return fmt.Errorf("selection literal must be text")
 			}
 			if body, ok := s.Declarations[ty]; ok && body.Kind == "enum" {
 				var variants []string
@@ -8250,8 +8443,8 @@ func admitSelection(value any) (*selectionObservation, error) {
 						return nil, err
 					}
 				}
-				if leaf != "String" && s.Declarations[leaf].Kind != "enum" {
-					return nil, fmt.Errorf("selection predicate requires String or enum")
+				if leaf != "String" && leaf != "Boolean" && s.Declarations[leaf].Kind != "enum" {
+					return nil, fmt.Errorf("selection predicate requires String, Boolean or enum")
 				}
 			}
 			condition, err := fromNode(op["predicate"])
@@ -8550,6 +8743,8 @@ func (s selectionObservation) evaluate(payload map[string]Node) (Node, bool, err
 							return nil, false, selectionFailure("resource", input, index, selector)
 						}
 						observations[path] = text
+					} else if flag, ok := value.(bool); ok && present {
+						observations[path] = flag
 					}
 				}
 				condition, err := fromNode(plan.Operation.Predicate)
@@ -8968,6 +9163,9 @@ func decodeExpectation(raw []byte, exact bool) (*Expectation, error) {
 			return nil, err
 		}
 		return &Expectation{Expect: tag.Expect, Paged: &page}, nil
+	case "value_invariants":
+		// Read by its tag alone: this runtime reports the scenario unsupported (suite/52).
+		return &Expectation{Expect: tag.Expect}, nil
 	}
 	expectation := &Expectation{}
 	decoder := json.NewDecoder(bytes.NewReader(raw))

@@ -182,8 +182,8 @@ fn lifecycle_derived_field_guide_section_states_the_idiom() {
         .ancestors()
         .find(|p| p.join("website/docs").is_dir())
         .expect("the workspace holds website/docs")
-        .join("website/docs/guides/specify/values-and-views.md");
-    let page = std::fs::read_to_string(&path).expect("values-and-views.md");
+        .join("website/docs/guides/specify/views.md");
+    let page = std::fs::read_to_string(&path).expect("views.md");
     let heading = "## A view field derived from the lifecycle state";
     let section = section(&page, heading).unwrap_or_else(|| panic!("missing heading `{heading}`"));
     for phrase in [

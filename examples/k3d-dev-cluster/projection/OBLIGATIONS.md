@@ -2,7 +2,7 @@
 
 Every gap this projection did **not** write a change for, and the reason. Applying every file in the tree beside this one leaves exactly these.
 
-Computed from specification `6f52fb34191df4f822a31f9242e103c7e61976b69bed41b772aba8a72f747689` against snapshot `73b68c18c311bd81a36d76b50238ae08ffb0621ae16753ff54b7329778deb785` of `k3d-dev-cluster`.
+Computed from specification `c18c0f5d02b300308071e076508c71541010a362eef3e3842e17b852f8b75e88` against snapshot `cc80082ad1d7daaf379c946dc8bec0461bc664653b2921d70415de5df5f5cdeb` of `k3d-dev-cluster`.
 
 ## Decisions owed (16)
 
@@ -12,71 +12,71 @@ Computed from specification `6f52fb34191df4f822a31f9242e103c7e61976b69bed41b772a
 * **why not a patch:** the expectation names the object and not what it would run
 * **decision:** write a deployment manifest for shop/checkout-api: this specification says it should exist and says nothing about what it would run
 
-### `shop-probes` — `workloads/shop/deployment/flaky-agent`
-
-* **observed:** container agent declares no liveness probe
-* **why not a patch:** no value is stated for probes.liveness
-* **decision:** choose what makes container `agent` healthy — a path and a port, or a port to connect to — and state it as a `remedy: {probes: …}` on expectation `shop-probes`; probes.liveness unstated
-
-### `shop-probes` — `workloads/shop/deployment/queue-redis`
+### `shop-probes` — `workloads/shop/deployment/cache-redis`
 
 * **observed:** container redis declares no liveness probe
 * **why not a patch:** no value is stated for probes.liveness
 * **decision:** choose what makes container `redis` healthy — a path and a port, or a port to connect to — and state it as a `remedy: {probes: …}` on expectation `shop-probes`; probes.liveness unstated
 
-### `shop-probes` — `workloads/shop/deployment/storefront-server`
+### `shop-probes` — `workloads/shop/deployment/web-server`
 
-* **observed:** container storefront-server declares no liveness probe
+* **observed:** container web-server declares no liveness probe
 * **why not a patch:** no value is stated for probes.liveness
-* **decision:** choose what makes container `storefront-server` healthy — a path and a port, or a port to connect to — and state it as a `remedy: {probes: …}` on expectation `shop-probes`; probes.liveness unstated
+* **decision:** choose what makes container `web-server` healthy — a path and a port, or a port to connect to — and state it as a `remedy: {probes: …}` on expectation `shop-probes`; probes.liveness unstated
 
-### `shop-probes` — `workloads/shop/statefulset/switchboard`
+### `shop-probes` — `workloads/shop/deployment/worker-agent`
 
-* **observed:** container switchboard declares no liveness probe
+* **observed:** container agent declares no liveness probe
 * **why not a patch:** no value is stated for probes.liveness
-* **decision:** choose what makes container `switchboard` healthy — a path and a port, or a port to connect to — and state it as a `remedy: {probes: …}` on expectation `shop-probes`; probes.liveness unstated
+* **decision:** choose what makes container `agent` healthy — a path and a port, or a port to connect to — and state it as a `remedy: {probes: …}` on expectation `shop-probes`; probes.liveness unstated
 
-### `flaky-agent-registry` — `workloads/shop/deployment/flaky-agent`
+### `shop-probes` — `workloads/shop/statefulset/relay`
 
-* **observed:** container agent pulls registry.local/flaky-agent from registry.local, wanted one of [registry.example.com]
+* **observed:** container relay declares no liveness probe
+* **why not a patch:** no value is stated for probes.liveness
+* **decision:** choose what makes container `relay` healthy — a path and a port, or a port to connect to — and state it as a `remedy: {probes: …}` on expectation `shop-probes`; probes.liveness unstated
+
+### `worker-agent-registry` — `workloads/shop/deployment/worker-agent`
+
+* **observed:** container agent pulls registry.example.test/worker-agent from registry.example.test, wanted one of [registry.example.com]
 * **why not a patch:** choosing an image is an engineering decision, not a substitution
-* **decision:** choose the build of `registry.local/flaky-agent` that container `agent` should run from one of [registry.example.com]; a rewritten registry prefix is a different image, not the same one somewhere else
+* **decision:** choose the build of `registry.example.test/worker-agent` that container `agent` should run from one of [registry.example.com]; a rewritten registry prefix is a different image, not the same one somewhere else
 
-### `shop-tags` — `workloads/shop/deployment/flaky-agent`
+### `shop-tags` — `workloads/shop/deployment/worker-agent`
 
-* **observed:** container agent pulls registry.local/flaky-agent, untagged — which is `latest`
+* **observed:** container agent pulls registry.example.test/worker-agent, untagged — which is `latest`
 * **why not a patch:** choosing an image is an engineering decision, not a substitution
-* **decision:** choose the version of `registry.local/flaky-agent` that container `agent` should run and write it as a tag or a `sha256:` digest; nothing in the snapshot says which build `registry.local/flaky-agent` is today
+* **decision:** choose the version of `registry.example.test/worker-agent` that container `agent` should run and write it as a tag or a `sha256:` digest; nothing in the snapshot says which build `registry.example.test/worker-agent` is today
 
-### `shop-tags` — `workloads/shop/statefulset/switchboard`
+### `shop-tags` — `workloads/shop/statefulset/relay`
 
-* **observed:** container switchboard pulls registry.example.com/services/switchboard-8:latest, tagged `latest`
+* **observed:** container relay pulls registry.example.com/services/relay-8:latest, tagged `latest`
 * **why not a patch:** choosing an image is an engineering decision, not a substitution
-* **decision:** choose the version of `registry.example.com/services/switchboard-8:latest` that container `switchboard` should run and write it as a tag or a `sha256:` digest; nothing in the snapshot says which build `registry.example.com/services/switchboard-8:latest` is today
+* **decision:** choose the version of `registry.example.com/services/relay-8:latest` that container `relay` should run and write it as a tag or a `sha256:` digest; nothing in the snapshot says which build `registry.example.com/services/relay-8:latest` is today
 
-### `shop-digests` — `workloads/shop/deployment/flaky-agent`
-
-* **observed:** container agent pulls registry.local/flaky-agent, not pinned by digest
-* **why not a patch:** choosing an image is an engineering decision, not a substitution
-* **decision:** choose the version of `registry.local/flaky-agent` that container `agent` should run and write it as a tag or a `sha256:` digest; nothing in the snapshot says which build `registry.local/flaky-agent` is today
-
-### `shop-digests` — `workloads/shop/deployment/queue-redis`
+### `shop-digests` — `workloads/shop/deployment/cache-redis`
 
 * **observed:** container redis pulls redis:7-alpine, not pinned by digest
 * **why not a patch:** choosing an image is an engineering decision, not a substitution
 * **decision:** choose the version of `redis:7-alpine` that container `redis` should run and write it as a tag or a `sha256:` digest; nothing in the snapshot says which build `redis:7-alpine` is today
 
-### `shop-digests` — `workloads/shop/deployment/storefront-server`
+### `shop-digests` — `workloads/shop/deployment/web-server`
 
-* **observed:** container storefront-server pulls localhost:31721/apps/storefront-server:AtqQlTV, not pinned by digest
+* **observed:** container web-server pulls registry.example.test:31721/apps/web-server:AtqQlTV, not pinned by digest
 * **why not a patch:** choosing an image is an engineering decision, not a substitution
-* **decision:** choose the version of `localhost:31721/apps/storefront-server:AtqQlTV` that container `storefront-server` should run and write it as a tag or a `sha256:` digest; nothing in the snapshot says which build `localhost:31721/apps/storefront-server:AtqQlTV` is today
+* **decision:** choose the version of `registry.example.test:31721/apps/web-server:AtqQlTV` that container `web-server` should run and write it as a tag or a `sha256:` digest; nothing in the snapshot says which build `registry.example.test:31721/apps/web-server:AtqQlTV` is today
 
-### `shop-digests` — `workloads/shop/statefulset/switchboard`
+### `shop-digests` — `workloads/shop/deployment/worker-agent`
 
-* **observed:** container switchboard pulls registry.example.com/services/switchboard-8:latest, not pinned by digest
+* **observed:** container agent pulls registry.example.test/worker-agent, not pinned by digest
 * **why not a patch:** choosing an image is an engineering decision, not a substitution
-* **decision:** choose the version of `registry.example.com/services/switchboard-8:latest` that container `switchboard` should run and write it as a tag or a `sha256:` digest; nothing in the snapshot says which build `registry.example.com/services/switchboard-8:latest` is today
+* **decision:** choose the version of `registry.example.test/worker-agent` that container `agent` should run and write it as a tag or a `sha256:` digest; nothing in the snapshot says which build `registry.example.test/worker-agent` is today
+
+### `shop-digests` — `workloads/shop/statefulset/relay`
+
+* **observed:** container relay pulls registry.example.com/services/relay-8:latest, not pinned by digest
+* **why not a patch:** choosing an image is an engineering decision, not a substitution
+* **decision:** choose the version of `registry.example.com/services/relay-8:latest` that container `relay` should run and write it as a tag or a `sha256:` digest; nothing in the snapshot says which build `registry.example.com/services/relay-8:latest` is today
 
 ### `shop-selectors` — `services/shop/lost-lookup`
 
@@ -84,7 +84,7 @@ Computed from specification `6f52fb34191df4f822a31f9242e103c7e61976b69bed41b772a
 * **why not a patch:** nobody observed what this points at
 * **decision:** decide which is true: the workload that should carry app=retired was never deployed, or this selector names labels nothing carries. Deploying one and rewriting the other are different changes and the snapshot does not say which was meant
 
-### `shop-config-refs` — `workloads/shop/deployment/flaky-agent`
+### `shop-config-refs` — `workloads/shop/deployment/worker-agent`
 
 * **observed:** containers[agent].env[AGENT_TOKEN] requires secret agent-credentials, which was not observed
 * **why not a patch:** nobody observed what this points at

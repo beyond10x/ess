@@ -904,3 +904,319 @@ func admitOneTimeTrace(scenario map[string]any, major int) (*oneTimeTrace, error
 	}
 	return result, nil
 }
+
+// ---- rules a suite/52 or /53 states once (beyond10x/ess#570) -----------------------------------
+
+// compactEvents reads a list of catalog event names that must appear in catalog order.
+func compactEvents(value any, catalog []string) ([]string, error) {
+	list, err := array(value)
+	if err != nil {
+		return nil, err
+	}
+	names := []string{}
+	at := -1
+	for _, raw := range list {
+		event, err := text(raw)
+		if err != nil {
+			return nil, err
+		}
+		found := -1
+		for index := at + 1; index < len(catalog); index++ {
+			if catalog[index] == event {
+				found = index
+				break
+			}
+		}
+		if found < 0 {
+			return nil, fmt.Errorf("an event list leaves out catalog events in catalog order")
+		}
+		at = found
+		names = append(names, event)
+	}
+	if len(names) >= len(catalog) {
+		return nil, fmt.Errorf("an event list keeps at least one catalog event")
+	}
+	return names, nil
+}
+
+// compactKept is every catalog event outside except, in catalog order.
+func compactKept(catalog, except []string) []string {
+	left := map[string]bool{}
+	for _, event := range except {
+		left[event] = true
+	}
+	kept := []string{}
+	for _, event := range catalog {
+		if !left[event] {
+			kept = append(kept, event)
+		}
+	}
+	return kept
+}
+
+// expandCompactSuite expands, in place and before any admission reads a scenario, what a suite/52
+// or /53 states once at its root: each scenario's unpublished-event lists and absent-event runs
+// into its steps, and each compact one-time trace into the complete trace with the catalog events
+// among its sources. It returns the document to decode, re-encoded where anything was expanded.
+func expandCompactSuite(root map[string]any, major int, raw string) (string, error) {
+	rawEvents, hasEvents := root["events"]
+	rawCatalog, hasCatalog := root["one_time_response"]
+	if (hasEvents || hasCatalog) && major < 52 {
+		return "", fmt.Errorf("a suite-level event or one-time catalog requires suite/52 or /53")
+	}
+	scenarios, ok := root["scenarios"].(map[string]any)
+	if !ok {
+		return raw, nil
+	}
+	catalog := []string{}
+	if hasEvents {
+		list, err := array(rawEvents)
+		if err != nil {
+			return "", err
+		}
+		for _, value := range list {
+			if err := name(value, false); err != nil {
+				return "", err
+			}
+			event := value.(string)
+			if len(catalog) > 0 && catalog[len(catalog)-1] >= event {
+				return "", fmt.Errorf("the event catalog lists each event once, in name order")
+			}
+			catalog = append(catalog, event)
+		}
+	}
+	type marked struct {
+		command  string
+		response any
+		outcomes []map[string]any
+	}
+	commands := []marked{}
+	if hasCatalog {
+		body, err := closed(rawCatalog, "commands", "")
+		if err != nil {
+			return "", err
+		}
+		list, err := array(body["commands"])
+		if err != nil {
+			return "", err
+		}
+		for _, value := range list {
+			entry, err := closed(value, "command response outcomes", "")
+			if err != nil {
+				return "", err
+			}
+			if err := name(entry["command"], false); err != nil {
+				return "", err
+			}
+			command := entry["command"].(string)
+			if len(commands) > 0 && commands[len(commands)-1].command >= command {
+				return "", fmt.Errorf("the one-time catalog lists each command once, in name order")
+			}
+			outcomes, err := array(entry["outcomes"])
+			if err != nil || len(outcomes) == 0 {
+				return "", fmt.Errorf("the one-time catalog lists each command with an outcome")
+			}
+			typed := marked{command: command, response: entry["response"]}
+			for _, value := range outcomes {
+				outcome, err := closed(value, "outcome fields", "")
+				if err != nil {
+					return "", err
+				}
+				typed.outcomes = append(typed.outcomes, outcome)
+			}
+			commands = append(commands, typed)
+		}
+	}
+	operations := map[any]bool{"execute_command": true, "execute_command_without_input": true, "query_view": true, "eventually_view": true}
+	referred, changed, used := false, false, map[string]bool{}
+	for _, id := range meaningKeys(scenarios) {
+		scenario, ok := scenarios[id].(map[string]any)
+		if !ok {
+			continue
+		}
+		_, patched := scenario["unpublished_events"]
+		_, inserted := scenario["absent_events"]
+		trace, traced := scenario["one_time_response"].(map[string]any)
+		_, compactTrace := trace["within_ms"]
+		if !patched && !inserted && !(traced && compactTrace) {
+			continue
+		}
+		if major < 52 {
+			return "", fmt.Errorf("absent-event runs, unpublished-event lists and compact traces require suite/52 or /53")
+		}
+		if !hasEvents {
+			return "", fmt.Errorf("%s: a compact spelling requires the suite event catalog", id)
+		}
+		steps, err := array(scenario["steps"])
+		if err != nil {
+			return "", err
+		}
+		referred, changed = true, true
+		if patched {
+			list, err := array(scenario["unpublished_events"])
+			if err != nil || len(list) == 0 {
+				return "", fmt.Errorf("an empty unpublished_events is written as none")
+			}
+			previous := -1
+			for _, value := range list {
+				patch, err := closed(value, "step except", "")
+				if err != nil {
+					return "", err
+				}
+				index, err := unsigned(patch["step"])
+				if err != nil || int(index) <= previous || index >= uint64(len(steps)) {
+					return "", fmt.Errorf("unpublished-event lists name written steps in ascending order")
+				}
+				previous = int(index)
+				step, ok := steps[index].(map[string]any)
+				if !ok || step["step"] != "expect_not_granted" {
+					return "", fmt.Errorf("an unpublished-event list names an expect_not_granted step")
+				}
+				if present, ok := step["unpublished"]; ok {
+					if list, ok := present.([]any); !ok || len(list) != 0 {
+						return "", fmt.Errorf("an unpublished-event list completes a step written without one")
+					}
+				}
+				except, err := compactEvents(patch["except"], catalog)
+				if err != nil {
+					return "", err
+				}
+				kept := []any{}
+				for _, event := range compactKept(catalog, except) {
+					kept = append(kept, event)
+				}
+				step["unpublished"] = kept
+			}
+			delete(scenario, "unpublished_events")
+		}
+		if inserted {
+			list, err := array(scenario["absent_events"])
+			if err != nil || len(list) == 0 {
+				return "", fmt.Errorf("an empty absent_events is written as none")
+			}
+			expanded := []any{}
+			next := 0
+			for _, value := range list {
+				run, err := closed(value, "before except", "")
+				if err != nil {
+					return "", err
+				}
+				before, err := unsigned(run["before"])
+				if err != nil || before < uint64(next) || before > uint64(len(steps)) {
+					return "", fmt.Errorf("absent-event runs stand at ascending positions within the steps")
+				}
+				expanded = append(expanded, steps[next:before]...)
+				next = int(before)
+				except, err := compactEvents(run["except"], catalog)
+				if err != nil {
+					return "", err
+				}
+				for _, event := range compactKept(catalog, except) {
+					expanded = append(expanded, map[string]any{"step": "expect_no_event", "event": event})
+				}
+			}
+			steps = append(expanded, steps[next:]...)
+			scenario["steps"] = steps
+			delete(scenario, "absent_events")
+		}
+		if traced && compactTrace {
+			if !hasCatalog {
+				return "", fmt.Errorf("%s: a compact one-time trace requires the suite one-time catalog", id)
+			}
+			body, err := closed(trace, "required_origins within_ms", "")
+			if err != nil {
+				return "", err
+			}
+			within, err := unsigned(body["within_ms"])
+			if err != nil {
+				return "", err
+			}
+			invoked := map[any]bool{}
+			positions := []int{}
+			for index, value := range steps {
+				step, _ := value.(map[string]any)
+				if step["step"] == "execute_command" || step["step"] == "execute_command_without_input" {
+					invoked[step["command"]] = true
+				}
+				if operations[step["step"]] {
+					positions = append(positions, index)
+				}
+			}
+			for command := range invoked {
+				if command, ok := command.(string); ok {
+					used[command] = true
+				}
+			}
+			lengths := []uint64{0}
+			if within != 0 {
+				lengths = append(lengths, within)
+			}
+			if len(catalog)*len(positions)*len(lengths) > 65536 {
+				return "", fmt.Errorf("one-time trace authority bound")
+			}
+			origins := []any{}
+			for _, entry := range commands {
+				if !invoked[entry.command] {
+					continue
+				}
+				for _, outcome := range entry.outcomes {
+					origins = append(origins, map[string]any{
+						"command":  entry.command,
+						"outcome":  map[string]any{"command": entry.command, "outcome": outcome["outcome"]},
+						"response": entry.response,
+						"fields":   outcome["fields"],
+					})
+				}
+			}
+			number := func(value uint64) json.Number { return json.Number(strconv.FormatUint(value, 10)) }
+			events, windows := []any{}, []any{}
+			for _, event := range catalog {
+				events = append(events, map[string]any{"event": event, "within_ms": number(within)})
+				for _, position := range positions {
+					for _, length := range lengths {
+						windows = append(windows, map[string]any{"event": event, "after_step": number(uint64(position)), "within_ms": number(length)})
+					}
+				}
+			}
+			scenario["one_time_response"] = map[string]any{
+				"origins": origins, "required_origins": body["required_origins"], "events": events, "event_windows": windows,
+			}
+			sources, err := array(scenario["source"])
+			if err != nil {
+				return "", err
+			}
+			for _, event := range catalog {
+				present := false
+				for _, value := range sources {
+					if ref, ok := value.(map[string]any); ok && ref["kind"] == "event" && ref["name"] == event {
+						present = true
+					}
+				}
+				if !present {
+					sources = append(sources, map[string]any{"kind": "event", "name": event})
+				}
+			}
+			scenario["source"] = sources
+		}
+	}
+	if hasEvents && !referred {
+		return "", fmt.Errorf("the suite event catalog is written only where a scenario refers to it")
+	}
+	for _, entry := range commands {
+		if !used[entry.command] {
+			return "", fmt.Errorf("the one-time catalog carries authority no compact trace uses")
+		}
+	}
+	delete(root, "events")
+	delete(root, "one_time_response")
+	if !changed {
+		return raw, nil
+	}
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(root); err != nil {
+		return "", err
+	}
+	return encoded.String(), nil
+}

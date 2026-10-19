@@ -174,7 +174,7 @@ pub(super) fn destination<'a>(
                 field: from.clone(),
             }
         }
-        Some((ResolvedPayloadValue::Generated, _)) => unavailable(
+        Some((ResolvedPayloadValue::Generated { .. }, _)) => unavailable(
             "the triggering event carries an identity the implementation mints, known only after \
              the trigger",
         ),
@@ -972,14 +972,24 @@ pub(super) fn prepare<'a>(
 ) -> Result<Prepared<'a>, BindingGap> {
     let command = || CommandRef::new(invoked.name.clone());
     match destination(ir, binding, published_by) {
-        Destination::Unaddressed => Ok(Prepared {
-            setup: trigger.setup.clone(),
-            invoke: trigger.invoke.clone(),
-            capture: Vec::new(),
-            reached: reachable_branch(invoked),
-            row: None,
-            source: BTreeSet::new(),
-        }),
+        Destination::Unaddressed => {
+            let reached = reachable_branch(invoked);
+            if reached.is_err() {
+                if let Some(prepared) =
+                    related_decided(ir, binding, invoked, published_by, trigger, actors)
+                {
+                    return Ok(prepared);
+                }
+            }
+            Ok(Prepared {
+                setup: trigger.setup.clone(),
+                invoke: trigger.invoke.clone(),
+                capture: Vec::new(),
+                reached,
+                row: None,
+                source: BTreeSet::new(),
+            })
+        }
         Destination::Unavailable { input, why } => {
             Err(BindingGap::DestinationIdentityUnavailable {
                 command: command(),
@@ -994,6 +1004,130 @@ pub(super) fn prepare<'a>(
             arranged_destination(ir, invoked, published_by, entity, &field, trigger, actors)
         }
     }
+}
+
+/// The branch of a `when_related` guard a binding's invocation takes, decided by arranging the
+/// related row before the trigger (downstream report, 2026-10-18).
+///
+/// The invoked command acts on no existing row of its own, and every branch it can take
+/// unforced is decided by one related row alone: an `exists: false` branch, a predicate over the
+/// row's stored fields that reads no input, or the default. The input naming the row is mapped
+/// unconverted from an event field the trigger fills unconverted from an input of its own. Then
+/// the row is a value the scenario chooses rather than one the upstream implementation does: it is
+/// arranged through its creating command so the accepting branch is selected, as that branch's own
+/// scenario arranges it, and the trigger is sent naming it.
+///
+/// The accepting branch is the default where it accepts, else the first predicate branch that
+/// does. `None` where any of that does not hold, so the binding keeps the
+/// [`BindingGap::BranchUndecided`] it had, and a model without such a guard keeps its suite bytes.
+fn related_decided<'a>(
+    ir: &'a EssIr,
+    binding: &'a ResolvedBinding,
+    invoked: &'a ResolvedCommand,
+    published_by: &'a ResolvedOutcome,
+    trigger: &Run,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Option<Prepared<'a>> {
+    use super::related_guard;
+    use ess_compiler::ir::ResolvedRelatedTest;
+
+    if !related_guard::uses(invoked)
+        || related_guard::several(invoked)
+        || related_guard::stored::field(invoked).is_some()
+    {
+        return None;
+    }
+    let (via, entity) = related_guard::reads(invoked)?;
+    let mut accepting: Option<&ResolvedOutcome> = None;
+    for outcome in &invoked.outcomes {
+        if outcome.test_strategy == TestStrategy::InjectFault {
+            continue;
+        }
+        if outcome.replays.is_some() {
+            return None;
+        }
+        let candidate = match &outcome.condition {
+            ResolvedCondition::Otherwise => true,
+            // Answered first, for an identity a row already carries; the event fills a fresh one.
+            ResolvedCondition::ExistingInstance => false,
+            ResolvedCondition::Related {
+                via: read,
+                test,
+                input: None,
+                ..
+            } if read.field() == via => match test {
+                ResolvedRelatedTest::Absent => false,
+                ResolvedRelatedTest::Holds { predicate } => {
+                    if super::subject_fact::reads_input(ir, entity, predicate) {
+                        return None;
+                    }
+                    true
+                }
+            },
+            _ => return None,
+        };
+        if candidate && outcome.error.is_none() {
+            let default = matches!(outcome.condition, ResolvedCondition::Otherwise);
+            if accepting.is_none() || default {
+                accepting = Some(outcome);
+            }
+        }
+    }
+    let accepting = accepting?;
+
+    // The identity reaches the invocation unchanged from an input of the trigger's caller.
+    let event = binding.cause.event()?;
+    let mapped = binding.mapping.iter().find(|mapped| mapped.target == via)?;
+    let field = match (&mapped.value, &mapped.conversion) {
+        (ResolvedMappingValue::EventField { field, .. }, None) => field.as_str(),
+        _ => return None,
+    };
+    let from = match payload_source(published_by, event, field)? {
+        (ResolvedPayloadValue::InputField { field: from, .. }, false)
+            if !ess_domain::command::input_path::is_path(from) =>
+        {
+            from.clone()
+        }
+        _ => return None,
+    };
+
+    let (_, distinction) = unused_name(ir, entity, trigger);
+    let models = super::caller::InvocationModels::plain(ir);
+    let (arranged, _) =
+        related_guard::prepare_at_in(&models, invoked, accepting, actors, distinction, None)
+            .ok()?;
+    // Only the related row is the scenario's to choose: anything else the branch's own
+    // arrangement binds is a value the event fills.
+    if arranged.instance.is_some() || arranged.bound.keys().any(|bound| bound != via) {
+        return None;
+    }
+    let row = arranged.bound.get(via)?.clone();
+    let taken = captured(trigger);
+    let collides = arranged.steps.iter().any(|step| {
+        matches!(step, ScenarioStep::CaptureInstance { instance, .. } if taken.contains(instance))
+    });
+    if collides {
+        return None;
+    }
+    let mut invoke = trigger.invoke.clone();
+    let named = invoke.iter_mut().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand { input, .. } if input.contains_key(&from) => {
+            input.insert(from.clone(), ScenarioValue::instance(row.clone()));
+            Some(())
+        }
+        _ => None,
+    });
+    named?;
+    let mut setup = trigger.setup.clone();
+    setup.extend(arranged.steps);
+    Some(Prepared {
+        setup,
+        invoke,
+        capture: Vec::new(),
+        reached: Ok(accepting),
+        row: None,
+        source: arranged.source,
+    })
 }
 
 /// [`prepare`] where the destination is the trigger's own row: its state is where the trigger
@@ -1243,11 +1377,14 @@ pub(super) fn dropped(
     let forced = invoked
         .outcomes
         .iter()
-        .find(|outcome| outcome.test_strategy == TestStrategy::InjectFault)
+        // A refusal: an `external:` branch that accepts is no failure to force.
+        .find(|outcome| {
+            outcome.test_strategy == TestStrategy::InjectFault && outcome.error.is_some()
+        })
         .ok_or_else(|| BindingGap::NoForcibleFailure {
             command: CommandRef::new(invoked.name.clone()),
         })?;
-    if let Some(gap) = forced_eligibility(invoked, forced) {
+    if let Some(gap) = forced_eligibility(ir.format(), invoked, forced) {
         return Err(gap);
     }
     let siblings = siblings_rest(ir, binding, row)?;

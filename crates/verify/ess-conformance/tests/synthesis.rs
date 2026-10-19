@@ -333,6 +333,8 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
             ScenarioStep::ExecuteCommandWithoutInput { .. } => "execute without input",
             ScenarioStep::ExpectOutcome { .. } => "outcome",
             ScenarioStep::ExpectNotGranted { .. } => "not granted",
+            ScenarioStep::AwaitOutcome { .. } => "await",
+            ScenarioStep::ExpectNotIssued { .. } => "not issued",
             ScenarioStep::ReadAs { .. } => "read as",
             ScenarioStep::ExpectError { .. } => "error",
             ScenarioStep::ExpectEvent { .. } => "event",
@@ -3320,9 +3322,9 @@ commands:
 
 /// A view nobody can be asked for without saying *which queue*.
 ///
-/// ACD's shape, cut to the smallest thing that shows it: the position of a call is per queue, and
-/// a specification that declared one ranked list of every queued call declared something the
-/// implementation has no way to answer.
+/// A call-queue shape, cut to the smallest thing that shows it: the position of a call is per
+/// queue, and a specification that declared one ranked list of every queued call declared
+/// something the implementation has no way to answer.
 const PARAMETERISED_VIEW: &str = r"
 format: ess/1
 system: quiet

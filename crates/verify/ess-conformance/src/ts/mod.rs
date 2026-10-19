@@ -32,7 +32,7 @@
 //! # Read rather than inlined
 //!
 //! `suite.json` is a file `src/runtime.ts` reads, not a string constant, for the reason the Go
-//! target embeds rather than inlines: a generated purpose reads `` `acd.backend.ConnectAgent`
+//! target embeds rather than inlines: a generated purpose reads `` `queue.backend.ConnectAgent`
 //! answers `requested` `` — backticks — so a TypeScript template literal cannot hold it unescaped,
 //! and an interpreted literal would need the whole document escaped into one unreadable line. As a
 //! file it stays diffable, and `git diff` on a model change shows which scenarios moved.
@@ -476,7 +476,32 @@ fn shared_compiler_options(root: &str, out: Option<&str>) -> serde_json::Value {
 }
 
 /// How to wire the package up, written against this suite's own numbers.
+/// The README: what every package says, and the await section where the suite awaits a command
+/// the system issues itself (beyond10x/ess#542). A suite that does not keeps its README bytes.
 fn readme(suite: &ConformanceSuite) -> String {
+    let mut readme = readme_body(suite);
+    if crate::system_issued::used_by(suite) {
+        readme.push_str(AWAIT_README);
+    }
+    readme
+}
+
+/// The README section of a package whose suite awaits a command the system issues itself.
+const AWAIT_README: &str = r"
+## A command the system issues itself
+
+A command every actor of which is declared `system: true` is never sent through
+`executeCommand`: no caller can be the system. The suite awaits it instead. Define the optional
+`awaitOutcome(request)`, answering `{reached: true, result, input, elapsedMillis}` with the outcome
+your system reached on `request.instance`, the input it issued the command with and what it
+published, or `{reached: false, elapsedMillis}` where nothing was reached. Hold the step until the
+runner awaits it — a controlled scheduler, or a tick the target drives — and report your clock's
+reading in `elapsedMillis` where the request carries a bound (`within`, in seconds). A target
+without `awaitOutcome`, or one that throws `unsupported(...)`, has each such scenario reported
+unsupported, never passed.
+";
+
+fn readme_body(suite: &ConformanceSuite) -> String {
     let provenance = &suite.provenance;
     let scope = match &provenance.component {
         None => String::new(),

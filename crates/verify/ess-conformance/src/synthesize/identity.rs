@@ -237,7 +237,10 @@ fn visit(
         }
         Predicate::Not(inner) => visit(inner, binders, tokens, kept, dropped),
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
-            refuse(&quantified.over, true);
+            // A rows collection (ess/27) names an entity, which holds no token.
+            if let Some(over) = quantified.over.fact() {
+                refuse(over, true);
+            }
             let mut inner = binders.to_vec();
             inner.push(quantified.bind.as_str());
             visit(&quantified.body, &inner, tokens, kept, dropped);

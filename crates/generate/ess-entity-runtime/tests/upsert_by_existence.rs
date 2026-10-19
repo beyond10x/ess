@@ -20,9 +20,15 @@ use ess_synth::SynthesisPlan;
 
 /// The focused contract fixture at ess/16, with each `(file, before, after)` edit applied once.
 fn contract(changes: &[(&str, &str, &str)]) -> EssIr {
+    contract_at(changes, "ess/16")
+}
+
+/// [`contract`] in the source format `format`.
+fn contract_at(changes: &[(&str, &str, &str)], format: &str) -> EssIr {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");
+    let header = format!("format: {format}");
     let mut changes = changes.to_vec();
-    changes.push(("system.yaml", "format: ess/4", "format: ess/16"));
+    changes.push(("system.yaml", "format: ess/4", header.as_str()));
     let mut paths = Vec::new();
     let mut pending = vec![base.clone()];
     while let Some(directory) = pending.pop() {
@@ -200,5 +206,28 @@ fn create_or_update_selected_by_stored_fields_is_refused_by_name() {
         sign_in,
         [LoweringCode::ExistenceSelectionUnsupported],
         "{diagnostics:#?}"
+    );
+}
+
+/// Under the one precedence rule (`ess/27`) a creation for an identity no record carries pairs with
+/// a branch that only preserves the record ("ensure it exists"): still a branch chosen by
+/// existence, refused by name.
+#[test]
+fn create_or_preserve_is_refused_by_name() {
+    let mut changes = vec![(
+        "domains/local.yaml",
+        "  - name: contract.local.Admin\n",
+        "  - name: contract.local.Ensure\n    input:\n      - name: child_id\n        type: contract.local.ChildId\n      - name: owner_id\n        type: contract.foreign.OwnerId\n      - name: note\n        type: contract.local.Shared\n    outcomes:\n      - name: kept\n        preserves: contract.local.Child\n        instance: child_id\n      - name: made\n        unknown_instance: true\n        creates: contract.local.Child\n        instance: child_id\n        emits: [contract.local.Stored]\n        payload:\n          contract.local.Stored: {child_id: input.child_id}\n        sets:\n          owner_id: input.owner_id\n          note: input.note\n\n  - name: contract.local.Admin\n",
+    )];
+    changes.push((
+        "wiring.yaml",
+        "        - contract.local.Run\n",
+        "        - contract.local.Run\n        - contract.local.Ensure\n",
+    ));
+    let built = contract_at(&[STORED, changes[0], changes[1]], "ess/27");
+    let codes = refused_codes(&built);
+    assert!(
+        codes.contains(&LoweringCode::ExistenceSelectionUnsupported),
+        "{codes:?}"
     );
 }

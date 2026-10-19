@@ -14,6 +14,9 @@
 //! and, on a command whose branches address one existing subject through the input, that subject
 //! as it was before the outcome under `subject.`. A creation has no prior subject, so a `subject.`
 //! read on a command that only creates is refused. `now` reads the decision's one instant (A3).
+//! From `ess/27` the selector of a value read also reads what its own outcome publishes, as
+//! `payload.<Event>.<field>` ([`super::published_operand`], beyond10x/ess#549); a guard refuses
+//! that, because nothing is published before the branch is selected.
 //!
 //! The test is exactly one of `exists` (a Boolean), `count` (one comparison — `eq`, `ne`, `lt`,
 //! `lte`, `gt`, `gte` — with a nonnegative Integer) and `forall` (a second predicate in the same
@@ -262,25 +265,34 @@ pub fn subject_entity<'a>(
 }
 
 /// `predicate` checked over a candidate row of `entity`, the input under `input.` and, where the
-/// command addresses one, the subject under `subject.`; `now` reads the decision's instant.
+/// command addresses one, the subject under `subject.`; `now` reads the decision's instant. At
+/// `site` a value source also reads what its outcome publishes under `payload.` (ess/27,
+/// beyond10x/ess#549), and a guard refuses that by name: nothing is published before the branch.
 pub(super) fn check(
     spec: &Specification,
     command: &CommandSpec,
     entity: &EntitySpec,
     types: &TypeRegistry,
     predicate: &Predicate,
-    at: &ConstructRef,
+    (at, site): (&ConstructRef, super::published_operand::Site<'_>),
 ) -> ValidationErrors {
+    // The rules of a test over related rows come first: a broken one would only bury itself
+    // under the type checker's reading of the same body (beyond10x/ess#551).
+    let rows = super::related_rows::check(spec, entity, predicate, at);
+    if !rows.is_empty() {
+        return rows;
+    }
     let fields = candidate_fields(entity);
     super::set_effects::check_row_predicate(
+        spec,
         command,
         entity,
         &fields,
         subject_entity(spec, command),
         types,
         predicate,
-        at,
-        true,
+        (at, site),
+        (true, true),
     )
 }
 
@@ -491,9 +503,17 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 errors.push(undeclared(spec, &at, &selection.entity));
                 continue;
             };
-            errors.extend(check(spec, command, entity, types, &selection.filter, &at));
+            let guard = (&at, super::published_operand::Site::Guard);
+            errors.extend(check(
+                spec,
+                command,
+                entity,
+                types,
+                &selection.filter,
+                guard,
+            ));
             if let RowSetTest::Forall(predicate) = test {
-                errors.extend(check(spec, command, entity, types, predicate, &at));
+                errors.extend(check(spec, command, entity, types, predicate, guard));
             }
         }
     }
@@ -654,7 +674,7 @@ fn nested(source: &mut PayloadSource, at: &str, errors: &mut ValidationErrors) {
                         at.to_owned(),
                         refusal.clone(),
                     ));
-                    PayloadSource::Generated
+                    PayloadSource::Generated { present: false }
                 }
             };
             let leaf = |target: &str, source: PayloadSource| PayloadField {

@@ -98,12 +98,66 @@ use ess_primitives::predicate::Predicate;
 /// walk its input. A scenario therefore does not repeat its own id as a field — the id is the
 /// heading it appears under, which is also why inserting one outcome adds one keyed block to the
 /// artifact and moves nothing else.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConformanceSuite {
     /// Which specification this suite checks, and what produced it.
     pub provenance: SuiteProvenance,
     /// Every scenario, by the name of what it is about.
     pub scenarios: BTreeMap<ScenarioId, ConformanceScenario>,
+}
+
+/// Written as `provenance`, from suite/52 the event catalog and the one-time authority where a
+/// scenario refers to them (beyond10x/ess#570), then `scenarios`.
+impl serde::Serialize for ConformanceSuite {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use crate::one_time_response::compact;
+        #[derive(serde::Serialize)]
+        struct Written<'a> {
+            provenance: &'a SuiteProvenance,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            events: Option<Vec<EventRef>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            one_time_response: Option<compact::Catalog>,
+            scenarios: BTreeMap<&'a ScenarioId, compact::ScenarioOut<'a>>,
+        }
+        let written = compact::written(self);
+        Written {
+            provenance: &self.provenance,
+            events: written.events,
+            one_time_response: written.one_time_response,
+            scenarios: written.scenarios,
+        }
+        .serialize(serializer)
+    }
+}
+
+/// Read with every compact scenario expanded against the suite catalogs, so the value is the one
+/// the writer held.
+impl<'de> serde::Deserialize<'de> for ConformanceSuite {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use crate::one_time_response::compact;
+        #[derive(serde::Deserialize)]
+        struct Read {
+            provenance: SuiteProvenance,
+            #[serde(default)]
+            events: Option<Vec<EventRef>>,
+            #[serde(default)]
+            one_time_response: Option<compact::Catalog>,
+            scenarios: BTreeMap<ScenarioId, compact::ScenarioIn>,
+        }
+        let read = Read::deserialize(deserializer)?;
+        let scenarios = compact::read(
+            read.provenance.suite_version.major(),
+            read.events.as_deref(),
+            read.one_time_response.as_ref(),
+            read.scenarios,
+        )
+        .map_err(serde::de::Error::custom)?;
+        Ok(Self {
+            provenance: read.provenance,
+            scenarios,
+        })
+    }
 }
 
 impl ConformanceSuite {
@@ -172,11 +226,16 @@ impl ConformanceSuite {
     /// Raises the format to suite/44 when an act claims one event more than once
     /// (beyond10x/ess#427), to suite/46 when a response observation carries String-newtype
     /// constraints (beyond10x/ess#499), to suite/48 when a response observation ignores
-    /// undeclared fields (beyond10x/ess#500), and to suite/50 when a scenario holds `now` for a
-    /// command (beyond10x/ess#586). Each pair is cumulative over every major below it, so
-    /// nothing may lower it.
+    /// undeclared fields (beyond10x/ess#500), to suite/50 when a scenario holds `now` for a command
+    /// (beyond10x/ess#586), and to suite/52 when a view expectation observes a value type's
+    /// invariants at a wrapped position or a scenario awaits a system-issued command
+    /// (beyond10x/ess#542). Each pair is cumulative over every major below it, so nothing may
+    /// lower it.
     fn raise_for_counted_claims(&mut self) {
-        let floor = crate::hold_now::ordinary_floor(self)
+        let floor = crate::value_invariant::ordinary_floor(self)
+            .or_else(|| crate::one_time_response::compact::ordinary_floor(self))
+            .or_else(|| crate::system_issued::ordinary_floor(self))
+            .or_else(|| crate::hold_now::ordinary_floor(self))
             .or_else(|| crate::undeclared_fields::ordinary_floor(self))
             .or_else(|| crate::direct_response::constrained_ordinary_floor(self))
             .or_else(|| crate::event_multiplicity::ordinary_floor(self));
@@ -244,7 +303,13 @@ impl ConformanceSuite {
         }
         // The persisted expression vocabulary (`docs/design/expression-family-source22.md`):
         // `/40` is cumulative, so it is the floor whatever else selected a lower number.
-        if let Some(floor) = crate::expression_format::ordinary_floor(self) {
+        // A text's `.count` read off a row is the same vocabulary, which only the model can tell
+        // from a member named `count` (downstream report, 2026-10-18).
+        let floor = crate::expression_format::ordinary_floor(self).or_else(|| {
+            crate::expression_format::text_lengths_used_by(ir, self)
+                .then_some(crate::expression_format::ORDINARY)
+        });
+        if let Some(floor) = floor {
             if self.provenance.suite_version.major() < floor {
                 self.provenance.suite_version =
                     SuiteFormat::parse(&format!("ess-conformance/{floor}"))
@@ -473,7 +538,7 @@ impl SuiteProvenance {
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
     27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
-    51,
+    51, 52, 53,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -751,6 +816,24 @@ pub enum ScenarioId {
         /// The field path within a row that reaches the value, dotted where it walks a struct.
         field: String,
     },
+    /// What must hold of a value object at a typed position inside a view field — the element of
+    /// a `List`, the value of a `Map`, an `Optional`'s present value, a `Union` variant's payload —
+    /// observed by [`ViewExpectation::ValueInvariants`] (suite/52):
+    /// `billing.invoice.Money/invariant-wrapped/at/billing.invoice.InvoiceById/lines/<digest>`.
+    ///
+    /// `digest` is the lowercase SHA-256 of the canonical compact position
+    /// ([`crate::value_invariant::position_digest`]): the route is the identity, never the command
+    /// that arranges a row, the witness selector, the invariant statements or the work budget.
+    ValueInvariantWrapped {
+        /// Whose invariants: the declared value object.
+        value: DeclaredTypeRef,
+        /// The view whose rows hold one.
+        at: ViewRef,
+        /// The view field the position is under.
+        root: String,
+        /// The position's digest, 64 lowercase hexadecimal digits.
+        digest: String,
+    },
     /// A binding's observable behaviour: `notify-on-invoice-created/binding/flow`.
     Binding {
         /// Which binding.
@@ -958,6 +1041,24 @@ impl ScenarioId {
                     field: (*field).to_owned(),
                 })
             }
+            [value, "invariant-wrapped", "at", view, root, digest] => {
+                if root.is_empty() {
+                    return Err(reject("names no root field"));
+                }
+                if digest.len() != 64
+                    || !digest
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                {
+                    return Err(reject("names no lowercase SHA-256 position digest"));
+                }
+                Ok(Self::ValueInvariantWrapped {
+                    value: DeclaredTypeRef::new(name(value)?),
+                    at: ViewRef::new(name(view)?),
+                    root: (*root).to_owned(),
+                    digest: (*digest).to_owned(),
+                })
+            }
             [view, Self::AGGREGATE] => Ok(Self::Aggregate {
                 view: ViewRef::new(name(view)?),
             }),
@@ -1006,7 +1107,9 @@ impl ScenarioId {
                  `<entity>/transition/<name>/by/<command>/<outcome>`, \
                  `<entity>/state/<state>/refuses/<command>`, \
                  `<entity>/invariant/after/<command>/<outcome>`, \
-                 `<type>/invariant/at/<view>/<field>`, `<binding>/binding/<aspect>`, \
+                 `<type>/invariant/at/<view>/<field>`, \
+                 `<type>/invariant-wrapped/at/<view>/<field>/<digest>`, \
+                 `<binding>/binding/<aspect>`, \
                  `<binding>/binding/refusal/<outcome>`, \
                  `<view>/aggregate`, `<command>/grant/denied`, `<command>/grant/admitted/<actor>`, \
                  `<view>/grant/read/denied`, `<view>/grant/read/admitted/<actor>` or \
@@ -1068,6 +1171,12 @@ impl fmt::Display for ScenarioId {
             Self::ValueInvariant { value, at, field } => {
                 write!(f, "{value}/{}/at/{at}/{field}", Self::INVARIANT)
             }
+            Self::ValueInvariantWrapped {
+                value,
+                at,
+                root,
+                digest,
+            } => write!(f, "{value}/invariant-wrapped/at/{at}/{root}/{digest}"),
             Self::Binding { binding, aspect } => {
                 write!(f, "{binding}/{}/{aspect}", Self::BINDING)
             }
@@ -1467,7 +1576,7 @@ impl<'de> serde::Deserialize<'de> for InstanceName {
 /// # Why a duration claim may not have an implicit anchor
 ///
 /// Every step in this vocabulary but this one is anchored by position: an assertion is about the
-/// command before it. A window is not, and the difference is not cosmetic. The ACD end-to-end suite
+/// command before it. A window is not, and the difference is not cosmetic. The end-to-end suite
 /// this feature was built for had a `NeverWithin(observation, duration)` whose window opened
 /// "wherever the preceding block happened to end", so inserting one arrangement step moved every
 /// negative in the file and nothing said so. A window therefore names the instant it opens at, that
@@ -1525,9 +1634,9 @@ impl<'de> serde::Deserialize<'de> for InstantName {
 ///
 /// # Why seconds, and why a whole number of them
 ///
-/// Because the claims that exist are written in them. The ACD suite's five lost windows are 20 s,
-/// 5 s, 20 s, 1 s and 60 s, and every one of them is a configured timer or a sweep interval —
-/// nothing in that population is finer than a second and nothing is expressed as a fraction. A
+/// Because the claims that exist are written in them. Every window this was built for is a
+/// configured timer or a sweep interval of whole seconds, from one second to a minute — nothing in
+/// that population is finer than a second and nothing is expressed as a fraction. A
 /// millisecond field would therefore be four zeroes on every line of every scenario, and a
 /// floating-point one would give two spellings of one value, which is the thing
 /// [`to_canonical_json`](ConformanceSuite::to_canonical_json) cannot have.
@@ -1762,6 +1871,17 @@ pub enum ScenarioValue {
         /// The members, by field name or map key.
         members: BTreeMap<String, ScenarioValue>,
     },
+    /// The value the most recent [`AwaitOutcome`](ScenarioStep::AwaitOutcome)'s answer carried in
+    /// this input field (suite/[`ORDINARY`](crate::system_issued::ORDINARY), beyond10x/ess#542).
+    ///
+    /// The input of a system-issued command is decided by the system, so no suite can state it; a
+    /// later expectation reading the event the command published or the row it stored compares
+    /// against what the target reported instead. The sibling of [`Observed`](Self::Observed), which
+    /// reads what an earlier event published. Read before any await, it is a suite defect.
+    Awaited {
+        /// The input field of the awaited command.
+        field: String,
+    },
 }
 
 impl ScenarioValue {
@@ -1794,7 +1914,8 @@ impl ScenarioValue {
             | Self::ObservedSelection { .. }
             | Self::NowOffset { .. }
             | Self::List { .. }
-            | Self::Members { .. } => None,
+            | Self::Members { .. }
+            | Self::Awaited { .. } => None,
         }
     }
 }
@@ -2217,6 +2338,54 @@ pub enum ScenarioStep {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         caller: BTreeMap<String, Node>,
     },
+    /// Await an outcome of a command the system issues itself on one instance, within a bound
+    /// (suite/[`ORDINARY`](crate::system_issued::ORDINARY), beyond10x/ess#542).
+    ///
+    /// The runner never asks a target to invoke a system-issued command: it asks the target to
+    /// report the outcome its system reached on `instance` after the scenario's preceding steps.
+    /// The answer becomes the scenario's current command result, so every expectation that reads
+    /// the preceding command — [`ExpectOutcome`](Self::ExpectOutcome),
+    /// [`ExpectError`](Self::ExpectError), [`ExpectEvent`](Self::ExpectEvent) and the rest — reads
+    /// the awaited one. The input the system used is the answer's, and later values read it as
+    /// [`ScenarioValue::Awaited`].
+    AwaitOutcome {
+        /// The system-issued command.
+        command: CommandRef,
+        /// The identity of the record the outcome addresses: its `instance:` input.
+        instance: ScenarioValue,
+        /// The input field that names the record: the outcome's `instance:`. The answer's value of
+        /// it must be the awaited instance. Carried because the runner holds the suite, not the
+        /// model.
+        identity: String,
+        /// The command's declared `await_within:`, exactly when it declares one. Without it the
+        /// bound is the runner's own eventual deadline.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        within: Option<ess_domain::binding::periodic::Period>,
+        /// Input values the scenario states and the answer must carry: partial, authored only.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        input: BTreeMap<String, ScenarioValue>,
+        /// The command's declared input, flattened as an event payload's is: the answer's input
+        /// holds each field at its declared type (`ESS-CF-PAYLOAD`).
+        #[serde(default, skip_serializing_if = "PayloadShape::is_empty")]
+        shape: PayloadShape,
+    },
+    /// Require that no outcome of a system-issued command is reached on one instance within the
+    /// bound (suite/[`ORDINARY`](crate::system_issued::ORDINARY), beyond10x/ess#542): the
+    /// specification's refusal of the system's own step, read as "does not happen".
+    ExpectNotIssued {
+        /// The system-issued command.
+        command: CommandRef,
+        /// The identity of the record the command would address.
+        instance: ScenarioValue,
+        /// The command's declared `await_within:`, exactly when it declares one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        within: Option<ess_domain::binding::periodic::Period>,
+        /// Every event any outcome of the command emits: after the window closes each is observed
+        /// once, and an occurrence the scenario had not seen before fails the step, as
+        /// [`ExpectNotGranted`](Self::ExpectNotGranted)'s field of that name.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unpublished: Vec<EventRef>,
+    },
     /// Require that the command took this declared branch (§10).
     ///
     /// A declared refusal is an outcome, and asserting it is how a suite catches an implementation
@@ -2599,11 +2768,10 @@ pub enum ScenarioStep {
     /// arrives; nothing said a system's own timer had to run first, so a system that fired every
     /// timer immediately passed every suite ESS could write.
     ///
-    /// It is also the only way to say *let the system run for this long* — DEV-741's twenty seconds
-    /// are twenty passes of a one-hertz sweep against a bridged call, and the sweep is the
-    /// experiment. The runner asks the target to let the window close and compares the reading it
-    /// gets back; a target that reports less than the claim asked for **fails**, rather than the
-    /// runner assuming it waited.
+    /// It is also the only way to say *let the system run for this long* — twenty seconds can be
+    /// twenty passes of a one-hertz sweep, and then the sweep is the experiment. The runner asks
+    /// the target to let the window close and compares the reading it gets back; a target that
+    /// reports less than the claim asked for **fails**, rather than the runner assuming it waited.
     ExpectNotBefore {
         /// The instant the window opens at, marked earlier in this scenario.
         instant: InstantName,
@@ -2913,6 +3081,15 @@ pub enum ViewExpectation {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         follows: Option<crate::view_paging::Follows>,
     },
+    /// Every actual occurrence of a value type at one typed position under one view field
+    /// satisfies the type's invariants, and a witness row holds one (suite/52,
+    /// [`crate::value_invariant`], `docs/design/wrapped-value-invariant-observations.md`).
+    ///
+    /// The claim [`Satisfies`](Self::Satisfies) cannot make of a value inside a `List`, a `Map`,
+    /// an `Optional` or a `Union`: a fact path has no element selector, and an absent or empty
+    /// wrapper is legal where an invariant over it would be `Unknown`. The declarations the
+    /// position reaches travel with it, so the runner checks every element against the type.
+    ValueInvariants(Box<crate::value_invariant::ValueInvariants>),
 }
 
 /// Which row of a view an assertion is about.
@@ -3372,12 +3549,14 @@ mod tests {
             "ess-conformance/49",
             "ess-conformance/50",
             "ess-conformance/51",
+            "ess-conformance/52",
+            "ess-conformance/53",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/52").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/54").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

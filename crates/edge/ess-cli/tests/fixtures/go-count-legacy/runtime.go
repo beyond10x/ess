@@ -163,7 +163,7 @@ type ViewRequest struct {
 	// Params is the value bound to each parameter the view declares, resolved.
 	//
 	// Empty for a view with no `params:`, which is most of them. A view that declares them is one
-	// the implementation cannot answer without them — ACD's position in a queue is per queue — and
+	// the implementation cannot answer without them — a call's position in a queue is per queue — and
 	// the runner refuses to send a request with a parameter it could not resolve rather than
 	// reading a different set of rows and asserting against those.
 	Params map[string]Node

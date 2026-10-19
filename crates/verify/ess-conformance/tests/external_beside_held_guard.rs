@@ -855,6 +855,12 @@ fn unclaimed_external_witnesses_keep_their_bytes() {
 /// whose row-set decoy order moved five suites (beyond10x/ess#463). The rows of
 /// `current-time-guard.yaml`, `now-stored-rows.yaml` and `occurrence-clock-offers.yaml` were
 /// re-pinned when synthesis began to hold the clock on a `now` boundary (beyond10x/ess#586).
+/// Fifteen rows were re-pinned on the 0.63.0 integration branch, their claimable lists unchanged
+/// and each digest the one the moving unit re-pinned in `synthesis-suite-bytes-table.tsv`: ten
+/// suites for unread `Optional` inputs left absent (beyond10x/ess#546, 15db24d97), two for a suite
+/// stating its catalog once (beyond10x/ess#570, 036d89dae), and the refusals of `model-types`,
+/// `adversary_expression` (unit U5, 63a581f88) and the `ess/22` identity selector (the review fix
+/// a422cac9d, whose row-set refusal now carries the arrangement help).
 const BASE: &str = include_str!("fixtures/external-beside-held-guard-base.tsv");
 
 fn root() -> PathBuf {
@@ -1634,5 +1640,58 @@ views:
                 );
             }
         }
+    }
+}
+
+// ---- the #534 models under the one precedence rule (G4) -----------------------------------
+
+/// The two #534 models declared at `ess/27` answer as they do at `ess/25`: each command's plan
+/// holds the same branches in the same order (`before_row:` at the request-only step,
+/// `unknown_instance:` at existence), and the suite each synthesizes at `ess/25` passes on the
+/// interpreter of the `ess/27` model, and the reverse.
+#[test]
+fn issue_534_models_answer_alike_at_format_a() {
+    use ess_compiler::ir::PrecedencePlan;
+
+    for model in [SIGN_IN, REVOKE] {
+        assert!(model.starts_with("format: ess/25\n"), "{model}");
+        let format_a = model.replacen("format: ess/25\n", "format: ess/27\n", 1);
+        let (below, above) = (ir(model), ir(&format_a));
+        for command in below.commands().values() {
+            let names = |ir: &EssIr| -> Vec<(String, Vec<String>)> {
+                let resolved = &ir.commands()[&command.name];
+                PrecedencePlan::new(resolved, ir.format())
+                    .phases()
+                    .iter()
+                    .filter(|planned| !planned.branches.is_empty())
+                    .map(|planned| {
+                        (
+                            planned.phase.to_string(),
+                            planned
+                                .branches
+                                .iter()
+                                .map(|branch| branch.name.to_string())
+                                .collect(),
+                        )
+                    })
+                    .collect()
+            };
+            assert_eq!(names(&below), names(&above), "{}", command.name);
+        }
+        let below_suite = synthesis(model).suite;
+        let above_result = synthesis(&format_a);
+        assert!(
+            above_result.refusals.is_empty(),
+            "{:#?}",
+            above_result.refusals
+        );
+        assert_eq!(
+            not_passed(&run(&format_a, &below_suite)),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            not_passed(&run(model, &above_result.suite)),
+            Vec::<String>::new()
+        );
     }
 }

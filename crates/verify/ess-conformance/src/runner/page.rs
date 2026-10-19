@@ -146,7 +146,7 @@ pub(super) fn page_of(required: &PageRequired, result: &SemanticViewResult) -> V
             Verdict::Unsatisfied(reason) => wrong.push(format!(
                 "the page does not continue the one before it in the declared order: {reason}"
             )),
-            undecidable @ Verdict::Undecidable { .. } => return undecidable,
+            undecidable @ (Verdict::Undecidable { .. } | Verdict::Broken(_)) => return undecidable,
         }
         if !follows.distinct_by.is_empty() {
             for row in &result.rows {

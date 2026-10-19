@@ -612,8 +612,20 @@ fn go_keeps_each_marked_field_exemption_at_its_exact_position() {
 
 #[test]
 fn go_executes_the_original_suite35_coverage_input_and_parent_inventory() {
-    let root =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/one-time-coverage");
+    // The suite/35 input the producer wrote before beyond10x/ess#570, and the suite/53 one whose
+    // one-time trace states its rules once.
+    for (group, version) in [
+        ("one-time-coverage", "ess-conformance/35"),
+        ("one-time-coverage-53", "ess-conformance/53"),
+    ] {
+        go_executes_a_one_time_coverage_input(group, version);
+    }
+}
+
+fn go_executes_a_one_time_coverage_input(group: &str, version: &str) {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(group);
     let manifest: Vec<Value> =
         serde_json::from_str(&std::fs::read_to_string(root.join("manifest.json")).unwrap())
             .unwrap();
@@ -626,13 +638,10 @@ fn go_executes_the_original_suite35_coverage_input_and_parent_inventory() {
             .provenance
             .suite_version
             .to_string(),
-        "ess-conformance/35"
+        version
     );
-    let directory = support_go::package_input(
-        "one-time-coverage",
-        &input,
-        &[("parity_test.go", &one_time_driver())],
-    );
+    let directory =
+        support_go::package_input(group, &input, &[("parity_test.go", &one_time_driver())]);
     for mut expected in manifest {
         let mode: support_one_time::Mode =
             serde_json::from_value(expected["case"].clone()).unwrap();

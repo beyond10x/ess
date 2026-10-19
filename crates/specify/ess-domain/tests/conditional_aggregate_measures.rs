@@ -371,7 +371,7 @@ fn number(text: &str) -> FactValue {
 fn every_resolved_variant() -> Vec<Predicate> {
     let quantified = |universal: bool| {
         let body = ess_primitives::predicate::Quantified {
-            over: FactPath::new("tags").unwrap(),
+            over: ess_primitives::predicate::Collection::Fact(FactPath::new("tags").unwrap()),
             bind: "t".to_owned(),
             body: equals("t", FactValue::text("rush")),
         };

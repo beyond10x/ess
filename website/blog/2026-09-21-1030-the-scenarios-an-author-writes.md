@@ -43,7 +43,7 @@ separates them, and the format could not say it.
 produced and whether the consumer ended the read; a target without incremental reads reports
 `unsupported`. This adds a claim to `ess-conformance/4`.
 
-A migration of forty-five ACD slotmatcher cases hit that wall twice before the key existed.
+A migration of an existing matcher suite hit that wall twice before the key existed.
 
 ## A browser that plays a specification
 

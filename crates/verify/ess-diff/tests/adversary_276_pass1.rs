@@ -248,15 +248,29 @@ fn a_rename_beside_a_two_sided_attributes_edit_still_reports_the_edit() {
 
 // ---- domain-level content ------------------------------------------------------------------------
 
+/// A domain's wire name reaches every path addressed through it and stays unclassified; its
+/// display name is documentation, its own change from `ess-diff/20` (downstream report,
+/// 2026-10-19, finding 18).
 #[test]
 fn a_domain_naming_edit_stays_unclassified() {
     let after = replaced(
         DOMAIN,
         "domain: gap.desk\n",
+        "domain: gap.desk\n\nnaming:\n  wire: front-desk\n",
+    );
+    let wire = ids(&ir(SYSTEM, DOMAIN), &ir(SYSTEM, &after));
+    assert_eq!(wire, [UNCLASSIFIED], "{wire:?}");
+    let after = replaced(
+        DOMAIN,
+        "domain: gap.desk\n",
         "domain: gap.desk\n\nnaming:\n  display: Front desk\n",
     );
-    let ids = ids(&ir(SYSTEM, DOMAIN), &ir(SYSTEM, &after));
-    assert_eq!(ids, [UNCLASSIFIED], "{ids:?}");
+    let display = ids(&ir(SYSTEM, DOMAIN), &ir(SYSTEM, &after));
+    assert_eq!(
+        display,
+        ["domain/gap.desk/display-name-changed"],
+        "{display:?}"
+    );
 }
 
 /// A domain is its own family since beyond10x/ess#469: its arrival is `domain/<name>/added`, beside

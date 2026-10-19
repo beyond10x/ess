@@ -417,10 +417,7 @@ fn adv_w3u2_p1_the_byte_probes_see_the_pinned_set_of_reorders() {
     // read covers a pair, it leaves this list: shrink the expected list, never widen it.
     assert_eq!(
         blind,
-        [
-            "input_refusal <-> existence",
-            "present_related <-> accepting"
-        ],
+        ["present_related <-> accepting"],
         "the byte probes (adversary_e_u2_bytes, adversary_e_u6_bytes) see a different set of \
          reorders than pinned; a pair that left the list is now covered by a probe model, a pair \
          that joined it has lost its coverage.\n{report}"

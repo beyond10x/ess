@@ -286,3 +286,8 @@ fn writing_the_default_or_nothing_changes_no_byte_of_any_projection() {
         "a closed model publishes no open object"
     );
 }
+
+/// `shorthand: <field>` on a struct (`ess/27`, beyond10x/ess#594), projected beside
+/// `undeclared_fields:`.
+#[path = "undeclared_fields/shorthand.rs"]
+mod shorthand;

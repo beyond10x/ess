@@ -103,6 +103,13 @@ optimised in them. CI's Linux jobs link with lld through
 `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS` in `ci.yml`, not `.cargo/config.toml`, so local
 builds and shipped release binaries keep the system linker.
 
+**Local compile cache.** On the shared development host, local ESS builds use a compile cache of
+their own, because a fresh worktree otherwise recompiles every dependency. Set it per command, for
+this repository's builds only: `RUSTC_WRAPPER=sccache SCCACHE_DIR=~/.cache/sccache/ess
+SCCACHE_SERVER_PORT=4303 SCCACHE_CACHE_SIZE=2G`. Never the default port 4226, never a server shared
+with another repository, and never in `.cargo/config.toml` or a global cargo configuration: CI and
+release builds run without it.
+
 **Consumer coverage is opt-in.** Revision 3 of the ESS evolution plan (`ESS-EVOLUTION.md`, plan
 ess-evolution-20260915, 2026-09-25) parked feature-preservation accounting: `task check` runs
 `consumer-check` only with `CONSUMER_CHECKS=true`, no CI lane runs it, and it is not part of the

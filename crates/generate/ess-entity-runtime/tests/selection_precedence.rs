@@ -451,3 +451,216 @@ fn a_held_state_branch_after_a_disjoint_accepting_one_moves_bytes_and_no_answer(
         "every branch answers some request, in both orders"
     );
 }
+
+// ---- the one precedence rule (G4) ----------------------------------------------------------
+
+const RULE: &str =
+    include_str!("../../../specify/ess-compiler/tests/fixtures/precedence-rule-format-a.yaml");
+
+/// Under the one rule a missing row the input names answers at step 4, after the addressed
+/// record's existence and held state. Entity Runtime reads no row but the one its request names,
+/// so it lowers no `when_related:` branch in any order: the command is refused by name at each such
+/// branch (`RelatedGuardUnsupported`, answer 10 of the record), never lowered without it.
+#[test]
+fn format_a_related_row_existence_lowers_in_plan_order_or_is_refused_by_name() {
+    let text = format!(
+        "{}\ncomponents:\n  - component: seat-service\n    reached_by: network\n    owns: {{domains: [demo.rule]}}\n    accepts: {{commands: [demo.rule.DefineTier, demo.rule.Issue, demo.rule.Release, demo.rule.ChangeTier]}}\n    publishes: {{events: [demo.rule.TierDefined, demo.rule.Issued, demo.rule.Released, demo.rule.TierChanged]}}\n",
+        RULE.trim_end()
+    );
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}"));
+    let mut sources = SourceMap::new();
+    sources.insert("model.yaml".to_owned(), text.clone());
+    let specification = Specification::assemble([(Source::new("model.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    let ir = compile_locating(&specification, &sources, &["model.yaml".to_owned()])
+        .expect("fixture compiles");
+    let plan = SynthesisPlan::of(&ir);
+    let service = extract(&ir, &plan, &ComponentName::new("seat-service").unwrap())
+        .expect("service extracts");
+    let options = LoweringOptions {
+        definition_versions: ["demo.rule.Seat", "demo.rule.Tier"]
+            .iter()
+            .map(|entry| (QualifiedName::new(entry).unwrap(), NonZeroU32::MIN))
+            .collect(),
+        scales: BTreeMap::new(),
+    };
+    let Err(diagnostics) = lower(&service, &options) else {
+        panic!("a command guarded by a related row is not lowered");
+    };
+    let related: Vec<String> = diagnostics
+        .into_vec()
+        .into_iter()
+        .filter(|diagnostic| {
+            diagnostic.code == ess_entity_runtime::LoweringCode::RelatedGuardUnsupported
+        })
+        .map(|diagnostic| diagnostic.path)
+        .collect();
+    assert_eq!(
+        related,
+        [
+            "demo.rule.ChangeTier.unknown-tier.when_related",
+            "demo.rule.ChangeTier.tier-closed.when_related"
+        ],
+    );
+}
+
+const PAIRS: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml");
+
+/// The lowering diagnostics of the guard-pair corpus served by one component, by path.
+fn pair_diagnostics() -> Vec<(String, String)> {
+    let ir = served_ir(PAIRS, "pairs-service");
+    let plan = SynthesisPlan::of(&ir);
+    let service = extract(&ir, &plan, &ComponentName::new("pairs-service").unwrap())
+        .expect("service extracts");
+    let options = LoweringOptions {
+        definition_versions: ["demo.pairs.Seat", "demo.pairs.Tier"]
+            .iter()
+            .map(|entry| (QualifiedName::new(entry).unwrap(), NonZeroU32::MIN))
+            .collect(),
+        scales: BTreeMap::new(),
+    };
+    match lower(&service, &options) {
+        Ok(_) => Vec::new(),
+        Err(diagnostics) => diagnostics
+            .into_vec()
+            .into_iter()
+            .map(|diagnostic| (diagnostic.path, format!("{:?}", diagnostic.code)))
+            .collect(),
+    }
+}
+
+/// `text` served by one network component `component`, owning its domain and accepting every
+/// command, compiled.
+fn served_ir(text: &str, component: &str) -> EssIr {
+    let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}"));
+    let probe = Specification::assemble([(Source::new("model.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    let domain = text
+        .lines()
+        .find_map(|line| line.strip_prefix("domain: "))
+        .expect("one domain");
+    let commands: Vec<String> = probe.commands().keys().map(ToString::to_string).collect();
+    let events: Vec<String> = probe.events().keys().map(ToString::to_string).collect();
+    let text = format!(
+        "{}\ncomponents:\n  - component: {component}\n    reached_by: network\n    owns: {{domains: [{domain}]}}\n    accepts: {{commands: [{}]}}\n    publishes: {{events: [{}]}}\n",
+        text.trim_end(),
+        commands.join(", "),
+        events.join(", ")
+    );
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}"));
+    let mut sources = SourceMap::new();
+    sources.insert("model.yaml".to_owned(), text.clone());
+    let specification = Specification::assemble([(Source::new("model.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    compile_locating(&specification, &sources, &["model.yaml".to_owned()]).expect("compiles")
+}
+
+/// `text` without the command `name`: its block, the comment above it, and the grant naming it.
+fn without_command(text: &str, name: &str) -> String {
+    let declared = text
+        .find(&format!("  - name: {name}\n    input:"))
+        .unwrap_or_else(|| panic!("{name} is declared"));
+    let start = text[..declared]
+        .rfind("\n  # ")
+        .filter(|comment| !text[comment + 1..declared].contains("\n  - name: "))
+        .map_or(declared, |comment| comment + 1);
+    let rest = &text[declared + 1..];
+    let end = declared
+        + 1
+        + ["\n  # ", "\n  - name: demo.pairs.", "\nviews:"]
+            .iter()
+            .filter_map(|next| rest.find(next))
+            .min()
+            .expect("something follows the command")
+        + 1;
+    format!("{}{}", &text[..start], &text[end..]).replacen(&format!("      - {name}\n"), "", 1)
+}
+
+/// Every command of the guard-pair corpus is lowered in its plan's order or refused by name: each
+/// one guarded by a related row at every `when_related:` branch (`RelatedGuardUnsupported`), one
+/// answering a request with no input document at that branch, and the rest at the
+/// `unknown_instance:` branch Entity Runtime has no shape for; without that branch,
+/// `when_subject:` beside `when_subject_state:` lowers, its branches in the plan's order (record
+/// answer 10).
+#[test]
+fn guard_pair_corpus_lowers_or_refuses_each_command_by_name() {
+    let diagnostics = pair_diagnostics();
+    for (command, refused) in [
+        ("demo.pairs.StateBesideRelated", "RelatedGuardUnsupported"),
+        ("demo.pairs.SubjectBesideRelated", "RelatedGuardUnsupported"),
+        ("demo.pairs.AbsentBesideRelated", "RelatedGuardUnsupported"),
+        ("demo.pairs.AbsentBesideRelated", "InputAbsentUnsupported"),
+        (
+            "demo.pairs.WrongStateBesideRelatedMove",
+            "RelatedGuardUnsupported",
+        ),
+        (
+            "demo.pairs.BeforeRowBesideRelated",
+            "RelatedGuardUnsupported",
+        ),
+        (
+            "demo.pairs.StateBesideWrongState",
+            "OutcomeShapeUnsupported",
+        ),
+        ("demo.pairs.SubjectBesideState", "OutcomeShapeUnsupported"),
+        ("demo.pairs.TwoRefusalsOneRow", "RelatedGuardUnsupported"),
+    ] {
+        assert!(
+            diagnostics
+                .iter()
+                .any(|(path, code)| path.starts_with(&format!("{command}.")) && code == refused),
+            "{command} is refused as {refused}: {diagnostics:#?}"
+        );
+    }
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|(path, _)| path.starts_with("demo.pairs.SubjectBesideState."))
+            .map(|(path, _)| path.as_str())
+            .collect::<Vec<_>>(),
+        ["demo.pairs.SubjectBesideState.unknown-seat"],
+        "{diagnostics:#?}"
+    );
+
+    let mut text = PAIRS.to_owned();
+    for command in [
+        "demo.pairs.StateBesideRelated",
+        "demo.pairs.SubjectBesideRelated",
+        "demo.pairs.AbsentBesideRelated",
+        "demo.pairs.WrongStateBesideRelatedMove",
+        "demo.pairs.BeforeRowBesideRelated",
+        "demo.pairs.StateBesideWrongState",
+        "demo.pairs.TwoRefusalsOneRow",
+    ] {
+        text = without_command(&text, command);
+    }
+    for unknown in ["release-unknown", "retire-unknown", "unknown-seat"] {
+        let at = text.find(&format!("      - name: {unknown}\n")).unwrap();
+        let end = at + text[at + 1..].find("\n      - name: ").unwrap() + 1;
+        text = format!("{}{}", &text[..at], &text[end..]);
+    }
+    let ir = served_ir(&text, "pairs-service");
+    let plan = SynthesisPlan::of(&ir);
+    let service = extract(&ir, &plan, &ComponentName::new("pairs-service").unwrap())
+        .expect("service extracts");
+    let lowered = lower(
+        &service,
+        &LoweringOptions {
+            definition_versions: ["demo.pairs.Seat", "demo.pairs.Tier"]
+                .iter()
+                .map(|entry| (QualifiedName::new(entry).unwrap(), NonZeroU32::MIN))
+                .collect(),
+            scales: BTreeMap::new(),
+        },
+    )
+    .unwrap_or_else(|diagnostics| panic!("{diagnostics:?}"));
+    let order: Vec<String> = lowered.definitions()[&QualifiedName::new("demo.pairs.Seat").unwrap()]
+        .as_definition()
+        .operations["demo.pairs.SubjectBesideState"]
+        .outcomes
+        .iter()
+        .map(|outcome| outcome.name.clone())
+        .collect();
+    assert_eq!(order, ["released", "vip", "changed"]);
+}

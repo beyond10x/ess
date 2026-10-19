@@ -93,7 +93,7 @@ pub struct Store {
 
 impl Store {
     /// Establish already-validated upstream state without replacing an existing identity.
-    pub(super) fn establish(
+    pub(crate) fn establish(
         &mut self,
         entity: QualifiedName,
         identity: Node,
@@ -302,6 +302,15 @@ pub enum Undetermined {
         /// The invariant, as the author wrote it.
         invariant: String,
     },
+    /// Two rows a head read selects tie on every key of an order declaring `ties: unordered`, and
+    /// rank first: the model leaves which is the head to the implementation (ess/27,
+    /// beyond10x/ess#543, `docs/design/ordered-related-head.md`, "Declared-unordered ties").
+    UnorderedTie {
+        /// The entity whose rows tie.
+        entity: String,
+        /// The ranking keys, as written.
+        order: String,
+    },
 }
 
 impl Undetermined {
@@ -314,6 +323,7 @@ impl Undetermined {
                 | Self::NotInterpreted { .. }
                 | Self::NoValue { .. }
                 | Self::NoCaller { .. }
+                | Self::UnorderedTie { .. }
         )
     }
 }
@@ -347,6 +357,12 @@ impl fmt::Display for Undetermined {
             } => write!(
                 f,
                 "the model's own outcome leaves {instance} violating its invariant `{invariant}`"
+            ),
+            Self::UnorderedTie { entity, order } => write!(
+                f,
+                "two `{entity}` rows the selector selects tie on every key of `{order}` and rank \
+                 first, and the order declares `ties: unordered`: which is the head is the \
+                 implementation's choice"
             ),
         }
     }
@@ -565,6 +581,11 @@ fn responding_phases(
     // A related row named by a stored field of the addressed subject (ess/22, beyond10x/ess#304)
     // is read after that row's existence and held state, below — not before the input refusals.
     let stored = related::stored(spec);
+    // Where the plan reads a missing row the input names: at `RelatedRow`, before the input
+    // refusals, or, under the one rule (`docs/design/generic-language-features.md` § G4), leading
+    // `PresentRelated`, after the addressed row's existence and held state. Read late, a missing
+    // row is left out of the rows gathered before it and answered where the plan places it.
+    let missing_late = related::reads_missing(&plan, Phase::PresentRelated);
     // Every phase in the plan's order. The request with no input document (`InputAbsent`) is
     // answered by [`without_input`]; each other phase answers here where the plan places it, and a
     // phase `select` reads is read in place, with the rows gathered so far.
@@ -584,10 +605,16 @@ fn responding_phases(
                 {
                     return Ok(vec![step]);
                 }
-                if stored.is_none() {
-                    if let Some(steps) =
-                        related_absent(ir, spec, &plan, store, input, generated, responses)?
-                    {
+                if stored.is_none() && related::reads_missing(&plan, planned.phase) {
+                    if let Some(steps) = related_absent(
+                        ir,
+                        spec,
+                        (&plan, planned.phase),
+                        store,
+                        input,
+                        generated,
+                        responses,
+                    )? {
                         return Ok(steps);
                     }
                 }
@@ -597,6 +624,7 @@ fn responding_phases(
                         related: true,
                         subjects: false,
                         strict: true,
+                        missing_late,
                     };
                     held_rows(
                         ir,
@@ -667,6 +695,7 @@ fn responding_phases(
                     related: related_read,
                     subjects: true,
                     strict: true,
+                    missing_late,
                 };
                 if let Some(steps) = held_rows(
                     ir,
@@ -689,6 +718,21 @@ fn responding_phases(
                     {
                         return Ok(vec![step]);
                     }
+                } else if stored.is_none()
+                    && ess_domain::command::precedence::reads_one_rule(ir.format())
+                    && planned
+                        .branches
+                        .iter()
+                        .any(|outcome| outcome.condition == ResolvedCondition::UnknownInstance)
+                {
+                    // Under the one rule (`docs/design/generic-language-features.md` § G4) the
+                    // addressed record's existence is step 2, whatever branch a later step
+                    // selects: an identity no row carries is answered here.
+                    if let Some(step) =
+                        addressed_unknown(ir, spec, store, input, generated, responses)?
+                    {
+                        return Ok(vec![step]);
+                    }
                 }
                 existence_read = true;
             }
@@ -703,6 +747,7 @@ fn responding_phases(
                             related: related_read,
                             subjects: true,
                             strict: false,
+                            missing_late,
                         };
                         held_rows(
                             ir,
@@ -752,6 +797,31 @@ fn responding_phases(
                         }
                     }
                     row_sets = Some(decided);
+                }
+                // Under the one rule a missing row the input names answers here, once the
+                // addressed row's existence and held state have; a missing row with no
+                // `exists: false` branch is the undecidable read it always was.
+                if missing_late
+                    && stored.is_none()
+                    && planned.phase == Phase::PresentRelated
+                    && !selection.done
+                {
+                    if let Some(steps) = related_absent(
+                        ir,
+                        spec,
+                        (&plan, planned.phase),
+                        store,
+                        input,
+                        generated,
+                        responses,
+                    )? {
+                        return Ok(steps);
+                    }
+                    for outcome in &spec.outcomes {
+                        if !held_subjects.contains_key(&outcome.name) {
+                            related::held(ir, store, input, &outcome.condition)?;
+                        }
+                    }
                 }
                 select_phases(
                     spec,
@@ -814,6 +884,10 @@ fn flattened<'i>(
 }
 
 /// Which rows [`held_rows`] gathers into `held_subjects`, and how strictly.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "one flag per question the gather answers, not a state machine"
+)]
 #[derive(Clone, Copy)]
 struct Gather {
     /// The related rows named through the input: read only once the plan's `RelatedRow` phase has
@@ -825,6 +899,9 @@ struct Gather {
     /// read is the error it always was, and a subject nobody holds is answered `unknown_instance:`.
     /// Otherwise, for a phase `select` reads before `Existence`, such a row is left out.
     strict: bool,
+    /// The plan answers a missing related row the input names after the rows gathered here, at
+    /// `PresentRelated` (the one rule): such a row is left out, whatever `strict` says.
+    missing_late: bool,
 }
 
 /// The rows the command's guards read, gathered into `held_subjects` in declaration order: each
@@ -848,6 +925,9 @@ fn held_rows<'a>(
     for outcome in &spec.outcomes {
         if matches!(outcome.condition, ResolvedCondition::Related { .. }) {
             if stored.is_some() || !gather.related {
+                continue;
+            }
+            if gather.missing_late && related::missing(ir, store, input, &outcome.condition) {
                 continue;
             }
             match related::held(ir, store, input, &outcome.condition) {
@@ -1351,6 +1431,47 @@ fn addressed_row(
     wrong_state(ir, spec, store, input, Some(held)).map(Some)
 }
 
+/// Under the one rule, on a command declaring `unknown_instance:`, its answer for the record the
+/// command's acting branches address through the input, where no row carries the identity and no
+/// creation takes it. `None` where the command addresses no row through its
+/// input, the input names none, or a row carries it.
+fn addressed_unknown(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &State,
+    input: &Context<'_>,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+) -> Result<Option<Transition>, Undetermined> {
+    let Some((entity, field)) = spec
+        .outcomes
+        .iter()
+        .filter(|outcome| outcome.error.is_none())
+        .find_map(|outcome| {
+            let subject = outcome.subject.as_ref()?;
+            match (&subject.effect, &subject.instance) {
+                (ResolvedEffect::Creates, _) | (_, ResolvedInstance::Observed { .. }) => None,
+                (_, ResolvedInstance::Supplied { field }) => {
+                    Some((&subject.entity, field.name.as_str()))
+                }
+            }
+        })
+    else {
+        return Ok(None);
+    };
+    let Some(identity) = input.get(field) else {
+        return Ok(None);
+    };
+    if store
+        .instance_typed(&ir.entity(entity).name, identity)
+        .is_some()
+        || creation_takes_absent(spec, entity, field)
+    {
+        return Ok(None);
+    }
+    unknown_instance(ir, spec, store, input, generated, responses).map(Some)
+}
+
 /// Whether a creation branch of `entity` takes its identity from the input `field`. On a command
 /// guarded by a row set, an absent addressed row such a branch takes is that creation's, not an
 /// unknown instance: the row sets answer, then the creation (an upsert, beyond10x/ess#462).
@@ -1414,9 +1535,11 @@ fn selected_subject_refusal(
 }
 
 /// The answer of a command guarded by a related row (`when_related:`, ess/18) whose related row is
-/// missing: its `exists: false` branch, before any input-guarded refusal — step 1 of the
-/// precedence order (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence
-/// order"). `None` on a command with no related guard, or where the row is stored.
+/// missing: its `exists: false` branch, where the plan places it — before any input-guarded
+/// refusal, step 1 of the precedence order (`docs/design/cross-record-and-stored-field-guards.md`,
+/// "The precedence order"), or under the one rule at step 4, after the addressed row's existence
+/// and held state (`docs/design/generic-language-features.md` § G4). `phase` is the plan's phase
+/// holding those branches. `None` on a command with no related guard, or where the row is stored.
 ///
 /// On a command reading several rows through its input (ess/22, beyond10x/ess#283) the rows are
 /// read in the declaration order of their `exists: false` branches, and the first missing one
@@ -1430,14 +1553,14 @@ fn selected_subject_refusal(
 fn related_absent(
     ir: &EssIr,
     spec: &ResolvedCommand,
-    plan: &PrecedencePlan<'_>,
+    (plan, phase): (&PrecedencePlan<'_>, Phase),
     store: &State,
     input: &Context<'_>,
     generated: &Generated,
     responses: &mut super::response::Authority,
 ) -> Result<Option<Vec<Transition>>, Undetermined> {
     let gap = |construct: String| Err(Undetermined::NotInterpreted { construct });
-    for read in related::reads_in_order(plan, spec) {
+    for read in related::reads_in_order(plan, phase, spec) {
         let ResolvedCondition::Related { via, entity, .. } = &read.condition else {
             unreachable!("ordered among related guards")
         };
@@ -1816,7 +1939,7 @@ fn error_value(
     let mut path = location.to_vec();
     path.push(field.target.clone());
     Ok(match &field.value {
-        ResolvedPayloadValue::Generated => match input.operation {
+        ResolvedPayloadValue::Generated { .. } => match input.operation {
             None => None,
             Some(operation) => Some(history::generated(
                 ir,
@@ -1921,7 +2044,15 @@ struct Work<'g> {
     location: Vec<String>,
     /// The field location being written, independent of history-generation provenance.
     target_location: Vec<String>,
+    /// The values this outcome's payload publishes that a `sets:` entry stores, `{payload:
+    /// <Event>.<field>}` (ess/27, beyond10x/ess#545), or a selector reads,
+    /// `payload.<Event>.<field>` (beyond10x/ess#549): resolved once by [`publish_reads`] and read
+    /// again by [`emit`], so the row, the selectors and the event hold one value.
+    published: Published,
 }
+
+/// The values an outcome publishes, by event and field, resolved before anything is written.
+type Published = BTreeMap<(QualifiedName, String), Option<Value>>;
 
 impl Work<'_> {
     fn origin(&self) -> history::Origin {
@@ -2059,7 +2190,9 @@ fn take(
         operation: input.operation,
         location: Vec::new(),
         target_location: Vec::new(),
+        published: BTreeMap::new(),
     };
+    or_no_step!(publish_reads(ir, outcome, input, &mut work));
     let mut created: Option<(String, Node)> = None;
     let mut touched: Option<(QualifiedName, Node)> = None;
 
@@ -2376,6 +2509,34 @@ fn value(
     Ok(value)
 }
 
+/// The value `field` reads from the first row its ordered selection ranks, in the store as it was
+/// before the outcome (ess/27, beyond10x/ess#543); none selected supplies no value, and a head tying
+/// under `ties: unordered` is [`Undetermined::UnorderedTie`].
+fn related_head(
+    ir: &EssIr,
+    field: &ResolvedPayloadField,
+    input: &Context<'_>,
+    work: &Work<'_>,
+) -> Result<Option<Value>, Undetermined> {
+    let ResolvedPayloadValue::RelatedHead {
+        selection,
+        order_by,
+        ties,
+        ..
+    } = &field.value
+    else {
+        unreachable!("only a head read reads the head of an ordered selection");
+    };
+    let reader = row_set::Reader::new(ir, work.command, work.original, input)?
+        .with_published(&work.published);
+    let (key, row) = reader.head(selection, order_by, *ties)?;
+    values::selected(ir, field, ir.entity(&selection.entity), key, row)
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arm per value source the interpreter determines"
+)]
 fn value_at(
     ir: &EssIr,
     field: &ResolvedPayloadField,
@@ -2390,10 +2551,14 @@ fn value_at(
         // The one row the selector selects in the store as it was before the outcome (ess/22,
         // beyond10x/ess#299); none or several supply no value.
         ResolvedPayloadValue::RelatedSelection { selection, .. } => {
-            let reader = row_set::Reader::new(ir, work.command, work.original, input)?;
+            let reader = row_set::Reader::new(ir, work.command, work.original, input)?
+                .with_published(&work.published);
             let (key, row) = reader.one(selection)?;
             values::selected(ir, field, ir.entity(&selection.entity), key, row)
         }
+        // The first row the selector selects by the order, in the same store (ess/27,
+        // beyond10x/ess#543); none supplies no value.
+        ResolvedPayloadValue::RelatedHead { .. } => related_head(ir, field, input, work),
         // ess/25 (beyond10x/ess#531): `emit` holds the changed row one occurrence is for as the
         // row before the outcome.
         ResolvedPayloadValue::SubjectState { .. } | ResolvedPayloadValue::ChangedState { .. } => {
@@ -2414,6 +2579,11 @@ fn value_at(
             field.conversion.as_deref(),
             work.before.as_ref(),
         ),
+        // ess/27 (beyond10x/ess#560): the shared evaluator over the invocation's input and the row
+        // as it was before the outcome; absent leaves the field absent.
+        ResolvedPayloadValue::Expression { expr, .. } => {
+            values::expression(expr, input, work.before.as_ref())
+        }
         ResolvedPayloadValue::Increment { by } => values::increment(
             ir,
             field,
@@ -2437,7 +2607,20 @@ fn value_at(
         ResolvedPayloadValue::Literal { value } => {
             literal(ir, &field.target_type, value).map(|value| Some(Value::Known(value)))
         }
-        ResolvedPayloadValue::Generated => mint(ir, &field.target_type, work),
+        // A present mint (ess/27, beyond10x/ess#545): a value of the required type, never absent.
+        ResolvedPayloadValue::Generated { present } => {
+            mint(ir, minted_type(&field.target_type, *present), work)
+        }
+        // The value the outcome's own payload publishes, resolved once by `publish_reads`.
+        ResolvedPayloadValue::PayloadRead {
+            event, field: read, ..
+        } => work
+            .published
+            .get(&(event.name().clone(), read.clone()))
+            .cloned()
+            .ok_or_else(|| Undetermined::NotInterpreted {
+                construct: format!("the published `{}.{read}`", event.name()),
+            }),
         ResolvedPayloadValue::Struct { fields } => {
             let mut members = BTreeMap::new();
             for member in fields {
@@ -2557,6 +2740,16 @@ fn mint(
             },
         );
     }
+    minted(ir, target, &mut || work.next.tick()).map(|value| value.map(Value::Known))
+}
+
+/// A value of `target` drawn from a counter, in the shape its declared type takes: `None` for an
+/// optional type. [`mint`] and [`Store::mint`] both draw this way, so one counter yields one value.
+fn minted(
+    ir: &EssIr,
+    target: &ResolvedTypeRef,
+    tick: &mut dyn FnMut() -> u64,
+) -> Result<Option<Node>, Undetermined> {
     if target.is_optional() {
         return Ok(None);
     }
@@ -2564,24 +2757,43 @@ fn mint(
         what: format!("a value of `{target}`"),
     };
     if let Representation::Primitive(Primitive::Uuid) = representation(ir, target) {
-        Ok(Some(Value::Known(Node::Text(format!(
+        Ok(Some(Node::Text(format!(
             "00000000-0000-4000-8000-{:012}",
-            work.next.tick()
-        )))))
+            tick()
+        ))))
     } else {
         let field = ess_compiler::ir::ResolvedField {
             name: "generated".into(),
             type_ref: target.clone(),
             naming: ess_domain::name::Naming::default(),
         };
-        let distinction = usize::try_from(work.next.tick()).map_err(|_| no_value())?;
+        let distinction = usize::try_from(tick()).map_err(|_| no_value())?;
         crate::witness::fields(
             ir,
             &[field],
             crate::witness::Distinction::further(distinction),
         )
-        .map(|mut values| values.remove("generated").map(Value::Known))
+        .map(|mut values| values.remove("generated"))
         .map_err(|_| no_value())
+    }
+}
+
+impl Store {
+    /// A present value of `target` minted from this store's counter, as every value the model
+    /// leaves to the implementation is: the input a system-issued command's system decides where
+    /// nothing narrower offers one (beyond10x/ess#542, `docs/design/system-issued-commands.md`).
+    pub(super) fn mint(
+        &mut self,
+        ir: &EssIr,
+        target: &ResolvedTypeRef,
+    ) -> Result<Node, Undetermined> {
+        let mut tick = || {
+            self.minted += 1;
+            self.minted
+        };
+        minted(ir, target.required(), &mut tick)?.ok_or_else(|| Undetermined::NoValue {
+            what: format!("a value of `{target}`"),
+        })
     }
 }
 
@@ -2612,6 +2824,168 @@ fn representation(ir: &EssIr, target: &ResolvedTypeRef) -> Representation {
         }
     }
     Representation::Other
+}
+
+/// The type a mint into `target` draws: its required type where the mint is present (ess/27,
+/// beyond10x/ess#545), so an `Optional` field is never left absent.
+fn minted_type(target: &ResolvedTypeRef, present: bool) -> &ResolvedTypeRef {
+    if present {
+        target.required()
+    } else {
+        target
+    }
+}
+
+/// Every published value `fields` read, in the order written, nested leaves included: each
+/// `{payload: <Event>.<field>}` a stored field copies, and each `payload.<Event>.<field>` a
+/// selector lists (ess/27, beyond10x/ess#549).
+fn reads_of(fields: &[ResolvedPayloadField], out: &mut Vec<(QualifiedName, String)>) {
+    for field in fields {
+        reads_in(&field.value, out);
+    }
+}
+
+fn reads_in(value: &ResolvedPayloadValue, out: &mut Vec<(QualifiedName, String)>) {
+    match value {
+        ResolvedPayloadValue::PayloadRead { event, field, .. } => {
+            out.push((event.name().clone(), field.clone()));
+        }
+        ResolvedPayloadValue::RelatedSelection { selection, .. }
+        | ResolvedPayloadValue::RelatedHead { selection, .. } => {
+            for read in &selection.reads {
+                out.push((read.event.name().clone(), read.field.clone()));
+            }
+        }
+        ResolvedPayloadValue::Struct { fields } => reads_of(fields, out),
+        _ => {}
+    }
+}
+
+/// Every published value the outcome reads before it emits: each `{payload: <Event>.<field>}` its
+/// `sets:` and `affects:` entries store (beyond10x/ess#545), and each one a selector anywhere in
+/// its sources reads (beyond10x/ess#549), in the order written.
+fn payload_reads(outcome: &ResolvedOutcome) -> Vec<(QualifiedName, String)> {
+    let mut out = Vec::new();
+    reads_of(&outcome.sets, &mut out);
+    for affect in &outcome.affects {
+        reads_of(&affect.sets, &mut out);
+    }
+    for payload in &outcome.payload {
+        reads_of(&payload.fields, &mut out);
+    }
+    out
+}
+
+/// Resolves, before anything is written, each payload value a `sets:` entry stores (ess/27,
+/// beyond10x/ess#545) or a selector reads (beyond10x/ess#549): minted, given or recorded exactly as
+/// [`emit`] would, and kept in [`Work::published`] so the event carries the same value. A value is
+/// resolved after every value its own selectors read, against the store as it was before the
+/// outcome, so the order is the dependency order of the payload's fields, not the order written.
+///
+/// `Ok(Err(_))` is a branch the given values do not describe, which yields no step.
+fn publish_reads(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    input: &Context<'_>,
+    work: &mut Work<'_>,
+) -> Result<Result<(), Unmatched>, Undetermined> {
+    let mut chain = Vec::new();
+    for key in payload_reads(outcome) {
+        or_no_step!(publish(ir, outcome, input, work, key, &mut chain));
+    }
+    work.location = Vec::new();
+    Ok(Ok(()))
+}
+
+/// Resolves the published `key` into [`Work::published`], each value its source's selectors read
+/// first; `chain` holds the values being resolved around it. Re-entering one is a cycle, which
+/// validation refuses, so it is answered as a gap naming the chain rather than looping.
+fn publish(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    input: &Context<'_>,
+    work: &mut Work<'_>,
+    key: (QualifiedName, String),
+    chain: &mut Vec<(QualifiedName, String)>,
+) -> Result<Result<(), Unmatched>, Undetermined> {
+    if work.published.contains_key(&key) {
+        return Ok(Ok(()));
+    }
+    if chain.contains(&key) {
+        let named: Vec<String> = chain
+            .iter()
+            .chain(std::iter::once(&key))
+            .map(|(event, field)| format!("`{event}.{field}`"))
+            .collect();
+        return Err(Undetermined::NotInterpreted {
+            construct: format!(
+                "published values that read each other: {}",
+                named.join(" reads ")
+            ),
+        });
+    }
+    let (event, field) = key.clone();
+    let gap = || Undetermined::NotInterpreted {
+        construct: format!("the published `{event}.{field}`"),
+    };
+    let index = outcome
+        .emits
+        .iter()
+        .position(|handle| handle.name() == &event)
+        .ok_or_else(gap)?;
+    let declared = ir.event(&outcome.emits[index]);
+    let target = declared
+        .fields
+        .iter()
+        .find(|it| it.name == field)
+        .ok_or_else(gap)?;
+    let source = outcome
+        .payload
+        .iter()
+        .find(|payload| payload.event.name() == &event)
+        .and_then(|payload| payload.fields.iter().find(|it| it.target == field))
+        .ok_or_else(gap)?;
+    // The created identity is assigned once, when the row is created: a stored copy of it is
+    // read from there, which this cut does not do.
+    let creates_it = outcome.subject.as_ref().is_some_and(|subject| {
+        matches!(&subject.instance, ResolvedInstance::Observed { event: carried, field: named }
+                if carried.name() == &event && named.name == field)
+    });
+    if creates_it {
+        return Err(Undetermined::NotInterpreted {
+            construct: format!("a stored copy of the created identity `{event}.{field}`"),
+        });
+    }
+    // Every value the source's selectors read, resolved first.
+    let mut needs = Vec::new();
+    reads_in(&source.value, &mut needs);
+    chain.push(key.clone());
+    for need in needs {
+        match publish(ir, outcome, input, work, need, chain) {
+            Ok(Ok(())) => {}
+            other => {
+                chain.pop();
+                return other;
+            }
+        }
+    }
+    chain.pop();
+    work.location = vec!["event".into(), index.to_string(), declared.name.to_string()];
+    let value = match &source.value {
+        ResolvedPayloadValue::Generated { present } => {
+            work.location.push(field.clone());
+            or_no_step!(assign(
+                ir,
+                &declared.name,
+                &field,
+                minted_type(&target.type_ref, *present),
+                work
+            ))
+        }
+        _ => value(ir, source, input, work)?,
+    };
+    work.published.insert(key, value);
+    Ok(Ok(()))
 }
 
 /// The events `outcome` emits, each carrying what the model determines of it. An event published
@@ -2675,22 +3049,31 @@ fn emit(
                 ];
                 let source = determined
                     .and_then(|payload| payload.fields.iter().find(|it| it.target == field.name));
+                // A value a `sets:` entry already stored (ess/27): the one this event publishes.
+                let published = if identity == Some(field.name.as_str()) {
+                    None
+                } else {
+                    work.published
+                        .get(&(declared.name.clone(), field.name.clone()))
+                        .cloned()
+                };
                 // The field `instance:` names publishes the created identity, whatever source the
                 // payload declares for it: `{generated: true}` there says only that the implementation
                 // assigns it, and it assigned it once, when the instance was created.
                 let value = match (identity == Some(field.name.as_str()), source) {
+                    _ if published.is_some() => published.flatten(),
                     (true, _) => created.map(|(_, identity)| Value::Known(identity.clone())),
                     (
                         false,
                         Some(ResolvedPayloadField {
-                            value: ResolvedPayloadValue::Generated,
+                            value: ResolvedPayloadValue::Generated { present },
                             ..
                         }),
                     ) => or_no_step!(assign(
                         ir,
                         &declared.name,
                         &field.name,
-                        &field.type_ref,
+                        minted_type(&field.type_ref, *present),
                         work
                     )),
                     (

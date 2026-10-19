@@ -1364,6 +1364,18 @@ const IGNORED_STRUCT: &str =
     "A field it does not declare is ignored rather than refused, wherever \
      it is reached; the declared fields stay required and typed.";
 
+/// What a struct declaring `shorthand: <field>` (`ess/27`) says of itself.
+fn shorthand_prose(short: &str) -> Vec<Inline> {
+    vec![
+        Inline::text("A value of it may also be written as its "),
+        Inline::code(short.to_owned()),
+        Inline::text(
+            " alone, which stands for the record with only that field written; \
+             every writer writes the record.",
+        ),
+    ]
+}
+
 /// A named type as a sentence, because its shape is one fact and a table of one fact is furniture.
 fn type_prose(ir: &EssIr, declared: &ResolvedType) -> Vec<Block> {
     let name = Inline::code(declared.name.to_string());
@@ -1412,6 +1424,9 @@ fn type_prose(ir: &EssIr, declared: &ResolvedType) -> Vec<Block> {
             out.push(bullets(fields.iter().map(field_bullet).collect()));
             if ir.undeclared_fields(&declared.name).is_ignored() {
                 out.sentence(IGNORED_STRUCT);
+            }
+            if let Some(short) = ir.shorthand(&declared.name) {
+                out.prose(shorthand_prose(short));
             }
             let clause = invariants_clause(invariants);
             if !clause.is_empty() {
@@ -3199,7 +3214,7 @@ fn gap_blocks(heading: &str, preamble: &str) -> Vec<Block> {
 /// The identity of a bounded context's page, which is also where a renderer files it.
 ///
 /// The dots of a qualified name become hyphens. A dot in a path segment makes a static file server
-/// read `acd.routing` as a name with an extension, so `domains/acd.routing.md` is served as
+/// read `queue.routing` as a name with an extension, so `domains/queue.routing.md` is served as
 /// something it is not or not at all — every one of these pages 404'd behind GitLab Pages until
 /// the adopter carried a rename pass of their own. A generator that emits a route nothing can serve
 /// has not generated documentation.

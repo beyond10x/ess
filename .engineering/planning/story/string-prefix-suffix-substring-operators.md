@@ -9,7 +9,7 @@ refs:
   reference: beyond10x/ess#95
 relations:
 - serves: vision:O2
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-25T21:41:01Z", actor: "human:timo", revision: 2, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-25T21:41:27Z", actor: "human:timo", revision: 3, imported: true}
@@ -17,7 +17,7 @@ transitions:
 ---
 ## Outcome
 
-A routing rule such as "caller number starts with +44" is a checked ESS guard, not `UNMAPPED:`.
+A routing rule such as "a field starts with +44" is a checked ESS guard, not `UNMAPPED:`.
 
 ## Why
 

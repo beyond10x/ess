@@ -43,6 +43,9 @@ use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
 use super::caller::{InvocationModels, InvocationPhase};
 use crate::witness::{Distinction, WitnessGap};
 
+mod naming;
+mod pinned;
+
 use super::{
     arrange_toward_bound, arrange_toward_filter, determined_payload, fact_value,
     has_subject_guards, insert, instance_name, lifecycle_state, not_emitted, prepare_in, reach,
@@ -77,7 +80,20 @@ pub(super) fn set_effects(
                 ),
             };
             if let Some(set) = &outcome.instances {
-                match set_scenario(models, command, outcome, set, actors) {
+                // A filter pinning the row's identity (ess/27, beyond10x/ess#547) is witnessed one
+                // named row per send.
+                let built = match pinned::pin_of(models.arrangement, &set.entity, &set.filter) {
+                    Ok(None) => set_scenario(models, command, outcome, set, actors),
+                    Ok(Some(pin)) => {
+                        pinned::set_scenario(models, command, outcome, set, &pin, actors)
+                    }
+                    Err(reason) => Err(gap(
+                        format!("{}.instances", outcome.name),
+                        set.entity.to_string(),
+                        reason,
+                    )),
+                };
+                match built {
                     Ok(scenario) => insert(suite, id.clone(), scenario, refusals),
                     Err(cause) => refusals.push(Refusal::about(&id, cause)),
                 }
@@ -248,6 +264,114 @@ fn gap(path: String, type_ref: String, reason: &'static str) -> RefusalCause {
         type_ref,
         reason,
     })
+}
+
+/// Why the rows a filter selects cannot be arranged, where it reads a stored field no declared
+/// command writes (downstream report, 2026-10-18): every row holds the same value of it, whatever
+/// the arranging commands are sent.
+pub(super) const UNWRITTEN: &str = "a filter reads and no declared command writes, so no \
+     arrangement leaves rows on both sides of the filter";
+
+/// Every reason a row of a filter could not be arranged for, which no input type repairs: a set
+/// effect's, and a row-set branch's selector (`when_related:`, review 2026-10-19).
+pub(super) const UNARRANGED: [&str; 4] = [
+    NO_MATCHING,
+    NO_MISS,
+    NO_PUBLISHED,
+    super::row_set::ROWS_UNARRANGED,
+];
+
+/// Too few rows the filter selects.
+const NO_MATCHING: &str =
+    "has no three rows the filter selects that the arranging commands can produce";
+
+/// No row leaving one conjunct out.
+const NO_MISS: &str = "has no row leaving out exactly one conjunct of the filter that the \
+     arranging commands can produce";
+
+/// No changed row where a per-row event publishes.
+const NO_PUBLISHED: &str = "has no row the filter selects, resting where a per-row event's \
+     `when_state:` publishes it, that the arranging commands can produce";
+
+/// `reason`, or — where it is one of [`UNARRANGED`] and `filter` reads a stored field of
+/// `entity` no declared command writes — the refusal naming that field ([`unwritten`]).
+fn unarranged(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    filter: &Predicate,
+    at: String,
+    reason: &'static str,
+) -> RefusalCause {
+    UNARRANGED
+        .contains(&reason)
+        .then(|| unwritten(ir, entity, filter))
+        .flatten()
+        .unwrap_or_else(|| gap(at, entity.to_string(), reason))
+}
+
+/// The refusal naming the first stored field of `entity` that `filter` reads and no declared
+/// command writes in `sets:`, an `affects:` entry or an `each:` read: every row holds one value
+/// of it, so no arrangement puts rows on both sides of the filter. `None` where every field it
+/// reads is written somewhere.
+pub(super) fn unwritten(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    filter: &Predicate,
+) -> Option<RefusalCause> {
+    let declared = ir.entity(entity);
+    let read: BTreeSet<&str> = filter
+        .fact_paths()
+        .into_iter()
+        .filter_map(|path| path.segments().first().map(String::as_str))
+        .collect();
+    let mut written: BTreeSet<&str> = BTreeSet::new();
+    for command in ir.commands().values() {
+        for outcome in &command.outcomes {
+            let on_entity = outcome
+                .subject
+                .as_ref()
+                .is_some_and(|subject| subject.entity == *entity)
+                || outcome
+                    .instances
+                    .as_ref()
+                    .is_some_and(|set| set.entity == *entity);
+            if on_entity {
+                written.extend(
+                    outcome
+                        .sets
+                        .iter()
+                        .map(|field| first_segment(&field.target)),
+                );
+            }
+            for affect in outcome
+                .affects
+                .iter()
+                .filter(|affect| affect.entity == *entity)
+            {
+                written.extend(affect.sets.iter().map(|field| first_segment(&field.target)));
+                written.extend(
+                    affect
+                        .each
+                        .iter()
+                        .flat_map(|each| &each.reads)
+                        .map(|read| first_segment(&read.target)),
+                );
+            }
+        }
+    }
+    let field = declared.fields.iter().find(|field| {
+        read.contains(field.name.as_str()) && !written.contains(field.name.as_str())
+    })?;
+    Some(gap(
+        format!("{}.{}", declared.name, field.name),
+        field.type_ref.to_string(),
+        UNWRITTEN,
+    ))
+}
+
+/// The field a `sets:` target names: its first segment.
+fn first_segment(target: &str) -> &str {
+    target.split('.').next().unwrap_or(target)
 }
 
 /// The value a path under `input.` names in the input a scenario sends.
@@ -635,9 +759,7 @@ fn rows_preferring(
         changed.push(
             preferred
                 .or_else(|| selection.row(actors, taken, movable, visible))
-                .ok_or(
-                    "has no three rows the filter selects that the arranging commands can produce",
-                )?,
+                .ok_or(NO_MATCHING)?,
         );
     }
     let mut kept = Vec::new();
@@ -648,10 +770,7 @@ fn rows_preferring(
         kept.push(
             selection
                 .row_meeting(actors, taken, &miss, movable, visible)
-                .ok_or(
-                    "has no row leaving out exactly one conjunct of the filter that the \
-                     arranging commands can produce",
-                )?,
+                .ok_or(NO_MISS)?,
         );
     }
     if let Some((outside, to)) = outside {
@@ -823,10 +942,7 @@ fn set_rows<'s>(
         .iter()
         .any(|entry| !rows.changed.iter().any(|row| publishes(entry, &row.state)))
     {
-        return Err(
-            "has no row the filter selects, resting where a per-row event's `when_state:` \
-             publishes it, that the arranging commands can produce",
-        );
+        return Err(NO_PUBLISHED);
     }
     Ok((rows, to))
 }
@@ -1102,7 +1218,7 @@ fn set_scenario(
         other: None,
     };
     let (arranged, to) = set_rows(&selection, actors, set)
-        .map_err(|reason| gap(at(), entity.to_string(), reason))?;
+        .map_err(|reason| unarranged(ir, entity, &set.filter, at(), reason))?;
 
     let mut steps = Vec::new();
     let mut source: BTreeSet<EssSemanticRef> = BTreeSet::new();
@@ -1476,6 +1592,40 @@ fn affect_inputs(
     })
 }
 
+/// The branch's `affects:` entry whose filter pins the row's identity (ess/27, beyond10x/ess#547),
+/// with its position and the pin; `None` where no entry's filter reads the identity. A refusal
+/// where a filter reads it other than by a pin, or where the pinned entry stands beside another
+/// entry: one send names one row, and this cut witnesses a pinned entry as the branch's only one.
+fn pinned_entry<'o>(
+    ir: &EssIr,
+    outcome: &'o ResolvedOutcome,
+) -> Result<Option<(usize, &'o ResolvedAffect, pinned::Pin)>, RefusalCause> {
+    let at = |index: usize| format!("{}.affects[{index}]", outcome.name);
+    let mut found = None;
+    for (index, affect) in outcome.affects.iter().enumerate() {
+        let Some(filter) = &affect.filter else {
+            continue;
+        };
+        match pinned::pin_of(ir, &affect.entity, filter) {
+            Ok(None) => {}
+            Ok(Some(pin)) => found = Some((index, affect, pin)),
+            Err(reason) => return Err(gap(at(index), affect.entity.to_string(), reason)),
+        }
+    }
+    let Some((index, affect, pin)) = found else {
+        return Ok(None);
+    };
+    if outcome.affects.len() > 1 {
+        return Err(gap(
+            at(index),
+            affect.entity.to_string(),
+            "pins the row's identity beside another `affects:` entry; each send names one row, \
+             and this cut witnesses a pinned entry only as the branch's one entry",
+        ));
+    }
+    Ok(Some((index, affect, pin)))
+}
+
 /// The `affects:` segment appended to the branch's own scenario.
 #[allow(clippy::too_many_lines)] // One complete set-effect witness, including invocation authority.
 fn affects_segment(
@@ -1487,6 +1637,20 @@ fn affects_segment(
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
     let ir = models.arrangement;
     let at = |index: usize| format!("{}.affects[{index}]", outcome.name);
+    if let Some((index, affect, pin)) = pinned_entry(ir, outcome)? {
+        return pinned::affects_segment(
+            models,
+            command,
+            outcome,
+            actors,
+            taken,
+            (index, affect, &pin),
+        );
+    }
+    // Entries moving or removing the row each element names (ess/27, beyond10x/ess#596).
+    if outcome.affects.iter().any(naming::names_rows) {
+        return naming::affects_segment(models, command, outcome, actors, taken);
+    }
     let subject = outcome.subject.as_ref().ok_or_else(|| {
         gap(
             at(0),
@@ -1580,8 +1744,9 @@ fn affects_segment(
             symbols: operands.symbols.clone(),
             other: other.clone(),
         };
-        let rows = affect_rows(&selection, actors, taken, affect)
-            .map_err(|reason| gap(at(index), affect.entity.to_string(), reason))?;
+        let rows = affect_rows(&selection, actors, taken, affect).map_err(|reason| {
+            unarranged(ir, &affect.entity, &selection.filter, at(index), reason)
+        })?;
         let (filter, closed) = (selection.filter.clone(), selection.closed.clone());
         for row in rows.changed.iter().chain(&rows.kept) {
             steps.extend(row.steps.iter().cloned());

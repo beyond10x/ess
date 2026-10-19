@@ -671,7 +671,7 @@ impl Layout {
     ///
     /// Authored types before derived ones, which is the rule `allocate_names` states and this did
     /// not implement. An entity's lifecycle enum is filed in `ir.types()` like an authored type, and
-    /// `acd.backend.Connection.State` sorts before `acd.backend.ConnectionState` — so the sweep used
+    /// `queue.backend.Connection.State` sorts before `queue.backend.ConnectionState` — so the sweep used
     /// to hand the identifier to the *derived* enum and rename the author's view `ConnectionState_`.
     /// A name an author wrote is not this emitter's to move.
     fn allocate_declared(&mut self, ir: &EssIr, taken: &mut BTreeMap<String, BTreeSet<String>>) {

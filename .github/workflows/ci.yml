@@ -278,7 +278,9 @@ jobs:
 
       - name: Free runner disk
         run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL \
+            /usr/local/.ghcup /usr/lib/jvm /usr/share/swift /usr/local/share/powershell \
+            /usr/local/share/chromium /usr/local/julia* /opt/microsoft /opt/google /opt/az
           df -h /
 
       # The shards compile no test binary, but their tests do build: generated projects through
@@ -409,6 +411,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           rm -f target/nextest-archives/workspace.tar.zst
+          rm -rf target/tmp
           df -h /
 
       - name: Feature-off tests ${{ matrix.shard }}

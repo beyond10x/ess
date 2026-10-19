@@ -9,6 +9,13 @@
 //! `version != input.expected_version` over an absent operand is `Unknown`. The mutant's suite
 //! refuses the branch (`ESS-SYNTH-003`); it was `unwitnessed`. A stored guard holding through a
 //! test that reads no input, or through another disjunct, keeps its scoring.
+//!
+//! Since synthesis sends a filled `Optional` number apart from every required leaf
+//! (beyond10x/ess#546), the mutant's own `applied` scenario sends an `expected_version` other than
+//! the row's `version`: the mutant accepts it, the specification answers `stale-version`, and the
+//! mutant is `killed`, as a dead-guard mutant a failure tells apart always was
+//! (`Verdict::with_dead_guard`). It was `equivalent` only while both leaves carried one literal.
+//! The dead guard is still named.
 #![allow(clippy::missing_panics_doc)]
 
 use ess_compiler::source::SourceMap;
@@ -61,7 +68,14 @@ fn edited(text: &str, from: &str, to: &str) -> String {
 #[test]
 fn the_negated_defined_guard_beside_the_comparison_is_equivalent_naming_the_dead_guard() {
     let (entry, text) = negate(ORDER);
-    assert_eq!(entry["verdict"], "equivalent", "{text}");
+    assert_eq!(entry["verdict"], "killed", "{text}");
+    assert!(
+        entry["killers"].as_array().is_some_and(|killers| killers
+            .iter()
+            .any(|id| id == "demo.order.Fulfil/outcome/applied")),
+        "the mutant's `applied` scenario, sending a version apart from the row's, kills it: \
+         {entry:#}"
+    );
     let dead = entry["unsatisfiable_guard"]
         .as_str()
         .unwrap_or_else(|| panic!("an unsatisfiable guard is named: {entry:#}"));
@@ -71,8 +85,8 @@ fn the_negated_defined_guard_beside_the_comparison_is_equivalent_naming_the_dead
     );
     assert!(
         text.lines()
-            .any(|line| line.starts_with(&format!("equivalent {NEGATE}: "))
-                && line.contains("ESS-MUTATE-005")),
+            .any(|line| line.starts_with(&format!("killed {NEGATE}: "))
+                && line.contains("no input satisfies")),
         "{text}"
     );
 }
@@ -164,6 +178,6 @@ fn a_negated_comparison_of_the_absent_input_is_dead_too() {
         COMPARED,
         "              - {not: \"version == input.expected_version\"}\n",
     ));
-    assert_eq!(entry["verdict"], "equivalent", "{text}");
+    assert_eq!(entry["verdict"], "killed", "{text}");
     assert!(entry["unsatisfiable_guard"].is_string(), "{entry:#}");
 }

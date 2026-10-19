@@ -115,6 +115,30 @@ pub struct Plan {
     /// A model string's declared alphabet and text length, by the pointer of the string
     /// (beyond10x/ess#579): what the Rust decoder refuses a value outside of.
     text: BTreeMap<String, TextConstraint>,
+    /// A model struct that may be written as one field's value alone (`ess/27`,
+    /// beyond10x/ess#594), by the pointer of the struct's definition. The struct is planned as
+    /// its record; this names the field the short form fills.
+    shorthands: BTreeMap<String, Shorthand>,
+}
+
+/// The field a model struct's short form fills, read from its `x-ess-shorthand`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Shorthand {
+    /// The field's wire name, a key of the record's fields.
+    pub(crate) wire: String,
+    /// What the short form is on the wire.
+    pub(crate) kind: ShortKind,
+}
+
+/// The JSON type of a struct's short form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShortKind {
+    /// A string: text, a timestamp, an enum or a newtype over one.
+    String,
+    /// `true` or `false`.
+    Boolean,
+    /// A JSON number.
+    Number,
 }
 
 /// One typed attribute of a model enum, read from its `x-ess-attributes` annotation.
@@ -205,6 +229,19 @@ impl TextConstraint {
             || constraint.minimum.is_some()
             || constraint.maximum.is_some())
         .then_some(constraint)
+    }
+}
+
+/// Whether a model string schema's `pattern` is exactly the one its `x-ess-alphabet` projects to,
+/// with no prefix in it (beyond10x/ess#592).
+fn alphabet_pattern(object: &Map<String, Value>) -> bool {
+    let alphabet = object.get("x-ess-alphabet").and_then(Value::as_str);
+    let pattern = object.get("pattern").and_then(Value::as_str);
+    match (alphabet, pattern) {
+        (Some(alphabet), Some(pattern)) => {
+            ess_gen::schema::alphabet_pattern(alphabet).as_deref() == Some(pattern)
+        }
+        _ => false,
     }
 }
 
@@ -336,6 +373,8 @@ struct Builder {
     attributes: BTreeMap<String, Vec<EnumAttribute>>,
     declared_fields: BTreeMap<String, String>,
     text: BTreeMap<String, TextConstraint>,
+    /// Each `x-ess-shorthand` struct's definition pointer and the wire name it names.
+    shorthands: BTreeMap<String, String>,
 }
 
 impl Plan {
@@ -410,6 +449,7 @@ impl Plan {
         Ok(plan)
     }
 
+    #[allow(clippy::too_many_lines)] // One pass from the walked schema to the plan, in order.
     fn build(
         mut builder: Builder,
         sources: BTreeMap<&str, &Value>,
@@ -474,6 +514,30 @@ impl Plan {
                 ));
             }
         }
+        let mut shorthands = BTreeMap::new();
+        for (pointer, wire) in std::mem::take(&mut builder.shorthands) {
+            let field = definitions
+                .values()
+                .find(|node| node.pointer == pointer)
+                .and_then(|node| match &node.shape {
+                    Shape::Object { fields, .. } => fields.get(&wire),
+                    _ => None,
+                });
+            match field
+                .and_then(|field| short_kind(&definitions, &field.value, &mut BTreeSet::new()))
+            {
+                Some(kind) => {
+                    shorthands.insert(pointer, Shorthand { wire, kind });
+                }
+                None => {
+                    builder.errors.insert(finding(
+                        &path(&pointer, "x-ess-shorthand"),
+                        SHORTHAND_RULE,
+                        "the shorthand field is not a string, boolean or number on the wire",
+                    ));
+                }
+            }
+        }
         if !builder.errors.is_empty() {
             return Err(Refused(builder.errors.into_iter().collect()));
         }
@@ -493,6 +557,7 @@ impl Plan {
             constants: builder.constants,
             attributes: builder.attributes,
             text: builder.text,
+            shorthands,
         })
     }
 
@@ -559,7 +624,11 @@ impl Plan {
             .collect();
         let (owner, steps) = parts.split_first()?;
         let mut name = self.names.get(owner)?.clone();
-        let mut index = 0;
+        // A shorthand struct is planned as its record branch, which names nothing of its own.
+        let mut index = usize::from(
+            self.shorthands.contains_key(&path("/$defs", owner))
+                && steps.starts_with(&["oneOf".to_owned(), "1".to_owned()]),
+        ) * 2;
         while index < steps.len() {
             match steps[index].as_str() {
                 "properties" => {
@@ -911,7 +980,7 @@ impl Builder {
             let location = path(pointer, keyword);
             match keyword.as_str() {
                 "x-ess-name" | "x-ess-kind" | "x-ess-field" | "x-ess-map-key"
-                | "x-ess-union-tag" | "x-ess-attributes"
+                | "x-ess-union-tag" | "x-ess-attributes" | "x-ess-shorthand"
                     if self.model =>
                 {
                     self.annotations.insert(finding(
@@ -963,6 +1032,10 @@ impl Builder {
                         },
                     ));
                 }
+                // A model newtype's alphabet is projected twice, as `x-ess-alphabet` and as the
+                // pattern derived from it (beyond10x/ess#592). The `model_alphabet` obligation is
+                // that constraint, so the pattern adds none; a prefix in it still does.
+                "pattern" if self.model && alphabet_pattern(object) => {}
                 "pattern" => {
                     if object[keyword].is_string() {
                         self.obligations.insert(finding(
@@ -1015,7 +1088,73 @@ impl Builder {
         true
     }
 
+    /// A model struct with a shorthand (`ess/27`, beyond10x/ess#594): `oneOf` its field's schema
+    /// and its record, planned as the record, with the field the short form fills recorded.
+    /// Any other shape beside `x-ess-shorthand` is refused naming it.
+    fn shorthand(&mut self, object: &Map<String, Value>, pointer: &str) -> Shape {
+        self.classify_keywords(object, pointer);
+        let at = path(pointer, "x-ess-shorthand");
+        let mut refuse = |detail: &str| {
+            self.errors.insert(finding(&at, SHORTHAND_RULE, detail));
+            Shape::Never
+        };
+        let Some(wire) = object["x-ess-shorthand"].as_str() else {
+            return refuse("x-ess-shorthand is not a field's wire name");
+        };
+        if let Some(keyword) = ["$ref", "type", "const", "enum", "anyOf", "allOf"]
+            .into_iter()
+            .find(|keyword| object.contains_key(*keyword))
+        {
+            return refuse(&format!(
+                "a shorthand struct asserts only its oneOf, not {keyword}"
+            ));
+        }
+        let Some([scalar, record]) = object
+            .get("oneOf")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+        else {
+            return refuse("a shorthand struct is oneOf its field's schema and its record");
+        };
+        let (Some(scalar), Some(record)) = (scalar.as_object(), record.as_object()) else {
+            return refuse("a shorthand struct's branches are schemas");
+        };
+        if record.get("type").and_then(Value::as_str) != Some("object") {
+            return refuse("the second branch of a shorthand struct is its record");
+        }
+        let Some(property) = record
+            .get("properties")
+            .and_then(|properties| properties.get(wire))
+            .and_then(Value::as_object)
+        else {
+            return refuse(&format!("the record declares no field {wire:?}"));
+        };
+        let required = record.get("required").and_then(Value::as_array);
+        if required.map(Vec::as_slice) != Some(&[Value::from(wire)][..]) {
+            return refuse(&format!(
+                "the record requires a field other than {wire:?}, which the short form leaves unfilled"
+            ));
+        }
+        // The first branch is the field's own schema: the field asserts everything it does.
+        if scalar
+            .iter()
+            .any(|(keyword, value)| property.get(keyword) != Some(value))
+        {
+            return refuse(&format!(
+                "the first branch is not the schema of the field {wire:?}"
+            ));
+        }
+        self.shorthands.insert(pointer.to_owned(), wire.to_owned());
+        let record = Value::Object(record.clone());
+        self.node(&record, &path(&path(pointer, "oneOf"), "1"))
+            .shape
+    }
+
+    #[allow(clippy::too_many_lines)] // Every keyword of an object schema, read in one place.
     fn object_schema(&mut self, object: &Map<String, Value>, pointer: &str) -> Shape {
+        if self.model && object.contains_key("x-ess-shorthand") {
+            return self.shorthand(object, pointer);
+        }
         self.classify_keywords(object, pointer);
         self.enum_attributes(object, pointer);
         let mut terms = Vec::new();
@@ -1253,6 +1392,47 @@ fn check_references(node: &Node, names: &BTreeMap<String, String>, errors: &mut 
 /// The finding rule for a `--rust-raw-json` location: its refusal and, in a Rust report, the
 /// obligation each kept value carries (beyond10x/ess#577).
 const RAW_JSON_RULE: &str = "rust_raw_json";
+
+/// The refusal of an `x-ess-shorthand` struct this realization does not read.
+const SHORTHAND_RULE: &str = "model_shorthand";
+
+/// What `node` is on the wire when it is one JSON scalar type, references followed: the short
+/// form a struct's shorthand field is written as. `None` for anything else.
+fn short_kind(
+    definitions: &BTreeMap<String, Node>,
+    node: &Node,
+    followed: &mut BTreeSet<String>,
+) -> Option<ShortKind> {
+    match &node.shape {
+        Shape::String | Shape::Timestamp | Shape::Literal(Value::String(_)) => {
+            Some(ShortKind::String)
+        }
+        Shape::Boolean | Shape::Literal(Value::Bool(_)) => Some(ShortKind::Boolean),
+        Shape::Number
+        | Shape::Integer
+        | Shape::SizedInteger(_)
+        | Shape::Literal(Value::Number(_)) => Some(ShortKind::Number),
+        Shape::Ref(name) => {
+            if !followed.insert(name.clone()) {
+                return None;
+            }
+            short_kind(definitions, definitions.get(name)?, followed)
+        }
+        // An enum's values, and an enum beside its `type`: every term the same scalar type.
+        Shape::Union {
+            mode: UnionMode::Enum,
+            variants: terms,
+        }
+        | Shape::Intersection(terms) => {
+            let mut kinds = terms
+                .iter()
+                .map(|term| short_kind(definitions, term, &mut followed.clone()));
+            let first = kinds.next()??;
+            kinds.all(|kind| kind == Some(first)).then_some(first)
+        }
+        _ => None,
+    }
+}
 
 /// The `Json` value `node` holds itself: the node, or the non-null branch of a nullable one.
 fn json_value(node: &Node) -> Option<&Node> {
@@ -1579,6 +1759,74 @@ func TestRawLayouts(t *testing.T) {
                 String::from_utf8_lossy(&result.stderr)
             );
             assert!(result.status.success());
+        }
+    }
+}
+
+#[cfg(test)]
+mod shorthand_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The rules of the findings a model definition `Operation` is refused with.
+    fn refused(definition: &Value) -> Vec<(String, String)> {
+        let sources = BTreeMap::from([("Operation", definition)]);
+        let refused = Plan::build(
+            Builder {
+                model: true,
+                ..Builder::default()
+            },
+            sources,
+            &BTreeSet::from(["Operation".to_owned()]),
+            String::new(),
+            InputIdentity::Model {
+                system: "probe".to_owned(),
+                specification_version: "v1".to_owned(),
+                contract_digest: String::new(),
+                projection_digest: String::new(),
+            },
+            BTreeSet::new(),
+        )
+        .expect_err("refused");
+        refused
+            .0
+            .into_iter()
+            .map(|finding| (finding.pointer, finding.rule))
+            .collect()
+    }
+
+    fn record() -> Value {
+        json!({
+            "type": "object",
+            "properties": {"operation": {"type": "string", "x-ess-field": "op"}, "paging": {"type": "string"}},
+            "required": ["operation"],
+            "additionalProperties": false,
+        })
+    }
+
+    #[test]
+    fn a_shorthand_of_another_shape_is_refused_by_name() {
+        let at = || {
+            (
+                "/$defs/Operation/x-ess-shorthand".to_owned(),
+                SHORTHAND_RULE.to_owned(),
+            )
+        };
+        let mut required = record();
+        required["required"] = json!(["operation", "paging"]);
+        let mut list = record();
+        list["properties"]["operation"] = json!({"type": "array", "items": {"type": "string"}});
+        for definition in [
+            json!({"x-ess-shorthand": "operation", "oneOf": [{"type": "string"}, record(), {"type": "null"}]}),
+            json!({"x-ess-shorthand": "operation", "oneOf": [record(), {"type": "string"}]}),
+            json!({"x-ess-shorthand": "absent", "oneOf": [{"type": "string"}, record()]}),
+            json!({"x-ess-shorthand": "operation", "oneOf": [{"type": "integer"}, record()]}),
+            json!({"x-ess-shorthand": "operation", "oneOf": [{"type": "string"}, required]}),
+            json!({"x-ess-shorthand": "operation", "type": "object", "oneOf": [{"type": "string"}, record()]}),
+            json!({"x-ess-shorthand": ["operation"], "oneOf": [{"type": "string"}, record()]}),
+            json!({"x-ess-shorthand": "operation", "oneOf": [{"type": "array", "items": {"type": "string"}}, list]}),
+        ] {
+            assert_eq!(refused(&definition), vec![at()], "{definition}");
         }
     }
 }

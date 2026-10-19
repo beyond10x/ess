@@ -176,6 +176,14 @@ pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bo
                 | ResolvedCondition::ExternalWhen { .. }
                 // The command's own identity, checked first: the existence family arranges it.
                 | ResolvedCondition::ExistingInstance
+                // Under the one rule (ess/27) answered before the related row is read, by the
+                // held state or by a request with no input document: their own families
+                // arrange them, the related row left for a target reading it first to trip on.
+                | ResolvedCondition::SubjectState { .. }
+                | ResolvedCondition::StateChange { .. }
+                | ResolvedCondition::SubjectField { .. }
+                | ResolvedCondition::SubjectPredicate { .. }
+                | ResolvedCondition::InputAbsent
         )
 }
 
@@ -310,7 +318,7 @@ pub(super) fn external_unwitnessed(
 /// branch the plan reads before it holds on the row with its input guard, one the row leaves
 /// undecided counting as holding. A predicate refusal's place depends on the format (`ess/22`
 /// reads it at step 5 beside `wrong_state:` or several rows), so that plan is built in the model's
-/// format ([`super::precedence::answers_before_in`]).
+/// format ([`super::precedence::answers_before`]).
 fn leaves_external(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -325,15 +333,18 @@ fn leaves_external(
             return Ok(false);
         }
     }
-    let refusals: Vec<&Predicate> = super::sibling_refusals(command, outcome)
+    let refusals: Vec<&Predicate> = super::sibling_refusals(ir.format(), command, outcome)
         .filter_map(super::when)
         .collect();
     if !decides(&facts, &refusals, false)?
-        || super::claimed_by(&facts, &super::earlier_accepting(command, outcome))
+        || super::claimed_by(
+            &facts,
+            &super::earlier_accepting(ir.format(), command, outcome),
+        )
     {
         return Ok(false);
     }
-    for branch in super::precedence::answers_before_in(command, ir.format(), outcome) {
+    for branch in super::precedence::answers_before(ir.format(), command, outcome) {
         let ResolvedCondition::Related {
             test: ResolvedRelatedTest::Holds { predicate },
             ..
@@ -544,6 +555,8 @@ fn answers_before(
             ..
         }
         | ResolvedCondition::WrongState
+        // The addressed row's existence, at step 3 from ess/27: before any present row's predicate.
+        | ResolvedCondition::UnknownInstance
         | ResolvedCondition::ExistingInstance => false,
         _ if super::is_input_guarded_refusal(outcome) => false,
         ResolvedCondition::Related {
@@ -892,6 +905,17 @@ fn selects<'c>(
                     | ResolvedCondition::ExistingInstance
                     // Selected from the addressed row's held state, before this row is read.
                     | ResolvedCondition::WrongState
+                    // Selected from the addressed row's existence (ess/27), before this row's
+                    // predicates are read.
+                    | ResolvedCondition::UnknownInstance
+                    // Under the one rule (ess/27) selected by the addressed row's held state, or
+                    // by a request with no input document, before this row is read; the
+                    // arrangement leaves them unselected.
+                    | ResolvedCondition::SubjectState { .. }
+                    | ResolvedCondition::StateChange { .. }
+                    | ResolvedCondition::SubjectField { .. }
+                    | ResolvedCondition::SubjectPredicate { .. }
+                    | ResolvedCondition::InputAbsent
             )
     }) {
         if let ResolvedCondition::Related { test, .. } = &branch.condition {
@@ -990,6 +1014,10 @@ pub(super) fn orders_present_related_refusal(ir: &EssIr, command: &ResolvedComma
 /// Arrange a present related row that selects the predicate refusal, while the addressed
 /// subject is already in the wrong state. This is the overlap the wrong-state scenario must send
 /// to distinguish the ess/22 order from a target that reads the related row first.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arrangement, read in the order the precedence plan answers its branches"
+)]
 pub(super) fn wrong_state_overlap(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -1056,18 +1084,39 @@ pub(super) fn wrong_state_overlap(
         }
         return Ok((input, bound));
     }
-    let refusal = command
-        .outcomes
-        .iter()
-        .find(|outcome| {
-            outcome.error.is_some()
-                && matches!(
-                    outcome.condition,
-                    ResolvedCondition::Related {
-                        test: ResolvedRelatedTest::Holds { .. },
-                        ..
-                    }
-                )
+    // Under the one rule `wrong_state:` answers for the branch step 5 selects: where an accepting
+    // related branch moves the subject, the row is arranged to select it, since a row selecting
+    // the refusal selects no move at step 5 (`docs/design/generic-language-features.md` § G4).
+    let moving = missing_late(ir, command)
+        .then(|| {
+            command.outcomes.iter().find(|outcome| {
+                outcome.error.is_none()
+                    && matches!(
+                        outcome.condition,
+                        ResolvedCondition::Related {
+                            test: ResolvedRelatedTest::Holds { .. },
+                            ..
+                        }
+                    )
+                    && outcome
+                        .subject
+                        .as_ref()
+                        .is_some_and(|subject| subject.effect.transition().is_some())
+            })
+        })
+        .flatten();
+    let refusal = moving
+        .or_else(|| {
+            command.outcomes.iter().find(|outcome| {
+                outcome.error.is_some()
+                    && matches!(
+                        outcome.condition,
+                        ResolvedCondition::Related {
+                            test: ResolvedRelatedTest::Holds { .. },
+                            ..
+                        }
+                    )
+            })
         })
         .ok_or_else(unarranged)?;
     let (via, entity) = read(command).ok_or_else(unarranged)?;
@@ -1088,6 +1137,55 @@ pub(super) fn wrong_state_overlap(
     addressed.source.insert(entity_ref(entity));
     let bound = BTreeMap::from([(via.field().to_owned(), row.instance)]);
     Ok((input, bound))
+}
+
+/// The related row an `unknown_instance:` scenario sends beside an identity no row carries (ess/27):
+/// present, so the `exists: false` branch answered at step 1 is not selected, and selecting the
+/// first present-related refusal where the command declares one — else the first branch a present
+/// row's predicate selects — so a target reading the related row before the addressed row's
+/// existence answers that branch and fails. Its steps, the constructs they read, the input chosen
+/// on it, and the input field pointed at it. A command reading several rows, or reading its row
+/// through an Optional input or a stored field, is not arranged here.
+pub(super) fn unknown_identity_overlap(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<(Arrangement, BoundInput), RefusalCause> {
+    if several(command) || optional(command) || stored::field(command).is_some() {
+        return Err(unarranged());
+    }
+    let holds = |outcome: &&ResolvedOutcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { .. },
+                ..
+            }
+        )
+    };
+    let chosen = command
+        .outcomes
+        .iter()
+        .filter(holds)
+        .find(|outcome| outcome.error.is_some())
+        .or_else(|| command.outcomes.iter().find(holds))
+        .ok_or_else(unarranged)?;
+    let (via, entity) = read(command).ok_or_else(unarranged)?;
+    let (mut row, _, input) = with_row(
+        ir,
+        command,
+        chosen,
+        entity,
+        actors,
+        (OWN, Distinction::PLAIN, &[]),
+        None,
+        None,
+        None,
+        (&BTreeMap::new(), &[], &BTreeMap::new()),
+    )?;
+    row.source.insert(entity_ref(entity));
+    let bound = BTreeMap::from([(via.field().to_owned(), row.instance.clone())]);
+    Ok((row, (input, bound)))
 }
 
 /// The first branch of the command acting on an existing row the input names, and that input.
@@ -2191,6 +2289,10 @@ fn absent_at(
 }
 
 /// [`prepare_at_in`], and whether the scenario is [`unaccompanied`].
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arrangement, read in the order the precedence plan answers its branches"
+)]
 fn arranged_at(
     models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -2229,10 +2331,16 @@ fn arranged_at(
     place_beside(ir, outcome, &mut setup, others);
     let mut steps = Vec::new();
     let mut pinned = BTreeMap::new();
+    let mut sends = Vec::new();
     let mut lonely = false;
     let input = if is_absent(outcome) {
-        let mut each = without_row_each(ir, command, entity, field, distinction)?.into_iter();
-        let input = each.next().ok_or_else(unarranged)?;
+        let (input, each) = missing_sends(
+            ir,
+            command,
+            outcome,
+            without_row_each(ir, command, entity, field, distinction)?,
+            (field, distinction),
+        )?;
         // Rows of the entity exist, each carrying an identity other than the one sent — but for a
         // singleton entity, which has no identity but the one (beyond10x/ess#287).
         let first = block_start(OWN, distinction);
@@ -2248,12 +2356,14 @@ fn arranged_at(
             }
         }
         // Every other input guard's input is sent for the missing row too, before the scenario's
-        // own send: each is answered by this refusal, so a target answering that guard's branch
-        // before reading the row fails. Only for a refusal, which changes nothing, so the sends
-        // leave the row missing for the next.
-        models.mark(super::caller::InvocationPhase::Arrange, &mut steps);
-        send_each_without_row(ir, command, outcome, actors, &setup.bound, each, &mut steps);
-        models.mark(super::caller::InvocationPhase::Act, &mut steps);
+        // own send: each is answered by the branch the plan reads first for it — this refusal, or
+        // under the one rule an input-guarded refusal its guard selects — so a target reading the
+        // row and the input in another order fails. Only for refusals, which change nothing, so the
+        // sends leave the row missing for the next. They follow every arrangement step: the
+        // record the branch's arrangement names is created before they name it.
+        models.mark(super::caller::InvocationPhase::Arrange, &mut sends);
+        send_each_without_row(ir, command, actors, &setup.bound, each, &mut sends);
+        models.mark(super::caller::InvocationPhase::Act, &mut sends);
         input
     } else {
         // The owners the branch's own arrangement already names for a link input — its subject,
@@ -2306,6 +2416,7 @@ fn arranged_at(
         std::mem::swap(&mut steps, &mut setup.steps);
     }
     setup.steps.append(&mut steps);
+    setup.steps.append(&mut sends);
     setup.source.insert(entity_ref(entity));
     prepend_beside(&mut setup, others);
     Ok((setup, input, lonely))
@@ -2529,10 +2640,9 @@ fn overlaps(
         send_each_without_row(
             ir,
             command,
-            outcome,
             actors,
             &bound,
-            std::iter::once(sent),
+            vec![(sent, outcome)],
             &mut steps,
         );
     }
@@ -2934,29 +3044,185 @@ fn without_row(
     field: &str,
     distinction: Distinction,
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
-    without_row_each(ir, command, entity, field, distinction)?
-        .into_iter()
-        .next()
-        .ok_or_else(unarranged)
+    let inputs = without_row_each(ir, command, entity, field, distinction)?;
+    if !missing_late(ir, command) {
+        return inputs.into_iter().next().ok_or_else(unarranged);
+    }
+    // Under the one rule an input-guarded refusal answers before the row is read: the input sent
+    // for the missing row is one no such refusal claims.
+    for input in &inputs {
+        if input_refusal_taking(ir, command, input)?.is_none() {
+            return Ok(input.clone());
+        }
+    }
+    let fresh = inputs
+        .first()
+        .and_then(|input| input.get(field).cloned())
+        .ok_or_else(unarranged)?;
+    unclaimed(ir, command, (field, &fresh), distinction)
 }
 
-/// Sends each of `others` for the missing row, each answered by the `exists: false` refusal
-/// `outcome` (beyond10x/ess#227). Only for a refusal, which changes nothing, so every send leaves
-/// the row missing for the next.
+/// Whether the command's precedence plan reads a missing row the input names after the addressed
+/// row's existence and held state and after the input-guarded refusals: under the one rule
+/// (`docs/design/generic-language-features.md` § G4), where its `exists: false` branch leads
+/// [`Phase::PresentRelated`].
+fn missing_late(ir: &EssIr, command: &ResolvedCommand) -> bool {
+    PrecedencePlan::new(command, ir.format())
+        .branches(Phase::PresentRelated)
+        .iter()
+        .any(|branch| {
+            matches!(
+                branch.condition,
+                ResolvedCondition::Related {
+                    via: ResolvedRelatedVia::Input { .. },
+                    test: ResolvedRelatedTest::Absent,
+                    ..
+                }
+            )
+        })
+}
+
+/// Under the one rule, `input` with the one row the command reads through a required input pointed
+/// at an identity no row carries, and `bound` without that field: a send the addressed record's
+/// existence and held state answer before the missing row (`docs/design/generic-language-features.md`
+/// § G4), so a target reading the row first answers its `exists: false` and fails. `None` below the
+/// rule, on a command reading several rows, an Optional reference or a stored one.
+#[allow(
+    clippy::type_complexity,
+    reason = "the input and the bound names one send is built from"
+)]
+pub(super) fn missing_row_send(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+) -> Option<(
+    BTreeMap<String, Node>,
+    BTreeMap<String, crate::scenario::InstanceName>,
+)> {
+    if !missing_late(ir, command)
+        || several(command)
+        || optional(command)
+        || stored::field(command).is_some()
+    {
+        return None;
+    }
+    let (via, _) = read(command)?;
+    let field = via.field();
+    let fresh = fresh_identity(ir, command, field, Some(input)).ok()?;
+    let mut missing = input.clone();
+    missing.insert(field.to_owned(), fresh);
+    let mut unbound = bound.clone();
+    unbound.remove(field);
+    Some((missing, unbound))
+}
+
+/// The first input-guarded refusal the plan reads whose guard `input` satisfies: the branch that
+/// answers `input` before any related row is read under the one rule. `None` where none does.
+fn input_refusal_taking<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+) -> Result<Option<&'c ResolvedOutcome>, RefusalCause> {
+    let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+    for refusal in PrecedencePlan::new(command, ir.format()).branches(Phase::InputRefusal) {
+        if !super::is_input_guarded_refusal(refusal) {
+            continue;
+        }
+        if let Some(guard) = input_guard(refusal) {
+            if decides(&facts, &[guard], true)? {
+                return Ok(Some(*refusal));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// The `exists: false` scenario's own input for the missing row, and every other input sent for
+/// that row first with the branch expected to answer it. Below the one rule the missing row answers
+/// first, so the first input is the scenario's and each other is answered by `outcome`. Under the
+/// rule an input-guarded refusal answers before the row is read: the scenario's own input is the
+/// first that no such refusal claims (a further one searched for where every one is claimed), and
+/// each other input is answered by the refusal claiming it, or by `outcome` where none does.
+#[allow(
+    clippy::type_complexity,
+    reason = "the inputs and the branch each is answered by, read once by the caller"
+)]
+fn missing_sends<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    outcome: &'c ResolvedOutcome,
+    inputs: Vec<BTreeMap<String, Node>>,
+    (field, distinction): (&str, Distinction),
+) -> Result<
+    (
+        BTreeMap<String, Node>,
+        Vec<(BTreeMap<String, Node>, &'c ResolvedOutcome)>,
+    ),
+    RefusalCause,
+> {
+    if !missing_late(ir, command) {
+        let mut each = inputs.into_iter();
+        let own = each.next().ok_or_else(unarranged)?;
+        return Ok((own, each.map(|input| (input, outcome)).collect()));
+    }
+    let mut answered = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        let taking = input_refusal_taking(ir, command, &input)?;
+        answered.push((input, taking));
+    }
+    let own = if let Some(at) = answered.iter().position(|(_, taking)| taking.is_none()) {
+        answered.remove(at).0
+    } else {
+        let fresh = answered
+            .first()
+            .and_then(|(input, _)| input.get(field).cloned())
+            .ok_or_else(unarranged)?;
+        unclaimed(ir, command, (field, &fresh), distinction)?
+    };
+    Ok((
+        own,
+        answered
+            .into_iter()
+            .map(|(input, taking)| (input, taking.unwrap_or(outcome)))
+            .collect(),
+    ))
+}
+
+/// An input naming `fresh` in `field` that no input-guarded refusal claims, the first the plain
+/// candidates hold.
+fn unclaimed(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    (field, fresh): (&str, &Node),
+    distinction: Distinction,
+) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    for mut input in candidates(ir, command, &[], distinction).map_err(RefusalCause::NoWitness)? {
+        input.insert(field.to_owned(), fresh.clone());
+        if input_refusal_taking(ir, command, &input)?.is_none() {
+            return Ok(input);
+        }
+    }
+    Err(unarranged())
+}
+
+/// Sends each of `others` for the missing row, each answered by the refusal it names: the
+/// `exists: false` refusal (beyond10x/ess#227), or under the one rule an input-guarded refusal the
+/// input selects. Only for refusals, which change nothing, so every send leaves the row missing for
+/// the next.
 fn send_each_without_row(
     ir: &EssIr,
     command: &ResolvedCommand,
-    outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     bound: &BTreeMap<String, crate::scenario::InstanceName>,
-    others: impl Iterator<Item = BTreeMap<String, Node>>,
+    others: Vec<(BTreeMap<String, Node>, &ResolvedOutcome)>,
     steps: &mut Vec<super::ScenarioStep>,
 ) {
-    let Some(error) = &outcome.error else {
-        return;
-    };
     let command_ref = super::CommandRef::new(command.name.clone());
-    for other in others {
+    for (other, outcome) in others {
+        let Some(error) = &outcome.error else {
+            continue;
+        };
         let supplied = super::supply(ir, command, &other, None, None, bound);
         let expected = super::expect_error(ir, outcome, error, &supplied, &BTreeMap::new());
         steps.push(super::ScenarioStep::ExecuteCommand {

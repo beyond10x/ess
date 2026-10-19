@@ -2222,7 +2222,7 @@ index 8d157fb..74d73e3 100644
 +    for classified in [false, true] {
 +        let mut system = edited_system(
 +            "    summary: Runs orders.",
-+            "    summary: Runs orders.\n    refs: [jira:DEV-630]",
++            "    summary: Runs orders.\n    refs: [jira:EX-1]",
 +        );
 +        if classified {
 +            system = system.replace("Runs orders.", "Runs revised orders.");

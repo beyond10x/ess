@@ -536,11 +536,12 @@ fn an_opened_response_under_an_older_major_is_refused_by_name() {
 fn a_reader_of_48_refuses_a_later_major_by_version() {
     let suite = synthesized(Opened::Response, false, false);
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 48)).is_ok());
-    // `/50` is the cumulative `hold_now` major above it (beyond10x/ess#586); `/52` is the first no
-    // reader implements.
+    // `/50` is the cumulative `hold_now` major above it (beyond10x/ess#586), `/52` the cumulative
+    // wrapped value-invariant and await major above that (beyond10x/ess#542); `/54` is the first no reader implements.
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 50)).is_ok());
-    let Err(error) = AdmittedSuite::from_json(&relabelled(&suite, 52)) else {
-        panic!("no reader implements suite/52");
+    assert!(AdmittedSuite::from_json(&relabelled(&suite, 52)).is_ok());
+    let Err(error) = AdmittedSuite::from_json(&relabelled(&suite, 54)) else {
+        panic!("no reader implements suite/54");
     };
     assert!(
         error
@@ -678,13 +679,13 @@ fn an_older_go_reader_refuses_a_suite_48_by_version() {
     let runtime = directory.join("essconform/runtime.go");
     let text = std::fs::read_to_string(&runtime).unwrap();
     assert!(
-        text.contains("const newestSuiteMajor = 51\n"),
-        "the runtime reads /51"
+        text.contains("const newestSuiteMajor = 53\n"),
+        "the runtime reads /53"
     );
     std::fs::write(
         &runtime,
         text.replace(
-            "const newestSuiteMajor = 51\n",
+            "const newestSuiteMajor = 53\n",
             "const newestSuiteMajor = 47\n",
         ),
     )
@@ -1221,3 +1222,6 @@ fn a_literal_naming_an_undeclared_member_is_refused_by_every_reader() {
     let _ = std::fs::remove_dir_all(package.parent().unwrap());
     assert!(report.is_none(), "TypeScript admitted it: {log}");
 }
+
+#[path = "undeclared_fields/shorthand.rs"]
+mod shorthand;

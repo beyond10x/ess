@@ -2,6 +2,377 @@
 
 ## [Unreleased]
 
+## [0.63.0] — 2026-10-19
+
+### Added
+
+- From `format: ess/27` a value may be computed by an expression, `{expr: "<expression>"}`, in
+  `sets:`, an event's `payload:` and an error's `payload:`, and a view field may be computed from
+  its source row, `{name: elapsed, type: Duration, expr: "ended_at - started_at"}` — the first
+  cut of the typed expression language (G1, `docs/design/generic-language-features.md`; grid O's
+  arithmetic and time rows, in the value positions of grid R). `+ - * /` over Integer and Decimal
+  are exact, `/` is an `Optional<Decimal>` at six places half-even and absent at a zero divisor,
+  `round(x, digits, half_even | half_up | down)` rounds a quotient once; `abs`, `min`, `max` and
+  `coalesce(a, b)` are functions; `Timestamp - Timestamp` is a `Duration`, `Timestamp ± Duration`
+  a `Timestamp`, and `60s`, `5m`, `1h` are literals. An expression reads `input.<path>` and, on an
+  existing subject, `subject.<field>`, or a view's source fields, and is typed against the field
+  it fills. The interpreter and synthesis compute it with one shared evaluator; synthesis runs the
+  branch again on inputs worth checking the figure on — the reads apart, a zero divisor, a rounding
+  tie either way. The generated Rust and Go behaviours and queries and Entity Runtime keep such a
+  command or view an obligation, named by the expression. Below `ess/27` the shape keeps its
+  nested-mapping reading and a refusal of it names `ess/27` (beyond10x/ess#560).
+- From `format: ess/27` a value reads what its branch established (G1 narrowing, grid R's subject
+  column in the error payload). A refusal guarded by a related row the addressed record's stored
+  reference names, `when_related: {via: <field>, …}`, reads that record's stored fields with
+  `{subject: …}`, so an error can name the incident a review belongs to. An `Optional` input reads
+  at its present type in a `when_related:` branch over it (`via: input.<field>`): an absent
+  reference selects no such branch. A stored `Optional` field reads at its present type under its
+  own `when_subject: {predicate: defined(<field>)}`, and `{related: {via, field}}` under
+  `when_related: {predicate: defined(<field>)}`. Synthesis asserts the named value in the error,
+  the stored identity included where the arrangement named it by a literal; the interpreter reads
+  the record the reference was followed from. Every other `Optional` read keeps its refusal; below
+  `ess/27` these do too, the hint naming `ess/27`. The generated Rust and Go behaviours keep a
+  command copying a value its branch narrowed an obligation, named by the read, rather than
+  copy the declared `Optional` into the inner type (beyond10x/ess#555, beyond10x/ess#556).
+- From `format: ess/27` a command outcome's guard reads a fact through a digest or encoding
+  function (grid O's text/bytes family, in the guard positions of grid R): `challenge !=
+  base64url(sha256(ascii(input.verifier)))` states RFC 7636 PKCE `S256` as a held-row predicate.
+  `sha256` takes a String (its UTF-8 bytes) or Bytes, `base64url` Bytes, `ascii` a String; each
+  is pinned by its standard's known answers, the RFC 7636 Appendix B example included, and a
+  misuse is refused naming the type the function takes. The same functions are expression values
+  under `{expr: …}`. Synthesis issues the stored challenge the verifier it sends computes for the
+  accepting branch and sends one computing another for the refusal; a held-state refusal is
+  witnessed on a row and input where a refusal declared after it holds too, so the declaration
+  order is checked. The interpreter and the Rust, Go and TypeScript runners agree on every
+  scenario; the generated behaviours keep such a command an obligation and Entity Runtime refuses
+  the guard (`FunctionCallUnsupported`). A function elsewhere is refused by name, and below
+  `ess/27` an unquoted call spelling is refused naming `ess/27`; quoted it is the text it spells
+  (beyond10x/ess#584).
+- From `format: ess/27` an `each:` entry of `affects:` may move or delete the row each element
+  names (`moves: <Entity>.<transition>`, `deletes: <Entity>`), and `each:` may carry a `where:`
+  over the element and the input, so one call takes each named row to its own transition by the
+  answer the input carries for it, one entry per answer. Entries apply in the order written; an
+  element naming no row, or one whose row rests outside the move's `from` states, is skipped, and
+  nothing is created. Synthesis witnesses each entry on a row of its own, a row the first moving
+  entry skips and a decoy no element names; the interpreter applies them; `ess verify diff` names
+  the element filter and the move under `outcome-set-effect-changed`. Below `ess/27` the entry
+  keeps its refusal, naming `ess/27`; an entry without either keeps its IR bytes
+  (beyond10x/ess#596).
+- `ess verify conform diff --from <suite> --to <suite>` says what changed between two suites: the
+  scenario ids added, removed and changed, grouped by the construct each is about (a command's
+  outcomes, an entity's transitions, one field and aspect of a one-time disclosure), with the parts
+  of each changed scenario that differ and the steps removed from and added to it. `--format json`
+  writes an `ess-suite-diff/1` document a CI comment can carry. Scenarios are compared as read, so
+  a newer spelling of the same scenarios is no change (beyond10x/ess#572).
+- `ess verify conform synthesize --check` compares the suite, or the `go` or `typescript`
+  package, the command would write with what `--out` holds, byte for byte, writing nothing: exit 0
+  when current, 1 naming each missing or differing file. The commit guide gains a row for the
+  `--target ir` suite: commit it where `ess verify impact --suite` or a review reads the base
+  revision, check it with `--check`, review a change with `ess verify conform diff`
+  (beyond10x/ess#571).
+- Suite `ess-conformance/52` (or `/53` with coverage) states once what a scenario repeated for
+  every declared event: the declared event catalog and each marked command's one-time response
+  authority are written at the suite root; a run of `expect_no_event` steps, or an
+  `expect_not_granted` step's `unpublished` list, is written by the catalog events it leaves out;
+  and a one-time trace keeps only its required origins and its longest wait, the scan of every
+  catalog event after each operation being the rule. A scenario no longer grows with the number of
+  declared events. Rust, the generated Go and TypeScript runtimes and the declaration player
+  expand these before admission, so every scenario means and runs as before. A suite carrying a
+  one-time trace is now written at 52 or 53; a suite with neither keeps its format and bytes
+  (beyond10x/ess#570).
+- `ess specify validate --format json` links each refused disclosure scenario to the refusal whose
+  cause it repeats: an entry of `completeness.unscenarioed` carries `caused_by`, the scenario id
+  of that refusal. Every refused id is still listed and `counts.unscenarioed` is unchanged; the
+  key is additive and absent where a refusal is its own cause. Suite bytes do not change
+  (downstream report, 2026-10-18).
+- A value type's invariants are observed wherever a view publishes a value of the type inside a
+  wrapper: the element of a `List`, the value of a `Map`, the present value of an `Optional` or the
+  payload of one `Union` variant. The new `value_invariants` view expectation (suite
+  `ess-conformance/52`, or `/53` with coverage) carries the declarations the position reaches, and
+  the runner checks every actual occurrence against the type's invariants, `alphabet:` and
+  `prefix:`, so an empty element, one outside the alphabet, or a bad element after a good one
+  fails; an empty list, an absent `Optional` or another variant is legal but no witness, and a row
+  must hold at least one value there. Filed as `<type>/invariant-wrapped/at/<view>/<field>/<digest>`.
+  The reference runner, the interpreted target and the browser product execute it; the generated
+  Go and TypeScript runners admit the suite and report that scenario `unsupported`, naming
+  `value_invariants`. A position reached only across a recursive type is refused by name. A suite
+  without such a position keeps its format and bytes (downstream report, 2026-10-18).
+- Source format `ess/27`: a binding condition and a binding selection may compare a `Boolean`
+  leaf with `true` or `false`, `where: [event.direction == inbound, event.bridged == false]` and
+  `first: {in: legs, where: item.held == false}`. `condition-false` flips the flag; the
+  interpreter, the generated Rust and Go dispatch and selection helpers, and the Go and TypeScript
+  conformance runners evaluate it. A text literal against a Boolean leaf stays a type mismatch and a
+  bare Boolean path stays refused. Below `ess/27` the comparison is refused as
+  `unsupported_format_version` naming `ess/27`, and a Boolean read only by `defined(...)` keeps
+  its `{kind: other}` IR leaf and its bytes (downstream report, 2026-10-18).
+- Format `ess/27`: a command guarding on a related row (`when_related:`) may declare an
+  `unknown_instance:` branch for the row its input addresses. Under the one precedence rule (below)
+  it answers at step 2, after the input-guarded refusals and before the held state and every
+  related row's `exists: false` and predicate refusal. Synthesis sends the branch an identity no
+  row carries beside a present related row that selects the first predicate refusal, and again
+  beside a related row no record carries, so a target reading the related row first fails; the
+  interpreter and generated Rust and Go answer in that order. Below `ess/27` the pairing stays
+  `conflicting_declaration`, its hint now naming `ess/27`; older documents keep their bytes
+  (downstream report, 2026-10-18).
+- `ess generate --kind schema --schema-id-base <URI>` gives every projected JSON Schema document a
+  root `$id`: the base, an absolute URI ending in `/` or `:` without a query or fragment,
+  followed by the document's path under `schema/` (`types/<name>.schema.json`, …). The documents
+  are then registry resources `ess generate schema validate` accepts as written. The base is the
+  adopter's; any other `--kind`, or none, refuses the option, and without it no byte of the
+  projection moves (https://github.com/beyond10x/ess/issues/590).
+- `ess generate schema validate` and `validate-bundle` read an instance file ending `.yaml` or
+  `.yml` as the JSON value its YAML denotes, through the reader ESS sources are read with. A tag,
+  a key that is not a string, a number that is not finite, a key written twice or a second
+  document is refused, naming the file and pointer. `validate-bundle` now reads JSON numbers as
+  `validate` does (https://github.com/beyond10x/ess/issues/591).
+- Source format `ess/27`: a `kind: struct` type may name one field as its shorthand,
+  `shorthand: <field>`, and a value of the struct may then be written as that field alone: with
+  `shorthand: op`, `getIssue` is the value `{op: getIssue}`. The field must be declared, required
+  and a scalar on the wire (a primitive other than `Json`, an enum, or a newtype over one), and
+  every other field `Optional`; each breach is refused by name at `<type>.shorthand`, the key on
+  any other declaration as `unsupported_construct`, and below `ess/27` as
+  `unsupported_format_version` naming `ess/27`. The IR names the shorthands beside the types
+  (`shorthands`, omitted when empty, so a model without the key keeps its bytes and digest), and
+  the JSON Schema, OpenAPI and AsyncAPI definition of such a struct is `oneOf` the field's schema
+  and the struct's object, closed unless it declares `undeclared_fields: ignored`, annotated
+  `x-ess-shorthand` with the field's wire name
+  (https://github.com/beyond10x/ess/issues/594). The generated Rust, Go and TypeScript model
+  types read the short form beside the object; a numeric shorthand field is refused for Rust.
+  `ess verify diff` writes `ess-diff/20` for a struct whose `shorthand:` was declared
+  (`expanded`), dropped or moved (`narrowed`), as
+  `type/<name>/shorthand-changed`. Synthesis of a Rust or Go server or the web app refuses such a
+  struct by name, since their codecs decode it from its object only, and conformance withdraws
+  each scenario that would observe one, refusing it with the type.
+- Format `ess/27` reads one precedence rule for which guard answers first
+  (`docs/design/generic-language-features.md` § G4): a branch answers in the order of what it must
+  read — the request alone (input-guarded refusals, `external:` marked `before_row: true`), then
+  the addressed record's existence, then its held state, then the rows around it (every
+  `exists: false`, then every related row's and row set's refusal), then the accepting and external
+  branches — and within one step the first declared whose condition holds. Under it a missing row
+  the input names answers after the addressed record's existence and held state rather than first,
+  `existing_instance:` on a command reading a related row answers with existence, and a
+  `when_related:` refusal answers before every accepting branch on every command. The precedence
+  plan, the interpreter, synthesis and the generated Rust and Go behaviour read it; synthesis sends
+  a missing related row beside each earlier step's question, so a target reading the row first
+  fails. Entity Runtime still refuses `when_related:` by name. Below `ess/27` every command keeps its
+  order and answers (beyond10x/ess#554).
+- Format `ess/27` admits every guard pair `conflicting_declaration` refused for want of an order,
+  and the one precedence rule answers it: `when_related:` beside `when_subject:`,
+  `when_subject_state:`, `when_state_changes:`, `input_absent:`, `wrong_state:` in any composition
+  and an `external:` marked `before_row: true`; `when_subject:` beside `when_subject_state:`;
+  `wrong_state:` beside explicit subject-state guards; two refusals over one related row, the first
+  declared answering. The interpreter answers the addressed record's existence at step 2 whatever a
+  later step selects, synthesis arranges a held-state branch beside a related guard by the held
+  state alone, and generated Rust and Go read the addressed row at step 2. Below `ess/27` each pair
+  keeps its refusal, the hint naming `ess/27` (beyond10x/ess#554, beyond10x/ess#282).
+- Format `ess/27`: a creating `unknown_instance:` branch may pair with a branch that only preserves
+  the record its input names ("ensure the record exists"), the creation answering an identity no
+  record carries and the preserving branch every stored one; synthesis witnesses both, and the
+  interpreter and generated Rust and Go answer them. A `deletes:` sibling stays refused. Below
+  `ess/27` the pairing keeps its `conflicting_declaration`, the hint naming `ess/27`
+  (beyond10x/ess#535).
+- `ess/27`, a new specification format. A model below it keeps its meaning,
+  its IR bytes and its compiled digest; each construct below is refused under an earlier header as
+  `unsupported_format_version` naming `ess/27`, or keeps the reading it had there
+  (`ess specify formats` prints the row).
+- A minted value may be required present, `{generated: true, present: true}` in an `Optional`
+  field: the implementation must supply a value, and the interpreted target and synthesis treat it
+  as present. A `sets:` entry may store the value its own outcome publishes,
+  `{payload: <Event>.<field>}`, so the stored row and the event carry one minted value; synthesis
+  requires the minted row value from the view that shows it. Below `ess/27` both shapes keep their
+  nested-mapping reading (beyond10x/ess#545,
+  `docs/design/minted-value-sources.md`).
+- A command the system issues itself: an actor may declare `system: true`, and a command every grant
+  of which is such an actor is system-issued, with an optional `await_within: PT<seconds>S`.
+  Conformance awaits its outcome rather than invoking it: synthesis writes `await_outcome` and
+  `expect_not_issued` steps and `{kind: awaited}` values, authored acts may await it, and the
+  interpreter, the Rust runner and the generated Go (`AwaitTarget`) and TypeScript (`awaitOutcome`)
+  runtimes answer them. A suite carrying them is `ess-conformance/52` (ordinary) or `/53`
+  (coverage), cumulative over every major below; older readers refuse both by version. A binding
+  invoking a system-issued command is refused. `ess verify diff` reports an actor becoming or
+  ceasing to be the system as `actor/<name>/system-changed` and a moved bound as
+  `command/<name>/await-within-changed`, `ess-diff/20` vocabulary: the first is `breaking` for
+  callers, the reverse and every bound move `compatible`
+  (beyond10x/ess#542, `docs/design/system-issued-commands.md`).
+- A value may read the head of an ordered selection, `{related: {entity, where, order_by, first}}`:
+  the first row the selector selects by `order_by`, the identity the last key, struct identities
+  included, with ties declared unordered where the model says so. It compiles to its own IR arm,
+  the interpreter publishes it, and synthesis witnesses it with several selected rows in order and
+  with commands reading several selectors (beyond10x/ess#543,
+  `docs/design/ordered-related-head.md`).
+- A set effect's `instances:` or `affects:` filter may read the candidate row's identity, as a
+  row-set selector reads it, so an `affects:` entry can pin the one row its subject names
+  (`where: call_id == subject.call_id` over the call). Synthesis witnesses the pin, and the
+  generated Rust and Go servers execute such an entry; every code target now owes a set effect as
+  an obligation instead of refusing the workspace (beyond10x/ess#547,
+  `docs/design/set-effect-identity-filters.md`).
+- A selector's `where:` may read a value its own outcome publishes, `payload.<Event>.<field>`, so
+  one selector scopes another's rows, the IR row selection listing the published values it reads.
+  The interpreter resolves them in dependency order and refuses values that read each other, and
+  synthesis arranges nested heads with cross decoys in the other outer rows
+  (beyond10x/ess#549, `docs/design/published-value-operand.md`).
+- A selector may test each candidate's related rows: `exists: {in: {entity: <E>}, as: <b>, that:
+  <P>}` walks every row of `E`, `<b>.<field>` reading the row and a bare name still the candidate,
+  so a command picks the best slot among those whose two sides each hold a `Present` membership and
+  refuses by name when none does. It stands in the `where:` of a related read or a head and of a
+  row-set `when_related:`, tied to the candidate by a conjunct `<b>.<field> == <candidate field>`;
+  `forall` over rows, nesting, an untied test and a binder shadowing the candidate are refused, and
+  every other predicate site refuses it by name. The interpreter and the history checker evaluate
+  it over the same snapshot as the candidates, and synthesis arranges the related rows of each
+  selected candidate and, per test, a higher-ranked candidate that fails it, so a target ignoring
+  the test, testing one side or dropping a conjunct or the tie fails a scenario. `Quantified::over`
+  in `ess-primitives` is now a `Collection`, and `FactSource` gains a defaulted `rows`
+  (beyond10x/ess#551, `docs/design/related-rows-quantifier.md`).
+
+### Changed
+
+- `now` in a view filter stays refused, and the refusal now names the idiom that keeps the bound
+  in the specification: `from`/`to` view parameters the caller sends, `<field> >= param.from` and
+  `<field> < param.to`. A view read has no clock a suite fixes, so no scenario could check the
+  rows either side of a `now` bound (beyond10x/ess#567).
+
+### Fixed
+
+- `ess generate schema import-document` imports what `ess generate --kind schema` writes: a
+  struct's `x-ess-shorthand` is retained as the other `x-ess-*` annotations are, and a document's
+  root `$id`, written by `--schema-id-base`, is read as its identity and changes nothing the bundle
+  validates. An `$id` below the root, or one that is not a string, is still refused.
+- `shorthand:` on a command is refused at `<command>.shorthand` as `unsupported_construct`, as on
+  every other declaration that is not a type, rather than stopping the file as an unknown field.
+- `ess verify conform diff` admits both suites as every other verb does: a document admission
+  refuses, such as one carrying a key no suite format defines, is refused by name rather than
+  diffed with the key dropped.
+- A suite's `absent_events: null` or `unpublished_events: null` is refused, as the generated Go
+  and TypeScript runtimes refuse it, instead of being read as left out. The generated Go runtime
+  refuses a wrapped value-invariant scenario below suite/52, as the TypeScript runtime does.
+- Synthesis help: a `when_related:` row set whose rows no arrangement gives the branch is told
+  what the filter needs written, not to drop an input; the help of a recursive or overflowing
+  value-invariant position no longer says an authored scenario checks the invariant (one can
+  expect the row's exact value there); and a view field that expands past the edge bound is
+  refused only for the value types it reaches. A model field whose name starts like a lifted
+  caller input no longer drops the scenario that names it.
+- The Entity Runtime refusal of an ordered head, `{related: {entity, where, order_by, first}}`,
+  names that form, and `ess_domain::binding::validate_bindings` reads the format its type registry
+  records rather than the newest one. `ess verify conform synthesize --help` names the route for a
+  Rust implementation under `--target`.
+- `ess specify validate` refuses a branch whose literal writes break an invariant of the entity
+  they land in, as a literal breaking a newtype's invariant already was: `sets: {capacity: 0}`
+  beside `invariants: [capacity > 0]`, in a subject's `sets:`, a set subject's or an `affects:`
+  entry's, is `conflicting_declaration` naming the branch, the literal and the invariant. Only an
+  invariant every field of which the branch writes with a literal is decided, with the `state` the
+  branch arrives in where it reads one; a value read from the input stays the run's to decide
+  (downstream report, 2026-10-19).
+- A `when_related` refusal of `via: subject.<field>`, or any other path that names no input
+  field, gives a hint naming both accepted forms from `ess/22`, `via: input.<field>` and the bare
+  stored field `via: <field>` (`via: node_id` for `subject.node_id`); through `ess/21` the hint is
+  unchanged (downstream report, 2026-10-19).
+- `ess verify diff` reports a domain's display name or summary edit, on a domain both revisions
+  declare, as `domain/<name>/display-name-changed` or `domain/<name>/summary-changed`, compatible
+  for callers, readers and history, in `ess-diff/20`. It was `system/<name>/unclassified-changed`,
+  `unknown`, so a summary edit failed `--fail-on breaking-or-unknown`. A domain's wire name stays
+  unclassified, and `ess verify impact` still owes everything for either (downstream report,
+  2026-10-19).
+- Synthesis witnesses a set effect, an `affects:` entry or a `when_related:` row set whose filter
+  reads a field the arranging command writes from its caller (`sets: {owner: {caller: user_id}}`):
+  each arranging act is sent as a caller whose attribute carries the value its record needs, so
+  records sit on both sides of the filter. Such a branch was refused with `ESS-SYNTH-001` (`no three
+  rows the filter selects`). A served command witnessed this way also gets its
+  `<command>/grant/denied` scenario. A suite that did not refuse such a branch keeps its bytes
+  (downstream report, 2026-10-18).
+- A filter reading a stored field no declared command writes is refused naming the field
+  (`` `<entity>.<field>` is `<type>`, which a filter reads and no declared command writes ``), with a
+  help line saying to declare a `sets:` for it. A filter whose records the arranging commands cannot
+  produce no longer gets the help line about the command's input; it says to write each field the
+  filter reads from an input or a caller attribute. The `ESS-SYNTH-001` repair in the diagnostics
+  reference says the same (downstream report, 2026-10-18).
+- `ess verify conform synthesize` prints one block per refusal cause, not one per one-time
+  disclosure cell. A cell refused for the same cause as an ordinary outcome scenario it sends or
+  arranges through, such as an update of an entity no command creates, is counted under that
+  outcome's refusal (`and 3 disclosure scenario(s) that send <command>, refused for the same
+  cause`). Cells of one marked field and aspect refused for one reason of their own, such as the
+  `read/<view>` cells of every actor not granted the origin, are counted under the first of them.
+  The summary line adds `N distinct cause(s)` when the two numbers differ. A disclosure cell's
+  own refusal now reads `the disclosure cell cannot be arranged or observed: <reason>`, in place
+  of a `no witness` line about an inventory type and a hint about input field types
+  (downstream report, 2026-10-18).
+- A value or entity invariant reading a text's `.count`, such as `value.count >= 1` on a `String`
+  newtype a view publishes directly, is asserted on the view row (suite `ess-conformance/40`, or
+  `/41` with coverage) instead of being refused with ESS-SYNTH-013 or ESS-SYNTH-011 as "a `.count`,
+  which a view row does not assert in this suite format". A list's `.count` is still refused, named
+  as such (downstream report, 2026-10-18).
+- ESS-SYNTH-011 no longer says a list field is "published by no view of the entity" when a view
+  publishes it and the invariant reads it through `forall` or `exists`: it names the list as
+  published and read element by element, which a view row does not assert, and its help points to
+  declaring the rule on the element's type. The ESS-SYNTH-013 help names only remedies that answer
+  the case: publishing the type somewhere a view reads it, or an outcome that leaves a row there with
+  the field set from what the command sends (downstream report, 2026-10-18).
+- A binding whose invoked command chooses its branch by a `when_related` guard over the row an
+  input names (`exists: false`, a predicate over the row's stored fields, the default) gets its
+  `flow`, `mapping` and `delivery` scenarios instead of the `ESS-SYNTH-010` refusal "whose branch
+  is decided by an input the event fills". Where the binding maps that input unconverted from an
+  event field the trigger copies from its own input, synthesis creates the row through its
+  creating command so the accepting branch is taken, and sends the trigger naming it. A guard that
+  also reads the invoked command's input, or a row named by an identity the implementation mints,
+  keeps the refusal. A model without such a binding keeps its suite bytes
+  (downstream report, 2026-10-18).
+- A binding condition over an event member the trigger fills from the row an input names,
+  `{related: {via: input.<field>, field: <field>}}`, gets its `flow`, `mapping`, `delivery` and
+  `condition-false` scenarios instead of `ESS-SYNTH-010` "fills `event.<member>` from neither an
+  input nor a literal". Synthesis creates the row through its creating command with a value the
+  condition holds for, or fails for, and sends the trigger naming it; an enum leaf works under every
+  format with binding conditions, a Boolean leaf from `ess/27` (downstream report, 2026-10-18).
+- A binding's `on-failure` scenario, and a `drop` or delivery-context one, forces only an
+  `external:` branch that refuses. It forced the first `external:` branch even where that branch
+  accepts, and then required a consequence the honest system never publishes; such a binding is now
+  refused with the reason that no branch can be forced to fail (downstream report, 2026-10-18).
+- Synthesis arranges the rows of a row-set guard over a field a creating branch copies from another
+  row with `{related: {via: input.<field>, field: …}}`: that row is arranged first, holding the value
+  the selected row or a decoy needs, and the creating command is sent its identity. Both branches of
+  such a guard were refused as `ESS-SYNTH-001` ("its own row set is Unknown"); suites of models
+  without such a copy keep their bytes (downstream report, 2026-10-18).
+- A bare `<binder>.utf8_bytes` under a quantifier over a list written `input.<list>` in a command
+  guard is the UTF-8 byte length, as `{utf8_bytes: <binder>}` is: `exists: {in: input.tags, as: s,
+  that: "s.utf8_bytes != s.count"}` compiles to the same predicate as the structured form instead of
+  being refused as `ESS-COMMAND-002` (downstream report, 2026-10-18).
+- `ess generate schema import-document` and `import-bundle` accept the `x-ess-*` annotations
+  `ess generate --kind schema` writes, retaining them as written and asserting none, so a
+  projected document imports and `validate-bundle` checks instances against it. An `x-ess-*`
+  keyword the projector does not write, such as `x-ess-binary64` or `x-ess-source`, is refused like
+  any other unknown keyword, so an import cannot mint a codec or an import record. A document
+  without `x-ess-*` keywords imports to the same bundle bytes (https://github.com/beyond10x/ess/issues/593).
+- A `String` newtype's `alphabet:` is asserted by its projected JSON Schema, OpenAPI and AsyncAPI
+  definition as an anchored `pattern` beside `x-ess-alphabet`, so `ess generate schema validate`
+  refuses a value outside the alphabet as the generated Rust decoder does. The class is sorted, a
+  run of three or more characters is a range, and every character other than an ASCII letter or
+  digit is a four-digit `\u` escape: `0123456789abcdef` projects to `^[0-9a-f]*$`. With a
+  `prefix:` the two are one pattern, `^0x[0-9a-fx]*$`; a length invariant stays an annotation.
+  An alphabet holding a character outside the Basic Multilingual Plane keeps the annotation only
+  (and its prefix's `^<prefix>`), since no class reads it alike with and without the `u` flag.
+  `ess generate types` reports the alphabet once, as `model_alphabet`, and no separate `pattern`
+  obligation for it. Projections of models without an alphabet keep their bytes; adopters'
+  `--check` reports drift once for each alphabet newtype
+  (https://github.com/beyond10x/ess/issues/592).
+- `ess verify conform author` refuses an act that claims an exact value for a field the model
+  leaves to the implementation, as `ESS-AUTHOR-042` naming the field, the value and the branch
+  that mints it. Such an act was accepted, and its suite then passed only where the
+  implementation happened to mint that value. It covers an event's payload and an error's fields
+  where every branch that can publish them marks the field `{generated: true}` (or
+  `{generated: true, present: true}`, or `{input: f, else: {generated: true}}` where the act sends
+  no `f`, or a struct leaf marked so), and a view row's stored field where every branch the
+  scenario reaches writes it so, including through `{payload: <Event>.<field>}`, and no `setup:`
+  states it. A reference (`{$observed: …}`, `{$instance: …}`) is still accepted, and so is the
+  field left out, whose presence and type the suite still checks. The Rust, Go, TypeScript and
+  browser coverage readers admit the new code (beyond10x/ess#544,
+  `docs/design/authored-generated-values.md`).
+- Synthesis sends an `Optional` input absent unless the command reads it, or a branch copies the
+  value it is stored as onward (`{related: …}`, a selected row's field, `subject.<field>`), and
+  present in the branch scenario that copies it, instead of filling every optional input
+  (beyond10x/ess#546).
+- A minted ordered head refuses only its own branch, naming it, instead of every sibling branch of
+  the command (beyond10x/ess#552).
+
+Language: 1 general, 7 one-to-one, 7 part (general share 7%; cumulative 20%).
+
 ## [0.62.0] — 2026-10-16
 
 ### Added
@@ -2924,7 +3295,7 @@
 
 - The `README.md` that `ess verify conform synthesize --target go` writes wires the package into
   `package yourservice_test` importing `example.com/yourservice/essconform`, and says both stand
-  for the adopter's own module. It named `acd_test` and `example.com/acd`, a project unrelated to
+  for the adopter's own module. It named the test package and module of a project unrelated to
   the synthesized system.
 - Generated files spell the grouped commands the CLI help and the agent skills use: the Go and
   TypeScript conformance packages (`README.md` and source headers) say `ess verify conform
@@ -4079,7 +4450,7 @@ retries and absence of physical writes remain adopter-owned acceptance.
   are all predicates over the rows a read returned — `contains`, `excludes`, `counts`, `ranked`,
   `at`, `satisfies` — and two implementations that return the same rows are indistinguishable under
   every one of them. "The producer stopped" is exactly the fact that separates them, and until now
-  the format could not say it: a migration of forty-five ACD slotmatcher cases hit the wall twice,
+  the format could not say it: a migration of an existing matcher suite hit the wall twice,
   refused to write a prefix assertion in its place, and quoted this crate's own documentation back —
   *a prefix read in silence is still a prefix*. The claim it could not make is `ScanOrdered`
   returning "stop" after two of three elements, and the implementation it would have hidden is real:
@@ -4134,11 +4505,10 @@ Written as 0.17.0; released in 0.18.0. See the note at the top of this section.
 
 - **An authored scenario can claim a length of time.** `ess-scenario/1` could say what happened and
   in what order, and nothing about how long anything took: `at:` ordered the file and reached no
-  runner. A migration of forty-five ACD scenarios into the format reported that as its one class of
-  loss, and enumerated it — a twenty-second hold that *is* an experiment's independent variable, two
-  wrap-up windows, a one-second queue-exit threshold, a one-minute callback TTL and a five-second
-  teardown margin, all of them gaps between two instants and enforced by nothing. A system that
-  fires every timer the moment it is armed passed every check ESS could write.
+  runner. A migration of an existing scenario suite into the format reported that as its one class
+  of loss — a twenty-second hold that *is* an experiment's independent variable, and a handful of
+  timer windows and margins, all of them gaps between two instants and enforced by nothing. A
+  system that fires every timer the moment it is armed passed every check ESS could write.
 
 - **Three bounds, each on an anchor somebody wrote.** An act names its instant with `mark:`, and a
   later act states what must be true of the gap: `not_before:` is the hold, `within:` is the
@@ -4425,15 +4795,15 @@ Releases 0.15.0.
 
 - **A wrong-state branch that accepts rather than refuses: `refuses: false`.** `wrong_state:` could
   say one thing — the command refuses here, and reports this error — so a command that is
-  deliberately idempotent had no way to be written down. ACD's `EndCall` on a call that has already
+  deliberately idempotent had no way to be written down. An `EndCall` on a call that has already
   ended answers and does nothing, on purpose and documented; its specification claimed a refusal the
-  code never makes, and that claim was filed as a defect in ACD before anybody read the code. A key
+  code never makes, and that claim was filed as a defect before anybody read the code. A key
   rather than "leave `error:` out": a branch missing its error is a mistake the validator has caught
   since `wrong_state:` shipped, and making the omission mean *accepts* would turn every one of those
   mistakes into a silent claim. The generated scenario's id says which claim it carries —
   `…/accepts/EndCall` beside `…/refuses/CancelInvoice`.
 - **`params:` on a view, and a `query_view` that carries them.** Most views are one answer the whole
-  system shares. ACD's position in a queue is not: it is per queue, and one ranked list of every
+  system shares. A call's position in a queue is not: it is per queue, and one ranked list of every
   queued call is a different thing from what the implementation can be asked. A parameter is read in
   the filter as `param.<name>`, so the predicate grammar needs nothing new; `params:` and the
   parameters the filter reads must be the same set. Synthesis binds each from what the arrangement
@@ -4494,8 +4864,8 @@ Releases 0.15.0.
   printed as `outside:` with what they need, so they are visible somewhere other than by their
   absence. `SuiteProvenance.component` records the scope and is left out of an unscoped suite, so
   every existing suite is the bytes it was. The refusals are the whole system's, untouched.
-  Measured on the ACD ↔ backend model: 44 scenarios for the system, of which the `acd` component
-  can be held to the ones its own commands, events and views make answerable.
+  On a two-component model, a component can be held to the scenarios its own commands, events
+  and views make answerable.
 - **The emitted Go runner writes `ess-conformance-report/1`.** `ESS_REPORT_OUT=<file> go test`
   leaves the same closed document the Rust runner writes — specification, digest, implementation,
   status, counts, the non-passing scenarios by status — so `aep artifact evidence --from <file>`
@@ -4693,7 +5063,7 @@ Releases 0.15.0.
 ## [0.4.0] — 2026-09-02
 
 - **The documentation projection writes different filenames.** `--kind docs` now writes `index.md`
-  rather than `README.md`, and `domains/acd-routing.md` rather than `domains/acd.routing.md`: a dot
+  rather than `README.md`, and `domains/queue-routing.md` rather than `domains/queue.routing.md`: a dot
   in a path segment makes a static file server read the name as having an extension, so every one
   of those pages was unservable behind GitLab Pages and an adopter carried a rename pass of their
   own. Committed output moves once; the links inside it move with it.

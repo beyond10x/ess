@@ -86,7 +86,8 @@ fn document_import_refuses_collisions_dialect_changes_and_nonlocal_references() 
         json!({"$ref":"#/$defs/Missing"}),
         json!({"$defs":false}),
         json!({"type":"string","nullable":true}),
-        json!({"$id":"https://example.invalid/schema"}),
+        json!({"$defs":{"Inner":{"$id":"https://example.invalid/inner","type":"string"}},"$ref":"#/$defs/Inner"}),
+        json!({"$id":7}),
     ] {
         assert!(
             bundle::import_document(
@@ -422,4 +423,153 @@ fn original_byte_changes_remain_visible_even_when_structural_meaning_is_equal() 
             .to_json()
             .unwrap()
     );
+}
+
+/// The importer accepts the annotations `ess generate --kind schema` writes (beyond10x/ess#593).
+mod ess_annotations {
+    use std::collections::BTreeSet;
+
+    use schema_contract::bundle::{self, Dialect, SCHEMA_DIALECT};
+    use serde_json::{json, Value};
+
+    /// A document shaped as the projector writes one for a newtype: a root `$ref`, provenance at the
+    /// root, and the model's annotations beside the assertions.
+    fn projected() -> Value {
+        json!({
+            "$schema": SCHEMA_DIALECT,
+            "$ref": "#/$defs/digest.store.Sha256Hex",
+            "x-ess-provenance": {"system": "digest", "specification_version": "v1"},
+            "$defs": {"digest.store.Sha256Hex": {
+                "title": "Sha256Hex",
+                "x-ess-name": "digest.store.Sha256Hex",
+                "x-ess-kind": "newtype",
+                "type": "string",
+                "x-ess-alphabet": "0123456789abcdef",
+                "x-ess-invariants": ["value != \"\""]
+            }}
+        })
+    }
+
+    #[test]
+    fn issue_593_ess_annotations_are_retained() {
+        let text = format!("{}\n", serde_json::to_string_pretty(&projected()).unwrap());
+        let imported =
+            bundle::import_document(&text, "Root", &BTreeSet::new(), Dialect::Draft202012)
+                .unwrap_or_else(|error| panic!("the projected document imports: {error}"));
+        let definition = &imported.definitions()["digest.store.Sha256Hex"];
+        assert_eq!(definition["x-ess-kind"], "newtype");
+        assert_eq!(definition["x-ess-alphabet"], "0123456789abcdef");
+        assert_eq!(
+            imported.definitions()["Root"]["x-ess-provenance"]["system"],
+            "digest"
+        );
+        assert_eq!(imported.validate("Root", &json!("00ff")).unwrap(), vec![]);
+        assert_ne!(imported.validate("Root", &json!(7)).unwrap(), vec![]);
+        assert_eq!(
+            bundle::Bundle::read(&imported.to_json().unwrap()).unwrap(),
+            imported,
+            "the retained annotations replay"
+        );
+    }
+
+    /// Every annotation the projector writes is retained as written and asserts nothing, the one
+    /// on a struct with a shorthand (beyond10x/ess#594) among them (review 2026-10-19, B2, T7).
+    #[test]
+    fn issue_593_every_annotation_the_projector_writes_is_retained() {
+        for (keyword, value) in [
+            ("x-ess-field", json!("declared_name")),
+            ("x-ess-map-key", json!("digest.store.Sha256Hex")),
+            ("x-ess-union-tag", json!("kind")),
+            ("x-ess-attributes", json!({"digest": {"label": "Digest"}})),
+            (
+                "x-ess-relation",
+                json!({"entity": "digest.store.Blob", "via": "blob_id"}),
+            ),
+            ("x-ess-reading", json!({"kind": "instant"})),
+            ("x-ess-one-time-response", json!(["secret"])),
+            ("x-ess-shorthand", json!("op")),
+        ] {
+            let mut document = projected();
+            document["$defs"]["digest.store.Sha256Hex"][keyword] = value.clone();
+            let text = serde_json::to_string(&document).unwrap();
+            let imported =
+                bundle::import_document(&text, "Root", &BTreeSet::new(), Dialect::Draft202012)
+                    .unwrap_or_else(|error| panic!("`{keyword}` imports: {error}"));
+            assert_eq!(
+                imported.definitions()["digest.store.Sha256Hex"][keyword],
+                value,
+                "`{keyword}` is retained as written"
+            );
+            assert_eq!(
+                imported.validate("Root", &json!("00ff")).unwrap(),
+                vec![],
+                "`{keyword}` asserts nothing"
+            );
+            assert_ne!(imported.validate("Root", &json!(7)).unwrap(), vec![]);
+        }
+    }
+
+    /// A document's root `$id`, which `ess generate --kind schema --schema-id-base` writes
+    /// (beyond10x/ess#590), is its identity and changes nothing the bundle validates; an `$id`
+    /// anywhere below the root is still refused (review 2026-10-19, B3).
+    #[test]
+    fn issue_590_a_root_id_imports_as_inert_identity() {
+        let mut document = projected();
+        document["$id"] =
+            json!("https://schemas.example.org/digest/types/digest.store.Sha256Hex.schema.json");
+        let text = serde_json::to_string(&document).unwrap();
+        let imported =
+            bundle::import_document(&text, "Root", &BTreeSet::new(), Dialect::Draft202012)
+                .unwrap_or_else(|error| panic!("the identified document imports: {error}"));
+        assert_eq!(imported.validate("Root", &json!("00ff")).unwrap(), vec![]);
+        assert_ne!(imported.validate("Root", &json!(7)).unwrap(), vec![]);
+        assert_eq!(
+            bundle::Bundle::read(&imported.to_json().unwrap()).unwrap(),
+            imported,
+            "the bundle replays"
+        );
+
+        let mut nested = projected();
+        nested["$defs"]["digest.store.Sha256Hex"]["$id"] = json!("urn:example:digest:hex");
+        let text = serde_json::to_string(&nested).unwrap();
+        let error = bundle::import_document(&text, "Root", &BTreeSet::new(), Dialect::Draft202012)
+            .expect_err("an `$id` below the root would move every reference under it");
+        assert!(error.to_string().contains("$id"), "{error}");
+    }
+
+    #[test]
+    fn issue_593_a_foreign_extension_keyword_is_still_refused() {
+        let mut document = projected();
+        document["$defs"]["digest.store.Sha256Hex"]["x-vendor-hint"] = json!(true);
+        let text = serde_json::to_string(&document).unwrap();
+        let error = bundle::import_document(&text, "Root", &BTreeSet::new(), Dialect::Draft202012)
+            .expect_err("an annotation outside ESS's namespace has no account");
+        assert!(
+            error.to_string().contains("x-vendor-hint"),
+            "the refusal names the keyword: {error}"
+        );
+    }
+
+    /// An `x-ess-` keyword the projector does not write is refused, so an import cannot mint the
+    /// authority it would carry: a finite binary64 codec, the import's own source record, or an
+    /// annotation nobody has defined.
+    #[test]
+    fn issue_593_an_ess_keyword_carrying_authority_is_refused() {
+        for (keyword, value) in [
+            ("x-ess-binary64", json!(true)),
+            ("x-ess-source", json!({"format": "forged"})),
+            ("x-ess-undefined", json!(true)),
+        ] {
+            let mut document = projected();
+            document["$defs"]["digest.store.Sha256Hex"][keyword] = value;
+            let text = serde_json::to_string(&document).unwrap();
+            let error =
+                bundle::import_document(&text, "Root", &BTreeSet::new(), Dialect::Draft202012)
+                    .expect_err("an ESS keyword the projector does not write has no account");
+            assert!(
+                error.to_string().contains(keyword),
+                "the refusal names `{keyword}`: {error}"
+            );
+        }
+    }
 }

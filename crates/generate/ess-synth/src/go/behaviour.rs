@@ -1738,6 +1738,39 @@ impl Locals {
     }
 }
 
+/// The locals one pinned `affects:` entry's read and change use (ess/27, beyond10x/ess#547),
+/// numbered by the entry's position so the read and the change name the same ones.
+struct Affected {
+    row: String,
+    identity: String,
+    read: String,
+    found: String,
+    next: String,
+    gone: String,
+    refined: String,
+    moved: String,
+    instance: String,
+    changed: String,
+}
+
+impl Affected {
+    fn new(reserved: &BTreeSet<String>, index: usize) -> Self {
+        let local = |base: &str| fresh(reserved, &format!("{base}{index}"));
+        Self {
+            row: local("affected"),
+            identity: local("affectedIdentity"),
+            read: local("affectedRow"),
+            found: local("affectedFound"),
+            next: local("affectedNext"),
+            gone: local("affectedGone"),
+            refined: local("affectedRefined"),
+            moved: local("affectedMoved"),
+            instance: local("affectedInstance"),
+            changed: local("affectedChanged"),
+        }
+    }
+}
+
 /// Everything rendering one command's method needs.
 struct Writer<'a> {
     ir: &'a EssIr,
@@ -1861,8 +1894,9 @@ impl<'a> Writer<'a> {
                     for outcome in branches {
                         match outcome.condition {
                             ResolvedCondition::ExistingInstance => self.existing_lookup(outcome),
-                            // Answered where a row is read (`unknown_arm`).
-                            ResolvedCondition::UnknownInstance => {}
+                            // Answered where a row is read (`unknown_arm`); under the one rule
+                            // (ess/27) also here, at step 2 (`addressed_existence`).
+                            ResolvedCondition::UnknownInstance => self.addressed_existence(),
                             _ => unreachable!(
                                 "the plan holds only `existing_instance:` and `unknown_instance:` \
                                  at step 3, not `{}`",
@@ -1957,6 +1991,48 @@ impl<'a> Writer<'a> {
         });
     }
 
+    /// Under the one rule (ess/27), the addressed record's existence at step 2: the record the
+    /// command's acting branches address through the input, read, and `unknown_instance:` taken
+    /// where no row carries it. Nothing below the rule, on a command a creation upserts, one guarded
+    /// by a row set, or one reading a stored reference, whose own reads answer it.
+    fn addressed_existence(&mut self) {
+        let command = self.command;
+        if !ess_domain::command::precedence::reads_one_rule(self.ir.format())
+            || command.outcomes.iter().any(|outcome| {
+                matches!(
+                    outcome.condition,
+                    ResolvedCondition::RelatedSet { .. }
+                        | ResolvedCondition::Related {
+                            via: ResolvedRelatedVia::Subject { .. },
+                            ..
+                        }
+                ) || outcome
+                    .subject
+                    .as_ref()
+                    .is_some_and(|subject| subject.effect == ResolvedEffect::Creates)
+            })
+        {
+            return;
+        }
+        let Some(subject) = determined::addressed_subject(command) else {
+            return;
+        };
+        let ResolvedInstance::Supplied { field } = &subject.instance else {
+            return;
+        };
+        let entity = self.ir.entity(&subject.entity);
+        let identity = self.input_member(&field.name);
+        self.lines
+            .push("// The addressed row's existence, at step 2 of the one precedence rule.");
+        self.lines.open("{");
+        self.get(entity, &identity);
+        self.lines.open(&format!("if !{} {{", self.locals.found));
+        self.unknown_arm();
+        self.lines.close("}");
+        self.lines.push(&format!("_ = {}", self.locals.held));
+        self.lines.close("}");
+    }
+
     /// Step 4: the addressed row, read where a branch of the phase selects by it, then the
     /// phase's branches in order. `wrong_state:` is answered where the branch taken moves from a
     /// state the row does not hold, not by a block of its own. Where the row is read afterwards.
@@ -2018,23 +2094,67 @@ impl<'a> Writer<'a> {
     /// the addressed row's existence and held state for the branch the request selects without
     /// them (beyond10x/ess#282, #304). `unknown_instance:` on a row-set upsert is answered where
     /// the branch taken reads its row.
+    ///
+    /// Under the one rule (`docs/design/generic-language-features.md` § G4) step 4 also leads with
+    /// the row the input names: it is read, the addressed row's existence and held state answer for
+    /// the branch the request selects, and then its `exists: false` for an identity no row carries.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one phase of the plan, each branch it holds in its own arm"
+    )]
     fn present_related(&mut self, branches: &[&ResolvedOutcome]) {
         let command = self.command;
-        if branches.iter().any(|outcome| {
-            outcome.error.is_some()
-                && matches!(
-                    outcome.condition,
-                    ResolvedCondition::Related {
-                        via: ResolvedRelatedVia::Input { .. },
-                        test: ResolvedRelatedTest::Holds { .. },
-                        ..
-                    }
-                )
-        }) {
+        let missing = branches.iter().copied().find(|outcome| {
+            matches!(
+                outcome.condition,
+                ResolvedCondition::Related {
+                    via: ResolvedRelatedVia::Input { .. },
+                    test: ResolvedRelatedTest::Absent,
+                    ..
+                }
+            )
+        });
+        if let Some(missing) = missing {
+            let ResolvedCondition::Related {
+                via: ResolvedRelatedVia::Input { field, type_ref },
+                entity,
+                ..
+            } = &missing.condition
+            else {
+                unreachable!("an input row's `exists: false`")
+            };
+            let member = self.input_member(field);
+            let reference = if type_ref.is_optional() {
+                member
+            } else {
+                format!("&{member}")
+            };
+            self.related_fetch(entity, &reference, &format!("input.{field}"));
+            let related = self.locals.related.clone();
+            self.lines.push(&format!("_ = {related}"));
+        }
+        if missing.is_some()
+            || branches.iter().any(|outcome| {
+                outcome.error.is_some()
+                    && matches!(
+                        outcome.condition,
+                        ResolvedCondition::Related {
+                            via: ResolvedRelatedVia::Input { .. },
+                            test: ResolvedRelatedTest::Holds { .. },
+                            ..
+                        }
+                    )
+            })
+        {
             self.precheck(true);
         }
         for outcome in branches {
             match &outcome.condition {
+                ResolvedCondition::Related {
+                    via: ResolvedRelatedVia::Input { .. },
+                    test: ResolvedRelatedTest::Absent,
+                    ..
+                } => self.missing_answer(outcome),
                 ResolvedCondition::Related {
                     via: ResolvedRelatedVia::Subject { field, type_ref },
                     entity,
@@ -2453,6 +2573,15 @@ impl<'a> Writer<'a> {
         named: &str,
         absent: &ResolvedOutcome,
     ) {
+        self.related_fetch(entity, reference, named);
+        self.missing_answer(absent);
+        let related = self.locals.related.clone();
+        self.lines.push(&format!("_ = {related}"));
+    }
+
+    /// The read of [`Self::related_read`], declaring the reference and the related row, with no
+    /// answer.
+    fn related_fetch(&mut self, entity: &EntityHandle, reference: &str, named: &str) {
         let declared = self.ir.entity(entity);
         let storage = self.storage(&declared.name);
         let snapshot = self.emit.qualify(
@@ -2482,6 +2611,12 @@ impl<'a> Writer<'a> {
         self.lines.push(&format!("{related} = &{row}"));
         self.lines.close("}");
         self.lines.close("}");
+    }
+
+    /// The answer of [`Self::related_read`]: `absent` taken where the reference names an identity
+    /// no row carries.
+    fn missing_answer(&mut self, absent: &ResolvedOutcome) {
+        let (local, related) = (self.locals.reference.clone(), self.locals.related.clone());
         self.lines.push(&format!(
             "// `{}`: the reference names an identity no row carries.",
             absent.name
@@ -2490,7 +2625,6 @@ impl<'a> Writer<'a> {
             .open(&format!("if {local} != nil && {related} == nil {{"));
         self.take(absent, Held::None);
         self.lines.close("}");
-        self.lines.push(&format!("_ = {related}"));
     }
 
     /// The reading of a `when_related:` predicate branch over the present row `related`, with
@@ -2865,9 +2999,15 @@ impl<'a> Writer<'a> {
                 self.lines.close("}");
                 let held_row = self.locals.held.clone();
                 self.lines.push(&format!("_ = {held_row}"));
+                self.affected_reads(outcome, entity, &identity);
                 let storage = self.storage(&entity.name);
                 let receiver = self.receiver;
-                let reads_before = outcome_reads_before(outcome);
+                let reads_before = outcome_reads_before(outcome)
+                    || outcome
+                        .affects
+                        .iter()
+                        .flat_map(|affect| &affect.sets)
+                        .any(|set| reads_subject(&set.value));
                 let reads_state = outcome_reads_state(outcome);
                 let before = self.locals.before.clone();
                 let mut commit = None;
@@ -2943,11 +3083,17 @@ impl<'a> Writer<'a> {
                         unreachable!("a creation whose identity is supplied is an obligation")
                     }
                 }
+                let affected = self.affected_changes(outcome, entity);
                 let answer = self.variant(outcome, held, None);
                 let prepared = self.temp("answer");
                 self.lines.push(&format!("{prepared} := {answer}"));
                 if let Some(commit) = commit {
                     self.lines.push(&commit);
+                }
+                for (open, write) in affected {
+                    self.lines.open(&open);
+                    self.lines.push(&write);
+                    self.lines.close("}");
                 }
                 self.lines.push(&format!("return {prepared}, nil"));
             }
@@ -2955,6 +3101,220 @@ impl<'a> Writer<'a> {
                 unreachable!("an observed identity outside `creates:` is an obligation")
             }
         }
+    }
+
+    /// The rows `outcome`'s `affects:` entries pin (ess/27, beyond10x/ess#547, D5), each read by
+    /// identity through its entity's storage port into `affected<n>`, a pointer nil where no row is
+    /// read: from the subject `held` as it was before the outcome, or from the input, before
+    /// anything is written. An absent reference, an identity no row carries and, over the
+    /// subject's own entity, the subject's own identity read none. `subject` is the subject's
+    /// entity and `identity` the input member naming it.
+    fn affected_reads(
+        &mut self,
+        outcome: &ResolvedOutcome,
+        subject: &ResolvedEntity,
+        identity: &str,
+    ) {
+        let subject_entity = &outcome
+            .subject
+            .as_ref()
+            .expect("an `affects:` branch has a subject")
+            .entity;
+        for (index, affect) in outcome.affects.iter().enumerate() {
+            let filter = affect
+                .filter
+                .as_ref()
+                .expect("a generated `affects:` entry has a filter");
+            let pin = determined::pin(self.ir, &affect.entity, filter)
+                .expect("a generated `affects:` entry pins the identity");
+            let declared = self.ir.entity(&affect.entity);
+            let storage = self.storage(&declared.name);
+            let snapshot = self.emit.qualify(
+                self.emit.layout.package_of(&declared.name),
+                self.emit.layout.snapshot(&declared.name),
+            );
+            let (member, optional, operand) = match pin.source {
+                determined::PinSource::Subject(field) => (
+                    format!(
+                        "{}.Data.{}",
+                        self.locals.held,
+                        Self::data_member(subject, field)
+                    ),
+                    subject
+                        .field(field)
+                        .is_some_and(|field| field.type_ref.is_optional()),
+                    format!("subject.{field}"),
+                ),
+                determined::PinSource::Input(field) => (
+                    self.input_member(field),
+                    self.command
+                        .input
+                        .iter()
+                        .any(|input| input.name == field && input.type_ref.is_optional()),
+                    format!("input.{field}"),
+                ),
+            };
+            let reference = if optional {
+                member
+            } else {
+                format!("&{member}")
+            };
+            let names = Affected::new(self.reserved, index);
+            self.lines.push(&format!(
+                "// `affects[{index}]`: the `{}` row `{operand}` names, read through its storage port",
+                declared.name
+            ));
+            self.lines
+                .push("// before any write; a reference naming no row changes nothing.");
+            self.lines.push(&format!("var {} *{snapshot}", names.row));
+            self.lines
+                .push(&format!("{} := {reference}", names.identity));
+            // Every `affects:` entry excepts the subject (`set-effects-over-filtered-instances.md`).
+            let except = if affect.entity == *subject_entity {
+                format!(" && *{} != {identity}", names.identity)
+            } else {
+                String::new()
+            };
+            self.lines
+                .open(&format!("if {} != nil{except} {{", names.identity));
+            self.lines.push(&format!(
+                "{}, {} := {}.ports.{storage}.Get(*{})",
+                names.read, names.found, self.receiver, names.identity
+            ));
+            self.lines.open(&format!("if {} {{", names.found));
+            self.lines.push(&format!("{} = &{}", names.row, names.read));
+            self.lines.close("}");
+            self.lines.close("}");
+        }
+    }
+
+    /// What each row [`Self::affected_reads`] read becomes, computed before any write — the other
+    /// conjuncts hold on it, a move takes it from one of its `from` states, `sets:` is written and
+    /// the entity's invariants checked — and the writes, each an opening line and the statement it
+    /// guards, which the caller emits after the subject's own write in the order the entries are
+    /// written: `Put`, or `Delete` for `deletes:`. A row the other conjuncts leave out, or resting
+    /// outside the move's `from` states, is left as it is. `subject` is the subject's entity, which
+    /// a `sets:` source reading the subject reads as it was before the outcome.
+    #[allow(clippy::too_many_lines)] // One entry: its selection, its move or removal, its writes.
+    fn affected_changes(
+        &mut self,
+        outcome: &ResolvedOutcome,
+        subject: &ResolvedEntity,
+    ) -> Vec<(String, String)> {
+        let command = self.command;
+        let mut writes = Vec::new();
+        for (index, affect) in outcome.affects.iter().enumerate() {
+            let filter = affect
+                .filter
+                .as_ref()
+                .expect("a generated `affects:` entry has a filter");
+            let pin = determined::pin(self.ir, &affect.entity, filter)
+                .expect("a generated `affects:` entry pins the identity");
+            let declared = self.ir.entity(&affect.entity);
+            let storage = self.storage(&declared.name);
+            let snapshot = self.emit.qualify(
+                self.emit.layout.package_of(&declared.name),
+                self.emit.layout.snapshot(&declared.name),
+            );
+            let names = Affected::new(self.reserved, index);
+            let receiver = self.receiver;
+            if affect.deletes {
+                self.lines.push(&format!("{} := false", names.gone));
+            } else {
+                self.lines.push(&format!("var {} *{snapshot}", names.next));
+            }
+            self.lines.open(&format!("if {} != nil {{", names.row));
+            let truths: Vec<String> = pin
+                .rest
+                .iter()
+                .map(|conjunct| {
+                    self.predicate(&Env::Subject(command, declared), conjunct, &names.row)
+                })
+                .collect();
+            let depth = match truths.as_slice() {
+                [] => 0,
+                [only] => {
+                    self.uses.helpers.insert("truth");
+                    self.lines.open(&format!("if {only} == verity {{"));
+                    1
+                }
+                _ => {
+                    self.uses.helpers.insert("truth");
+                    self.uses.helpers.insert("allOf");
+                    self.lines
+                        .open(&format!("if allOf({}) == verity {{", truths.join(", ")));
+                    1
+                }
+            };
+            if affect.deletes {
+                self.lines.push(&format!("{} = true", names.gone));
+            } else {
+                let start = match &affect.moves {
+                    Some(transition) => {
+                        let any = self.emit.qualify(
+                            self.emit.layout.package_of(&declared.name),
+                            self.emit.layout.any(&declared.name),
+                        );
+                        self.lines
+                            .push(&format!("{}, _ := {}.Refine()", names.refined, names.row));
+                        self.lines.push(&format!("var {} {any}", names.moved));
+                        self.lines.push(&format!(
+                            "switch {} := {}.(type) {{",
+                            names.instance, names.refined
+                        ));
+                        for from in &transition.from {
+                            let state = self.emit.qualify(
+                                self.emit.layout.package_of(&declared.name),
+                                self.emit.layout.state(&declared.name, from.as_str()),
+                            );
+                            self.lines.push(&format!("case {state}:"));
+                            self.lines.push(&format!(
+                                "\t{} = {}.{}()",
+                                names.moved,
+                                names.instance,
+                                name::exported(&transition.name)
+                            ));
+                        }
+                        self.lines.push("}");
+                        self.lines.open(&format!("if {} != nil {{", names.moved));
+                        format!("{}.Snapshot()", names.moved)
+                    }
+                    None => format!("*{}", names.row),
+                };
+                self.lines.push(&format!("{} := {start}", names.changed));
+                let before = self.locals.before.clone();
+                for set in &affect.sets {
+                    let value = self.value(set, Some((&before, subject)));
+                    self.lines.push(&format!(
+                        "{}.Data.{} = {value}",
+                        names.changed,
+                        Self::data_member(declared, &set.target)
+                    ));
+                }
+                self.invariant_check(declared, &format!("{}.Data", names.changed));
+                self.lines
+                    .push(&format!("{} = &{}", names.next, names.changed));
+                if affect.moves.is_some() {
+                    self.lines.close("}");
+                }
+            }
+            for _ in 0..depth {
+                self.lines.close("}");
+            }
+            self.lines.close("}");
+            writes.push(if affect.deletes {
+                (
+                    format!("if {} {{", names.gone),
+                    format!("{receiver}.ports.{storage}.Delete(*{})", names.identity),
+                )
+            } else {
+                (
+                    format!("if {} != nil {{", names.next),
+                    format!("{receiver}.ports.{storage}.Put(*{})", names.next),
+                )
+            });
+        }
+        writes
     }
 
     /// Whether the wrong-state answer reads the held state, and whether it reads stored fields.
@@ -3299,7 +3659,13 @@ impl<'a> Writer<'a> {
             ResolvedPayloadValue::Literal { value } => self.literal(target, value),
             // The implementation supplies the value, an optional one included: its port answers
             // a pointer, nil where there is nothing to report (beyond10x/ess#467).
-            ResolvedPayloadValue::Generated => self.generate(target),
+            // A present mint (ess/27, beyond10x/ess#545) asks the required port and wraps its
+            // answer present.
+            ResolvedPayloadValue::Generated { present: true } if target.is_optional() => {
+                let minted = self.generate(&target.required().clone());
+                self.some(&minted)
+            }
+            ResolvedPayloadValue::Generated { .. } => self.generate(target),
             ResolvedPayloadValue::Cleared => "nil".to_owned(),
             ResolvedPayloadValue::Increment { by } => self.increment(
                 target,
@@ -3397,7 +3763,10 @@ impl<'a> Writer<'a> {
             }
             ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::ChangedCount
+            | ResolvedPayloadValue::PayloadRead { .. }
+            | ResolvedPayloadValue::Expression { .. }
             | ResolvedPayloadValue::ChangedField { .. }
             | ResolvedPayloadValue::ChangedState { .. }
             | ResolvedPayloadValue::ResponseField { .. } => {

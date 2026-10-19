@@ -204,16 +204,21 @@
 
 pub(crate) mod absent_input;
 pub mod caller_value;
+pub mod expression_value;
 pub mod finite;
 pub mod fixture_inputs;
 pub mod identity_write;
 pub mod input_path;
+pub mod minted_value;
 mod narrowing;
 mod one_time_response;
+pub mod ordered_head;
 pub(crate) mod outcome_shapes;
 pub mod precedence;
+pub mod published_operand;
 pub mod related_guard;
 pub use related_guard::RelatedTest;
+pub mod related_rows;
 pub mod related_value;
 pub use related_value::RelatedVia;
 pub mod row_set;
@@ -1073,8 +1078,23 @@ pub enum PayloadSource {
         /// The declared response field.
         field: String,
     },
-    /// The implementation chooses this field, subject to its declared type.
-    Generated,
+    /// The implementation chooses this field, subject to its declared type: `{generated: true}`,
+    /// or from `ess/27` `{generated: true, present: true}` over an `Optional` field, which requires
+    /// the value present ([`minted_value`], beyond10x/ess#545).
+    Generated {
+        /// Whether the minted value of an `Optional` field is present. Serialized only when set.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        present: bool,
+    },
+    /// The value this outcome publishes in `field` of `event`: `{payload: <Event>.<field>}`
+    /// (`ess/27`, beyond10x/ess#545, [`minted_value`]). A `sets:` source only, so one mint feeds
+    /// the event and the row.
+    PayloadRead {
+        /// An event this outcome emits and fills under `payload:`.
+        event: QualifiedName,
+        /// The event's field, given a source there.
+        field: String,
+    },
     /// A field of the command's declared input: `input.amount`; from `ess/22` a member of a struct
     /// input reached by a path, `input.opening.label` ([`input_path`], A4).
     InputField {
@@ -1195,6 +1215,27 @@ pub enum PayloadSource {
         #[serde(skip)]
         legacy: row_set::Legacy,
     },
+    /// A field of the first row a selector selects, ranked by an order, as the store held it
+    /// before this outcome: `{related: {entity, where, order_by, first}}` (ess/27,
+    /// beyond10x/ess#543, [`ordered_head`]).
+    ///
+    /// The order is total, ending in the entity's identity, so exactly one selected row is first;
+    /// or it declares `ties: unordered`, and a head tying on every key is the implementation's
+    /// choice. An empty selection supplies no value.
+    RelatedHead {
+        /// The entity and the predicate selecting its rows.
+        selection: row_set::RowSelection,
+        /// The ranking keys, most significant first, as a view writes them.
+        order_by: Vec<crate::view::Ranking>,
+        /// How rows tying on every key rank: never, under a total order.
+        #[serde(skip_serializing_if = "ordered_head::Ties::is_total")]
+        ties: ordered_head::Ties,
+        /// The field of the head row read.
+        first: String,
+        /// What the reading found wrong with the shape as written, if anything.
+        #[serde(skip)]
+        written: ordered_head::Written,
+    },
     /// An attribute of the authenticated caller: `{caller: account_id}` (ess/16,
     /// beyond10x/ess#168, [`caller_value`]).
     ///
@@ -1213,6 +1254,15 @@ pub enum PayloadSource {
     ChangedField {
         /// The entity field read, the identity included, or `state`.
         field: String,
+    },
+    /// A value computed by an expression: `{expr: "input.ended_at - input.started_at"}` (ess/27,
+    /// beyond10x/ess#560, [`expression_value`], `docs/design/generic-language-features.md` § G1).
+    ///
+    /// The text as written; it is parsed and typed against the field it fills where the
+    /// declarations are in hand.
+    Expression {
+        /// The expression, in the compact text form.
+        expr: String,
     },
 }
 
@@ -1240,7 +1290,9 @@ impl fmt::Display for PayloadSource {
             Self::InputField { field } => write!(f, "{}{field}", Self::INPUT_PREFIX),
             Self::Literal { value } | Self::Scalar { value, .. } => f.write_str(value),
             Self::ResponseField { field } => write!(f, "response field `{field}`"),
-            Self::Generated => f.write_str("implementation-generated"),
+            Self::Generated { present: false } => f.write_str("implementation-generated"),
+            Self::Generated { present: true } => f.write_str("implementation-generated, present"),
+            Self::PayloadRead { event, field } => write!(f, "the published `{event}.{field}`"),
             Self::Cleared => f.write_str("cleared"),
             Self::SubjectField { field } => write!(f, "subject field `{field}`"),
             Self::RelatedField {
@@ -1262,8 +1314,31 @@ impl fmt::Display for PayloadSource {
                 "field `{field}` of the one `{}` that `{}` selects",
                 selection.entity, selection.filter
             ),
+            Self::RelatedHead {
+                selection,
+                order_by,
+                ties,
+                first,
+                ..
+            } => write!(
+                f,
+                "field `{first}` of the first `{}` by `{}`{} that `{}` selects",
+                selection.entity,
+                order_by
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                if ties.is_total() {
+                    ""
+                } else {
+                    ", ties unordered,"
+                },
+                selection.filter
+            ),
             Self::ChangedCount => f.write_str("{count: changed}"),
             Self::ChangedField { field } => write!(f, "{{changed: {field}}}"),
+            Self::Expression { expr } => write!(f, "{{expr: \"{expr}\"}}"),
             Self::Increment { by, .. } => write!(f, "increment by {by}"),
             Self::InputOrGenerated {
                 field,
@@ -1302,15 +1377,19 @@ impl PayloadSource {
             | Self::Struct { .. }
             | Self::RelatedField { .. }
             | Self::RelatedSelection { .. }
+            | Self::RelatedHead { .. }
             | Self::CallerAttribute { .. }
             | Self::ChangedCount
             | Self::ChangedField { .. } => true,
             Self::ResponseField { .. }
-            | Self::Generated
+            | Self::Generated { .. }
+            | Self::PayloadRead { .. }
             | Self::InputField { .. }
             | Self::Literal { .. }
             | Self::Scalar { .. }
-            | Self::Cleared => false,
+            | Self::Cleared
+            // ess/27: below it the shape is read back as the nested mapping it was.
+            | Self::Expression { .. } => false,
         }
     }
 }
@@ -1359,6 +1438,12 @@ enum RawPayloadSource {
     Related(RawRelatedSource),
     Caller(caller_value::RawCallerSource),
     Count(set_effects::RawCountSource),
+    /// `{generated: true, present: true}` (ess/27, beyond10x/ess#545).
+    PresentMint(minted_value::RawPresentMint),
+    /// `{payload: <Event>.<field>}` (ess/27, beyond10x/ess#545).
+    PayloadRead(minted_value::RawPayloadRead),
+    /// `{expr: "<expression>"}` (ess/27, beyond10x/ess#560).
+    Expr(expression_value::RawExprSource),
     /// `{changed: <field>}` (ess/25, beyond10x/ess#531).
     Changed(set_effects::RawChangedSource),
     Nested(RawNestedSources),
@@ -1368,6 +1453,8 @@ enum RawPayloadSource {
     Texts(Vec<String>),
     /// `{related: {entity, where, field}}` (ess/22, beyond10x/ess#299).
     Selection(RawRelatedSelection),
+    /// `{related: {entity, where, order_by, first}}` (ess/27, beyond10x/ess#543).
+    Head(ordered_head::RawRelatedHead),
     /// The `where:` of a `related:` mapping, kept as written until the shape around it says whether
     /// it is a selector; never left in a source once read.
     #[schemars(skip)]
@@ -1488,7 +1575,7 @@ impl<'de> serde::de::Visitor<'de> for Source {
              `{input: <field>, else: {generated: true}}`, \
              `{input: <field>, else: <literal>}`, \
              `{related: {via: <field>, field: <field>}}`, `{caller: <attribute>}`, \
-             `{count: changed}`, or a mapping of struct fields",
+             `{count: changed}`, `{expr: \"<expression>\"}`, or a mapping of struct fields",
         )
     }
 
@@ -1545,12 +1632,20 @@ impl<'de> serde::de::Visitor<'de> for Source {
             }
             entries.push((key, value));
         }
-        if self.related && RawRelatedSelection::selects(&entries) {
+        if self.related
+            && (RawRelatedSelection::selects(&entries) || ordered_head::selects(&entries))
+        {
             // Kept for the mapping around it to recognise; anything else settles it below.
             return Ok(RawPayloadSource::Nested(RawNestedSources(entries)));
         }
         if let Some(selection) = RawRelatedSelection::recognise(&mut entries) {
             return Ok(RawPayloadSource::Selection(selection));
+        }
+        if let Some(head) = ordered_head::RawRelatedHead::recognise(&mut entries) {
+            return Ok(RawPayloadSource::Head(head));
+        }
+        if let Some(refusal) = ordered_head::beside_via(&entries) {
+            return Err(A::Error::custom(refusal));
         }
         for (_, value) in &mut entries {
             value.settle().map_err(A::Error::custom)?;
@@ -1563,6 +1658,15 @@ impl<'de> serde::de::Visitor<'de> for Source {
         }
         if let Some(count) = set_effects::RawCountSource::recognise(&entries) {
             return Ok(RawPayloadSource::Count(count));
+        }
+        if let Some(mint) = minted_value::RawPresentMint::recognise(&entries) {
+            return Ok(RawPayloadSource::PresentMint(mint));
+        }
+        if let Some(read) = minted_value::RawPayloadRead::recognise(&entries) {
+            return Ok(RawPayloadSource::PayloadRead(read));
+        }
+        if let Some(expression) = expression_value::RawExprSource::recognise(&entries) {
+            return Ok(RawPayloadSource::Expr(expression));
         }
         if let Some(changed) = set_effects::RawChangedSource::recognise(&entries) {
             return Ok(RawPayloadSource::Changed(changed));
@@ -1870,12 +1974,16 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
             RawPayloadSource::Selection(RawRelatedSelection { related }) => {
                 Ok(Self::selection(related))
             }
+            RawPayloadSource::Head(head) => Ok(head.into_source()),
             // Never left in a source once read; read as the leaf it always was where it is.
             RawPayloadSource::Captured(value) => legacy_reading(&value)
                 .map_err(|_| "a `where:` under `related:` is read only as a selector")
                 .and_then(Self::try_from),
             RawPayloadSource::Caller(caller) => Ok(caller.into_source()),
             RawPayloadSource::Count(_) => Ok(Self::ChangedCount),
+            RawPayloadSource::PresentMint(_) => Ok(Self::Generated { present: true }),
+            RawPayloadSource::PayloadRead(read) => Ok(read.into_source()),
+            RawPayloadSource::Expr(expression) => Ok(expression.into_source()),
             RawPayloadSource::Changed(changed) => Ok(changed.into_source()),
             RawPayloadSource::Nested(RawNestedSources(entries)) => entries
                 .into_iter()
@@ -1936,7 +2044,7 @@ impl PayloadSource {
     /// `value_expression::validate`, which knows the format and the target's type.
     fn fallback(otherwise: RawPayloadSource) -> Result<Option<Box<Self>>, &'static str> {
         match Self::try_from(otherwise)? {
-            Self::Generated => Ok(None),
+            Self::Generated { present: false } => Ok(None),
             literal @ (Self::Literal { .. } | Self::Scalar { .. }) => Ok(Some(Box::new(literal))),
             // From `ess/22` (A4) another input path, which `value_expression` holds to being
             // required along its whole route: `else:` promises a value.
@@ -1978,7 +2086,7 @@ impl PayloadSource {
                 increment: None,
                 input: None,
                 otherwise: None,
-            } => Ok(Self::Generated),
+            } => Ok(Self::Generated { present: false }),
             ExplicitPayloadSource {
                 response: None,
                 generated: None,
@@ -2051,6 +2159,10 @@ impl PayloadSource {
 }
 
 impl From<&PayloadSource> for RawPayloadSource {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one arm per payload source, each written back as the document spelled it"
+    )]
     fn from(source: &PayloadSource) -> Self {
         let explicit = |fill: &dyn Fn(&mut ExplicitPayloadSource)| {
             let mut explicit = ExplicitPayloadSource::empty();
@@ -2061,7 +2173,16 @@ impl From<&PayloadSource> for RawPayloadSource {
             PayloadSource::ResponseField { field } => {
                 explicit(&|e| e.response = Some(field.clone()))
             }
-            PayloadSource::Generated => explicit(&|e| e.generated = Some(true)),
+            PayloadSource::Generated { present: false } => explicit(&|e| e.generated = Some(true)),
+            PayloadSource::Generated { present: true } => {
+                Self::PresentMint(minted_value::RawPresentMint::of())
+            }
+            PayloadSource::PayloadRead { event, field } => {
+                Self::PayloadRead(minted_value::RawPayloadRead::of(event, field))
+            }
+            PayloadSource::Expression { expr } => {
+                Self::Expr(expression_value::RawExprSource::of(expr))
+            }
             PayloadSource::Cleared => explicit(&|e| e.cleared = Some(true)),
             PayloadSource::SubjectField { field } => explicit(&|e| e.subject = Some(field.clone())),
             PayloadSource::RelatedField {
@@ -2095,6 +2216,15 @@ impl From<&PayloadSource> for RawPayloadSource {
                     written: None,
                 },
             }),
+            PayloadSource::RelatedHead {
+                selection,
+                order_by,
+                ties,
+                first,
+                ..
+            } => Self::Head(ordered_head::RawRelatedHead::of(
+                selection, order_by, *ties, first,
+            )),
             PayloadSource::ChangedCount => Self::Count(set_effects::RawCountSource::changed()),
             PayloadSource::ChangedField { field } => {
                 Self::Changed(set_effects::RawChangedSource::of(field))
@@ -2110,7 +2240,9 @@ impl From<&PayloadSource> for RawPayloadSource {
             PayloadSource::InputOrGenerated { field, otherwise } => explicit(&|e| {
                 e.input = Some(field.clone());
                 e.otherwise = Some(Box::new(Self::from(
-                    otherwise.as_deref().unwrap_or(&PayloadSource::Generated),
+                    otherwise
+                        .as_deref()
+                        .unwrap_or(&PayloadSource::Generated { present: false }),
                 )));
             }),
             PayloadSource::Struct { fields } => Self::Nested(RawNestedSources(
@@ -2374,7 +2506,7 @@ pub struct Outcome {
     pub one_time_response: Vec<String>,
     /// One line for generated documentation and for the generated scenario's title.
     pub summary: Option<String>,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
@@ -2567,11 +2699,18 @@ pub struct CommandSpec {
     pub outcomes: Vec<Outcome>,
     /// What it is called on the wire and shown as.
     pub naming: Naming,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
+    /// How soon the system takes this step, where the command is system-issued and says so
+    /// (`ess/27`, beyond10x/ess#542, `docs/design/system-issued-commands.md`).
+    ///
+    /// A property of the system, not of the machine, as an elapsed claim is. `None` where the
+    /// command declares no bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub await_within: Option<crate::binding::periodic::Period>,
 }
 
 impl CommandSpec {
@@ -2618,6 +2757,25 @@ impl CommandSpec {
             && self.outcomes.iter().any(|outcome| {
                 outcome.is_unconditional() && outcome.error.is_some() && outcome.subject.is_none()
             })
+    }
+
+    /// Of `selected`, the branch this command's precedence plan reads first under `composition`:
+    /// the earliest phase, then the rank inside it, then the first declared. Under the one rule
+    /// (`ess/27`) that branch answers wherever `selected` all hold.
+    pub(crate) fn read_first<'o>(
+        &self,
+        composition: precedence::Composition,
+        selected: &[&'o Outcome],
+    ) -> Option<&'o Outcome> {
+        selected.iter().copied().min_by_key(|outcome| {
+            let place = precedence::place(&precedence::BranchShape::of(outcome), &composition);
+            let declared = self
+                .outcomes
+                .iter()
+                .position(|declared| declared.name == outcome.name)
+                .unwrap_or(usize::MAX);
+            (place.phase.position(), place.rank, declared)
+        })
     }
 
     /// The composition [`precedence::place`] reads for this command, in the format `types`
@@ -2809,7 +2967,10 @@ impl CommandSpec {
             errors.extend(self.validate_held_state_order(types));
         }
         errors.extend(self.validate_before_row_order(types));
-        errors.extend(outcome_shapes::validate_command(self));
+        errors.extend(outcome_shapes::validate_command(
+            self,
+            types.and_then(TypeRegistry::format),
+        ));
         errors.extend(absent_input::validate_command(self));
         errors
     }
@@ -3197,6 +3358,14 @@ impl CommandSpec {
                 {
                     continue;
                 }
+                // `payload.<Event>.<field>` is a published value from `ess/27` (#549), which a
+                // guard refuses by name; the typed pass knows the format and refuses it either way.
+                if READS_INPUT_NAMESPACE.with(std::cell::Cell::get)
+                    && root == published_operand::ROOT
+                    && path.segments().len() > 2
+                {
+                    continue;
+                }
                 errors.push(
                     ValidationError::at(
                         location.clone().key("when"),
@@ -3272,6 +3441,14 @@ impl CommandSpec {
                 .as_ref()
                 .is_some_and(|path| caller_value::is_caller_path(path, &self.input))
             {
+                continue;
+            }
+            // A published value (ess/27, #549) is refused by name: nothing is published before
+            // the branch is chosen.
+            if let Some(refused) = error.path.as_ref().and_then(|path| {
+                published_operand::guard_refusal(types, path, error.segment.as_deref(), &owner)
+            }) {
+                errors.push(refused);
                 continue;
             }
             let mut diagnostic = error.validation_error();
@@ -3379,7 +3556,10 @@ impl CommandSpec {
                     .key("outcomes")
                     .named(outcome.name.as_str())
                     .key("before_row");
-                if let Some(related) = related {
+                if let Some(related) = related
+                    .filter(|_| types.is_some_and(|types| types.format().is_some()))
+                    .filter(|_| !composition.reads_one_rule())
+                {
                     errors.push(
                         ValidationError::at(
                             at,
@@ -3392,7 +3572,11 @@ impl CommandSpec {
                                 outcome.name, related.name
                             ),
                         )
-                        .with_hint("drop `before_row:`, or the `when_related:` guard"),
+                        .with_hint(
+                            "declare `format: ess/27`, where the one precedence rule answers \
+                             `before_row:` at step 1 and the related row at step 4, or drop \
+                             `before_row:`, or the `when_related:` guard",
+                        ),
                     );
                 } else if let Some(earlier) = later {
                     errors.push(
@@ -3400,11 +3584,13 @@ impl CommandSpec {
                             at,
                             ValidationCode::ConflictingDeclaration,
                             format!(
-                                "`{}` is answered before the row (`before_row: true`), at step 2 \
+                                "`{}` is answered before the row (`before_row: true`), at step {} \
                                  of the precedence order, but is declared after `{}`, which a \
                                  later step answers; the declaration order and the precedence \
                                  order disagree",
-                                outcome.name, earlier.name
+                                outcome.name,
+                                if composition.reads_one_rule() { 1 } else { 2 },
+                                earlier.name
                             ),
                         )
                         .with_hint(format!(
@@ -3576,17 +3762,22 @@ impl CommandSpec {
         // with the input, which needs the other entity's field types, known at assembly; here its
         // own branches are checked, including that it selects on nothing else.
         if related_guard::uses(self) {
-            return related_guard::validate_shape(self);
+            return related_guard::validate_shape(self, types);
         }
         // Two strategies stay two (`cross-record-and-stored-field-guards.md`, "One strategy or
         // two"): a command selecting on stored fields and on the held lifecycle state at once is
         // refused before either partition is asked about it.
-        if subject_fact::uses(self)
+        let mixed = subject_fact::uses(self)
             && self
                 .outcomes
                 .iter()
-                .any(|outcome| outcome.condition.reads_held_state())
-        {
+                .any(|outcome| outcome.condition.reads_held_state());
+        // Whether the one rule admits the mix is the format's to say: without it, left to
+        // `subject_fact::validate`, which knows it.
+        if mixed && types.and_then(TypeRegistry::format).is_none() {
+            return errors;
+        }
+        if mixed && !self.composition(types).reads_one_rule() {
             errors.push(
                 ValidationError::at(
                     self.site().key("outcomes"),
@@ -3604,6 +3795,13 @@ impl CommandSpec {
             .iter()
             .any(|outcome| outcome.condition.reads_held_state())
         {
+            // Whether `wrong_state:` may sit beside the explicit guards is the format's to say:
+            // without it, left to `subject_state::validate`, which knows it.
+            if types.and_then(TypeRegistry::format).is_none()
+                && self.outcomes.iter().any(Outcome::is_wrong_state)
+            {
+                return errors;
+            }
             return subject_state::validate_shape(self, &self.composition(types));
         }
         // Likewise a command reading the subject's stored fields: its partition crosses those
@@ -3948,13 +4146,16 @@ fn check_payload_entry(
 
     match source {
         // Checked with the entity, input and struct in hand by `value_expression::validate`.
-        PayloadSource::Generated
+        PayloadSource::Generated { .. }
+        | PayloadSource::PayloadRead { .. }
+        | PayloadSource::Expression { .. }
         | PayloadSource::SubjectField { .. }
         | PayloadSource::Increment { .. }
         | PayloadSource::InputOrGenerated { .. }
         | PayloadSource::Struct { .. }
         | PayloadSource::RelatedField { .. }
         | PayloadSource::RelatedSelection { .. }
+        | PayloadSource::RelatedHead { .. }
         | PayloadSource::CallerAttribute { .. }
         // Checked with the changed rows' entity in hand by `set_effects::validate`.
         | PayloadSource::ChangedField { .. } => {}
@@ -4002,6 +4203,11 @@ fn check_payload_entry(
             if admitted {
                 return errors;
             }
+            // ess/27 (beyond10x/ess#556): a `when_related:` branch over the input narrows it there.
+            let from_27 = matches!(source, PayloadSource::InputField { .. })
+                && command
+                    .narrowed_input_at(outcome, &read.name, Some(crate::system::FormatVersion::V27))
+                    .is_some_and(|present| conversions.permits(present, &filled.type_ref));
             errors.push(
                 ValidationError::at(
                     at.clone(),
@@ -4012,12 +4218,22 @@ fn check_payload_entry(
                         command.name, read.type_ref, event.name, filled.type_ref
                     ),
                 )
-                .with_hint(format!(
-                    "declare the crossing — `conversions: [{{from: {}, to: {}, because: …}}]` — \
-                     or make the two types agree. The reason is required, because a crossing \
-                     nobody explained is the silent widening this refusal exists to catch",
-                    read.type_ref, filled.type_ref
-                )),
+                .with_hint(if from_27 {
+                    format!(
+                        "from specification format ess/27 this branch reads `input.{}` present, \
+                         since its `when_related:` reads the row through it: declare `format: \
+                         ess/27`",
+                        read.name
+                    )
+                } else {
+                    format!(
+                        "declare the crossing — `conversions: [{{from: {}, to: {}, because: …}}]` \
+                         — or make the two types agree. The reason is required, because a \
+                         crossing nobody explained is the silent widening this refusal exists to \
+                         catch",
+                        read.type_ref, filled.type_ref
+                    )
+                }),
             );
         }
         PayloadSource::Literal { value } => {
@@ -4162,25 +4378,28 @@ fn marker_formats(
 }
 
 /// Whether a payload source reads a stored row: the addressed one (`{subject: …}`, an increment),
-/// a related one (`{related: …}`) or a changed one (`{changed: …}`). What a refusal answered
-/// before the row cannot fill.
+/// a related one (`{related: …}`, an ordered head included) or a changed one (`{changed: …}`).
+/// What a refusal answered before the row cannot fill.
 fn reads_row(source: &PayloadSource) -> bool {
     match source {
         PayloadSource::SubjectField { .. }
         | PayloadSource::Increment { .. }
         | PayloadSource::RelatedField { .. }
         | PayloadSource::RelatedSelection { .. }
+        | PayloadSource::RelatedHead { .. }
         | PayloadSource::ChangedField { .. } => true,
         PayloadSource::Struct { fields } => fields.iter().any(|field| reads_row(&field.source)),
         PayloadSource::InputOrGenerated { otherwise, .. } => {
             otherwise.as_deref().is_some_and(reads_row)
         }
+        PayloadSource::Expression { expr } => expression_value::reads_root(expr, "subject"),
         PayloadSource::ResponseField { .. }
-        | PayloadSource::Generated
+        | PayloadSource::Generated { .. }
         | PayloadSource::InputField { .. }
         | PayloadSource::Literal { .. }
         | PayloadSource::Scalar { .. }
         | PayloadSource::Cleared
+        | PayloadSource::PayloadRead { .. }
         | PayloadSource::CallerAttribute { .. }
         | PayloadSource::ChangedCount => false,
     }
@@ -4308,11 +4527,11 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
                 // `ess/14` hands a field to the implementation with `{generated: true}` (#134).
                 let generated_admitted = spec.system().format.major()
                     >= crate::system::FormatVersion::V14.major()
-                    && matches!(source, PayloadSource::Generated);
+                    && matches!(source, PayloadSource::Generated { .. });
                 if !generated_admitted
                     && matches!(
                         source,
-                        PayloadSource::ResponseField { .. } | PayloadSource::Generated
+                        PayloadSource::ResponseField { .. } | PayloadSource::Generated { .. }
                     )
                 {
                     errors.push(ValidationError::at(
@@ -4328,7 +4547,7 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
                     if !modern
                         && matches!(
                             source,
-                            PayloadSource::ResponseField { .. } | PayloadSource::Generated
+                            PayloadSource::ResponseField { .. } | PayloadSource::Generated { .. }
                         )
                     {
                         errors.push(ValidationError::at(at.clone().key("payload").named(event.to_string()).named(field), ValidationCode::UnsupportedFormatVersion, "explicit response/generated payload sources require specification format ess/4"));
@@ -4471,6 +4690,8 @@ pub fn validate_sets(
             }
         }
     }
+    // And the literals a branch writes, against the invariants of the entity they land in.
+    errors.extend(validate_literal_invariants(commands, entities, types));
     errors
 }
 
@@ -4621,6 +4842,164 @@ pub fn validate_created_invariant_fields(
         }
     }
     errors
+}
+
+/// Refuses a branch whose literal writes break an invariant of the entity whose row they land in
+/// (downstream report, 2026-10-19, finding 16).
+///
+/// The entity's counterpart of a newtype's invariant over a `sets:` literal, which is refused where
+/// the literal is read. Decided only where the literals settle it: an invariant every field of
+/// which the branch writes with a literal — the subject's `sets:`, a set subject's, or an
+/// `affects:` entry's — and whose `state`, where it reads one, is the state the branch arrives in
+/// (a created row's initial or `into:` state, a move's target). A field the branch leaves alone
+/// keeps a value nobody wrote here, and one read from the input is the run's to decide: whether a
+/// guard implies the invariant is not decidable in general. A literal its own type already refuses
+/// is left to that refusal.
+fn validate_literal_invariants(
+    commands: &BTreeMap<QualifiedName, CommandSpec>,
+    entities: &BTreeMap<QualifiedName, crate::entity::EntitySpec>,
+    types: &TypeRegistry,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    for command in commands.values() {
+        for outcome in &command.outcomes {
+            for (entity, sets, at, arrives) in literal_rows(command, outcome, entities) {
+                let mut written: Vec<(&str, &TypeRef, Node, &str)> = Vec::new();
+                for (target, source) in sets {
+                    let (PayloadSource::Literal { value } | PayloadSource::Scalar { value, .. }) =
+                        source
+                    else {
+                        continue;
+                    };
+                    let Some(held) = entity.field(target) else {
+                        continue;
+                    };
+                    if layered_literal(held, value, types).is_some() {
+                        continue;
+                    }
+                    let terminal = types.newtype_layers(&held.type_ref).terminal;
+                    if let Some((node, _)) = terminal_literal(types, &terminal, value) {
+                        written.push((target.as_str(), &held.type_ref, node, value.as_str()));
+                    }
+                }
+                if written.is_empty() {
+                    continue;
+                }
+                let members: Vec<(&str, &TypeRef, &Node)> = written
+                    .iter()
+                    .map(|(name, declared, node, _)| (*name, *declared, node))
+                    .collect();
+                let mut facts = LiteralFacts::of(types, &members);
+                if let (Some(state), Ok(path)) =
+                    (arrives, ess_primitives::facts::FactPath::new("state"))
+                {
+                    facts.set(path, FactValue::text(state.as_str()));
+                }
+                for invariant in &entity.invariants {
+                    let reads = invariant.predicate.fact_paths();
+                    let settled = !reads.is_empty()
+                        && reads.iter().all(|path| {
+                            (path.namespace() == "state" && arrives.is_some())
+                                || written.iter().any(|(name, ..)| *name == path.namespace())
+                        });
+                    if !settled || facts.truth(invariant) != ess_primitives::predicate::Truth::False
+                    {
+                        continue;
+                    }
+                    let literals = written
+                        .iter()
+                        .filter(|(name, ..)| reads.iter().any(|path| path.namespace() == *name))
+                        .map(|(name, _, _, value)| format!("`{value}` into `{name}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    errors.push(
+                        ValidationError::at(
+                            at.clone(),
+                            ValidationCode::ConflictingDeclaration,
+                            format!(
+                                "outcome `{}` of `{}` writes {literals}{}, which breaks the \
+                                 invariant `{invariant}` of `{}`: every row this branch writes \
+                                 is refused by it",
+                                outcome.name,
+                                command.name,
+                                arrives
+                                    .filter(|_| {
+                                        reads.iter().any(|path| path.namespace() == "state")
+                                    })
+                                    .map(|state| format!(" and leaves the row in `{state}`"))
+                                    .unwrap_or_default(),
+                                entity.name,
+                            ),
+                        )
+                        .with_hint(
+                            "write a literal the entity's invariants hold for, or set the field \
+                             from the input",
+                        ),
+                    );
+                }
+            }
+        }
+    }
+    errors
+}
+
+/// One row a branch writes `sets:` into: the entity, its `sets:`, where they are written, and the
+/// state the row arrives in where the branch says.
+type LiteralRow<'a> = (
+    &'a crate::entity::EntitySpec,
+    &'a BTreeMap<String, PayloadSource>,
+    ConstructRef,
+    Option<&'a crate::entity::StateName>,
+);
+
+/// The rows one branch writes `sets:` into, for [`validate_literal_invariants`].
+fn literal_rows<'a>(
+    command: &CommandSpec,
+    outcome: &'a Outcome,
+    entities: &'a BTreeMap<QualifiedName, crate::entity::EntitySpec>,
+) -> Vec<LiteralRow<'a>> {
+    let branch = command.site().key("outcomes").named(outcome.name.as_str());
+    let moved = |entity: &'a crate::entity::EntitySpec, transition: &str| {
+        entity
+            .states
+            .transition(transition)
+            .map(|transition| &transition.to)
+    };
+    let own = outcome
+        .subject
+        .as_ref()
+        .map(|subject| (&subject.entity, &subject.effect, subject.into.as_ref()))
+        .or(outcome
+            .set_effects
+            .instances
+            .as_ref()
+            .map(|set| (&set.entity, &set.effect, None)));
+    let mut rows = Vec::new();
+    if let Some((name, effect, into)) = own {
+        if let Some(entity) = entities.get(name) {
+            let arrives = match effect {
+                Effect::Creates => Some(into.unwrap_or(&entity.states.initial)),
+                Effect::Moves { transition } => moved(entity, transition),
+                _ => None,
+            };
+            rows.push((entity, &outcome.sets, branch.clone().key("sets"), arrives));
+        }
+    }
+    for (index, affect) in outcome.set_effects.affects.iter().enumerate() {
+        if let Some(entity) = entities.get(&affect.entity) {
+            let arrives = affect
+                .moves
+                .as_deref()
+                .and_then(|transition| moved(entity, transition));
+            rows.push((
+                entity,
+                &affect.sets,
+                branch.clone().key("affects").index(index).key("sets"),
+                arrives,
+            ));
+        }
+    }
+    rows
 }
 
 /// A payload literal, against the representation of the event field it fills.
@@ -5723,7 +6102,24 @@ fn layered_literal(held: &Field, value: &str, types: &TypeRegistry) -> Option<Li
     if layers.newtypes.is_empty() {
         return None;
     }
-    let (node, fact) = match &layers.terminal {
+    let (node, fact) = terminal_literal(types, &layers.terminal, value)?;
+    example_layers(&layers.newtypes, &node, &fact, false, Held::Literal)
+        .err()
+        .map(|(_, reason, hint)| LiteralRefusal {
+            reason,
+            hint: hint.to_owned(),
+        })
+}
+
+/// The value a `sets:` literal's text spells in the scalar `terminal` its field's newtype layers
+/// wrap: a `Boolean`, a number, a text or an enum variant; `None` for a terminal no literal spells
+/// and for text that is no number where one is held.
+fn terminal_literal(
+    types: &TypeRegistry,
+    terminal: &TypeRef,
+    value: &str,
+) -> Option<(Node, FactValue)> {
+    Some(match terminal {
         TypeRef::Primitive(Primitive::Boolean) => {
             let flag = value == "true";
             (Node::Bool(flag), FactValue::Bool(flag))
@@ -5744,13 +6140,7 @@ fn layered_literal(held: &Field, value: &str, types: &TypeRegistry) -> Option<Li
             (Node::Text(value.to_owned()), FactValue::text(value))
         }
         _ => return None,
-    };
-    example_layers(&layers.newtypes, &node, &fact, false, Held::Literal)
-        .err()
-        .map(|(_, reason, hint)| LiteralRefusal {
-            reason,
-            hint: hint.to_owned(),
-        })
+    })
 }
 
 /// Every newtype layer's alphabet and invariants, held against one example read as `value`.
@@ -5880,11 +6270,15 @@ pub struct RawCommandSpec {
     /// What it is called on the wire and shown as.
     #[serde(default, skip_serializing_if = "Naming::is_empty")]
     pub naming: Naming,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
+    /// How soon the system takes this step: positive whole seconds, `PT<seconds>S`, on a command
+    /// every grant of which is a system actor (`ess/27`, beyond10x/ess#542).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub await_within: Option<crate::binding::periodic::Period>,
 }
 
 /// One field of a command's input: a [`Field`] that may also carry an `example:`.
@@ -6293,7 +6687,7 @@ pub struct RawOutcome {
     /// One line for generated documentation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
-    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    /// The records outside this model that explain it, such as `jira:EX-1`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
@@ -7028,6 +7422,7 @@ impl TryFrom<RawCommandSpec> for CommandSpec {
             outcomes,
             naming: raw.naming,
             refs: raw.refs,
+            await_within: raw.await_within,
         };
         errors.extend(spec.validate_shape(None));
         errors.into_result(spec)
@@ -7228,6 +7623,7 @@ impl From<CommandSpec> for RawCommandSpec {
             outcomes: command.outcomes.into_iter().map(RawOutcome::from).collect(),
             naming: command.naming,
             refs: command.refs,
+            await_within: command.await_within,
         }
     }
 }
@@ -7294,6 +7690,7 @@ mod tests {
                     ],
                     invariants: Vec::new(),
                     undeclared_fields: None,
+                    shorthand: None,
                 },
                 naming: Naming::default(),
             })
@@ -7344,6 +7741,7 @@ outcomes:
             )],
             response: Vec::new(),
             undeclared_fields: None,
+            await_within: None,
             fixture_inputs: BTreeMap::new(),
             outcomes,
             naming: Naming::default(),
@@ -7658,8 +8056,8 @@ outcomes:
     #[test]
     fn a_branch_that_accepts_a_wrong_state_needs_no_error_and_may_not_name_one() {
         // The other answer, and the reason the key exists rather than `error:` simply becoming
-        // optional. A command can be deliberately idempotent — ACD's `EndCall` on a call that has
-        // already ended answers and does nothing — and a specification with no way to write that
+        // optional. A command can be deliberately idempotent — ending a call that has already
+        // ended answers and does nothing — and a specification with no way to write that
         // either claims a refusal the implementation never makes or says nothing about the state.
         let accepting = |error: Option<QualifiedName>| Outcome {
             replays: None,
@@ -8602,6 +9000,7 @@ outcomes:
             ],
             response: Vec::new(),
             undeclared_fields: None,
+            await_within: None,
             fixture_inputs: BTreeMap::new(),
             outcomes: vec![
                 Outcome::when(

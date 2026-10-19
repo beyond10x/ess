@@ -61,7 +61,7 @@ compilation disabled. No unit browser build is needed for the private Rust check
 
 Planned managed ID: `ess-public-support-claims`.
 Planned branch: `impl/review-public-support-claims`.
-Planned worktree: `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims`.
+Planned worktree: `<tree>`.
 Build directory: that tree's `target`.
 Implementor scratch: `target/review-boundaries-14/public-support` in that tree.
 Adversary scratch: `target/review-boundaries-14/adversary-pass-1` in that tree.
@@ -120,7 +120,7 @@ planning follow all nine offline lanes. Only runner syntax and its preparation d
 checked; no wave-14 integrated gate has run.
 
 Public-delivery support is planned as managed `ess-wave14-website-verification`, at
-`~/.local/state/worktree/trees/b10x/website/ess-wave14-website-verification`, detached
+`<tree>`, detached
 at the Atlas-controlled Website runtime `fc4571534765c098ed861bc326da4d3da0d1df63`. Scratch,
 artifact and build evidence remain under its `target/review-boundaries-14`; ordinary Website
 dependencies and generated outputs are owned within that tree. Its short browser temporary

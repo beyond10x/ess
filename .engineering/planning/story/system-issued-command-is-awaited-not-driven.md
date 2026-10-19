@@ -4,7 +4,7 @@ id: story:system-issued-command-is-awaited-not-driven
 kind: story
 status: draft
 title: A system-issued command is awaited, not driven
-revision: 1
+revision: 3
 ---
 ## Outcome
 
@@ -72,3 +72,16 @@ Each line names the failing test written first.
 - depends_on: the unit that opens `ess/25`; #545's present mint for minted input checks (soft).
 - du estimate: 10G.
 - adversary: yes (a new suite major and step semantics).
+
+## Design pass
+
+Design pass (2026-10-13, unit commit e6c4b4c46, merged on the 2026-10-13 integration branch as fda971d48): `docs/design/system-issued-commands.md`. Its Fit review answers all seven questions of `.agents/skills/assessing-external-requests/SKILL.md` with citations. Decision: **accept, redesigned**.
+
+Departures from the decisions above, accepted by the coordinator:
+
+- Refusals decided by the record (`wrong_state:`, `when_subject*`, `unknown_instance:`) read as "not issued". An `external:` refusal reads as an outcome the system reached. A refusal decided by the input or by `when_related:` gets no synthesized scenario (`ESS-SYNTH-024`).
+- With no `await_within:`, the bound is the runner's deadline.
+- Inputs the system mints use the existing `{generated: true}` value source.
+- A target that implements await holds the step until the scenario awaits it.
+- Stage 1 (Rust) and stage 2 (Go, TypeScript) ship in one release.
+- Suite majors and code numbers follow merge order.

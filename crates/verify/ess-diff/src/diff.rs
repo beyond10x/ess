@@ -350,21 +350,43 @@ fn system_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChang
 
 /// Every domain one revision declares and the other does not (beyond10x/ess#469).
 ///
-/// Only presence is compared. A domain's member sets follow each construct's own `domain`, which
-/// that construct's family compares, and the naming of a domain both sides declare is still read
-/// by the residual. The `domains:` list's order is not in the IR, so reordering it is no change.
+/// Presence, and for a domain both sides declare its display name and summary (downstream report,
+/// 2026-10-19, finding 18): documentation, as every other construct's are. A domain's member sets
+/// follow each construct's own `domain`, which that construct's family compares, and its wire name
+/// is still read by the residual, since it reaches every path addressed through the domain. The
+/// `domains:` list's order is not in the IR, so reordering it is no change.
 fn domain_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChange>) {
     for name in keys(before.domains(), after.domains()) {
-        let moved = match (before.domains().get(name), after.domains().get(name)) {
-            (None, Some(_)) => DomainChange::Added,
-            (Some(_), None) => DomainChange::Removed,
-            (Some(_), Some(_)) => continue,
-            (None, None) => unreachable!("a key came from one of the two maps"),
+        let mut push = |changed| {
+            changes.push(SemanticChange::Domain {
+                subject: DomainRef::new(name.clone()),
+                changed,
+            });
         };
-        changes.push(SemanticChange::Domain {
-            subject: DomainRef::new(name.clone()),
-            changed: moved,
-        });
+        match (before.domains().get(name), after.domains().get(name)) {
+            (None, Some(_)) => push(DomainChange::Added),
+            (Some(_), None) => push(DomainChange::Removed),
+            (Some(was), Some(is)) => {
+                let fallback = name.local();
+                let (old, new) = (
+                    display_name(&was.naming, fallback),
+                    display_name(&is.naming, fallback),
+                );
+                if old != new {
+                    push(DomainChange::DisplayNameChanged {
+                        before: old.to_owned(),
+                        after: new.to_owned(),
+                    });
+                }
+                if was.naming.summary != is.naming.summary {
+                    push(DomainChange::SummaryChanged {
+                        before: was.naming.summary.clone(),
+                        after: is.naming.summary.clone(),
+                    });
+                }
+            }
+            (None, None) => unreachable!("a key came from one of the two maps"),
+        }
     }
 }
 
@@ -695,6 +717,14 @@ fn type_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChange>
                         after: opens,
                     });
                 }
+                // Beside the types too (`ess/27`): which field a struct may be written as alone.
+                let (was, is) = (before.shorthand(name), after.shorthand(name));
+                if was != is {
+                    push(TypeChange::ShorthandChanged {
+                        before: was.map(str::to_owned),
+                        after: is.map(str::to_owned),
+                    });
+                }
             }
             (None, None) => unreachable!("a key came from one of the two maps"),
         }
@@ -928,6 +958,14 @@ fn actor_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChange
                 for command in granted.difference(&grants) {
                     push(ActorChange::GrantRemoved {
                         command: command.clone(),
+                    });
+                }
+                // Whether the actor is the system itself (ess/27, beyond10x/ess#542). A command
+                // becoming system-issued follows from this and the grants, and is not compared.
+                if was.system != is.system {
+                    push(ActorChange::SystemChanged {
+                        before: was.system,
+                        after: is.system,
                     });
                 }
                 for delta in naming_deltas(&was.naming, &is.naming, name.local()) {
@@ -1204,9 +1242,6 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 ess_compiler::ir::ResolvedPayloadValue::ResponseField { field, .. } => {
                     format!("response field `{field}`")
                 }
-                ess_compiler::ir::ResolvedPayloadValue::Generated => {
-                    "implementation-generated".to_owned()
-                }
                 ess_compiler::ir::ResolvedPayloadValue::InputField { field: name, .. } => {
                     format!("input.{name}")
                 }
@@ -1221,7 +1256,12 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedHead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
+                // `implementation-generated`, and `…, present` for an ess/27 present mint.
+                | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::PayloadRead { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::Expression { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
@@ -1551,6 +1591,12 @@ fn compare_commands(
         push(CommandChange::ResponseChanged {
             before: parameter_contracts(&was.response),
             after: parameter_contracts(&is.response),
+        });
+    }
+    if was.await_within != is.await_within {
+        push(CommandChange::AwaitWithinChanged {
+            before: was.await_within,
+            after: is.await_within,
         });
     }
     if was.undeclared_fields != is.undeclared_fields {
@@ -1954,6 +2000,16 @@ fn compare_aggregations(was: &ResolvedView, is: &ResolvedView, push: &mut impl F
                 after: after.map(ToString::to_string),
             });
         }
+        // A field computed from one row (`expr:`, ess/27, beyond10x/ess#560) is what the field
+        // computes too, reported under the same kind, its expression compared as a typed tree.
+        let (before, after) = (was.computed.get(field), is.computed.get(field));
+        if before != after {
+            push(ViewChange::FieldAggregateChanged {
+                field: field.to_owned(),
+                before: before.map(|expr| format!("expr: {expr}")),
+                after: after.map(|expr| format!("expr: {expr}")),
+            });
+        }
     }
 }
 
@@ -2245,9 +2301,6 @@ fn written_sets(
                 ess_compiler::ir::ResolvedPayloadValue::ResponseField { field, .. } => {
                     format!("response field `{field}`")
                 }
-                ess_compiler::ir::ResolvedPayloadValue::Generated => {
-                    "implementation-generated".to_owned()
-                }
                 ess_compiler::ir::ResolvedPayloadValue::InputField { field, .. } => {
                     format!("input.{field}")
                 }
@@ -2262,7 +2315,12 @@ fn written_sets(
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedHead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
+                // `implementation-generated`, and `…, present` for an ess/27 present mint.
+                | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::PayloadRead { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::Expression { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
@@ -2338,11 +2396,18 @@ fn declarations<'a>(
 /// introduced serialized fields visible by default, even beside an already classified edit.
 /// This value is internal equality evidence; it is never persisted as a change/property bag.
 fn residual(mut value: serde_json::Value) -> serde_json::Value {
-    // `undeclared_fields_ignored` (`ess/24`) is compared per type both revisions declare as
-    // `undeclared-fields-changed`; a type in one revision only is its own `added` or `removed`.
+    // `undeclared_fields_ignored` (`ess/24`) and `shorthands` (`ess/27`) are compared per type both
+    // revisions declare, as `undeclared-fields-changed` and `shorthand-changed`; a type in one
+    // revision only is its own `added` or `removed`.
     remove_keys(
         &mut value,
-        &["system", "version", "summary", "undeclared_fields_ignored"],
+        &[
+            "system",
+            "version",
+            "summary",
+            "undeclared_fields_ignored",
+            "shorthands",
+        ],
     );
     for family in RESIDUAL_FAMILIES {
         if let Some(declarations) = value
@@ -2374,14 +2439,15 @@ fn residual(mut value: serde_json::Value) -> serde_json::Value {
                 .get_mut("naming")
                 .and_then(serde_json::Value::as_object_mut)
             {
+                // Its display name and summary are compared as `domain/<name>/…` (ess-diff/20).
+                naming.remove("display");
+                naming.remove("summary");
                 let fallback = name.rsplit('.').next().unwrap_or(name);
-                for key in ["wire", "display"] {
-                    if naming
-                        .get(key)
-                        .is_some_and(|value| value.is_null() || value.as_str() == Some(fallback))
-                    {
-                        naming.remove(key);
-                    }
+                if naming
+                    .get("wire")
+                    .is_some_and(|value| value.is_null() || value.as_str() == Some(fallback))
+                {
+                    naming.remove("wire");
                 }
             }
         }
@@ -2638,7 +2704,8 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
             residual_fields(declaration, "params");
             remove_keys(
                 declaration,
-                // `aggregation` is `grouping-changed` / `field-aggregate-changed` (ess#256).
+                // `aggregation` is `grouping-changed` / `field-aggregate-changed` (ess#256), and so
+                // is `computed` (ess/27, beyond10x/ess#560).
                 &[
                     "source",
                     "filter",
@@ -2648,10 +2715,12 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                     "consistency",
                     "assertion_style",
                     "aggregation",
+                    "computed",
                 ],
             );
         }
-        "actors" => remove_keys(declaration, &["may"]),
+        // `system` is `system-changed` (ess/27, beyond10x/ess#542).
+        "actors" => remove_keys(declaration, &["may", "system"]),
         "bindings" => {
             remove_keys(
                 declaration,
@@ -2708,6 +2777,9 @@ fn residual_command(declaration: &mut serde_json::Value) {
     residual_fields(declaration, "input");
     // Compared as `ResponseUndeclaredFieldsChanged` (`ess/24`).
     remove_keys(declaration, &["undeclared_fields"]);
+    // `await_within` is `await-within-changed`; `system_issued` is a pure function of the grants
+    // and the actors' `system`, both compared on the actor (ess/27, beyond10x/ess#542).
+    remove_keys(declaration, &["await_within", "system_issued"]);
     // Compared as `InputExampleChanged`, input by input.
     remove_keys(declaration, &["examples"]);
     if let Some(outcomes) = declaration
@@ -2824,7 +2896,7 @@ fn outcome_payload_change(
             matches!(
                 f.value,
                 ess_compiler::ir::ResolvedPayloadValue::ResponseField { .. }
-                    | ess_compiler::ir::ResolvedPayloadValue::Generated
+                    | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
             )
         });
     let outcome = name.to_owned();
@@ -2940,9 +3012,23 @@ fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
                 .into_iter()
                 .chain(reads)
                 .collect();
+            // From ess/27 (beyond10x/ess#596) the line also names the elements the entry acts on
+            // and what it does to a held row; an entry without either reads as it always did.
+            let selected = each
+                .filter
+                .as_ref()
+                .map_or_else(String::new, |filter| format!(" where `{filter}`"));
+            let done = match (&affect.moves, affect.deletes) {
+                (_, true) => "deletes the row if held".to_owned(),
+                (Some(transition), false) => format!(
+                    "moves the row if held along `{}`, a row outside its `from` states skipped",
+                    transition.name
+                ),
+                (None, false) => "updated if held and created if not".to_owned(),
+            };
             lines.push(format!(
-                "affects one `{}` per element (each) of `input.{}` as `{}`, named by `{}.{}`, \
-                 updated if held and created if not: {}",
+                "affects one `{}` per element (each) of `input.{}` as `{}`{selected}, named by \
+                 `{}.{}`, {done}: {}",
                 affect.entity.name(),
                 each.list,
                 each.binder,

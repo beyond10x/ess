@@ -164,7 +164,7 @@ fn adv_e_u2_rule3a_reads_an_unspaced_minus_after_every_kind_of_base() {
     }
     let written = "{forall: {in: slots, as: slot, that: slot.high == slot.low-1}}";
     let want = Predicate::Forall(Box::new(Quantified {
-        over: path("slots"),
+        over: ess_primitives::predicate::Collection::Fact(path("slots")),
         bind: "slot".to_owned(),
         body: compare("slot.high", CompareOp::Eq, integer("slot.low", Subtract, 1)),
     }));

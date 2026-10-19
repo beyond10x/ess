@@ -8,17 +8,50 @@ use std::fmt;
 
 pub(crate) mod attributes;
 pub mod lexical;
+pub mod value;
 
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{
-    CompareKind, CompareOp, Derived, Distinct, DistinctKeyKind, FoldOp, OffsetMagnitude,
-    OffsetOperand, Operand, Predicate, Quantified, TextNamespace, TextOp, TextOperand, TRIMMED,
-    TRIMMED_WHITESPACE,
+    Collection, CompareKind, CompareOp, Derived, Distinct, DistinctKeyKind, FoldOp,
+    OffsetMagnitude, OffsetOperand, Operand, Predicate, Quantified, TextNamespace, TextOp,
+    TextOperand, TRIMMED, TRIMMED_WHITESPACE,
 };
 use ess_primitives::window::{CalendarWindow, WindowInstant};
 
 use crate::{Field, Primitive, TypeBody, TypeRef, TypeRegistry};
+
+/// Where one side of a comparison is a function of a fact (`ess/27`, beyond10x/ess#584), the type it
+/// computes and the other side, where that side holds no value of that type: `String` against a
+/// `String`, `Bytes` against text that is no `String`, an instant, a `Duration`, a number, a
+/// Boolean.
+fn computed_against<'v>(
+    left: &'v ValueType,
+    right: &'v ValueType,
+) -> Option<(ess_primitives::expr::Kind, &'v ValueType)> {
+    use ess_primitives::expr::Kind;
+    let admits = |kind: Kind, other: &ValueType| match other.computes {
+        Some(computed) => computed == kind,
+        None => match kind {
+            Kind::String => other.string || other.declared.starts_with("Text literal"),
+            Kind::Bytes => {
+                other.scalar == Some(ScalarKind::Text)
+                    && !other.string
+                    && !other.instant
+                    && !other.duration
+            }
+            Kind::Timestamp => other.instant,
+            Kind::Duration => other.duration,
+            Kind::Integer | Kind::Decimal => other.scalar == Some(ScalarKind::Number),
+            Kind::Boolean => other.scalar == Some(ScalarKind::Bool),
+        },
+    };
+    match (left.computes, right.computes) {
+        (Some(kind), _) if !admits(kind, right) => Some((kind, right)),
+        (None, Some(kind)) if !admits(kind, left) => Some((kind, left)),
+        _ => None,
+    }
+}
 
 /// The three scalar representations understood by the predicate evaluator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -204,12 +237,34 @@ pub trait TypeEnvironment {
     fn current_time_later(&self) -> Option<&'static str> {
         None
     }
+    /// Whether this site is a view's filter, where a refusal of the current time names the
+    /// parameter idiom (`story:expression-arithmetic-and-time`, `now_relative_view_filter`).
+    ///
+    /// `false` by default.
+    fn is_view_filter(&self) -> bool {
+        false
+    }
     /// Whether a one-segment fact that no binder names may stand on the right of a comparison —
     /// the operand the canonical form writes as `{fact: …}`, which `ess/22` introduced
     /// (`docs/design/expression-family-source22.md`, A1).
     ///
     /// `true` by default, for the reason [`Self::admits_text_length`] is.
     fn admits_root_facts(&self) -> bool {
+        true
+    }
+    /// Whether the format admits a function of a fact as an operand, `sha256(…)`, which `ess/27`
+    /// introduced (beyond10x/ess#584).
+    ///
+    /// `true` by default, for the reason [`Self::admits_text_length`] is.
+    fn admits_calls(&self) -> bool {
+        true
+    }
+    /// Whether this site admits a function of a fact as an operand: a command outcome's guards
+    /// (`when:`, `when_subject:`, `when_related:`), which are decided while a request is handled
+    /// and never carried into a suite.
+    ///
+    /// `true` by default: the compiler's environment reads an IR validation already admitted.
+    fn calls_here(&self) -> bool {
         true
     }
     /// Whether this environment checks an authored source whose bare words name roots (`ess/22`
@@ -269,6 +324,29 @@ pub trait TypeEnvironment {
     fn caller_attribute(&self, _name: &str) -> Option<Self::Type> {
         None
     }
+    /// Whether a quantifier may walk the rows of `entity` here, `exists: {in: {entity: <E>}, …}`
+    /// (`ess/27`, beyond10x/ess#551, `docs/design/related-rows-quantifier.md`), and the type each
+    /// row is read as.
+    ///
+    /// [`RelatedRows::NotHere`] by default, which the checker refuses by name: only the selector of
+    /// a related read and of a row-set guard admits rows, and every other predicate site refuses
+    /// them without having to know the construct exists.
+    fn related_rows(&self, _entity: &str) -> RelatedRows<Self::Type> {
+        RelatedRows::NotHere
+    }
+}
+
+/// What a predicate site answers for a quantifier over the rows of an entity
+/// ([`TypeEnvironment::related_rows`]).
+#[derive(Debug, Clone)]
+pub enum RelatedRows<T> {
+    /// Admitted here: the binder reads a row of this type, its fields as members.
+    Admitted(T),
+    /// A site that admits rows, where this use is refused by the site's own rules — below the
+    /// format, or no declared entity — so the checker reports nothing and types no binder.
+    Reported,
+    /// Not admitted at this site.
+    NotHere,
 }
 
 /// Whether a predicate site admits the current-time operand (beyond10x/ess#171), in two parts
@@ -398,6 +476,9 @@ enum CurrentTimeSite {
     /// A command outcome's `when_subject:` or `when_related:` predicate over a stored row, from
     /// `ess/22`.
     Stored,
+    /// A view's filter: refused, and the refusal names the `from`/`to` parameter idiom, because a
+    /// view read has no clock a suite fixes (`docs/design/generic-language-features.md`, grid R).
+    ViewFilter,
 }
 
 impl<'a> DomainEnvironment<'a> {
@@ -449,6 +530,13 @@ impl<'a> DomainEnvironment<'a> {
         self.current_time = CurrentTimeSite::Stored;
         self
     }
+    /// Mark the environment a view's filter is checked in, so a refusal of `now` there names the
+    /// `from`/`to` parameter idiom.
+    #[must_use]
+    pub fn in_view_filter(mut self) -> Self {
+        self.current_time = CurrentTimeSite::ViewFilter;
+        self
+    }
 }
 
 impl TypeEnvironment for DomainEnvironment<'_> {
@@ -490,6 +578,17 @@ impl TypeEnvironment for DomainEnvironment<'_> {
             .format()
             .is_none_or(|format| format.major() >= crate::system::FormatVersion::V22.major())
     }
+    fn admits_calls(&self) -> bool {
+        self.registry
+            .format()
+            .is_none_or(|format| format.major() >= crate::system::FormatVersion::V27.major())
+    }
+    fn calls_here(&self) -> bool {
+        matches!(
+            self.current_time,
+            CurrentTimeSite::Input | CurrentTimeSite::Stored
+        )
+    }
     fn resolves_bare_words(&self) -> bool {
         self.registry
             .format()
@@ -506,7 +605,7 @@ impl TypeEnvironment for DomainEnvironment<'_> {
         };
         CurrentTimeAdmission {
             site: match self.current_time {
-                CurrentTimeSite::None => false,
+                CurrentTimeSite::None | CurrentTimeSite::ViewFilter => false,
                 CurrentTimeSite::Input => true,
                 CurrentTimeSite::Stored => at(crate::system::FormatVersion::V22),
             },
@@ -516,6 +615,9 @@ impl TypeEnvironment for DomainEnvironment<'_> {
     fn current_time_later(&self) -> Option<&'static str> {
         (self.current_time == CurrentTimeSite::Stored && !self.current_time().site)
             .then_some("ess/22")
+    }
+    fn is_view_filter(&self) -> bool {
+        self.current_time == CurrentTimeSite::ViewFilter
     }
     type Type = TypeRef;
 
@@ -1105,7 +1207,7 @@ fn utf8_bytes_path<E: TypeEnvironment>(
 fn derive_selectors<E: TypeEnvironment>(
     environment: &E,
     predicate: Predicate,
-    scope: &mut Vec<(FactPath, String)>,
+    scope: &mut Vec<(Collection, String)>,
     input_namespace: bool,
 ) -> Predicate {
     match predicate {
@@ -1115,7 +1217,7 @@ fn derive_selectors<E: TypeEnvironment>(
             right,
             kind,
         } => {
-            let pairs: Vec<(&FactPath, &str)> = scope
+            let pairs: Vec<(&Collection, &str)> = scope
                 .iter()
                 .map(|(over, bind)| (over, bind.as_str()))
                 .collect();
@@ -1171,10 +1273,16 @@ fn derive_selectors<E: TypeEnvironment>(
 fn derive_quantified<E: TypeEnvironment>(
     environment: &E,
     quantified: Quantified,
-    scope: &mut Vec<(FactPath, String)>,
+    scope: &mut Vec<(Collection, String)>,
     input_namespace: bool,
 ) -> Quantified {
-    scope.push((quantified.over.clone(), quantified.bind.clone()));
+    // The binder is typed where `key_kinds` types it: a collection written `input.<path>` in a
+    // plain input guard is the input `<path>`, so `s.utf8_bytes` over `input.tags` reads the text
+    // `s` as `{utf8_bytes: s}` does.
+    let typed = quantified
+        .over
+        .map_fact(|over| typed_over(over, scope, input_namespace));
+    scope.push((typed, quantified.bind.clone()));
     let body = derive_selectors(environment, quantified.body, scope, input_namespace);
     scope.pop();
     Quantified {
@@ -1265,6 +1373,18 @@ pub(crate) fn resolve_lexical_reading<E: TypeEnvironment>(
             let bindings = scope_bindings(environment, scope);
             let word = match spelling {
                 lexical::Spelling::Word(word) => word,
+                // A call spelling (beyond10x/ess#584): the expression it parses to, where it reads
+                // one fact through a function; the checker admits it from `ess/27`. Text that is
+                // no such expression keeps the meaning it always had.
+                lexical::Spelling::Call(text) => {
+                    return ess_primitives::expr::Expr::parse(text)
+                        .ok()
+                        .and_then(Derived::call)
+                        .map_or_else(
+                            || Operand::Literal(FactValue::Text(text.to_owned())),
+                            Operand::Derived,
+                        );
+                }
                 // A dotted path with a `-`: the fact it reads where it names one, else the offset
                 // it also spells (`window.lower-5`), else the fact it always was, which the checker
                 // refuses as unobservable as before.
@@ -1316,10 +1436,10 @@ pub(crate) fn resolve_lexical_reading<E: TypeEnvironment>(
 fn key_kinds<E: TypeEnvironment>(
     environment: &E,
     predicate: Predicate,
-    scope: &mut Vec<(FactPath, String)>,
+    scope: &mut Vec<(Collection, String)>,
     input_namespace: bool,
 ) -> Predicate {
-    let nested = |child: Predicate, scope: &mut Vec<(FactPath, String)>| {
+    let nested = |child: Predicate, scope: &mut Vec<(Collection, String)>| {
         key_kinds(environment, child, scope, input_namespace)
     };
     match predicate {
@@ -1362,10 +1482,12 @@ fn key_kinds<E: TypeEnvironment>(
 fn kinds_in<E: TypeEnvironment>(
     environment: &E,
     quantified: Quantified,
-    scope: &mut Vec<(FactPath, String)>,
+    scope: &mut Vec<(Collection, String)>,
     input_namespace: bool,
 ) -> Quantified {
-    let typed = typed_over(&quantified.over, scope, input_namespace);
+    let typed = quantified
+        .over
+        .map_fact(|over| typed_over(over, scope, input_namespace));
     scope.push((typed, quantified.bind.clone()));
     let body = key_kinds(environment, quantified.body, scope, input_namespace);
     scope.pop();
@@ -1378,7 +1500,7 @@ fn kinds_in<E: TypeEnvironment>(
 
 /// The path a collection is typed at: `over`, or with `input_namespace` the input `<path>` that
 /// `input.<path>` names where no binder is called `input` (decision 6).
-fn typed_over(over: &FactPath, scope: &[(FactPath, String)], input_namespace: bool) -> FactPath {
+fn typed_over(over: &FactPath, scope: &[(Collection, String)], input_namespace: bool) -> FactPath {
     let namespace = crate::command::subject_fact::INPUT_NAMESPACE;
     if input_namespace
         && over.namespace() == namespace
@@ -1395,14 +1517,14 @@ fn typed_over(over: &FactPath, scope: &[(FactPath, String)], input_namespace: bo
 fn with_key_kind<E: TypeEnvironment>(
     environment: &E,
     mut distinct: Distinct,
-    scope: &[(FactPath, String)],
+    scope: &[(Collection, String)],
     input_namespace: bool,
 ) -> Distinct {
     if distinct.key_kind.is_some() {
         return distinct;
     }
-    let over = typed_over(&distinct.over, scope, input_namespace);
-    let mut pairs: Vec<(&FactPath, &str)> = scope
+    let over = Collection::Fact(typed_over(&distinct.over, scope, input_namespace));
+    let mut pairs: Vec<(&Collection, &str)> = scope
         .iter()
         .map(|(over, bind)| (over, bind.as_str()))
         .collect();
@@ -1525,7 +1647,7 @@ fn base_resolves<E: TypeEnvironment>(
 fn tag_instants<E: TypeEnvironment>(
     environment: &E,
     predicate: Predicate,
-    scope: &mut Vec<(FactPath, String)>,
+    scope: &mut Vec<(Collection, String)>,
 ) -> Predicate {
     match predicate {
         Predicate::Compare {
@@ -1534,7 +1656,7 @@ fn tag_instants<E: TypeEnvironment>(
             right: Operand::Fact(right),
             kind: CompareKind::Value,
         } => {
-            let pairs: Vec<(&FactPath, &str)> = scope
+            let pairs: Vec<(&Collection, &str)> = scope
                 .iter()
                 .map(|(over, bind)| (over, bind.as_str()))
                 .collect();
@@ -1582,7 +1704,7 @@ fn tag_instants<E: TypeEnvironment>(
 fn tag_quantified<E: TypeEnvironment>(
     environment: &E,
     quantified: Quantified,
-    scope: &mut Vec<(FactPath, String)>,
+    scope: &mut Vec<(Collection, String)>,
 ) -> Quantified {
     scope.push((quantified.over.clone(), quantified.bind.clone()));
     let body = tag_instants(environment, quantified.body, scope);
@@ -1599,7 +1721,7 @@ fn scope_bindings<E: TypeEnvironment>(
     environment: &E,
     scope: &[&lexical::LexicalQuantified],
 ) -> Vec<Binding<E::Type>> {
-    let pairs: Vec<(&FactPath, &str)> = scope
+    let pairs: Vec<(&Collection, &str)> = scope
         .iter()
         .map(|quantified| (&quantified.over, quantified.bind.as_str()))
         .collect();
@@ -1610,10 +1732,31 @@ fn scope_bindings<E: TypeEnvironment>(
 /// [`Checker::quantified`] types them.
 fn bindings_of<E: TypeEnvironment>(
     environment: &E,
-    scope: &[(&FactPath, &str)],
+    scope: &[(&Collection, &str)],
 ) -> Vec<Binding<E::Type>> {
     let mut bindings: Vec<Binding<E::Type>> = Vec::new();
     for (over, bind) in scope {
+        let over = match over {
+            Collection::Fact(over) => over,
+            // A row of an entity, where this environment admits one: its fields are members.
+            Collection::Rows { entity } => {
+                let reference = match environment.related_rows(entity) {
+                    RelatedRows::Admitted(row) => Some(row),
+                    RelatedRows::Reported | RelatedRows::NotHere => None,
+                };
+                bindings.push(Binding {
+                    name: (*bind).to_owned(),
+                    reference,
+                    access: Access {
+                        collection: true,
+                        text_length: false,
+                        depth: 1,
+                    },
+                    optional: false,
+                });
+                continue;
+            }
+        };
         let target = resolve(environment, over, "", &bindings).ok();
         let reference =
             target
@@ -1722,7 +1865,7 @@ pub fn read_input_namespace(predicate: &Predicate) -> Predicate {
         }
     }
     fn quantifier<'a>(quantified: &'a Quantified, bound: &mut Vec<&'a str>) -> Quantified {
-        let over = strip(&quantified.over, bound);
+        let over = quantified.over.map_fact(|over| strip(over, bound));
         bound.push(&quantified.bind);
         let body = walk(&quantified.body, bound);
         bound.pop();
@@ -1785,6 +1928,9 @@ struct ValueType {
     string: bool,
     /// Whether the terminal type is `Integer`, which an Integer offset moves (A2).
     integer: bool,
+    /// What a function of a fact computes (`ess/27`, beyond10x/ess#584); `None` for every other
+    /// operand, whose type the flags above say.
+    computes: Option<ess_primitives::expr::Kind>,
 }
 
 impl<E: TypeEnvironment> Checker<'_, E> {
@@ -1837,6 +1983,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             declared: resolved.declared,
             scalar: resolved.scalar,
             variants: resolved.variants,
+            computes: None,
         }
     }
 
@@ -1859,6 +2006,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     duration: false,
                     string: false,
                     integer: false,
+                    computes: None,
                 })
             }
         }
@@ -1868,6 +2016,9 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     /// the UTF-8 byte length of a `String` — through newtypes and `Optional` — which is an
     /// `Integer`. The parent is read like any fact, so a producer publishes the text it measures.
     fn derived(&mut self, derived: &Derived) -> Option<ValueType> {
+        if let Derived::Call(expr) = derived {
+            return self.call(derived, expr);
+        }
         let parent = derived.parent();
         if !self.environment.admits_root_facts() {
             self.checked.errors.push(error(
@@ -1909,6 +2060,102 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             duration: false,
             string: false,
             integer: true,
+            computes: None,
+        })
+    }
+
+    /// A function of one fact (`ess/27`, beyond10x/ess#584): admitted in a command outcome's
+    /// guards from `ess/27`, its one read typed as any fact is, and the expression typed over it by
+    /// the shared rules ([`ess_primitives::expr::Expr::infer`]), each misuse refused naming the
+    /// function and the type it takes.
+    fn call(&mut self, derived: &Derived, expr: &ess_primitives::expr::Expr) -> Option<ValueType> {
+        use ess_primitives::expr::Kind;
+        let parent = derived.parent();
+        if !self.environment.admits_calls() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UnsupportedFormatVersion,
+                Some(parent),
+                None,
+                format!(
+                    "`{expr}` reads `{parent}` through a function, which requires specification \
+                     format ess/27; below it, quote the text to compare with it"
+                ),
+            ));
+            return None;
+        }
+        if !self.environment.calls_here() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::UnsupportedConstruct,
+                Some(parent),
+                None,
+                format!(
+                    "`{expr}` computes a value from `{parent}`, and a function of a fact is \
+                     admitted only in a command outcome's guards (`when:`, `when_subject:`, \
+                     `when_related:`); compare stored values here, or move the rule into the \
+                     command's guard"
+                ),
+            ));
+            return None;
+        }
+        let resolved = self.read(parent, false)?;
+        let primitive = self.environment.primitive(&resolved.terminal);
+        let kind = match primitive {
+            Some(Primitive::Integer) => Some(Kind::Integer),
+            Some(Primitive::Decimal) => Some(Kind::Decimal),
+            Some(Primitive::Timestamp) => Some(Kind::Timestamp),
+            Some(Primitive::Duration) => Some(Kind::Duration),
+            Some(Primitive::String) => Some(Kind::String),
+            Some(Primitive::Bytes) => Some(Kind::Bytes),
+            Some(Primitive::Boolean) => Some(Kind::Boolean),
+            _ => None,
+        };
+        let Some(kind) = kind else {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(parent),
+                None,
+                format!(
+                    "`{expr}` reads `{parent}`, which is `{}`; a function reads an Integer, a \
+                     Decimal, a Timestamp, a Duration, a String, Bytes or a Boolean",
+                    resolved.declared
+                ),
+            ));
+            return None;
+        };
+        let read = ess_primitives::expr::ExprType {
+            kind,
+            optional: resolved.optional,
+        };
+        let typed = match expr.infer(&|_| Ok(read)) {
+            Ok(typed) => typed,
+            Err(refused) => {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::TypeMismatch,
+                    Some(parent),
+                    None,
+                    format!("{refused}; `{parent}` is `{}`", resolved.declared),
+                ));
+                return None;
+            }
+        };
+        Some(ValueType {
+            declared: format!("{expr} ({})", typed.kind),
+            declaring_variants: None,
+            scalar: Some(match typed.kind {
+                Kind::Integer | Kind::Decimal => ScalarKind::Number,
+                Kind::Boolean => ScalarKind::Bool,
+                Kind::Timestamp | Kind::Duration | Kind::String | Kind::Bytes => ScalarKind::Text,
+            }),
+            variants: None,
+            instant: typed.kind == Kind::Timestamp,
+            duration: typed.kind == Kind::Duration,
+            string: typed.kind == Kind::String,
+            integer: typed.kind == Kind::Integer,
+            computes: Some(typed.kind),
         })
     }
 
@@ -2236,6 +2483,10 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     /// elsewhere. `true` when this decided the literal; `false` leaves it to the rules every other
     /// text literal meets, which is what a format before `ess/16` keeps for everything but an
     /// ordering in a `when:` — so an equality with the word `now` means what it meant there.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one arm per admission of the current time, each with its own refusal"
+    )]
     fn current_time_literal(
         &mut self,
         expression: &Predicate,
@@ -2278,6 +2529,31 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                      `{text}`, which requires specification format ess/16"
                 ),
                 "write `format: ess/16` on the source that declares the system".to_owned(),
+            ),
+            // A view filter: no suite sets a clock for a read, so the bound is the caller's
+            // parameters, which keep it in the specification and checked.
+            (
+                ordering,
+                parsed,
+                CurrentTimeAdmission {
+                    site: false,
+                    format: true,
+                },
+            ) if (ordering || parsed) && self.environment.is_view_filter() => (
+                ValidationCode::TypeMismatch,
+                format!(
+                    "`{expression}` compares the Timestamp `{path}` with the current time, \
+                     `{text}`, which is admitted only in a command outcome's `when:` over its \
+                     input and, from ess/22, in its `when_subject:` and `when_related:` \
+                     predicates; in a view filter a read has no clock a suite can fix, so no \
+                     scenario could check the rows either side of the bound"
+                ),
+                format!(
+                    "declare the bounds as view parameters and filter on them, such as \
+                     `params: [{{name: from, type: Timestamp}}, {{name: to, type: Timestamp}}]` \
+                     with `{path} >= param.from` and `{path} < param.to`; the caller sends the \
+                     window it means"
+                ),
             ),
             // A site that refuses the operand names where it is admitted, whatever else is wrong
             // with the comparison, and never suggests writing it again here.
@@ -2460,7 +2736,14 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     }
 
     fn quantified(&mut self, predicate: &Predicate, quantified: &Quantified) {
-        let target = self.read(&quantified.over, true);
+        let over = match &quantified.over {
+            Collection::Fact(over) => over,
+            Collection::Rows { entity } => {
+                self.rows(predicate, quantified, entity);
+                return;
+            }
+        };
+        let target = self.read(over, true);
         let mut reference = None;
         let mut access = Access {
             collection: true,
@@ -2494,6 +2777,45 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             reference,
             access,
             optional,
+        });
+        self.predicate(&quantified.body);
+        self.bindings.pop();
+    }
+
+    /// A quantifier over the rows of `entity` (`ess/27`, beyond10x/ess#551): where the site admits
+    /// rows, the binder reads a row of the entity and the body is checked as any body is; where it
+    /// does not, the refusal names the two sites that do. The body's free paths are checked either
+    /// way.
+    fn rows(&mut self, predicate: &Predicate, quantified: &Quantified, entity: &str) {
+        let reference = match self.environment.related_rows(entity) {
+            RelatedRows::Admitted(row) => Some(row),
+            RelatedRows::Reported => None,
+            RelatedRows::NotHere => {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::UnsupportedConstruct,
+                    None,
+                    None,
+                    format!(
+                        "`{predicate}` walks the rows of `{entity}`, which a quantifier does only \
+                         in the `where:` of a `{{related: …}}` read and of a row-set \
+                         `when_related:`; to test the rows related to the subject or the input, \
+                         guard with `when_related: {{entity: {entity}, where: <its tie to \
+                         subject. or input.>, exists: true}}`"
+                    ),
+                ));
+                None
+            }
+        };
+        self.bindings.push(Binding {
+            name: quantified.bind.clone(),
+            reference,
+            access: Access {
+                collection: true,
+                text_length: false,
+                depth: 1,
+            },
+            optional: false,
         });
         self.predicate(&quantified.body);
         self.bindings.pop();
@@ -2585,6 +2907,19 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     || left_type.scalar != Some(ScalarKind::Bool));
             if !compatible {
                 self.mismatch(predicate, &op.to_string(), &left_type, Some(&right_type));
+            } else if let Some((computed, other)) = computed_against(&left_type, &right_type) {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::TypeMismatch,
+                    left.fact_path().or_else(|| right.fact_path()),
+                    None,
+                    format!(
+                        "`{predicate}` compares {computed} with `{}`, which is no {computed}; a \
+                         function's value compares with a value of the type it computes, such as \
+                         `base64url(…)`'s String",
+                        other.declared
+                    ),
+                ));
             }
             if op.needs_ordering() {
                 self.duration_ordering(predicate, [(left, &left_type), (right, &right_type)]);
@@ -3278,6 +3613,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                             duration: false,
                             string: false,
                             integer: false,
+                            computes: None,
                         };
                         self.mismatch(predicate, op, &typed, Some(&literal));
                     }

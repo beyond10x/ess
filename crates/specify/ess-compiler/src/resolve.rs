@@ -41,6 +41,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ess_domain::actor::ActorSpec;
 use ess_domain::binding::{BindingName, BindingSpec, MappingSource};
+use ess_domain::command::published_operand as published_reads;
 use ess_domain::command::related_value::{input_carrier, referenced_entity, Referenced};
 use ess_domain::command::row_set::RowSetTest;
 use ess_domain::command::{
@@ -70,9 +71,10 @@ use crate::ir::{
     ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError,
     ResolvedEvent, ResolvedFallback, ResolvedField, ResolvedInputRead, ResolvedInstance,
     ResolvedMapping, ResolvedMappingValue, ResolvedOutcome, ResolvedPayload, ResolvedPayloadField,
-    ResolvedPayloadValue, ResolvedRelatedHop, ResolvedRelatedTest, ResolvedRelatedVia,
-    ResolvedRelation, ResolvedRowSelection, ResolvedRowSetTest, ResolvedSubject, ResolvedType,
-    ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
+    ResolvedPayloadValue, ResolvedPublishedRead, ResolvedRelatedHop, ResolvedRelatedTest,
+    ResolvedRelatedVia, ResolvedRelation, ResolvedRowSelection, ResolvedRowSetTest,
+    ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle,
+    ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -1592,6 +1594,21 @@ impl<'a> Resolver<'a> {
             })
             .map(|declared| declared.name.clone())
             .collect();
+        // The structs declared `shorthand: <field>` (`ess/27`), carried beside the types.
+        let shorthands = self
+            .spec
+            .system()
+            .types
+            .iter()
+            .filter(|declared| types.contains_key(&declared.name))
+            .filter_map(|declared| match &declared.body {
+                TypeBody::Struct {
+                    shorthand: Some(field),
+                    ..
+                } => Some((declared.name.clone(), field.clone())),
+                _ => None,
+            })
+            .collect();
         Ok(EssIr::from_parts(crate::ir::EssIrParts {
             system: self.spec.system().name.clone(),
             version: self.spec.system().version,
@@ -1600,6 +1617,7 @@ impl<'a> Resolver<'a> {
             domains,
             types,
             undeclared_fields_ignored,
+            shorthands,
             conversions,
             entities,
             commands,
@@ -2173,6 +2191,8 @@ impl<'a> Resolver<'a> {
                 &needles,
             );
             let domain = self.owner(code, &command.name, "command");
+            // ess/27 (#542): a pure function of the grants, carried so no consumer derives it.
+            let system_issued = self.spec.is_system_issued(&command.name);
             if let (Some(input), Some(response), Some(outcomes), Some(domain)) =
                 (input, response, outcomes, domain)
             {
@@ -2189,6 +2209,8 @@ impl<'a> Resolver<'a> {
                         outcomes,
                         naming: command.naming,
                         refs: command.refs,
+                        system_issued,
+                        await_within: command.await_within,
                     },
                 );
             }
@@ -2436,30 +2458,10 @@ impl<'a> Resolver<'a> {
                 None => None,
                 Some(named) => Some(entity.lifecycle.transition(named)?.clone()),
             };
-            // One row per element of an input list (ess/23, beyond10x/ess#459): the element reads
-            // in the entity's declaration order, at the field's declared type.
-            let each = affect.each.as_ref().map(|each| crate::ir::ResolvedEach {
-                list: each.list.clone(),
-                binder: each.binder.clone(),
-                member: each.member.clone(),
-                reads: entity
-                    .fields
-                    .iter()
-                    .filter_map(|field| {
-                        each.reads
-                            .get(&field.name)
-                            .map(|member| crate::ir::ResolvedElementRead {
-                                target: field.name.clone(),
-                                member: member.clone(),
-                                target_type: field.type_ref.clone(),
-                            })
-                    })
-                    .collect(),
-            });
             affects.push(crate::ir::ResolvedAffect {
                 entity: handle,
                 filter: affect.filter.clone(),
-                each,
+                each: affect.each.as_ref().map(|each| resolved_each(entity, each)),
                 sets,
                 moves,
                 deletes: affect.deletes,
@@ -2749,7 +2751,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// One determined field: the source resolved, and the two types checked against each other.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn payload_field(
         &mut self,
         command: &CommandSpec,
@@ -2762,6 +2764,12 @@ impl<'a> Resolver<'a> {
     ) -> Option<ResolvedPayloadField> {
         if let Some(constant) = payload_constant_source(target, source) {
             return Some(constant);
+        }
+        if let PayloadSource::PayloadRead { event, field } = source {
+            return self.payload_read(command, outcome, block, target, source, (event, field));
+        }
+        if let PayloadSource::Expression { expr } = source {
+            return self.expression_value(command, outcome, block, target, source, (expr, subject));
         }
         if source.needs_value_expressions() {
             return self.expression_field(command, outcome, block, target, source, input, subject);
@@ -2935,10 +2943,152 @@ impl<'a> Resolver<'a> {
         };
         let admitted =
             self.spec.system().format.major() >= ess_domain::system::FormatVersion::V16.major();
-        (admitted && command.narrowed_input(outcome, &read.name).is_some()).then(|| ResolvedField {
+        let format = Some(self.spec.system().format);
+        (admitted
+            && command
+                .narrowed_input_at(outcome, &read.name, format)
+                .is_some())
+        .then(|| ResolvedField {
             type_ref: of.as_ref().clone(),
             ..read.clone()
         })
+    }
+
+    /// `{payload: <event>.<field>}` (`ess/27`, beyond10x/ess#545): the event field this outcome
+    /// publishes, at its declared type. `ess-domain` refused a read outside `sets:`, of an event
+    /// this outcome does not fill and of a field it does not declare; the refusals here are the
+    /// backstop for a specification built field by field.
+    fn payload_read(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        block: SourceBlock<'_>,
+        target: &ResolvedField,
+        source: &PayloadSource,
+        (event, field): (&QualifiedName, &String),
+    ) -> Option<ResolvedPayloadField> {
+        let declared = matches!(block, SourceBlock::Sets(_))
+            .then(|| outcome.payload.get(event))
+            .flatten()
+            .filter(|filled| filled.contains_key(field))
+            .and_then(|_| self.spec.events().get(event))
+            .and_then(|declared| declared.field(field))
+            .cloned();
+        let Some(declared) = declared else {
+            self.refuse_payload(
+                command,
+                outcome,
+                block,
+                Some((&target.name, source)),
+                codes::COMMAND_UNDECLARED_REFERENCE,
+                format!(
+                    "outcome `{}` of `{}` stores `{{payload: {event}.{field}}}`, which its \
+                     `payload:` does not fill",
+                    outcome.name, command.name
+                ),
+                Vec::new(),
+            );
+            return None;
+        };
+        let subject = format!("{event}.{field}");
+        let path = format!("events.{event}.{field}");
+        let needles = vec![format!("name: {event}")];
+        let type_ref = self.type_ref(
+            codes::EVENT_UNDECLARED_REFERENCE,
+            &declared.type_ref,
+            &subject,
+            &path,
+            &needles,
+        )?;
+        Some(ResolvedPayloadField {
+            target: target.name.clone(),
+            target_type: target.type_ref.clone(),
+            value: ResolvedPayloadValue::PayloadRead {
+                event: EventHandle::new(event.clone()),
+                field: field.clone(),
+                type_ref,
+            },
+            conversion: None,
+        })
+    }
+
+    /// `{expr: …}` (ess/27, beyond10x/ess#560): typed again by the checker `ess-domain` admitted it
+    /// with, so every read carries its kind. A refusal here is a backstop for a specification built
+    /// field by field.
+    fn expression_value(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        block: SourceBlock<'_>,
+        target: &ResolvedField,
+        source: &PayloadSource,
+        (written, subject): (&str, Option<&ResolvedEntity>),
+    ) -> Option<ResolvedPayloadField> {
+        let declared_target = ess_domain::types::Field::new(
+            target.name.clone(),
+            self.declared_target(block, &target.name)?,
+        );
+        let entity = subject.and_then(|subject| self.spec.entities().get(&subject.name));
+        match ess_domain::command::expression_value::check_value(
+            command,
+            entity,
+            &self.registry,
+            &declared_target,
+            written,
+        ) {
+            Ok(checked) => Some(ResolvedPayloadField {
+                target: target.name.clone(),
+                target_type: target.type_ref.clone(),
+                value: ResolvedPayloadValue::Expression {
+                    expr: checked.expr,
+                    computes: checked.typed.kind,
+                    optional: checked.typed.optional,
+                },
+                conversion: None,
+            }),
+            Err(refusal) => {
+                self.refuse_payload(
+                    command,
+                    outcome,
+                    block,
+                    Some((&target.name, source)),
+                    codes::COMMAND_TYPE_MISMATCH,
+                    refusal.message,
+                    Vec::new(),
+                );
+                None
+            }
+        }
+    }
+
+    /// The declared type of `name` in the event, error or entity `block` fills.
+    fn declared_target(
+        &self,
+        block: SourceBlock<'_>,
+        name: &str,
+    ) -> Option<ess_domain::types::TypeRef> {
+        let owner = block.owner();
+        let field = match block {
+            SourceBlock::Payload(_) => self
+                .spec
+                .events()
+                .get(owner)
+                .and_then(|event| event.field(name))
+                .or_else(|| {
+                    self.spec
+                        .errors()
+                        .get(owner)
+                        .and_then(|error| error.fields.iter().find(|field| field.name == name))
+                }),
+            SourceBlock::Sets(_) => self.spec.entities().get(owner).and_then(|entity| {
+                if entity.identity.name == name {
+                    Some(&entity.identity)
+                } else {
+                    entity.field(name)
+                }
+            }),
+        };
+        field.map(|field| field.type_ref.clone())
     }
 
     /// An `ess/14` source that reads something: the subject, an optional input, or a struct's
@@ -2994,12 +3144,22 @@ impl<'a> Resolver<'a> {
                     );
                     return None;
                 };
+                // ess/27 (beyond10x/ess#556): the branch's own `when_subject:` requires the
+                // field present, so it is read at its present type, as `ess-domain` admitted it.
+                let type_ref = match &read.type_ref {
+                    ResolvedTypeRef::Optional { of }
+                        if self.narrows(command.narrows_subject_field(outcome, field)) =>
+                    {
+                        of.as_ref().clone()
+                    }
+                    declared => declared.clone(),
+                };
                 (
                     ResolvedPayloadValue::SubjectField {
                         field: read.name.clone(),
-                        type_ref: read.type_ref.clone(),
+                        type_ref: type_ref.clone(),
                     },
-                    read.type_ref.clone(),
+                    type_ref,
                 )
             }
             PayloadSource::InputOrGenerated { field, otherwise } => {
@@ -3063,6 +3223,9 @@ impl<'a> Resolver<'a> {
             }
             PayloadSource::RelatedSelection { .. } => {
                 self.selection_field(command, outcome, block, (target, source))?
+            }
+            PayloadSource::RelatedHead { .. } => {
+                self.head_field(command, outcome, block, (target, source))?
             }
             // A whole event field read from the changed row (ess/25, beyond10x/ess#531): `subject`
             // is the set subject's entity there. `ess-domain` refused it anywhere else; the refusal
@@ -3159,12 +3322,74 @@ impl<'a> Resolver<'a> {
             return None;
         };
         let read = self.entity_field_resolved(entity, held)?;
+        let reads = self.published_reads(outcome, selection)?;
         Some((
             ResolvedPayloadValue::RelatedSelection {
                 selection: ResolvedRowSelection {
                     entity: EntityHandle::new(entity.name.clone()),
                     filter: selection.filter.clone(),
+                    reads,
                 },
+                field: read.name.clone(),
+                type_ref: read.type_ref.clone(),
+            },
+            read.type_ref,
+        ))
+    }
+
+    /// `{related: {entity, where, order_by, first}}` (ess/27, beyond10x/ess#543): the selector
+    /// resolved as a filtered read's, the order as written, and `first` read from the head row at
+    /// its declared type. `ess-domain` refused an order that is not total and a field the entity
+    /// does not hold; the refusal here is the backstop for a specification built field by field.
+    fn head_field(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        block: SourceBlock<'_>,
+        (target, source): (&ResolvedField, &PayloadSource),
+    ) -> Option<(ResolvedPayloadValue, ResolvedTypeRef)> {
+        let PayloadSource::RelatedHead {
+            selection,
+            order_by,
+            ties,
+            first,
+            ..
+        } = source
+        else {
+            return None;
+        };
+        let read = self
+            .spec
+            .entities()
+            .get(&selection.entity)
+            .and_then(|entity| entity_field(entity, first).map(|held| (entity, held)));
+        let Some((entity, held)) = read else {
+            self.refuse_payload(
+                command,
+                outcome,
+                block,
+                Some((&target.name, source)),
+                codes::COMMAND_UNDECLARED_REFERENCE,
+                format!(
+                    "outcome `{}` of `{}` reads `{first}` of the first `{}` its selector ranks, \
+                     and that is no field of a declared entity",
+                    outcome.name, command.name, selection.entity
+                ),
+                Vec::new(),
+            );
+            return None;
+        };
+        let read = self.entity_field_resolved(entity, held)?;
+        let reads = self.published_reads(outcome, selection)?;
+        Some((
+            ResolvedPayloadValue::RelatedHead {
+                selection: ResolvedRowSelection {
+                    entity: EntityHandle::new(entity.name.clone()),
+                    filter: selection.filter.clone(),
+                    reads,
+                },
+                order_by: order_by.clone(),
+                ties: *ties,
                 field: read.name.clone(),
                 type_ref: read.type_ref.clone(),
             },
@@ -3374,8 +3599,21 @@ impl<'a> Resolver<'a> {
             unresolved(self);
             return None;
         };
-        let read = self.entity_field_resolved(entity, held)?;
+        let mut read = self.entity_field_resolved(entity, held)?;
+        // ess/27 (beyond10x/ess#556): the branch's own `when_related:` predicate requires the
+        // field present, so it is read at its present type, as `ess-domain` admitted it.
+        if hops.is_empty() && self.narrows(command.narrows_related_field(outcome, via, field)) {
+            if let ResolvedTypeRef::Optional { of } = &read.type_ref {
+                read.type_ref = of.as_ref().clone();
+            }
+        }
         Some(related_value(via, read_via, hops, entity, read))
+    }
+
+    /// Whether a read its branch proves present is narrowed: from `ess/27`, where `proved`.
+    fn narrows(&self, proved: bool) -> bool {
+        proved
+            && self.spec.system().format.major() >= ess_domain::system::FormatVersion::V27.major()
     }
 
     /// `held`, a field of `entity` a `{related: …}` source reads or follows, resolved as the entity
@@ -3393,6 +3631,37 @@ impl<'a> Resolver<'a> {
             &[format!("name: {}", entity.name)],
         )?
         .pop()
+    }
+
+    /// The values of `outcome`'s payload that `selection`, one of its value sources, reads under
+    /// `payload.` (ess/27, beyond10x/ess#549), in the dependency order `ess-domain` gives them,
+    /// each at its event field's resolved type. `ess-domain` refused a read of no declared field.
+    fn published_reads(
+        &mut self,
+        outcome: &ess_domain::command::Outcome,
+        selection: &ess_domain::command::row_set::RowSelection,
+    ) -> Option<Vec<ResolvedPublishedRead>> {
+        let spec = self.spec;
+        let mut resolved = Vec::new();
+        for read in published_reads::reads(spec, outcome, selection) {
+            let event = spec.events().get(&read.event)?;
+            let held = event.field(&read.field)?;
+            let field = self
+                .fields(
+                    codes::COMMAND_TYPE_MISMATCH,
+                    std::slice::from_ref(held),
+                    &event.name,
+                    &format!("events.{}", event.name),
+                    &[format!("name: {}", event.name)],
+                )?
+                .pop()?;
+            resolved.push(ResolvedPublishedRead {
+                event: EventHandle::new(event.name.clone()),
+                field: field.name,
+                type_ref: field.type_ref,
+            });
+        }
+        Some(resolved)
     }
 
     /// `{caller: <attribute>}` (ess/16, #168): the attribute as the actors that may invoke the
@@ -4039,6 +4308,7 @@ impl<'a> Resolver<'a> {
                 self.aggregation(aggregation, entities.get(source.name()), &view)
             });
             let absent = self.absent(&view, declared_fields.as_deref());
+            let computed = self.computed(&view);
             resolved.insert(
                 view.name.clone(),
                 ResolvedView {
@@ -4049,6 +4319,7 @@ impl<'a> Resolver<'a> {
                     fields,
                     params,
                     filter: view.filter,
+                    computed,
                     aggregation,
                     order_by: view.order_by,
                     paging: view.paging,
@@ -4060,6 +4331,35 @@ impl<'a> Resolver<'a> {
             );
         }
         resolved
+    }
+
+    /// A view's computed fields (`expr:`, ess/27, beyond10x/ess#560), each typed again by the
+    /// checker `ess-domain` admitted it with, against the source's observable fields. A refusal
+    /// keeps compilation closed: `ess-domain` refused an assembled specification already.
+    fn computed(&mut self, view: &ViewSpec) -> BTreeMap<String, ess_primitives::expr::Expr> {
+        let mut computed = BTreeMap::new();
+        if view.computed.is_empty() {
+            return computed;
+        }
+        let source = self
+            .spec
+            .entities()
+            .get(&view.source)
+            .map(ess_domain::entity::EntitySpec::observable_fields);
+        for (name, written) in &view.computed {
+            let checked = source.as_ref().and_then(|fields| {
+                let field = view.fields.iter().find(|field| &field.name == name)?;
+                view.computed_value(field, written, &self.registry, fields)
+                    .ok()
+            });
+            match checked {
+                Some(checked) => {
+                    computed.insert(name.clone(), checked.expr);
+                }
+                None => self.off_contract = true,
+            }
+        }
+        computed
     }
 
     /// An aggregate view's computations, each input read off the source's observable fields as
@@ -4203,6 +4503,7 @@ impl<'a> Resolver<'a> {
                     may_read,
                     naming: actor.naming,
                     attributes,
+                    system: actor.system,
                 },
             );
         }
@@ -4592,6 +4893,7 @@ impl<'a> Resolver<'a> {
             self.spec.events().get(event)?,
             &self.registry,
             &format!("{path}.when.where"),
+            self.spec.system().format,
         )
         .ok()?;
         Some(Some(crate::ir::ResolvedBindingCondition::of(plan)))
@@ -4904,6 +5206,7 @@ impl<'a> Resolver<'a> {
             &self.registry,
             self.spec.conversions(),
             &format!("binding.{}.selections", binding.name),
+            self.spec.system().format,
         ) {
             Ok(plan) => Some(plan),
             Err(error) => {
@@ -5163,7 +5466,14 @@ impl<'a> Resolver<'a> {
         }
         let predicate = binding.condition.as_ref()?;
         let event = self.spec.events().get(binding.cause.event()?)?;
-        let plan = condition::ConditionPlan::resolve(predicate, event, &self.registry, "").ok()?;
+        let plan = condition::ConditionPlan::resolve(
+            predicate,
+            event,
+            &self.registry,
+            "",
+            self.spec.system().format,
+        )
+        .ok()?;
         let optional = condition::optional_positions(members, event, &self.registry)?;
         condition::covers(&plan.proves_present(), members, &optional)
             .then(|| condition::present_type(from))
@@ -5491,6 +5801,8 @@ fn condition_of(
             selection: ResolvedRowSelection {
                 entity: EntityHandle::new(selection.entity.clone()),
                 filter: selection.filter.clone(),
+                // A guard decides the branch before anything is published (beyond10x/ess#549).
+                reads: Vec::new(),
             },
             test: match test {
                 RowSetTest::Exists(exists) => ResolvedRowSetTest::Exists(*exists),
@@ -5576,7 +5888,9 @@ fn payload_constant_source(
                 value: value.clone(),
             }
         }
-        PayloadSource::Generated => ResolvedPayloadValue::Generated,
+        PayloadSource::Generated { present } => {
+            ResolvedPayloadValue::Generated { present: *present }
+        }
         PayloadSource::Cleared => ResolvedPayloadValue::Cleared,
         PayloadSource::InputField { .. }
         | PayloadSource::ResponseField { .. }
@@ -5585,7 +5899,10 @@ fn payload_constant_source(
         | PayloadSource::Struct { .. }
         | PayloadSource::RelatedField { .. }
         | PayloadSource::RelatedSelection { .. }
+        | PayloadSource::RelatedHead { .. }
         | PayloadSource::CallerAttribute { .. }
+        | PayloadSource::PayloadRead { .. }
+        | PayloadSource::Expression { .. }
         | PayloadSource::ChangedField { .. } => return None,
         PayloadSource::ChangedCount => ResolvedPayloadValue::ChangedCount,
         PayloadSource::Increment { by, .. } => ResolvedPayloadValue::Increment { by: by.clone() },
@@ -5658,6 +5975,34 @@ fn entity_field<'e>(entity: &'e EntitySpec, name: &str) -> Option<&'e ess_domain
         Some(&entity.identity)
     } else {
         entity.field(name)
+    }
+}
+
+/// One row per element of an input list (ess/23, beyond10x/ess#459): the element reads in the
+/// entity's declaration order, at the field's declared type, and from ess/27 the element filter
+/// (beyond10x/ess#596).
+fn resolved_each(
+    entity: &crate::ir::ResolvedEntity,
+    each: &ess_domain::command::set_effects::Each,
+) -> crate::ir::ResolvedEach {
+    crate::ir::ResolvedEach {
+        list: each.list.clone(),
+        binder: each.binder.clone(),
+        member: each.member.clone(),
+        reads: entity
+            .fields
+            .iter()
+            .filter_map(|field| {
+                each.reads
+                    .get(&field.name)
+                    .map(|member| crate::ir::ResolvedElementRead {
+                        target: field.name.clone(),
+                        member: member.clone(),
+                        target_type: field.type_ref.clone(),
+                    })
+            })
+            .collect(),
+        filter: each.filter.clone(),
     }
 }
 

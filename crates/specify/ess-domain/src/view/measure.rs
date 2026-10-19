@@ -130,6 +130,11 @@ fn operand(operand: &Operand, out: &mut Vec<Token>) {
                     out.push(Token::Tag(0));
                     path(parent, out);
                 }
+                // ess/27 (beyond10x/ess#584): its canonical text names the expression.
+                Derived::Call(expr) => {
+                    out.push(Token::Tag(1));
+                    out.push(Token::Text(expr.to_string()));
+                }
             }
         }
     }
@@ -169,7 +174,9 @@ const fn fold_op(op: FoldOp) -> u8 {
 }
 
 fn quantified(quantified: &Quantified, out: &mut Vec<Token>) {
-    path(&quantified.over, out);
+    // A path keeps its text; a rows collection's `{entity: <E>}` is no path's text. Validation
+    // refuses rows in a measure, so only a path reaches here from an admitted view.
+    out.push(Token::Text(quantified.over.to_string()));
     out.push(Token::Text(quantified.bind.clone()));
     walk(&quantified.body, out);
 }

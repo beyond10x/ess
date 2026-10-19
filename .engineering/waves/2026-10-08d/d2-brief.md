@@ -12,7 +12,7 @@ Read the story: `aep plan artifact show story:test-scratch-directories-are-remov
 ## The triple
 
 ```
-worktree:  ~/.local/state/worktree/trees/b10x/ess/ess-wave-20261008d-d2
+worktree:  <tree>
 build dir: <worktree>/target
 scratch:   <worktree>/target/wave-scratch/d2
 ```
@@ -25,7 +25,7 @@ scratch:   <worktree>/target/wave-scratch/d2
 | **not yours** | everything else; `CHANGELOG.md` and `.engineering/**` are the coordinator's |
 
 Invariants: `.engineering/waves/2026-10-08d/invariants.md` in the integration tree
-(`~/.local/state/worktree/trees/b10x/ess/ess-wave-20261008d`). Read it first.
+(`<tree>`). Read it first.
 
 Your part: ess-cli only. Every directory a test creates under `std::env::temp_dir()` is removed by a drop guard, also when the test panics; a read-only fixture (`tests/output_ownership_adversary.rs`) gets its write bit back before removal. Reuse the drop-guarded helper ess-cli already has where it fits. No `ess-conformance` test runs. Prove it: run the ess-cli test binaries you changed with `TMPDIR` set to an empty directory under your scratch and show it empty afterwards.
 

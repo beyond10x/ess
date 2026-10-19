@@ -415,3 +415,110 @@ fn a_manifest_version_this_reader_does_not_know_is_refused_naming_the_ones_it_re
         assert!(refusal.contains(known), "{refusal}");
     }
 }
+
+// ---- the guard-pair corpus (G4) -----------------------------------------------------------
+
+/// The branch `name` of the command `command` cut out of `text`: from its `- name:` line to the next
+/// branch, the next command or the views.
+fn without_branch(text: &str, command: &str, name: &str) -> String {
+    let at = text
+        .find(&format!("  - name: {command}\n"))
+        .unwrap_or_else(|| panic!("{command} is declared"));
+    let start = at
+        + text[at..]
+            .find(&format!("      - name: {name}\n"))
+            .unwrap_or_else(|| panic!("{command}/{name} is declared"));
+    let rest = &text[start + 1..];
+    let end = start
+        + 1
+        + ["\n      - name: ", "\n  - name: ", "\n  # ", "\nviews:"]
+            .iter()
+            .filter_map(|next| rest.find(next))
+            .min()
+            .expect("something follows the branch")
+        + 1;
+    format!("{}{}", &text[..start], &text[end..])
+}
+
+/// For each pair of guards the one rule orders, a model with either guard's branch dropped is told
+/// apart: by the suite the corpus synthesizes, where some scenario of it is no longer passed against
+/// the interpreter of the mutant, or by validation, which refuses the mutant.
+#[test]
+fn guard_pair_corpus_mutant_dropping_either_guard_turns_a_scenario_red() {
+    use ess_compiler::resolve::compile;
+    use ess_conformance::report::Status;
+    use ess_conformance::synthesize::synthesize;
+    use ess_conformance::{AdmittedSuite, AdvancingClock, Ids, Runner, RunnerConfig};
+    use ess_domain::spec::Specification;
+
+    let text = include_str!("fixtures/guard-pair-corpus.yaml");
+    let model = |text: &str| {
+        let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}"));
+        let spec = Specification::assemble([(Source::new("pairs.yaml"), raw)])
+            .map_err(|errors| errors.to_string())?;
+        compile(&spec, &SourceMap::new()).map_err(|error| format!("{error:?}"))
+    };
+    let ir = model(text).unwrap_or_else(|errors| panic!("{errors}"));
+    let suite = synthesize(&ir).suite;
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap_or_else(|error| panic!("{error}"));
+    let mut survived = Vec::new();
+    let mut invalid = Vec::new();
+    for (command, dropped) in [
+        ("demo.pairs.StateBesideRelated", "released"),
+        ("demo.pairs.StateBesideRelated", "closed"),
+        ("demo.pairs.SubjectBesideRelated", "vip"),
+        ("demo.pairs.SubjectBesideRelated", "closed"),
+        ("demo.pairs.AbsentBesideRelated", "no-input"),
+        ("demo.pairs.AbsentBesideRelated", "closed"),
+        ("demo.pairs.WrongStateBesideRelatedMove", "not-held"),
+        ("demo.pairs.WrongStateBesideRelatedMove", "closed"),
+        ("demo.pairs.BeforeRowBesideRelated", "bad-secret"),
+        ("demo.pairs.BeforeRowBesideRelated", "closed"),
+        ("demo.pairs.SubjectBesideState", "released"),
+        ("demo.pairs.SubjectBesideState", "vip"),
+        ("demo.pairs.StateBesideWrongState", "parked"),
+        ("demo.pairs.StateBesideWrongState", "not-held"),
+        ("demo.pairs.TwoRefusalsOneRow", "closed"),
+        ("demo.pairs.TwoRefusalsOneRow", "full"),
+    ] {
+        let mutant = without_branch(text, command, dropped);
+        let mutant = match model(&mutant) {
+            Ok(mutant) => mutant,
+            Err(errors) => {
+                invalid.push(format!("{command}/{dropped}: {errors}"));
+                continue;
+            }
+        };
+        let report = Runner::new(
+            RunnerConfig::default(),
+            AdvancingClock::default(),
+            Ids::for_suite(&suite),
+        )
+        .run_admitted(&admitted, &Interpreted::for_model(mutant))
+        .into_report();
+        if report
+            .scenarios
+            .iter()
+            .all(|scenario| scenario.status == Status::Passed)
+        {
+            survived.push(format!("{command}/{dropped}"));
+        }
+    }
+    assert_eq!(survived, Vec::<String>::new(), "every mutant is told apart");
+    // Two drops leave a model validation refuses, which tells them apart before any suite runs:
+    // without `closed` a shut tier selects no branch of a command declaring no default, and
+    // without `not-held` a move from a held state it does not start from is answered by nothing.
+    assert_eq!(
+        invalid
+            .iter()
+            .map(|refusal| refusal
+                .split_once(": ")
+                .map_or(refusal.as_str(), |(dropped, _)| dropped))
+            .collect::<Vec<_>>(),
+        [
+            "demo.pairs.WrongStateBesideRelatedMove/closed",
+            "demo.pairs.StateBesideWrongState/not-held"
+        ],
+        "{invalid:#?}"
+    );
+}

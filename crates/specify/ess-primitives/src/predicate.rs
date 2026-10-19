@@ -664,6 +664,13 @@ pub enum Derived {
     /// normalization occurs. A text holding a lone surrogate is no Unicode text and its byte length
     /// is `Unknown` in every lane; a Rust `str` cannot hold one, so here it never arrives.
     Utf8Bytes(FactPath),
+    /// A function of the fact at one path, `base64url(sha256(ascii(input.verifier)))` (`ess/27`,
+    /// beyond10x/ess#584, `docs/design/generic-language-features.md` § G1): an expression of the
+    /// shared language ([`crate::expr`]) reading exactly one fact, its parent, evaluated by the one
+    /// evaluator every lane uses. Canonically `{expr: "<expression>"}`. An unobserved or absent
+    /// parent, and a value the expression has no answer for (a non-ASCII text under `ascii`), are
+    /// `Unknown`.
+    Call(Box<crate::expr::Expr>),
 }
 
 impl Derived {
@@ -671,10 +678,24 @@ impl Derived {
     /// format reads it from (`label.utf8_bytes`).
     pub const UTF8_BYTES: &'static str = "utf8_bytes";
 
+    /// The key of the canonical mapping `{expr: "<expression>"}` of a [`Self::Call`].
+    pub const EXPR: &'static str = "expr";
+
+    /// `expr` as a derived operand: where it reads exactly one fact and calls a function.
+    pub fn call(expr: crate::expr::Expr) -> Option<Self> {
+        (expr.reads().len() == 1 && !expr.functions().is_empty())
+            .then(|| Self::Call(Box::new(expr)))
+    }
+
     /// The fact this value is derived from.
     pub fn parent(&self) -> &FactPath {
         match self {
             Self::Utf8Bytes(parent) => parent,
+            Self::Call(expr) => expr
+                .reads()
+                .into_iter()
+                .next()
+                .expect("a derived call reads exactly one fact"),
         }
     }
 
@@ -683,13 +704,16 @@ impl Derived {
     pub fn with_parent(&self, parent: FactPath) -> Self {
         match self {
             Self::Utf8Bytes(_) => Self::Utf8Bytes(parent),
+            Self::Call(expr) => Self::Call(Box::new(expr.map_paths(&|_| parent.clone()))),
         }
     }
 
-    /// The path a full-path observation of this value is bound at: `<parent>.utf8_bytes`.
+    /// The path a full-path observation of this value is bound at: `<parent>.utf8_bytes`. A call
+    /// has no observation of its own; its value is always computed, and this names the parent.
     pub fn observed_at(&self) -> FactPath {
         match self {
             Self::Utf8Bytes(parent) => parent.child(Self::UTF8_BYTES),
+            Self::Call(_) => self.parent().clone(),
         }
     }
 
@@ -703,6 +727,13 @@ impl Derived {
     /// differently from the evaluator that decides it.
     pub fn value_with(&self, fact: &dyn Fn(&FactPath) -> Option<FactValue>) -> Option<FactValue> {
         match self {
+            Self::Call(expr) => {
+                let reads = |path: &FactPath| match fact(path) {
+                    Some(value) => crate::expr::Reading::Value(value),
+                    None => crate::expr::Reading::Unknown,
+                };
+                expr.evaluate(&reads).to_fact()
+            }
             Self::Utf8Bytes(parent) => {
                 if let Some(bound) = fact(&self.observed_at()) {
                     let length = bound.as_number()?;
@@ -716,11 +747,14 @@ impl Derived {
         }
     }
 
-    /// The canonical mapping, `{utf8_bytes: <parent>}`.
+    /// The canonical mapping, `{utf8_bytes: <parent>}` or `{expr: "<expression>"}`.
     pub fn to_node(&self) -> Node {
         match self {
             Self::Utf8Bytes(parent) => {
                 Node::Map([(Self::UTF8_BYTES.to_owned(), Node::Text(parent.to_string()))].into())
+            }
+            Self::Call(expr) => {
+                Node::Map([(Self::EXPR.to_owned(), Node::Text(expr.to_string()))].into())
             }
         }
     }
@@ -732,6 +766,7 @@ impl fmt::Display for Derived {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Utf8Bytes(parent) => write!(f, "{{{}: {parent}}}", Self::UTF8_BYTES),
+            Self::Call(expr) => write!(f, "{{{}: \"{expr}\"}}", Self::EXPR),
         }
     }
 }
@@ -1079,6 +1114,23 @@ impl Operand {
         }
     }
 
+    /// Whether `raw` is unquoted text spelled as a function call — a name, `(`, and `)` last —
+    /// which this reader keeps as text and a source format may read as an expression (`ess/27`,
+    /// beyond10x/ess#584).
+    fn is_call_spelling(raw: &str) -> bool {
+        let trimmed = raw.trim();
+        let Some(open) = trimmed.find('(') else {
+            return false;
+        };
+        let name = &trimmed[..open];
+        !trimmed.starts_with(['"', '\''])
+            && trimmed.ends_with(')')
+            && !name.is_empty()
+            && name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    }
+
     /// Parses an operand as written on the right-hand side of a comparison.
     ///
     /// A bare word containing a dot is a fact path; everything else is a literal. Quote a
@@ -1163,6 +1215,19 @@ impl Operand {
                 FactPath::new(path).map(Self::Fact).map_err(|error| {
                     ParseError::predicate(&written(), format!("`{{fact: …}}`: {error}"))
                 })
+            }
+            Some((key, Node::Text(written_expr))) if entries.len() == 1 && key == Derived::EXPR => {
+                crate::expr::Expr::parse(written_expr)
+                    .ok()
+                    .and_then(Derived::call)
+                    .map(Self::Derived)
+                    .ok_or_else(|| {
+                        ParseError::predicate(
+                            &written(),
+                            "`{expr: …}` is an expression reading exactly one fact through a \
+                             function, such as `base64url(sha256(ascii(input.verifier)))`",
+                        )
+                    })
             }
             Some((key, Node::Text(path))) if entries.len() == 1 && key == Derived::UTF8_BYTES => {
                 FactPath::new(path)
@@ -1255,6 +1320,10 @@ impl FactSource for WithNow<'_> {
 
     fn cardinality(&self, path: &FactPath) -> Option<usize> {
         self.facts.cardinality(path)
+    }
+
+    fn rows(&self, entity: &str) -> Option<Vec<Box<dyn FactSource + '_>>> {
+        self.facts.rows(entity)
     }
 }
 
@@ -1480,14 +1549,19 @@ pub struct Spelled {
     /// read as one constant offset of that fact (`docs/design/expression-family-source22.md`, A2,
     /// rule 3a), and text or the dotted fact otherwise.
     pub offsets: Vec<bool>,
+    /// Per comparison, in pre-order: whether its right-hand side was unquoted text spelled as a
+    /// function call, `base64url(sha256(ascii(input.verifier)))`: text to this reader, and from
+    /// `ess/27` an expression of the shared language ([`crate::expr`], beyond10x/ess#584).
+    pub calls: Vec<bool>,
 }
 
-/// What the spelled readers record per comparison, in pre-order: [`Spelled::words`] and
-/// [`Spelled::offsets`].
+/// What the spelled readers record per comparison, in pre-order: [`Spelled::words`],
+/// [`Spelled::offsets`] and [`Spelled::calls`].
 #[derive(Default)]
 struct Spellings {
     words: Vec<bool>,
     offsets: Vec<bool>,
+    calls: Vec<bool>,
 }
 
 impl Spellings {
@@ -1495,12 +1569,14 @@ impl Spellings {
     fn literal(&mut self) {
         self.words.push(false);
         self.offsets.push(false);
+        self.calls.push(false);
     }
 
     /// One comparison whose right side was written as `raw` under `binders`.
     fn written(&mut self, raw: &str, binders: &[String]) {
         self.words.push(Operand::is_word(raw, binders));
         self.offsets.push(Operand::is_offset_spelling(raw, binders));
+        self.calls.push(Operand::is_call_spelling(raw));
     }
 }
 
@@ -1514,40 +1590,240 @@ impl Spellings {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Quantified {
     /// The collection to walk.
-    pub over: FactPath,
+    pub over: Collection,
     /// The name the body reads each element under. One fact-path segment.
     pub bind: String,
     /// The condition each element is held to.
     pub body: Predicate,
 }
 
+/// What a quantifier walks: the elements of a collection fact, or the rows of an entity.
+///
+/// # Why two cases rather than a field beside the path
+///
+/// Every reader of a quantifier has to decide what a walk over rows means to it — a type checker,
+/// a generated invariant, a witness builder. A second field beside a path would let each existing
+/// reader go on reading a rows quantifier as a path without anyone deciding
+/// (`docs/design/related-rows-quantifier.md`, "Format and compatibility").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Collection {
+    /// `in: <path>`: a `List` or `Map` fact, published as `<path>.count` and `<path>.<index>.…`.
+    Fact(FactPath),
+    /// `in: {entity: <E>}` (`ess/27`, beyond10x/ess#551): every row of the entity `E`, by its
+    /// qualified name, as [`FactSource::rows`] hands them out. The name is not resolved here; the
+    /// domain guarantees it names a declared entity, and a reader looks it up with an `Option`.
+    Rows {
+        /// The entity's qualified name.
+        entity: String,
+    },
+}
+
+impl Collection {
+    /// The collection fact, where this walks one.
+    pub fn fact(&self) -> Option<&FactPath> {
+        match self {
+            Self::Fact(path) => Some(path),
+            Self::Rows { .. } => None,
+        }
+    }
+
+    /// The entity whose rows this walks, where it walks rows.
+    pub fn rows(&self) -> Option<&str> {
+        match self {
+            Self::Fact(_) => None,
+            Self::Rows { entity } => Some(entity),
+        }
+    }
+
+    /// This collection with its fact path moved by `onto`; a rows collection names no path and is
+    /// kept.
+    #[must_use]
+    pub fn map_fact(&self, onto: impl FnOnce(&FactPath) -> FactPath) -> Self {
+        match self {
+            Self::Fact(path) => Self::Fact(onto(path)),
+            Self::Rows { entity } => Self::Rows {
+                entity: entity.clone(),
+            },
+        }
+    }
+
+    /// The canonical document form of `in:`: the path as text, or `{entity: <E>}`.
+    pub fn to_node(&self) -> Node {
+        match self {
+            Self::Fact(path) => Node::Text(path.to_string()),
+            Self::Rows { entity } => Node::Map(
+                [("entity".to_owned(), Node::Text(entity.clone()))]
+                    .into_iter()
+                    .collect(),
+            ),
+        }
+    }
+}
+
+impl fmt::Display for Collection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Fact(path) => path.fmt(f),
+            Self::Rows { entity } => write!(f, "{{entity: {entity}}}"),
+        }
+    }
+}
+
 impl Quantified {
     /// Evaluates the body once per element, folding conjunctively when `universal`.
     fn evaluate(&self, facts: &dyn FactSource, universal: bool) -> Truth {
-        let Some(count) = facts.cardinality(&self.over) else {
-            return Truth::Unknown;
-        };
-        let mut result = if universal { Truth::True } else { Truth::False };
-        for index in 0..count {
-            let element = Element {
-                inner: facts,
-                bind: &self.bind,
-                prefix: self.over.child(&index.to_string()),
-            };
-            let truth = self.body.evaluate(&element);
-            result = if universal {
+        let fold = |result: Truth, truth: Truth| {
+            if universal {
                 result.and(truth)
             } else {
                 result.or(truth)
-            };
-            // `False` dominates a conjunction and `True` a disjunction, so the remaining elements
-            // cannot change the answer. Stopping is not an optimisation: walking a collection whose
-            // verdict is already settled would report causes from elements nobody is waiting on.
-            if result == if universal { Truth::False } else { Truth::True } {
-                break;
+            }
+        };
+        // `False` dominates a conjunction and `True` a disjunction, so the remaining elements
+        // cannot change the answer. Stopping is not an optimisation: walking a collection whose
+        // verdict is already settled would report causes from elements nobody is waiting on.
+        let settled = if universal { Truth::False } else { Truth::True };
+        let mut result = if universal { Truth::True } else { Truth::False };
+        match &self.over {
+            Collection::Fact(over) => {
+                let Some(count) = facts.cardinality(over) else {
+                    return Truth::Unknown;
+                };
+                for index in 0..count {
+                    let element = Element {
+                        inner: facts,
+                        bind: &self.bind,
+                        prefix: over.child(&index.to_string()),
+                    };
+                    result = fold(result, self.body.evaluate(&element));
+                    if result == settled {
+                        break;
+                    }
+                }
+            }
+            // A source that knows no rows of the entity answers `None`: nobody looked, which is
+            // `Unknown`, never the vacuous answer no rows would give.
+            Collection::Rows { entity } => {
+                let Some(rows) = facts.rows(entity) else {
+                    return Truth::Unknown;
+                };
+                for row in &rows {
+                    let overlay = Row {
+                        outer: facts,
+                        bind: &self.bind,
+                        fields: row.as_ref(),
+                    };
+                    result = fold(result, self.body.evaluate(&overlay));
+                    if result == settled {
+                        break;
+                    }
+                }
             }
         }
         result
+    }
+}
+
+/// One row of an entity under a quantifier's binder, seen as a fact source.
+///
+/// Reads of `<bind>.rest` become reads of `rest` in the row; every other path, and the binder
+/// alone, which names no value of the row, goes to the enclosing source. So a bare name in the body
+/// keeps reading what it reads around the quantifier — the candidate, in a selector.
+struct Row<'a> {
+    outer: &'a dyn FactSource,
+    bind: &'a str,
+    fields: &'a dyn FactSource,
+}
+
+/// Where a [`Row`] reads one path.
+enum RowReading {
+    /// Around the quantifier: the path is not the binder's.
+    Outer,
+    /// In the row, at this path.
+    Field(FactPath),
+    /// Nowhere: the binder alone names no value of the row.
+    Nothing,
+}
+
+impl Row<'_> {
+    fn reading(&self, path: &FactPath) -> RowReading {
+        if path.namespace() != self.bind {
+            return RowReading::Outer;
+        }
+        match &path.segments()[1..] {
+            [] => RowReading::Nothing,
+            rest => RowReading::Field(FactPath::from_segments(rest)),
+        }
+    }
+}
+
+impl FactSource for Row<'_> {
+    fn fact(&self, path: &FactPath) -> Option<FactValue> {
+        match self.reading(path) {
+            RowReading::Outer => self.outer.fact(path),
+            RowReading::Field(field) => self.fields.fact(&field),
+            RowReading::Nothing => None,
+        }
+    }
+
+    fn observe(&self, path: &FactPath) -> Option<FactValue> {
+        match self.reading(path) {
+            RowReading::Outer => self.outer.observe(path),
+            RowReading::Field(field) => self.fields.observe(&field),
+            RowReading::Nothing => None,
+        }
+    }
+
+    fn present(&self, path: &FactPath) -> bool {
+        match self.reading(path) {
+            RowReading::Outer => self.outer.present(path),
+            RowReading::Field(field) => self.fields.present(&field),
+            RowReading::Nothing => false,
+        }
+    }
+
+    fn observed_presence(&self, path: &FactPath) -> Option<bool> {
+        match self.reading(path) {
+            RowReading::Outer => self.outer.observed_presence(path),
+            RowReading::Field(field) => self.fields.observed_presence(&field),
+            RowReading::Nothing => None,
+        }
+    }
+
+    fn scales(&self) -> &Scales {
+        self.outer.scales()
+    }
+
+    fn orders_as_instant(&self, path: &FactPath) -> bool {
+        match self.reading(path) {
+            RowReading::Outer => self.outer.orders_as_instant(path),
+            RowReading::Field(field) => self.fields.orders_as_instant(&field),
+            RowReading::Nothing => false,
+        }
+    }
+
+    fn now(&self) -> Option<crate::time::Rfc3339Instant> {
+        self.outer.now()
+    }
+
+    fn orders_text_by_bytes(&self, path: &FactPath) -> bool {
+        match self.reading(path) {
+            RowReading::Outer => self.outer.orders_text_by_bytes(path),
+            RowReading::Field(field) => self.fields.orders_text_by_bytes(&field),
+            RowReading::Nothing => false,
+        }
+    }
+
+    fn cardinality(&self, path: &FactPath) -> Option<usize> {
+        match self.reading(path) {
+            RowReading::Outer => self.outer.cardinality(path),
+            RowReading::Field(field) => self.fields.cardinality(&field),
+            RowReading::Nothing => None,
+        }
+    }
+
+    fn rows(&self, entity: &str) -> Option<Vec<Box<dyn FactSource + '_>>> {
+        self.outer.rows(entity)
     }
 }
 
@@ -1611,6 +1887,10 @@ impl FactSource for Element<'_> {
 
     fn cardinality(&self, path: &FactPath) -> Option<usize> {
         self.inner.cardinality(&self.rebind(path))
+    }
+
+    fn rows(&self, entity: &str) -> Option<Vec<Box<dyn FactSource + '_>>> {
+        self.inner.rows(entity)
     }
 }
 
@@ -2273,9 +2553,12 @@ impl Predicate {
                     }
                 }
             }
+            // A rows collection names no fact; the body's free paths are read around it.
             Self::Forall(quantified) | Self::Exists(quantified) => {
-                if !bound.contains(&quantified.over.namespace()) {
-                    visit(&quantified.over);
+                if let Some(over) = quantified.over.fact() {
+                    if !bound.contains(&over.namespace()) {
+                        visit(over);
+                    }
                 }
                 bound.push(&quantified.bind);
                 quantified.body.visit_free_paths(bound, visit);
@@ -2319,9 +2602,13 @@ impl Predicate {
                 }
             }
             Self::Not(inner) | Self::Trimmed(inner) => inner.visit_quantified(bound, found),
+            // A rows collection is no fact to check for being a collection; the domain checks
+            // the entity it names.
             Self::Forall(quantified) | Self::Exists(quantified) => {
-                if !bound.contains(&quantified.over.namespace()) {
-                    found.push(&quantified.over);
+                if let Some(over) = quantified.over.fact() {
+                    if !bound.contains(&over.namespace()) {
+                        found.push(over);
+                    }
                 }
                 bound.push(&quantified.bind);
                 quantified.body.visit_quantified(bound, found);
@@ -2613,6 +2900,21 @@ impl Predicate {
         found
     }
 
+    /// Whether any comparison, at any depth, reads a fact through a function,
+    /// `{expr: "base64url(sha256(ascii(input.verifier)))"}` (`ess/27`, beyond10x/ess#584).
+    pub fn reads_call(&self) -> bool {
+        match self {
+            Self::Compare { left, right, .. } => {
+                matches!(left, Operand::Derived(Derived::Call(_)))
+                    || matches!(right, Operand::Derived(Derived::Call(_)))
+            }
+            Self::All(children) | Self::Any(children) => children.iter().any(Self::reads_call),
+            Self::Not(inner) | Self::Trimmed(inner) => inner.reads_call(),
+            Self::Forall(quantified) | Self::Exists(quantified) => quantified.body.reads_call(),
+            _ => false,
+        }
+    }
+
     /// Whether any comparison, at any depth, reads a derived operand — the UTF-8 byte length of a
     /// text, `{utf8_bytes: <path>}` (`docs/design/expression-family-source22.md`, decision 11): the
     /// question the `ess/22` source gate and the suite pair `/40` and `/41` ask beside
@@ -2620,7 +2922,8 @@ impl Predicate {
     pub fn reads_utf8_bytes(&self) -> bool {
         match self {
             Self::Compare { left, right, .. } => {
-                matches!(left, Operand::Derived(_)) || matches!(right, Operand::Derived(_))
+                matches!(left, Operand::Derived(Derived::Utf8Bytes(_)))
+                    || matches!(right, Operand::Derived(Derived::Utf8Bytes(_)))
             }
             Self::All(children) | Self::Any(children) => {
                 children.iter().any(Self::reads_utf8_bytes)
@@ -2734,6 +3037,7 @@ impl Predicate {
             predicate,
             words: spellings.words,
             offsets: spellings.offsets,
+            calls: spellings.calls,
         })
     }
 
@@ -2746,6 +3050,7 @@ impl Predicate {
             predicate,
             words: spellings.words,
             offsets: spellings.offsets,
+            calls: spellings.calls,
         })
     }
 
@@ -2973,7 +3278,9 @@ impl Predicate {
         let left = match &fields["left"] {
             Node::Text(path) => Operand::Fact(FactPath::new(path)?),
             Node::Map(entries)
-                if entries.len() == 1 && entries.contains_key(Derived::UTF8_BYTES) =>
+                if entries.len() == 1
+                    && (entries.contains_key(Derived::UTF8_BYTES)
+                        || entries.contains_key(Derived::EXPR)) =>
             {
                 Operand::fact_mapping(entries, written)?
             }
@@ -3041,7 +3348,7 @@ impl Predicate {
         let mut key_kind = None;
         for (field, node) in entries {
             match field.as_str() {
-                "in" => over = Some(Self::quantifier_collection(node)?),
+                "in" => over = Some(Self::list_collection(node)?),
                 "as" => bind = Some(Self::quantifier_binder(node)?),
                 "by" => {
                     let text = node.as_text().ok_or_else(|| {
@@ -3095,8 +3402,41 @@ impl Predicate {
         })
     }
 
-    /// Parses the `in:` of a quantifier: the collection it walks.
-    fn quantifier_collection(node: &Node) -> Result<FactPath, ParseError> {
+    /// Parses the `in:` of a quantifier: the collection it walks, a fact path or, from `ess/27`
+    /// (beyond10x/ess#551), the rows of an entity as `{entity: <E>}` with exactly that key. The
+    /// format is not known here; the domain refuses the rows below `ess/27`.
+    fn quantifier_collection(node: &Node) -> Result<Collection, ParseError> {
+        const EXPECTED: &str = "a fact path or `{entity: <Entity>}`";
+        let Node::Map(entries) = node else {
+            let text = node
+                .as_text()
+                .ok_or_else(|| ParseError::shape("quantifier `in`", EXPECTED, node.type_name()))?;
+            return FactPath::new(text).map(Collection::Fact);
+        };
+        if let [(key, Node::Text(entity))] = entries.iter().collect::<Vec<_>>().as_slice() {
+            if key.as_str() == "entity" && !entity.trim().is_empty() {
+                return Ok(Collection::Rows {
+                    entity: entity.clone(),
+                });
+            }
+        }
+        let found = if entries.is_empty() {
+            "an empty mapping".to_owned()
+        } else {
+            format!(
+                "a mapping of {}",
+                entries
+                    .iter()
+                    .map(|(key, value)| format!("`{key}` ({})", value.type_name()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        Err(ParseError::shape("quantifier `in`", EXPECTED, found))
+    }
+
+    /// Parses the `in:` of a `distinct:`: the list it reads, a fact path.
+    fn list_collection(node: &Node) -> Result<FactPath, ParseError> {
         let text = node
             .as_text()
             .ok_or_else(|| ParseError::shape("quantifier `in`", "a fact path", node.type_name()))?;
@@ -3814,7 +4154,7 @@ fn quantifier_node<'a>(
             keyword.to_owned(),
             Node::Map(
                 [
-                    ("in".to_owned(), Node::Text(quantified.over.to_string())),
+                    ("in".to_owned(), quantified.over.to_node()),
                     ("as".to_owned(), Node::Text(quantified.bind.clone())),
                     ("that".to_owned(), body),
                 ]
@@ -4323,7 +4663,10 @@ impl schemars::JsonSchema for Predicate {
              from: \"HH:MM\", to: \"HH:MM\", offset: Z | ±HH:MM}}`; a named time zone is \
              refused. From `ess/25` a command guard may compare a text fact with its surrounding \
              ASCII whitespace removed, `{trimmed: {<text operator>: …}}` around `equals`, `in`, \
-             `equals_ignore_case`, `in_ignore_case`, `starts_with`, `ends_with` or `contains`."
+             `equals_ignore_case`, `in_ignore_case`, `starts_with`, `ends_with` or `contains`. \
+             From `ess/27` the selector of a related read or a row-set guard may test each \
+             candidate's related rows with `exists: {in: {entity: <Entity>}, as: <name>, that: \
+             <predicate>}`, tied to the candidate by `<name>.<field> == <candidate field>`."
                 .to_owned(),
         );
         schema.into()

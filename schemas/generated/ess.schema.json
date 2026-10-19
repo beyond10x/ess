@@ -1191,6 +1191,11 @@
             "reading": {
               "$ref": "#/definitions/ReadingContract"
             },
+            "shorthand": {
+              "description": "The one field a value of this struct may be written as alone: with `shorthand: op`, the scalar `getIssue` is the value `{op: getIssue}`. The field is required and a scalar on the wire, and every other field is `Optional` (`ess/27`, beyond10x/ess#594).",
+              "type": "string",
+              "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
+            },
             "undeclared_fields": {
               "description": "What a reader does with a field this struct does not declare: `refused`, the default, or `ignored`, which admits fields beyond the declared ones while every declared field stays required and typed (`ess/24`, beyond10x/ess#500).",
               "allOf": [
@@ -1590,7 +1595,7 @@
       "additionalProperties": false
     },
     "Predicate": {
-      "description": "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, `exists` or a fact path with an operator constraint. A text fact is tested against a text literal, map form only, with `starts_with`, `ends_with` or `contains`, and without ASCII case with `equals_ignore_case` (one literal) or `in_ignore_case` (a list). From `ess/22` a comparison operand may be the explicit fact `{fact: <path>}`, two `Timestamp` facts compare as instants in the closed form `{compare: {left, op, right, as: timestamp}}`, and a comparison operand may be one fact moved by one constant, `{offset: {fact: <path>, add|subtract: <magnitude>}}` — a whole number for an `Integer`, a whole number of `s`, `m` or `h` for a `Timestamp`. Either operand may be the UTF-8 byte length of a `String`, `{utf8_bytes: <path>}`, with the comparison written `{compare: {left, op, right}}` where it stands on the left. From `ess/22` `distinct: {in: <list>, as: <name>, by: <name>.<member>}` holds when no two elements of a list share a key: the element, or the one scalar member `by` names. A string operator may compare with a view parameter, `{param: <name>}`, or a command input, `{input: <name>}`. A command guard may hold an instant to a calendar window at UTC or a fixed offset, `{window: {at: now | <path>, days: [mon, …], from: \"HH:MM\", to: \"HH:MM\", offset: Z | ±HH:MM}}`; a named time zone is refused. From `ess/25` a command guard may compare a text fact with its surrounding ASCII whitespace removed, `{trimmed: {<text operator>: …}}` around `equals`, `in`, `equals_ignore_case`, `in_ignore_case`, `starts_with`, `ends_with` or `contains`.",
+      "description": "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, `exists` or a fact path with an operator constraint. A text fact is tested against a text literal, map form only, with `starts_with`, `ends_with` or `contains`, and without ASCII case with `equals_ignore_case` (one literal) or `in_ignore_case` (a list). From `ess/22` a comparison operand may be the explicit fact `{fact: <path>}`, two `Timestamp` facts compare as instants in the closed form `{compare: {left, op, right, as: timestamp}}`, and a comparison operand may be one fact moved by one constant, `{offset: {fact: <path>, add|subtract: <magnitude>}}` — a whole number for an `Integer`, a whole number of `s`, `m` or `h` for a `Timestamp`. Either operand may be the UTF-8 byte length of a `String`, `{utf8_bytes: <path>}`, with the comparison written `{compare: {left, op, right}}` where it stands on the left. From `ess/22` `distinct: {in: <list>, as: <name>, by: <name>.<member>}` holds when no two elements of a list share a key: the element, or the one scalar member `by` names. A string operator may compare with a view parameter, `{param: <name>}`, or a command input, `{input: <name>}`. A command guard may hold an instant to a calendar window at UTC or a fixed offset, `{window: {at: now | <path>, days: [mon, …], from: \"HH:MM\", to: \"HH:MM\", offset: Z | ±HH:MM}}`; a named time zone is refused. From `ess/25` a command guard may compare a text fact with its surrounding ASCII whitespace removed, `{trimmed: {<text operator>: …}}` around `equals`, `in`, `equals_ignore_case`, `in_ignore_case`, `starts_with`, `ends_with` or `contains`. From `ess/27` the selector of a related read or a row-set guard may test each candidate's related rows with `exists: {in: {entity: <Entity>}, as: <name>, that: <predicate>}`, tied to the candidate by `<name>.<field> == <candidate field>`.",
       "anyOf": [
         {
           "type": "string"
@@ -1698,6 +1703,11 @@
               "$ref": "#/definitions/Naming"
             }
           ]
+        },
+        "system": {
+          "description": "Whether this actor is the system itself (ess/27). `false` is the same as leaving it out.",
+          "default": false,
+          "type": "boolean"
         }
       },
       "additionalProperties": false
@@ -1962,7 +1972,7 @@
           ]
         },
         "refs": {
-          "description": "The records outside this model that explain it, such as `jira:DEV-630`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
+          "description": "The records outside this model that explain it, such as `jira:EX-1`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ExternalRef"
@@ -2115,6 +2125,17 @@
         "name"
       ],
       "properties": {
+        "await_within": {
+          "description": "How soon the system takes this step: positive whole seconds, `PT<seconds>S`, on a command every grant of which is a system actor (`ess/27`, beyond10x/ess#542).",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Period"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "fixture_inputs": {
           "description": "Independently provisioned conformance inputs, keyed by declared input field.",
           "type": "object",
@@ -2153,7 +2174,7 @@
           }
         },
         "refs": {
-          "description": "The records outside this model that explain it, such as `jira:DEV-630`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
+          "description": "The records outside this model that explain it, such as `jira:EX-1`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ExternalRef"
@@ -2314,7 +2335,7 @@
           ]
         },
         "refs": {
-          "description": "The records outside this model that explain it, such as `jira:DEV-630`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
+          "description": "The records outside this model that explain it, such as `jira:EX-1`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ExternalRef"
@@ -2390,6 +2411,17 @@
         "in": {
           "description": "The list, `input.<field>`.",
           "type": "string"
+        },
+        "where": {
+          "description": "The elements the entry acts on: a predicate over `<as>.<member>` and `input.<field>` (ess/27, beyond10x/ess#596); every element where absent.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -2575,6 +2607,20 @@
       },
       "additionalProperties": false
     },
+    "RawExprSource": {
+      "description": "`{expr: \"<expression>\"}`, written as exactly this key over text.",
+      "type": "object",
+      "required": [
+        "expr"
+      ],
+      "properties": {
+        "expr": {
+          "description": "The expression, in the compact text form.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "RawGroupOutcome": {
       "description": "One outcome of a group: always an external refusal.",
       "type": "object",
@@ -2618,6 +2664,55 @@
           "type": [
             "string",
             "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawHead": {
+      "description": "What `related:` holds in a head read.",
+      "type": "object",
+      "required": [
+        "entity",
+        "first",
+        "order_by",
+        "where"
+      ],
+      "properties": {
+        "entity": {
+          "description": "The entity whose rows are candidates.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          ]
+        },
+        "first": {
+          "description": "The field of the head row read.",
+          "type": "string"
+        },
+        "order_by": {
+          "description": "The ranking keys, most significant first: `<field>` or `<field> asc|desc`, ending in the entity's identity.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "ties": {
+          "description": "`unordered` where rows tying on every key are in no order the model fixes; the order then need not end in the identity, and must not hold it.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^unordered$"
+        },
+        "where": {
+          "description": "What a candidate must satisfy: its fields bare, the input under `input.`, the addressed subject under `subject.`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            }
           ]
         }
       },
@@ -2846,7 +2941,7 @@
           ]
         },
         "refs": {
-          "description": "The records outside this model that explain it, such as `jira:DEV-630`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
+          "description": "The records outside this model that explain it, such as `jira:EX-1`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ExternalRef"
@@ -3031,6 +3126,20 @@
       },
       "additionalProperties": false
     },
+    "RawPayloadRead": {
+      "description": "`{payload: <Event>.<field>}`: the value this outcome publishes in `<field>` of `<Event>`.",
+      "type": "object",
+      "required": [
+        "payload"
+      ],
+      "properties": {
+        "payload": {
+          "description": "The qualified event name, a dot, and the field: `demo.routing.EntryAgentSelected.seq`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "RawPayloadSource": {
       "description": "Closed authored payload source; strings retain their original interpretation.",
       "anyOf": [
@@ -3066,6 +3175,30 @@
           "$ref": "#/definitions/RawCountSource"
         },
         {
+          "description": "`{generated: true, present: true}` (ess/27, beyond10x/ess#545).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawPresentMint"
+            }
+          ]
+        },
+        {
+          "description": "`{payload: <Event>.<field>}` (ess/27, beyond10x/ess#545).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawPayloadRead"
+            }
+          ]
+        },
+        {
+          "description": "`{expr: \"<expression>\"}` (ess/27, beyond10x/ess#560).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawExprSource"
+            }
+          ]
+        },
+        {
           "description": "`{changed: <field>}` (ess/25, beyond10x/ess#531).",
           "allOf": [
             {
@@ -3081,6 +3214,14 @@
           "allOf": [
             {
               "$ref": "#/definitions/RawRelatedSelection"
+            }
+          ]
+        },
+        {
+          "description": "`{related: {entity, where, order_by, first}}` (ess/27, beyond10x/ess#543).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawRelatedHead"
             }
           ]
         }
@@ -3120,6 +3261,25 @@
               "type": "null"
             }
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawPresentMint": {
+      "description": "`{generated: true, present: true}`, written as exactly these two keys.",
+      "type": "object",
+      "required": [
+        "generated",
+        "present"
+      ],
+      "properties": {
+        "generated": {
+          "description": "`true`: the implementation mints the value.",
+          "type": "boolean"
+        },
+        "present": {
+          "description": "`true`: the minted value is present.",
+          "type": "boolean"
         }
       },
       "additionalProperties": false
@@ -3219,6 +3379,19 @@
               "type": "null"
             }
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawRelatedHead": {
+      "description": "`{related: {entity, where, order_by, first}}` as the document writes it.",
+      "type": "object",
+      "required": [
+        "related"
+      ],
+      "properties": {
+        "related": {
+          "$ref": "#/definitions/RawHead"
         }
       },
       "additionalProperties": false
@@ -3534,6 +3707,13 @@
         },
         "display": {
           "description": "What a person is shown.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expr": {
+          "description": "What it computes from its source row, where it is a computed field: an expression over the row's fields, `ended_at - started_at` (ess/27, beyond10x/ess#560, `docs/design/generic-language-features.md` § G1).",
           "type": [
             "string",
             "null"

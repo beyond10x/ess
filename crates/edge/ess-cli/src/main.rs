@@ -78,7 +78,7 @@ enum Command {
         #[command(subcommand)]
         command: Option<GenerateAreaCommand>,
         #[command(flatten)]
-        direct: GenerateArgs,
+        direct: Box<GenerateArgs>,
     },
     /// Hold an implementation, or a later revision, to what a system says.
     Verify {
@@ -244,7 +244,7 @@ enum GenerateAreaCommand {
     /// takes any number of `--include` pages beside the generated ones — a plan board another tool
     /// rendered, a runbook. Both are markdown somebody wrote, read into the document and styled
     /// like every other page.
-    Generate(GenerateArgs),
+    Generate(Box<GenerateArgs>),
     /// Generate a parser and process adapter from a typed CLI presentation binding.
     Cli(cli_binding::Generate),
     /// Generate an application from an `ess-ui/1` document.
@@ -294,6 +294,11 @@ struct GenerateArgs {
     /// pins.
     #[arg(long, requires = "http")]
     refines: Option<PathBuf>,
+    /// Give every document `--kind schema` writes a root `$id`: this absolute URI, ending in `/` or
+    /// `:`, followed by the document's path under `schema/` (beyond10x/ess#590). Only with
+    /// `--kind schema`; without it no document carries an `$id`.
+    #[arg(long, value_name = "URI")]
+    schema_id_base: Option<String>,
 }
 
 /// `ess generate`: IR becomes artifacts; explicit executor verbs deliver them — `crates/generate/`.
@@ -615,7 +620,8 @@ enum ConformCommand {
     Synthesize {
         #[command(flatten)]
         input: SpecPath,
-        /// What to write the suite as.
+        /// What to write the suite as. A Rust implementation runs the `ir` suite with the
+        /// `ess-conformance` runner, `https://beyond10x.github.io/ess/docs/start/runners/rust`.
         #[arg(long, value_enum, default_value_t = SuiteTarget::Ir)]
         target: SuiteTarget,
         /// A file for `--target ir`, a directory for `--target go` or `--target typescript`.
@@ -643,6 +649,14 @@ enum ConformCommand {
         /// Write fresh IR as compact JSON with one trailing newline; requires --target ir.
         #[arg(long)]
         compact: bool,
+        /// Refuse when `--out` differs from the suite this command would write, writing nothing.
+        ///
+        /// Compares the `--target ir` file, or every file of the `go` or `typescript` package, byte for
+        /// byte with what the same command without `--check` would write, `--compact` and
+        /// `--suite-format` included. Exit 0 when `--out` is current, 1 with one line per drifted
+        /// file.
+        #[arg(long, requires = "out")]
+        check: bool,
         /// Offer the `setup` row of arrangement INSTANCE in the authored document FILE as an
         /// explicit synthesis seed; repeatable.
         ///
@@ -653,9 +667,9 @@ enum ConformCommand {
         /// real command and assertions follow it. Any seed selects suite/42 (or /43 with
         /// `--suite-format 5`), suite/44 (/45) where an act also claims one event more than once,
         /// suite/46 (/47) where a response reaches a constrained String newtype, suite/48 (/49)
-        /// where a response or a struct it reaches ignores undeclared fields, or suite/50 (/51) where
-        /// a scenario holds `now` for a command, and records its
-        /// source, row and uses.
+        /// where a response or a struct it reaches ignores undeclared fields, suite/50 (/51) where a
+        /// scenario holds `now` for a command, or suite/52 (/53) where a view observes a value
+        /// type's invariants at a wrapped position, and records its source, row and uses.
         #[arg(
             long = "synthesis-seed",
             num_args = 2,
@@ -712,6 +726,24 @@ enum ConformCommand {
         /// write history pages and the player to different directories.
         #[arg(long, conflicts_with_all = ["scenarios", "suite_format"])]
         history: Option<PathBuf>,
+    },
+    /// Say what changed between two suites: scenarios added, removed and changed, by construct.
+    ///
+    /// Each scenario is filed under the construct it is about — its subject and family, such as
+    /// `billing.invoice.CreateInvoice/outcome`, and for a one-time disclosure cell also the origin
+    /// outcome, field and aspect. A changed scenario names the parts that differ and lists the
+    /// steps removed from it and added to it. Scenarios are compared as read, so a suite rewritten
+    /// in a newer spelling of the same scenarios shows no change. `--format json` writes an
+    /// `ess-suite-diff/1` document. Exit 0 whatever changed, 1 when a suite cannot be read.
+    Diff {
+        /// The earlier suite, such as the one committed on the base branch.
+        #[arg(long)]
+        from: PathBuf,
+        /// The later suite, such as the one this change synthesizes.
+        #[arg(long)]
+        to: PathBuf,
+        #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
+        format: MachineFormat,
     },
     /// Narrow a coverage suite/5, /7 or /9 by explicit IDs, retaining every exact original parent.
     Select {
@@ -1687,6 +1719,16 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
     if arguments.http.is_some() && !matches!(arguments.kind, Some(Projection::OpenApi)) {
         bail!("--http binds routes for the OpenAPI projection; it requires --kind openapi");
     }
+    if arguments.schema_id_base.is_some() && !matches!(arguments.kind, Some(Projection::Schema)) {
+        bail!(
+            "--schema-id-base identifies the JSON Schema projection's documents; it requires --kind schema"
+        );
+    }
+    let identified = arguments
+        .schema_id_base
+        .as_deref()
+        .map(ess_gen::schema::IdentifiedJsonSchema::new)
+        .transpose()?;
     generate(
         &arguments.input.path,
         arguments.kind,
@@ -1698,13 +1740,18 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
         },
         arguments.format,
         arguments.strict,
-        match (arguments.transport.as_deref(), arguments.http.as_deref()) {
-            (Some(transport), _) => Beside::Transport(transport),
-            (None, Some(binding)) => Beside::Http {
+        match (
+            arguments.transport.as_deref(),
+            arguments.http.as_deref(),
+            identified.as_ref(),
+        ) {
+            (Some(transport), _, _) => Beside::Transport(transport),
+            (None, Some(binding), _) => Beside::Http {
                 binding,
                 refines: arguments.refines.as_deref(),
             },
-            (None, None) => Beside::Nothing,
+            (None, None, Some(identified)) => Beside::SchemaIds(identified),
+            (None, None, None) => Beside::Nothing,
         },
     )
 }
@@ -3402,6 +3449,33 @@ enum Beside<'a> {
         binding: &'a Path,
         refines: Option<&'a Path>,
     },
+    /// A base every JSON Schema document's `$id` is minted under, for `--kind schema`.
+    SchemaIds(&'a ess_gen::schema::IdentifiedJsonSchema),
+}
+
+/// `openapi` and `asyncapi` write one document per component, so a domain no component owns
+/// is absent from both, and a specification with no components projects to nothing at all.
+/// That is legal; saying nothing about it is what made it look like a clean run (ess#102).
+/// Names each such domain, and says whether `--strict` refuses the run for it.
+fn refuses_unowned_domains(
+    kind: Option<Projection>,
+    ir: &ess_compiler::EssIr,
+    strict: bool,
+) -> bool {
+    if !matches!(
+        kind,
+        None | Some(Projection::OpenApi | Projection::AsyncApi)
+    ) {
+        return false;
+    }
+    let unowned = unowned_domains(ir);
+    for domain in &unowned {
+        eprintln!(
+            "{}: no component owns {domain}; declare it in components.yaml",
+            if strict { "refused" } else { "note" }
+        );
+    }
+    strict && !unowned.is_empty()
 }
 
 /// Resolve once, then render the selected projection and preflight its complete output set.
@@ -3425,23 +3499,8 @@ fn generate(
     let Ok((ir, _)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
-    // `openapi` and `asyncapi` write one document per component, so a domain no component owns
-    // is absent from both, and a specification with no components projects to nothing at all.
-    // That is legal; saying nothing about it is what made it look like a clean run (ess#102).
-    if matches!(
-        kind,
-        None | Some(Projection::OpenApi | Projection::AsyncApi)
-    ) {
-        let unowned = unowned_domains(&ir);
-        for domain in &unowned {
-            eprintln!(
-                "{}: no component owns {domain}; declare it in components.yaml",
-                if strict { "refused" } else { "note" }
-            );
-        }
-        if strict && !unowned.is_empty() {
-            return Ok(ExitCode::from(1));
-        }
+    if refuses_unowned_domains(kind, &ir, strict) {
+        return Ok(ExitCode::from(1));
     }
     let mut publications = Vec::new();
     let artifacts = match (kind, beside) {
@@ -3473,6 +3532,11 @@ fn generate(
                 Some(artifacts) => artifacts,
                 None => return Ok(ExitCode::from(1)),
             }
+        }
+        (Some(Projection::Schema), Beside::SchemaIds(identified)) => {
+            ess_gen::artifact::run(identified, &ir)?
+                .into_iter()
+                .collect()
         }
         (Some(kind), _) => {
             let generator = ess_gen::generator(kind.name()).context("projection unavailable")?;
@@ -3637,6 +3701,7 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             scenarios,
             suite_format,
             compact,
+            check,
             synthesis_seed,
         } => synthesize_suite(
             &input,
@@ -3644,7 +3709,7 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             out.as_deref(),
             component.as_deref(),
             scenarios.as_deref(),
-            (&suite_format, compact),
+            (&suite_format, compact, check),
             &synthesis_seed,
         ),
         ConformCommand::Author {
@@ -3672,6 +3737,7 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             ids,
             out,
         } => coverage::select(suite.as_deref(), suite_input.as_deref(), &ids, &out),
+        ConformCommand::Diff { from, to, format } => conform_diff(&from, &to, format),
         command @ ConformCommand::Run { .. } => conform_run(command),
         command @ ConformCommand::Report { .. } => Ok(conform_report_mode(command)),
         command @ ConformCommand::Mutate { .. } => conform_mutate_mode(command),
@@ -3689,6 +3755,32 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             output,
         } => Ok(import_history(&path, &log, &adapter, output.as_deref())),
     }
+}
+
+/// `ess verify conform diff`: what changed between two suites, by construct (beyond10x/ess#572).
+fn conform_diff(from: &Path, to: &Path, format: MachineFormat) -> Result<ExitCode> {
+    // Admitted as every other verb reads a suite (review 2026-10-19): a document admission refuses
+    // is not diffed with what it carries dropped.
+    let read = |path: &Path| -> Result<Option<ess_conformance::ConformanceSuite>> {
+        let text =
+            fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        Ok(match ess_conformance::AdmittedSuite::from_json(&text) {
+            Ok(admitted) => Some(admitted.suite().clone()),
+            Err(error) => {
+                eprintln!("refused: {} is not a suite: {error}", path.display());
+                None
+            }
+        })
+    };
+    let (Some(before), Some(after)) = (read(from)?, read(to)?) else {
+        return Ok(ExitCode::from(1));
+    };
+    let diff = ess_conformance::suite_diff::diff(&before, &after);
+    match format {
+        MachineFormat::Text => print!("{}", diff.to_text()),
+        MachineFormat::Json => print!("{}", diff.to_canonical_json()),
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 /// `ess verify conform report`: 0 written, 2 refused.
@@ -4727,16 +4819,24 @@ fn render_conformance_report(
 /// package target writes a tree, and the only thing that differs between two package targets is
 /// which emitter and which output owner — which is the shape a third language should be able to
 /// join without touching the verb around it.
+///
+/// With `check`, compares instead of writing (beyond10x/ess#571): `None` after naming each drifted
+/// file.
 fn write_suite(
     suite: &ess_conformance::ConformanceSuite,
     ir: &EssIr,
     target: SuiteTarget,
     json: &str,
-    out: &Path,
-) -> Result<String> {
+    (out, check): (&Path, bool),
+) -> Result<Option<String>> {
     if target == SuiteTarget::Ir {
+        if check {
+            return Ok(
+                check_named_suite(out, json)?.then(|| format!("current in {}", out.display()))
+            );
+        }
         write_named_output(out, json)?;
-        return Ok(format!("written to {}", out.display()));
+        return Ok(Some(format!("written to {}", out.display())));
     }
     let (files, family) = match target {
         SuiteTarget::Ir => unreachable!("answered above"),
@@ -4755,18 +4855,63 @@ fn write_suite(
             "conformance-typescript",
         ),
     };
-    write_owned_files(
-        out,
-        family,
-        files
-            .iter()
-            .map(|(path, contents)| (path.as_str(), contents.as_str())),
-    )?;
-    Ok(format!(
-        "{} file(s) written to {}",
-        files.len(),
+    let files = files
+        .iter()
+        .map(|(path, contents)| (path.as_str(), contents.as_str()));
+    if check {
+        return Ok(
+            check_owned_suite(out, family, files)?.then(|| format!("current in {}", out.display()))
+        );
+    }
+    let count = files.len();
+    write_owned_files(out, family, files)?;
+    Ok(Some(format!(
+        "{count} file(s) written to {}",
         out.display()
-    ))
+    )))
+}
+
+/// What a drifted suite file says to do.
+const SUITE_REMEDY: &str = "regenerate it with `ess verify conform synthesize`";
+
+/// Compare one suite document with the file at `path`, writing nothing; `false` after naming it
+/// when it is missing or holds other bytes.
+fn check_named_suite(path: &Path, contents: &str) -> Result<bool> {
+    let reason = match fs::read(path) {
+        Ok(existing) if existing == contents.as_bytes() => return Ok(true),
+        Ok(_) => "differs from the synthesized suite",
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => "is missing",
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("reading {} for drift check", path.display()))
+        }
+    };
+    eprintln!("{} {reason}; {SUITE_REMEDY}", path.display());
+    Ok(false)
+}
+
+/// Compare a suite package with the tree under `root` as `ess generate --check` compares a
+/// projection, writing nothing; `false` after naming each drifted file.
+fn check_owned_suite<'a>(
+    root: &Path,
+    family: &str,
+    files: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Result<bool> {
+    let drifted =
+        output_ownership::drift(root, &[output_ownership::Publication::tree(family, files)?])?;
+    for drift in &drifted {
+        let remedy = if drift.remedy == output_ownership::REGENERATE {
+            SUITE_REMEDY
+        } else {
+            drift.remedy
+        };
+        eprintln!(
+            "{} {}; {remedy}",
+            root.join(&drift.path).display(),
+            drift.reason
+        );
+    }
+    Ok(drifted.is_empty())
 }
 
 /// Files the compiled authored scenarios in `synthesis`'s suite and returns how many it kept.
@@ -4813,7 +4958,7 @@ fn synthesize_suite(
     out: Option<&Path>,
     component: Option<&str>,
     scenarios: Option<&Path>,
-    (suite_format, compact): (&str, bool),
+    (suite_format, compact, check): (&str, bool, bool),
     seeds: &[String],
 ) -> Result<ExitCode> {
     if compact && target != SuiteTarget::Ir {
@@ -4825,7 +4970,7 @@ fn synthesize_suite(
             target,
             out,
             (component, scenarios),
-            (false, compact),
+            (false, compact, check),
             seeds,
         );
     }
@@ -4872,7 +5017,10 @@ fn synthesize_suite(
     // tries twice.
     let written = match &out {
         None => None,
-        Some(out) => Some(write_suite(&synthesis.suite, &ir, target, &json, out)?),
+        Some(out) => match write_suite(&synthesis.suite, &ir, target, &json, (out, check))? {
+            Some(summary) => Some(summary),
+            None => return Ok(ExitCode::from(1)),
+        },
     };
 
     match input.format {
@@ -4882,9 +5030,7 @@ fn synthesize_suite(
             // tells a reader that something is unchecked without telling them what — which
             // is the same "generated tests are green" failure the refusal list exists to
             // rule out, one step further back.
-            for refusal in &synthesis.refusals {
-                println!("refused: {refusal}");
-            }
+            print!("{}", refusal_blocks(&synthesis.refusals));
             // Listed for the same reason: a scenario the specification obliges and this
             // suite does not hold has to be visible somewhere other than by its absence.
             for outside in &synthesis.outside {
@@ -4908,18 +5054,17 @@ fn synthesize_suite(
             // obligation the specification derived; an authored one is what a person asserted about
             // an algorithm the model cannot derive, and it is only as good as the person. One
             // number covering both would report coverage a specification never promised.
+            let refused = refusal_count(&synthesis.refusals);
             match component {
                 None => println!(
-                    "{} scenario(s) ({authored} authored), {} refusal(s), {written}",
+                    "{} scenario(s) ({authored} authored), {refused}, {written}",
                     synthesis.suite.len(),
-                    synthesis.refusals.len(),
                 ),
                 Some(name) => println!(
-                    "{} scenario(s) for `{name}` ({authored} authored), {} outside it, {} \
-                     refusal(s), {written}",
+                    "{} scenario(s) for `{name}` ({authored} authored), {} outside it, {refused}, \
+                     {written}",
                     synthesis.suite.len(),
                     synthesis.outside.len(),
-                    synthesis.refusals.len(),
                 ),
             }
         }
@@ -4927,6 +5072,66 @@ fn synthesize_suite(
         Format::Yaml => render(&synthesis.suite, Format::Yaml)?,
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// The `refused:` lines of `conform synthesize`, one block per cause.
+///
+/// A refusal linked to the ordinary scenario refused for the same cause (`caused_by`) is not
+/// printed again: its cause's block ends with one line counting the derived scenarios it also
+/// refuses, by family, so a missing creation reads once rather than once per actor and follow-up.
+/// The machine-readable report (`ess specify validate --format json`) still lists every id.
+fn refusal_blocks(refusals: &[ess_conformance::Refusal]) -> String {
+    use std::collections::BTreeMap;
+    use std::fmt::Write as _;
+    let mut derived: BTreeMap<&ess_conformance::ScenarioId, BTreeMap<&str, usize>> =
+        BTreeMap::new();
+    for refusal in refusals {
+        if let Some(cause) = &refusal.caused_by {
+            *derived
+                .entry(cause)
+                .or_default()
+                .entry(refusal.derived_family().unwrap_or("derived"))
+                .or_default() += 1;
+        }
+    }
+    let mut out = String::new();
+    for refusal in refusals
+        .iter()
+        .filter(|refusal| refusal.caused_by.is_none())
+    {
+        let _ = writeln!(out, "refused: {refusal}");
+        let Some(families) = refusal.scenario.as_ref().and_then(|id| derived.get(id)) else {
+            continue;
+        };
+        // Under an ordinary outcome, the cells that send its command; under a cell of its own
+        // reason, the further cells refused for that reason.
+        let (more, sent) = match &refusal.scenario {
+            Some(ess_conformance::ScenarioId::Outcome { outcome }) => {
+                ("", format!(" that send `{}`,", outcome.command))
+            }
+            _ => (" more", String::new()),
+        };
+        for (family, count) in families {
+            let _ = writeln!(
+                out,
+                "  and {count}{more} {family} scenario(s){sent} refused for the same cause"
+            );
+        }
+    }
+    out
+}
+
+/// `N refusal(s)`, and how many distinct causes they come from where derived scenarios repeat one.
+fn refusal_count(refusals: &[ess_conformance::Refusal]) -> String {
+    let causes = refusals
+        .iter()
+        .filter(|refusal| refusal.caused_by.is_none())
+        .count();
+    if causes == refusals.len() {
+        format!("{} refusal(s)", refusals.len())
+    } else {
+        format!("{} refusal(s), {causes} distinct cause(s)", refusals.len())
+    }
 }
 
 /// `ess conform author`: the authored scenarios alone, compiled against the model.
@@ -5032,7 +5237,7 @@ fn author_suite(
             SuiteTarget::Ir,
             out,
             (None, scenarios),
-            (true, false),
+            (true, false, false),
             &[],
         );
     }
@@ -5227,6 +5432,9 @@ struct Unscenarioed {
     subject: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     scenario: Option<String>,
+    /// The ordinary scenario refused for the same cause, where this one is derived from it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    caused_by: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -5299,6 +5507,7 @@ impl Completeness {
                 code: refusal.code().to_string(),
                 subject: refusal.subject.to_string(),
                 scenario: refusal.scenario.as_ref().map(ToString::to_string),
+                caused_by: refusal.caused_by.as_ref().map(ToString::to_string),
             })
             .collect();
         let outside: Vec<OutsideScenario> = synthesis
@@ -6124,7 +6333,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 83;
+    const AREA_LEAVES: usize = 84;
     const AREA_ONLY_LEAVES: [&[&str]; 13] = [
         &["specify", "protocol", "validate"],
         &["specify", "protocol", "compile"],

@@ -733,6 +733,7 @@ ess generate <COMMAND>
 | `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
 | `--http` | `<HTTP>` | no |  | An `ess-http/1` document binding commands and views to methods and paths; only with `--kind openapi`. Compiled as `ess specify http compile` compiles it, and refused when a route it projects has no path |
 | `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:` digest pins |
+| `--schema-id-base` | `<URI>` | no |  | Give every document `--kind schema` writes a root `$id`: this absolute URI, ending in `/` or `:`, followed by the document's path under `schema/` (beyond10x/ess#590). Only with `--kind schema`; without it no document carries an `$id` |
 
 #### `ess generate generate`
 
@@ -759,6 +760,7 @@ ess generate generate [OPTIONS]
 | `--transport` | `<TRANSPORT>` | no |  | An `ess-transport/1` or `ess-transport/2` document binding events to brokers, subjects and streams; only with `--kind asyncapi` |
 | `--http` | `<HTTP>` | no |  | An `ess-http/1` document binding commands and views to methods and paths; only with `--kind openapi`. Compiled as `ess specify http compile` compiles it, and refused when a route it projects has no path |
 | `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:` digest pins |
+| `--schema-id-base` | `<URI>` | no |  | Give every document `--kind schema` writes a root `$id`: this absolute URI, ending in `/` or `:`, followed by the document's path under `schema/` (beyond10x/ess#590). Only with `--kind schema`; without it no document carries an `$id` |
 
 #### `ess generate cli`
 
@@ -983,7 +985,7 @@ ess generate schema project-bundle [OPTIONS] --bundle <BUNDLE> --root <ROOT> --s
 
 #### `ess generate schema validate-bundle`
 
-Validate unmodified JSON instances against one selected component root
+Validate unmodified JSON or YAML instances against one selected component root
 
 ```text
 ess generate schema validate-bundle [OPTIONS] --bundle <BUNDLE> --root <ROOT> <INSTANCES>...
@@ -991,7 +993,7 @@ ess generate schema validate-bundle [OPTIONS] --bundle <BUNDLE> --root <ROOT> <I
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
-| `<INSTANCES>`… |  | yes |  | JSON instance files. No schema selector field is added to their data |
+| `<INSTANCES>`… |  | yes |  | Instance files: `.yaml` or `.yml` read as the JSON value their YAML denotes, any other as JSON. No schema selector field is added to their data |
 | `--bundle` | `<BUNDLE>` | yes |  | Persisted component (/1) or document-root (/2) bundle to revalidate |
 | `--root` | `<ROOT>` | yes |  | One root explicitly selected by that import |
 
@@ -1066,7 +1068,7 @@ ess generate schema normalize-generate [OPTIONS] --recipe <RECIPE> --target <TAR
 
 #### `ess generate schema validate`
 
-Validate JSON instances against schemas selected by their `schema` property
+Validate JSON or YAML instances against schemas selected by their `schema` property
 
 ```text
 ess generate schema validate [OPTIONS] --schemas <DIR> <PATHS>...
@@ -1074,7 +1076,7 @@ ess generate schema validate [OPTIONS] --schemas <DIR> <PATHS>...
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
-| `<PATHS>`… |  | yes |  | JSON files or directories to validate. Directories are searched recursively |
+| `<PATHS>`… |  | yes |  | Instance files or directories to validate. Directories are searched recursively. A file ending `.yaml` or `.yml` is read as the JSON value its YAML denotes, one ending `.json` as JSON |
 | `--schemas` | `<DIR>` | yes |  | Directory containing the authoritative `*.schema.json` registry |
 | `--format` | `<FORMAT>` | no | `text` | How to render the validation report. One of `text`, `yaml`, `json`. |
 
@@ -1426,13 +1428,14 @@ ess verify conform synthesize [OPTIONS]
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
-| `--target` | `<TARGET>` | no | `ir` | What to write the suite as. One of `ir`, `go`, `typescript`. |
+| `--target` | `<TARGET>` | no | `ir` | What to write the suite as. A Rust implementation runs the `ir` suite with the `ess-conformance` runner, `https://beyond10x.github.io/ess/docs/start/runners/rust`. One of `ir`, `go`, `typescript`. |
 | `--out` | `<OUT>` | no |  | A file for `--target ir`, a directory for `--target go` or `--target typescript` |
 | `--component` | `<COMPONENT>` | no |  | Hold one component to the specification rather than the whole system.<br /><br />Keeps only the scenarios whose every command, event and view this component accepts, publishes or owns, and lists the rest with what they need — they belong in the suite of the component that realises it. An implementation of one component answers `ErrUnsupported` to the other's scenarios, and a run with skips in it cannot say it passed. |
 | `--scenarios` | `<SCENARIOS>` | no |  | The `ess-scenario/1` documents to compile beside the generated scenarios.<br /><br />One file or a directory. Immediate `ess-inputs.yaml` selects its exact scenarios list. Otherwise only immediate `.yaml`/`.yml` files are read; subdirectories are not searched. An empty selection is refused. When omitted, no authored scenarios are selected. |
 | `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); admitted features select newer required versions. One of `4`, `5`. |
 | `--compact` |  | no |  | Write fresh IR as compact JSON with one trailing newline; requires --target ir |
-| `--synthesis-seed` | `<FILE>`… | no |  | Offer the `setup` row of arrangement INSTANCE in the authored document FILE as an explicit synthesis seed; repeatable.<br /><br />A seed supplies only that nominated initial row: never the document's timeline, assertions or any state its timeline reaches, and it appends no authored scenario (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is established only for a generated obligation no bounded arrangement reaches, and the real command and assertions follow it. Any seed selects suite/42 (or /43 with `--suite-format 5`), suite/44 (/45) where an act also claims one event more than once, suite/46 (/47) where a response reaches a constrained String newtype, suite/48 (/49) where a response or a struct it reaches ignores undeclared fields, or suite/50 (/51) where a scenario holds `now` for a command, and records its source, row and uses. |
+| `--check` |  | no |  | Refuse when `--out` differs from the suite this command would write, writing nothing.<br /><br />Compares the `--target ir` file, or every file of the `go` or `typescript` package, byte for byte with what the same command without `--check` would write, `--compact` and `--suite-format` included. Exit 0 when `--out` is current, 1 with one line per drifted file. |
+| `--synthesis-seed` | `<FILE>`… | no |  | Offer the `setup` row of arrangement INSTANCE in the authored document FILE as an explicit synthesis seed; repeatable.<br /><br />A seed supplies only that nominated initial row: never the document's timeline, assertions or any state its timeline reaches, and it appends no authored scenario (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is established only for a generated obligation no bounded arrangement reaches, and the real command and assertions follow it. Any seed selects suite/42 (or /43 with `--suite-format 5`), suite/44 (/45) where an act also claims one event more than once, suite/46 (/47) where a response reaches a constrained String newtype, suite/48 (/49) where a response or a struct it reaches ignores undeclared fields, suite/50 (/51) where a scenario holds `now` for a command, or suite/52 (/53) where a view observes a value type's invariants at a wrapped position, and records its source, row and uses. |
 
 #### `ess verify conform author`
 
@@ -1472,6 +1475,22 @@ ess verify conform web [OPTIONS]
 | `--out` | `<OUT>` | no |  | Where to write the product |
 | `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); coverage emits the complete coverage input. One of `4`, `5`. |
 | `--history` | `<HISTORY>` | no |  | An `ess-history/1`, `ess-history/2` or `ess-history/3` document: draw it, checked against the specification, as one lane per client in a single self-contained `index.html`, printed when `--out` is absent. `--out` replaces the files `ess` owns in that directory, the player's included, so write history pages and the player to different directories |
+
+#### `ess verify conform diff`
+
+Say what changed between two suites: scenarios added, removed and changed, by construct.
+
+Each scenario is filed under the construct it is about — its subject and family, such as `billing.invoice.CreateInvoice/outcome`, and for a one-time disclosure cell also the origin outcome, field and aspect. A changed scenario names the parts that differ and lists the steps removed from it and added to it. Scenarios are compared as read, so a suite rewritten in a newer spelling of the same scenarios shows no change. `--format json` writes an `ess-suite-diff/1` document. Exit 0 whatever changed, 1 when a suite cannot be read.
+
+```text
+ess verify conform diff [OPTIONS] --from <FROM> --to <TO>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--from` | `<FROM>` | yes |  | The earlier suite, such as the one committed on the base branch |
+| `--to` | `<TO>` | yes |  | The later suite, such as the one this change synthesizes |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `json`. |
 
 #### `ess verify conform select`
 

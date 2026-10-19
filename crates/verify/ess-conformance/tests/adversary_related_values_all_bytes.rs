@@ -16,6 +16,16 @@
 //! `demo.jobs.ScheduleJob/outcome/scheduled/held/starts_at/-60` and moves from
 //! `ess-conformance/34` to `/50`; every other scenario keeps its bytes. Its IR and refusal digests
 //! are unchanged, and the old suite digest is what the released 0.60.0 synthesizes.
+//!
+//! Ten rows are re-pinned on the 0.63.0 integration branch, each to the digest the moving unit
+//! re-pinned in `synthesis-suite-bytes-table.tsv`. Suite digests of `bounded-accessor`,
+//! `generated-views`, `adversary-explore-preconditions`, `aggregate-optional-fields`,
+//! `structured-instances` and `examples/gatepass`: synthesis leaves an unread `Optional` input
+//! absent (beyond10x/ess#546, 15db24d97). Suite digests of `one-time-coverage/model.yaml` and
+//! `one-time-response-values.example.yaml`: a suite states its catalog once (beyond10x/ess#570,
+//! 036d89dae). Refusal digests of `model-types` and `adversary_expression`: value invariants are
+//! observed at wrapped positions, recursive ones refused by name (unit U5, 63a581f88, and the
+//! review fix a422cac9d). IR digests did not move.
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 

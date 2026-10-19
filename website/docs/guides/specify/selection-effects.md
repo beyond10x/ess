@@ -86,7 +86,12 @@ back from an immediate, unfiltered view that publishes the identity, the state a
 effect writes: the changed ones in their new state with what `sets:` wrote, the others as they
 were, and `{count: changed}` equal to the records changed. It then sends the command again with an
 input the filter selects no record by, and requires the same outcome, a count of 0 and no record
-changed. Where no such view exists the scenario is refused by name. A `sets:` entry writing the
+changed. Where no such view exists the scenario is refused by name. The records are arranged by the
+declared commands, so every field the filter reads must be written by one of them: from an input,
+or from a caller attribute (`{caller: user_id}`), in which case each arranging command is sent as a
+caller whose attribute carries the value its record needs. A filter reading a field no declared
+command writes is refused naming that field and saying no declared command writes it. An
+`affects:` entry and a `when_related:` row set are arranged the same way. A `sets:` entry writing the
 entity's identity is refused. No new
 suite step is used. Every generated code target (Rust, Go, Web, Clap) refuses both constructs by
 name, and Entity Runtime lowering refuses them with `SetEffectUnsupported`. Below `ess/16` both are
@@ -217,7 +222,8 @@ the entry.
 Writing is per element, so an empty list writes nothing; a record the list does not name is not
 removed, and an updated record keeps every field the entry does not write. An element naming the
 branch's own subject is skipped: the subject keeps what its branch writes. A refused run writes
-none of the records. `each:` beside `where:`, `moves:` or `deletes:` is refused, and so is an entry
+none of the records. `each:` beside `where:` is refused, and below `ess/27` so is `each:` beside
+`moves:` or `deletes:` (next section); so is an entry
 on a branch without a subject: `affects:` sits beside a branch that moves or updates one named
 record. Below `ess/23` `each:` is refused, naming `ess/23`.
 
@@ -229,3 +235,86 @@ exactly one record per identity. Each refusal of the command is then read to hav
 record its list named.
 Every generated code target (Rust, Go, Web, Clap) refuses the entry by name, and Entity Runtime
 lowering refuses it with `SetEffectUnsupported`.
+
+## Move each named record by its own answer
+
+From `format: ess/27` (beyond10x/ess#596), an `each:` entry can move or delete the record each
+element names instead of writing it, and `each:` can carry a `where:` over the element. One call
+then takes each record to its own transition by the answer the input carries for it: one entry per
+answer, each selecting the elements that carry it.
+
+```yaml
+format: ess/27
+system: demo
+version: v1
+domain: demo.batch
+types:
+  - {name: demo.batch.ProposalId, kind: newtype, of: Uuid}
+  - {name: demo.batch.BatchId, kind: newtype, of: Uuid}
+  - {name: demo.batch.Verdict, kind: enum, variants: [applied, refused]}
+  - name: demo.batch.Answer
+    kind: struct
+    fields:
+      - {name: proposal_id, type: demo.batch.ProposalId}
+      - {name: verdict, type: demo.batch.Verdict}
+entities:
+  - name: demo.batch.Batch
+    identity: {name: batch_id, type: demo.batch.BatchId}
+    fields: [{name: label, type: String}]
+    lifecycle:
+      initial: Open
+      states: [Open, Applied]
+      terminal: [Applied]
+      transitions: [{name: apply, from: [Open], to: Applied}]
+  - name: demo.batch.Proposal
+    identity: {name: proposal_id, type: demo.batch.ProposalId}
+    fields: [{name: batch_id, type: demo.batch.BatchId}]
+    lifecycle:
+      initial: Approved
+      states: [Approved, Applied, Refused]
+      terminal: [Applied, Refused]
+      transitions:
+        - {name: apply, from: [Approved], to: Applied}
+        - {name: refuse, from: [Approved], to: Refused}
+events:
+  - name: demo.batch.BatchApplied
+    fields: [{name: batch_id, type: demo.batch.BatchId}]
+errors: [{name: demo.batch.Duplicate}, {name: demo.batch.WrongState}]
+commands:
+  - name: demo.batch.Apply
+    input:
+      - {name: batch_id, type: demo.batch.BatchId}
+      - {name: answers, type: List<demo.batch.Answer>}
+    outcomes:
+      - name: duplicated
+        when: {not: {distinct: {in: answers, as: a, by: a.proposal_id}}}
+        error: demo.batch.Duplicate
+      - name: applied
+        moves: demo.batch.Batch.apply
+        instance: batch_id
+        emits: [demo.batch.BatchApplied]
+        payload: {demo.batch.BatchApplied: {batch_id: input.batch_id}}
+        affects:
+          - entity: demo.batch.Proposal
+            each: {in: input.answers, as: a, where: a.verdict == applied}
+            instance: a.proposal_id
+            moves: demo.batch.Proposal.apply
+          - entity: demo.batch.Proposal
+            each: {in: input.answers, as: a, where: a.verdict == refused}
+            instance: a.proposal_id
+            moves: demo.batch.Proposal.refuse
+      - {name: wrong-state, wrong_state: true, error: demo.batch.WrongState}
+```
+
+The entries apply in the order written, each to the elements its `where:` selects; the `where:`
+reads `<name>.<member>` and `input.<field>`. A selected element moves the record it names along the
+entry's transition, or removes it under `deletes: <Entity>`. An element naming no record is
+skipped, and so is one whose record rests outside the transition's `from` states, as a record under
+`instances:` is; nothing is created. The `distinct:` over the identity member is required as for
+every `each:` entry, and a refused run moves nothing. Two such entries may move records of one
+entity; a `where:` on the entry itself beside `each:` stays refused. Below `ess/27` the entry's
+`moves:` or `deletes:` is refused as before, its hint naming `ess/27`, and a `where:` inside `each:`
+is refused naming `ess/27`.
+
+Where the external system answers one record at a time, the per-record command stays the way to
+write it: one call per answer, with a `when:` branch per verdict that `moves:` its record.

@@ -38,7 +38,7 @@
 //!
 //! | change | decided as |
 //! |---|---|
-//! | display name, summary or example moved | compatible everywhere: documentation |
+//! | display name, summary or example moved, a domain's included (`ess-diff/20`) | compatible everywhere: documentation |
 //! | a type widened (`expanded`) | breaking for readers of an output use; compatible for callers and history |
 //! | a type narrowed (`narrowed`) | breaking for callers of an input use and for stored history; compatible for readers |
 //! | a union variant gains or loses a required payload (ess/22) | breaking for every use: neither revision reads what the other writes |
@@ -52,9 +52,12 @@
 //! | a refusal gains or loses its compensating change (`compensates: true`, ess/22) | breaking for callers and readers; compatible for history |
 //! | an input whose type is not `Optional` added, or a refusal added or its guard changed so that an input the earlier revision accepted is refused by it, where the guards decide that (`ess-diff/17`) | breaking for callers; unknown for readers; compatible for history |
 //! | a struct opened or closed, `undeclared_fields: ignored` ↔ `refused` (`ess-diff/18`, ess/24) | decided as `expanded`, or `narrowed`: an open record admits every value the closed one did and more |
+//! | a struct's `shorthand:` declared, or dropped or moved to another field (`ess-diff/20`, ess/27) | decided as `expanded`, or `narrowed`: a short form is a value of the struct only while it declares that field |
 //! | a command response opened (`ess-diff/18`) | breaking for readers: one written against the closed response may be sent a field it refuses; compatible for callers and history |
 //! | a command response closed (`ess-diff/18`) | compatible: it carries only what every reader of the open one admitted |
 //! | a view's answer for an identity no row carries gained, lost or changed (`absent:`, `ess-diff/19`, ess/25) | breaking for readers; compatible for callers and history |
+//! | an actor becomes the system itself (`ess-diff/20`, ess/27) | breaking for callers: it stops being a caller, as a grant removed does |
+//! | an actor stops being the system, or a system-issued command's `await_within:` moves (`ess-diff/20`) | compatible |
 //! | a view is removed | breaking for readers |
 //! | an event or an entity is removed | breaking for history |
 //!
@@ -677,17 +680,29 @@ fn dimensions(change: &SemanticChange, uses: &BTreeSet<TypeUse>) -> Dimensions {
         // from every surface a caller or a reader addresses through it; what it stored is named by
         // each removed entity and event, each breaking history on its own (beyond10x/ess#469).
         SemanticChange::Domain { changed, .. } => match changed {
-            DomainChange::Added => [C, C, C],
+            // A domain's display name and summary are documentation, answered above.
+            DomainChange::Added
+            | DomainChange::DisplayNameChanged { .. }
+            | DomainChange::SummaryChanged { .. } => [C, C, C],
             DomainChange::Removed => [B, B, C],
         },
         SemanticChange::Type { changed, .. } => type_dimensions(changed, change.relation(), uses),
         SemanticChange::Actor { changed, .. } => match changed {
-            ActorChange::Added | ActorChange::GrantAdded { .. } => [C, C, C],
-            ActorChange::Removed | ActorChange::GrantRemoved { .. } => [B, C, C],
+            // An actor that becomes the system (ess/27, beyond10x/ess#542) can no longer be sent
+            // as a caller of what it is granted, as a grant removed; one that stops being the
+            // system can again, as a grant added.
+            ActorChange::Added
+            | ActorChange::GrantAdded { .. }
+            | ActorChange::SystemChanged { after: false, .. } => [C, C, C],
+            ActorChange::Removed
+            | ActorChange::GrantRemoved { .. }
+            | ActorChange::SystemChanged { after: true, .. } => [B, C, C],
             _ => [U, C, C],
         },
         SemanticChange::Command { changed, .. } => match changed {
-            CommandChange::Added => [C, C, C],
+            // How soon the system claims to take its own step (ess/27, beyond10x/ess#542): no
+            // caller sends it, no reader's shape moves, and nothing stored reads it.
+            CommandChange::Added | CommandChange::AwaitWithinChanged { .. } => [C, C, C],
             CommandChange::Removed => [B, C, C],
             // A refusal that now changes its row, or no longer does (ess/22, beyond10x/ess#197):
             // a caller retrying after it and a reader of the row meet a different state; nothing
@@ -793,7 +808,7 @@ fn unit_variant_dimensions(changed: &TypeChange) -> Option<Dimensions> {
 /// depends on.
 fn documentation_only(change: &SemanticChange) -> bool {
     match change {
-        SemanticChange::Domain { .. } => false,
+        SemanticChange::Domain { changed, .. } => changed.is_naming(),
         SemanticChange::System { changed, .. } => {
             matches!(changed, SystemChange::SummaryChanged { .. })
         }
@@ -1307,9 +1322,11 @@ impl Residual {
                 }
             }
         }
-        // Which structs ignore undeclared fields (`ess/24`) is a property of each, not a use.
+        // Which structs ignore undeclared fields (`ess/24`), and which may be written as one field
+        // alone (`ess/27`), is a property of each, not a use.
         if let Some(model) = rest.as_object_mut() {
             model.remove("undeclared_fields_ignored");
+            model.remove("shorthands");
         }
         // A payload or mapping target type restates the event, error or command-input field it
         // fills, each of which is read above.
