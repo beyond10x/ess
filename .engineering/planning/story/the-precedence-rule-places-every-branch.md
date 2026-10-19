@@ -86,7 +86,7 @@ model below format A answers exactly as before. Each line names the failing test
   `format_a_fixture_suite_passes_on_the_interpreted_rust_and_go_targets`.
 - `crates/generate/ess-entity-runtime/tests/selection_precedence.rs`:
   `format_a_related_row_existence_lowers_in_plan_order_or_is_refused_by_name`.
-- `crates/specify/ess-domain/tests/format_history.rs`: `format_a_is_open_and_names_the_rule`.
+- `crates/specify/ess-domain/tests/format_history.rs`: `format_a_shipped_in_0_63_0_and_names_the_rule`.
 - Tests are modules of existing test binaries; no new tests/*.rs file.
 
 ## Scope
