@@ -654,6 +654,111 @@ fn the_typescript_runner_awaits_a_system_issued_command() {
     assert_eq!(ts_replay(&package, &mismatched, &recorder, false), rust);
 }
 
+/// The queue, its reached answers carrying `elapsed_ms` instead of the reading it took.
+struct Reading {
+    queue: Queue,
+    elapsed_ms: Option<u64>,
+}
+
+impl ConformanceTarget for Reading {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        self.queue.identity()
+    }
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.queue.begin_scenario(scenario)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        self.queue.execute_command(request)
+    }
+    fn await_outcome(&self, request: AwaitRequest) -> Result<AwaitAnswer, TargetError> {
+        Ok(match self.queue.await_outcome(request)? {
+            AwaitAnswer::Reached { result, input, .. } => AwaitAnswer::Reached {
+                result,
+                input,
+                elapsed_ms: self.elapsed_ms,
+            },
+            other @ AwaitAnswer::NotIssued { .. } => other,
+        })
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        self.queue.query_view(request)
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.queue.observe_events(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        request: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.queue.configure_external_outcome(request)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.queue.redeliver_event(request)
+    }
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.queue.end_scenario(scenario)
+    }
+}
+
+/// A step reached exactly at the bound is within it; one millisecond later is not, and a reached
+/// answer with no reading of the clock cannot be held to a bound at all. Without a bound neither
+/// matters. The three runners agree (review 2026-10-19, T2).
+#[test]
+fn a_reading_at_the_bound_passes_and_one_past_it_or_none_fails_in_every_runner() {
+    let suite = await_suite();
+    let directory = support_go::package(
+        "await-readings",
+        suite.suite(),
+        &[support_go::TRANSCRIPT_TARGET],
+    );
+    let package = support_ts::Package::new("await-readings", suite.suite());
+    for (elapsed_ms, bounded) in [
+        (Some(5_000), "passed"),
+        (Some(5_001), "failed"),
+        (None, "failed"),
+    ] {
+        let target = Reading {
+            queue: Queue::new(),
+            elapsed_ms,
+        };
+        let (rust, recorder) = recorded(&suite, target);
+        let mut expected = every(&suite, "passed");
+        expected.insert(BOUNDED.to_owned(), bounded.to_owned());
+        assert_eq!(rust, expected, "{elapsed_ms:?}: the reference runner");
+        if bounded == "failed" {
+            let results = run(
+                &suite,
+                &Reading {
+                    queue: Queue::new(),
+                    elapsed_ms,
+                },
+            );
+            assert_eq!(
+                failing(&results[BOUNDED]),
+                BTreeSet::from([CheckCode::Await]),
+                "{elapsed_ms:?}: {:#?}",
+                results[BOUNDED]
+            );
+        }
+        assert_eq!(
+            go_replay(&directory, &suite, &recorder, false),
+            rust,
+            "{elapsed_ms:?}: Go (left) and Rust (right)"
+        );
+        assert_eq!(
+            ts_replay(&package, &suite, &recorder, false),
+            rust,
+            "{elapsed_ms:?}: TypeScript (left) and Rust (right)"
+        );
+    }
+}
+
 /// Every faulty queue, through the three runners: the same verdict per scenario, each the one
 /// [`caught`] names. Among them the refusal read as "nothing within the bound": a target that takes
 /// the step from a refusing state, one that publishes without saying so, and one that answers

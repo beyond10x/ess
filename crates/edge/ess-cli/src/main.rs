@@ -620,7 +620,8 @@ enum ConformCommand {
     Synthesize {
         #[command(flatten)]
         input: SpecPath,
-        /// What to write the suite as.
+        /// What to write the suite as. A Rust implementation runs the `ir` suite with the
+        /// `ess-conformance` runner, `https://beyond10x.github.io/ess/docs/start/runners/rust`.
         #[arg(long, value_enum, default_value_t = SuiteTarget::Ir)]
         target: SuiteTarget,
         /// A file for `--target ir`, a directory for `--target go` or `--target typescript`.
@@ -3758,11 +3759,13 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
 
 /// `ess verify conform diff`: what changed between two suites, by construct (beyond10x/ess#572).
 fn conform_diff(from: &Path, to: &Path, format: MachineFormat) -> Result<ExitCode> {
+    // Admitted as every other verb reads a suite (review 2026-10-19): a document admission refuses
+    // is not diffed with what it carries dropped.
     let read = |path: &Path| -> Result<Option<ess_conformance::ConformanceSuite>> {
         let text =
             fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        Ok(match ess_conformance::ConformanceSuite::from_json(&text) {
-            Ok(suite) => Some(suite),
+        Ok(match ess_conformance::AdmittedSuite::from_json(&text) {
+            Ok(admitted) => Some(admitted.suite().clone()),
             Err(error) => {
                 eprintln!("refused: {} is not a suite: {error}", path.display());
                 None

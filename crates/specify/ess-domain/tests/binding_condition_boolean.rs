@@ -156,3 +156,33 @@ fn a_text_literal_against_a_boolean_leaf_and_a_bare_path_stay_refused() {
     .expect_err("text against a Boolean item leaf");
     assert!(selected.contains("binding.record.selections"), "{selected}");
 }
+
+/// The public cross-cutting pass reads the format its registry serves, not the newest one (review
+/// 2026-10-19, B12): an `ess/26` registry refuses the Boolean comparison an `ess/27` document
+/// validates with.
+#[test]
+fn validate_bindings_reads_the_format_its_registry_serves() {
+    let spec = validate(&document(
+        "ess/27",
+        "[event.bridged == false]",
+        "item.held != true",
+    ))
+    .unwrap_or_else(|errors| panic!("validates: {errors}"));
+    let check = |format: FormatVersion| {
+        ess_domain::binding::validate_bindings(
+            spec.bindings(),
+            spec.events(),
+            spec.commands(),
+            &spec.system().types.clone().with_format(format),
+            spec.conversions(),
+        )
+    };
+    let current = check(FormatVersion::V27);
+    assert!(current.is_empty(), "{current}");
+    let older = check(FormatVersion::V26).to_string();
+    assert_eq!(
+        older.matches("unsupported_format_version").count(),
+        2,
+        "the condition and the selection: {older}"
+    );
+}

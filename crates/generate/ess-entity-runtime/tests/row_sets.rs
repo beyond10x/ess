@@ -158,6 +158,14 @@ fn a_head_read_is_refused_with_the_row_set_limitation() {
         "{}",
         found[0].message
     );
+    // Named as the head it reads, not as the field form (review 2026-10-19, B10).
+    assert!(
+        found[0].message.contains("order_by"),
+        "{}",
+        found[0].message
+    );
+    let construct = LoweringCode::RowSetUnsupported.construct();
+    assert!(construct.contains("order_by"), "{construct}");
 }
 
 #[test]

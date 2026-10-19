@@ -4608,6 +4608,11 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		if strings.Contains(id, "/grant/read/") && major < 34 {
 			return suite, fmt.Errorf("a read sent as an actor requires suite/34 or /35")
 		}
+		// A value type's invariants at a wrapped view position arrived in suite/52 and /53, as the
+		// TypeScript runtime reads it.
+		if strings.Contains(id, "/invariant-wrapped/at/") && major < 52 {
+			return suite, fmt.Errorf("a wrapped value-invariant scenario requires suite/52 or /53")
+		}
 		s, err := closed(scenario, "purpose steps source", "one_time_response")
 		if err != nil {
 			return suite, err

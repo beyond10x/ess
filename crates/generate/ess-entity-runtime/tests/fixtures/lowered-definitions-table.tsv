@@ -12,7 +12,7 @@ crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-filters.yaml	AS
 crates/edge/ess-cli/tests/fixtures/room-booking/flat.yaml	ASSEMBLE
 crates/edge/ess-cli/tests/fixtures/room-booking/window.yaml	components=0
 crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	components=1
-crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	rules	REFUSED	a8dbf3c6afa424532375ffa8949c0265393fa2ee1fcfcc4b43f1a0dc865fa6af:843
+crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	rules	REFUSED	e9d38759ae44128176ac9d5beac7f7bbe941eb1cdb9cbf5cc4479f6e05ca506b:1125
 crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	rules	REFUSED	4d69430ae363d2442112bed442e147606ab7591abf820acc0b54727ccdfb297b:334
 crates/edge/ess-cli/tests/fixtures/synthesis-seeds/model/system.yaml	ASSEMBLE
@@ -92,7 +92,7 @@ crates/verify/ess-conformance/tests/fixtures/adversary-l2-preserves.yaml	compone
 crates/verify/ess-conformance/tests/fixtures/adversary-l3-affects.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/adversary-l3-selected-rows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	components=1
-crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	team-service	REFUSED	287af9c87dde4d272812f363281646a0e75ce1115d68a8f9ee48a6c5221d50f6:1020
+crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	team-service	REFUSED	3bb7512bb1109eb749075c3e868b8674f2cd584d86524683c047720bc21a46da:1161
 crates/verify/ess-conformance/tests/fixtures/aggregate-copied-group-parameter.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/aggregate-group-parameter.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/aggregate-group-selection-copied.yaml	components=0
@@ -167,7 +167,7 @@ crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	compone
 crates/verify/ess-conformance/tests/fixtures/held-state-input-refusal.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/held-state-input-refusal.yaml	sessions	REFUSED	13fcdcca57513343da4b2bdb43ad89d164afb6236a7a44db529535afd02c25a1:203
 crates/verify/ess-conformance/tests/fixtures/identity-changing-updates.yaml	components=1
-crates/verify/ess-conformance/tests/fixtures/identity-changing-updates.yaml	vault-service	REFUSED	d3be463002c26108d6d2bca57753f666074da8eb732bf485821f51a9dd34b62a:1536
+crates/verify/ess-conformance/tests/fixtures/identity-changing-updates.yaml	vault-service	REFUSED	246bf3414169176a94a483df4088c7569a189a586e3d5b81d16587d0409a82bb:1677
 crates/verify/ess-conformance/tests/fixtures/input-guard-overlap.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/keypad.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	components=0
@@ -232,7 +232,7 @@ crates/verify/ess-conformance/tests/fixtures/retained-commit.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/retained-replay.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	components=1
-crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	vault-lib	REFUSED	58d8ae288e03800715d215c2ca2a653287aec95cef99c363f233a7ae5236c551:422
+crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	vault-lib	REFUSED	bccabb45b72adc4e53e56a40e11f47886c7a6388102c64b527ae8406928bd29d:563
 crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/state-in-subject-predicate.yaml	components=0

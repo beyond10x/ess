@@ -172,3 +172,89 @@ fn schema_projects_shorthand_as_one_of_scalar_and_object() {
         );
     }
 }
+
+/// The projection of a struct with a shorthand, identified under a base, is a document the bundle
+/// importer accepts: its `x-ess-shorthand` and its root `$id` are inert there, and the imported
+/// bundle admits the short and the long form (review 2026-10-19, B2, B3).
+#[test]
+fn an_identified_shorthand_projection_imports_as_a_bundle() {
+    let directory = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("shorthand-bundle-{}", std::process::id()));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).expect("a stale scratch directory is removed");
+    }
+    std::fs::create_dir_all(directory.join("model")).expect("a scratch directory");
+    std::fs::write(directory.join("model/system.yaml"), MODEL).expect("the model is written");
+    let generated = ess(
+        &directory,
+        &[
+            "generate",
+            "--path",
+            "model",
+            "--kind",
+            "schema",
+            "--out",
+            "out",
+            "--schema-id-base",
+            "urn:example:tracker:",
+        ],
+    );
+    assert!(generated.status.success(), "{}", text(&generated));
+    let document = "out/schema/commands/tracker.ops.Run.schema.json";
+    let projected: Value = serde_json::from_str(
+        &std::fs::read_to_string(directory.join(document)).expect("the projected schema"),
+    )
+    .expect("JSON");
+    assert_eq!(
+        projected["$id"],
+        json!("urn:example:tracker:commands/tracker.ops.Run.schema.json")
+    );
+    let imported = ess(
+        &directory,
+        &[
+            "generate",
+            "schema",
+            "import-document",
+            "--path",
+            document,
+            "--root",
+            "Run",
+            "--dialect",
+            "draft-2020-12",
+            "--out",
+            "bundle.json",
+        ],
+    );
+    assert!(imported.status.success(), "{}", text(&imported));
+    for (label, operation, admitted) in [
+        ("short", json!("getIssue"), true),
+        ("long", json!({"op": "getIssue", "paging": "token"}), true),
+        ("number", json!(7), false),
+    ] {
+        let instance = format!("{label}.json");
+        std::fs::write(
+            directory.join(&instance),
+            serde_json::to_string(&json!({"operation": operation})).expect("JSON"),
+        )
+        .expect("the instance is written");
+        let validated = ess(
+            &directory,
+            &[
+                "generate",
+                "schema",
+                "validate-bundle",
+                "--bundle",
+                "bundle.json",
+                "--root",
+                "Run",
+                &instance,
+            ],
+        );
+        assert_eq!(
+            validated.status.success(),
+            admitted,
+            "{label}: {}",
+            text(&validated)
+        );
+    }
+}

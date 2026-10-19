@@ -1630,6 +1630,10 @@ fn cause_of(name: &BindingName, when: RawTrigger) -> Result<BindingCause, Valida
 /// [`Specification::validate`](crate::spec::Specification::validate) already holds, and a missing
 /// end stops only the checks that needed it — an event nobody declares is reported once, not once
 /// per mapping entry underneath it.
+///
+/// The format is the one `types` records it serves ([`TypeRegistry::format`]), so a registry of
+/// an older document is held to that document's rules; a registry recording none is read as
+/// [`condition::BOOLEAN_FORMAT`].
 pub fn validate_bindings(
     bindings: &BTreeMap<BindingName, BindingSpec>,
     events: &BTreeMap<QualifiedName, EventSpec>,
@@ -1644,7 +1648,7 @@ pub fn validate_bindings(
         types,
         conversions,
         &crate::spec::Refused::default(),
-        condition::BOOLEAN_FORMAT,
+        types.format().unwrap_or(condition::BOOLEAN_FORMAT),
     )
 }
 

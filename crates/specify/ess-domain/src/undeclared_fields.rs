@@ -43,7 +43,8 @@ use crate::types::{TypeBody, UndeclaredFields};
 
 /// A declaration list of a document that [`Written::take`] reads the key out of.
 ///
-/// Commands are not here: a command reads the key as its own field.
+/// [`Self::Commands`] is not among [`Self::ALL`]: a command reads `undeclared_fields:` as its own
+/// field, and only `shorthand:` is taken out of it (`crate::shorthand`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Section {
     /// `types:`.
@@ -58,6 +59,8 @@ pub(crate) enum Section {
     Views,
     /// `actors:`.
     Actors,
+    /// `commands:`, read for `shorthand:` alone.
+    Commands,
 }
 
 impl Section {
@@ -80,6 +83,7 @@ impl Section {
             Self::Errors => "errors",
             Self::Views => "views",
             Self::Actors => "actors",
+            Self::Commands => "commands",
         }
     }
 
@@ -92,6 +96,7 @@ impl Section {
             Self::Errors => ConstructKind::Error,
             Self::Views => ConstructKind::View,
             Self::Actors => ConstructKind::Actor,
+            Self::Commands => ConstructKind::Command,
         }
     }
 
@@ -104,6 +109,7 @@ impl Section {
             Self::Errors => "error",
             Self::Views => "view",
             Self::Actors => "actor",
+            Self::Commands => "command",
         }
     }
 }
@@ -191,7 +197,8 @@ pub(crate) fn refused_outside_types(file: &crate::spec::RawSpecFile) -> Validati
         .outside_types()
         .filter_map(|(section, index)| {
             let name = match section {
-                Section::Types => None,
+                // Commands read `undeclared_fields:` as their own field, so none is taken from one.
+                Section::Types | Section::Commands => None,
                 Section::Entities => file.entities.get(index).map(|it| it.name.to_string()),
                 Section::Events => file.events.get(index).map(|it| it.name.to_string()),
                 Section::Errors => file.errors.get(index).map(|it| it.name.to_string()),
