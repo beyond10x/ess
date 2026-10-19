@@ -2,12 +2,13 @@
 //! 2026-10-18).
 //!
 //! `tests/fixtures/related-guard-unknown-instance.yaml`: `ChangeTier` addresses a seat by the
-//! identity its input carries and reads the tier its input names. The precedence order answers an
-//! unknown tier first (step 1), then an unknown seat (step 3), then a closed tier (step 5), then
-//! the change. The `unknown-seat` scenario sends an identity no seat carries beside a tier that is
-//! present and closed, so a target reading the tier before the seat's existence answers
-//! `tier-closed` and fails it; `ess-synth`'s `related_guard_unknown_instance_served.rs` holds a
-//! generated target edited to read the tier first to that verdict.
+//! identity its input carries and reads the tier its input names. The one precedence rule
+//! (`docs/design/generic-language-features.md` § G4) answers an unknown seat first (step 2), then
+//! an unknown tier and then a closed tier (step 4), then the change. The `unknown-seat` scenario
+//! sends an identity no seat carries beside a tier that is present and closed, so a target reading
+//! the tier before the seat's existence answers `tier-closed` and fails it;
+//! `ess-synth`'s `related_guard_unknown_instance_served.rs` holds a generated target edited to read
+//! the tier first to that verdict.
 
 use std::collections::BTreeMap;
 
@@ -76,7 +77,7 @@ fn every_branch_beside_unknown_instance_is_synthesized() {
 }
 
 #[test]
-fn the_unknown_identity_is_sent_beside_a_present_closed_tier() {
+fn the_unknown_identity_is_sent_beside_a_present_closed_tier_and_a_missing_one() {
     let suite = suite();
     let scenario = suite
         .scenarios
@@ -85,7 +86,7 @@ fn the_unknown_identity_is_sent_beside_a_present_closed_tier() {
         .map(|(_, scenario)| scenario)
         .expect("synthesized");
     let mut closed = None;
-    let mut sent = None;
+    let mut sends = Vec::new();
     for step in &scenario.steps {
         let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
             continue;
@@ -94,7 +95,7 @@ fn the_unknown_identity_is_sent_beside_a_present_closed_tier() {
             "demo.seats.DefineTier" => {
                 closed = Some(input.get("open").cloned());
             }
-            "demo.seats.ChangeTier" => sent = Some(input.clone()),
+            "demo.seats.ChangeTier" => sends.push(input.clone()),
             _ => {}
         }
     }
@@ -106,7 +107,9 @@ fn the_unknown_identity_is_sent_beside_a_present_closed_tier() {
         "the tier is defined closed: {:#?}",
         scenario.steps
     );
-    let sent = sent.expect("the command is sent");
+    let [sent, missing] = sends.as_slice() else {
+        panic!("the command is sent twice: {sends:#?}");
+    };
     assert!(
         matches!(sent.get("tier_id"), Some(ScenarioValue::Instance { .. })),
         "the tier the scenario defined is named: {sent:?}"
@@ -114,6 +117,13 @@ fn the_unknown_identity_is_sent_beside_a_present_closed_tier() {
     assert!(
         matches!(sent.get("seat_id"), Some(ScenarioValue::Literal { .. })),
         "the seat is an identity no row carries: {sent:?}"
+    );
+    // Under the one rule a missing tier answers after the seat's existence: the unknown seat is
+    // sent once more naming a tier no row carries.
+    assert_eq!(missing.get("seat_id"), sent.get("seat_id"), "{missing:?}");
+    assert!(
+        matches!(missing.get("tier_id"), Some(ScenarioValue::Literal { .. })),
+        "the tier is an identity no row carries: {missing:?}"
     );
 }
 
@@ -126,8 +136,8 @@ fn the_interpreter_passes_every_scenario() {
     );
 }
 
-/// The order every consumer reads: the unknown tier at step 1, the unknown seat at step 3, the
-/// closed tier at step 5 — before the change, which answers at step 6.
+/// The order every consumer reads under the one rule: the unknown seat at step 2, the unknown tier
+/// and then the closed tier at step 4 — before the change, the default.
 #[test]
 fn the_precedence_plan_answers_the_unknown_seat_before_the_closed_tier() {
     let ir = model();
@@ -148,7 +158,7 @@ fn the_precedence_plan_answers_the_unknown_seat_before_the_closed_tier() {
             })
             .map(|planned| planned.phase)
     };
-    assert_eq!(phase_of("unknown-tier"), Some(Phase::RelatedRow));
+    assert_eq!(phase_of("unknown-tier"), Some(Phase::PresentRelated));
     assert_eq!(phase_of("unknown-seat"), Some(Phase::Existence));
     assert_eq!(phase_of("tier-closed"), Some(Phase::PresentRelated));
     assert_eq!(phase_of("changed"), Some(Phase::Default));

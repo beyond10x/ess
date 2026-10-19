@@ -2601,7 +2601,7 @@ fn overlap_taken_by(baseline: &EssIr, mutation: &Mutation) -> Option<Vec<String>
         return None;
     }
     let earlier: Vec<(String, &Predicate)> =
-        crate::synthesize::precedence::answers_before_in(found, baseline.format(), outcome)
+        crate::synthesize::precedence::answers_before(baseline.format(), found, outcome)
             .into_iter()
             .filter(|branch| branch.name.to_string() != *second)
             .filter_map(|branch| match &branch.condition {

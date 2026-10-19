@@ -289,7 +289,16 @@ pub(super) fn existing_alone(raw: &super::RawOutcome) -> Result<(), ValidationEr
 
 /// The command-level rules of both forms: a creating `unknown_instance:` pairs with a branch
 /// acting on the record its own identity names; [`validate_existing_pair`] checks the other form.
-fn validate_existence_pair(command: &CommandSpec) -> ValidationErrors {
+///
+/// The acting branch moves or updates the record, and from the one precedence rule (`ess/27`,
+/// `docs/design/generic-language-features.md` § G4) it may preserve it too: "ensure the record
+/// exists", the creation answering at step 2 for an identity no record carries. A `deletes:`
+/// sibling stays refused in every format. `format` is the document's where known; where it is
+/// not, a preserving pair is left to the pass that knows it.
+fn validate_existence_pair(
+    command: &CommandSpec,
+    format: Option<crate::system::FormatVersion>,
+) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let at = |outcome: &Outcome| command.site().key("outcomes").named(outcome.name.as_str());
     for creating in command
@@ -324,16 +333,25 @@ fn validate_existence_pair(command: &CommandSpec) -> ValidationErrors {
             );
             continue;
         };
-        // The update half is a `moves:` or an `updates:`; a `deletes:` sibling would make the pair a
-        // create-or-delete toggle, which is not the construct.
-        let paired = command.outcomes.iter().any(|sibling| {
-            names_existing(sibling)
-                && sibling.subject.as_ref().is_some_and(|acting| {
-                    matches!(acting.effect, Effect::Moves { .. } | Effect::Updates)
-                        && acting.entity == subject.entity
-                        && acting.instance == identity
-                })
-        });
+        // The update half is a `moves:` or an `updates:`, and from `ess/27` a `preserves:`; a
+        // `deletes:` sibling would make the pair a create-or-delete toggle, which is not the
+        // construct.
+        let acts = |effects: fn(&Effect) -> bool| {
+            command.outcomes.iter().any(|sibling| {
+                addresses_existing(sibling)
+                    && sibling.subject.as_ref().is_some_and(|acting| {
+                        effects(&acting.effect)
+                            && acting.entity == subject.entity
+                            && acting.instance == identity
+                    })
+            })
+        };
+        let preserved = acts(|effect| *effect == Effect::Preserves);
+        let paired = acts(|effect| matches!(effect, Effect::Moves { .. } | Effect::Updates))
+            || (preserved && format.is_some_and(super::precedence::reads_one_rule));
+        if !paired && preserved && format.is_none() {
+            continue;
+        }
         if !paired {
             errors.push(
                 ValidationError::at(
@@ -346,10 +364,20 @@ fn validate_existence_pair(command: &CommandSpec) -> ValidationErrors {
                         creating.name, subject.entity, command.name, subject.entity
                     ),
                 )
-                .with_hint(format!(
-                    "declare the `updates:` or `moves:` branch on `{}` with `instance: {identity}`",
-                    subject.entity
-                )),
+                .with_hint(if preserved {
+                    format!(
+                        "declare `format: ess/27`, where a creation pairs with a branch that \
+                         preserves `{}`, or declare the `updates:` or `moves:` branch on it with \
+                         `instance: {identity}`",
+                        subject.entity
+                    )
+                } else {
+                    format!(
+                        "declare the `updates:` or `moves:` branch on `{}` with `instance: \
+                         {identity}`",
+                        subject.entity
+                    )
+                }),
             );
         }
     }
@@ -455,7 +483,10 @@ fn addresses_existing(outcome: &Outcome) -> bool {
 
 /// At most one `unknown_instance:` branch per command, and only where an unknown identity can
 /// arrive.
-pub(super) fn validate_command(command: &CommandSpec) -> ValidationErrors {
+pub(super) fn validate_command(
+    command: &CommandSpec,
+    format: Option<crate::system::FormatVersion>,
+) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let marked: Vec<&Outcome> = command
         .outcomes
@@ -496,7 +527,7 @@ pub(super) fn validate_command(command: &CommandSpec) -> ValidationErrors {
             );
         }
     }
-    errors.extend(validate_existence_pair(command));
+    errors.extend(validate_existence_pair(command, format));
     errors
 }
 

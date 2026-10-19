@@ -166,11 +166,21 @@ pub fn validate_shape(command: &CommandSpec, composition: &Composition) -> Valid
             defaults += 1;
         }
         if outcome.is_wrong_state() {
-            errors.push(ValidationError::at(
-                command.site().key("outcomes"),
-                ValidationCode::ConflictingDeclaration,
-                "explicit subject-state guards cannot also declare wrong_state precedence",
-            ));
+            // Under the one rule `wrong_state:` closes the held-state step, after the explicit
+            // guards (`docs/design/generic-language-features.md` § G4).
+            if !composition.reads_one_rule() {
+                errors.push(
+                    ValidationError::at(
+                        command.site().key("outcomes"),
+                        ValidationCode::ConflictingDeclaration,
+                        "explicit subject-state guards cannot also declare wrong_state precedence",
+                    )
+                    .with_hint(
+                        "declare `format: ess/27`, where the one precedence rule answers \
+                         `wrong_state:` after the explicit subject-state guards",
+                    ),
+                );
+            }
             continue;
         }
         if outcome.is_unconditional() && outcome.error.is_some() && outcome.subject.is_none() {
@@ -179,7 +189,28 @@ pub fn validate_shape(command: &CommandSpec, composition: &Composition) -> Valid
         if is_input_refusal(outcome, composition) {
             continue;
         }
+        // Under the one rule a related row is read at step 4, after the held state: its branches
+        // select by that row, not by the held state, and their partition is the related row's.
+        if composition.reads_one_rule()
+            && matches!(
+                outcome.condition,
+                OutcomeCondition::Related { .. } | OutcomeCondition::RelatedSet { .. }
+            )
+        {
+            continue;
+        }
+        // Under the one rule a `when_subject:` refusal naming no subject reads the one its
+        // siblings name, at the held-state step beside the literal held-state guards.
+        let shared = || {
+            (composition.reads_one_rule()
+                && outcome.subject.is_none()
+                && outcome.error.is_some()
+                && outcome.condition.reads_subject_fact())
+            .then(|| super::subject_fact::common_subject(command))
+            .flatten()
+        };
         let Some(subject) = selection(command, outcome)
+            .or_else(shared)
             .filter(|subject| subject.surface() == InstanceSurface::CommandInput)
         else {
             errors.push(ValidationError::at(command.site().key("outcomes").named(outcome.name.as_str()), ValidationCode::UnobservableFact,
@@ -318,6 +349,10 @@ fn analyze_partition<'a>(
     analyze(&rest).map(|cases| (cases, rest))
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one partition proof: the branches it counts, the cases and the refusal of each"
+)]
 fn validate_partition(
     command: &CommandSpec,
     entity: &EntitySpec,
@@ -325,6 +360,7 @@ fn validate_partition(
     composition: Composition,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
+    let one_rule = composition.reads_one_rule();
     let guarded: Vec<_> = command
         .outcomes
         .iter()
@@ -339,6 +375,12 @@ fn validate_partition(
                         | OutcomeCondition::InputAbsent
                         | OutcomeCondition::ExistingInstance
                 )
+                // Under the one rule the related row's branches are its partition's.
+                && (!one_rule
+                    || !matches!(
+                        outcome.condition,
+                        OutcomeCondition::Related { .. } | OutcomeCondition::RelatedSet { .. }
+                    ))
         })
         .collect();
     let default = command.default_outcome();
@@ -398,6 +440,14 @@ fn validate_partition(
         {
             selected = vec![guarded[first]];
         }
+        // Under the one rule the branch the plan reads first answers, within a step the first
+        // declared (`docs/design/generic-language-features.md` § G4).
+        if one_rule {
+            selected = command
+                .read_first(composition, &selected)
+                .into_iter()
+                .collect();
+        }
         let assignment = case
             .input
             .values
@@ -424,6 +474,15 @@ fn validate_partition(
                         .join(", ")
                 ),
             ));
+            continue;
+        }
+        // Under the one rule `wrong_state:` answers where the branch selected moves from a state
+        // the row does not hold (the end of step 3); only an explicit held-state guard naming such
+        // a state contradicts itself.
+        if one_rule
+            && command.outcomes.iter().any(Outcome::is_wrong_state)
+            && !matches!(selected[0].condition, OutcomeCondition::SubjectState { .. })
+        {
             continue;
         }
         errors.extend(validate_move(command, selected[0], entity, &case.state));

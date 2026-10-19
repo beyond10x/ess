@@ -62,12 +62,12 @@
   `unsupported_format_version` naming `ess/27`, and a Boolean read only by `defined(...)` keeps
   its `{kind: other}` IR leaf and its bytes (downstream report, 2026-10-18).
 - Format `ess/27`: a command guarding on a related row (`when_related:`) may declare an
-  `unknown_instance:` branch for the row its input addresses. It answers at step 3 of the
-  precedence order, after `exists: false` over the related row and the input-guarded refusals and
-  before the related row's predicate refusals, which then answer before every accepting branch.
-  Synthesis sends the branch an identity no row carries beside a present related row that selects
-  the first predicate refusal, so a target reading the related row first fails; the interpreter and
-  generated Rust and Go answer in that order. Below `ess/27` the pairing stays
+  `unknown_instance:` branch for the row its input addresses. Under the one precedence rule (below)
+  it answers at step 2, after the input-guarded refusals and before the held state and every
+  related row's `exists: false` and predicate refusal. Synthesis sends the branch an identity no
+  row carries beside a present related row that selects the first predicate refusal, and again
+  beside a related row no record carries, so a target reading the related row first fails; the
+  interpreter and generated Rust and Go answer in that order. Below `ess/27` the pairing stays
   `conflicting_declaration`, its hint now naming `ess/27`; older documents keep their bytes
   (downstream report, 2026-10-18).
 - `ess generate --kind schema --schema-id-base <URI>` gives every projected JSON Schema document a
@@ -99,6 +99,34 @@
   `type/<name>/shorthand-changed`. Synthesis of a Rust or Go server or the web app refuses such a
   struct by name, since their codecs decode it from its object only, and conformance withdraws
   each scenario that would observe one, refusing it with the type.
+- Format `ess/27` reads one precedence rule for which guard answers first
+  (`docs/design/generic-language-features.md` § G4): a branch answers in the order of what it must
+  read — the request alone (input-guarded refusals, `external:` marked `before_row: true`), then
+  the addressed record's existence, then its held state, then the rows around it (every
+  `exists: false`, then every related row's and row set's refusal), then the accepting and external
+  branches — and within one step the first declared whose condition holds. Under it a missing row
+  the input names answers after the addressed record's existence and held state rather than first,
+  `existing_instance:` on a command reading a related row answers with existence, and a
+  `when_related:` refusal answers before every accepting branch on every command. The precedence
+  plan, the interpreter, synthesis and the generated Rust and Go behaviour read it; synthesis sends
+  a missing related row beside each earlier step's question, so a target reading the row first
+  fails. Entity Runtime still refuses `when_related:` by name. Below `ess/27` every command keeps its
+  order and answers (beyond10x/ess#554).
+- Format `ess/27` admits every guard pair `conflicting_declaration` refused for want of an order,
+  and the one precedence rule answers it: `when_related:` beside `when_subject:`,
+  `when_subject_state:`, `when_state_changes:`, `input_absent:`, `wrong_state:` in any composition
+  and an `external:` marked `before_row: true`; `when_subject:` beside `when_subject_state:`;
+  `wrong_state:` beside explicit subject-state guards; two refusals over one related row, the first
+  declared answering. The interpreter answers the addressed record's existence at step 2 whatever a
+  later step selects, synthesis arranges a held-state branch beside a related guard by the held
+  state alone, and generated Rust and Go read the addressed row at step 2. Below `ess/27` each pair
+  keeps its refusal, the hint naming `ess/27` (beyond10x/ess#554, beyond10x/ess#282).
+- Format `ess/27`: a creating `unknown_instance:` branch may pair with a branch that only preserves
+  the record its input names ("ensure the record exists"), the creation answering an identity no
+  record carries and the preserving branch every stored one; synthesis witnesses both, and the
+  interpreter and generated Rust and Go answer them. A `deletes:` sibling stays refused. Below
+  `ess/27` the pairing keeps its `conflicting_declaration`, the hint naming `ess/27`
+  (beyond10x/ess#535).
 - `ess/27`, a specification format no release has shipped yet. A model below it keeps its meaning,
   its IR bytes and its compiled digest; each construct below is refused under an earlier header as
   `unsupported_format_version` naming `ess/27`, or keeps the reading it had there

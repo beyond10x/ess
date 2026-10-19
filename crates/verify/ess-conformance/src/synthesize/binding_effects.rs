@@ -1384,7 +1384,7 @@ pub(super) fn dropped(
         .ok_or_else(|| BindingGap::NoForcibleFailure {
             command: CommandRef::new(invoked.name.clone()),
         })?;
-    if let Some(gap) = forced_eligibility(invoked, forced) {
+    if let Some(gap) = forced_eligibility(ir.format(), invoked, forced) {
         return Err(gap);
     }
     let siblings = siblings_rest(ir, binding, row)?;

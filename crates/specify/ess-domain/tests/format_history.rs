@@ -61,3 +61,23 @@ fn only_a_suffix_of_the_history_is_unreleased() {
         "a released format follows an unreleased one"
     );
 }
+
+/// The format that carries the one precedence rule (G4, `docs/design/generic-language-features.md`
+/// § G4) is open and its row names the rule.
+#[test]
+fn format_a_is_open_and_names_the_rule() {
+    let rule = ess_domain::command::precedence::ONE_RULE;
+    let entry = FORMAT_HISTORY
+        .iter()
+        .find(|entry| entry.major == rule.major())
+        .expect("the rule's format is supported");
+    assert_eq!(entry.release, None, "ess/{} is open", rule.major());
+    assert!(
+        entry.added.iter().any(|item| item.starts_with(
+            "One precedence rule: a branch answers in the order of what it must read"
+        )),
+        "ess/{} names the rule: {:#?}",
+        rule.major(),
+        entry.added
+    );
+}

@@ -1,0 +1,339 @@
+format: ess/27
+system: demo
+version: v1
+domain: demo.pairs
+summary: One command per pair of guards the one precedence rule orders, each refused below ess/27 because which of the two answered first was not stated.
+types:
+  - {name: demo.pairs.SeatId, kind: newtype, of: Uuid}
+  - {name: demo.pairs.TierId, kind: newtype, of: Uuid}
+  - {name: demo.pairs.Openness, kind: enum, variants: [Open, Shut]}
+  - {name: demo.pairs.Load, kind: enum, variants: [Spare, Full]}
+entities:
+  - name: demo.pairs.Tier
+    identity: {name: tier_id, type: demo.pairs.TierId}
+    fields:
+      - {name: openness, type: demo.pairs.Openness}
+      - {name: load, type: demo.pairs.Load}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.pairs.Seat
+    identity: {name: seat_id, type: demo.pairs.SeatId}
+    fields:
+      - {name: tier_id, type: demo.pairs.TierId}
+      - {name: kind, type: String}
+    relations:
+      - {name: tier, kind: references, target: demo.pairs.Tier, cardinality: one, via: tier_id}
+    lifecycle:
+      initial: Held
+      states: [Held, Released, Retired]
+      terminal: [Retired]
+      transitions:
+        - {name: release, from: [Held], to: Released}
+        - {name: retire, from: [Released], to: Retired}
+actors:
+  - name: demo.pairs.Operator
+    may:
+      - demo.pairs.DefineTier
+      - demo.pairs.Issue
+      - demo.pairs.Release
+      - demo.pairs.Retire
+      - demo.pairs.StateBesideRelated
+      - demo.pairs.SubjectBesideRelated
+      - demo.pairs.AbsentBesideRelated
+      - demo.pairs.WrongStateBesideRelatedMove
+      - demo.pairs.BeforeRowBesideRelated
+      - demo.pairs.SubjectBesideState
+      - demo.pairs.StateBesideWrongState
+      - demo.pairs.TwoRefusalsOneRow
+errors:
+  - {name: demo.pairs.UnknownSeat, summary: No seat carries the identity., fields: []}
+  - {name: demo.pairs.SeatNotHeld, summary: The seat is not in a state the move starts from., fields: []}
+  - {name: demo.pairs.SeatReleased, summary: The seat is released., fields: []}
+  - {name: demo.pairs.VipLocked, summary: A VIP seat is locked., fields: []}
+  - {name: demo.pairs.UnknownTier, summary: No tier carries the identity., fields: []}
+  - {name: demo.pairs.TierClosed, summary: The tier is closed., fields: []}
+  - {name: demo.pairs.TierFull, summary: The tier is full., fields: []}
+  - {name: demo.pairs.NoInput, summary: The request carries no input., fields: []}
+  - {name: demo.pairs.BadSecret, summary: The secret does not match., fields: []}
+events:
+  - name: demo.pairs.TierDefined
+    fields:
+      - {name: tier_id, type: demo.pairs.TierId}
+  - name: demo.pairs.Issued
+    fields:
+      - {name: seat_id, type: demo.pairs.SeatId}
+  - name: demo.pairs.Released
+    fields:
+      - {name: seat_id, type: demo.pairs.SeatId}
+  - name: demo.pairs.Retired
+    fields:
+      - {name: seat_id, type: demo.pairs.SeatId}
+  - name: demo.pairs.Changed
+    fields:
+      - {name: seat_id, type: demo.pairs.SeatId}
+commands:
+  - name: demo.pairs.DefineTier
+    input:
+      - {name: openness, type: demo.pairs.Openness}
+      - {name: load, type: demo.pairs.Load}
+    outcomes:
+      - name: defined
+        creates: demo.pairs.Tier
+        instance: tier_id
+        sets: {openness: input.openness, load: input.load}
+        emits: [demo.pairs.TierDefined]
+        payload:
+          demo.pairs.TierDefined: {tier_id: {generated: true}}
+  - name: demo.pairs.Issue
+    input:
+      - {name: tier_id, type: demo.pairs.TierId}
+      - {name: kind, type: String}
+    outcomes:
+      - name: issued
+        creates: demo.pairs.Seat
+        instance: seat_id
+        sets: {tier_id: input.tier_id, kind: input.kind}
+        emits: [demo.pairs.Issued]
+        payload:
+          demo.pairs.Issued: {seat_id: {generated: true}}
+  - name: demo.pairs.Release
+    input:
+      - {name: seat_id, type: demo.pairs.SeatId}
+    outcomes:
+      - name: release-unknown
+        unknown_instance: true
+        error: demo.pairs.UnknownSeat
+      - name: release-not-held
+        wrong_state: true
+        error: demo.pairs.SeatNotHeld
+      - name: released
+        moves: demo.pairs.Seat.release
+        instance: seat_id
+        emits: [demo.pairs.Released]
+        payload:
+          demo.pairs.Released: {seat_id: input.seat_id}
+  - name: demo.pairs.Retire
+    input:
+      - {name: seat_id, type: demo.pairs.SeatId}
+    outcomes:
+      - name: retire-unknown
+        unknown_instance: true
+        error: demo.pairs.UnknownSeat
+      - name: retire-not-released
+        wrong_state: true
+        error: demo.pairs.SeatNotHeld
+      - name: retired
+        moves: demo.pairs.Seat.retire
+        instance: seat_id
+        emits: [demo.pairs.Retired]
+        payload:
+          demo.pairs.Retired: {seat_id: input.seat_id}
+  # step 3 (the held state) beside step 4 (the rows around it)
+  - name: demo.pairs.StateBesideRelated
+    input:
+      - {name: seat_id, type: demo.pairs.SeatId}
+      - {name: tier_id, type: demo.pairs.TierId}
+    outcomes:
+      - name: unknown-seat
+        unknown_instance: true
+        error: demo.pairs.UnknownSeat
+      - name: released
+        when_subject_state: [Released, Retired]
+        error: demo.pairs.SeatReleased
+      - name: unknown-tier
+        when_related: {via: input.tier_id, exists: false}
+        error: demo.pairs.UnknownTier
+      - name: closed
+        when_related: {via: input.tier_id, predicate: openness == Shut}
+        error: demo.pairs.TierClosed
+      - name: changed
+        updates: demo.pairs.Seat
+        instance: seat_id
+        sets: {tier_id: input.tier_id}
+        emits: [demo.pairs.Changed]
+        payload:
+          demo.pairs.Changed: {seat_id: input.seat_id}
+  # step 3 (`when_subject:`) beside step 4
+  - name: demo.pairs.SubjectBesideRelated
+    input:
+      - {name: seat_id, type: demo.pairs.SeatId}
+      - {name: tier_id, type: demo.pairs.TierId}
+    outcomes:
+      - name: unknown-seat
+        unknown_instance: true
+        error: demo.pairs.UnknownSeat
+      - name: vip
+        when_subject:
+          predicate: kind == "vip"
+        error: demo.pairs.VipLocked
+      - name: unknown-tier
+        when_related: {via: input.tier_id, exists: false}
+        error: demo.pairs.UnknownTier
+      - name: closed
+        when_related: {via: input.tier_id, predicate: openness == Shut}
+        error: demo.pairs.TierClosed
+      - name: changed
+        updates: demo.pairs.Seat
+        instance: seat_id
+        sets: {tier_id: input.tier_id}
+        emits: [demo.pairs.Changed]
+        payload:
+          demo.pairs.Changed: {seat_id: input.seat_id}
+  # step 0 (`input_absent:`) beside step 4
+  - name: demo.pairs.AbsentBesideRelated
+    input:
+      - {name: seat_id, type: demo.pairs.SeatId}
+      - {name: tier_id, type: demo.pairs.TierId}
+    outcomes:
+      - name: no-input
+        input_absent: true
+        error: demo.pairs.NoInput
+      - name: unknown-tier
+        when_related: {via: input.tier_id, exists: false}
+        error: demo.pairs.UnknownTier
+      - name: closed
+        when_related: {via: input.tier_id, predicate: openness == Shut}
+        error: demo.pairs.TierClosed
+      - name: changed
+        updates: demo.pairs.Seat
+        instance: seat_id
+        sets: {tier_id: input.tier_id}
+        emits: [demo.pairs.Changed]
+        payload:
+          demo.pairs.Changed: {seat_id: input.seat_id}
+  # `wrong_state:` (end of step 3) beside an accepting related branch that moves (step 5)
+  - name: demo.pairs.WrongStateBesideRelatedMove
+    input:
+      - {name: seat_id, type: demo.pairs.SeatId}
+      - {name: tier_id, type: demo.pairs.TierId}
+    outcomes:
+      - name: unknown-seat
+        unknown_instance: true
+        error: demo.pairs.UnknownSeat
+      - name: not-held
+        wrong_state: true
+        error: demo.pairs.SeatNotHeld
+      - name: unknown-tier
+        when_related: {via: input.tier_id, exists: false}
+        error: demo.pairs.UnknownTier
+      - name: closed
+        when_related: {via: input.tier_id, predicate: openness == Shut}
+        error: demo.pairs.TierClosed
+      - name: released
+        when_related: {via: input.tier_id, predicate: openness == Open}
+        moves: demo.pairs.Seat.release
+        instance: seat_id
+        emits: [demo.pairs.Released]
+        payload:
+          demo.pairs.Released: {seat_id: input.seat_id}
+  # step 1 (`external:` + `before_row: true`) beside step 4
+  - name: demo.pairs.BeforeRowBesideRelated
+    input:
+      - {name: seat_id, type: demo.pairs.SeatId}
+      - {name: tier_id, type: demo.pairs.TierId}
+      - {name: secret, type: String}
+    outcomes:
+      - name: bad-secret
+        external: the secret is not the one the service derives from the seat identity
+        before_row: true
+        error: demo.pairs.BadSecret
+      - name: unknown-seat
+        unknown_instance: true
+        error: demo.pairs.UnknownSeat
+      - name: unknown-tier
+        when_related: {via: input.tier_id, exists: false}
+        error: demo.pairs.UnknownTier
+      - name: closed
+        when_related: {via: input.tier_id, predicate: openness == Shut}
+        error: demo.pairs.TierClosed
+      - name: changed
+        updates: demo.pairs.Seat
+        instance: seat_id
+        sets: {tier_id: input.tier_id}
+        emits: [demo.pairs.Changed]
+        payload:
+          demo.pairs.Changed: {seat_id: input.seat_id}
+  # `when_subject_state:` beside `when_subject:`, both step 3
+  - name: demo.pairs.SubjectBesideState
+    input:
+      - {name: seat_id, type: demo.pairs.SeatId}
+      - {name: kind, type: String}
+    outcomes:
+      - name: unknown-seat
+        unknown_instance: true
+        error: demo.pairs.UnknownSeat
+      - name: released
+        when_subject_state: [Released, Retired]
+        error: demo.pairs.SeatReleased
+      - name: vip
+        when_subject:
+          predicate: kind == "vip"
+        error: demo.pairs.VipLocked
+      - name: changed
+        updates: demo.pairs.Seat
+        instance: seat_id
+        sets: {kind: input.kind}
+        emits: [demo.pairs.Changed]
+        payload:
+          demo.pairs.Changed: {seat_id: input.seat_id}
+  # `when_subject_state:` beside `wrong_state:`, both step 3, `wrong_state:` last
+  - name: demo.pairs.StateBesideWrongState
+    input:
+      - {name: seat_id, type: demo.pairs.SeatId}
+      - {name: kind, type: String}
+    outcomes:
+      - name: unknown-seat
+        unknown_instance: true
+        error: demo.pairs.UnknownSeat
+      - name: parked
+        when_subject_state: Released
+        error: demo.pairs.SeatReleased
+      - name: not-held
+        wrong_state: true
+        error: demo.pairs.SeatNotHeld
+      - name: released
+        moves: demo.pairs.Seat.release
+        instance: seat_id
+        emits: [demo.pairs.Released]
+        payload:
+          demo.pairs.Released: {seat_id: input.seat_id}
+  # two present-related refusals over one row, both step 4: the first declared answers
+  - name: demo.pairs.TwoRefusalsOneRow
+    input:
+      - {name: seat_id, type: demo.pairs.SeatId}
+      - {name: tier_id, type: demo.pairs.TierId}
+    outcomes:
+      - name: unknown-seat
+        unknown_instance: true
+        error: demo.pairs.UnknownSeat
+      - name: unknown-tier
+        when_related: {via: input.tier_id, exists: false}
+        error: demo.pairs.UnknownTier
+      - name: closed
+        when_related: {via: input.tier_id, predicate: openness == Shut}
+        error: demo.pairs.TierClosed
+      - name: full
+        when_related: {via: input.tier_id, predicate: load == Full}
+        error: demo.pairs.TierFull
+      - name: changed
+        updates: demo.pairs.Seat
+        instance: seat_id
+        sets: {tier_id: input.tier_id}
+        emits: [demo.pairs.Changed]
+        payload:
+          demo.pairs.Changed: {seat_id: input.seat_id}
+views:
+  - name: demo.pairs.Seats
+    source: demo.pairs.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: seat_id, type: demo.pairs.SeatId}
+      - {name: state, type: demo.pairs.Seat.State}
+      - {name: tier_id, type: demo.pairs.TierId}
+      - {name: kind, type: String}
+  - name: demo.pairs.Tiers
+    source: demo.pairs.Tier
+    consistency: read_your_writes
+    fields:
+      - {name: tier_id, type: demo.pairs.TierId}
+      - {name: openness, type: demo.pairs.Openness}
+      - {name: load, type: demo.pairs.Load}

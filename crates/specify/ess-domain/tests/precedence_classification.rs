@@ -3,7 +3,7 @@
 //! between phases, and the classification follows a phase order exchanged inside the test seam.
 use ess_domain::command::precedence::{
     order, phase_order, place, with_phase_order, BranchShape, Composition, ConditionShape, Phase,
-    Rank,
+    Rank, ONE_RULE,
 };
 use ess_domain::command::row_set::{RowSelection, RowSetTest};
 use ess_domain::command::{Outcome, OutcomeCondition, OutcomeName, RelatedTest, RelatedVia};
@@ -874,4 +874,325 @@ fn unknown_instance_answers_after_the_row_sets_where_a_creation_takes_the_absent
             (Phase::Default, &["replaced"]),
         ])
     );
+}
+
+// ---- the one precedence rule (G4, `docs/design/generic-language-features.md` § G4) -------------
+
+const RULE: &str = include_str!("../../ess-compiler/tests/fixtures/precedence-rule-format-a.yaml");
+
+/// Under the one rule a missing row the input names answers at step 4, after the addressed
+/// record's existence (step 2) and held state (step 3), leading the related-row phase; below it,
+/// first of all (step 1).
+#[test]
+fn format_a_places_input_named_absent_rows_after_the_held_state() {
+    assert_eq!(ONE_RULE, FormatVersion::V27);
+    let absent = shape(INPUT_ABSENT, true);
+    let refusal = shape(INPUT_HOLDS, true);
+    let accepting = shape(
+        ConditionShape::When {
+            trivially_true: true,
+        },
+        false,
+    );
+    let command = [absent, refusal, accepting];
+    let at = place(&absent, &Composition::new(&command, 1, ONE_RULE));
+    assert_eq!((at.phase, at.rank), (Phase::PresentRelated, Rank::Lead));
+    assert!(at.phase.position() > Phase::HeldState.position());
+    assert!(at.phase.position() > Phase::Existence.position());
+    assert_eq!(at.phase.step_in(ONE_RULE), Some(4));
+    // Every present-related refusal answers at step 4 under the rule, whatever the composition.
+    assert_eq!(
+        placed(refusal, &command, 1, ONE_RULE),
+        Phase::PresentRelated
+    );
+    let below = place(&absent, &Composition::new(&command, 1, FormatVersion::V26));
+    assert_eq!(
+        (below.phase, below.rank),
+        (Phase::RelatedRow, Rank::Declared)
+    );
+    assert_eq!(
+        placed(refusal, &command, 1, FormatVersion::V26),
+        Phase::Accepting
+    );
+
+    assert_eq!(
+        phases(RULE, "demo.rule.ChangeTier", false),
+        expect(&[
+            (Phase::InputRefusal, &["blank-reason"]),
+            (Phase::Existence, &["unknown-seat"]),
+            (Phase::HeldState, &["not-held"]),
+            (Phase::PresentRelated, &["unknown-tier", "tier-closed"]),
+            (Phase::Default, &["changed"]),
+        ])
+    );
+}
+
+/// Under the one rule `existing_instance:` answers at step 2, existence, on every command, also
+/// one reading a related row or a row set; below it, such a command reads it at step 1.
+#[test]
+fn format_a_places_existing_instance_at_existence_on_a_related_row_command() {
+    let existing = shape(ConditionShape::ExistingInstance, true);
+    let accepting = shape(
+        ConditionShape::When {
+            trivially_true: true,
+        },
+        false,
+    );
+    for beside in [INPUT_ABSENT, STORED_HOLDS, ConditionShape::RelatedSet] {
+        let command = [existing, shape(beside, true), accepting];
+        let at = place(&existing, &Composition::new(&command, 1, ONE_RULE));
+        assert_eq!(
+            (at.phase, at.rank),
+            (Phase::Existence, Rank::Lead),
+            "{beside:?}"
+        );
+        assert_eq!(at.phase.step_in(ONE_RULE), Some(2));
+        let below = place(
+            &existing,
+            &Composition::new(&command, 1, FormatVersion::V26),
+        );
+        assert_eq!(
+            (below.phase, below.rank),
+            (Phase::RelatedRow, Rank::Lead),
+            "{beside:?}"
+        );
+    }
+}
+
+/// Request-only refusals stay first under the rule (record § "Open questions, answered", answer
+/// 1): an input-guarded refusal and an `external:` refusal marked `before_row: true` answer at step
+/// 1, before existence, the held state and every related row.
+#[test]
+fn format_a_keeps_input_refusals_and_before_row_externals_before_existence() {
+    let refusal = shape(
+        ConditionShape::When {
+            trivially_true: false,
+        },
+        true,
+    );
+    let before_row = BranchShape {
+        before_row: true,
+        ..shape(ConditionShape::External, true)
+    };
+    let absent = shape(INPUT_ABSENT, true);
+    let unknown = shape(ConditionShape::UnknownInstance, true);
+    let wrong = shape(ConditionShape::WrongState, true);
+    let command = [refusal, before_row, unknown, wrong, absent];
+    let composition = Composition::new(&command, 1, ONE_RULE);
+    for branch in [refusal, before_row] {
+        let at = place(&branch, &composition);
+        assert_eq!((at.phase, at.rank), (Phase::InputRefusal, Rank::Declared));
+        assert_eq!(at.phase.step_in(ONE_RULE), Some(1));
+        for later in [unknown, wrong, absent] {
+            assert!(
+                at.phase.position() < place(&later, &composition).phase.position(),
+                "{branch:?} before {later:?}"
+            );
+        }
+    }
+    assert_eq!(Phase::InputAbsent.step_in(ONE_RULE), Some(0));
+    assert_eq!(Phase::HeldState.step_in(ONE_RULE), Some(3));
+    assert_eq!(Phase::Accepting.step_in(ONE_RULE), Some(5));
+    assert_eq!(Phase::Default.step_in(ONE_RULE), Some(6));
+    assert_eq!(Phase::RelatedRow.step_in(ONE_RULE), None);
+    for phase in Phase::PRECEDENCE {
+        assert_eq!(phase.step_in(FormatVersion::V26), phase.step(), "{phase:?}");
+    }
+}
+
+/// [`place`] as it stood before the one rule, copied from `precedence.rs` at the story's base and
+/// read through the same public facts: the reference every format below the rule is held to.
+fn place_before_the_rule(
+    branch: BranchShape,
+    branches: &[BranchShape],
+    input_rows: usize,
+    format: FormatVersion,
+    upsert: bool,
+) -> ess_domain::command::precedence::Place {
+    let any = |test: &dyn Fn(&BranchShape) -> bool| branches.iter().any(test);
+    let present_related_refusal = |branch: &BranchShape| {
+        branch.error
+            && matches!(
+                branch.condition,
+                ConditionShape::Related { absent: false, .. } | ConditionShape::RelatedSet
+            )
+    };
+    let row_set = any(&|branch| matches!(branch.condition, ConditionShape::RelatedSet));
+    let stored_reference = any(&|branch| {
+        matches!(
+            branch.condition,
+            ConditionShape::Related { stored: true, .. }
+        )
+    });
+    let refusal = any(&present_related_refusal);
+    let ordered = if row_set {
+        refusal
+    } else {
+        format.major() >= FormatVersion::V22.major()
+            && refusal
+            && (input_rows > 1
+                || any(&|branch| matches!(branch.condition, ConditionShape::WrongState))
+                || (format.major() >= FormatVersion::V27.major()
+                    && any(&|branch| matches!(branch.condition, ConditionShape::UnknownInstance))))
+    };
+    let reads_related = any(&|branch| {
+        matches!(
+            branch.condition,
+            ConditionShape::Related { .. } | ConditionShape::RelatedSet
+        )
+    });
+    let orders = ordered || stored_reference;
+    let read_first_nothing = !row_set && !stored_reference;
+    let at = |phase, rank| ess_domain::command::precedence::Place { phase, rank };
+    match branch.condition {
+        ConditionShape::InputAbsent => at(Phase::InputAbsent, Rank::Declared),
+        ConditionShape::ExistingInstance => {
+            if reads_related {
+                at(Phase::RelatedRow, Rank::Lead)
+            } else {
+                at(Phase::Existence, Rank::Lead)
+            }
+        }
+        ConditionShape::Related {
+            stored: false,
+            absent: true,
+        } => at(Phase::RelatedRow, Rank::Declared),
+        ConditionShape::Related {
+            stored: true,
+            absent: true,
+        } => at(Phase::PresentRelated, Rank::Lead),
+        ConditionShape::When { trivially_true } => {
+            if !branch.error {
+                at(Phase::Accepting, Rank::Declared)
+            } else if trivially_true || branch.subject || branch.replays {
+                if read_first_nothing {
+                    at(Phase::HeldState, Rank::Unguarded)
+                } else {
+                    at(Phase::PresentRelated, Rank::Unguarded)
+                }
+            } else {
+                at(Phase::InputRefusal, Rank::Declared)
+            }
+        }
+        ConditionShape::UnknownInstance => {
+            if row_set && upsert {
+                at(Phase::PresentRelated, Rank::Trail)
+            } else {
+                at(Phase::Existence, Rank::Trail)
+            }
+        }
+        ConditionShape::SubjectState
+        | ConditionShape::StateChange
+        | ConditionShape::SubjectField
+        | ConditionShape::SubjectPredicate => at(Phase::HeldState, Rank::Declared),
+        ConditionShape::WrongState => at(Phase::HeldState, Rank::Trail),
+        ConditionShape::Related { absent: false, .. } | ConditionShape::RelatedSet => {
+            if branch.error && orders {
+                at(Phase::PresentRelated, Rank::Declared)
+            } else {
+                at(Phase::Accepting, Rank::Declared)
+            }
+        }
+        ConditionShape::External | ConditionShape::ExternalWhen
+            if branch.before_row && branch.error =>
+        {
+            at(Phase::InputRefusal, Rank::Declared)
+        }
+        ConditionShape::External | ConditionShape::ExternalWhen => {
+            at(Phase::Accepting, Rank::Declared)
+        }
+        ConditionShape::Otherwise => at(Phase::Default, Rank::Declared),
+    }
+}
+
+/// Every [`ConditionShape`], with every combination of the facts a branch carries, on every
+/// command its companions compose, in every format below the rule: placed exactly where it was.
+#[test]
+fn below_format_a_every_placement_is_unchanged() {
+    let conditions = [
+        ConditionShape::When {
+            trivially_true: true,
+        },
+        ConditionShape::When {
+            trivially_true: false,
+        },
+        ConditionShape::SubjectField,
+        ConditionShape::SubjectPredicate,
+        INPUT_ABSENT,
+        INPUT_HOLDS,
+        STORED_ABSENT,
+        STORED_HOLDS,
+        ConditionShape::RelatedSet,
+        ConditionShape::SubjectState,
+        ConditionShape::StateChange,
+        ConditionShape::Otherwise,
+        ConditionShape::ExternalWhen,
+        ConditionShape::External,
+        ConditionShape::WrongState,
+        ConditionShape::UnknownInstance,
+        ConditionShape::InputAbsent,
+        ConditionShape::ExistingInstance,
+    ];
+    let mut branches = Vec::new();
+    for condition in conditions {
+        for facts in 0_u8..16 {
+            branches.push(BranchShape {
+                condition,
+                error: facts & 1 != 0,
+                subject: facts & 2 != 0,
+                replays: facts & 4 != 0,
+                before_row: facts & 8 != 0,
+            });
+        }
+    }
+    let companions = [
+        shape(INPUT_ABSENT, true),
+        shape(INPUT_HOLDS, true),
+        shape(STORED_HOLDS, true),
+        shape(ConditionShape::RelatedSet, true),
+        shape(ConditionShape::WrongState, true),
+        shape(ConditionShape::UnknownInstance, true),
+    ];
+    let below: Vec<FormatVersion> = ess_domain::system::SUPPORTED_FORMATS
+        .iter()
+        .filter(|major| **major < ONE_RULE.major())
+        .map(|major| FormatVersion::new(*major).unwrap())
+        .collect();
+    assert_eq!(below.len(), 26, "every format below the rule");
+    let mut checked = 0_usize;
+    for mask in 0_u32..(1 << companions.len()) {
+        let mut command: Vec<BranchShape> = companions
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| mask & (1 << index) != 0)
+            .map(|(_, branch)| *branch)
+            .collect();
+        command.push(BranchShape {
+            condition: ConditionShape::Otherwise,
+            error: false,
+            subject: false,
+            replays: false,
+            before_row: false,
+        });
+        for branch in &branches {
+            let mut declared = command.clone();
+            declared.push(*branch);
+            for &format in &below {
+                for rows in [0, 1, 2] {
+                    for upsert in [false, true] {
+                        let composition =
+                            Composition::new(&declared, rows, format).with_upsert(upsert);
+                        assert_eq!(
+                            place(branch, &composition),
+                            place_before_the_rule(*branch, &declared, rows, format, upsert),
+                            "{branch:?} on {declared:?}, {rows} rows, ess/{}, upsert {upsert}",
+                            format.major()
+                        );
+                        checked += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 64 * 18 * 16 * 26 * 3 * 2);
 }

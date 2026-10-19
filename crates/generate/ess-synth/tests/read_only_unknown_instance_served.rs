@@ -91,3 +91,62 @@ fn a_read_only_command_answers_an_unknown_identity_in_the_generated_go_target() 
     );
     read_only_served(Target::Go);
 }
+
+// ---- create-or-preserve under the one precedence rule (G4) --------------------------------
+
+/// `READ_ONLY`'s `Ring` at `ess/27` with its `unknown_instance:` branch creating the seat: "ensure
+/// the seat exists" (`docs/design/generic-language-features.md` § G4).
+fn create_or_preserve() -> String {
+    let text = READ_ONLY.replacen("format: ess/24\n", "format: ess/27\n", 1).replacen(
+        "      - name: no-seat\n        unknown_instance: true\n        error: demo.desk.NoSeat\n      - name: closed\n",
+        "      - name: no-seat\n        unknown_instance: true\n        creates: demo.desk.Seat\n        instance: user_id\n        emits: [demo.desk.SeatTaken]\n        payload:\n          demo.desk.SeatTaken: {user_id: input.user_id}\n      - name: closed\n",
+        1,
+    );
+    assert!(
+        text.contains("format: ess/27")
+            && text.contains("unknown_instance: true\n        creates:")
+    );
+    text
+}
+
+/// The generated behaviour creates the seat for an identity no seat carries and preserves a stored
+/// one, passing the suite the model synthesizes.
+fn create_or_preserve_served(target: Target) {
+    let ir = served::model(&served::served(&create_or_preserve(), "desk"));
+    let synthesis = ess_synth::synthesize_for(&ir, target).expect("the model synthesizes");
+    assert_eq!(
+        synthesis
+            .plan
+            .disposition_of(CapabilityKind::CommandBehavior, "demo.desk.Ring"),
+        Some(&SynthesisDisposition::Generated),
+        "{target:?}:\n{}",
+        synthesis.plan.to_markdown()
+    );
+    let (root, _) = served::emit(&ir, target, "create-or-preserve");
+    let binary = served::build(&root, target, "demo", "desk", false);
+    let statuses = served::run(&ir, &binary);
+    served::assert_passes(
+        &format!("{target:?} create-or-preserve"),
+        &statuses,
+        &[
+            "Ring/outcome/no-seat",
+            "Ring/outcome/closed",
+            "Ring/outcome/rung",
+        ],
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn create_or_preserve_is_witnessed_in_the_generated_rust_target() {
+    create_or_preserve_served(Target::Rust);
+}
+
+#[test]
+fn create_or_preserve_is_witnessed_in_the_generated_go_target() {
+    assert!(
+        served::go_available(),
+        "Go is required: the generated Go target is unchecked without it"
+    );
+    create_or_preserve_served(Target::Go);
+}

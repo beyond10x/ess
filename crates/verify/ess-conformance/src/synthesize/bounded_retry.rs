@@ -44,7 +44,7 @@ pub(super) fn exhausted(
     let command = CommandRef::new(invoked.name.clone());
     // A failure the retry repeats: a refusal (`error:`) that is not final. An `external:` branch
     // that carries no error is a success the adapter decides, and a correct sender stops on it.
-    let forced = forcible(invoked, |outcome| {
+    let forced = forcible(ir.format(), invoked, |outcome| {
         outcome.error.is_some() && !bound.is_final(&outcome.name)
     })?
     .ok_or(BindingGap::RetriedUnforcible {
@@ -122,11 +122,12 @@ fn single_attempt(
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Built {
     let command = CommandRef::new(invoked.name.clone());
-    let forced = forcible(invoked, |outcome| bound.is_final(&outcome.name))?.ok_or(
-        BindingGap::FinalUnforcible {
-            command: command.clone(),
-        },
-    )?;
+    let forced = forcible(ir.format(), invoked, |outcome| {
+        bound.is_final(&outcome.name)
+    })?
+    .ok_or(BindingGap::FinalUnforcible {
+        command: command.clone(),
+    })?;
     let alternative = clean_trigger(ir, binding, trigger, actors)?;
     let trigger = alternative.as_ref().map_or(trigger, |(run, _)| run);
     let (steps, mut source) = forced_run(ir, binding, invoked, trigger, event, forced, None);
@@ -231,6 +232,7 @@ fn reaches(ir: &EssIr, start: &QualifiedName, event: &EventHandle) -> bool {
 /// can be forced, and one whose eligibility a guard over the mapped input decides needs an
 /// observation of that input first.
 fn forcible(
+    format: ess_domain::system::FormatVersion,
     invoked: &ResolvedCommand,
     wanted: impl Fn(&ResolvedOutcome) -> bool,
 ) -> Result<Option<&ResolvedOutcome>, BindingGap> {
@@ -241,7 +243,7 @@ fn forcible(
     else {
         return Ok(None);
     };
-    if let Some(gap) = super::forced_eligibility(invoked, forced) {
+    if let Some(gap) = super::forced_eligibility(format, invoked, forced) {
         return Err(gap);
     }
     Ok(Some(forced))

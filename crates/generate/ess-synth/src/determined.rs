@@ -1554,11 +1554,15 @@ fn related_composition(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Stri
                 .to_owned(),
         );
     }
+    // An external refusal answered before the row (`before_row: true`) is read from the request
+    // alone, before any row (the one precedence rule, ess/27, admits it beside `when_related:`); any
+    // other stays owed.
     if command.outcomes.iter().any(|outcome| {
-        matches!(
-            outcome.condition,
-            ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
-        )
+        !outcome.before_row
+            && matches!(
+                outcome.condition,
+                ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+            )
     }) {
         return Err("`external:` beside `when_related:` in one command".to_owned());
     }

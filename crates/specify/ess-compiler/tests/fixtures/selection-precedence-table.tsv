@@ -1,4 +1,4 @@
-#	models=266	commands=527
+#	models=268	commands=543
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -101,6 +101,11 @@ crates/specify/ess-compiler/tests/fixtures/precedence-row-set-updating-branch.ya
 crates/specify/ess-compiler/tests/fixtures/precedence-row-set-updating-branch.yaml	demo.jobs.Record	default: recorded
 crates/specify/ess-compiler/tests/fixtures/precedence-row-set-updating-branch.yaml	demo.jobs.Retry	present_related: ambiguous | accepting: started | default: retried
 crates/specify/ess-compiler/tests/fixtures/precedence-row-set-updating-branch.yaml	demo.jobs.Shut	default: shut
+crates/specify/ess-compiler/tests/fixtures/precedence-rule-format-a.yaml	ir=706c1a0d822ba6621e6386b37a94a117bc6af087ae8d2678ed5e71a9b477d480:19207
+crates/specify/ess-compiler/tests/fixtures/precedence-rule-format-a.yaml	demo.rule.ChangeTier	input_refusal: blank-reason | existence: unknown-seat | held_state: not-held | present_related: unknown-tier, tier-closed | default: changed
+crates/specify/ess-compiler/tests/fixtures/precedence-rule-format-a.yaml	demo.rule.DefineTier	default: defined
+crates/specify/ess-compiler/tests/fixtures/precedence-rule-format-a.yaml	demo.rule.Issue	default: issued
+crates/specify/ess-compiler/tests/fixtures/precedence-rule-format-a.yaml	demo.rule.Release	existence: release-unknown | held_state: release-not-held | default: released
 crates/specify/ess-compiler/tests/fixtures/precedence-upsert-unknown-instance.yaml	ir=b06b0057dc1673285c89a3c8d75ccc5e17e773b05878aa231e5a2f8429955bf0:17199
 crates/specify/ess-compiler/tests/fixtures/precedence-upsert-unknown-instance.yaml	demo.shelf.OpenLibrary	default: opened
 crates/specify/ess-compiler/tests/fixtures/precedence-upsert-unknown-instance.yaml	demo.shelf.Restock	existence: unknown-book | present_related: refused | default: restocked
@@ -446,6 +451,19 @@ crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	demo.jo
 crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	demo.jobs.Close	existence: unknown-attempt | held_state: already-closed | present_related: crowded | default: closed
 crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	demo.jobs.Record	default: recorded
 crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	demo.jobs.Retry	present_related: ambiguous | accepting: started | default: retried
+crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	ir=8a5e4a3ff72b5286ecf3f95aecdfbf0e81a229e9d3dcb49cc75f999421738521:52106
+crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	demo.pairs.AbsentBesideRelated	input_absent: no-input | present_related: unknown-tier, closed | default: changed
+crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	demo.pairs.BeforeRowBesideRelated	input_refusal: bad-secret | existence: unknown-seat | present_related: unknown-tier, closed | default: changed
+crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	demo.pairs.DefineTier	default: defined
+crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	demo.pairs.Issue	default: issued
+crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	demo.pairs.Release	existence: release-unknown | held_state: release-not-held | default: released
+crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	demo.pairs.Retire	existence: retire-unknown | held_state: retire-not-released | default: retired
+crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	demo.pairs.StateBesideRelated	existence: unknown-seat | held_state: released | present_related: unknown-tier, closed | default: changed
+crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	demo.pairs.StateBesideWrongState	existence: unknown-seat | held_state: parked, not-held | default: released
+crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	demo.pairs.SubjectBesideRelated	existence: unknown-seat | held_state: vip | present_related: unknown-tier, closed | default: changed
+crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	demo.pairs.SubjectBesideState	existence: unknown-seat | held_state: released, vip | default: changed
+crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	demo.pairs.TwoRefusalsOneRow	existence: unknown-seat | present_related: unknown-tier, closed, full | default: changed
+crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	demo.pairs.WrongStateBesideRelatedMove	existence: unknown-seat | held_state: not-held | present_related: unknown-tier, closed | accepting: released
 crates/verify/ess-conformance/tests/fixtures/held-state-input-refusal.yaml	ir=3b67201d31df95a6b9880dfc1c70354a458d7f7e13fe4a97e14ffb872f704355:9926
 crates/verify/ess-conformance/tests/fixtures/held-state-input-refusal.yaml	demo.session.Pause	existence: no-session | held_state: invalid-code, not-active | default: paused
 crates/verify/ess-conformance/tests/fixtures/held-state-input-refusal.yaml	demo.session.Start	default: started
@@ -615,7 +633,7 @@ crates/verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml
 crates/verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml	demo.tasks.AddTask	default: added
 crates/verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml	demo.tasks.CompleteTask	held_state: wrong-state | present_related: blocker-missing, blocked | default: completed
 crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	ir=aea73208270739cd9b7886bc2222b95021f8504e6d8b46451bb810f48d938211:13268
-crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	demo.seats.ChangeTier	related_row: unknown-tier | existence: unknown-seat | present_related: tier-closed | default: changed
+crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	demo.seats.ChangeTier	existence: unknown-seat | present_related: unknown-tier, tier-closed | default: changed
 crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	demo.seats.DefineTier	default: defined
 crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	demo.seats.Issue	default: issued
 crates/verify/ess-conformance/tests/fixtures/related-rows-quantifier.yaml	ir=d7645e18ee4f85edee06d1d7be71285d7aca9e27fd1afd32043fb5de45136890:33785

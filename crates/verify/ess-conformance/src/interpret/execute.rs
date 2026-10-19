@@ -581,6 +581,11 @@ fn responding_phases(
     // A related row named by a stored field of the addressed subject (ess/22, beyond10x/ess#304)
     // is read after that row's existence and held state, below — not before the input refusals.
     let stored = related::stored(spec);
+    // Where the plan reads a missing row the input names: at `RelatedRow`, before the input
+    // refusals, or, under the one rule (`docs/design/generic-language-features.md` § G4), leading
+    // `PresentRelated`, after the addressed row's existence and held state. Read late, a missing
+    // row is left out of the rows gathered before it and answered where the plan places it.
+    let missing_late = related::reads_missing(&plan, Phase::PresentRelated);
     // Every phase in the plan's order. The request with no input document (`InputAbsent`) is
     // answered by [`without_input`]; each other phase answers here where the plan places it, and a
     // phase `select` reads is read in place, with the rows gathered so far.
@@ -600,10 +605,16 @@ fn responding_phases(
                 {
                     return Ok(vec![step]);
                 }
-                if stored.is_none() {
-                    if let Some(steps) =
-                        related_absent(ir, spec, &plan, store, input, generated, responses)?
-                    {
+                if stored.is_none() && related::reads_missing(&plan, planned.phase) {
+                    if let Some(steps) = related_absent(
+                        ir,
+                        spec,
+                        (&plan, planned.phase),
+                        store,
+                        input,
+                        generated,
+                        responses,
+                    )? {
                         return Ok(steps);
                     }
                 }
@@ -613,6 +624,7 @@ fn responding_phases(
                         related: true,
                         subjects: false,
                         strict: true,
+                        missing_late,
                     };
                     held_rows(
                         ir,
@@ -683,6 +695,7 @@ fn responding_phases(
                     related: related_read,
                     subjects: true,
                     strict: true,
+                    missing_late,
                 };
                 if let Some(steps) = held_rows(
                     ir,
@@ -705,6 +718,21 @@ fn responding_phases(
                     {
                         return Ok(vec![step]);
                     }
+                } else if stored.is_none()
+                    && ess_domain::command::precedence::reads_one_rule(ir.format())
+                    && planned
+                        .branches
+                        .iter()
+                        .any(|outcome| outcome.condition == ResolvedCondition::UnknownInstance)
+                {
+                    // Under the one rule (`docs/design/generic-language-features.md` § G4) the
+                    // addressed record's existence is step 2, whatever branch a later step
+                    // selects: an identity no row carries is answered here.
+                    if let Some(step) =
+                        addressed_unknown(ir, spec, store, input, generated, responses)?
+                    {
+                        return Ok(vec![step]);
+                    }
                 }
                 existence_read = true;
             }
@@ -719,6 +747,7 @@ fn responding_phases(
                             related: related_read,
                             subjects: true,
                             strict: false,
+                            missing_late,
                         };
                         held_rows(
                             ir,
@@ -768,6 +797,31 @@ fn responding_phases(
                         }
                     }
                     row_sets = Some(decided);
+                }
+                // Under the one rule a missing row the input names answers here, once the
+                // addressed row's existence and held state have; a missing row with no
+                // `exists: false` branch is the undecidable read it always was.
+                if missing_late
+                    && stored.is_none()
+                    && planned.phase == Phase::PresentRelated
+                    && !selection.done
+                {
+                    if let Some(steps) = related_absent(
+                        ir,
+                        spec,
+                        (&plan, planned.phase),
+                        store,
+                        input,
+                        generated,
+                        responses,
+                    )? {
+                        return Ok(steps);
+                    }
+                    for outcome in &spec.outcomes {
+                        if !held_subjects.contains_key(&outcome.name) {
+                            related::held(ir, store, input, &outcome.condition)?;
+                        }
+                    }
                 }
                 select_phases(
                     spec,
@@ -830,6 +884,10 @@ fn flattened<'i>(
 }
 
 /// Which rows [`held_rows`] gathers into `held_subjects`, and how strictly.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "one flag per question the gather answers, not a state machine"
+)]
 #[derive(Clone, Copy)]
 struct Gather {
     /// The related rows named through the input: read only once the plan's `RelatedRow` phase has
@@ -841,6 +899,9 @@ struct Gather {
     /// read is the error it always was, and a subject nobody holds is answered `unknown_instance:`.
     /// Otherwise, for a phase `select` reads before `Existence`, such a row is left out.
     strict: bool,
+    /// The plan answers a missing related row the input names after the rows gathered here, at
+    /// `PresentRelated` (the one rule): such a row is left out, whatever `strict` says.
+    missing_late: bool,
 }
 
 /// The rows the command's guards read, gathered into `held_subjects` in declaration order: each
@@ -864,6 +925,9 @@ fn held_rows<'a>(
     for outcome in &spec.outcomes {
         if matches!(outcome.condition, ResolvedCondition::Related { .. }) {
             if stored.is_some() || !gather.related {
+                continue;
+            }
+            if gather.missing_late && related::missing(ir, store, input, &outcome.condition) {
                 continue;
             }
             match related::held(ir, store, input, &outcome.condition) {
@@ -1367,6 +1431,47 @@ fn addressed_row(
     wrong_state(ir, spec, store, input, Some(held)).map(Some)
 }
 
+/// Under the one rule, on a command declaring `unknown_instance:`, its answer for the record the
+/// command's acting branches address through the input, where no row carries the identity and no
+/// creation takes it. `None` where the command addresses no row through its
+/// input, the input names none, or a row carries it.
+fn addressed_unknown(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &State,
+    input: &Context<'_>,
+    generated: &Generated,
+    responses: &mut super::response::Authority,
+) -> Result<Option<Transition>, Undetermined> {
+    let Some((entity, field)) = spec
+        .outcomes
+        .iter()
+        .filter(|outcome| outcome.error.is_none())
+        .find_map(|outcome| {
+            let subject = outcome.subject.as_ref()?;
+            match (&subject.effect, &subject.instance) {
+                (ResolvedEffect::Creates, _) | (_, ResolvedInstance::Observed { .. }) => None,
+                (_, ResolvedInstance::Supplied { field }) => {
+                    Some((&subject.entity, field.name.as_str()))
+                }
+            }
+        })
+    else {
+        return Ok(None);
+    };
+    let Some(identity) = input.get(field) else {
+        return Ok(None);
+    };
+    if store
+        .instance_typed(&ir.entity(entity).name, identity)
+        .is_some()
+        || creation_takes_absent(spec, entity, field)
+    {
+        return Ok(None);
+    }
+    unknown_instance(ir, spec, store, input, generated, responses).map(Some)
+}
+
 /// Whether a creation branch of `entity` takes its identity from the input `field`. On a command
 /// guarded by a row set, an absent addressed row such a branch takes is that creation's, not an
 /// unknown instance: the row sets answer, then the creation (an upsert, beyond10x/ess#462).
@@ -1430,9 +1535,11 @@ fn selected_subject_refusal(
 }
 
 /// The answer of a command guarded by a related row (`when_related:`, ess/18) whose related row is
-/// missing: its `exists: false` branch, before any input-guarded refusal — step 1 of the
-/// precedence order (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence
-/// order"). `None` on a command with no related guard, or where the row is stored.
+/// missing: its `exists: false` branch, where the plan places it — before any input-guarded
+/// refusal, step 1 of the precedence order (`docs/design/cross-record-and-stored-field-guards.md`,
+/// "The precedence order"), or under the one rule at step 4, after the addressed row's existence
+/// and held state (`docs/design/generic-language-features.md` § G4). `phase` is the plan's phase
+/// holding those branches. `None` on a command with no related guard, or where the row is stored.
 ///
 /// On a command reading several rows through its input (ess/22, beyond10x/ess#283) the rows are
 /// read in the declaration order of their `exists: false` branches, and the first missing one
@@ -1446,14 +1553,14 @@ fn selected_subject_refusal(
 fn related_absent(
     ir: &EssIr,
     spec: &ResolvedCommand,
-    plan: &PrecedencePlan<'_>,
+    (plan, phase): (&PrecedencePlan<'_>, Phase),
     store: &State,
     input: &Context<'_>,
     generated: &Generated,
     responses: &mut super::response::Authority,
 ) -> Result<Option<Vec<Transition>>, Undetermined> {
     let gap = |construct: String| Err(Undetermined::NotInterpreted { construct });
-    for read in related::reads_in_order(plan, spec) {
+    for read in related::reads_in_order(plan, phase, spec) {
         let ResolvedCondition::Related { via, entity, .. } = &read.condition else {
             unreachable!("ordered among related guards")
         };

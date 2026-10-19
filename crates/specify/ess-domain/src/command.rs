@@ -2733,6 +2733,25 @@ impl CommandSpec {
             })
     }
 
+    /// Of `selected`, the branch this command's precedence plan reads first under `composition`:
+    /// the earliest phase, then the rank inside it, then the first declared. Under the one rule
+    /// (`ess/27`) that branch answers wherever `selected` all hold.
+    pub(crate) fn read_first<'o>(
+        &self,
+        composition: precedence::Composition,
+        selected: &[&'o Outcome],
+    ) -> Option<&'o Outcome> {
+        selected.iter().copied().min_by_key(|outcome| {
+            let place = precedence::place(&precedence::BranchShape::of(outcome), &composition);
+            let declared = self
+                .outcomes
+                .iter()
+                .position(|declared| declared.name == outcome.name)
+                .unwrap_or(usize::MAX);
+            (place.phase.position(), place.rank, declared)
+        })
+    }
+
     /// The composition [`precedence::place`] reads for this command, in the format `types`
     /// records. Checked as it is parsed, before a registry records its document's format, a command
     /// is read in the grammar its parser admits: `ess/22`, unless the source is older
@@ -2922,7 +2941,10 @@ impl CommandSpec {
             errors.extend(self.validate_held_state_order(types));
         }
         errors.extend(self.validate_before_row_order(types));
-        errors.extend(outcome_shapes::validate_command(self));
+        errors.extend(outcome_shapes::validate_command(
+            self,
+            types.and_then(TypeRegistry::format),
+        ));
         errors.extend(absent_input::validate_command(self));
         errors
     }
@@ -3508,7 +3530,10 @@ impl CommandSpec {
                     .key("outcomes")
                     .named(outcome.name.as_str())
                     .key("before_row");
-                if let Some(related) = related {
+                if let Some(related) = related
+                    .filter(|_| types.is_some_and(|types| types.format().is_some()))
+                    .filter(|_| !composition.reads_one_rule())
+                {
                     errors.push(
                         ValidationError::at(
                             at,
@@ -3521,7 +3546,11 @@ impl CommandSpec {
                                 outcome.name, related.name
                             ),
                         )
-                        .with_hint("drop `before_row:`, or the `when_related:` guard"),
+                        .with_hint(
+                            "declare `format: ess/27`, where the one precedence rule answers \
+                             `before_row:` at step 1 and the related row at step 4, or drop \
+                             `before_row:`, or the `when_related:` guard",
+                        ),
                     );
                 } else if let Some(earlier) = later {
                     errors.push(
@@ -3529,11 +3558,13 @@ impl CommandSpec {
                             at,
                             ValidationCode::ConflictingDeclaration,
                             format!(
-                                "`{}` is answered before the row (`before_row: true`), at step 2 \
+                                "`{}` is answered before the row (`before_row: true`), at step {} \
                                  of the precedence order, but is declared after `{}`, which a \
                                  later step answers; the declaration order and the precedence \
                                  order disagree",
-                                outcome.name, earlier.name
+                                outcome.name,
+                                if composition.reads_one_rule() { 1 } else { 2 },
+                                earlier.name
                             ),
                         )
                         .with_hint(format!(
@@ -3710,12 +3741,17 @@ impl CommandSpec {
         // Two strategies stay two (`cross-record-and-stored-field-guards.md`, "One strategy or
         // two"): a command selecting on stored fields and on the held lifecycle state at once is
         // refused before either partition is asked about it.
-        if subject_fact::uses(self)
+        let mixed = subject_fact::uses(self)
             && self
                 .outcomes
                 .iter()
-                .any(|outcome| outcome.condition.reads_held_state())
-        {
+                .any(|outcome| outcome.condition.reads_held_state());
+        // Whether the one rule admits the mix is the format's to say: without it, left to
+        // `subject_fact::validate`, which knows it.
+        if mixed && types.and_then(TypeRegistry::format).is_none() {
+            return errors;
+        }
+        if mixed && !self.composition(types).reads_one_rule() {
             errors.push(
                 ValidationError::at(
                     self.site().key("outcomes"),
@@ -3733,6 +3769,13 @@ impl CommandSpec {
             .iter()
             .any(|outcome| outcome.condition.reads_held_state())
         {
+            // Whether `wrong_state:` may sit beside the explicit guards is the format's to say:
+            // without it, left to `subject_state::validate`, which knows it.
+            if types.and_then(TypeRegistry::format).is_none()
+                && self.outcomes.iter().any(Outcome::is_wrong_state)
+            {
+                return errors;
+            }
             return subject_state::validate_shape(self, &self.composition(types));
         }
         // Likewise a command reading the subject's stored fields: its partition crosses those

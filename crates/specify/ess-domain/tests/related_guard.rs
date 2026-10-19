@@ -903,3 +903,148 @@ fn a_stored_reference_via_is_refused_on_creates_and_without_a_subject() {
         "{errors}"
     );
 }
+
+// ---- the one precedence rule (G4): the guard-pair corpus ------------------------------------
+
+const PAIRS: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml");
+
+/// The guard-pair corpus in `format`: every command validates in `ess/27`; below it, each pair
+/// keeps the refusal it had.
+fn pairs_at(
+    format: &str,
+) -> Result<ess_domain::Specification, ess_primitives::error::ValidationErrors> {
+    let text = PAIRS.replacen("format: ess/27\n", &format!("format: {format}\n"), 1);
+    assert!(text.starts_with(&format!("format: {format}\n")));
+    let raw = ess_domain::spec::RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}"));
+    ess_domain::Specification::assemble([(ess_domain::system::Source::new("pairs.yaml"), raw)])
+}
+
+/// The refusals of the corpus one format below the rule that name `command`, each with its hint.
+fn pair_refusals(command: &str) -> Vec<String> {
+    let Err(errors) = pairs_at("ess/26") else {
+        panic!("below ess/27 the corpus is refused");
+    };
+    errors
+        .as_slice()
+        .iter()
+        .filter(|error| error.to_string().contains(&format!("command.{command}")))
+        .map(ToString::to_string)
+        .collect()
+}
+
+/// Under the one rule a related row is around the addressed record: `when_related:` sits beside
+/// `when_subject_state:`, `when_subject:`, `unknown_instance:` and `input_absent:` in one command,
+/// each answering at its step.
+#[test]
+fn format_a_admits_when_related_beside_every_subject_and_existence_guard() {
+    pairs_at("ess/27").unwrap_or_else(|errors| panic!("the corpus validates at ess/27: {errors}"));
+    for (command, other) in [
+        (
+            "demo.pairs.StateBesideRelated",
+            "an `unknown_instance` branch",
+        ),
+        // Below the rule its `unknown_instance:` branch is refused first; the `when_subject:`
+        // pair keeps its own refusal (`related_guard_unknown_instance.rs`).
+        (
+            "demo.pairs.SubjectBesideRelated",
+            "an `unknown_instance` branch",
+        ),
+        ("demo.pairs.AbsentBesideRelated", "an `input_absent` branch"),
+    ] {
+        let refusals = pair_refusals(command);
+        assert!(
+            refusals.iter().any(|refusal| refusal.contains(other)
+                && refusal.contains("which of the two answers first is not stated")),
+            "{command}: {refusals:#?}"
+        );
+    }
+}
+
+/// `wrong_state:` beside an accepting related branch that moves the subject, outside the `ess/22`
+/// composition: the held state answers at step 3, the related row at step 4 and the moving branch
+/// at step 5.
+#[test]
+fn format_a_admits_when_related_beside_wrong_state_outside_the_ess_22_composition() {
+    pairs_at("ess/27").unwrap_or_else(|errors| panic!("the corpus validates at ess/27: {errors}"));
+    let spec = pairs_at("ess/27").unwrap();
+    assert!(spec
+        .commands()
+        .contains_key(&"demo.pairs.WrongStateBesideRelatedMove".parse().unwrap()));
+}
+
+/// Two present related row's refusals over one row that both hold: the first declared answers
+/// under the rule, where below it the two were refused as ambiguous.
+#[test]
+fn format_a_two_refusals_over_one_row_answer_in_declaration_order() {
+    pairs_at("ess/27").unwrap_or_else(|errors| panic!("the corpus validates at ess/27: {errors}"));
+    let refusals = pair_refusals("demo.pairs.TwoRefusalsOneRow");
+    assert!(
+        refusals
+            .iter()
+            .any(|refusal| refusal.contains("branches: unknown-seat, closed, full")),
+        "{refusals:#?}"
+    );
+}
+
+/// Below `ess/27` each pairwise refusal stays, and its hint names `ess/27`, where the rule orders
+/// the pair.
+#[test]
+fn below_format_a_the_pairwise_refusals_stay_and_name_format_a() {
+    for (command, refused) in [
+        (
+            "demo.pairs.SubjectBesideRelated",
+            "which of the two answers first is not stated",
+        ),
+        (
+            "demo.pairs.AbsentBesideRelated",
+            "which of the two answers first is not stated",
+        ),
+        (
+            "demo.pairs.WrongStateBesideRelatedMove",
+            "which of the two answers first is not stated",
+        ),
+        ("demo.pairs.TwoRefusalsOneRow", "closed, full"),
+    ] {
+        let refusals = pair_refusals(command);
+        let named: Vec<&String> = refusals
+            .iter()
+            .filter(|refusal| refusal.contains(refused))
+            .collect();
+        assert!(!named.is_empty(), "{command}: {refusals:#?}");
+        assert!(
+            named.iter().all(|refusal| refusal.contains("ess/27")),
+            "{command}: the hint names ess/27: {named:#?}"
+        );
+    }
+}
+
+/// A neutral command of the downstream incident ledger's shape: `unknown_instance:`,
+/// `when_subject:` and a `when_related:` over a row the input names, in one command (beyond10x/ess#554).
+#[test]
+fn incident_ledger_guard_combinations_validate() {
+    let spec = pairs_at("ess/27")
+        .unwrap_or_else(|errors| panic!("the corpus validates at ess/27: {errors}"));
+    let command = &spec.commands()[&"demo.pairs.SubjectBesideRelated".parse().unwrap()];
+    let declares = |test: fn(&OutcomeCondition) -> bool| {
+        command
+            .outcomes
+            .iter()
+            .any(|outcome| test(&outcome.condition))
+    };
+    assert!(declares(|condition| matches!(
+        condition,
+        OutcomeCondition::UnknownInstance
+    )));
+    assert!(declares(|condition| matches!(
+        condition,
+        OutcomeCondition::SubjectPredicate { .. }
+    )));
+    assert!(declares(|condition| matches!(
+        condition,
+        OutcomeCondition::Related {
+            via: RelatedVia::Input(_),
+            ..
+        }
+    )));
+}

@@ -323,9 +323,10 @@ pub(super) fn existence(
 /// run time.
 ///
 /// Left to their own families: the two existence forms (their stored-row half is above), a command
-/// reading stored fields (its refusals are already sent for an arranged row), a command whose
-/// branches read the held state, and a refusal whose guard reads the identity field, which stays a
-/// plain send (beyond10x/ess#178).
+/// reading stored fields (its refusals are already sent for an arranged row), from the one rule
+/// (`ess/27`) a command reading a related row (the related row's arrangement names a record the
+/// acting branch could act on), a command whose branches read the held state, and a refusal whose
+/// guard reads the identity field, which stays a plain send (beyond10x/ess#178).
 fn refusals_on_an_arranged_row(
     models: &InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -336,6 +337,8 @@ fn refusals_on_an_arranged_row(
     if !creations(command).is_empty()
         || subject_fact::uses(command)
         || super::has_subject_guards(command)
+        || (super::related_guard::uses(command)
+            && ess_domain::command::precedence::reads_one_rule(models.arrangement.format()))
     {
         return;
     }
@@ -650,7 +653,7 @@ fn refused_inputs_in(
     let Some(own) = super::when(refusal) else {
         return Ok(inputs);
     };
-    let others: Vec<_> = super::sibling_refusals(command, refusal)
+    let others: Vec<_> = super::sibling_refusals(ir.format(), command, refusal)
         .filter_map(super::when)
         .collect();
     for sibling in command.outcomes.iter().filter(|sibling| {
