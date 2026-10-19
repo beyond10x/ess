@@ -560,7 +560,8 @@ fn coverage_version(
     // A held `now` (beyond10x/ess#586) is cumulative over every pair below, the opened one included.
     // A wrapped value-invariant observation (downstream report, 2026-10-18) is cumulative over
     // every pair below, the held one included.
-    let observed = crate::value_invariant::coverage_floor(suite).is_some();
+    let observed = crate::value_invariant::coverage_floor(suite).is_some()
+        || crate::one_time_response::compact::coverage_floor(suite).is_some();
     let held = crate::hold_now::coverage_floor(suite).is_some();
     let opened = crate::undeclared_fields::coverage_floor(suite).is_some();
     let constrained = crate::direct_response::constrained_coverage_floor(suite).is_some();

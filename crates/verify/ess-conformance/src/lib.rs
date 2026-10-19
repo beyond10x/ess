@@ -181,6 +181,7 @@ pub mod selection;
 pub mod sessions;
 pub mod structured_values;
 pub mod subject;
+pub mod suite_diff;
 pub mod synthesis_seeds;
 pub mod synthesize;
 pub mod target;

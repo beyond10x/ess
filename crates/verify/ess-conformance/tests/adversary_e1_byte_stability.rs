@@ -47,7 +47,8 @@ fn a_one_time_outcome_keeps_its_format_and_carries_no_response_constraints() {
         "        returns: true\n        one_time_response: [code]\n",
     );
     let (format, bytes, refused) = format_and_bytes(&text);
-    assert_eq!(format, "ess-conformance/34", "{refused:#?}");
+    // A one-time trace states its rules once from suite/52 (beyond10x/ess#570).
+    assert_eq!(format, "ess-conformance/52", "{refused:#?}");
     let json: serde_json::Value = serde_json::from_str(&bytes).unwrap();
     for scenario in json["scenarios"].as_object().unwrap().values() {
         for step in scenario["steps"].as_array().unwrap() {

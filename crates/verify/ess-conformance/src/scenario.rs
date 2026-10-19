@@ -98,12 +98,66 @@ use ess_primitives::predicate::Predicate;
 /// walk its input. A scenario therefore does not repeat its own id as a field — the id is the
 /// heading it appears under, which is also why inserting one outcome adds one keyed block to the
 /// artifact and moves nothing else.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConformanceSuite {
     /// Which specification this suite checks, and what produced it.
     pub provenance: SuiteProvenance,
     /// Every scenario, by the name of what it is about.
     pub scenarios: BTreeMap<ScenarioId, ConformanceScenario>,
+}
+
+/// Written as `provenance`, from suite/52 the event catalog and the one-time authority where a
+/// scenario refers to them (beyond10x/ess#570), then `scenarios`.
+impl serde::Serialize for ConformanceSuite {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use crate::one_time_response::compact;
+        #[derive(serde::Serialize)]
+        struct Written<'a> {
+            provenance: &'a SuiteProvenance,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            events: Option<Vec<EventRef>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            one_time_response: Option<compact::Catalog>,
+            scenarios: BTreeMap<&'a ScenarioId, compact::ScenarioOut<'a>>,
+        }
+        let written = compact::written(self);
+        Written {
+            provenance: &self.provenance,
+            events: written.events,
+            one_time_response: written.one_time_response,
+            scenarios: written.scenarios,
+        }
+        .serialize(serializer)
+    }
+}
+
+/// Read with every compact scenario expanded against the suite catalogs, so the value is the one
+/// the writer held.
+impl<'de> serde::Deserialize<'de> for ConformanceSuite {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use crate::one_time_response::compact;
+        #[derive(serde::Deserialize)]
+        struct Read {
+            provenance: SuiteProvenance,
+            #[serde(default)]
+            events: Option<Vec<EventRef>>,
+            #[serde(default)]
+            one_time_response: Option<compact::Catalog>,
+            scenarios: BTreeMap<ScenarioId, compact::ScenarioIn>,
+        }
+        let read = Read::deserialize(deserializer)?;
+        let scenarios = compact::read(
+            read.provenance.suite_version.major(),
+            read.events.as_deref(),
+            read.one_time_response.as_ref(),
+            read.scenarios,
+        )
+        .map_err(serde::de::Error::custom)?;
+        Ok(Self {
+            provenance: read.provenance,
+            scenarios,
+        })
+    }
 }
 
 impl ConformanceSuite {
@@ -178,6 +232,7 @@ impl ConformanceSuite {
     /// it, so nothing may lower it.
     fn raise_for_counted_claims(&mut self) {
         let floor = crate::value_invariant::ordinary_floor(self)
+            .or_else(|| crate::one_time_response::compact::ordinary_floor(self))
             .or_else(|| crate::hold_now::ordinary_floor(self))
             .or_else(|| crate::undeclared_fields::ordinary_floor(self))
             .or_else(|| crate::direct_response::constrained_ordinary_floor(self))

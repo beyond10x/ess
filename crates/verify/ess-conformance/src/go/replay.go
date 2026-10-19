@@ -88,7 +88,7 @@ func decodeExactSuiteSteps(suite *Suite) error {
 			Steps []json.RawMessage `json:"steps"`
 		} `json:"scenarios"`
 	}
-	if err := json.Unmarshal([]byte(suite.original), &raw); err != nil {
+	if err := json.Unmarshal([]byte(suite.decoded), &raw); err != nil {
 		return err
 	}
 	for id, scenario := range suite.Scenarios {

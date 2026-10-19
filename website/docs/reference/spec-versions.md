@@ -575,6 +575,14 @@ pair included. The reference runner executes it; the generated Go and TypeScript
 majors and report such a scenario `unsupported`, naming `value_invariants`. Older readers refuse
 these envelopes by version. A suite without it keeps its earlier format and bytes.
 
+The same pair states once what a scenario used to repeat for every declared event
+(beyond10x/ess#570): the declared event catalog (`events`) and each marked command's one-time
+response authority (`one_time_response`) sit at the suite root, a run of absent events or an
+`unpublished` list that names the catalog is written by what it leaves out, and a one-time trace
+keeps only its required origins and its longest wait. Rust, Go and TypeScript expand these before
+admission, so the scenarios mean what their complete spelling meant. A suite whose scenario carries
+a one-time trace is written at 52 or 53.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named

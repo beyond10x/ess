@@ -4,6 +4,28 @@
 
 ### Added
 
+- `ess verify conform diff --from <suite> --to <suite>` says what changed between two suites: the
+  scenario ids added, removed and changed, grouped by the construct each is about (a command's
+  outcomes, an entity's transitions, one field and aspect of a one-time disclosure), with the parts
+  of each changed scenario that differ and the steps removed from and added to it. `--format json`
+  writes an `ess-suite-diff/1` document a CI comment can carry. Scenarios are compared as read, so
+  a newer spelling of the same scenarios is no change (beyond10x/ess#572).
+- `ess verify conform synthesize --check` compares the suite, or the `go` or `typescript`
+  package, the command would write with what `--out` holds, byte for byte, writing nothing: exit 0
+  when current, 1 naming each missing or differing file. The commit guide gains a row for the
+  `--target ir` suite: commit it where `ess verify impact --suite` or a review reads the base
+  revision, check it with `--check`, review a change with `ess verify conform diff`
+  (beyond10x/ess#571).
+- Suite `ess-conformance/52` (or `/53` with coverage) states once what a scenario repeated for
+  every declared event: the declared event catalog and each marked command's one-time response
+  authority are written at the suite root; a run of `expect_no_event` steps, or an
+  `expect_not_granted` step's `unpublished` list, is written by the catalog events it leaves out;
+  and a one-time trace keeps only its required origins and its longest wait, the scan of every
+  catalog event after each operation being the rule. A scenario no longer grows with the number of
+  declared events. Rust, the generated Go and TypeScript runtimes and the declaration player
+  expand these before admission, so every scenario means and runs as before. A suite carrying a
+  one-time trace is now written at 52 or 53; a suite with neither keeps its format and bytes
+  (beyond10x/ess#570).
 - `ess specify validate --format json` links each refused disclosure scenario to the refusal whose
   cause it repeats: an entry of `completeness.unscenarioed` carries `caused_by`, the scenario id
   of that refusal. Every refused id is still listed and `counts.unscenarioed` is unchanged; the

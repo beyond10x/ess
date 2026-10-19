@@ -1434,6 +1434,7 @@ ess verify conform synthesize [OPTIONS]
 | `--scenarios` | `<SCENARIOS>` | no |  | The `ess-scenario/1` documents to compile beside the generated scenarios.<br /><br />One file or a directory. Immediate `ess-inputs.yaml` selects its exact scenarios list. Otherwise only immediate `.yaml`/`.yml` files are read; subdirectories are not searched. An empty selection is refused. When omitted, no authored scenarios are selected. |
 | `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); admitted features select newer required versions. One of `4`, `5`. |
 | `--compact` |  | no |  | Write fresh IR as compact JSON with one trailing newline; requires --target ir |
+| `--check` |  | no |  | Refuse when `--out` differs from the suite this command would write, writing nothing.<br /><br />Compares the `--target ir` file, or every file of the `go` or `typescript` package, byte for byte with what the same command without `--check` would write, `--compact` and `--suite-format` included. Exit 0 when `--out` is current, 1 with one line per drifted file. |
 | `--synthesis-seed` | `<FILE>`… | no |  | Offer the `setup` row of arrangement INSTANCE in the authored document FILE as an explicit synthesis seed; repeatable.<br /><br />A seed supplies only that nominated initial row: never the document's timeline, assertions or any state its timeline reaches, and it appends no authored scenario (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is established only for a generated obligation no bounded arrangement reaches, and the real command and assertions follow it. Any seed selects suite/42 (or /43 with `--suite-format 5`), suite/44 (/45) where an act also claims one event more than once, suite/46 (/47) where a response reaches a constrained String newtype, suite/48 (/49) where a response or a struct it reaches ignores undeclared fields, suite/50 (/51) where a scenario holds `now` for a command, or suite/52 (/53) where a view observes a value type's invariants at a wrapped position, and records its source, row and uses. |
 
 #### `ess verify conform author`
@@ -1474,6 +1475,22 @@ ess verify conform web [OPTIONS]
 | `--out` | `<OUT>` | no |  | Where to write the product |
 | `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); coverage emits the complete coverage input. One of `4`, `5`. |
 | `--history` | `<HISTORY>` | no |  | An `ess-history/1`, `ess-history/2` or `ess-history/3` document: draw it, checked against the specification, as one lane per client in a single self-contained `index.html`, printed when `--out` is absent. `--out` replaces the files `ess` owns in that directory, the player's included, so write history pages and the player to different directories |
+
+#### `ess verify conform diff`
+
+Say what changed between two suites: scenarios added, removed and changed, by construct.
+
+Each scenario is filed under the construct it is about — its subject and family, such as `billing.invoice.CreateInvoice/outcome`, and for a one-time disclosure cell also the origin outcome, field and aspect. A changed scenario names the parts that differ and lists the steps removed from it and added to it. Scenarios are compared as read, so a suite rewritten in a newer spelling of the same scenarios shows no change. `--format json` writes an `ess-suite-diff/1` document. Exit 0 whatever changed, 1 when a suite cannot be read.
+
+```text
+ess verify conform diff [OPTIONS] --from <FROM> --to <TO>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--from` | `<FROM>` | yes |  | The earlier suite, such as the one committed on the base branch |
+| `--to` | `<TO>` | yes |  | The later suite, such as the one this change synthesizes |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `json`. |
 
 #### `ess verify conform select`
 

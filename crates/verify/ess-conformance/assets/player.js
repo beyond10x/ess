@@ -82,11 +82,34 @@ function groupSteps(steps) {
   }
   return acts
 }
+// From suite/52 the event catalog and one-time authority are written once (beyond10x/ess#570):
+// put back each scenario's absent events, unpublished events and one-time origins.
+const catalog = suite.events ?? []
+const kept = (except) => catalog.filter((event) => !except.includes(event))
+const expandedSteps = (body) => {
+  const steps = body.steps.map((step) => ({ ...step }))
+  for (const patch of body.unpublished_events ?? []) steps[patch.step].unpublished = kept(patch.except)
+  const out = []
+  let next = 0
+  for (const run of body.absent_events ?? []) {
+    out.push(...steps.slice(next, run.before))
+    next = run.before
+    out.push(...kept(run.except).map((event) => ({ step: 'expect_no_event', event })))
+  }
+  return [...out, ...steps.slice(next)]
+}
+const originsOf = (body, steps) => {
+  if (!body.one_time_response || body.one_time_response.origins) return body.one_time_response?.origins ?? []
+  const invoked = new Set(steps.filter((s) => ['execute_command', 'execute_command_without_input'].includes(s.step)).map((s) => s.command))
+  return (suite.one_time_response?.commands ?? []).filter((entry) => invoked.has(entry.command)).flatMap((entry) =>
+    entry.outcomes.map((o) => ({ command: entry.command, outcome: { command: entry.command, outcome: o.outcome }, response: entry.response, fields: o.fields })))
+}
 const scenarios = Object.entries(suite.scenarios).map(([name, body]) => {
-  const acts = groupSteps(body.steps)
+  const steps = expandedSteps(body)
+  const acts = groupSteps(steps)
   const lanes = [...new Set(acts.map((a) => a.actor))]
   return { name, short: name.split('/').pop(), group: name.split('/').slice(0, -1).join('/'),
-    purpose: body.purpose, oneTimeOrigins: body.one_time_response?.origins ?? [],
+    purpose: body.purpose, oneTimeOrigins: originsOf(body, steps),
     acts, lanes, hasBindingLane: acts.some((a) => a.consequences.length) }
 })
 const groups = [...new Set(scenarios.map((s) => s.group))]
