@@ -32,7 +32,6 @@ use std::collections::BTreeMap;
 
 use ess_compiler::ir::{
     EntityHandle, EssIr, ResolvedCommand, ResolvedCondition, ResolvedPayloadValue,
-    ResolvedRelatedTest,
 };
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::node::Node;
@@ -415,11 +414,13 @@ fn row_reads(command: &ResolvedCommand) -> Vec<(&EntityHandle, &Predicate)> {
                     read.push((&subject.entity, predicate));
                 }
             }
-            ResolvedCondition::Related {
-                entity,
-                test: ResolvedRelatedTest::Holds { predicate },
-                ..
-            } => read.push((entity, predicate)),
+            // From ess/28 every row an `all:` branch lists.
+            condition @ ResolvedCondition::Related { .. } => read.extend(
+                condition
+                    .related_predicates()
+                    .into_iter()
+                    .map(|(_, entity, predicate)| (entity, predicate)),
+            ),
             ResolvedCondition::RelatedSet {
                 selection, test, ..
             } => {
@@ -501,11 +502,12 @@ pub(crate) fn stored_predicates<'ir>(
                     {
                         Some(predicate)
                     }
-                    ResolvedCondition::Related {
-                        entity: related,
-                        test: ResolvedRelatedTest::Holds { predicate },
-                        ..
-                    } if *related == entity => Some(predicate),
+                    ResolvedCondition::Related { .. } => outcome
+                        .condition
+                        .related_predicates()
+                        .into_iter()
+                        .find(|(_, related, _)| **related == entity)
+                        .map(|(_, _, predicate)| predicate),
                     _ => None,
                 })
         })
@@ -580,13 +582,15 @@ pub(crate) fn clocked_window(
     command: &ResolvedCommand,
 ) -> Option<ess_primitives::window::CalendarWindow> {
     command.outcomes.iter().find_map(|outcome| {
-        let stored = match &outcome.condition {
-            ResolvedCondition::SubjectPredicate { predicate, .. }
-            | ResolvedCondition::Related {
-                test: ResolvedRelatedTest::Holds { predicate },
-                ..
-            } => Some(predicate),
-            _ => None,
+        let stored: Vec<&Predicate> = match &outcome.condition {
+            ResolvedCondition::SubjectPredicate { predicate, .. } => vec![predicate],
+            // From ess/28 every row an `all:` branch lists.
+            condition @ ResolvedCondition::Related { .. } => condition
+                .related_predicates()
+                .into_iter()
+                .map(|(_, _, predicate)| predicate)
+                .collect(),
+            _ => Vec::new(),
         };
         input_predicate(&outcome.condition)
             .into_iter()

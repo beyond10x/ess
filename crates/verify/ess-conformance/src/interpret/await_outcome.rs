@@ -310,13 +310,20 @@ fn related_inputs(command: &ResolvedCommand) -> BTreeMap<&str, &QualifiedName> {
     command
         .outcomes
         .iter()
-        .filter_map(|outcome| match &outcome.condition {
+        // From ess/28 every row an `all:` branch lists.
+        .flat_map(|outcome| match &outcome.condition {
             ResolvedCondition::Related {
-                via: ResolvedRelatedVia::Input { field, .. },
-                entity,
-                ..
-            } => Some((field.as_str(), entity.name())),
-            _ => None,
+                via, entity, also, ..
+            } => std::iter::once((via, entity))
+                .chain(also.iter().map(|row| (&row.via, &row.entity)))
+                .filter_map(|(via, entity)| match via {
+                    ResolvedRelatedVia::Input { field, .. } => {
+                        Some((field.as_str(), entity.name()))
+                    }
+                    ResolvedRelatedVia::Subject { .. } => None,
+                })
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
         })
         .collect()
 }

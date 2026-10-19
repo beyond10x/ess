@@ -1,0 +1,112 @@
+format: ess/28
+system: relstate
+version: v1
+domain: relstate.desk
+summary: A ticket is opened only on an open desk; the refusal names the desk's state, and two views read the desk a ticket names as it is now.
+types:
+  - {name: relstate.desk.DeskId, kind: newtype, of: Uuid}
+  - {name: relstate.desk.TicketId, kind: newtype, of: Uuid}
+entities:
+  - name: relstate.desk.Desk
+    identity: {name: desk_id, type: relstate.desk.DeskId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+  - name: relstate.desk.Ticket
+    identity: {name: ticket_id, type: relstate.desk.TicketId}
+    fields:
+      - {name: desk_id, type: relstate.desk.DeskId}
+    relations:
+      - {name: desk, kind: references, target: relstate.desk.Desk, cardinality: one, via: desk_id}
+    lifecycle:
+      initial: Waiting
+      states: [Waiting]
+      terminal: [Waiting]
+      transitions: []
+errors:
+  - {name: relstate.desk.DeskNotFound, summary: No desk carries this identity., fields: []}
+  - name: relstate.desk.DeskNotOpen
+    summary: The desk is not open.
+    fields:
+      - {name: current, type: relstate.desk.Desk.State}
+  - {name: relstate.desk.WrongState, summary: The desk is not open., fields: []}
+events:
+  - name: relstate.desk.DeskOpened
+    fields: [{name: desk_id, type: relstate.desk.DeskId}]
+  - name: relstate.desk.DeskClosed
+    fields: [{name: desk_id, type: relstate.desk.DeskId}]
+  - name: relstate.desk.TicketOpened
+    fields: [{name: ticket_id, type: relstate.desk.TicketId}]
+actors:
+  - name: relstate.desk.Clerk
+    may: [relstate.desk.OpenDesk, relstate.desk.CloseDesk, relstate.desk.OpenTicket]
+commands:
+  - name: relstate.desk.OpenDesk
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: relstate.desk.Desk
+        instance: desk_id
+        emits: [relstate.desk.DeskOpened]
+        payload: {relstate.desk.DeskOpened: {desk_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: relstate.desk.CloseDesk
+    input:
+      - {name: desk_id, type: relstate.desk.DeskId}
+    outcomes:
+      - name: closed
+        moves: relstate.desk.Desk.close
+        instance: desk_id
+        emits: [relstate.desk.DeskClosed]
+        payload: {relstate.desk.DeskClosed: {desk_id: input.desk_id}}
+      - {name: wrong-state, wrong_state: true, error: relstate.desk.WrongState}
+  - name: relstate.desk.OpenTicket
+    input:
+      - {name: desk_id, type: relstate.desk.DeskId}
+    outcomes:
+      - name: unknown-desk
+        when_related: {via: input.desk_id, exists: false}
+        error: relstate.desk.DeskNotFound
+      - name: desk-not-open
+        when_related: {via: input.desk_id, predicate: state != Open}
+        error: relstate.desk.DeskNotOpen
+        payload:
+          relstate.desk.DeskNotOpen:
+            current: {related: {via: input.desk_id, field: state}}
+      - name: opened
+        creates: relstate.desk.Ticket
+        instance: ticket_id
+        emits: [relstate.desk.TicketOpened]
+        payload: {relstate.desk.TicketOpened: {ticket_id: {generated: true}}}
+        sets: {desk_id: input.desk_id}
+views:
+  - name: relstate.desk.Tickets
+    source: relstate.desk.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: relstate.desk.TicketId}
+      - {name: desk_id, type: relstate.desk.DeskId}
+      - name: desk_state
+        type: Optional<relstate.desk.Desk.State>
+        field: {related: {via: desk_id, field: state}}
+      - name: desk_label
+        type: Optional<String>
+        field: {related: {via: desk_id, field: label}}
+  - name: relstate.desk.TicketsAtOpenDesks
+    source: relstate.desk.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: relstate.desk.TicketId}
+    filter: desk_id.state == Open
+  - name: relstate.desk.Desks
+    source: relstate.desk.Desk
+    consistency: read_your_writes
+    fields:
+      - {name: desk_id, type: relstate.desk.DeskId}
+      - {name: state, type: relstate.desk.Desk.State}

@@ -469,7 +469,8 @@ fn include_payload_field(
         | ResolvedPayloadValue::PayloadRead { type_ref, .. }
         | ResolvedPayloadValue::RelatedSelection { type_ref, .. }
         | ResolvedPayloadValue::RelatedHead { type_ref, .. } => Some(type_ref),
-        ResolvedPayloadValue::RelatedField { via, type_ref, .. } => {
+        ResolvedPayloadValue::RelatedField { via, type_ref, .. }
+        | ResolvedPayloadValue::RelatedState { via, type_ref, .. } => {
             include_type_ref(types, via.type_ref());
             Some(type_ref)
         }

@@ -567,6 +567,11 @@ pub enum OutcomeCondition {
         test: RelatedTest,
         /// Additional input eligibility, the ordinary `when:`.
         input: Option<Predicate>,
+        /// The further rows the branch requires, each named by another input identity and
+        /// satisfying its own predicate, all at once (`when_related: {all: […]}`, ess/28, the
+        /// downstream report of 2026-10-19, finding 11): the first element is `via` and `test`,
+        /// the rest are here. Empty for a guard over one row.
+        also: Vec<related_guard::RelatedAlso>,
     },
     /// The rows of an entity a `where:` predicate selects, tested by `exists`, `count` or `forall`,
     /// conjunctive with an optional input guard (`when_related: {entity, where, …}`, ess/22,
@@ -7072,7 +7077,17 @@ impl TryFrom<RawOutcome> for Outcome {
                     via,
                     test,
                     input: input_predicate,
+                    also: Vec::new(),
                 },
+                // ess/28: several rows at once; `related_guard::validate` gates the format.
+                Some(related_guard::ReadGuard::All(via, predicate, also)) => {
+                    OutcomeCondition::Related {
+                        via,
+                        test: related_guard::RelatedTest::Holds(predicate),
+                        input: input_predicate,
+                        also,
+                    }
+                }
                 Some(related_guard::ReadGuard::RowSet(selection, test)) => {
                     OutcomeCondition::RelatedSet {
                         selection,

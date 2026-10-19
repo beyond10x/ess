@@ -1983,7 +1983,9 @@ fn error_value(
             field.conversion.as_deref(),
             reads.before,
         )?,
-        ResolvedPayloadValue::RelatedField { .. } => reads.related(ir, field, input)?,
+        ResolvedPayloadValue::RelatedField { .. } | ResolvedPayloadValue::RelatedState { .. } => {
+            reads.related(ir, field, input)?
+        }
         ResolvedPayloadValue::InputField { field: read, .. } => input
             .get(read)
             .filter(|value| **value != Node::Null)
@@ -2547,7 +2549,9 @@ fn value_at(
         ResolvedPayloadValue::ResponseField { .. } => {
             values::response(ir, field, work.response.as_ref()).map(|value| value.map(Value::Known))
         }
-        ResolvedPayloadValue::RelatedField { .. } => work.reads().related(ir, field, input),
+        ResolvedPayloadValue::RelatedField { .. } | ResolvedPayloadValue::RelatedState { .. } => {
+            work.reads().related(ir, field, input)
+        }
         // The one row the selector selects in the store as it was before the outcome (ess/22,
         // beyond10x/ess#299); none or several supply no value.
         ResolvedPayloadValue::RelatedSelection { selection, .. } => {

@@ -3311,6 +3311,16 @@
       "description": "`when_related:` as a document writes it: one row named by an input identity (`via`), or, from `ess/22`, the rows a selector selects (`entity`, `where`) with one test of them.",
       "type": "object",
       "properties": {
+        "all": {
+          "description": "Several rows, each named by an input identity, every one of them present and satisfying its own `predicate:` (ess/28): `all: [{via, predicate}, …]`, written alone.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/RawRelatedGuard"
+          }
+        },
         "count": {
           "description": "Over a selector (ess/22): one comparison of the number of rows selected with a nonnegative whole number, `{eq: 1}`; the operator is `eq`, `ne`, `lt`, `lte`, `gt` or `gte`.",
           "type": [
@@ -3717,6 +3727,17 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "field": {
+          "description": "What it reads where it is not its source's own field of that name: `{related: {via, field}}`, the row a reference names (ess/28, [`navigation`]).",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ViewFieldSource"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "name": {
@@ -4293,6 +4314,43 @@
           "minimum": 1.0
         }
       ]
+    },
+    "ViewFieldSource": {
+      "description": "What a view field reads where it is not its source's own field of that name (ess/28): `field: {related: {via, field}}`.",
+      "type": "object",
+      "required": [
+        "related"
+      ],
+      "properties": {
+        "related": {
+          "description": "A field of the row a reference of the source names.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ViewRelated"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ViewRelated": {
+      "description": "`{related: {via, field}}` on a view field: `field` of the row the source's `via` names.",
+      "type": "object",
+      "required": [
+        "field",
+        "via"
+      ],
+      "properties": {
+        "field": {
+          "description": "The field of that row: a declared field, its identity, or `state`.",
+          "type": "string"
+        },
+        "via": {
+          "description": "The source field holding the other row's identity.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

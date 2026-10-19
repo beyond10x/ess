@@ -216,6 +216,13 @@ fn outcome(
                     .to_owned(),
             )
         }
+        // Several rows in one branch (ess/28, `when_related: {all: …}`): no emitter reads two related
+        // rows for one branch in this cut, so the command stays an obligation, named.
+        ResolvedCondition::Related { also, .. } if !also.is_empty() => {
+            return Err(
+                "a guard over several related rows at once (`when_related: {all: […]}`)".to_owned(),
+            )
+        }
         ResolvedCondition::Related {
             entity,
             test,
@@ -545,6 +552,14 @@ fn value(
                 ""
             };
             return Err(format!("`{{related:}}`{form} for `{}`", field.target));
+        }
+        // The referenced row's lifecycle state (ess/28, beyond10x/ess#557) is owed as every
+        // `{related:}` value is, named for what it reads.
+        ResolvedPayloadValue::RelatedState { .. } => {
+            return Err(format!(
+                "`{{related: {{…, field: state}}}}`, the referenced row's state, for `{}`",
+                field.target
+            ));
         }
         ResolvedPayloadValue::ChangedCount => {
             return Err(format!("`{{count: changed}}` for `{}`", field.target));

@@ -26,19 +26,20 @@ decided today.
 | row-set `where:` / `forall:` | yes | yes (`subject.`) | candidate row only | the selection itself | I don't know | yes (`ess/22`) | n/a | `dom/command/row_set.rs:242-251, 269-284` |
 | `instances:` / `affects:` `where:` | yes | `affects:` only | candidate row only | the selection itself | no | no | n/a | `dom/command/set_effects.rs:1738-1757, 1766-1800` |
 | entity / type invariant | n/a | own fields and `state` | no | no | n/a | no | n/a | `dom/entity.rs:970-978, 1053-1057` |
-| view `filter:` | n/a | source row fields and `state` | no | no | no | no | yes | `dom/view.rs:1154-1157`; `dom/expression.rs:2268-2287` |
+| view `filter:` | n/a | source row fields and `state` | part: one hop through a reference of the source, `<reference>.<field>` (`ess/28`) | no | no | no | yes | `dom/view.rs:1154-1157`; `dom/expression.rs:2268-2287` |
 | measure `where:` | n/a | source row fields | no | no | no | no | yes | `dom/view.rs:1194-1226` |
 | measure input | n/a | part: one top-level field | no | no | no | no | no | `dom/view.rs:1316-1328`, `361-372` |
-| view field | n/a | part: one source field, no computation | no | no | no | no | no | `dom/view.rs:1302`; `read-api-view-idioms.md:191-192` |
-| `sets:` (subject) | yes | yes (`ess/14`) | yes (`ess/16`; two hops `ess/22`) | part: exactly one row (`ess/22`) | yes (`ess/16`) | no | n/a | `dom/command/value_expression.rs:339-462, 1018-1050`; `dom/command.rs:1162-1199` |
+| view field | n/a | part: one source field, no computation | part: one hop, `field: {related: {via, field}}` (`ess/28`) | no | no | no | no | `dom/view.rs:1302`; `read-api-view-idioms.md:191-192` |
+| `sets:` (subject) | yes | yes (`ess/14`) | yes (`ess/16`; two hops `ess/22`; `state` `ess/28`) | part: exactly one row (`ess/22`) | yes (`ess/16`) | no | n/a | `dom/command/value_expression.rs:339-462, 1018-1050`; `dom/command.rs:1162-1199` |
 | `sets:` under `instances:` / `affects:` | yes | no | no | no | no | no | n/a | `dom/command/set_effects.rs:38-41` |
-| event `payload:` | yes | yes | yes | part: exactly one row | yes | no | n/a | `dom/command/value_expression.rs:339-462` |
+| event `payload:` | yes | yes | yes; `state` `ess/28` | part: exactly one row | yes | no | n/a | `dom/command/value_expression.rs:339-462` |
 | error `payload:` | yes | part: only the row the refusal answers for (`ess/19`) | I don't know | I don't know | I don't know | no | n/a | `dom/command/value_expression.rs:151-188`; `dom/command.rs:4085-4108` |
 | binding cause `where:` | n/a (root `event`) | n/a | n/a | n/a | n/a | no | n/a | `dom/binding/condition.rs:1-22, 279-305` |
 
-No position reads a related row's `state` as a value (https://github.com/beyond10x/ess/issues/557),
-none reads `now` as a value (`dom/command.rs:1070-1217` has no such source), and no view reads
-another entity (`read-api-view-idioms.md:191-192`).
+From `ess/28` a value reads a related row's `state` (https://github.com/beyond10x/ess/issues/557)
+and a view field or filter reads the row a reference of its source names, one hop
+(https://github.com/beyond10x/ess/issues/564). No position reads `now` as a value
+(`dom/command.rs:1070-1217` has no such source).
 
 **Target.** Columns, closed whole:
 

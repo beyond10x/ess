@@ -206,6 +206,7 @@ mod subject_fact;
 pub(crate) mod system_issued;
 mod value_invariant;
 mod view_grant;
+mod view_reference;
 
 pub use seeds::{AdmittedSeeds, SeedAdmissionError, SeedSelection};
 
@@ -2579,6 +2580,8 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
         // (`docs/design/aggregate-group-selection.md`); the final selection below still runs.
         suite.select_fresh_format();
         aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
+        // A view read through a reference of its source (ess/28, beyond10x/ess#564).
+        view_reference::references(ir, &actors, &mut suite, &mut refusals);
     }
     // Every scenario sending a row-set command keeps only the branch its rows decide (ess/22).
     row_set::contradictions(ir, &mut suite, &mut refusals);
@@ -6179,12 +6182,12 @@ fn invoke_created_with(
     // A payload-only source keeps its existing outer arrangement. This seam is for stored
     // copies needed by a later subject/view; arranging payload-only reads here would duplicate
     // the sources that the later branch already arranges (#166).
-    if !driver
-        .outcome
-        .sets
-        .iter()
-        .any(|set| matches!(set.value, ResolvedPayloadValue::RelatedField { .. }))
-    {
+    if !driver.outcome.sets.iter().any(|set| {
+        matches!(
+            set.value,
+            ResolvedPayloadValue::RelatedField { .. } | ResolvedPayloadValue::RelatedState { .. }
+        )
+    }) {
         return Ok(invoke_with(ir, driver, None, actors, bound, input));
     }
     let mut setup = Setup::none();
@@ -7789,6 +7792,7 @@ fn determined_fields(
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedState { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::CallerAttribute { .. }
@@ -7868,6 +7872,7 @@ fn absent_by_reference_leaves(
 /// beyond10x/ess#285).
 fn absent_by_reference(value: &ResolvedPayloadValue) -> bool {
     matches!(value, ResolvedPayloadValue::RelatedField { via, through, .. }
+        | ResolvedPayloadValue::RelatedState { via, through, .. }
         if ess_compiler::ir::related_may_be_absent(via, through))
 }
 
@@ -8946,6 +8951,15 @@ fn expression_value_at(
         } => before
             .get(&related::key(via, through, read))
             .map(|held| held.value.clone()),
+        // ess/28 (#557): the referenced row's state, which `related` settled under the key of
+        // `state` where it arranged that row.
+        ResolvedPayloadValue::RelatedState { via, through, .. } => before
+            .get(&related::key(
+                via,
+                through,
+                ess_domain::entity::EntitySpec::STATE,
+            ))
+            .map(|held| held.value.clone()),
         // ess/22 (#299): the one selected row's value, which `row_set` settled where it arranged
         // exactly one row the selector selects.
         ResolvedPayloadValue::RelatedSelection {
@@ -9776,6 +9790,10 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         ResolvedPayloadValue::RelatedField {
             via: ess_compiler::ir::ResolvedRelatedVia::Input { field, .. },
             ..
+        }
+        | ResolvedPayloadValue::RelatedState {
+            via: ess_compiler::ir::ResolvedRelatedVia::Input { field, .. },
+            ..
         } => out.push((field, Read::Needed)),
         ResolvedPayloadValue::Struct { fields } => {
             for leaf in fields {
@@ -9803,6 +9821,7 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         | ResolvedPayloadValue::SubjectField { .. }
         | ResolvedPayloadValue::RelatedField { .. }
         | ResolvedPayloadValue::Increment { .. }
+        | ResolvedPayloadValue::RelatedState { .. }
         | ResolvedPayloadValue::SubjectState { .. }
         | ResolvedPayloadValue::CallerAttribute { .. }
         // ess/27 (#545): what the payload field reads is collected from the payload itself.
@@ -10336,6 +10355,7 @@ fn settled(
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedState { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::CallerAttribute { .. }
@@ -11984,6 +12004,20 @@ fn row_truth(
     identity: Option<&ScenarioValue>,
     params: &BTreeMap<String, ScenarioValue>,
 ) -> Result<bool, Vec<FactPath>> {
+    row_truth_with(ir, view, filter, (state, settled), identity, params, &[])
+}
+
+/// [`row_truth`], with `navigated` bound beside the row: what a filter path reading through a
+/// reference (`<via>.<member>`, ess/28, beyond10x/ess#564) reads of the row it names.
+fn row_truth_with(
+    ir: &EssIr,
+    view: &ResolvedView,
+    filter: &Predicate,
+    (state, settled): (&StateName, &BTreeMap<String, Determined>),
+    identity: Option<&ScenarioValue>,
+    params: &BTreeMap<String, ScenarioValue>,
+    navigated: &[(FactPath, FactValue)],
+) -> Result<bool, Vec<FactPath>> {
     // A filter reads the source's rows. A row-level view projects them at the source's types, so
     // its own fields type the facts; an aggregate view's fields are group keys and results, and
     // `talk_seconds` in its filter is the row's value and never the sum a field of that name holds.
@@ -12062,6 +12096,9 @@ fn row_truth(
     }
     for (path, token) in identity::facts(ir, view, settled, identity, params) {
         facts.set(path, token);
+    }
+    for (path, value) in navigated {
+        facts.set(path.clone(), value.clone());
     }
 
     match filter.evaluate(&facts) {
@@ -17110,7 +17147,9 @@ fn granted_actors(ir: &EssIr) -> BTreeMap<QualifiedName, ActorRef> {
 fn row_projections(ir: &EssIr) -> BTreeMap<&EntityHandle, Vec<&ResolvedView>> {
     let mut out = ir.projections();
     for views in out.values_mut() {
-        views.retain(|view| !view.is_aggregate());
+        // A view reading through a reference (ess/28, beyond10x/ess#564) answers what another
+        // entity's row holds when it is read; `view_reference` witnesses it on rows of its own.
+        views.retain(|view| !view.is_aggregate() && !view.reads_through());
     }
     out.retain(|_, views| !views.is_empty());
     out
@@ -17132,13 +17171,13 @@ fn subject_of(id: &ScenarioId) -> EssSemanticRef {
         ScenarioId::Binding { binding, .. } | ScenarioId::BindingRefusal { binding, .. } => {
             binding.clone().into()
         }
-        ScenarioId::Aggregate { view } => view.clone().into(),
         ScenarioId::Grant { command } | ScenarioId::GrantAdmitted { command, .. } => {
             command.clone().into()
         }
-        ScenarioId::ReadGrant { view } | ScenarioId::ReadGrantAdmitted { view, .. } => {
-            view.clone().into()
-        }
+        ScenarioId::Aggregate { view }
+        | ScenarioId::ReadGrant { view }
+        | ScenarioId::ReadGrantAdmitted { view, .. }
+        | ScenarioId::ViewReference { view, .. } => view.clone().into(),
         // Synthesis mints every id it refuses about and mints no authored one — an authored
         // scenario is a person's claim, compiled and refused by [`crate::authored`] in a vocabulary
         // of its own. The arm is here because the match is total, and it answers with the one

@@ -187,6 +187,8 @@ crates/verify/ess-conformance/tests/fixtures/mutation-sets-entries.yaml	componen
 crates/verify/ess-conformance/tests/fixtures/mutation-stored-guards.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-unwitnessed-outcome.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/navigate-a-reference.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/navigate-absent-reference.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/now-guard-interpreted.yaml	components=0
@@ -253,6 +255,7 @@ crates/verify/ess-conformance/tests/fixtures/subject-state-source.yaml	component
 crates/verify/ess-conformance/tests/fixtures/subject-state-source.yaml	docs-service	REFUSED	3a47e494bbe0dc6de6360fca89a26008758a6f567e5c1a2b1074310b7ec8b5e0:1072
 crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/two-rows-one-branch.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/two-sided-pick.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	directory-service	REFUSED	b5d5a4905a4d3b17db9d0adfe1d75c5c52b6df167f36f0ca7f1e4de30c5edfa0:1108

@@ -2829,7 +2829,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /53 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /55 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -6815,6 +6815,12 @@ export function scenarioIdentity(id: string, major = 21): void {
       throw new Error('the refusal an ungranted actor gets requires suite/26 or /27');
     }
     valid = q(segment(0)) && segment(2) === 'admitted' && q(segment(3));
+  } else if (parts.length === 3 && segment(1) === 'reference') {
+    // A view read through a reference of its source (ess/28, beyond10x/ess#564) is suite/54 vocabulary.
+    if (major < 54) {
+      throw new Error('a view read through a reference requires suite/54 or /55');
+    }
+    valid = q(segment(0)) && /^_*[A-Za-z][A-Za-z0-9_]*$/.test(segment(2));
   } else if (parts.length === 2 && segment(1) === 'aggregate' && q(segment(0))) {
     // An aggregate scenario (beyond10x/ess#96) is suite/16 vocabulary and every later major's.
     if (major < 16) {
@@ -6928,6 +6934,10 @@ const SUITE_MAJORS: { [version: string]: number } = {
   // every major below, the held-now pair included.
   'ess-conformance/52': 52,
   'ess-conformance/53': 53,
+  // A view read through a reference of its source (beyond10x/ess#564), `<view>/reference/<field>`.
+  // Cumulative over every major below, the pair above included.
+  'ess-conformance/54': 54,
+  'ess-conformance/55': 55,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
@@ -6935,8 +6945,8 @@ const COVERAGE_MAJORS = new Set([
   5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37,
   // The coverage majors of the conditional measure, expression, seed-bearing and counted-claim
   // pairs, of the constrained-response and opened-response pairs, of the held-now pair and of the
-  // pair carrying wrapped value-invariant observations and awaits.
-  39, 41, 43, 45, 47, 49, 51, 53,
+  // pair carrying wrapped value-invariant observations and awaits, and of the view-reference pair.
+  39, 41, 43, 45, 47, 49, 51, 53, 55,
 ]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
@@ -6975,7 +6985,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
   if (carriesCoverage !== coverageMajor(major)) {
-    throw new Error('coverage is required exactly for odd suite majors from /5 through /53');
+    throw new Error('coverage is required exactly for odd suite majors from /5 through /55');
   }
   expandCompactSuite(root, major);
   for (const key of ['system', 'specification_version', 'spec_digest', 'contract_digest']) {

@@ -1487,7 +1487,7 @@ fn references<'ir>(ir: &'ir EssIr, entity: &'ir EntityHandle) -> impl Iterator<I
 fn command_reads(outcome: &ess_compiler::ir::ResolvedOutcome, read: &mut BTreeSet<FactPath>) {
     use ess_compiler::ir::{
         ResolvedCondition, ResolvedInstance, ResolvedPayloadField, ResolvedPayloadValue,
-        ResolvedRelatedTest, ResolvedRelatedVia, ResolvedRowSetTest,
+        ResolvedRelatedVia, ResolvedRowSetTest,
     };
     fn mixed(predicate: &Predicate, read: &mut BTreeSet<FactPath>) {
         for path in predicate.fact_paths() {
@@ -1534,7 +1534,8 @@ fn command_reads(outcome: &ess_compiler::ir::ResolvedOutcome, read: &mut BTreeSe
                         named(&input.field, read);
                     }
                 }
-                ResolvedPayloadValue::RelatedField { via: from, .. } => via(from, read),
+                ResolvedPayloadValue::RelatedField { via: from, .. }
+                | ResolvedPayloadValue::RelatedState { via: from, .. } => via(from, read),
                 ResolvedPayloadValue::RelatedSelection { selection, .. } => {
                     mixed(&selection.filter, read);
                 }
@@ -1548,11 +1549,11 @@ fn command_reads(outcome: &ess_compiler::ir::ResolvedOutcome, read: &mut BTreeSe
     }
     match &outcome.condition {
         ResolvedCondition::SubjectPredicate { predicate, .. } => mixed(predicate, read),
-        ResolvedCondition::Related {
-            via: from, test, ..
-        } => {
+        ResolvedCondition::Related { via: from, .. } => {
             via(from, read);
-            if let ResolvedRelatedTest::Holds { predicate } = test {
+            // From ess/28 every row an `all:` branch lists, each with its own predicate.
+            for (from, _, predicate) in outcome.condition.related_predicates() {
+                via(from, read);
                 mixed(predicate, read);
             }
         }

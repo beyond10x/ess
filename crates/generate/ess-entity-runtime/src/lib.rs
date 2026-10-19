@@ -2389,6 +2389,7 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::InputOrGenerated { .. }
                         | ResolvedPayloadValue::Struct { .. }
                         | ResolvedPayloadValue::RelatedField { .. }
+                        | ResolvedPayloadValue::RelatedState { .. }
                         | ResolvedPayloadValue::RelatedSelection { .. }
                         | ResolvedPayloadValue::RelatedHead { .. }
                         | ResolvedPayloadValue::CallerAttribute { .. }
@@ -3162,6 +3163,7 @@ impl Projector<'_> {
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedState { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::Generated { present: true }
@@ -4086,6 +4088,7 @@ fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedState { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. }
             // ess/27 (beyond10x/ess#545): entity-core has no present mint and no read of the

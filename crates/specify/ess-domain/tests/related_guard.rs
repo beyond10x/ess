@@ -76,7 +76,9 @@ fn issue_211_a_create_guarded_by_another_entity_validates_under_ess_18() {
             .find(|outcome| outcome.name.as_str() == name)
             .unwrap_or_else(|| panic!("no outcome {name}"))
     };
-    let OutcomeCondition::Related { via, test, input } = &branch("no-configuration").condition
+    let OutcomeCondition::Related {
+        via, test, input, ..
+    } = &branch("no-configuration").condition
     else {
         panic!("expected a related guard: {:?}", branch("no-configuration"))
     };

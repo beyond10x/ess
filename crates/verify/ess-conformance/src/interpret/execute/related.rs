@@ -58,21 +58,25 @@ pub(super) fn missing(
     condition: &ResolvedCondition,
 ) -> bool {
     let ResolvedCondition::Related {
-        via: ResolvedRelatedVia::Input { field, type_ref },
-        entity,
-        ..
+        via, entity, also, ..
     } = condition
     else {
         return false;
     };
-    if absent_optional(type_ref, input.get(field)) {
-        return false;
-    }
-    input.get(field).is_some_and(|identity| {
-        store
-            .instance_typed(&ir.entity(entity).name, identity)
-            .is_none()
-    })
+    // ess/28: an `all:` branch's row is missing where any row it lists is.
+    std::iter::once((via, entity))
+        .chain(also.iter().map(|row| (&row.via, &row.entity)))
+        .any(|(via, entity)| {
+            let ResolvedRelatedVia::Input { field, type_ref } = via else {
+                return false;
+            };
+            !absent_optional(type_ref, input.get(field))
+                && input.get(field).is_some_and(|identity| {
+                    store
+                        .instance_typed(&ir.entity(entity).name, identity)
+                        .is_none()
+                })
+        })
 }
 
 /// One branch per related row the command reads, in the order its rows are read when looking for a
@@ -143,9 +147,33 @@ pub(super) fn held<'a>(
     input: &BTreeMap<String, Node>,
     condition: &ResolvedCondition,
 ) -> Result<Option<Held<'a>>, Undetermined> {
-    let ResolvedCondition::Related { via, entity, .. } = condition else {
+    let ResolvedCondition::Related {
+        via, entity, also, ..
+    } = condition
+    else {
         return Ok(None);
     };
+    let Some(mut held) = held_row(ir, store, input, (via, entity))? else {
+        return Ok(None);
+    };
+    // ess/28: every further row an `all:` branch lists, read the same way; one absent Optional
+    // reference selects no branch over them.
+    for row in also {
+        let Some(further) = held_row(ir, store, input, (&row.via, &row.entity))? else {
+            return Ok(None);
+        };
+        held.also.push(further);
+    }
+    Ok(Some(held))
+}
+
+/// The row `via` names in `store`, held for its predicates; `None` for an absent Optional reference.
+fn held_row<'a>(
+    ir: &'a EssIr,
+    store: &'a State,
+    input: &BTreeMap<String, Node>,
+    (via, entity): (&ResolvedRelatedVia, &EntityHandle),
+) -> Result<Option<Held<'a>>, Undetermined> {
     let ResolvedRelatedVia::Input { field, type_ref } = via else {
         return Err(Undetermined::NotInterpreted {
             construct: "a related guard not named by command input".into(),

@@ -2919,6 +2919,7 @@ impl<'a> Writer<'a> {
                 }
             }
             ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedState { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::ChangedCount

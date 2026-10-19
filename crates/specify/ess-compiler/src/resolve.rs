@@ -3468,10 +3468,33 @@ impl<'a> Resolver<'a> {
         outcome: &Outcome,
         input: Option<&[ResolvedField]>,
         entities: &BTreeMap<QualifiedName, ResolvedEntity>,
-    ) -> Option<(ResolvedRelatedVia, EntityHandle)> {
-        let OutcomeCondition::Related { via, .. } = &outcome.condition else {
+    ) -> Option<RelatedRows> {
+        let OutcomeCondition::Related { via, also, .. } = &outcome.condition else {
             return None;
         };
+        let (first, entity) = self.related_read(command, via, input, entities)?;
+        // ess/28: every further row an `all:` branch lists, each by the same rule.
+        let mut further = Vec::new();
+        for row in also {
+            let (via, entity) = self.related_read(command, &row.via, input, entities)?;
+            further.push(crate::ir::ResolvedRelatedAlso {
+                via,
+                entity,
+                predicate: row.predicate.clone(),
+            });
+        }
+        Some((first, entity, further))
+    }
+
+    /// The input field, or stored field, `via` reads and the entity whose identity it carries, by
+    /// the rule `ess-domain` validated it with.
+    fn related_read(
+        &self,
+        command: &CommandSpec,
+        via: &RelatedVia,
+        input: Option<&[ResolvedField]>,
+        entities: &BTreeMap<QualifiedName, ResolvedEntity>,
+    ) -> Option<(ResolvedRelatedVia, EntityHandle)> {
         let related =
             ess_domain::command::related_guard::related_entity_via(self.spec, command, via);
         let Referenced::Entity(entity) = related else {
@@ -3509,6 +3532,10 @@ impl<'a> Resolver<'a> {
     /// references, each resolved by the same rule on the entity the reference before names; where
     /// any may be absent, the value's type is `Optional<…>` of the field's.
     #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one related read resolved: its reference chain, the field or state, and its type"
+    )]
     fn related_field(
         &mut self,
         command: &CommandSpec,
@@ -3596,6 +3623,42 @@ impl<'a> Resolver<'a> {
             entity = next;
         }
         let Some(held) = entity_field(entity, field) else {
+            // ess/28 (beyond10x/ess#557): the referenced row's lifecycle state, which
+            // `ess-domain` admitted from that format only.
+            if field == EntitySpec::STATE {
+                let state = ResolvedTypeRef::Declared {
+                    name: TypeHandle::new(entity.name.child(EntitySpec::STATE_TYPE)),
+                };
+                let (value, type_ref) = related_value(
+                    via,
+                    read_via,
+                    hops,
+                    entity,
+                    ResolvedField {
+                        name: field.clone(),
+                        type_ref: state,
+                        naming: ess_domain::name::Naming::default(),
+                    },
+                );
+                let ResolvedPayloadValue::RelatedField {
+                    via,
+                    through,
+                    entity,
+                    ..
+                } = value
+                else {
+                    unreachable!("`related_value` resolves a related field")
+                };
+                return Some((
+                    ResolvedPayloadValue::RelatedState {
+                        via,
+                        through,
+                        entity,
+                        type_ref: type_ref.clone(),
+                    },
+                    type_ref,
+                ));
+            }
             unresolved(self);
             return None;
         };
@@ -4309,6 +4372,7 @@ impl<'a> Resolver<'a> {
             });
             let absent = self.absent(&view, declared_fields.as_deref());
             let computed = self.computed(&view);
+            let references = view_references(self.spec, &view, entities.get(source.name()));
             resolved.insert(
                 view.name.clone(),
                 ResolvedView {
@@ -4324,6 +4388,7 @@ impl<'a> Resolver<'a> {
                     order_by: view.order_by,
                     paging: view.paging,
                     absent,
+                    references,
                     consistency: view.consistency,
                     assertion_style: view.consistency.assertion_style(),
                     naming: view.naming,
@@ -5771,18 +5836,24 @@ fn complete_refusal(major: u32, command: &CommandSpec, outcome: &Outcome) -> boo
 /// carries that transition by value, so the set is read off work this resolver has already done
 /// rather than looked up again — which is the difference between the domain's condition and the
 /// IR's mirror of it.
+/// A related guard's rows, resolved: the first row's read and entity, and every further row an
+/// `all:` branch lists (ess/28).
+type RelatedRows = (
+    ResolvedRelatedVia,
+    EntityHandle,
+    Vec<crate::ir::ResolvedRelatedAlso>,
+);
+
 fn condition_of(
     outcome: &Outcome,
     subject: Option<&ResolvedSubject>,
-    related: Option<(ResolvedRelatedVia, EntityHandle)>,
+    related: Option<RelatedRows>,
 ) -> ResolvedCondition {
     match &outcome.condition {
         // `related` is `None` only where the command did not resolve, and an incomplete command
         // reaches no `EssIr`: the default stands in for it until the refusal is reported.
         OutcomeCondition::Related { test, input, .. } => match related {
-            Some((via, entity)) => ResolvedCondition::Related {
-                via,
-                entity,
+            Some((via, entity, also)) => ResolvedCondition::Related {
                 test: match test {
                     RelatedTest::Absent => ResolvedRelatedTest::Absent,
                     RelatedTest::Holds(predicate) => ResolvedRelatedTest::Holds {
@@ -5790,6 +5861,9 @@ fn condition_of(
                     },
                 },
                 input: input.clone(),
+                via,
+                entity,
+                also,
             },
             None => ResolvedCondition::Otherwise,
         },
@@ -5966,6 +6040,57 @@ fn related_value(
         },
         type_ref,
     )
+}
+
+/// The references of `view`'s source the view reads through, one hop (ess/28, beyond10x/ess#564):
+/// each one a field reads through (`field: {related: …}`) or the filter navigates, in the order
+/// the source declares them, with the view fields read from the row it names. `ess-domain` refused
+/// every other read; `source` is the resolved source entity, without which there is none.
+fn view_references(
+    spec: &Specification,
+    view: &ViewSpec,
+    source: Option<&ResolvedEntity>,
+) -> Vec<crate::ir::ResolvedViewReference> {
+    let Some(source) = source else {
+        return Vec::new();
+    };
+    let declared = ess_domain::view::navigation::references(spec, view);
+    let navigated: BTreeSet<&str> =
+        ess_domain::view::navigation::navigated_paths(spec, view, &declared)
+            .into_iter()
+            .filter_map(|path| path.segments().first().map(String::as_str))
+            .collect();
+    let observable = source.observable_fields();
+    declared
+        .iter()
+        .filter_map(|reference| {
+            let fields: Vec<crate::ir::ResolvedViewRead> = view
+                .fields
+                .iter()
+                .filter_map(|field| {
+                    let read = view.related.get(&field.name)?;
+                    (read.via == reference.via).then(|| crate::ir::ResolvedViewRead {
+                        field: field.name.clone(),
+                        read: read.field.clone(),
+                    })
+                })
+                .collect();
+            if fields.is_empty() && !navigated.contains(reference.via.as_str()) {
+                return None;
+            }
+            let via_type = observable
+                .iter()
+                .find(|field| field.name == reference.via)?
+                .type_ref
+                .clone();
+            Some(crate::ir::ResolvedViewReference {
+                via: reference.via.clone(),
+                via_type,
+                entity: EntityHandle::new(reference.entity.clone()),
+                fields,
+            })
+        })
+        .collect()
 }
 
 /// The field `name` of `entity`, its identity included: what a `{related: …}` reference or read

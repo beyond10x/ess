@@ -23,7 +23,7 @@ use ess_compiler::ir::{
     ResolvedTypeRef,
 };
 use ess_domain::command::TestStrategy;
-use ess_domain::entity::{Cardinality, RelationKind};
+use ess_domain::entity::{Cardinality, EntitySpec, RelationKind};
 use ess_domain::name::QualifiedName;
 
 use super::{
@@ -93,36 +93,52 @@ impl Read<'_> {
 
 /// Every `via` the branch's payload and `sets:` read, in the order first written.
 fn reads(outcome: &ResolvedOutcome) -> Vec<Read<'_>> {
+    reads_of(outcome, false)
+}
+
+/// [`reads`], and with `error` the reads of the branch's error payload after them: what a refusal
+/// answering for the row its guard reads publishes of that row ([`settle`], ess/28,
+/// beyond10x/ess#557).
+fn reads_of(outcome: &ResolvedOutcome, error: bool) -> Vec<Read<'_>> {
     fn collect<'a>(field: &'a ResolvedPayloadField, out: &mut Vec<Read<'a>>) {
-        match &field.value {
+        // ess/28 (beyond10x/ess#557): the referenced row's state is read as a field named `state`.
+        let (via, through, entity, field) = match &field.value {
             ResolvedPayloadValue::RelatedField {
                 via,
                 through,
                 entity,
                 field,
                 ..
-            } => match out
-                .iter_mut()
-                .find(|read| read.via == via && read.through == through.as_slice())
-            {
-                Some(read) => {
-                    if !read.fields.contains(&field.as_str()) {
-                        read.fields.push(field);
-                    }
-                }
-                None => out.push(Read {
-                    via,
-                    through,
-                    entity,
-                    fields: vec![field],
-                }),
-            },
+            } => (via, through, entity, field.as_str()),
+            ResolvedPayloadValue::RelatedState {
+                via,
+                through,
+                entity,
+                ..
+            } => (via, through, entity, ess_domain::entity::EntitySpec::STATE),
             ResolvedPayloadValue::Struct { fields } => {
                 for leaf in fields {
                     collect(leaf, out);
                 }
+                return;
             }
-            _ => {}
+            _ => return,
+        };
+        match out
+            .iter_mut()
+            .find(|read| read.via == via && read.through == through.as_slice())
+        {
+            Some(read) => {
+                if !read.fields.contains(&field) {
+                    read.fields.push(field);
+                }
+            }
+            None => out.push(Read {
+                via,
+                through,
+                entity,
+                fields: vec![field],
+            }),
         }
     }
     let mut out = Vec::new();
@@ -131,6 +147,7 @@ fn reads(outcome: &ResolvedOutcome) -> Vec<Read<'_>> {
         .iter()
         .flat_map(|payload| &payload.fields)
         .chain(&outcome.sets)
+        .chain(outcome.error_payload.iter().filter(|_| error))
     {
         collect(field, &mut out);
     }
@@ -635,7 +652,10 @@ pub(super) fn settle(
     guarded: Guarded<'_>,
     row: &Arrangement,
 ) {
-    for read in reads(outcome)
+    // From ess/28 (beyond10x/ess#557) a refusal's error payload reading the guarded row is carried
+    // too, so the scenario asserts what the refusal publishes of it; below, its bytes stay.
+    let error = ir.format().major() >= ess_domain::system::FormatVersion::V28.major();
+    for read in reads_of(outcome, error)
         .iter()
         .filter(|read| is_guarded(ir, outcome, read, Some(guarded)))
     {
@@ -646,6 +666,8 @@ pub(super) fn settle(
                     value: ScenarioValue::instance(row.instance.clone()),
                     type_ref: identity.type_ref.clone(),
                 })
+            } else if *field == EntitySpec::STATE {
+                Some(held_state(ir, read.entity, row))
             } else {
                 row.settled.get(*field).cloned()
             };
@@ -980,6 +1002,8 @@ fn settle_read(
                 value: ScenarioValue::instance(referenced.instance.clone()),
                 type_ref: identity.type_ref.clone(),
             })
+        } else if *field == EntitySpec::STATE {
+            Some(held_state(ir, read.entity, referenced))
         } else {
             match change {
                 Some((writes, invocation)) if writes.iter().any(|written| written == field) => {
@@ -999,13 +1023,24 @@ fn settle_read(
     }
 }
 
+/// The lifecycle state `row`, a row of `entity`, was left in, as a `{related: {…, field: state}}`
+/// read carries it (ess/28, beyond10x/ess#557): the text of the state, at the entity's `State`.
+fn held_state(ir: &EssIr, entity: &EntityHandle, row: &Arrangement) -> Determined {
+    Determined {
+        value: ScenarioValue::literal(Node::Text(row.state.to_string())),
+        type_ref: ir.entity(entity).state_field().type_ref,
+    }
+}
+
 /// Carries every field `read` reads as absent (ess/22, beyond10x/ess#285): a reference it follows
 /// was left absent, so the value is.
 fn settle_absent(ir: &EssIr, setup: &mut Setup, read: &Read<'_>) {
     let entity = ir.entity(read.entity);
     for field in &read.fields {
+        let state = entity.state_field();
         let type_ref = std::iter::once(&entity.identity)
             .chain(&entity.fields)
+            .chain(std::iter::once(&state))
             .find(|held| held.name == *field)
             .map_or_else(
                 || entity.identity.type_ref.clone(),

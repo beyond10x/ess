@@ -556,9 +556,12 @@ impl Specification {
 
         let catalogue = EntityCatalogue::new(self.entities.values());
         for view in self.views.values() {
-            if let Err(view_errors) = view.validate(&registry, &catalogue) {
+            // A filter navigates the source's references one hop (ess/28, beyond10x/ess#564).
+            let references = crate::view::navigation::references(self, view);
+            if let Err(view_errors) = view.validate_navigating(&registry, &catalogue, &references) {
                 errors.extend(view_errors);
             }
+            errors.extend(crate::view::navigation::validate(self, view));
             // `absent:` (ess/25) reads the source entity's identity, which the catalogue does not carry.
             errors.extend(crate::view::absent::validate(
                 view,

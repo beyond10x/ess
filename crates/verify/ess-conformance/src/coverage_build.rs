@@ -585,6 +585,9 @@ fn coverage_version(
     // every pair below, the held one included.
     let observed = crate::value_invariant::coverage_floor(suite).is_some()
         || crate::one_time_response::compact::coverage_floor(suite).is_some();
+    // A view read through a reference of its source (beyond10x/ess#564) is cumulative over every
+    // pair below, the observed one included.
+    let referenced = crate::view_reference::coverage_floor(suite).is_some();
     let held = crate::hold_now::coverage_floor(suite).is_some();
     // A system-issued command's await vocabulary (beyond10x/ess#542) is cumulative over every
     // pair below, the held one included.
@@ -593,7 +596,9 @@ fn coverage_version(
     let opened = crate::undeclared_fields::coverage_floor(suite).is_some();
     let constrained = crate::direct_response::constrained_coverage_floor(suite).is_some();
     let counted = crate::event_multiplicity::coverage_floor(suite).is_some();
-    crate::scenario::SuiteFormat::parse(if observed || awaited {
+    crate::scenario::SuiteFormat::parse(if referenced {
+        "ess-conformance/55"
+    } else if observed || awaited {
         "ess-conformance/53"
     } else if held {
         "ess-conformance/51"

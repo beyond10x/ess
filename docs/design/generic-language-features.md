@@ -220,6 +220,21 @@ Navigation: a path through a declared reference reads the referenced row:
 Optional reference the path is absent where the reference is. Depth is any chain of declared
 references (open question 8); today it is two (`dom/command.rs:1861-1863`).
 
+**First cut, `ess/28` (beyond10x/ess#564, beyond10x/ess#557).** Navigation ships one hop, in the
+positions a view reads and as a value: a view field `field: {related: {via, field}}` and a view
+filter path `<reference>.<field>` read the referenced row when the view is read, and a value source
+`{related: {via, field: state}}` reads its lifecycle state. A missing far row reads as absent in a
+view, as an absent reference does, so a navigated field is `Optional` and a filter over it shows no
+row; a value source keeps its rule (a present reference naming no row is a missing row, answered by
+the guard's `exists: false` branch). The value source keeps its two-hop chain; a second hop in a
+view or a guard, `E[id]`, and navigation in guard predicates are not in this cut and stay refused
+by the paths' own checks. A conjunction over several rows the input names is the guard form
+`when_related: {all: [{via, predicate}, …]}`, each row with its own predicate; a comparison across
+two rows (`E[input.a].direction == E[input.b].direction`) is one such branch per value until
+navigation reaches guard predicates. Aggregate, paged and `absent:` views refuse navigation by name. Each
+navigated view is witnessed by a `<view>/reference/<field>` scenario (suite/54 and /55): two
+referenced rows, a decoy, an absent reference, and a second read after the named row changes.
+
 | existing construct | as G2 |
 |---|---|
 | `when_related: {via: input.r, exists: false}` / predicate | `not exists(E[input.r])` / a predicate over `E[input.r]` (`dom/command.rs:551-566`) |

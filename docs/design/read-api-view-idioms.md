@@ -197,6 +197,13 @@ If a live join is needed, start from `field: {related:` on a view field, in full
 {via: <reference field>, field: <field>}}`: the existing value source read at query time, one hop,
 absent where the reference is.
 
+Revised by `docs/design/generic-language-features.md` § G2 (beyond10x/ess#564, `ess/28`): that
+starting point ships. A view field `field: {related: {via, field}}` and a filter path
+`<reference>.<field>` read the current referenced row, one hop, absent where the reference is absent
+or names no row; the copy-at-write idiom stays valid where the value at write time is the fact
+wanted. `source:` stays one entity, so the row count is the source's. The dotted field name
+(`agent.label`) stays refused as a field name.
+
 ## A clock-relative window is resolved by the caller
 
 Asked (#439): a read that counts rows whose instant falls in a range named relative to the request

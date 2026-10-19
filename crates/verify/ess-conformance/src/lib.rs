@@ -193,6 +193,7 @@ pub mod undeclared_fields;
 pub mod value_invariant;
 pub mod view_grant;
 pub mod view_paging;
+pub mod view_reference;
 pub mod web;
 pub mod web_execution;
 pub mod web_replay;

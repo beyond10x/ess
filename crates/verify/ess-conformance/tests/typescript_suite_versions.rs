@@ -1695,3 +1695,67 @@ fn string_operators_in_a_suite_26_envelope_run_in_typescript_with_the_rust_verdi
     }
     .authored(&text_match_suite("ess-conformance/26"));
 }
+
+// ---- ess/28: a view read through a reference, and a refusal naming the referenced row's state ---
+
+/// The model of `tests/row_queries_navigate_a_reference.rs` (beyond10x/ess#564, beyond10x/ess#557):
+/// its `<view>/reference/<field>` scenarios are suite/54 and /55 vocabulary.
+const NAVIGATE: &str = include_str!("fixtures/navigate-a-reference.yaml");
+
+const NAVIGATE_CASE: Case<'static> = Case {
+    name: "navigate",
+    version: "",
+    target: include_str!("fixtures/typescript-navigate-target.mjs"),
+    modes: &["correct", "copies-at-write", "latest-desk", "wrong-current"],
+    also_correct: &[],
+};
+
+#[test]
+fn a_view_read_through_a_reference_fresh_suite_54_runs_in_typescript_with_the_rust_verdicts() {
+    Case {
+        version: "ess-conformance/54",
+        ..NAVIGATE_CASE
+    }
+    .ordinary(&ir(NAVIGATE));
+}
+
+#[test]
+fn a_view_read_through_a_reference_fresh_coverage_suite_55_runs_in_typescript_with_the_rust_verdicts(
+) {
+    Case {
+        version: "ess-conformance/55",
+        ..NAVIGATE_CASE
+    }
+    .coverage(&ir(NAVIGATE));
+}
+
+/// Two related rows in one branch (`when_related: {all: […]}`, ess/28, downstream report
+/// 2026-10-19, finding 11): no suite vocabulary of its own, so the suite keeps the pair its other
+/// constructs choose.
+const WIRING: &str = include_str!("fixtures/two-rows-one-branch.yaml");
+
+const WIRING_CASE: Case<'static> = Case {
+    name: "wiring",
+    version: "",
+    target: include_str!("fixtures/typescript-wiring-target.mjs"),
+    modes: &["correct", "source-only", "sink-only", "ignores"],
+    also_correct: &[],
+};
+
+#[test]
+fn two_rows_in_one_branch_fresh_suite_34_run_in_typescript_with_the_rust_verdicts() {
+    Case {
+        version: "ess-conformance/34",
+        ..WIRING_CASE
+    }
+    .ordinary(&ir(WIRING));
+}
+
+#[test]
+fn two_rows_in_one_branch_fresh_coverage_suite_35_run_in_typescript_with_the_rust_verdicts() {
+    Case {
+        version: "ess-conformance/35",
+        ..WIRING_CASE
+    }
+    .coverage(&ir(WIRING));
+}

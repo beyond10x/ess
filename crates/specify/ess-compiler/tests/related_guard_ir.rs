@@ -45,6 +45,7 @@ fn issue_211_both_tests_compile_to_the_related_condition() {
             entity,
             test,
             input,
+            ..
         } = &outcome.condition
         else {
             panic!("a related guard: {:?}", outcome.condition)

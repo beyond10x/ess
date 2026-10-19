@@ -330,6 +330,10 @@ fn held_state_conditions(
 /// invariants, view filters and binding selections. A format gate over predicate vocabulary asks
 /// this one walk, so a position cannot be gated in one construct and forgotten in another; a new
 /// predicate position is added here, not beside the gate that reads it.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one walk over every predicate position of a specification"
+)]
 pub fn predicates(
     spec: &Specification,
 ) -> Vec<(ConstructRef, &ess_primitives::predicate::Predicate)> {
@@ -383,20 +387,26 @@ pub fn predicates(
                     predicate,
                 ));
             }
-            // And the one over a related row (ess/18, `when_related:`).
+            // And the one over a related row (ess/18, `when_related:`), and from ess/28 the one over
+            // each further row `all:` lists.
             if let crate::command::OutcomeCondition::Related {
                 test: crate::command::RelatedTest::Holds(predicate),
+                also,
                 ..
             } = &outcome.condition
             {
-                found.push((
-                    command
-                        .site()
-                        .key("outcomes")
-                        .named(outcome.name.to_string())
-                        .key(crate::command::related_guard::KEY),
-                    predicate,
-                ));
+                for predicate in
+                    std::iter::once(predicate).chain(also.iter().map(|row| &row.predicate))
+                {
+                    found.push((
+                        command
+                            .site()
+                            .key("outcomes")
+                            .named(outcome.name.to_string())
+                            .key(crate::command::related_guard::KEY),
+                        predicate,
+                    ));
+                }
             }
             // And the selector and `forall` of a row set (ess/22, beyond10x/ess#228, #299).
             if let crate::command::OutcomeCondition::RelatedSet {
@@ -635,6 +645,8 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     }
     for view in spec.views().values() {
         view_admission(view, format, &spec.system().types, &mut errors);
+        // A view reading through a reference (ess/28, beyond10x/ess#564).
+        errors.extend(view.navigation_admission(spec, format));
     }
     errors
 }
