@@ -7,7 +7,7 @@
 //! silent failure mode — a step of `task check` that no job calls exits nowhere, so nothing turns
 //! red when it goes missing. The coverage case below reads both files and names the step instead.
 //!
-//! The release workflow runs the full gate on a tag unless a full green `Gate` already covers the
+//! The release workflow runs the full gate on a tag unless the required checks passed on the
 //! tagged tree: `main`'s own push run on the tagged commit, or the pull-request run of the queue
 //! head the tagged commit merged, which `ci.yml` runs in full (a pull request from any other head
 //! and a merge-group run archive the narrowed feature-off build and never stand in). It also
@@ -1096,7 +1096,7 @@ fn pull_requests_run_feature_off_on_number_semantics_and_every_other_run_runs_al
         .job;
     assert_eq!(
         text(&ci["jobs"][builder.as_str()]["env"]["FEATURE_OFF"]),
-        "${{ inputs.checkout-ref == '' && (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && !startsWith(github.head_ref, 'queue/'))) && 'number-semantics' || 'full' }}",
+        "${{ inputs.checkout-ref == '' && (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && !(startsWith(github.head_ref, 'queue/') && github.event.pull_request.head.repo.full_name == github.repository))) && 'number-semantics' || 'full' }}",
         "only a pull request from an ordinary head or a merge-group run may narrow the feature-off \
          archive; a queue head's pull request must not, because the release reuses it"
     );
@@ -1581,10 +1581,11 @@ fn evaluate(expression: &str, context: &BTreeMap<&str, &str>) -> ExpressionValue
 }
 
 /// A release runs its full gate unless a full gate already passed on the tagged tree. The only
-/// stand-in is the `prior-gate` step's answer, which is `true` only for a full green `Gate` on the
-/// tagged commit or on the queue head it merged
-/// (`a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it`); a `Gate` from a
-/// pull request of an ordinary head ran the narrowed feature-off build and never counts.
+/// stand-in is the `prior-gate` step's answer, which is `true` only when every check the ruleset
+/// requires passed on the tagged commit, or on the queue head it merged, in this repository's own
+/// full run (`a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it`); a `Gate`
+/// from a pull request of an ordinary head or a fork ran the narrowed feature-off build and never
+/// counts.
 /// `release.yml` calls the reusable gate with nothing but the commit, publication requires that
 /// call to have succeeded or that step to have said `true`, and `ci.yml`'s feature-off selection is
 /// `full` for every run a release makes or reuses: a tag push, a backfill dispatched from any
@@ -1659,22 +1660,36 @@ fn a_release_runs_its_full_gate_unless_a_full_gate_passed_the_tagged_tree() {
     );
     assert_eq!(text(&step["env"]["EVENT"]), "${{ github.event_name }}");
     let script = text(&step["run"]);
-    let check = text(&ci["jobs"]["gate"]["name"]);
-    for needed in [
-        "/check-runs?".to_owned(),
-        format!("check_name={check}"),
-        format!(".name == \"{check}\""),
+    let mut needed = vec![
+        "/check-runs?check_name=".to_owned(),
+        "&filter=all&per_page=100".to_owned(),
         ".app.slug == \"github-actions\"".to_owned(),
         "\"completed/success\"".to_owned(),
-        // The Gate's own workflow run says whether it archived every feature-off case.
+        // A second page of check-runs is never read; it runs the gate instead.
+        "total_count > 100".to_owned(),
+        // A check-run's own workflow run says whether it is this repository's full run of that
+        // commit.
         "/actions/runs/".to_owned(),
+        ".head_repository.full_name".to_owned(),
+        ".head_sha".to_owned(),
         "pull_request".to_owned(),
-        // The pull request a merge commit closed, and the Git facts about its head.
-        "/pulls".to_owned(),
+        // The pull request a merge commit closed, from this repository into main, and the Git
+        // facts about its head.
+        "/pulls?per_page=100".to_owned(),
+        ".head.repo.full_name == env.REPOSITORY".to_owned(),
+        ".base.ref == \"main\"".to_owned(),
         "^{tree}".to_owned(),
         "merge-base --is-ancestor".to_owned(),
         "decide false".to_owned(),
-    ] {
+    ];
+    // Every check the ruleset requires is read, by its exact name: `Gate`, and the ownership
+    // witness of each macOS runner, which a skipped tag would otherwise never run.
+    needed.extend(
+        required_checks(&ci)
+            .iter()
+            .map(|name| format!("\"{name}\"")),
+    );
+    for needed in needed {
         assert!(
             script.contains(&needed),
             "the prior-gate step no longer reads `{needed}`: {script}"
@@ -1696,40 +1711,61 @@ fn a_release_runs_its_full_gate_unless_a_full_gate_passed_the_tagged_tree() {
         .job;
     let feature_off = text(&ci["jobs"][builder.as_str()]["env"]["FEATURE_OFF"]);
     let commit = "3ec2deb977bb19c292a611dcf92a3e676352864a";
-    // The event, `github.ref`, `github.head_ref` (a pull request's head branch, empty elsewhere),
-    // `inputs.checkout-ref`, and the feature-off selection expected.
+    let own = "owner/repository";
+    // The event, `github.ref`, `github.head_ref` and the head repository (a pull request's, empty
+    // elsewhere), `inputs.checkout-ref`, and the feature-off selection expected.
     let runs = [
         // The release, which always passes the tagged commit.
-        ("push", "refs/tags/0.60.0", "", commit, "full"),
-        ("workflow_dispatch", "refs/heads/main", "", commit, "full"),
+        ("push", "refs/tags/0.60.0", "", "", commit, "full"),
+        (
+            "workflow_dispatch",
+            "refs/heads/main",
+            "",
+            "",
+            commit,
+            "full",
+        ),
         (
             "workflow_dispatch",
             "refs/heads/queue/pr-119",
+            "",
             "",
             commit,
             "full",
         ),
         // The runs of ci.yml's own, which this reader must tell apart from it.
-        ("push", "refs/heads/main", "", "", "full"),
-        ("schedule", "refs/heads/main", "", "", "full"),
+        ("push", "refs/heads/main", "", "", "", "full"),
+        ("schedule", "refs/heads/main", "", "", "", "full"),
         // The queue head's pull request, which the release reuses in place of its gate.
         (
             "pull_request",
             "refs/pull/7/merge",
             "queue/pr-119",
+            own,
             "",
             "full",
+        ),
+        // A fork can name its branch anything, and runs the workflow file of its own merge ref.
+        (
+            "pull_request",
+            "refs/pull/8/merge",
+            "queue/pr-119",
+            "fork/repository",
+            "",
+            "number-semantics",
         ),
         (
             "pull_request",
             "refs/pull/7/merge",
             "feat/x",
+            own,
             "",
             "number-semantics",
         ),
         (
             "merge_group",
             "refs/heads/gh-readonly-queue/main/pr-7",
+            "",
             "",
             "",
             "number-semantics",
@@ -1739,11 +1775,16 @@ fn a_release_runs_its_full_gate_unless_a_full_gate_passed_the_tagged_tree() {
     // older commit that may predate their test target, leaves them out.
     let ownership = text(&ci["jobs"]["output-ownership-macos"]["if"]);
     let mut wrong = Vec::new();
-    for (event, reference, head_ref, checkout, expected) in runs {
+    for (event, reference, head_ref, head_repository, checkout, expected) in runs {
         let context = BTreeMap::from([
             ("github.event_name", event),
             ("github.ref", reference),
             ("github.head_ref", head_ref),
+            (
+                "github.event.pull_request.head.repo.full_name",
+                head_repository,
+            ),
+            ("github.repository", own),
             ("inputs.checkout-ref", checkout),
         ]);
         let selected = evaluate(feature_off, &context);
@@ -2107,25 +2148,34 @@ fn a_queue_run_prebuilds_the_archives_the_tag_publishes_and_the_release_builds_t
     );
 }
 
-fn prebuilt_step(release: &Value) -> &Value {
+/// The step of release.yml's `resolve` job with `id`.
+fn step_with_id<'a>(release: &'a Value, id: &str) -> &'a Value {
     release["jobs"]["resolve"]["steps"]
         .as_sequence()
         .expect("resolve steps")
         .iter()
-        .find(|step| text(&step["id"]) == "prebuilt")
-        .expect("resolve looks for prebuilt archives")
+        .find(|step| text(&step["id"]) == id)
+        .unwrap_or_else(|| panic!("resolve has no `{id}` step"))
 }
 
-/// Stands in for `gh api <path> --jq <filter>`: answers from `<path without query, / as _>.json`
-/// in `$GH_STUB_RESPONSES` through the real `jq`, and fails like an HTTP error when there is none.
+fn prebuilt_step(release: &Value) -> &Value {
+    step_with_id(release, "prebuilt")
+}
+
+fn prior_gate_step(release: &Value) -> &Value {
+    step_with_id(release, "prior-gate")
+}
+
+/// Stands in for `gh api <path?query> --jq <filter>`: answers from `<path?query, / as _>.json` in
+/// `$GH_STUB_RESPONSES` through the real `jq`, and fails like an HTTP error when there is none.
+/// The query is part of the name, so a step that asks with other parameters gets no answer.
 const GH_PATH_STUB: &str = r#"#!/usr/bin/env bash
 set -euo pipefail
 if [ "$#" -ne 4 ] || [ "$1" != api ] || [ "$3" != --jq ]; then
   echo "gh stub: unexpected arguments: $*" >&2
   exit 2
 fi
-path="${2%%\?*}"
-file="$GH_STUB_RESPONSES/${path//\//_}.json"
+file="$GH_STUB_RESPONSES/${2//\//_}.json"
 if [ ! -f "$file" ]; then
   echo "gh: HTTP 404: Not Found (https://api.github.com/$2)" >&2
   exit 1
@@ -2133,38 +2183,85 @@ fi
 exec jq -r "$4" "$file"
 "#;
 
-/// The canned API answers one `prebuilt` case serves: each API path with the JSON it returns.
+/// The API paths, queries included, that the resolve steps ask for.
+fn check_runs_path(sha: &str, name: &str) -> String {
+    format!(
+        "repos/owner/repository/commits/{sha}/check-runs?check_name={}&filter=all&per_page=100",
+        name.replace(' ', "%20")
+    )
+}
+
+fn pulls_path(sha: &str) -> String {
+    format!("repos/owner/repository/commits/{sha}/pulls?per_page=100")
+}
+
+fn run_path(id: &str) -> String {
+    format!("repos/owner/repository/actions/runs/{id}")
+}
+
+fn package_runs_path(head: &str) -> String {
+    format!(
+        "repos/owner/repository/actions/workflows/package.yml/runs\
+         ?head_sha={head}&event=push&status=success&per_page=100"
+    )
+}
+
+fn artifacts_path(id: u64) -> String {
+    format!("repos/owner/repository/actions/runs/{id}/artifacts?per_page=100")
+}
+
+/// The canned API answers one step run serves: each API path, with its query, and the JSON it
+/// returns.
 type Answers = Vec<(String, serde_json::Value)>;
 
-/// Runs release.yml's `prebuilt` step the way Actions runs a `shell: bash` step, with `head` as
-/// the merged queue head `prior-gate` reported (empty when it reported none), and returns the
-/// `run` value it wrote, then its log.
-fn prebuilt(
-    root: &Path,
-    index: usize,
-    head: &str,
-    responses: &[(&str, serde_json::Value)],
-) -> String {
-    let release = yaml(".github/workflows/release.yml");
-    let step = prebuilt_step(&release);
-    assert_eq!(
-        text(&step["env"]["HEAD"]),
-        "${{ steps.prior-gate.outputs.head }}",
-        "the prebuilt step is no longer keyed on the head prior-gate resolved"
-    );
-    for name in ["GH_TOKEN", "REPOSITORY", "HEAD"] {
-        assert!(
-            !step["env"][name].is_null(),
-            "the prebuilt step no longer receives {name}; this harness supplies it"
-        );
+/// What one step wrote to `$GITHUB_OUTPUT`, by name, and its log.
+struct StepRun {
+    outputs: BTreeMap<String, String>,
+    log: String,
+}
+
+impl StepRun {
+    fn output(&self, name: &str) -> &str {
+        self.outputs
+            .get(name)
+            .unwrap_or_else(|| panic!("the step wrote no `{name}` output: {}", self.log))
     }
-    let case = &root.join(format!("prebuilt-{index}"));
+}
+
+/// Runs one `shell: bash` step of release.yml's `resolve` job the way Actions does. `env` is the
+/// step's environment and must name exactly the variables the step declares; `gh` on `PATH` is a
+/// stub answering `responses`; the step runs in `directory`, and `case` holds the stub, the
+/// answers and the output file. The step must exit 0 and write each output once.
+fn run_release_step(
+    case: &Path,
+    id: &str,
+    directory: &Path,
+    env: &[(&str, &str)],
+    responses: &[(String, serde_json::Value)],
+) -> StepRun {
+    let release = yaml(".github/workflows/release.yml");
+    let step = step_with_id(&release, id);
+    assert_eq!(
+        text(&step["shell"]),
+        "bash",
+        "the {id} step is not a bash step"
+    );
+    let declared: BTreeSet<&str> = step["env"]
+        .as_mapping()
+        .into_iter()
+        .flatten()
+        .map(|(name, _)| text(name))
+        .collect();
+    let supplied: BTreeSet<&str> = env.iter().map(|(name, _)| *name).collect();
+    assert_eq!(
+        declared, supplied,
+        "the {id} step's environment is not what this harness supplies"
+    );
     let bin = case.join("bin");
     let answers = case.join("responses");
     fs::create_dir_all(&bin).unwrap();
     fs::create_dir_all(&answers).unwrap();
-    let stub = bin.join("gh");
-    executable::install_bytes(&stub, GH_PATH_STUB.as_bytes()).unwrap();
+    executable::install_bytes(&bin.join("gh"), GH_PATH_STUB.as_bytes()).unwrap();
     for (path, body) in responses {
         fs::write(
             answers.join(format!("{}.json", path.replace('/', "_"))),
@@ -2172,7 +2269,7 @@ fn prebuilt(
         )
         .unwrap();
     }
-    let script = case.join("prebuilt.sh");
+    let script = case.join(format!("{id}.sh"));
     fs::write(&script, text(&step["run"])).unwrap();
     let output_file = case.join("github-output");
     fs::write(&output_file, "").unwrap();
@@ -2181,17 +2278,17 @@ fn prebuilt(
         bin.display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    let output = isolated("bash", case)
+    let mut command = isolated("bash", directory);
+    command
         .args(["--noprofile", "--norc", "-eo", "pipefail"])
         .arg(&script)
         .env("PATH", path)
-        .env("GH_TOKEN", "fixture")
-        .env("REPOSITORY", "owner/repository")
-        .env("HEAD", head)
         .env("GITHUB_OUTPUT", &output_file)
-        .env("GH_STUB_RESPONSES", &answers)
-        .output()
-        .unwrap();
+        .env("GH_STUB_RESPONSES", &answers);
+    for (name, value) in env {
+        command.env(name, value);
+    }
+    let output = command.output().unwrap();
     let log = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -2199,17 +2296,50 @@ fn prebuilt(
     );
     assert!(
         output.status.success(),
-        "the prebuilt step failed the resolve job instead of deciding: {log}"
+        "the {id} step failed the resolve job instead of deciding: {log}"
     );
     let written = fs::read_to_string(&output_file).unwrap();
-    let decisions: Vec<&str> = written
-        .lines()
-        .filter_map(|line| line.strip_prefix("run="))
-        .collect();
-    let [decision] = decisions.as_slice() else {
-        panic!("the prebuilt step wrote {decisions:?}, not one decision: {log}")
-    };
-    format!("{decision}\n{log}")
+    let mut outputs = BTreeMap::new();
+    for line in written.lines() {
+        let (name, value) = line
+            .split_once('=')
+            .unwrap_or_else(|| panic!("the {id} step wrote `{line}`, not name=value: {log}"));
+        assert!(
+            outputs.insert(name.to_owned(), value.to_owned()).is_none(),
+            "the {id} step wrote `{name}` twice: {log}"
+        );
+    }
+    StepRun { outputs, log }
+}
+
+/// Runs the `prebuilt` step with `head` as the merged queue head `prior-gate` reported (empty when
+/// it reported none), and returns the `run` value it wrote, then its log.
+fn prebuilt(
+    root: &Path,
+    index: usize,
+    head: &str,
+    responses: &[(String, serde_json::Value)],
+) -> String {
+    let release = yaml(".github/workflows/release.yml");
+    assert_eq!(
+        text(&prebuilt_step(&release)["env"]["HEAD"]),
+        "${{ steps.prior-gate.outputs.head }}",
+        "the prebuilt step is no longer keyed on the head prior-gate resolved"
+    );
+    let case = root.join(format!("prebuilt-{index}"));
+    fs::create_dir_all(&case).unwrap();
+    let run = run_release_step(
+        &case,
+        "prebuilt",
+        &case,
+        &[
+            ("GH_TOKEN", "fixture"),
+            ("REPOSITORY", "owner/repository"),
+            ("HEAD", head),
+        ],
+        responses,
+    );
+    format!("{}\n{}", run.output("run"), run.log)
 }
 
 fn package_run(id: u64, sha: &str, branch: &str, path: &str, started: &str) -> serde_json::Value {
@@ -2227,20 +2357,20 @@ fn artifacts(names: &[&str], expired: &[&str]) -> serde_json::Value {
 }
 
 /// A prebuilt run counts only when `prior-gate` reported a merged queue head with the tagged tree,
-/// the run is a successful `package.yml` push run of a queue branch at exactly that head, and the
-/// newest such run still holds all four unexpired archives. Every other answer — no head, and
-/// every API failure — builds the archives in the release. `package.yml` runs on the queue push
-/// of the head and never at the merge commit a tag names: keyed on the tagged commit, 0.61.0 and
-/// 0.62.0 both built again.
+/// the run is a successful `package.yml` push run of a queue branch at exactly that head, and it
+/// still holds all four unexpired archives; of several such runs the newest that holds all four
+/// is used. Every other answer — no head, and every API failure — builds the archives in the
+/// release. `package.yml` runs on the queue push of the head and never at the merge commit a tag
+/// names: keyed on the tagged commit, 0.61.0 and 0.62.0 both built again.
 #[test]
 // One table of cases, which reads best whole.
 #[allow(clippy::too_many_lines)]
 fn a_release_publishes_only_a_queue_run_of_the_merged_head_that_holds_all_four_archives() {
     let root = Scratch::new("release-prebuilt");
     // The merged head `prior-gate` reported; `prebuilt` never sees the tagged commit.
-    let commit = "3ec2deb977bb19c292a611dcf92a3e676352864a";
+    let head = "3ec2deb977bb19c292a611dcf92a3e676352864a";
     let other = "5090405eeef545e9731ff362911ed5707e4b9293";
-    let runs = "repos/owner/repository/actions/workflows/package.yml/runs";
+    let runs = package_runs_path(head);
     let workflow = ".github/workflows/package.yml";
     let four = [
         "release-x86_64-unknown-linux-gnu",
@@ -2249,37 +2379,46 @@ fn a_release_publishes_only_a_queue_run_of_the_merged_head_that_holds_all_four_a
         "release-aarch64-apple-darwin",
     ];
     let all = || artifacts(&four, &[]);
-    let queued = |id| package_run(id, commit, "queue/pr-119", workflow, "2026-01-01T00:00:05Z");
+    let queued = |id| package_run(id, head, "queue/pr-119", workflow, "2026-01-01T00:00:05Z");
+    let older = |id| package_run(id, head, "queue/pr-119", workflow, "2026-01-01T00:00:01Z");
     let listing = |list: Vec<serde_json::Value>| json!({ "workflow_runs": list });
-    let held = |id: u64| format!("repos/owner/repository/actions/runs/{id}/artifacts");
+    let artifacts_of = artifacts_path;
 
     let cases: Vec<(&str, Answers, &str)> = vec![
         (
-            "a queue run of the tagged commit holds all four archives",
-            vec![
-                (runs.to_owned(), listing(vec![queued(7)])),
-                (held(7), all()),
-            ],
+            "a queue run of the head holds all four archives",
+            vec![(runs.clone(), listing(vec![queued(7)])), (artifacts_of(7), all())],
             "7",
         ),
         (
             "the newest of two queue runs is the one published",
             vec![
-                (
-                    runs.to_owned(),
-                    listing(vec![
-                        queued(9),
-                        package_run(8, commit, "queue/pr-119", workflow, "2026-01-01T00:00:01Z"),
-                    ]),
-                ),
-                (held(9), all()),
-                (held(8), all()),
+                (runs.clone(), listing(vec![queued(9), older(8)])),
+                (artifacts_of(9), all()),
+                (artifacts_of(8), all()),
             ],
             "9",
         ),
         (
-            "no package run built the tagged commit",
-            vec![(runs.to_owned(), listing(vec![]))],
+            "the newest run holds three archives, so the older one that holds all four is published",
+            vec![
+                (runs.clone(), listing(vec![queued(9), older(8)])),
+                (artifacts_of(9), artifacts(&four[..3], &[])),
+                (artifacts_of(8), all()),
+            ],
+            "8",
+        ),
+        (
+            "the newest run's artifacts are unavailable, so the older one is published",
+            vec![
+                (runs.clone(), listing(vec![queued(9), older(8)])),
+                (artifacts_of(8), all()),
+            ],
+            "8",
+        ),
+        (
+            "no package run built the head",
+            vec![(runs.clone(), listing(vec![]))],
             "",
         ),
         ("the package runs are unavailable", vec![], ""),
@@ -2287,7 +2426,7 @@ fn a_release_publishes_only_a_queue_run_of_the_merged_head_that_holds_all_four_a
             "the only run built another commit",
             vec![
                 (
-                    runs.to_owned(),
+                    runs.clone(),
                     listing(vec![package_run(
                         7,
                         other,
@@ -2296,7 +2435,7 @@ fn a_release_publishes_only_a_queue_run_of_the_merged_head_that_holds_all_four_a
                         "2026-01-01T00:00:05Z",
                     )]),
                 ),
-                (held(7), all()),
+                (artifacts_of(7), all()),
             ],
             "",
         ),
@@ -2304,16 +2443,16 @@ fn a_release_publishes_only_a_queue_run_of_the_merged_head_that_holds_all_four_a
             "the only run was not a queue branch's",
             vec![
                 (
-                    runs.to_owned(),
+                    runs.clone(),
                     listing(vec![package_run(
                         7,
-                        commit,
+                        head,
                         "feature",
                         workflow,
                         "2026-01-01T00:00:05Z",
                     )]),
                 ),
-                (held(7), all()),
+                (artifacts_of(7), all()),
             ],
             "",
         ),
@@ -2321,49 +2460,45 @@ fn a_release_publishes_only_a_queue_run_of_the_merged_head_that_holds_all_four_a
             "the only run came from another workflow file",
             vec![
                 (
-                    runs.to_owned(),
+                    runs.clone(),
                     listing(vec![package_run(
                         7,
-                        commit,
+                        head,
                         "queue/pr-119",
                         ".github/workflows/ci.yml",
                         "2026-01-01T00:00:05Z",
                     )]),
                 ),
-                (held(7), all()),
+                (artifacts_of(7), all()),
             ],
             "",
         ),
         (
             "the run holds three of the four archives",
             vec![
-                (runs.to_owned(), listing(vec![queued(7)])),
-                (held(7), artifacts(&four[..3], &[])),
+                (runs.clone(), listing(vec![queued(7)])),
+                (artifacts_of(7), artifacts(&four[..3], &[])),
             ],
             "",
         ),
         (
             "one of the four archives has expired",
             vec![
-                (runs.to_owned(), listing(vec![queued(7)])),
-                (held(7), artifacts(&four, &["release-x86_64-apple-darwin"])),
+                (runs.clone(), listing(vec![queued(7)])),
+                (artifacts_of(7), artifacts(&four, &["release-x86_64-apple-darwin"])),
             ],
             "",
         ),
         (
             "the run's artifacts are unavailable",
-            vec![(runs.to_owned(), listing(vec![queued(7)]))],
+            vec![(runs.clone(), listing(vec![queued(7)]))],
             "",
         ),
     ];
 
     let mut wrong = Vec::new();
     for (index, (name, responses, expected)) in cases.into_iter().enumerate() {
-        let borrowed: Vec<(&str, serde_json::Value)> = responses
-            .iter()
-            .map(|(path, body)| (path.as_str(), body.clone()))
-            .collect();
-        let answer = prebuilt(&root.0, index, commit, &borrowed);
+        let answer = prebuilt(&root.0, index, head, &responses);
         let (decision, log) = answer.split_once('\n').unwrap();
         if decision != expected {
             wrong.push(format!(
@@ -2376,7 +2511,10 @@ fn a_release_publishes_only_a_queue_run_of_the_merged_head_that_holds_all_four_a
         &root.0,
         usize::MAX,
         "",
-        &[(runs, listing(vec![queued(7)])), (held(7).as_str(), all())],
+        &[
+            (runs.clone(), listing(vec![queued(7)])),
+            (artifacts_of(7), all()),
+        ],
     );
     let (decision, log) = answer.split_once('\n').unwrap();
     if !decision.is_empty() {
@@ -2389,15 +2527,6 @@ fn a_release_publishes_only_a_queue_run_of_the_merged_head_that_holds_all_four_a
         "the prebuilt step decided these wrongly:\n{}",
         wrong.join("\n")
     );
-}
-
-fn prior_gate_step(release: &Value) -> &Value {
-    release["jobs"]["resolve"]["steps"]
-        .as_sequence()
-        .expect("resolve steps")
-        .iter()
-        .find(|step| text(&step["id"]) == "prior-gate")
-        .expect("resolve looks for a full Gate on the tagged tree")
 }
 
 fn git(directory: &Path, args: &[&str]) -> String {
@@ -2525,34 +2654,85 @@ fn history(root: &Path) -> History {
     }
 }
 
-/// A check-runs listing whose newest `Gate` is `status`/`conclusion`, recorded by `app`, and
-/// belongs to workflow run `run` through its details URL, beside an older failed `Gate` and a
-/// newer check-run of another name.
-fn gate_run(status: &str, conclusion: Option<&str>, app: &str, run: &str) -> serde_json::Value {
-    json!({ "check_runs": [
-        { "name": "Other", "app": { "slug": "github-actions" }, "status": "completed",
-          "conclusion": "success", "started_at": "2026-01-01T00:00:09Z",
-          "details_url": "https://github.com/owner/repository/actions/runs/1/job/10" },
-        { "name": "Gate", "app": { "slug": "github-actions" }, "status": "completed",
-          "conclusion": "failure", "started_at": "2026-01-01T00:00:00Z",
-          "details_url": "https://github.com/owner/repository/actions/runs/2/job/20" },
-        { "name": "Gate", "app": { "slug": app }, "status": status, "conclusion": conclusion,
-          "started_at": "2026-01-01T00:00:05Z",
-          "details_url": format!("https://github.com/owner/repository/actions/runs/{run}/job/30") },
-    ]})
+/// The check names the ruleset requires: `Gate`, and the ownership witness of each macOS runner.
+fn required_checks(ci: &Value) -> Vec<String> {
+    let ownership = &ci["jobs"]["output-ownership-macos"];
+    let template = text(&ownership["name"]);
+    let mut names = vec![text(&ci["jobs"]["gate"]["name"]).to_owned()];
+    for row in matrix_rows(ownership) {
+        names.push(template.replace("${{ matrix.runner }}", &row["runner"]));
+    }
+    assert_eq!(names.len(), 3, "the required checks are {names:?}");
+    names
+}
+
+/// One check-run as a listing shows it, without its name: status and conclusion, the app that
+/// recorded it, the workflow run its details URL names, and when it started.
+fn check_run(
+    status: &str,
+    conclusion: Option<&str>,
+    app: &str,
+    run: &str,
+    started: &str,
+) -> serde_json::Value {
+    json!({
+        "app": { "slug": app }, "status": status, "conclusion": conclusion,
+        "started_at": started,
+        "details_url": format!("https://github.com/owner/repository/actions/runs/{run}/job/30"),
+    })
+}
+
+/// A listing of the check-runs named `name` on a commit, as `/check-runs?check_name=` returns
+/// it, with a check-run of another name beside them that the name filter must drop; `total`
+/// overrides the `total_count` the listing reports.
+fn listing(name: &str, runs: &[serde_json::Value], total: Option<u64>) -> serde_json::Value {
+    let mut named: Vec<serde_json::Value> = runs
+        .iter()
+        .map(|run| {
+            let mut run = run.clone();
+            run["name"] = json!(name);
+            run
+        })
+        .collect();
+    named.push(json!({
+        "name": "Other", "app": { "slug": "github-actions" }, "status": "completed",
+        "conclusion": "success", "started_at": "2026-01-01T00:09:00Z",
+        "details_url": "https://github.com/owner/repository/actions/runs/1/job/10",
+    }));
+    json!({
+        "total_count": total.unwrap_or(named.len() as u64),
+        "check_runs": named,
+    })
 }
 
 /// One workflow run as `GET /actions/runs/{id}` describes it.
-fn workflow_run(path: &str, event: &str, head_branch: Option<&str>) -> serde_json::Value {
-    json!({ "path": path, "event": event, "head_branch": head_branch })
+fn workflow_run(
+    path: &str,
+    event: &str,
+    head_branch: Option<&str>,
+    head_repository: &str,
+    head_sha: &str,
+) -> serde_json::Value {
+    json!({
+        "path": path, "event": event, "head_branch": head_branch,
+        "head_repository": { "full_name": head_repository }, "head_sha": head_sha,
+    })
 }
 
-fn pull(number: u64, merged: bool, merge_commit: &str, head: &str) -> serde_json::Value {
+fn pull(
+    number: u64,
+    merged: bool,
+    merge_commit: &str,
+    head: &str,
+    head_repository: &str,
+    base: &str,
+) -> serde_json::Value {
     json!({
         "number": number,
         "merged_at": if merged { json!("2026-01-01T00:00:00Z") } else { json!(null) },
         "merge_commit_sha": merge_commit,
-        "head": { "sha": head },
+        "head": { "sha": head, "repo": { "full_name": head_repository } },
+        "base": { "ref": base },
     })
 }
 
@@ -2563,37 +2743,29 @@ struct PriorGate {
     log: String,
 }
 
-/// Runs release.yml's `prior-gate` step the way Actions runs a `shell: bash` step, in a fresh
-/// clone of `main` as the resolve job's checkout.
+/// Runs the `prior-gate` step in a fresh clone of `main` as the resolve job's checkout.
 fn prior_gate(
     root: &Path,
     index: usize,
     history: &History,
     commit: &str,
     event: &str,
-    responses: &[(&str, serde_json::Value)],
+    responses: &[(String, serde_json::Value)],
 ) -> PriorGate {
     let release = yaml(".github/workflows/release.yml");
     let step = prior_gate_step(&release);
-    for name in ["GH_TOKEN", "REPOSITORY", "EVENT", "COMMIT"] {
-        assert!(
-            !step["env"][name].is_null(),
-            "the prior-gate step no longer receives {name}; this harness supplies it"
-        );
-    }
-    let case = &root.join(format!("prior-gate-{index}"));
-    let bin = case.join("bin");
-    let answers = case.join("responses");
-    fs::create_dir_all(&bin).unwrap();
-    fs::create_dir_all(&answers).unwrap();
-    executable::install_bytes(&bin.join("gh"), GH_PATH_STUB.as_bytes()).unwrap();
-    for (path, body) in responses {
-        fs::write(
-            answers.join(format!("{}.json", path.replace('/', "_"))),
-            body.to_string(),
-        )
-        .unwrap();
-    }
+    assert_eq!(
+        text(&step["env"]["COMMIT"]),
+        "${{ steps.release.outputs.commit }}",
+        "the prior-gate step is no longer keyed on the commit the tag resolved to"
+    );
+    assert_eq!(
+        text(&step["env"]["EVENT"]),
+        "${{ github.event_name }}",
+        "the prior-gate step no longer knows whether it is a backfill"
+    );
+    let case = root.join(format!("prior-gate-{index}"));
+    fs::create_dir_all(&case).unwrap();
     // Every branch, as `actions/checkout` with `fetch-depth: 0` fetches, and `main` checked out.
     let checkout = case.join("checkout");
     git(
@@ -2609,67 +2781,39 @@ fn prior_gate(
             checkout.to_str().unwrap(),
         ],
     );
-    let script = case.join("prior-gate.sh");
-    fs::write(&script, text(&step["run"])).unwrap();
-    let output_file = case.join("github-output");
-    fs::write(&output_file, "").unwrap();
-    let path = format!(
-        "{}:{}",
-        bin.display(),
-        std::env::var("PATH").unwrap_or_default()
+    let run = run_release_step(
+        &case,
+        "prior-gate",
+        &checkout,
+        &[
+            ("GH_TOKEN", "fixture"),
+            ("REPOSITORY", "owner/repository"),
+            ("EVENT", event),
+            ("COMMIT", commit),
+        ],
+        responses,
     );
-    let output = isolated("bash", &checkout)
-        .args(["--noprofile", "--norc", "-eo", "pipefail"])
-        .arg(&script)
-        .env("PATH", path)
-        .env("GH_TOKEN", "fixture")
-        .env("REPOSITORY", "owner/repository")
-        .env("EVENT", event)
-        .env("COMMIT", commit)
-        .env("GITHUB_OUTPUT", &output_file)
-        .env("GH_STUB_RESPONSES", &answers)
-        .output()
-        .unwrap();
-    let log = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(
-        output.status.success(),
-        "the prior-gate step failed the resolve job instead of deciding: {log}"
-    );
-    let written = fs::read_to_string(&output_file).unwrap();
-    let one = |name: &str| {
-        let values: Vec<&str> = written
-            .lines()
-            .filter_map(|line| line.strip_prefix(name))
-            .collect();
-        let [value] = values.as_slice() else {
-            panic!("the prior-gate step wrote {name}{values:?}, not one value: {log}")
-        };
-        (*value).to_owned()
-    };
     PriorGate {
-        passed: one("passed="),
-        head: one("head="),
-        log,
+        passed: run.output("passed").to_owned(),
+        head: run.output("head").to_owned(),
+        log: run.log,
     }
 }
 
-/// Canned `gh` answers: the API path, the JSON body.
-type Responses<'a> = Vec<(&'a str, serde_json::Value)>;
 /// One history the rule is asked about: its name, the tagged commit, the event, the answers, the
 /// `passed` decision, the `head` the prebuilt step is keyed on.
-type Case<'a> = (&'a str, &'a str, &'a str, Responses<'a>, &'a str, &'a str);
+type Case<'a> = (&'a str, &'a str, &'a str, Answers, &'a str, &'a str);
 
-/// The gate counts as passed when a full green `Gate` covers the tagged tree. "Full" means the
-/// newest `Gate` on a commit is a completed success whose workflow run ran the whole feature-off
-/// set: a `ci.yml` push or schedule run of `main`, or a `ci.yml` pull-request run of a `queue/`
-/// head. That holds on the tagged commit itself, or on the head of exactly one merged pull
-/// request that is the tagged commit's second parent, has its tree, and already contained the
-/// `main` it merged into. Every other answer — a backfill, a squash, a stale or forged merge, a
-/// narrowed run's `Gate`, a failure on the way — runs the gate. The head is reported whenever its
+/// The gate counts as passed when every check the ruleset requires — `Gate` and the two ownership
+/// witnesses — passed on the tagged tree in a qualifying run. Of a commit's check-runs of one name,
+/// newest first, the first whose workflow run qualifies decides, and only a completed success
+/// passes; a run qualifies when it is this repository's `ci.yml` at that commit and archived every
+/// feature-off case: a push or schedule run of `main`, or a pull-request run of a `queue/` head.
+/// That holds on the tagged commit itself, or on the head of exactly one merged pull request of
+/// this repository into `main` that is the tagged commit's second parent, has its tree, and
+/// already contained the `main` it merged into. Every other answer — a backfill, a squash, a stale
+/// or forged merge, a fork, a narrowed run, more than one page of check-runs, no qualifying run
+/// among the newest ten, a failure on the way — runs the gate. The head is reported whenever its
 /// tree is the tagged tree, so the prebuilt step can be keyed on it.
 #[test]
 // One table of cases, which reads best whole.
@@ -2677,116 +2821,259 @@ type Case<'a> = (&'a str, &'a str, &'a str, Responses<'a>, &'a str, &'a str);
 fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
     let root = Scratch::new("release-reuse");
     let history = history(&root.0);
+    let required = required_checks(&yaml(".github/workflows/ci.yml"));
     let (fresh, fresh_head) = (history.fresh.0.as_str(), history.fresh.1.as_str());
     let (stale, stale_head) = (history.stale.0.as_str(), history.stale.1.as_str());
     let (twin, twin_head) = (history.twin.0.as_str(), history.twin.1.as_str());
     let (squash, squash_head) = (history.squash.0.as_str(), history.squash.1.as_str());
     let (forged, forged_head) = (history.forged.0.as_str(), history.forged.1.as_str());
+    let absent = "0123456789abcdef0123456789abcdef01234567";
     let ci = ".github/workflows/ci.yml";
-    let checks = |sha: &str| format!("repos/owner/repository/commits/{sha}/check-runs");
-    let pulls = |sha: &str| format!("repos/owner/repository/commits/{sha}/pulls");
-    let run = |id: &str| format!("repos/owner/repository/actions/runs/{id}");
-    let green = |run: &str| gate_run("completed", Some("success"), "github-actions", run);
-    let none = || json!({ "check_runs": [] });
-    let queue_pull = || workflow_run(ci, "pull_request", Some("queue/pr-119"));
-    let main_push = || workflow_run(ci, "push", Some("main"));
-    let merged = |merge_commit: &str, head: &str| json!([pull(1, true, merge_commit, head)]);
-    let (c_fresh, c_head, p_fresh, run_50, run_60) = (
-        checks(fresh),
-        checks(fresh_head),
-        pulls(fresh),
-        run("50"),
-        run("60"),
-    );
-    let (c_stale, c_stale_head, p_stale) = (checks(stale), checks(stale_head), pulls(stale));
-    let (c_twin, c_twin_head, p_twin) = (checks(twin), checks(twin_head), pulls(twin));
-    let (c_squash, c_squash_head, p_squash) = (checks(squash), checks(squash_head), pulls(squash));
-    let (c_forged, c_forged_head, p_forged) = (checks(forged), checks(forged_head), pulls(forged));
-    let (run_65, run_70, run_80, run_90, run_95) =
-        (run("65"), run("70"), run("80"), run("90"), run("95"));
-    let (c_fresh, c_head, p_fresh, run_50, run_60) = (
-        c_fresh.as_str(),
-        c_head.as_str(),
-        p_fresh.as_str(),
-        run_50.as_str(),
-        run_60.as_str(),
-    );
-    let (c_stale, c_stale_head, p_stale) =
-        (c_stale.as_str(), c_stale_head.as_str(), p_stale.as_str());
-    let (c_twin, c_twin_head, p_twin) = (c_twin.as_str(), c_twin_head.as_str(), p_twin.as_str());
-    let (c_squash, c_squash_head, p_squash) =
-        (c_squash.as_str(), c_squash_head.as_str(), p_squash.as_str());
-    let (c_forged, c_forged_head, p_forged) =
-        (c_forged.as_str(), c_forged_head.as_str(), p_forged.as_str());
-    let (run_65, run_70, run_80, run_90, run_95) = (
-        run_65.as_str(),
-        run_70.as_str(),
-        run_80.as_str(),
-        run_90.as_str(),
-        run_95.as_str(),
-    );
+    let repository = "owner/repository";
+    let gate = required[0].as_str();
+    let intel = required[2].as_str();
+    let green = |run: &str, started: &str| {
+        check_run("completed", Some("success"), "github-actions", run, started)
+    };
+    let newest = "2026-01-01T00:00:05Z";
+    let checks = |sha: &str, name: &str, runs: Vec<serde_json::Value>| {
+        (check_runs_path(sha, name), listing(name, &runs, None))
+    };
+    // Every required check green on `sha`, from workflow run `run`.
+    let passed = |sha: &str, run: &str| -> Answers {
+        required
+            .iter()
+            .map(|name| checks(sha, name, vec![green(run, newest)]))
+            .collect()
+    };
+    // `passed`, with the check named `name` answered by `runs` instead.
+    let passed_but = |sha: &str, run: &str, name: &str, runs: Vec<serde_json::Value>| -> Answers {
+        passed(sha, run)
+            .into_iter()
+            .map(|(path, body)| {
+                if path == check_runs_path(sha, name) {
+                    (path, listing(name, &runs, None))
+                } else {
+                    (path, body)
+                }
+            })
+            .collect()
+    };
+    let pulls = |sha: &str, list: serde_json::Value| (pulls_path(sha), list);
+    let run = |id: &str, body: serde_json::Value| (run_path(id), body);
+    let merged = |merge_commit: &str, head: &str| {
+        json!([pull(1, true, merge_commit, head, repository, "main")])
+    };
+    let queue_pull =
+        |sha: &str| workflow_run(ci, "pull_request", Some("queue/pr-119"), repository, sha);
+    let queue_push = |sha: &str| workflow_run(ci, "push", Some("queue/pr-119"), repository, sha);
+    let main_push = |sha: &str| workflow_run(ci, "push", Some("main"), repository, sha);
+    // The usual rule-2 history: the tagged commit's own check-runs unavailable, the pull request
+    // merged, the head's run described.
+    let head_run = |body: serde_json::Value| -> Answers {
+        vec![pulls(fresh, merged(fresh, fresh_head)), run("50", body)]
+    };
 
     let cases: Vec<Case> =
         vec![
         (
-            "a green Gate on the tagged commit from main's push run",
+            "the tagged commit passed every required check in main's push run",
             fresh,
             "push",
-            vec![
-                (c_fresh, green("60")),
-                (run_60, main_push()),
-                (p_fresh, merged(fresh, fresh_head)),
-            ],
+            [
+                passed(fresh, "60"),
+                vec![
+                    run("60", main_push(fresh)),
+                    pulls(fresh, merged(fresh, fresh_head)),
+                ],
+            ]
+            .concat(),
             "true",
             fresh_head,
         ),
         (
-            "a green Gate on the tagged commit from the nightly run",
+            "the tagged commit passed every required check in the nightly run",
             fresh,
             "push",
-            vec![
-                (c_fresh, green("65")),
-                (run_65, workflow_run(ci, "schedule", Some("main"))),
-                (p_fresh, merged(fresh, fresh_head)),
-            ],
+            [
+                passed(fresh, "65"),
+                vec![
+                    run("65", workflow_run(ci, "schedule", Some("main"), repository, fresh)),
+                    pulls(fresh, merged(fresh, fresh_head)),
+                ],
+            ]
+            .concat(),
             "true",
             fresh_head,
         ),
         (
-            "an up-to-date merged pull request whose head's Gate is green from its queue run",
+            "an up-to-date merged pull request whose head passed every check in its queue run",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (p_fresh, merged(fresh, fresh_head)),
-                (c_head, green("50")),
-                (run_50, queue_pull()),
-            ],
+            [head_run(queue_pull(fresh_head)), passed(fresh_head, "50")].concat(),
             "true",
             fresh_head,
         ),
         (
-            "the tagged commit's check-runs are unavailable, and the head's Gate is green",
+            "the tagged commit's check-runs are an empty listing, and the head passed",
             fresh,
             "push",
-            vec![
-                (p_fresh, merged(fresh, fresh_head)),
-                (c_head, green("50")),
-                (run_50, queue_pull()),
-            ],
+            [
+                vec![checks(fresh, gate, vec![])],
+                head_run(queue_pull(fresh_head)),
+                passed(fresh_head, "50"),
+            ]
+            .concat(),
             "true",
             fresh_head,
         ),
         (
-            "the head's Gate is green but from its queue push run, which was narrowed",
+            "the head's newest Gate is from its queue push run, an older one from its pull request",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (p_fresh, merged(fresh, fresh_head)),
-                (c_head, green("80")),
-                (run_80, workflow_run(ci, "push", Some("queue/pr-119"))),
-            ],
+            [
+                head_run(queue_pull(fresh_head)),
+                vec![run("80", queue_push(fresh_head))],
+                passed_but(
+                    fresh_head,
+                    "50",
+                    gate,
+                    vec![green("80", newest), green("50", "2026-01-01T00:00:01Z")],
+                ),
+            ]
+            .concat(),
+            "true",
+            fresh_head,
+        ),
+        (
+            "a qualifying green Gate tenth among the head's newest check-runs",
+            fresh,
+            "push",
+            [
+                head_run(queue_pull(fresh_head)),
+                vec![run("80", queue_push(fresh_head))],
+                passed_but(fresh_head, "50", gate, {
+                    let mut runs: Vec<serde_json::Value> = (1..=9)
+                        .map(|minute| green("80", &format!("2026-01-01T00:{minute:02}:00Z")))
+                        .collect();
+                    runs.push(green("50", "2026-01-01T00:00:00Z"));
+                    runs
+                }),
+            ]
+            .concat(),
+            "true",
+            fresh_head,
+        ),
+        (
+            "the head's newest qualifying Gate failed, though an older one is green",
+            fresh,
+            "push",
+            [
+                head_run(queue_pull(fresh_head)),
+                vec![run("51", queue_pull(fresh_head))],
+                passed_but(
+                    fresh_head,
+                    "50",
+                    gate,
+                    vec![
+                        check_run("completed", Some("failure"), "github-actions", "51", newest),
+                        green("50", "2026-01-01T00:00:01Z"),
+                    ],
+                ),
+            ]
+            .concat(),
+            "false",
+            fresh_head,
+        ),
+        (
+            "a qualifying green Gate eleventh among the head's newest check-runs",
+            fresh,
+            "push",
+            [
+                head_run(queue_pull(fresh_head)),
+                vec![run("80", queue_push(fresh_head))],
+                passed_but(fresh_head, "50", gate, {
+                    let mut runs: Vec<serde_json::Value> = (1..=10)
+                        .map(|minute| green("80", &format!("2026-01-01T00:{minute:02}:00Z")))
+                        .collect();
+                    runs.push(green("50", "2026-01-01T00:00:00Z"));
+                    runs
+                }),
+            ]
+            .concat(),
+            "false",
+            fresh_head,
+        ),
+        (
+            "the head's Gate is green but an ownership witness failed",
+            fresh,
+            "push",
+            [
+                head_run(queue_pull(fresh_head)),
+                passed_but(
+                    fresh_head,
+                    "50",
+                    intel,
+                    vec![check_run("completed", Some("failure"), "github-actions", "50", newest)],
+                ),
+            ]
+            .concat(),
+            "false",
+            fresh_head,
+        ),
+        (
+            "the head's Gate is green but an ownership witness has no check-run",
+            fresh,
+            "push",
+            [
+                head_run(queue_pull(fresh_head)),
+                passed_but(fresh_head, "50", intel, vec![]),
+            ]
+            .concat(),
+            "false",
+            fresh_head,
+        ),
+        (
+            "the head's Gate is green but an ownership witness's check-runs are unavailable",
+            fresh,
+            "push",
+            [
+                head_run(queue_pull(fresh_head)),
+                passed(fresh_head, "50")
+                    .into_iter()
+                    .filter(|(path, _)| path != &check_runs_path(fresh_head, intel))
+                    .collect(),
+            ]
+            .concat(),
+            "false",
+            fresh_head,
+        ),
+        (
+            "the head has more than one page of Gate check-runs",
+            fresh,
+            "push",
+            [
+                head_run(queue_pull(fresh_head)),
+                passed(fresh_head, "50")
+                    .into_iter()
+                    .map(|(path, body)| {
+                        if path == check_runs_path(fresh_head, gate) {
+                            (path, listing(gate, &[green("50", newest)], Some(101)))
+                        } else {
+                            (path, body)
+                        }
+                    })
+                    .collect(),
+            ]
+            .concat(),
+            "false",
+            fresh_head,
+        ),
+        (
+            "the head's Gate is green but only from its queue push run, which was narrowed",
+            fresh,
+            "push",
+            [head_run(queue_push(fresh_head)), passed(fresh_head, "50")].concat(),
             "false",
             fresh_head,
         ),
@@ -2794,12 +3081,11 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "the head's Gate is green but from a pull request of an ordinary branch",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (p_fresh, merged(fresh, fresh_head)),
-                (c_head, green("70")),
-                (run_70, workflow_run(ci, "pull_request", Some("feat/x"))),
-            ],
+            [
+                head_run(workflow_run(ci, "pull_request", Some("feat/x"), repository, fresh_head)),
+                passed(fresh_head, "50"),
+            ]
+            .concat(),
             "false",
             fresh_head,
         ),
@@ -2807,15 +3093,17 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "the head's Gate is green but from a merge-group run",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (p_fresh, merged(fresh, fresh_head)),
-                (c_head, green("95")),
-                (
-                    run_95,
-                    workflow_run(ci, "merge_group", Some("gh-readonly-queue/main/pr-7")),
-                ),
-            ],
+            [
+                head_run(workflow_run(
+                    ci,
+                    "merge_group",
+                    Some("gh-readonly-queue/main/pr-7"),
+                    repository,
+                    fresh_head,
+                )),
+                passed(fresh_head, "50"),
+            ]
+            .concat(),
             "false",
             fresh_head,
         ),
@@ -2823,15 +3111,43 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "the head's Gate is green but from another workflow",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (p_fresh, merged(fresh, fresh_head)),
-                (c_head, green("90")),
-                (
-                    run_90,
-                    workflow_run(".github/workflows/package.yml", "push", Some("main")),
-                ),
-            ],
+            [
+                head_run(workflow_run(
+                    ".github/workflows/package.yml",
+                    "pull_request",
+                    Some("queue/pr-119"),
+                    repository,
+                    fresh_head,
+                )),
+                passed(fresh_head, "50"),
+            ]
+            .concat(),
+            "false",
+            fresh_head,
+        ),
+        (
+            "the head's Gate is green but from a run of a fork",
+            fresh,
+            "push",
+            [
+                head_run(workflow_run(
+                    ci,
+                    "pull_request",
+                    Some("queue/pr-119"),
+                    "fork/repository",
+                    fresh_head,
+                )),
+                passed(fresh_head, "50"),
+            ]
+            .concat(),
+            "false",
+            fresh_head,
+        ),
+        (
+            "the head's Gate is green but from a run at another commit",
+            fresh,
+            "push",
+            [head_run(queue_pull(stale_head)), passed(fresh_head, "50")].concat(),
             "false",
             fresh_head,
         ),
@@ -2839,11 +3155,11 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "the head's Gate names no workflow run",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (p_fresh, merged(fresh, fresh_head)),
-                (c_head, green("")),
-            ],
+            [
+                head_run(queue_pull(fresh_head)),
+                passed_but(fresh_head, "50", gate, vec![green("", newest)]),
+            ]
+            .concat(),
             "false",
             fresh_head,
         ),
@@ -2851,27 +3167,19 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "the workflow run of the head's Gate is unavailable",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (p_fresh, merged(fresh, fresh_head)),
-                (c_head, green("50")),
-            ],
+            [
+                vec![pulls(fresh, merged(fresh, fresh_head))],
+                passed(fresh_head, "50"),
+            ]
+            .concat(),
             "false",
             fresh_head,
         ),
         (
-            "the head's newest Gate failed",
+            "the head's check-runs are unavailable",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (p_fresh, merged(fresh, fresh_head)),
-                (
-                    c_head,
-                    gate_run("completed", Some("failure"), "github-actions", "50"),
-                ),
-                (run_50, queue_pull()),
-            ],
+            head_run(queue_pull(fresh_head)),
             "false",
             fresh_head,
         ),
@@ -2879,12 +3187,16 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "the head's newest Gate is still running",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (p_fresh, merged(fresh, fresh_head)),
-                (c_head, gate_run("in_progress", None, "github-actions", "50")),
-                (run_50, queue_pull()),
-            ],
+            [
+                head_run(queue_pull(fresh_head)),
+                passed_but(
+                    fresh_head,
+                    "50",
+                    gate,
+                    vec![check_run("in_progress", None, "github-actions", "50", newest)],
+                ),
+            ]
+            .concat(),
             "false",
             fresh_head,
         ),
@@ -2892,15 +3204,16 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "the head's green Gate was recorded by another app",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (p_fresh, merged(fresh, fresh_head)),
-                (
-                    c_head,
-                    gate_run("completed", Some("success"), "impostor", "50"),
+            [
+                head_run(queue_pull(fresh_head)),
+                passed_but(
+                    fresh_head,
+                    "50",
+                    gate,
+                    vec![check_run("completed", Some("success"), "impostor", "50", newest)],
                 ),
-                (run_50, queue_pull()),
-            ],
+            ]
+            .concat(),
             "false",
             fresh_head,
         ),
@@ -2908,26 +3221,85 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "the tagged commit's own Gate is green but from a pull request of an ordinary branch",
             fresh,
             "push",
-            vec![
-                (c_fresh, green("70")),
-                (run_70, workflow_run(ci, "pull_request", Some("feat/x"))),
-                (p_fresh, merged(fresh, fresh_head)),
-                (c_head, none()),
-            ],
+            [
+                passed(fresh, "70"),
+                vec![
+                    run("70", workflow_run(ci, "pull_request", Some("feat/x"), repository, fresh)),
+                    pulls(fresh, merged(fresh, fresh_head)),
+                    checks(fresh_head, gate, vec![]),
+                ],
+            ]
+            .concat(),
             "false",
             fresh_head,
         ),
         (
-            "a backfill, whatever is green",
+            "the pull request's head is a fork's",
+            fresh,
+            "push",
+            [
+                vec![
+                    pulls(
+                        fresh,
+                        json!([pull(1, true, fresh, fresh_head, "fork/repository", "main")]),
+                    ),
+                    run("50", queue_pull(fresh_head)),
+                ],
+                passed(fresh_head, "50"),
+            ]
+            .concat(),
+            "false",
+            "",
+        ),
+        (
+            "the pull request targets another branch",
+            fresh,
+            "push",
+            [
+                vec![
+                    pulls(
+                        fresh,
+                        json!([pull(1, true, fresh, fresh_head, repository, "release/1")]),
+                    ),
+                    run("50", queue_pull(fresh_head)),
+                ],
+                passed(fresh_head, "50"),
+            ]
+            .concat(),
+            "false",
+            "",
+        ),
+        (
+            "a backfill, whatever passed",
             fresh,
             "workflow_dispatch",
-            vec![
-                (c_fresh, green("60")),
-                (run_60, main_push()),
-                (p_fresh, merged(fresh, fresh_head)),
-                (c_head, green("50")),
-                (run_50, queue_pull()),
-            ],
+            [
+                passed(fresh, "60"),
+                vec![run("60", main_push(fresh))],
+                head_run(queue_pull(fresh_head)),
+                passed(fresh_head, "50"),
+            ]
+            .concat(),
+            "false",
+            "",
+        ),
+        (
+            "a schedule event, whatever passed",
+            fresh,
+            "schedule",
+            [passed(fresh, "60"), vec![run("60", main_push(fresh))]].concat(),
+            "false",
+            "",
+        ),
+        (
+            "the tagged commit is not in the checkout",
+            absent,
+            "push",
+            [
+                passed(absent, "60"),
+                vec![run("60", main_push(absent)), pulls(absent, merged(absent, fresh_head))],
+            ]
+            .concat(),
             "false",
             "",
         ),
@@ -2935,12 +3307,14 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "main moved after the branch left it, so the merge's tree is not the head's",
             stale,
             "push",
-            vec![
-                (c_stale, none()),
-                (p_stale, merged(stale, stale_head)),
-                (c_stale_head, green("50")),
-                (run_50, queue_pull()),
-            ],
+            [
+                vec![
+                    pulls(stale, merged(stale, stale_head)),
+                    run("50", queue_pull(stale_head)),
+                ],
+                passed(stale_head, "50"),
+            ]
+            .concat(),
             "false",
             "",
         ),
@@ -2948,12 +3322,14 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "the trees agree but main before the merge is not in the head's history",
             twin,
             "push",
-            vec![
-                (c_twin, none()),
-                (p_twin, merged(twin, twin_head)),
-                (c_twin_head, green("50")),
-                (run_50, queue_pull()),
-            ],
+            [
+                vec![
+                    pulls(twin, merged(twin, twin_head)),
+                    run("50", queue_pull(twin_head)),
+                ],
+                passed(twin_head, "50"),
+            ]
+            .concat(),
             "false",
             twin_head,
         ),
@@ -2961,12 +3337,14 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "a squash, whose head is not the tagged commit's second parent",
             squash,
             "push",
-            vec![
-                (c_squash, none()),
-                (p_squash, merged(squash, squash_head)),
-                (c_squash_head, green("50")),
-                (run_50, queue_pull()),
-            ],
+            [
+                vec![
+                    pulls(squash, merged(squash, squash_head)),
+                    run("50", queue_pull(squash_head)),
+                ],
+                passed(squash_head, "50"),
+            ]
+            .concat(),
             "false",
             "",
         ),
@@ -2974,12 +3352,14 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "the merge commit's tree carries a file its up-to-date head never had",
             forged,
             "push",
-            vec![
-                (c_forged, none()),
-                (p_forged, merged(forged, forged_head)),
-                (c_forged_head, green("50")),
-                (run_50, queue_pull()),
-            ],
+            [
+                vec![
+                    pulls(forged, merged(forged, forged_head)),
+                    run("50", queue_pull(forged_head)),
+                ],
+                passed(forged_head, "50"),
+            ]
+            .concat(),
             "false",
             "",
         ),
@@ -2987,18 +3367,20 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "two merged pull requests name the tagged commit",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (
-                    p_fresh,
-                    json!([
-                        pull(1, true, fresh, fresh_head),
-                        pull(5, true, fresh, fresh_head)
-                    ]),
-                ),
-                (c_head, green("50")),
-                (run_50, queue_pull()),
-            ],
+            [
+                vec![
+                    pulls(
+                        fresh,
+                        json!([
+                            pull(1, true, fresh, fresh_head, repository, "main"),
+                            pull(5, true, fresh, fresh_head, repository, "main")
+                        ]),
+                    ),
+                    run("50", queue_pull(fresh_head)),
+                ],
+                passed(fresh_head, "50"),
+            ]
+            .concat(),
             "false",
             "",
         ),
@@ -3006,12 +3388,17 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "the pull request was never merged",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (p_fresh, json!([pull(1, false, fresh, fresh_head)])),
-                (c_head, green("50")),
-                (run_50, queue_pull()),
-            ],
+            [
+                vec![
+                    pulls(
+                        fresh,
+                        json!([pull(1, false, fresh, fresh_head, repository, "main")]),
+                    ),
+                    run("50", queue_pull(fresh_head)),
+                ],
+                passed(fresh_head, "50"),
+            ]
+            .concat(),
             "false",
             "",
         ),
@@ -3019,12 +3406,14 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "the pull request merged as another commit",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (p_fresh, merged(stale, fresh_head)),
-                (c_head, green("50")),
-                (run_50, queue_pull()),
-            ],
+            [
+                vec![
+                    pulls(fresh, merged(stale, fresh_head)),
+                    run("50", queue_pull(fresh_head)),
+                ],
+                passed(fresh_head, "50"),
+            ]
+            .concat(),
             "false",
             "",
         ),
@@ -3032,12 +3421,14 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "the pull request names no head commit",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (p_fresh, merged(fresh, "not-a-commit")),
-                (c_head, green("50")),
-                (run_50, queue_pull()),
-            ],
+            [
+                vec![
+                    pulls(fresh, merged(fresh, "not-a-commit")),
+                    run("50", queue_pull(fresh_head)),
+                ],
+                passed(fresh_head, "50"),
+            ]
+            .concat(),
             "false",
             "",
         ),
@@ -3045,11 +3436,7 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
             "the tagged commit's pull requests are unavailable",
             fresh,
             "push",
-            vec![
-                (c_fresh, none()),
-                (c_head, green("50")),
-                (run_50, queue_pull()),
-            ],
+            [vec![run("50", queue_pull(fresh_head))], passed(fresh_head, "50")].concat(),
             "false",
             "",
         ),
@@ -3057,11 +3444,7 @@ fn a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it() {
 
     let mut wrong = Vec::new();
     for (index, (name, commit, event, responses, expected, head)) in cases.into_iter().enumerate() {
-        let borrowed: Vec<(&str, serde_json::Value)> = responses
-            .iter()
-            .map(|(path, body)| (*path, body.clone()))
-            .collect();
-        let answer = prior_gate(&root.0, index, &history, commit, event, &borrowed);
+        let answer = prior_gate(&root.0, index, &history, commit, event, &responses);
         if answer.passed != expected || answer.head != head {
             wrong.push(format!(
                 "{name}: passed={} head={}, expected passed={expected} head={head:?}\n{}",
@@ -3328,8 +3711,8 @@ fn the_prune_scan_recognises_a_once_per_process_prune() {
 /// A pull request can edit `package.yml` to run on `pull_request`, and the lookup is keyed on
 /// that pull request's head, so such a run of the head is reachable. So is a queue run that
 /// failed or was cancelled after uploading. The prebuilt step refuses all three twice: in the API
-/// query and in its `jq` filter. The stub answers by path alone, so the query half is held as
-/// text and the filter half by these runs.
+/// query and in its `jq` filter. The stub answers by path and query, so the query half is held by
+/// the answer's name and as text, and the filter half by these runs.
 #[test]
 fn a_release_publishes_no_pull_request_or_unsuccessful_package_run_of_the_merged_head() {
     let release = yaml(".github/workflows/release.yml");
@@ -3343,8 +3726,8 @@ fn a_release_publishes_no_pull_request_or_unsuccessful_package_run_of_the_merged
 
     let root = Scratch::new("release-prebuilt-review");
     let commit = "3ec2deb977bb19c292a611dcf92a3e676352864a";
-    let runs = "repos/owner/repository/actions/workflows/package.yml/runs";
-    let held = "repos/owner/repository/actions/runs/7/artifacts";
+    let runs = package_runs_path(commit);
+    let held = artifacts_path(7);
     let four = artifacts(
         &[
             "release-x86_64-unknown-linux-gnu",
@@ -3379,7 +3762,7 @@ fn a_release_publishes_no_pull_request_or_unsuccessful_package_run_of_the_merged
             &root.0,
             index,
             commit,
-            &[(runs, listing), (held, four.clone())],
+            &[(runs.clone(), listing), (held.clone(), four.clone())],
         );
         let (decision, log) = answer.split_once('\n').unwrap();
         if !decision.is_empty() {

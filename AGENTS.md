@@ -91,7 +91,7 @@ shards leave a partition unrun, or when `Gate` misses a job. Local `task test` s
 
 **A pull request from an ordinary branch runs the feature-off build on number semantics only.**
 With `FEATURE_OFF` set to `number-semantics` (a `pull_request` run whose head is not a `queue/`
-branch, and a `merge_group` run), the feature-off archive keeps every feature-off package except
+branch of this repository, and a `merge_group` run), the feature-off archive keeps every feature-off package except
 ess-cli, plus ess-cli's unit tests and its `binary64*`, `normalization*`, `schema*` and
 `execution_recovery` binaries (`FEATURE_OFF_NUMBER_SEMANTICS` in `Taskfile.yml`). The rest of
 ess-cli's feature-off run — every other ess-cli integration binary compiled without
@@ -185,8 +185,8 @@ refusal saying the IR is not the compiled model means `ess-ui`'s pinned ESS rele
 workspace compile the example differently: move the `ess-ui` pin to a commit built on this release.
 
 **The release gate is a full CI gate on the tagged tree.** `release.yml` runs the reusable
-`ci.yml` gate on the tagged commit in full unless a full green `Gate` already covers that tree
-(below); either run is the full pre-release suite. Run no local pre-release suite and no local
+`ci.yml` gate on the tagged commit in full unless every check the ruleset requires already passed
+on that tree in a qualifying run (below); either run is the full pre-release suite. Run no local pre-release suite and no local
 full gate before a release: each unit passes its package gates, the queue pull request's CI gates
 the merge into `main`, and that run or the tag run gates the release. A wave holds at most 5
 stories and ends in one release.
@@ -208,32 +208,38 @@ cases in `ess-ui-react` exit 127 and `cargo test` stops there.
 Consumer coverage is not part of that bar while it is parked (revision 3, above).
 The release workflow runs the reusable gate, the WebAssembly realization check and native
 packaging concurrently at that exact commit, then retains a read-only preparation artifact only
-after all succeed. Its `prior-gate` step skips the gate only when a full green `Gate` already
-covers the tagged bytes. "Green" means the newest `Gate` check-run GitHub Actions recorded on a
-commit is a completed success; "full" means that check-run's workflow run is a `ci.yml` `push` or
-`schedule` run of `main` or a `ci.yml` `pull_request` run whose head branch is `queue/…` (a pull
-request from any other head and a `merge_group` run are narrowed, above, and never count). The
-gate is skipped when **either** of these holds:
+after all succeed. Its `prior-gate` step skips the gate only when every check the ruleset
+requires — `Gate`, `Output ownership (macos-15)` and `Output ownership (macos-15-intel)` — already
+passed on the tagged bytes in a qualifying run. Of a commit's check-runs of one name (GitHub
+Actions' own, newest first, at most one page of 100), the first whose workflow run qualifies
+decides, and only a completed success passes; at most the newest ten are looked up. A run
+qualifies when it is this repository's `ci.yml` at that commit (`head_repository`, `head_sha`) and
+archived every feature-off case: a `push` or `schedule` run of `main`, or a `pull_request` run
+whose head branch is `queue/…` (a pull request from any other head or from a fork, and a
+`merge_group` run, are narrowed, above, and never count). The gate is skipped when **either** of
+these holds:
 
-1. the tagged commit itself has a full green `Gate`, normally from the `main` push run; or
+1. the tagged commit itself passed every required check, normally in the `main` push run; or
 2. all of the following hold:
-   - `GET /repos/{owner}/{repo}/commits/{sha}/pulls` returns exactly one merged pull request
-     whose `merge_commit_sha` is the tagged commit, and that pull request's head is the tagged
-     commit's second parent;
+   - `GET /repos/{owner}/{repo}/commits/{sha}/pulls` returns exactly one merged pull request of
+     this repository (`head.repo`) into `main` whose `merge_commit_sha` is the tagged commit, and
+     that pull request's head is the tagged commit's second parent;
    - `git rev-parse <sha>^{tree}` equals `<head>^{tree}` (the merge into `main` is a new commit,
      so trees are compared, not commits);
    - the tagged commit's first parent (`main` before the merge) is an ancestor of that head;
-   - that head has a full green `Gate`, which is its queue pull-request run.
+   - that head passed every required check in a qualifying run, normally its queue pull-request
+     run (a `main` push or nightly run at that commit would count too).
 
 Anything else runs the gate: a backfill (`workflow_dispatch`), an API failure, a squash, a merge
-whose base moved, a merge whose tree is not its head's. The tree equality makes the tested bytes
-the tagged bytes. The ancestry makes the head's `Gate` a test of those bytes: a `pull_request`
-run tests the head merged into the base of its day, and under the ruleset's strict status-check
-policy that is the head's own tree. So tag the merge commit as soon as it lands; there is no need
-to wait for `main`'s run. A call from `release.yml` passes `checkout-ref`, which `ci.yml` never
-narrows, so a backfill dispatched from any branch runs it in full. The macOS output-ownership
-witnesses run in a tag's gate and in every pull-request run; only a backfill, which may gate a
-commit older than their test target, skips them. `ci_lanes.rs`
+whose base moved, a merge whose tree is not its head's, a fork's pull request or run. The tree
+equality makes the tested bytes the tagged bytes. The ancestry makes the head's run a test of
+those bytes: a `pull_request` run tests the head merged into the base of its day, and under the
+ruleset's strict status-check policy that is the head's own tree. So tag the merge commit as soon
+as it lands; there is no need to wait for `main`'s run. A call from `release.yml` passes
+`checkout-ref`, which `ci.yml` never narrows, so a backfill dispatched from any branch runs it in
+full. The macOS output-ownership witnesses run in a tag's gate and in every pull-request run, and
+a tag that reuses a commit's checks requires both witnesses green there beside `Gate`; only a
+backfill, which may gate a commit older than their test target, skips them. `ci_lanes.rs`
 (`a_release_runs_its_full_gate_unless_a_full_gate_passed_the_tagged_tree`,
 `a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it`) holds both workflows to
 that and runs the step against real Git histories.
