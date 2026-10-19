@@ -147,6 +147,41 @@ fn go_admits_the_suite_and_reports_the_observation_unsupported() {
     );
 }
 
+/// A wrapped value-invariant id arrived in suite/52: below it the Go runtime refuses the id
+/// itself, as the TypeScript runtime does, before any target is reached (review 2026-10-19, B9).
+#[test]
+fn go_refuses_a_wrapped_id_below_suite_52_before_any_target_is_reached() {
+    let suite = suite(&ir());
+    let directory = support_go::package(
+        "wrapped-invariants-old-reader",
+        &suite,
+        &[support_go::TRANSCRIPT_TARGET],
+    );
+    support_go::rewrite_suite(&directory, |document| {
+        document["provenance"]["suite_version"] = "ess-conformance/50".into();
+    });
+    let transcript = directory.join("transcript.json");
+    std::fs::write(&transcript, "{}").unwrap();
+    let go = support_go::go_test(
+        &directory,
+        "TestTranscriptReplay",
+        &[
+            ("ESS_TRANSCRIPT", transcript.to_str().unwrap()),
+            (
+                "ESS_TRANSCRIPT_DIVERGENCE",
+                directory.join("divergence.txt").to_str().unwrap(),
+            ),
+        ],
+    );
+    assert!(
+        go.log
+            .contains("a wrapped value-invariant scenario requires suite/52 or /53"),
+        "{}",
+        go.log
+    );
+    assert!(go.outcomes.is_empty() && !go.success, "{}", go.log);
+}
+
 // ---- TypeScript ------------------------------------------------------------------------------
 
 /// Replays a recorded transcript (`support_go::Recorder`) as a TypeScript target, matching each

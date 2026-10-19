@@ -101,7 +101,8 @@ pub(crate) const OFFSET: &str = "one constant offset (`upper == lower + 5`, `iss
 pub(crate) const DISTINCT: &str = "distinct list members (`distinct: {in, as, by}`)";
 pub(crate) const UTF8_BYTES: &str = "the UTF-8 byte length of a text (`label.utf8_bytes`)";
 pub(crate) const ROW_SET: &str =
-    "a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`)";
+    "a row set (`when_related: {entity, where, …}`, `{related: {entity, where, field}}`, \
+     `{related: {entity, where, order_by, first}}`)";
 pub(crate) const CALENDAR_WINDOW: &str =
     "a calendar window (`window: {at, days, from, to, offset}`, ess/22)";
 pub(crate) const COMPENSATING_REFUSAL: &str =

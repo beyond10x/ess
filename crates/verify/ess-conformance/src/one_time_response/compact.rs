@@ -586,14 +586,24 @@ impl TraceIn {
     }
 }
 
+/// A list that is either left out or written: `null` is neither, and is refused as the Go and
+/// TypeScript runtimes refuse it (review 2026-10-19).
+fn listed<'de, D, T>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    <Vec<T> as serde::Deserialize>::deserialize(deserializer).map(Some)
+}
+
 /// A scenario as read, before it is expanded.
 #[derive(serde::Deserialize)]
 pub(crate) struct ScenarioIn {
     #[serde(default)]
     one_time_response: Option<TraceIn>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "listed")]
     absent_events: Option<Vec<AbsentEvents>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "listed")]
     unpublished_events: Option<Vec<Unpublished>>,
     purpose: ScenarioPurpose,
     steps: Vec<ScenarioStep>,

@@ -203,6 +203,56 @@ fn validate_json_keeps_every_id_and_links_it_to_its_cause() {
     );
 }
 
+/// Two ordinary refusals of one command (review 2026-10-19, T5): each cell sending a follow-up
+/// outcome is linked to that outcome's own refusal, not to the first refusal of its command.
+#[test]
+fn a_cell_is_linked_to_its_own_outcome_among_several_refused() {
+    let text = MODEL.replace(
+        "      - {name: body, type: String}\n    outcomes:\n      - name: edited\n",
+        "      - {name: body, type: String}
+      - {name: priority, type: Integer}
+    outcomes:
+      - name: escalated
+        when: priority > 5
+        updates: vault.keys.Note
+        instance: note_id
+        sets: {body: input.body}
+        emits: [vault.keys.NoteEdited]
+        payload:
+          vault.keys.NoteEdited: {note_id: input.note_id}
+      - name: edited\n",
+    );
+    assert_ne!(text, MODEL, "the second outcome is declared");
+    let path = model("two-outcomes");
+    fs::write(&path, &text).unwrap();
+    let output = ess(&[
+        "specify",
+        "validate",
+        "--path",
+        path.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = report["completeness"]["unscenarioed"].as_array().unwrap();
+    let cause = |scenario: &str| {
+        entries
+            .iter()
+            .find(|entry| entry["scenario"] == scenario)
+            .unwrap_or_else(|| panic!("{scenario} is refused: {entries:#?}"))
+            .get("caused_by")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    };
+    for outcome in ["edited", "escalated"] {
+        let own = format!("vault.keys.EditNote/outcome/{outcome}");
+        assert_eq!(cause(&own), None, "{own} is a cause of its own");
+        let cell =
+            format!("{CELL}/command/vault.keys.EditNote/{outcome}/as/actor/vault.keys.Owner");
+        assert_eq!(cause(&cell), Some(own), "{cell}: {entries:#?}");
+    }
+}
+
 /// The one-time responses guide shows this model's output, its notes left out.
 #[test]
 fn the_guide_shows_what_synthesize_prints() {

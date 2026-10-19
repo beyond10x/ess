@@ -1661,8 +1661,9 @@ impl Projector<'_> {
                     LoweringCode::RowSetUnsupported,
                     format!("{}.{}.when_related", command.name, outcome.name.as_str()),
                     "a branch reading the rows a selector selects (ess/22, `when_related: {entity, \
-                     where, …}` or `{related: {entity, where, field}}`) has no Entity Runtime \
-                     definition; an entity-core operation reads its arguments and the one row its \
+                     where, …}` or `{related: {entity, where, field}}`), or the head of an ordered \
+                     selection (ess/27, `{related: {entity, where, order_by, first}}`), has no \
+                     Entity Runtime definition; an entity-core operation reads its arguments and the one row its \
                      request names, and has no query over other rows",
                 );
                 refused = true;

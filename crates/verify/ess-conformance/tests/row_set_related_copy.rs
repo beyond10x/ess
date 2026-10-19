@@ -113,6 +113,79 @@ fn the_copied_value_is_steered_through_the_row_it_is_copied_from() {
     );
 }
 
+/// [`MODEL`] with `Requalify` copying a tier's value onto an existing seat: the copy is written by
+/// an update.
+fn copied_on_update() -> String {
+    MODEL
+        .replace(
+            "    may: [demo.seats.DefineTier, demo.seats.Issue, demo.seats.Check]",
+            "    may: [demo.seats.DefineTier, demo.seats.Issue, demo.seats.Requalify, demo.seats.Check]",
+        )
+        .replace(
+            "  - name: demo.seats.Check\n",
+            "  - name: demo.seats.Requalify
+    input:
+      - {name: seat_id, type: demo.seats.SeatId}
+      - {name: tier_id, type: demo.seats.TierId}
+    outcomes:
+      - name: requalified
+        updates: demo.seats.Seat
+        instance: seat_id
+        sets: {qualifies: {related: {via: input.tier_id, field: qualifies}}}
+        emits: [demo.seats.Issued]
+        payload:
+          demo.seats.Issued: {seat_id: input.seat_id}
+  - name: demo.seats.Check\n",
+        )
+}
+
+/// `text` synthesized with nothing refused, and its verdicts against the interpreter of `text` and
+/// of each of `faulty`.
+fn verdicts(
+    label: &str,
+    text: &str,
+    faulty: &[String],
+) -> (BTreeMap<String, Status>, Vec<BTreeMap<String, Status>>) {
+    assert_ne!(text, MODEL, "{label}: the variant is written");
+    let synthesis = synthesize(&model(text));
+    assert!(
+        synthesis.refusals.is_empty(),
+        "{label}: nothing is refused: {:#?}",
+        synthesis.refusals
+    );
+    let suite = synthesis.suite;
+    let healthy = run(&suite, &Interpreted::for_model(model(text)));
+    assert!(
+        healthy.values().all(|status| *status == Status::Passed),
+        "{label}: {healthy:#?}"
+    );
+    let faulty = faulty
+        .iter()
+        .map(|faulty| run(&suite, &Interpreted::for_model(model(faulty))))
+        .collect();
+    (healthy, faulty)
+}
+
+/// A copy written by an update is observed: the update's own scenario passes the interpreter and
+/// fails a target storing either constant instead of the tier's value (review 2026-10-19, T3).
+#[test]
+fn a_copy_written_by_an_update_is_read_through_its_row() {
+    let text = copied_on_update();
+    let copy = "sets: {qualifies: {related: {via: input.tier_id, field: qualifies}}}";
+    assert!(text.contains(copy));
+    let faulty: Vec<String> = ["true", "false"]
+        .into_iter()
+        .map(|constant| text.replace(copy, &format!("sets: {{qualifies: {constant}}}")))
+        .collect();
+    let (healthy, faulty) = verdicts("update", &text, &faulty);
+    let id = "demo.seats.Requalify/outcome/requalified";
+    assert!(healthy.contains_key(id), "{healthy:#?}");
+    assert!(
+        faulty.iter().any(|statuses| statuses[id] != Status::Passed),
+        "{faulty:#?}"
+    );
+}
+
 #[test]
 fn the_interpreter_passes_and_a_target_copying_no_tier_fails() {
     let suite = suite();

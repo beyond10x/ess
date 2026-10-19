@@ -673,3 +673,121 @@ fn the_browser_product_admits_and_runs_the_observation() {
         }
     }
 }
+
+// ---- recursion and overflow (review 2026-10-19, T1, B4, B8) ---------------------------------------
+
+/// [`model`] with `extra` type declarations after the `Tag`.
+fn with_types(field: &str, type_ref: &str, extra: &str) -> String {
+    model(field, type_ref, COUNT).replace("entities:\n", &format!("{extra}entities:\n"))
+}
+
+/// The refusals of `synthesis` whose line contains `needle`, with each one's help.
+fn refused_with<'a>(synthesis: &'a Synthesis, needle: &str) -> Vec<(String, &'a str)> {
+    synthesis
+        .refusals
+        .iter()
+        .filter(|refusal| refusal.to_string().contains(needle))
+        .map(|refusal| (refusal.to_string(), refusal.cause.hint()))
+        .collect()
+}
+
+/// The help of a recursion or overflow refusal names what an authored scenario can do, which is
+/// expect a row's exact value; ess-scenario/1 states no invariant expectation.
+fn assert_no_authored_invariant_check(help: &str) {
+    assert!(help.contains("exact value"), "{help}");
+    for claim in [
+        "checked only by an authored",
+        "check the invariant with an authored",
+    ] {
+        assert!(!help.contains(claim), "{help}");
+    }
+}
+
+/// A `Tag` inside a struct that reaches itself: the position outside the recursion is observed,
+/// the one across the back-edge is refused as recursive.
+#[test]
+fn a_site_across_a_recursive_back_edge_is_refused_and_the_rest_observed() {
+    let source = with_types(
+        "node",
+        "demo.tags.Node",
+        "  - name: demo.tags.Node
+    kind: struct
+    fields:
+      - {name: tag, type: demo.tags.Tag}
+      - {name: children, type: 'List<demo.tags.Node>'}
+",
+    );
+    let synthesis = synthesis(&ir(&source));
+    let recursive = refused_with(&synthesis, "recursive back-edge");
+    assert_eq!(recursive.len(), 1, "{:#?}", refusals(&synthesis));
+    assert!(
+        recursive[0].0.contains("demo.tags.Boards.node"),
+        "{}",
+        recursive[0].0
+    );
+    assert_no_authored_invariant_check(recursive[0].1);
+    assert_eq!(
+        invariant_ids(&synthesis.suite),
+        ["demo.tags.Tag/invariant/at/demo.tags.Boards/node.tag"],
+        "the position outside the recursion is observed"
+    );
+}
+
+/// A tree of structs `depth` levels deep, two `Optional` branches each, a `Tag` at every leaf.
+fn tree(depth: usize) -> String {
+    use std::fmt::Write as _;
+    let mut types = String::new();
+    for level in 0..depth {
+        write!(
+            types,
+            "  - name: demo.tags.L{level}
+    kind: struct
+    fields:
+      - {{name: a, type: 'Optional<demo.tags.L{next}>'}}
+      - {{name: b, type: 'Optional<demo.tags.L{next}>'}}
+",
+            next = level + 1
+        )
+        .expect("writing to a String");
+    }
+    write!(
+        types,
+        "  - name: demo.tags.L{depth}
+    kind: struct
+    fields:
+      - {{name: tag, type: 'Optional<demo.tags.Tag>'}}
+"
+    )
+    .expect("writing to a String");
+    types
+}
+
+/// A view field whose type expands past the edge bound is refused as an overflow for the value
+/// type it reaches, and for no value type it does not reach.
+#[test]
+fn an_overflowing_field_is_refused_only_for_the_value_types_it_reaches() {
+    let unreached = "  - name: demo.tags.Code
+    kind: newtype
+    of: String
+    invariants: [value.count >= 2]
+";
+    let source = with_types("root", "demo.tags.L0", &format!("{unreached}{}", tree(13)))
+        .replace(
+            "      - {name: root, type: 'demo.tags.L0'}\n",
+            "      - {name: root, type: 'demo.tags.L0'}\n      - {name: code, type: 'Optional<demo.tags.Code>'}\n",
+        )
+        .replace(
+            "        sets: {root: input.root}",
+            "        sets: {root: input.root, code: input.code}",
+        );
+    let synthesis = synthesis(&ir(&source));
+    let overflow = refused_with(&synthesis, "16384 typed edges");
+    assert_eq!(overflow.len(), 1, "{:#?}", refusals(&synthesis));
+    assert!(overflow[0].0.contains("demo.tags.Tag"), "{}", overflow[0].0);
+    assert!(
+        !overflow[0].0.contains("demo.tags.Code"),
+        "{}",
+        overflow[0].0
+    );
+    assert_no_authored_invariant_check(overflow[0].1);
+}

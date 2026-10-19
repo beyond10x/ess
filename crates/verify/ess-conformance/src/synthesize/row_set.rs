@@ -167,7 +167,7 @@ pub(super) fn unarranged() -> RefusalCause {
 }
 
 /// Why no rows were arranged that take a row-set branch.
-const ROWS_UNARRANGED: &str = "has no arrangement of rows the declared commands \
+pub(super) const ROWS_UNARRANGED: &str = "has no arrangement of rows the declared commands \
      produce on which the rows its selector selects take this branch";
 
 fn gap(path: String, reason: &'static str) -> RefusalCause {

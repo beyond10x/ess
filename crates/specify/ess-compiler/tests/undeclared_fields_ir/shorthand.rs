@@ -208,6 +208,23 @@ fn shorthand_outside_types_is_refused() {
     assert!(refused.message.contains("event"), "{refused:#?}");
 }
 
+/// A command is a declaration that is not a type too: the key is refused at
+/// `<command>.shorthand` as `unsupported_construct`, not as a field the command does not know
+/// (review 2026-10-19, B6).
+#[test]
+fn shorthand_on_a_command_is_refused_at_the_command() {
+    let source = text(27, None, "String", "").replace(
+        "  - name: tracker.ops.Run\n    input:\n",
+        "  - name: tracker.ops.Run\n    shorthand: operation\n    input:\n",
+    );
+    let refused = refused_at(
+        &source,
+        "tracker.ops.Run",
+        ValidationCode::UnsupportedConstruct,
+    );
+    assert!(refused.message.contains("command"), "{refused:#?}");
+}
+
 #[test]
 fn shorthand_naming_no_field_is_refused() {
     let refused = refused_at(

@@ -16,7 +16,7 @@
 //! | naming an `Optional` field, or one whose type is not a scalar on the wire | [`TypeMismatch`](ValidationCode::TypeMismatch) |
 //! | beside another field that is not `Optional` | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
 //! | on a newtype, an enum or a union | [`UnsupportedConstruct`](ValidationCode::UnsupportedConstruct) |
-//! | on an entity, an event, an error, a view or an actor | [`UnsupportedConstruct`](ValidationCode::UnsupportedConstruct) |
+//! | on an entity, an event, an error, a view, an actor or a command | [`UnsupportedConstruct`](ValidationCode::UnsupportedConstruct) |
 //! | under a header older than `ess/27` | [`UnsupportedFormatVersion`](ValidationCode::UnsupportedFormatVersion) |
 //!
 //! A value that is not one field name — a list or a mapping — is refused as the document is read.
@@ -59,7 +59,9 @@ impl Written {
     /// document is read, naming the declaration's position.
     pub(crate) fn take(document: &mut ess_yaml::Value) -> Result<Self, ess_yaml::Error> {
         let mut written = Self::default();
-        for section in Section::ALL {
+        // A command too, though it reads `undeclared_fields:` as its own field: `shorthand:` on one
+        // is refused at its line (review 2026-10-19), not as a field the command does not know.
+        for section in Section::ALL.into_iter().chain([Section::Commands]) {
             let Some(items) = document
                 .get_mut(section.key())
                 .and_then(ess_yaml::Value::as_sequence_mut)
@@ -139,6 +141,7 @@ impl Written {
                 Section::Errors => file.errors.get(index).map(|it| it.name.to_string()),
                 Section::Views => file.views.get(index).map(|it| it.name.to_string()),
                 Section::Actors => file.actors.get(index).map(|it| it.name.to_string()),
+                Section::Commands => file.commands.get(index).map(|it| it.name.to_string()),
             };
             if let Some(name) = name {
                 errors.push(

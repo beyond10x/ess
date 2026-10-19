@@ -169,9 +169,25 @@ fn unlift(step: &mut ScenarioStep, lifted: &Lifted) -> bool {
     true
 }
 
-/// Whether anything in the serialized scenario still names a lifted input.
-fn names_lifted(scenario: &ConformanceScenario) -> bool {
-    serde_json::to_string(scenario).map_or(true, |text| text.contains(LIFTED))
+/// Whether anything in the serialized scenario still names a lifted input: a key or a text equal
+/// to one of `lifted`'s input names. Not a match on [`LIFTED`] alone, which a model's own name may
+/// start with (review 2026-10-19).
+fn names_lifted(scenario: &ConformanceScenario, lifted: &Lifted) -> bool {
+    fn names(value: &serde_json::Value, inputs: &BTreeSet<&str>) -> bool {
+        match value {
+            serde_json::Value::String(text) => inputs.contains(text.as_str()),
+            serde_json::Value::Array(items) => items.iter().any(|item| names(item, inputs)),
+            serde_json::Value::Object(entries) => entries
+                .iter()
+                .any(|(key, item)| inputs.contains(key.as_str()) || names(item, inputs)),
+            _ => false,
+        }
+    }
+    let inputs: BTreeSet<&str> = lifted
+        .values()
+        .flat_map(|names| names.keys().map(String::as_str))
+        .collect();
+    serde_json::to_value(scenario).map_or(true, |value| names(&value, &inputs))
 }
 
 /// `scenario` with each step stamped by `stamp` and sent as the caller its lifted inputs name
@@ -186,7 +202,7 @@ fn finished(
         stamp(step);
         sendable &= unlift(step, lifted);
     }
-    (sendable && !names_lifted(&scenario)).then_some(scenario)
+    (sendable && !names_lifted(&scenario, lifted)).then_some(scenario)
 }
 
 /// Every scenario of a synthesis of the lifted model [`finished`], and the others dropped.

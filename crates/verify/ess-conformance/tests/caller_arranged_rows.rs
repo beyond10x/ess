@@ -299,6 +299,26 @@ fn the_suite_passes_the_interpreter_and_fails_a_target_that_ignores_the_caller()
     );
 }
 
+/// A model's own name that merely starts like a lifted input is not one: the scenario naming it is
+/// still taken (review 2026-10-19, B11).
+#[test]
+fn a_field_named_like_a_lifted_input_keeps_its_scenario() {
+    let model = TOKENS
+        .replace(
+            "{name: count, type: Integer}",
+            "{name: caller_attribute_count, type: Integer}",
+        )
+        .replace(
+            "count: {count: changed}",
+            "caller_attribute_count: {count: changed}",
+        );
+    let synthesis = synthesize(&ir(&model));
+    assert_eq!(synthesis.refusals.len(), 0, "{:#?}", rendered(&synthesis));
+    assert!(has(&synthesis, REVOKED), "{:#?}", rendered(&synthesis));
+    let results = run(&synthesis.suite, &model);
+    assert!(all_pass(&results), "{results:#?}");
+}
+
 #[test]
 fn an_affects_entry_over_a_caller_written_field_is_witnessed() {
     let model = affecting();
@@ -418,6 +438,41 @@ fn a_filter_no_arrangement_satisfies_is_not_told_to_drop_an_input() {
         .refusals
         .iter()
         .find(|refusal| refusal.to_string().contains(REVOKED))
+        .unwrap_or_else(|| panic!("{:#?}", rendered(&synthesis)));
+    let help = refusal.cause.hint();
+    assert!(
+        help.contains("from an input or from a caller attribute"),
+        "{help}"
+    );
+    assert!(!help.contains("drop it from the command's input"), "{help}");
+}
+
+/// A `when_related:` row set whose rows no arrangement gives the branch is told what the filter
+/// needs written, not to drop an input (review 2026-10-19, B1): its reason is the row-set one.
+#[test]
+fn a_related_row_set_no_arrangement_satisfies_is_not_told_to_drop_an_input() {
+    let model = related()
+        .replace(
+            "      - {name: owner, type: keys.tokens.UserId}\n    lifecycle:",
+            "      - {name: owner, type: keys.tokens.UserId}\n      - {name: tier, type: String}\n    lifecycle:",
+        )
+        .replace(
+            CALLER_WRITE,
+            "        sets: {owner: {caller: user_id}, tier: basic}\n",
+        )
+        .replace(
+            "where: {all: [owner == input.user_id, state == Active]}\n          count: {lt: 2}",
+            "where: {all: [owner == input.user_id, state == Active, tier == \"premium\"]}\n          exists: true",
+        );
+    let synthesis = synthesize(&ir(&model));
+    let refusal = synthesis
+        .refusals
+        .iter()
+        .find(|refusal| {
+            refusal
+                .to_string()
+                .contains("on which the rows its selector selects take this branch")
+        })
         .unwrap_or_else(|| panic!("{:#?}", rendered(&synthesis)));
     let help = refusal.cause.hint();
     assert!(

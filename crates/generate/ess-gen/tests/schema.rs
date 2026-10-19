@@ -1297,6 +1297,19 @@ mod schema_id_base {
             assert!(IdentifiedJsonSchema::new(admitted).is_ok(), "{admitted:?}");
         }
     }
+
+    /// A scheme alone ends in `:` and still names no namespace under it (review 2026-10-19, T7).
+    #[test]
+    fn issue_590_a_scheme_with_nothing_under_it_is_refused() {
+        for refused in ["urn:", "https:"] {
+            let error = IdentifiedJsonSchema::new(refused).expect_err(refused);
+            assert_eq!(
+                error.reason, "names a scheme and nothing under it",
+                "{refused:?}"
+            );
+            assert!(error.to_string().contains(refused), "{error}");
+        }
+    }
 }
 
 /// A `String` newtype's `alphabet:` is asserted by its projected schema as an anchored `pattern`

@@ -55,6 +55,13 @@ struct Expansion {
     overflow: bool,
 }
 
+/// Whether `root` reaches the declared type `wanted` through any declaration.
+fn reaches(ir: &EssIr, root: &ResolvedTypeRef, wanted: &QualifiedName) -> bool {
+    let mut names = BTreeSet::new();
+    reachable_types(ir, root, &mut names);
+    names.iter().any(|name| name.name() == wanted)
+}
+
 /// Walks one view field's type, collecting every site of `wanted`.
 fn expand(ir: &EssIr, root: &ResolvedTypeRef, wanted: &QualifiedName) -> Expansion {
     let mut expansion = Expansion::default();
@@ -330,7 +337,10 @@ pub(super) fn wrapped(
                     ),
                 ));
             }
-            if expansion.overflow {
+            // Only where the field's type reaches this value type at all: an overflowing field
+            // leaves unknown the positions of the types it reaches, and of no other (review
+            // 2026-10-19).
+            if expansion.overflow && reaches(ir, &field.type_ref, &declared.name) {
                 found += 1;
                 refusals.push(Refusal {
                     subject: DeclaredTypeRef::new(declared.name.clone()).into(),

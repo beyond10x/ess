@@ -729,7 +729,7 @@ mod projected {
             ("keyed.yaml", "1: one\n", "not a string"),
             ("infinite.yaml", "amount: .inf\n", "not finite"),
             ("twice.yaml", "schema: a\nschema: b\n", "schema"),
-            ("two.yaml", "a: 1\n---\na: 2\n", "two.yaml"),
+            ("two.yaml", "a: 1\n---\na: 2\n", "more than one document"),
         ] {
             fixture.write(name, text);
             let output = fixture.validate(name);
@@ -812,6 +812,53 @@ mod projected {
                 .contains("^[0-9a-f]*$"),
             "the refusal names the pattern: {refused}"
         );
+    }
+
+    /// A document projected under `--schema-id-base` carries a root `$id` and imports as one
+    /// without it: the identity changes nothing the bundle validates (review 2026-10-19, B3).
+    #[test]
+    fn issue_590_an_identified_projection_imports_as_a_bundle() {
+        let fixture = Fixture::new("projected-identified-bundle");
+        let generated = generate(&fixture, &["--schema-id-base", BASE]);
+        assert_eq!(generated.status.code(), Some(0), "{generated:?}");
+        let document = "gen/schema/types/billing.invoice.Money.schema.json";
+        let projected: serde_json::Value =
+            serde_json::from_slice(&fs::read(fixture.root.join(document)).unwrap()).unwrap();
+        assert_eq!(
+            projected["$id"],
+            format!("{BASE}types/billing.invoice.Money.schema.json")
+        );
+        let imported = fixture.run(&[
+            "generate",
+            "schema",
+            "import-document",
+            "--path",
+            document,
+            "--root",
+            "Money",
+            "--dialect",
+            "draft-2020-12",
+            "--out",
+            "bundle.json",
+        ]);
+        assert_eq!(imported.status.code(), Some(0), "{imported:?}");
+        fixture.write("money.yaml", "amount: \"12.5\"\ncurrency: EUR\n");
+        fixture.write("loose.yaml", "amount: 12.5\ncurrency: EUR\n");
+        let validated = fixture.run(&[
+            "generate",
+            "schema",
+            "validate-bundle",
+            "--bundle",
+            "bundle.json",
+            "--root",
+            "Money",
+            "money.yaml",
+            "loose.yaml",
+        ]);
+        assert_eq!(validated.status.code(), Some(1), "{validated:?}");
+        let stdout = String::from_utf8_lossy(&validated.stdout);
+        assert!(stdout.contains("2 instance(s), 1 valid"), "{stdout}");
+        assert!(stdout.contains("loose.yaml"), "{stdout}");
     }
 
     #[test]

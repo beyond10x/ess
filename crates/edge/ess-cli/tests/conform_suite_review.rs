@@ -219,3 +219,35 @@ fn conform_diff_groups_changes_by_construct() {
     ]);
     assert_eq!(refused.status.code(), Some(1));
 }
+
+/// A suite is read as every other verb admits one (review 2026-10-19, B7): a document carrying a
+/// key no suite format defines is refused by name, not diffed with the key dropped.
+#[test]
+fn conform_diff_refuses_a_document_admission_refuses() {
+    let dir = TemporaryDirectory::create("ess-suite-diff-admission").unwrap();
+    let spec = dir.join("model");
+    fs::create_dir_all(&spec).unwrap();
+    fs::write(spec.join("system.yaml"), BEFORE).unwrap();
+    let suite = dir.join("suite.json");
+    let output = synthesize(&spec.join("system.yaml"), &suite, &[]);
+    assert!(output.status.success(), "{}", text(&output));
+    let mut document: Value = serde_json::from_str(&fs::read_to_string(&suite).unwrap()).unwrap();
+    document["extension"] = Value::Bool(true);
+    let extended = dir.join("extended.json");
+    fs::write(&extended, document.to_string()).unwrap();
+    let refused = ess(&[
+        "verify",
+        "conform",
+        "diff",
+        "--from",
+        suite.to_str().unwrap(),
+        "--to",
+        extended.to_str().unwrap(),
+    ]);
+    assert_eq!(refused.status.code(), Some(1), "{}", text(&refused));
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        stderr.contains("extended.json") && stderr.contains("extension"),
+        "{stderr}"
+    );
+}

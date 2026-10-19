@@ -1428,7 +1428,7 @@ ess verify conform synthesize [OPTIONS]
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
-| `--target` | `<TARGET>` | no | `ir` | What to write the suite as. One of `ir`, `go`, `typescript`. |
+| `--target` | `<TARGET>` | no | `ir` | What to write the suite as. A Rust implementation runs the `ir` suite with the `ess-conformance` runner, `https://beyond10x.github.io/ess/docs/start/runners/rust`. One of `ir`, `go`, `typescript`. |
 | `--out` | `<OUT>` | no |  | A file for `--target ir`, a directory for `--target go` or `--target typescript` |
 | `--component` | `<COMPONENT>` | no |  | Hold one component to the specification rather than the whole system.<br /><br />Keeps only the scenarios whose every command, event and view this component accepts, publishes or owns, and lists the rest with what they need — they belong in the suite of the component that realises it. An implementation of one component answers `ErrUnsupported` to the other's scenarios, and a run with skips in it cannot say it passed. |
 | `--scenarios` | `<SCENARIOS>` | no |  | The `ess-scenario/1` documents to compile beside the generated scenarios.<br /><br />One file or a directory. Immediate `ess-inputs.yaml` selects its exact scenarios list. Otherwise only immediate `.yaml`/`.yml` files are read; subdirectories are not searched. An empty selection is refused. When omitted, no authored scenarios are selected. |

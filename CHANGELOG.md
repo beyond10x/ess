@@ -80,7 +80,8 @@
   `unsupported_format_version` naming `ess/27`. The IR names the shorthands beside the types
   (`shorthands`, omitted when empty, so a model without the key keeps its bytes and digest), and
   the JSON Schema, OpenAPI and AsyncAPI definition of such a struct is `oneOf` the field's schema
-  and the closed object, annotated `x-ess-shorthand` with the field's wire name
+  and the struct's object, closed unless it declares `undeclared_fields: ignored`, annotated
+  `x-ess-shorthand` with the field's wire name
   (https://github.com/beyond10x/ess/issues/594). The generated Rust, Go and TypeScript model
   types read the short form beside the object; a numeric shorthand field is refused for Rust.
   `ess verify diff` writes `ess-diff/20` for a struct whose `shorthand:` was declared
@@ -131,6 +132,28 @@
 
 ### Fixed
 
+- `ess generate schema import-document` imports what `ess generate --kind schema` writes: a
+  struct's `x-ess-shorthand` is retained as the other `x-ess-*` annotations are, and a document's
+  root `$id`, written by `--schema-id-base`, is read as its identity and changes nothing the bundle
+  validates. An `$id` below the root, or one that is not a string, is still refused.
+- `shorthand:` on a command is refused at `<command>.shorthand` as `unsupported_construct`, as on
+  every other declaration that is not a type, rather than stopping the file as an unknown field.
+- `ess verify conform diff` admits both suites as every other verb does: a document admission
+  refuses, such as one carrying a key no suite format defines, is refused by name rather than
+  diffed with the key dropped.
+- A suite's `absent_events: null` or `unpublished_events: null` is refused, as the generated Go
+  and TypeScript runtimes refuse it, instead of being read as left out. The generated Go runtime
+  refuses a wrapped value-invariant scenario below suite/52, as the TypeScript runtime does.
+- Synthesis help: a `when_related:` row set whose rows no arrangement gives the branch is told
+  what the filter needs written, not to drop an input; the help of a recursive or overflowing
+  value-invariant position no longer says an authored scenario checks the invariant (one can
+  expect the row's exact value there); and a view field that expands past the edge bound is
+  refused only for the value types it reaches. A model field whose name starts like a lifted
+  caller input no longer drops the scenario that names it.
+- The Entity Runtime refusal of an ordered head, `{related: {entity, where, order_by, first}}`,
+  names that form, and `ess_domain::binding::validate_bindings` reads the format its type registry
+  records rather than the newest one. `ess verify conform synthesize --help` names the route for a
+  Rust implementation under `--target`.
 - Synthesis witnesses a set effect, an `affects:` entry or a `when_related:` row set whose filter
   reads a field the arranging command writes from its caller (`sets: {owner: {caller: user_id}}`):
   each arranging act is sent as a caller whose attribute carries the value its record needs, so

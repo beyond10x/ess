@@ -271,8 +271,14 @@ fn gap(path: String, type_ref: String, reason: &'static str) -> RefusalCause {
 pub(super) const UNWRITTEN: &str = "a filter reads and no declared command writes, so no \
      arrangement leaves rows on both sides of the filter";
 
-/// Every reason a row of a filter could not be arranged for, which no input type repairs.
-pub(super) const UNARRANGED: [&str; 3] = [NO_MATCHING, NO_MISS, NO_PUBLISHED];
+/// Every reason a row of a filter could not be arranged for, which no input type repairs: a set
+/// effect's, and a row-set branch's selector (`when_related:`, review 2026-10-19).
+pub(super) const UNARRANGED: [&str; 4] = [
+    NO_MATCHING,
+    NO_MISS,
+    NO_PUBLISHED,
+    super::row_set::ROWS_UNARRANGED,
+];
 
 /// Too few rows the filter selects.
 const NO_MATCHING: &str =
