@@ -2458,30 +2458,10 @@ impl<'a> Resolver<'a> {
                 None => None,
                 Some(named) => Some(entity.lifecycle.transition(named)?.clone()),
             };
-            // One row per element of an input list (ess/23, beyond10x/ess#459): the element reads
-            // in the entity's declaration order, at the field's declared type.
-            let each = affect.each.as_ref().map(|each| crate::ir::ResolvedEach {
-                list: each.list.clone(),
-                binder: each.binder.clone(),
-                member: each.member.clone(),
-                reads: entity
-                    .fields
-                    .iter()
-                    .filter_map(|field| {
-                        each.reads
-                            .get(&field.name)
-                            .map(|member| crate::ir::ResolvedElementRead {
-                                target: field.name.clone(),
-                                member: member.clone(),
-                                target_type: field.type_ref.clone(),
-                            })
-                    })
-                    .collect(),
-            });
             affects.push(crate::ir::ResolvedAffect {
                 entity: handle,
                 filter: affect.filter.clone(),
-                each,
+                each: affect.each.as_ref().map(|each| resolved_each(entity, each)),
                 sets,
                 moves,
                 deletes: affect.deletes,
@@ -5853,6 +5833,34 @@ fn entity_field<'e>(entity: &'e EntitySpec, name: &str) -> Option<&'e ess_domain
         Some(&entity.identity)
     } else {
         entity.field(name)
+    }
+}
+
+/// One row per element of an input list (ess/23, beyond10x/ess#459): the element reads in the
+/// entity's declaration order, at the field's declared type, and from ess/27 the element filter
+/// (beyond10x/ess#596).
+fn resolved_each(
+    entity: &crate::ir::ResolvedEntity,
+    each: &ess_domain::command::set_effects::Each,
+) -> crate::ir::ResolvedEach {
+    crate::ir::ResolvedEach {
+        list: each.list.clone(),
+        binder: each.binder.clone(),
+        member: each.member.clone(),
+        reads: entity
+            .fields
+            .iter()
+            .filter_map(|field| {
+                each.reads
+                    .get(&field.name)
+                    .map(|member| crate::ir::ResolvedElementRead {
+                        target: field.name.clone(),
+                        member: member.clone(),
+                        target_type: field.type_ref.clone(),
+                    })
+            })
+            .collect(),
+        filter: each.filter.clone(),
     }
 }
 

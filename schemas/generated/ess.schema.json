@@ -2411,6 +2411,17 @@
         "in": {
           "description": "The list, `input.<field>`.",
           "type": "string"
+        },
+        "where": {
+          "description": "The elements the entry acts on: a predicate over `<as>.<member>` and `input.<field>` (ess/27, beyond10x/ess#596); every element where absent.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false

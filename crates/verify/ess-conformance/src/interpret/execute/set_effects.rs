@@ -89,7 +89,9 @@ pub(super) fn apply(
             let Some(filter) = &affect.filter else {
                 plans.push(Plan {
                     entity: affected,
-                    effect: ResolvedEffect::Updates,
+                    // From ess/27 the entry may move or remove the row an element names
+                    // (beyond10x/ess#596).
+                    effect,
                     sets: &affect.sets,
                     keys: Vec::new(),
                     each: affect.each.as_ref(),
@@ -120,7 +122,7 @@ pub(super) fn apply(
             });
         }
     }
-    let (count, mut rows) = carry_out(ir, plans, supplied, work)?;
+    let (count, mut rows) = carry_out(ir, plans, supplied, &input, work)?;
     // `instances:` stands alone among the plans, so every row changed is one of its own.
     rows.sort_by(|(left, _), (right, _)| left.cmp(right));
     Ok(outcome.instances.as_ref().map(|_| Changed { count, rows }))
@@ -149,6 +151,7 @@ fn carry_out(
     ir: &EssIr,
     plans: Vec<Plan<'_>>,
     supplied: &super::Context<'_>,
+    input: &input::InputFacts<'_>,
     work: &mut Work<'_>,
 ) -> Result<(usize, Vec<(Node, Row)>), Undetermined> {
     let mut applied = 0;
@@ -156,7 +159,7 @@ fn carry_out(
     let mut touched = BTreeSet::new();
     for (occurrence, plan) in plans.into_iter().enumerate() {
         if let Some(each) = plan.each {
-            for key in elements(ir, &plan, each, occurrence, supplied, work)? {
+            for key in elements(ir, &plan, each, occurrence, (supplied, input), work)? {
                 touched.insert((plan.entity.name.clone(), key));
                 applied += 1;
             }
@@ -224,13 +227,18 @@ fn carry_out(
 /// list, in order, the row the element's identity member names is updated if held and created in
 /// the lifecycle's `initial` state if not, and comes to hold the entry's `sets:` and the element's
 /// members it reads; an element naming the subject is skipped, the subject itself excepted.
-/// Returns the identities written, in the order written; an empty list writes nothing.
+///
+/// From ess/27 (beyond10x/ess#596) only the elements the entry's filter selects are read, and an
+/// entry that moves or removes its rows acts on held rows only: an element naming no row, or a row
+/// resting outside the move's `from` states, is skipped; a removed row is taken out of `work`.
+/// Returns the identities of the rows left resting that the entry wrote, in the order written; an
+/// empty list writes nothing.
 fn elements(
     ir: &EssIr,
     plan: &Plan<'_>,
     each: &ess_compiler::ir::ResolvedEach,
     occurrence: usize,
-    supplied: &super::Context<'_>,
+    (supplied, input): (&super::Context<'_>, &input::InputFacts<'_>),
     work: &mut Work<'_>,
 ) -> Result<Vec<Node>, Undetermined> {
     let entity = plan.entity;
@@ -266,6 +274,9 @@ fn elements(
         if plan.excepted.as_ref() == Some(&key) {
             continue;
         }
+        if !ElementFacts::selects(each, input, index) {
+            continue;
+        }
         work.location = vec![
             "set-effect".into(),
             occurrence.to_string(),
@@ -273,16 +284,22 @@ fn elements(
             index.to_string(),
             "sets".into(),
         ];
-        // Updated if held, created in `initial` if not.
+        // Updated if held, created in `initial` if not; moved or removed only if held.
         let held = work.next.instance_typed(&entity.name, &key).cloned();
+        let names_held = !matches!(plan.effect, ResolvedEffect::Updates);
         let mut after = if let Some(held) = held {
-            let Acted::Rests(after) = act(ir, plan.sets, &plan.effect, &held, supplied, work)?
-            else {
-                return Err(Undetermined::Request(
-                    "an `each:` entry updates the row an element names".into(),
-                ));
-            };
-            after
+            match act(ir, plan.sets, &plan.effect, &held, supplied, work)? {
+                Acted::Rests(after) => after,
+                Acted::NotFromHere => continue,
+                Acted::Removed => {
+                    if let Some(rows) = work.next.instances.get_mut(&entity.name) {
+                        rows.remove(&key);
+                    }
+                    continue;
+                }
+            }
+        } else if names_held {
+            continue;
         } else {
             let mut fields = BTreeMap::new();
             super::write(ir, plan.sets, supplied, &mut fields, work)?;
@@ -323,6 +340,78 @@ fn elements(
         written.push(key);
     }
     Ok(written)
+}
+
+/// One element of an `each:` entry's list as its filter reads it (ess/27, beyond10x/ess#596):
+/// `<binder>.<member>` is the member of element `index`, `input.<field>` the command's input.
+struct ElementFacts<'a> {
+    input: &'a input::InputFacts<'a>,
+    list: &'a str,
+    binder: &'a str,
+    index: usize,
+}
+
+impl ElementFacts<'_> {
+    /// Whether `each`'s filter selects element `index`: always where it has none. Only a filter
+    /// that holds selects the element. The input is supplied whole, so one left unknown reads a
+    /// member the element leaves out, which selects nothing.
+    fn selects(
+        each: &ess_compiler::ir::ResolvedEach,
+        input: &input::InputFacts<'_>,
+        index: usize,
+    ) -> bool {
+        each.filter.as_ref().is_none_or(|filter| {
+            filter.evaluate(&ElementFacts {
+                input,
+                list: &each.list,
+                binder: &each.binder,
+                index,
+            }) == Truth::True
+        })
+    }
+
+    fn rebind(&self, path: &FactPath) -> Option<FactPath> {
+        let (first, rest) = path.segments().split_first()?;
+        if first == self.binder {
+            return Some(FactPath::from_segments(
+                [self.list.to_owned(), self.index.to_string()]
+                    .into_iter()
+                    .chain(rest.iter().cloned()),
+            ));
+        }
+        (first == "input" && !rest.is_empty()).then(|| FactPath::from_segments(rest))
+    }
+}
+
+impl FactSource for ElementFacts<'_> {
+    fn fact(&self, path: &FactPath) -> Option<FactValue> {
+        self.input.fact(&self.rebind(path)?)
+    }
+    fn present(&self, path: &FactPath) -> bool {
+        self.rebind(path)
+            .is_some_and(|path| self.input.present(&path))
+    }
+    fn observed_presence(&self, path: &FactPath) -> Option<bool> {
+        self.rebind(path)
+            .map_or(Some(false), |path| self.input.observed_presence(&path))
+    }
+    fn observe(&self, path: &FactPath) -> Option<FactValue> {
+        self.input.observe(&self.rebind(path)?)
+    }
+    fn cardinality(&self, path: &FactPath) -> Option<usize> {
+        self.input.cardinality(&self.rebind(path)?)
+    }
+    fn scales(&self) -> &Scales {
+        self.input.scales()
+    }
+    fn orders_as_instant(&self, path: &FactPath) -> bool {
+        self.rebind(path)
+            .is_some_and(|path| self.input.orders_as_instant(&path))
+    }
+    fn orders_text_by_bytes(&self, path: &FactPath) -> bool {
+        self.rebind(path)
+            .is_some_and(|path| self.input.orders_text_by_bytes(&path))
+    }
 }
 
 fn validate_writes(

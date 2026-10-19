@@ -4,6 +4,16 @@
 
 ### Added
 
+- From `format: ess/27` an `each:` entry of `affects:` may move or delete the row each element
+  names (`moves: <Entity>.<transition>`, `deletes: <Entity>`), and `each:` may carry a `where:`
+  over the element and the input, so one call takes each named row to its own transition by the
+  answer the input carries for it, one entry per answer. Entries apply in the order written; an
+  element naming no row, or one whose row rests outside the move's `from` states, is skipped, and
+  nothing is created. Synthesis witnesses each entry on a row of its own, a row the first moving
+  entry skips and a decoy no element names; the interpreter applies them; `ess verify diff` names
+  the element filter and the move under `outcome-set-effect-changed`. Below `ess/27` the entry
+  keeps its refusal, naming `ess/27`; an entry without either keeps its IR bytes
+  (beyond10x/ess#596).
 - `ess verify conform diff --from <suite> --to <suite>` says what changed between two suites: the
   scenario ids added, removed and changed, grouped by the construct each is about (a command's
   outcomes, an entity's transitions, one field and aspect of a one-time disclosure), with the parts

@@ -68,17 +68,53 @@ fn affect_sentence(ir: &EssIr, affect: &ResolvedAffect) -> Vec<Inline> {
         .map_or_else(String::new, ToString::to_string);
     // From ess/23 an entry may write one row per element of an input list (beyond10x/ess#459).
     if let Some(each) = &affect.each {
+        // From ess/27 (beyond10x/ess#596) the entry may move or remove the row an element names,
+        // for the elements its filter selects.
+        if affect.deletes || affect.moves.is_some() {
+            let mut out = vec![
+                Inline::text(" Beside its subject, for each element of "),
+                Inline::code(each.list.clone()),
+            ];
+            if let Some(filter) = &each.filter {
+                out.push(Inline::text(" where "));
+                out.push(Inline::code(filter.to_string()));
+            }
+            out.push(Inline::text(", the held "));
+            out.push(Inline::code(entity.name.to_string()));
+            out.push(Inline::text(" "));
+            out.push(Inline::code(format!("{}.{}", each.binder, each.member)));
+            out.push(Inline::text(" names "));
+            match &affect.moves {
+                Some(transition) if !affect.deletes => {
+                    out.push(Inline::text("takes "));
+                    out.push(Inline::code(transition.name.clone()));
+                    out.push(Inline::text(
+                        ", unless it rests outside its from states; an element naming no row is skipped.",
+                    ));
+                }
+                _ => out.push(Inline::text(
+                    "is removed; an element naming no row is skipped.",
+                )),
+            }
+            return out;
+        }
         let mut out = vec![
             Inline::text(" Beside its subject, it writes one "),
             Inline::code(entity.name.to_string()),
             Inline::text(" per element of "),
             Inline::code(each.list.clone()),
+        ];
+        if let Some(filter) = &each.filter {
+            out.push(Inline::text(" where "));
+            out.push(Inline::code(filter.to_string()));
+        }
+        out.extend([
             Inline::text(": the row "),
             Inline::code(format!("{}.{}", each.binder, each.member)),
             Inline::text(" names is updated if held and created in "),
             Inline::code(entity.lifecycle.initial.to_string()),
             Inline::text(" if not"),
-        ];
+        ]);
         let mut written = assignments(&affect.sets);
         for read in &each.reads {
             written.push(Inline::text(if written.is_empty() { ": " } else { ", " }));

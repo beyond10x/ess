@@ -1,4 +1,4 @@
-#	models=264	commands=518
+#	models=265	commands=521
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -344,6 +344,10 @@ crates/verify/ess-conformance/tests/fixtures/defined-over-optional-aggregates.ya
 crates/verify/ess-conformance/tests/fixtures/defined-over-optional-aggregates.yaml	demo.queue.ResumeQueue	held_state: wrong-state | default: resumed
 crates/verify/ess-conformance/tests/fixtures/delivery-context.yaml	ir=29bf6e0eeb5cc90a61f1db25b9ae2fd5a4807ba820d3c03de13c69f3ac398391:6503
 crates/verify/ess-conformance/tests/fixtures/delivery-context.yaml	demo.inbox.RecordMessage	accepting: unavailable | default: recorded
+crates/verify/ess-conformance/tests/fixtures/each-moves.yaml	ir=eb1ab3f2266ed75bb0a1670fad2bf8be2eacdb66d80d01345137f335ff7af5e7:17198
+crates/verify/ess-conformance/tests/fixtures/each-moves.yaml	perrow.batch.Apply	input_refusal: duplicated | held_state: wrong-state | default: applied
+crates/verify/ess-conformance/tests/fixtures/each-moves.yaml	perrow.batch.Open	default: opened
+crates/verify/ess-conformance/tests/fixtures/each-moves.yaml	perrow.batch.Propose	default: proposed
 crates/verify/ess-conformance/tests/fixtures/emit-swap-served.yaml	ir=876f02f8abd5501c448cd33b8caec4e6828fdf5ebc130877d1edfe9ca1d60ae9:19398
 crates/verify/ess-conformance/tests/fixtures/emit-swap-served.yaml	demo.items.ArchiveItem	held_state: wrong-state | default: archived
 crates/verify/ess-conformance/tests/fixtures/emit-swap-served.yaml	demo.items.BookSlot	existence: already-booked | default: booked
