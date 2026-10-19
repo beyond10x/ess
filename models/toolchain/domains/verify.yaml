@@ -71,6 +71,7 @@ types:
       - Halt
       - Target
       - Suite
+      - Await
 
   - name: toolchain.verify.CheckResult
     kind: struct

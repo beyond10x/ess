@@ -468,17 +468,24 @@ impl Specification {
         self.validate_after(&Refused::default())
     }
 
+    /// The binding constructs checked across the whole specification: periodic causes, delivery
+    /// contexts, retries, conditions and refusals.
+    fn validate_bindings(&self) -> ValidationErrors {
+        let mut errors = crate::binding::periodic::validate_specification(self);
+        errors.extend(crate::binding::context::validate_specification(self));
+        errors.extend(crate::binding::retry::validate_specification(self));
+        errors.extend(crate::binding::condition::validate_specification(self));
+        errors.extend(crate::binding::refusal::validate_specification(self));
+        errors
+    }
+
     /// Checks every reference, treating the names `refused` holds as declared: their own
     /// conversion already said what is wrong with them, and a reference to one is not a second
     /// fault.
     fn validate_after(&self, refused: &Refused) -> ValidationErrors {
         let mut errors = crate::primitive_admission::specification(self);
         errors.extend(crate::wire::validate(self));
-        errors.extend(crate::binding::periodic::validate_specification(self));
-        errors.extend(crate::binding::context::validate_specification(self));
-        errors.extend(crate::binding::retry::validate_specification(self));
-        errors.extend(crate::binding::condition::validate_specification(self));
-        errors.extend(crate::binding::refusal::validate_specification(self));
+        errors.extend(self.validate_bindings());
 
         // Entities contribute the enum their lifecycle forms, so a view projecting `state` and a
         // filter comparing it are checked against the same set of names.

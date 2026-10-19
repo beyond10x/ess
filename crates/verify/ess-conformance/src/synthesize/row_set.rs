@@ -385,7 +385,7 @@ fn scoped_at(
                 })
             })
     };
-    let names = |path: &FactPath| named(path) || published(path);
+    let reads_any = |path: &FactPath| named(path) || published(path);
     conjuncts.iter().any(|conjunct| {
         matches!(
             conjunct,
@@ -394,7 +394,7 @@ fn scoped_at(
                 op: CompareOp::Eq,
                 right: Operand::Fact(right),
                 ..
-            } if (field(left) && names(right)) || (field(right) && names(left))
+            } if (field(left) && reads_any(right)) || (field(right) && reads_any(left))
         )
     })
 }
@@ -1901,15 +1901,18 @@ struct Plan<'p> {
     heads: Vec<Option<&'p [Ranking]>>,
 }
 
+/// The selections of a branch and, beside each, the owner row arranged under it (beyond10x/ess#553).
+type Selections<'p> = (
+    &'p [&'p ResolvedRowSelection],
+    &'p [Option<(Predicate, Arrangement)>],
+);
+
 impl<'p> Plan<'p> {
     /// The plan for `outcome` of `command` over `selections`, each predicate `closed`.
     fn new(
         command: &'p ResolvedCommand,
         outcome: &'p ResolvedOutcome,
-        (selections, unders): (
-            &'p [&'p ResolvedRowSelection],
-            &'p [Option<(Predicate, Arrangement)>],
-        ),
+        (selections, unders): Selections<'p>,
         closed: &dyn Fn(&Predicate) -> Predicate,
     ) -> Self {
         let foralls = selections
