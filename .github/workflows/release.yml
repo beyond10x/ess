@@ -1,7 +1,9 @@
 # Prepares a verified release artifact for every version tag. The reusable gate, WASM correctness
 # checks and native packages run concurrently at one resolved commit; preparation requires all
-# three. The gate always runs, in full: this run is the release gate, and no earlier `Gate` stands
-# in for it, because a pull request's `Gate` runs the narrowed feature-off build.
+# three. The gate is skipped only when a full green `Gate` already covers the tagged tree: on the
+# commit itself, or on the queue head it merged, whose pull-request run `ci.yml` runs in full (the
+# `prior-gate` step states the whole condition). The native packages are reused from that head's
+# `package.yml` run when it holds all four.
 # A trusted coordinator publishes the artifact with the organization bot after this workflow.
 # Atlas observes that published release and documentation bundles asynchronously.
 #
@@ -41,11 +43,16 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      # Read-only: the prebuilt step asks for `package.yml` runs and their artifacts.
+      # Read-only: the prior-gate step asks for `Gate` check-runs, their workflow runs and the pull
+      # request a merge commit closed; the prebuilt step for `package.yml` runs and artifacts.
       actions: read
+      checks: read
+      pull-requests: read
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       commit: ${{ steps.release.outputs.commit }}
+      gate-passed: ${{ steps.prior-gate.outputs.passed }}
+      head: ${{ steps.prior-gate.outputs.head }}
       prebuilt-run: ${{ steps.prebuilt.outputs.run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -75,13 +82,123 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
-      - name: Look for the archives a queue run built from the tagged commit
+      # The gate has usually run on these exact bytes already, so a full green `Gate` is reused
+      # instead of paid for twice. "Full" is a `Gate` whose workflow run archived every feature-off
+      # case: a `ci.yml` push or schedule run of `main`, or a `ci.yml` pull-request run of a
+      # `queue/` head; a pull request from any other head and a merge-group run are narrowed and
+      # never count. The gate is skipped when either holds:
+      #
+      # 1. the tagged commit carries a full green `Gate` — normally the `main` push run;
+      # 2. the tagged commit is the merge commit of exactly one merged pull request, that pull
+      #    request's head is its second parent and has its tree, `main` before the merge (the
+      #    first parent) is in the head's history, and the head carries a full green `Gate` — its
+      #    queue pull-request run.
+      #
+      # The tree equality is what makes 2 honest: the tested bytes are the tagged bytes. The
+      # ancestry is what makes the head's `Gate` a test of them — a `pull_request` run tests the
+      # head merged into the base of its day, which is the head's own tree only when that base was
+      # already in the head. Only the newest `Gate` GitHub Actions itself recorded counts, and only
+      # as a completed success. Anything else — a backfill, none, a failure, one still running, a
+      # squash, an API error — runs the gate below as before. The head is reported whenever its
+      # tree is the tagged tree, so the prebuilt step can be keyed on it. `ci_lanes.rs` runs this
+      # script against real Git histories.
+      - name: Look for a full green Gate on the tagged tree
+        id: prior-gate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          head=""
+          number=""
+          decide() {
+            echo "$2"
+            echo "passed=$1" >> "$GITHUB_OUTPUT"
+            echo "head=$head" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          newest_gate() {
+            gh api "repos/$REPOSITORY/commits/$1/check-runs?check_name=Gate&filter=all&per_page=100" --jq '
+              [.check_runs[] | select(.name == "Gate" and .app.slug == "github-actions")]
+              | sort_by(.started_at) | last
+              | if . == null then "none" else "\(.status)/\(.conclusion) \(.details_url)" end'
+          }
+          # 0 when the newest Gate on $1 ($2 in the log) is a completed success whose workflow run
+          # archived every feature-off case.
+          full_gate() {
+            local gate run described path event branch
+            gate=$(newest_gate "$1") || { echo "the check-runs of $2 are unavailable"; return 1; }
+            echo "newest Gate check-run on $2: $gate"
+            [ "${gate%% *}" = "completed/success" ] || return 1
+            [[ "${gate#* }" =~ /actions/runs/([0-9]+)/ ]] \
+              || { echo "that Gate names no workflow run"; return 1; }
+            run="${BASH_REMATCH[1]}"
+            described=$(gh api "repos/$REPOSITORY/actions/runs/$run" \
+                --jq '"\(.path) \(.event) \(.head_branch // "")"') \
+              || { echo "workflow run $run of that Gate is unavailable"; return 1; }
+            echo "workflow run $run of that Gate: $described"
+            read -r path event branch <<< "$described"
+            [ "$path" = ".github/workflows/ci.yml" ] || return 1
+            case "$event" in
+              push|schedule) [ "$branch" = main ] && return 0 ;;
+              pull_request) [[ "$branch" == queue/* ]] && return 0 ;;
+            esac
+            return 1
+          }
+
+          if [ "$EVENT" != push ]; then
+            decide false "running the gate and building the archives: a $EVENT backfill reuses nothing"
+          fi
+          tree=$(git rev-parse --verify --quiet "$COMMIT^{tree}") \
+            || decide false "running the gate and building the archives: $COMMIT has no tree"
+
+          pull=$(gh api "repos/$REPOSITORY/commits/$COMMIT/pulls" --jq '
+              [.[] | select(.merged_at != null and .merge_commit_sha == env.COMMIT)]
+              | if length == 1 then "pr \(.[0].number) \(.[0].head.sha)" else "count \(length)" end') \
+            || pull="unavailable"
+          case "$pull" in
+            "pr "*)
+              read -r _ number candidate <<< "$pull"
+              if [[ ! "$candidate" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "#$number names no head commit ($candidate)"
+              elif [ "$(git rev-parse --verify --quiet "$COMMIT^2" || true)" != "$candidate" ]; then
+                echo "$COMMIT is not the merge commit of head $candidate of #$number"
+              elif [ "$(git rev-parse --verify --quiet "$candidate^{tree}" || true)" != "$tree" ]; then
+                echo "head $candidate of #$number does not have the tagged tree $tree"
+              else
+                head="$candidate"
+                echo "#$number merged head $head, whose tree is the tagged tree $tree"
+              fi
+              ;;
+            *) echo "$COMMIT is the merge commit of no single merged pull request ($pull)" ;;
+          esac
+
+          if full_gate "$COMMIT" "the tagged commit"; then
+            decide true "reusing the Gate on the tagged commit"
+          fi
+          if [ -z "$head" ]; then
+            decide false "running the gate: no merged queue head has the tagged tree"
+          fi
+          if ! git merge-base --is-ancestor "$COMMIT^1" "$head"; then
+            decide false "running the gate: main before $COMMIT is not in head $head's history, so no run of #$number tested this tree"
+          fi
+          if full_gate "$head" "head $head of #$number"; then
+            decide true "reusing the Gate on head $head of #$number, whose tree is the tagged tree"
+          fi
+          decide false "running the gate: head $head of #$number has no full green Gate"
+
+      # The archives are built by `package.yml` on the queue push of the head, never at the merge
+      # commit a tag names, so the lookup is keyed on the head `prior-gate` resolved.
+      - name: Look for the archives a queue run built from the merged head
         id: prebuilt
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          COMMIT: ${{ steps.release.outputs.commit }}
+          HEAD: ${{ steps.prior-gate.outputs.head }}
         run: |
           set -euo pipefail
           decide() {
@@ -90,16 +207,19 @@ jobs:
             exit 0
           }
 
-          run=$(gh api "repos/$REPOSITORY/actions/workflows/package.yml/runs?head_sha=$COMMIT&event=push&status=success&per_page=100" --jq '
+          if [[ ! "$HEAD" =~ ^[0-9a-f]{40}$ ]]; then
+            decide "" "building the archives: the tagged commit merged no queue head with its tree"
+          fi
+          run=$(gh api "repos/$REPOSITORY/actions/workflows/package.yml/runs?head_sha=$HEAD&event=push&status=success&per_page=100" --jq '
               [.workflow_runs[]
-                | select(.head_sha == env.COMMIT and .path == ".github/workflows/package.yml"
+                | select(.head_sha == env.HEAD and .path == ".github/workflows/package.yml"
                     and .event == "push" and .conclusion == "success"
                     and (.head_branch | startswith("queue/")))]
               | sort_by(.run_started_at) | last
               | if . == null then "none" else "\(.id)" end') \
-            || decide "" "building the archives: the package runs of $COMMIT are unavailable"
+            || decide "" "building the archives: the package runs of head $HEAD are unavailable"
           if [[ ! "$run" =~ ^[0-9]+$ ]]; then
-            decide "" "building the archives: no successful queue package run built $COMMIT"
+            decide "" "building the archives: no successful queue package run built head $HEAD"
           fi
           held=$(gh api "repos/$REPOSITORY/actions/runs/$run/artifacts?per_page=100" --jq '
               [.artifacts[] | select(.expired == false) | .name] | join(" ")') \
@@ -110,10 +230,11 @@ jobs:
               *) decide "" "building the archives: package run $run holds no release-$target" ;;
             esac
           done
-          decide "$run" "using the archives package run $run built from $COMMIT"
+          decide "$run" "using the archives package run $run built from head $HEAD"
 
   gate:
     needs: resolve
+    if: ${{ needs.resolve.outputs.gate-passed != 'true' }}
     uses: ./.github/workflows/ci.yml
     with:
       checkout-ref: ${{ needs.resolve.outputs.commit }}
@@ -167,7 +288,7 @@ jobs:
   release:
     name: Prepare the release artifact
     needs: [resolve, gate, wasm, package]
-    if: ${{ always() && needs.resolve.result == 'success' && needs.gate.result == 'success' && needs.wasm.result == 'success' && (needs.package.result == 'success' || (needs.package.result == 'skipped' && needs.resolve.outputs.prebuilt-run != '')) }}
+    if: ${{ always() && needs.resolve.result == 'success' && (needs.gate.result == 'success' || (needs.gate.result == 'skipped' && needs.resolve.outputs.gate-passed == 'true')) && needs.wasm.result == 'success' && (needs.package.result == 'success' || (needs.package.result == 'skipped' && needs.resolve.outputs.prebuilt-run != '')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
