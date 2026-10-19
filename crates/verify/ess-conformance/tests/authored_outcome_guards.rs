@@ -605,16 +605,16 @@ fn succeeded(output: &std::process::Output) -> String {
 }
 
 /// The Rust, Go and TypeScript coverage readers each admit an input carrying `ESS-AUTHOR-041` and
-/// one carrying `ESS-AUTHOR-043`, the newest code (beyond10x/ess#543), and refuse one carrying
-/// `ESS-AUTHOR-044`, a code no cause numbers.
+/// one carrying `ESS-AUTHOR-046`, the newest code (beyond10x/ess#542), and refuse one carrying
+/// `ESS-AUTHOR-047`, a code no cause numbers.
 #[test]
 fn every_coverage_reader_admits_the_refusal_and_no_code_after_it() {
     use std::process::Command;
     let input = inventory_with_the_refusal();
     let admitted = input.document().to_canonical_json().unwrap();
     assert!(admitted.contains("ESS-AUTHOR-041"));
-    let unknown = admitted.replace("ESS-AUTHOR-041", "ESS-AUTHOR-044");
-    let newest = admitted.replace("ESS-AUTHOR-041", "ESS-AUTHOR-043");
+    let unknown = admitted.replace("ESS-AUTHOR-041", "ESS-AUTHOR-047");
+    let newest = admitted.replace("ESS-AUTHOR-041", "ESS-AUTHOR-046");
     assert!(ess_conformance::coverage::AdmittedInput::from_json(&admitted).is_ok());
     assert!(ess_conformance::coverage::AdmittedInput::from_json(&newest).is_ok());
     assert!(ess_conformance::coverage::AdmittedInput::from_json(&unknown).is_err());

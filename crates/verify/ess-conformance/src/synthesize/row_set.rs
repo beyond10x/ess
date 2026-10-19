@@ -2353,6 +2353,14 @@ pub(super) fn prepare(
         .iter()
         .map(|selection| under_subject(ir, command, selection, &setup, &supplied))
         .collect();
+    // The addressed subject is held while those rows are arranged, so their own commands read it
+    // as the steps leave it; every such selector names the same subject.
+    let _held = unders
+        .iter()
+        .flatten()
+        .next()
+        .and_then(|(_, row)| addressed(command, &supplied).map(|(entity, _)| (entity, row)))
+        .map(|(entity, row)| subject_fact::holding(ir, entity, row));
     let plan = Plan::new(command, outcome, (&selections, &unders), &closed);
     // A head is arranged only where a creating command steers its first key: a field set from the
     // input, or an identity the input names (ess/27, beyond10x/ess#543).

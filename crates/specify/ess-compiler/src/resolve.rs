@@ -41,6 +41,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ess_domain::actor::ActorSpec;
 use ess_domain::binding::{BindingName, BindingSpec, MappingSource};
+use ess_domain::command::published_operand as published_reads;
 use ess_domain::command::related_value::{input_carrier, referenced_entity, Referenced};
 use ess_domain::command::row_set::RowSetTest;
 use ess_domain::command::{
@@ -3536,7 +3537,7 @@ impl<'a> Resolver<'a> {
     ) -> Option<Vec<ResolvedPublishedRead>> {
         let spec = self.spec;
         let mut resolved = Vec::new();
-        for read in ess_domain::command::published_operand::reads(spec, outcome, selection) {
+        for read in published_reads::reads(spec, outcome, selection) {
             let event = spec.events().get(&read.event)?;
             let held = event.field(&read.field)?;
             let field = self
