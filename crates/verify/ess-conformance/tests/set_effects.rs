@@ -1978,3 +1978,155 @@ mod issue_531 {
         );
     }
 }
+
+/// One call takes each named row to its own transition (ess/27, beyond10x/ess#596): `Apply` moves
+/// the row each answer names by the answer's verdict, through three `each:` entries. The scenario
+/// sends one element per entry and one whose row rests outside its entry's `from` states, beside a
+/// row no element names; the interpreter passes it, a target moving every named row by the first
+/// element's verdict fails it, and so does one that moves the skipped row.
+mod issue_596 {
+    use super::*;
+
+    const MODEL: &str = include_str!("fixtures/each-moves.yaml");
+    const APPLIED: &str = "perrow.batch.Apply/outcome/applied";
+
+    /// The interpreter, sent every `Apply` with each answer's verdict replaced by the first's.
+    struct FirstVerdict {
+        inner: ess_conformance::interpret::Interpreted,
+    }
+
+    impl ConformanceTarget for FirstVerdict {
+        fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+            self.inner.identity()
+        }
+        fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+            self.inner.begin_scenario(scenario)
+        }
+        fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+            self.inner.end_scenario(scenario)
+        }
+        fn execute_command(
+            &self,
+            mut request: SemanticCommandRequest,
+        ) -> Result<SemanticCommandResult, TargetError> {
+            if request.command.to_string() == "perrow.batch.Apply" {
+                if let Some(Node::Seq(answers)) = request.input.get_mut("answers") {
+                    let first = answers.first().and_then(|answer| match answer {
+                        Node::Map(members) => members.get("verdict").cloned(),
+                        _ => None,
+                    });
+                    for answer in answers.iter_mut() {
+                        if let (Node::Map(members), Some(first)) = (answer, &first) {
+                            members.insert("verdict".into(), first.clone());
+                        }
+                    }
+                }
+            }
+            self.inner.execute_command(request)
+        }
+        fn query_view(
+            &self,
+            request: SemanticViewRequest,
+        ) -> Result<SemanticViewResult, TargetError> {
+            self.inner.query_view(request)
+        }
+        fn observe_events(
+            &self,
+            request: EventObservationRequest,
+        ) -> Result<Vec<ObservedEvent>, TargetError> {
+            self.inner.observe_events(request)
+        }
+        fn configure_external_outcome(
+            &self,
+            request: ExternalOutcomeControl,
+        ) -> Result<(), TargetError> {
+            self.inner.configure_external_outcome(request)
+        }
+        fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+            self.inner.redeliver_event(request)
+        }
+    }
+
+    /// The fixture with every move of a proposal starting from every state but its arrival: the
+    /// model of a target that moves a row resting outside its entry's `from` states.
+    fn moves_from_anywhere() -> String {
+        let model = MODEL
+            .replacen(
+                "      terminal: [Applied, Refused, Invalid]\n",
+                "      terminal: []\n",
+                1,
+            )
+            .replacen(
+                "{name: apply, from: [Approved], to: Applied}",
+                "{name: apply, from: [Approved, Refused, Invalid], to: Applied}",
+                1,
+            )
+            .replacen(
+                "{name: refuse, from: [Approved], to: Refused}",
+                "{name: refuse, from: [Approved, Applied, Invalid], to: Refused}",
+                1,
+            )
+            .replacen(
+                "{name: invalidate, from: [Approved], to: Invalid}",
+                "{name: invalidate, from: [Approved, Applied, Refused], to: Invalid}",
+                1,
+            );
+        assert_eq!(model.matches("from: [Approved, ").count(), 3, "{model}");
+        model
+    }
+
+    #[test]
+    fn synthesis_witnesses_each_entry_moves_and_a_skipped_element() {
+        let ir = ir_of(MODEL);
+        let synthesis = ess_conformance::synthesize::synthesize(&ir);
+        assert!(
+            synthesis
+                .refusals
+                .iter()
+                .all(|refusal| !format!("{refusal:?}").contains("Apply")),
+            "{:#?}",
+            synthesis.refusals
+        );
+        let applied = scenario(&synthesis.suite, APPLIED);
+        let sent = applied
+            .steps
+            .iter()
+            .filter(|step| {
+                matches!(step, ScenarioStep::ExecuteCommand { command, .. }
+                    if command.to_string() == "perrow.batch.Apply")
+            })
+            .count();
+        assert!(
+            sent >= 2,
+            "the command under test is sent: {:#?}",
+            applied.steps
+        );
+        let statuses = run(
+            &synthesis.suite,
+            &ess_conformance::interpret::Interpreted::for_model(ir.clone()),
+        );
+        assert!(not_passed(&statuses).is_empty(), "{statuses:#?}");
+        let first = run(
+            &synthesis.suite,
+            &FirstVerdict {
+                inner: ess_conformance::interpret::Interpreted::for_model(ir),
+            },
+        );
+        assert_eq!(
+            first.get(APPLIED),
+            Some(&Status::Failed),
+            "a target moving every named row by the first verdict fails: {:#?}",
+            applied.steps
+        );
+        let anywhere = run(
+            &synthesis.suite,
+            &ess_conformance::interpret::Interpreted::for_model(ir_of(&moves_from_anywhere())),
+        );
+        assert_eq!(
+            anywhere.get(APPLIED),
+            Some(&Status::Failed),
+            "a target moving the skipped row fails: {:#?}",
+            applied.steps
+        );
+    }
+}

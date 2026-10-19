@@ -43,6 +43,7 @@ use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
 use super::caller::{InvocationModels, InvocationPhase};
 use crate::witness::{Distinction, WitnessGap};
 
+mod naming;
 mod pinned;
 
 use super::{
@@ -1639,6 +1640,10 @@ fn affects_segment(
             taken,
             (index, affect, &pin),
         );
+    }
+    // Entries moving or removing the row each element names (ess/27, beyond10x/ess#596).
+    if outcome.affects.iter().any(naming::names_rows) {
+        return naming::affects_segment(models, command, outcome, actors, taken);
     }
     let subject = outcome.subject.as_ref().ok_or_else(|| {
         gap(

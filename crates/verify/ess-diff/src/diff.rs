@@ -2975,9 +2975,23 @@ fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
                 .into_iter()
                 .chain(reads)
                 .collect();
+            // From ess/27 (beyond10x/ess#596) the line also names the elements the entry acts on
+            // and what it does to a held row; an entry without either reads as it always did.
+            let selected = each
+                .filter
+                .as_ref()
+                .map_or_else(String::new, |filter| format!(" where `{filter}`"));
+            let done = match (&affect.moves, affect.deletes) {
+                (_, true) => "deletes the row if held".to_owned(),
+                (Some(transition), false) => format!(
+                    "moves the row if held along `{}`, a row outside its `from` states skipped",
+                    transition.name
+                ),
+                (None, false) => "updated if held and created if not".to_owned(),
+            };
             lines.push(format!(
-                "affects one `{}` per element (each) of `input.{}` as `{}`, named by `{}.{}`, \
-                 updated if held and created if not: {}",
+                "affects one `{}` per element (each) of `input.{}` as `{}`{selected}, named by \
+                 `{}.{}`, {done}: {}",
                 affect.entity.name(),
                 each.list,
                 each.binder,

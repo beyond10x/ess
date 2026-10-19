@@ -1088,6 +1088,11 @@ pub struct ResolvedEach {
     /// The fields written from a member of the element, in the entity's declaration order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reads: Vec<ResolvedElementRead>,
+    /// The elements the entry acts on, over `<binder>.<member>` and `input.<field>` (ess/27,
+    /// beyond10x/ess#596). Left out of the document where it acts on every element, so every other
+    /// model keeps its bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<Predicate>,
 }
 
 /// One entity field an `each:` entry fills from a member of the element (ess/23,

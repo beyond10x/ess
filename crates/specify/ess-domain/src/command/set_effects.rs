@@ -131,10 +131,16 @@ pub struct RawEach {
     /// The name each element is read under.
     #[serde(rename = "as")]
     pub binder: String,
+    /// The elements the entry acts on: a predicate over `<as>.<member>` and `input.<field>`
+    /// (ess/27, beyond10x/ess#596); every element where absent.
+    #[serde(rename = "where", default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<WrittenPredicate>,
 }
 
 /// One row per element of an input list (ess/23, beyond10x/ess#459): for each element, the row
-/// whose identity `member` holds is updated if held and created in `initial` if not.
+/// whose identity `member` holds is updated if held and created in `initial` if not. From ess/27
+/// (beyond10x/ess#596) the entry may instead move or remove that row, a held one only, and act only
+/// on the elements its [`Self::filter`] selects.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Each {
     /// The input field holding the list.
@@ -146,6 +152,10 @@ pub struct Each {
     /// The entity fields written from a member of the element: field, then member.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub reads: BTreeMap<String, String>,
+    /// The elements the entry acts on, over `<binder>.<member>` and `input.<field>` (ess/27,
+    /// beyond10x/ess#596); `None` where it acts on every element.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<Predicate>,
 }
 
 /// The rows a `moves:`, `updates:` or — from ess/23 — `deletes:` outcome changes, selected by a
@@ -859,10 +869,11 @@ fn set_twice(name: &OutcomeName, index: usize, target: &str) -> ValidationErrors
 
 /// The `each:` of one `affects:` entry as written (ess/23, beyond10x/ess#459): the list it reads,
 /// its binder, the member naming each row, and every `sets:` source reading `<as>.<member>`, taken
-/// out of `raw.sets`; `None` where the entry selects by `where:`. Refused: `each:` beside `where:`,
-/// `moves:` or `deletes:`, neither `each:` nor `where:`, `instance:` without `each:` or `each:`
-/// without it, a list that is not `input.<field>`, and a binder or a member read that is not one
-/// name.
+/// out of `raw.sets`, and the element filter; `None` where the entry selects by `where:`. Refused:
+/// `each:` beside `where:`, neither `each:` nor `where:`, `instance:` without `each:` or `each:`
+/// without it, a list that is not `input.<field>`, a binder or a member read that is not one name,
+/// and an element filter that does not parse. `moves:` and `deletes:` beside `each:` are read here
+/// under every format; below ess/27 [`refuse_each`] and [`validate`] refuse them.
 fn each_entry(
     name: &OutcomeName,
     index: usize,
@@ -875,24 +886,19 @@ fn each_entry(
     let Some(each) = raw.each.take() else {
         return selected_by_filter(name, index, raw).map(|()| None);
     };
-    for (beside, present) in [
-        ("where:", raw.filter.is_some()),
-        ("moves:", raw.moves.is_some()),
-        ("deletes:", raw.deletes.is_some()),
-    ] {
-        if present {
-            return refused(
-                ".each",
-                ValidationCode::ConflictingDeclaration,
-                format!(
-                    "outcome `{name}` declares `each:` and `{beside}` in `affects[{index}]`; an \
-                     `each:` entry creates or updates the row each element names, and selects, \
-                     moves or removes no other"
-                ),
-                "keep `each:` with `instance:` and `sets:`, or write the other effect as an entry \
-                 of its own",
-            );
-        }
+    // From ess/27 (beyond10x/ess#596) the entry may move or remove the row each element names;
+    // below it [`refuse_each`] and [`validate`] keep the refusal, naming ess/27.
+    if raw.filter.is_some() {
+        return refused(
+            ".each",
+            ValidationCode::ConflictingDeclaration,
+            format!(
+                "outcome `{name}` declares `each:` and `where:` in `affects[{index}]`; an `each:` \
+                 entry acts on the row each element names, and selects no other"
+            ),
+            "select the elements with `each: {in: …, as: <name>, where: <predicate>}`, or write \
+             the selection as an entry of its own",
+        );
     }
     let list = each
         .list
@@ -952,12 +958,19 @@ fn each_entry(
             &format!("write `instance: {binder}.<member>`"),
         );
     };
+    // A filter that does not parse is refused at the element's `where` (beyond10x/ess#596).
+    let filter = each
+        .filter
+        .map(|filter| filter.read(format!("outcomes.{name}.affects[{index}].each.where")))
+        .transpose()
+        .map_err(ValidationErrors::from)?;
     let reads = element_reads(name, index, &binder, &mut raw.sets)?;
     Ok(Some(Each {
         list: list.to_owned(),
         binder,
         member: identity,
         reads,
+        filter,
     }))
 }
 
@@ -1142,6 +1155,7 @@ pub(super) fn written(
                 each: affect.each.map(|each| RawEach {
                     list: format!("input.{}", each.list),
                     binder: each.binder,
+                    filter: each.filter.map(Into::into),
                 }),
                 entity: affect.entity,
                 sets: PayloadTable(sets),
@@ -1342,6 +1356,29 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                         }
                     }
                     if let Some(each) = &affect.each {
+                        if format.major() < FormatVersion::V27.major() {
+                            // A backstop for a specification assembled without the one header
+                            // [`refuse_each`] reads (beyond10x/ess#596).
+                            let site = at.clone().key("each");
+                            for (beside, present) in [
+                                ("moves:", affect.moves.is_some()),
+                                ("deletes:", affect.deletes),
+                            ] {
+                                if present {
+                                    errors.push(each_effect_below_ess_27(
+                                        outcome.name.as_str(),
+                                        index,
+                                        beside,
+                                        site.render(),
+                                    ));
+                                }
+                            }
+                            if each.filter.is_some() {
+                                errors.push(element_filter_below_ess_27(
+                                    site.clone().key("where").render(),
+                                ));
+                            }
+                        }
                         errors.extend(each_rules(
                             spec, command, outcome, entity, affect, each, &at,
                         ));
@@ -2430,7 +2467,12 @@ fn deletion_shapes(
     let affects = &outcome.set_effects.affects;
     for (index, affect) in affects.iter().enumerate() {
         let at = site.clone().key("affects").index(index);
-        if affect.deletes && !affect.sets.is_empty() {
+        // An element read is a `sets:` entry as written (ess/27, beyond10x/ess#596).
+        let reads = affect
+            .each
+            .as_ref()
+            .is_some_and(|each| !each.reads.is_empty());
+        if affect.deletes && (!affect.sets.is_empty() || reads) {
             errors.push(
                 ValidationError::at(
                     at.clone().key("sets"),
@@ -2769,6 +2811,36 @@ fn each_below_ess_23(at: String) -> ValidationError {
     .with_hint("declare `format: ess/23`")
 }
 
+/// The refusal of `moves:` or `deletes:` (`beside`) in an `each:` entry below ess/27, at `at`
+/// (beyond10x/ess#596): the code and message it had before ess/27, the hint naming the format
+/// that admits it.
+fn each_effect_below_ess_27(name: &str, index: usize, beside: &str, at: String) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::ConflictingDeclaration,
+        at,
+        format!(
+            "outcome `{name}` declares `each:` and `{beside}` in `affects[{index}]`; an `each:` \
+             entry creates or updates the row each element names, and selects, moves or removes \
+             no other, below specification format ess/27"
+        ),
+    )
+    .with_hint(
+        "keep `each:` with `instance:` and `sets:`, or write the other effect as an entry of its \
+         own; from `format: ess/27` the entry may move or delete the row each element names",
+    )
+}
+
+/// The refusal of a `where:` inside `each:` below ess/27, at `at` (beyond10x/ess#596).
+fn element_filter_below_ess_27(at: String) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::UnsupportedFormatVersion,
+        at,
+        "an `each:` entry acting only on the elements a filter selects — `each: {in: …, as: \
+         <name>, where: <predicate>}` — requires specification format ess/27",
+    )
+    .with_hint("declare `format: ess/27`")
+}
+
 /// Refuses, before any outcome is converted, under one header from `ess/16` (beyond10x/ess#459):
 /// below `ess/23` each `each:` inside an `affects:` entry, naming `ess/23`; and in every such format
 /// an entry without `each:` that declares `instance:` or no `where:`, naming `ess/23` below it. The
@@ -2782,9 +2854,15 @@ fn each_below_ess_23(at: String) -> ValidationError {
 /// `type_mismatch` for an element read, and no `empty_declaration`. Below `ess/16` the whole
 /// `affects:` is [`refuse_below_ess_16`]'s; a specification of several headers keeps
 /// [`validate`]'s refusal.
+///
+/// From `ess/23` below `ess/27` (beyond10x/ess#596) an `each:` entry's `moves:` or `deletes:` is
+/// refused as it always was, the hint naming `ess/27`, and a `where:` inside `each:` is refused
+/// naming `ess/27`. Each is taken off, the move recorded in `refused_moves`, so the entry converts as
+/// the create-or-update entry it was and the refusal is not followed by an uncaused transition.
 pub(crate) fn refuse_each(
     files: &mut [(crate::system::Source, crate::spec::RawSpecFile)],
     errors: &mut ValidationErrors,
+    refused_moves: &mut std::collections::BTreeSet<QualifiedName>,
 ) {
     let headers: Vec<Option<FormatVersion>> = files
         .iter()
@@ -2799,6 +2877,7 @@ pub(crate) fn refuse_each(
         return;
     }
     let below_23 = major < FormatVersion::V23.major();
+    let below_27 = major < FormatVersion::V27.major();
     for (_, file) in files.iter_mut() {
         for command in &mut file.commands {
             for outcome in &mut command.outcomes {
@@ -2814,7 +2893,34 @@ pub(crate) fn refuse_each(
                             .get_or_insert_with(|| Predicate::Always.into());
                         continue;
                     }
-                    if affect.each.is_some() {
+                    if let Some(each) = affect.each.as_mut() {
+                        if below_27 {
+                            if each.filter.take().is_some() {
+                                errors
+                                    .push(element_filter_below_ess_27(format!("{at}.each.where")));
+                            }
+                            if let Some(moved) = affect.moves.take() {
+                                errors.push(each_effect_below_ess_27(
+                                    &name,
+                                    index,
+                                    "moves:",
+                                    format!("{at}.each"),
+                                ));
+                                refused_moves.insert(if moved.namespace().is_some() {
+                                    moved
+                                } else {
+                                    affect.entity.child(moved.local())
+                                });
+                            }
+                            if affect.deletes.take().is_some() {
+                                errors.push(each_effect_below_ess_27(
+                                    &name,
+                                    index,
+                                    "deletes:",
+                                    format!("{at}.each"),
+                                ));
+                            }
+                        }
                         continue;
                     }
                     if affect.instance.take().is_some() {
@@ -2897,6 +3003,25 @@ fn each_rules(
         );
         return errors;
     };
+    // The element filter reads the element under its binder and the command's input (ess/27,
+    // beyond10x/ess#596).
+    if let Some(filter) = &each.filter {
+        let at = site.clone().key("where");
+        let bound = [Field::new(
+            binder.clone(),
+            TypeRef::Named(element.name.clone()),
+        )];
+        let environment =
+            DomainEnvironment::new(&spec.system().types, &bound).with_input(&command.input);
+        let checked = crate::expression::check_predicate(&environment, filter, &at.render());
+        for error in &checked.errors {
+            errors.push(ValidationError::at(
+                at.clone(),
+                error.code,
+                error.message.clone(),
+            ));
+        }
+    }
     let instance = at.clone().key("instance");
     match element.field(&each.member) {
         None => errors.push(
@@ -3029,7 +3154,10 @@ fn each_rules(
             }
         });
     }
-    for field in &entity.fields {
+    // An entry that moves or removes the row an element names creates none (ess/27,
+    // beyond10x/ess#596).
+    let creates = affect.moves.is_none() && !affect.deletes;
+    for field in entity.fields.iter().filter(|_| creates) {
         if field.type_ref.is_optional()
             || affect.sets.contains_key(&field.name)
             || each.reads.contains_key(&field.name)
@@ -3160,20 +3288,29 @@ fn identity_set(
 
 /// One transition per entity per outcome (beyond10x/ess#229): a second `affects:` entry declaring
 /// `moves:` over an entity an earlier entry already moves is refused at its `moves`, since a row
-/// both select would have to take two, and no order between their moves is defined.
+/// both select would have to take two, and no order between their moves is defined. Two `each:`
+/// entries are the exception (ess/27, beyond10x/ess#596): they apply in the order written.
 fn one_move_per_entity(
     command: &CommandSpec,
     outcome: &Outcome,
     site: &ConstructRef,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
-    let mut moving: BTreeMap<&QualifiedName, usize> = BTreeMap::new();
-    for (index, affect) in outcome.set_effects.affects.iter().enumerate() {
+    let mut moving: BTreeMap<&QualifiedName, Vec<usize>> = BTreeMap::new();
+    let affects = &outcome.set_effects.affects;
+    for (index, affect) in affects.iter().enumerate() {
         if affect.moves.is_none() {
             continue;
         }
-        let Some(first) = moving.get(&affect.entity) else {
-            moving.insert(&affect.entity, index);
+        let earlier = moving.entry(&affect.entity).or_default();
+        // Entries naming their rows by the elements of a list (ess/27, beyond10x/ess#596) apply in
+        // the order written, each to the rows its elements name, so a row an earlier one moved
+        // rests where a later one's move may not start from: their order is defined.
+        let Some(&first) = earlier
+            .iter()
+            .find(|&&other| affects[other].each.is_none() || affect.each.is_none())
+        else {
+            earlier.push(index);
             continue;
         };
         errors.push(

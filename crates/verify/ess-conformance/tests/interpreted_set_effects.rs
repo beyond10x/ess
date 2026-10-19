@@ -936,3 +936,161 @@ fn interpreter_emits_one_left_per_busy_selected_row() {
         "no Left where no row changed: {none:?}"
     );
 }
+
+/// One call takes each named row to its own transition (ess/27, beyond10x/ess#596): three `each:`
+/// entries over one list, each moving the rows of the elements its `where:` selects.
+mod issue_596 {
+    use super::*;
+
+    const EACH: &str = include_str!("fixtures/each-moves.yaml");
+    const PROPOSAL: &str = "perrow.batch.Proposal";
+
+    fn id(n: u8) -> Node {
+        text(&format!("00000000-0000-4000-8000-0000000000{n:02}"))
+    }
+
+    fn created(
+        ir: &EssIr,
+        store: &mut Store,
+        (command, event, field): (&str, &str, &str),
+        at: Node,
+        input: &BTreeMap<String, Node>,
+    ) {
+        let mut steps = execute_generating(
+            ir,
+            store,
+            &format!("perrow.batch.{command}").parse().unwrap(),
+            input,
+            &Externals::Withheld,
+            &Generated::Given(BTreeMap::from([(
+                GeneratedSlot::new(format!("perrow.batch.{event}").parse().unwrap(), field),
+                at,
+            )])),
+        )
+        .unwrap_or_else(|error| panic!("{command}: {error:?}"));
+        *store = steps.remove(0).next;
+    }
+
+    fn batch(ir: &EssIr, store: &mut Store, n: u8) {
+        created(
+            ir,
+            store,
+            ("Open", "BatchOpened", "batch_id"),
+            id(n),
+            &values([("label", text("b"))]),
+        );
+    }
+
+    fn proposal(ir: &EssIr, store: &mut Store, n: u8, of: u8) {
+        created(
+            ir,
+            store,
+            ("Propose", "Proposed", "proposal_id"),
+            id(n),
+            &values([("batch_id", id(of))]),
+        );
+    }
+
+    fn answer(n: u8, verdict: &str) -> Node {
+        Node::Map(
+            [
+                ("proposal_id".to_owned(), id(n)),
+                ("verdict".to_owned(), text(verdict)),
+            ]
+            .into_iter()
+            .collect(),
+        )
+    }
+
+    fn apply(ir: &EssIr, store: &mut Store, of: u8, answers: Vec<Node>) -> Step {
+        let mut steps = execute(
+            ir,
+            store,
+            &"perrow.batch.Apply".parse().unwrap(),
+            &values([("batch_id", id(of)), ("answers", Node::Seq(answers))]),
+            &Externals::Withheld,
+        )
+        .unwrap_or_else(|error| panic!("{error:?}"));
+        assert_eq!(steps.len(), 1);
+        let step = steps.remove(0);
+        *store = step.next.clone();
+        step
+    }
+
+    fn state(store: &Store, n: u8) -> Option<String> {
+        store
+            .instances()
+            .find(|(entity, identity, _)| entity.to_string() == PROPOSAL && **identity == id(n))
+            .map(|(_, _, row)| row.state.to_string())
+    }
+
+    fn outcome(step: &Step) -> String {
+        step.outcome
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn interpreter_moves_each_named_row_by_its_elements_verdict() {
+        let ir = model(EACH);
+        let mut store = Store::default();
+        batch(&ir, &mut store, 1);
+        batch(&ir, &mut store, 2);
+        for n in 11..=15 {
+            proposal(&ir, &mut store, n, 1);
+        }
+        // A first call puts row 15 in `Applied`.
+        let first = apply(&ir, &mut store, 2, vec![answer(15, "applied")]);
+        assert_eq!(outcome(&first), "perrow.batch.Apply/applied");
+        assert_eq!(state(&store, 15).as_deref(), Some("Applied"));
+        let step = apply(
+            &ir,
+            &mut store,
+            1,
+            vec![
+                answer(11, "applied"),
+                answer(12, "refused"),
+                answer(13, "invalid"),
+                // Already `Applied`, outside `refuse`'s `from`: skipped.
+                answer(15, "refused"),
+                // No row holds it: skipped, and no row is created.
+                answer(19, "applied"),
+            ],
+        );
+        assert_eq!(outcome(&step), "perrow.batch.Apply/applied");
+        assert_eq!(state(&store, 11).as_deref(), Some("Applied"));
+        assert_eq!(state(&store, 12).as_deref(), Some("Refused"));
+        assert_eq!(state(&store, 13).as_deref(), Some("Invalid"));
+        assert_eq!(
+            state(&store, 14).as_deref(),
+            Some("Approved"),
+            "no element names it"
+        );
+        assert_eq!(state(&store, 15).as_deref(), Some("Applied"), "skipped");
+        assert_eq!(
+            state(&store, 19),
+            None,
+            "an element naming no row creates none"
+        );
+        let subject = store
+            .instances()
+            .find(|(entity, identity, _)| {
+                entity.to_string() == "perrow.batch.Batch" && **identity == id(1)
+            })
+            .map(|(_, _, row)| row.state.to_string());
+        assert_eq!(subject.as_deref(), Some("Applied"), "the subject moves");
+        // A refused run moves nothing.
+        batch(&ir, &mut store, 3);
+        proposal(&ir, &mut store, 16, 3);
+        let before = store.clone();
+        let refused = apply(
+            &ir,
+            &mut store,
+            3,
+            vec![answer(16, "applied"), answer(16, "refused")],
+        );
+        assert_eq!(outcome(&refused), "perrow.batch.Apply/duplicated");
+        assert_eq!(store, before, "a refused run moves no row");
+    }
+}

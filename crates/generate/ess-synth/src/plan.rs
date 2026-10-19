@@ -933,9 +933,32 @@ fn affect_clause(ir: &EssIr, affect: &ResolvedAffect) -> String {
         } else {
             format!(", setting `{}`", written.join("`, `"))
         };
+        // From ess/27 (beyond10x/ess#596): only the elements the filter selects, and a held row
+        // moved or removed rather than written.
+        let selected = each
+            .filter
+            .as_ref()
+            .map_or_else(String::new, |filter| format!(" where `{filter}`"));
+        if affect.deletes {
+            return format!(
+                ", removes, beside its subject, for each element of `input.{}`{selected}, the held \
+                 `{entity}` `{}.{}` names; an element naming no row is skipped",
+                each.list, each.binder, each.member
+            );
+        }
+        if let Some(transition) = &affect.moves {
+            return format!(
+                ", changes, beside its subject, for each element of `input.{}`{selected}, the held \
+                 `{entity}` `{}.{}` names{}{setting}; an element naming no row is skipped",
+                each.list,
+                each.binder,
+                each.member,
+                moving_phrase(&transition.name)
+            );
+        }
         return format!(
-            ", writes, beside its subject, one `{entity}` per element of `input.{}`: the row `{}.{}` \
-             names, updated if held and created if not{setting}",
+            ", writes, beside its subject, one `{entity}` per element of `input.{}`{selected}: the \
+             row `{}.{}` names, updated if held and created if not{setting}",
             each.list, each.binder, each.member
         );
     }
