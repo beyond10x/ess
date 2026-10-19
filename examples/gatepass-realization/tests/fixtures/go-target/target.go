@@ -406,16 +406,17 @@ func depositNode(deposit visit.Deposit) essconform.Node {
 	return map[string]essconform.Node{"amount": amount, "currency": deposit.Currency}
 }
 
+// badgeNode leaves an absent printed_at out, as the generated server's wire codec writes it
+// (server/wire.go, encodeGatepassVisitBadge).
 func badgeNode(held visit.Badge) essconform.Node {
-	var printed essconform.Node
+	out := map[string]essconform.Node{
+		"serial":    held.Serial,
+		"signature": base64.StdEncoding.EncodeToString(held.Signature),
+	}
 	if held.PrintedAt != nil {
-		printed = held.PrintedAt.Value()
+		out["printed_at"] = held.PrintedAt.Value()
 	}
-	return map[string]essconform.Node{
-		"serial":     held.Serial,
-		"printed_at": printed,
-		"signature":  base64.StdEncoding.EncodeToString(held.Signature),
-	}
+	return out
 }
 
 func observed(event system.SystemEvent) essconform.ObservedEvent {

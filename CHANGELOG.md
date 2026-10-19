@@ -285,8 +285,9 @@
   field left out, whose presence and type the suite still checks. The Rust, Go, TypeScript and
   browser coverage readers admit the new code (beyond10x/ess#544,
   `docs/design/authored-generated-values.md`).
-- Synthesis sends an `Optional` input absent unless the command reads it, and present in the
-  branch scenario that copies it, instead of filling every optional input
+- Synthesis sends an `Optional` input absent unless the command reads it, or a branch copies the
+  value it is stored as onward (`{related: …}`, a selected row's field, `subject.<field>`), and
+  present in the branch scenario that copies it, instead of filling every optional input
   (beyond10x/ess#546).
 - A minted ordered head refuses only its own branch, naming it, instead of every sibling branch of
   the command (beyond10x/ess#552).

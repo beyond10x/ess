@@ -4052,6 +4052,22 @@ fn arranged(
     if outcome.test_strategy == TestStrategy::InjectFault {
         return unclaimed_external(ir, command, outcome, actors, setup, input);
     }
+    // A row-set command answers the row its input addresses before any row set is read: an
+    // identity no row carries takes its existence refusal (`docs/design/filtered-related-reads.md`,
+    // "Subject borrowing and precedence"). An accepting branch naming no subject of its own that no
+    // row set answers before (beyond10x/ess#552, [`row_set::routes`]) is still sent for a row
+    // that exists, as the row-set arrangement sent it.
+    if row_set::uses(command)
+        && !row_set::routes(command, outcome)
+        && outcome.subject.is_none()
+        && outcome.error.is_none()
+        && matches!(
+            outcome.condition,
+            ResolvedCondition::When { .. } | ResolvedCondition::Otherwise
+        )
+    {
+        return Ok((addressed_row(ir, command, actors, setup), input));
+    }
     Ok((setup, input))
 }
 

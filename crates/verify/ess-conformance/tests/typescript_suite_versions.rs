@@ -679,10 +679,22 @@ fn method<'a>(source: &'a str, signature: &str) -> &'a str {
     &body[..end]
 }
 
+/// The tags a design has the TypeScript runtime admit and report `unsupported`, naming the tag,
+/// rather than execute: each with the design that says so. Nothing else may be left unexecuted.
+const REPORTED_UNSUPPORTED: &[(&str, &str)] = &[(
+    "ViewExpectation::value_invariants",
+    // Wrapped value invariants (suite /52, /53): "Go and TypeScript admission with an
+    // `unsupported` verdict naming the expectation".
+    "docs/design/wrapped-value-invariant-observations.md",
+)];
+
 /// Every step, view expectation and scenario value the Rust runner executes is one the TypeScript
 /// runtime executes — handled by the executor that runs it, not only read at admission.
 /// Read off the sources so a new Rust variant requires a matching runtime implementation.
-/// Named runtime omissions do not satisfy this gate. Semantic parity is checked separately.
+/// A runtime omission satisfies this gate only where it is listed in [`REPORTED_UNSUPPORTED`] with
+/// the design that decides it, and the runtime reports the scenario unsupported naming the tag; a
+/// listed tag the runtime executes, or no longer reports, fails the gate. Semantic parity is
+/// checked separately.
 #[test]
 fn every_rust_suite_tag_is_executed_in_typescript() {
     let scenario = include_str!("../src/scenario.rs");
@@ -722,11 +734,42 @@ fn every_rust_suite_tag_is_executed_in_typescript() {
             }
         }
     }
+    // A listed omission is reported, not executed: the view step skips the scenario naming the
+    // tag, and the design it cites exists.
+    let views = method(
+        runtime,
+        "  async expectView(index: number, step: Step, retry: boolean)",
+    );
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let mut stale = Vec::new();
+    for (listed, design) in REPORTED_UNSUPPORTED {
+        assert!(
+            root.join(design).is_file(),
+            "{listed}: no design at {design}"
+        );
+        let (_, tag) = listed.split_once("::").expect("<enum>::<tag>");
+        let reported = views.contains(&format!("expect === '{tag}'"))
+            && views.contains(&format!(
+                "this.skip(`step ${{index}}: this runner does not observe \\`{tag}\\`"
+            ));
+        if !missing.contains(&(*listed).to_owned()) || !reported {
+            stale.push(*listed);
+        }
+    }
+    assert!(
+        stale.is_empty(),
+        "listed as reported unsupported, but executed or not reported by name: {stale:?}"
+    );
+    missing.retain(|tag| !REPORTED_UNSUPPORTED.iter().any(|(listed, _)| listed == tag));
     assert!(
         missing.is_empty(),
         "the TypeScript runtime does not execute: {missing:?}"
     );
-    println!("typescript vocabulary: {counted} Rust tag(s), each executed");
+    println!(
+        "typescript vocabulary: {counted} Rust tag(s), each executed but {} reported unsupported \
+         by design",
+        REPORTED_UNSUPPORTED.len()
+    );
 }
 
 // ---- #188: a nested `sets:` struct with one generated leaf ---------------------------------------

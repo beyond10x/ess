@@ -405,7 +405,11 @@ fn sha256(text: &str) -> String {
 }
 
 /// The digests were read at the unit's base `09ec1dc33`, before any production change; the
-/// refusal lines are ess 0.53.0's own output for the same two models.
+/// refusal lines are ess 0.53.0's own output for the same two models. The scalar model's digest is
+/// re-pinned on the 0.63.0 integration branch for the review fix a422cac9d alone: its row-set
+/// refusal carries the arrangement help in place of "give the field a type that has a finite
+/// value, or drop it from the command's input"; with that line put back, the document hashes to
+/// the old literal `73e7ff8e…3a4f5a` byte for byte.
 #[test]
 fn ess22_struct_identity_selector_keeps_bytes() {
     let members = replaced(SHELVES, "format: ess/23", "format: ess/22");
@@ -434,7 +438,7 @@ fn ess22_struct_identity_selector_keeps_bytes() {
     );
     assert_eq!(
         sha256(&scalar),
-        "73e7ff8e63ade3db600d7c419dd1d13ce14ab87711b12cb2209bf94e2f3a4f5a",
+        "29c067c98377599bd0e0c366c601310e586b419c6a7a4789d15f9cffb3d7c686",
         "the ess/22 suite moved:\n{scalar}"
     );
 }
