@@ -85,9 +85,9 @@ fn synthesis_refuses_a_shorthand_struct_by_name() {
     }
 
     // The same model without the key is synthesized by each.
-    let plain = shorthand_model(false);
+    let long_form = shorthand_model(false);
     for target in [Target::Rust, Target::Go, Target::Web] {
-        if let Err(failure) = synthesize_for(&plain, target) {
+        if let Err(failure) = synthesize_for(&long_form, target) {
             panic!("{target:?} synthesizes the long-form model: {failure}");
         }
     }
