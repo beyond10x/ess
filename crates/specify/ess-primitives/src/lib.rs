@@ -10,6 +10,7 @@ pub mod consistency;
 pub mod entity;
 pub mod error;
 pub mod evidence;
+pub mod expr;
 pub mod facts;
 pub mod ids;
 pub mod json;

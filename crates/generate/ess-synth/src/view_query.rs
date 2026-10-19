@@ -33,6 +33,15 @@ pub(crate) fn view(ir: &EssIr, view: &ResolvedView) -> Result<(), String> {
     if view.absent.is_some() {
         return Err("a view's answer for an identity no row carries (`absent:`)".to_owned());
     }
+    // ess/27 (beyond10x/ess#560): a generated query computes no expression yet; the query stays
+    // owed, named by the field it would compute, rather than computed otherwise than the shared
+    // evaluator computes it.
+    if let Some((name, expr)) = view.computed.iter().next() {
+        return Err(format!(
+            "the computed field `{name}` (`expr: \"{expr}\"`), which a generated query does not \
+             compute"
+        ));
+    }
     params(ir, view)?;
     let entity = ir.entity(&view.source);
     if let Some(filter) = &view.filter {

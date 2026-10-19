@@ -130,6 +130,11 @@ fn operand(operand: &Operand, out: &mut Vec<Token>) {
                     out.push(Token::Tag(0));
                     path(parent, out);
                 }
+                // ess/27 (beyond10x/ess#584): its canonical text names the expression.
+                Derived::Call(expr) => {
+                    out.push(Token::Tag(1));
+                    out.push(Token::Text(expr.to_string()));
+                }
             }
         }
     }

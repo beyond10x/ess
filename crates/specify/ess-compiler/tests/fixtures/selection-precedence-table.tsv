@@ -1,4 +1,4 @@
-#	models=268	commands=543
+#	models=271	commands=552
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -349,6 +349,9 @@ crates/verify/ess-conformance/tests/fixtures/defined-over-optional-aggregates.ya
 crates/verify/ess-conformance/tests/fixtures/defined-over-optional-aggregates.yaml	demo.queue.ResumeQueue	held_state: wrong-state | default: resumed
 crates/verify/ess-conformance/tests/fixtures/delivery-context.yaml	ir=29bf6e0eeb5cc90a61f1db25b9ae2fd5a4807ba820d3c03de13c69f3ac398391:6503
 crates/verify/ess-conformance/tests/fixtures/delivery-context.yaml	demo.inbox.RecordMessage	accepting: unavailable | default: recorded
+crates/verify/ess-conformance/tests/fixtures/digest-guard.yaml	ir=35182a69a9fa2ae58b318c856dcac0882eb11f2b82c2b5828ed183bf3311c0bf:11889
+crates/verify/ess-conformance/tests/fixtures/digest-guard.yaml	demo.pkce.Exchange	held_state: mismatch, redirect-mismatch, not-issued | default: redeemed
+crates/verify/ess-conformance/tests/fixtures/digest-guard.yaml	demo.pkce.IssueCode	default: issued
 crates/verify/ess-conformance/tests/fixtures/each-moves.yaml	ir=eb1ab3f2266ed75bb0a1670fad2bf8be2eacdb66d80d01345137f335ff7af5e7:17198
 crates/verify/ess-conformance/tests/fixtures/each-moves.yaml	perrow.batch.Apply	input_refusal: duplicated | held_state: wrong-state | default: applied
 crates/verify/ess-conformance/tests/fixtures/each-moves.yaml	perrow.batch.Open	default: opened
@@ -443,6 +446,15 @@ crates/verify/ess-conformance/tests/fixtures/explore.yaml	explore.desk.HoldTicke
 crates/verify/ess-conformance/tests/fixtures/explore.yaml	explore.desk.OpenTicket	accepting: opened | default: rejected
 crates/verify/ess-conformance/tests/fixtures/explore.yaml	explore.desk.ReleaseTicket	held_state: wrong-state | default: released
 crates/verify/ess-conformance/tests/fixtures/explore.yaml	explore.desk.Restock	accepting: restocked | default: refused
+crates/verify/ess-conformance/tests/fixtures/expression-arithmetic-and-time.yaml	ir=9744a9afbc4a3fb05ce551890319bc3b37bf895c96d0907baf0ea61b17673234:10251
+crates/verify/ess-conformance/tests/fixtures/expression-arithmetic-and-time.yaml	demo.ledger.RecordPastIncident	default: recorded
+crates/verify/ess-conformance/tests/fixtures/expression-roots.yaml	ir=d9d1279e3e0dd4f6737aed9b9ddeb048ab1e19118619badc03308602a6744471:30337
+crates/verify/ess-conformance/tests/fixtures/expression-roots.yaml	demo.review.CloseReview	held_state: not-open | present_related: missing, not-settled | default: closed
+crates/verify/ess-conformance/tests/fixtures/expression-roots.yaml	demo.review.FileComplaint	present_related: no-customer | default: filed
+crates/verify/ess-conformance/tests/fixtures/expression-roots.yaml	demo.review.JoinCustomer	default: joined
+crates/verify/ess-conformance/tests/fixtures/expression-roots.yaml	demo.review.OpenIncident	default: opened
+crates/verify/ess-conformance/tests/fixtures/expression-roots.yaml	demo.review.OpenReview	default: opened
+crates/verify/ess-conformance/tests/fixtures/expression-roots.yaml	demo.review.SettleIncident	held_state: sealed, not-detected | default: settled
 crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	ir=5b9804acff0e81eee23558ad3a1f1e3df0cb34e7ec8f77eb2e74cd02dfa92bc7:12384
 crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	demo.desk.CheckPick	held_state: stale, wrong-state | accepting: unlisted | default: accepted
 crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	demo.desk.MakePick	default: picked

@@ -264,6 +264,11 @@ impl Number {
         }
     }
 
+    /// The exact value as `(units, scale)` — `units × 10^-scale` — when there is one.
+    pub const fn exact_parts(self) -> Option<(i128, u8)> {
+        self.exact()
+    }
+
     /// The exact value as `(units, scale)`, when there is one.
     const fn exact(self) -> Option<(i128, u8)> {
         match self.0 {

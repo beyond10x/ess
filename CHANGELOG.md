@@ -4,6 +4,48 @@
 
 ### Added
 
+- From `format: ess/27` a value may be computed by an expression, `{expr: "<expression>"}`, in
+  `sets:`, an event's `payload:` and an error's `payload:`, and a view field may be computed from
+  its source row, `{name: elapsed, type: Duration, expr: "ended_at - started_at"}` — the first
+  cut of the typed expression language (G1, `docs/design/generic-language-features.md`; grid O's
+  arithmetic and time rows, in the value positions of grid R). `+ - * /` over Integer and Decimal
+  are exact, `/` is an `Optional<Decimal>` at six places half-even and absent at a zero divisor,
+  `round(x, digits, half_even | half_up | down)` rounds a quotient once; `abs`, `min`, `max` and
+  `coalesce(a, b)` are functions; `Timestamp - Timestamp` is a `Duration`, `Timestamp ± Duration`
+  a `Timestamp`, and `60s`, `5m`, `1h` are literals. An expression reads `input.<path>` and, on an
+  existing subject, `subject.<field>`, or a view's source fields, and is typed against the field
+  it fills. The interpreter and synthesis compute it with one shared evaluator; synthesis runs the
+  branch again on inputs worth checking the figure on — the reads apart, a zero divisor, a rounding
+  tie either way. The generated Rust and Go behaviours and queries and Entity Runtime keep such a
+  command or view an obligation, named by the expression. Below `ess/27` the shape keeps its
+  nested-mapping reading and a refusal of it names `ess/27` (beyond10x/ess#560).
+- From `format: ess/27` a value reads what its branch established (G1 narrowing, grid R's subject
+  column in the error payload). A refusal guarded by a related row the addressed record's stored
+  reference names, `when_related: {via: <field>, …}`, reads that record's stored fields with
+  `{subject: …}`, so an error can name the incident a review belongs to. An `Optional` input reads
+  at its present type in a `when_related:` branch over it (`via: input.<field>`): an absent
+  reference selects no such branch. A stored `Optional` field reads at its present type under its
+  own `when_subject: {predicate: defined(<field>)}`, and `{related: {via, field}}` under
+  `when_related: {predicate: defined(<field>)}`. Synthesis asserts the named value in the error,
+  the stored identity included where the arrangement named it by a literal; the interpreter reads
+  the record the reference was followed from. Every other `Optional` read keeps its refusal; below
+  `ess/27` these do too, the hint naming `ess/27`. The generated Rust and Go behaviours keep a
+  command copying a value its branch narrowed an obligation, named by the read, rather than
+  copy the declared `Optional` into the inner type (beyond10x/ess#555, beyond10x/ess#556).
+- From `format: ess/27` a command outcome's guard reads a fact through a digest or encoding
+  function (grid O's text/bytes family, in the guard positions of grid R): `challenge !=
+  base64url(sha256(ascii(input.verifier)))` states RFC 7636 PKCE `S256` as a held-row predicate.
+  `sha256` takes a String (its UTF-8 bytes) or Bytes, `base64url` Bytes, `ascii` a String; each
+  is pinned by its standard's known answers, the RFC 7636 Appendix B example included, and a
+  misuse is refused naming the type the function takes. The same functions are expression values
+  under `{expr: …}`. Synthesis issues the stored challenge the verifier it sends computes for the
+  accepting branch and sends one computing another for the refusal; a held-state refusal is
+  witnessed on a row and input where a refusal declared after it holds too, so the declaration
+  order is checked. The interpreter and the Rust, Go and TypeScript runners agree on every
+  scenario; the generated behaviours keep such a command an obligation and Entity Runtime refuses
+  the guard (`FunctionCallUnsupported`). A function elsewhere is refused by name, and below
+  `ess/27` an unquoted call spelling is refused naming `ess/27`; quoted it is the text it spells
+  (beyond10x/ess#584).
 - From `format: ess/27` an `each:` entry of `affects:` may move or delete the row each element
   names (`moves: <Entity>.<transition>`, `deletes: <Entity>`), and `each:` may carry a `where:`
   over the element and the input, so one call takes each named row to its own transition by the
@@ -179,6 +221,13 @@
   the test, testing one side or dropping a conjunct or the tie fails a scenario. `Quantified::over`
   in `ess-primitives` is now a `Collection`, and `FactSource` gains a defaulted `rows`
   (beyond10x/ess#551, `docs/design/related-rows-quantifier.md`).
+
+### Changed
+
+- `now` in a view filter stays refused, and the refusal now names the idiom that keeps the bound
+  in the specification: `from`/`to` view parameters the caller sends, `<field> >= param.from` and
+  `<field> < param.to`. A view read has no clock a suite fixes, so no scenario could check the
+  rows either side of a `now` bound (beyond10x/ess#567).
 
 ### Fixed
 

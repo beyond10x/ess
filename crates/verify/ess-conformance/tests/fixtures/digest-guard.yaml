@@ -1,0 +1,82 @@
+format: ess/27
+system: demo
+version: v1
+domain: demo.pkce
+types:
+  - {name: demo.pkce.CodeId, kind: newtype, of: Uuid}
+  - {name: demo.pkce.Method, kind: enum, variants: [plain, S256]}
+entities:
+  - name: demo.pkce.Code
+    identity: {name: code, type: demo.pkce.CodeId}
+    fields:
+      - {name: challenge, type: String}
+      - {name: method, type: demo.pkce.Method}
+      - {name: redirect_uri, type: String}
+    lifecycle:
+      initial: Issued
+      states: [Issued, Redeemed]
+      terminal: [Redeemed]
+      transitions:
+        - {name: redeem, from: [Issued], to: Redeemed}
+errors:
+  - {name: demo.pkce.InvalidVerifier, summary: The verifier does not match the challenge., fields: []}
+  - {name: demo.pkce.RedirectMismatch, summary: The redirect does not match the one issued., fields: []}
+  - {name: demo.pkce.AlreadyRedeemed, summary: The code was redeemed already., fields: []}
+events:
+  - name: demo.pkce.CodeIssued
+    fields:
+      - {name: code, type: demo.pkce.CodeId}
+  - name: demo.pkce.CodeRedeemed
+    fields:
+      - {name: code, type: demo.pkce.CodeId}
+actors:
+  - name: demo.pkce.Client
+    may: [demo.pkce.IssueCode, demo.pkce.Exchange]
+commands:
+  - name: demo.pkce.IssueCode
+    input:
+      - {name: code, type: demo.pkce.CodeId}
+      - {name: challenge, type: String}
+      - {name: method, type: demo.pkce.Method}
+      - {name: redirect_uri, type: String}
+    outcomes:
+      - name: issued
+        creates: demo.pkce.Code
+        instance: code
+        sets:
+          challenge: input.challenge
+          method: input.method
+          redirect_uri: input.redirect_uri
+        emits: [demo.pkce.CodeIssued]
+        payload:
+          demo.pkce.CodeIssued: {code: input.code}
+  - name: demo.pkce.Exchange
+    input:
+      - {name: code, type: demo.pkce.CodeId}
+      - {name: verifier, type: String}
+      - {name: redirect_uri, type: String}
+    outcomes:
+      - name: mismatch
+        when_subject:
+          predicate:
+            all:
+              - method == S256
+              - challenge != base64url(sha256(ascii(input.verifier)))
+        error: demo.pkce.InvalidVerifier
+      - name: redirect-mismatch
+        when_subject: {predicate: redirect_uri != input.redirect_uri}
+        error: demo.pkce.RedirectMismatch
+      - name: redeemed
+        moves: demo.pkce.Code.redeem
+        instance: code
+        emits: [demo.pkce.CodeRedeemed]
+        payload:
+          demo.pkce.CodeRedeemed: {code: input.code}
+      - {name: not-issued, wrong_state: true, error: demo.pkce.AlreadyRedeemed}
+views:
+  - name: demo.pkce.Codes
+    source: demo.pkce.Code
+    consistency: read_your_writes
+    fields:
+      - {name: code, type: demo.pkce.CodeId}
+      - {name: state, type: demo.pkce.Code.State}

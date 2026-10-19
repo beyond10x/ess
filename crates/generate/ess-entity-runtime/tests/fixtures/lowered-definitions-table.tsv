@@ -1,4 +1,4 @@
-#	models=312	lines=446
+#	models=315	lines=449
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -137,6 +137,7 @@ crates/verify/ess-conformance/tests/fixtures/current-time-guard.yaml	components=
 crates/verify/ess-conformance/tests/fixtures/declared-behaviour.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/defined-over-optional-aggregates.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/delivery-context.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/digest-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/each-moves.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/emit-swap-served.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/emit-swap-served.yaml	items-service	REFUSED	9fb6aaffab540c3a9df4baa73b13ccf3adf7210fd0a24a7ae08daf7774395783:662
@@ -163,6 +164,8 @@ crates/verify/ess-conformance/tests/fixtures/explore-selected-rows-unknown.yaml	
 crates/verify/ess-conformance/tests/fixtures/explore-selected-rows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-stored-rows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/expression-arithmetic-and-time.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/expression-roots.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	components=0

@@ -50,3 +50,27 @@ The synthesized suite checks the narrowing: the refusal's scenario sends no `acc
 `account-missing`, and the success scenario sends one. Below `ess/16` the copy is refused as a
 `type_mismatch`, as it always has been.
 [Design](https://github.com/beyond10x/ess/blob/main/docs/design/optional-input-narrowing.md).
+
+## From `ess/27`: what a branch's own guard establishes
+
+From source `ess/27` a value reads at its present type wherever its own branch's guard proves it
+present (beyond10x/ess#556):
+
+```yaml
+- name: no-customer                 # an absent customer_id selects no when_related branch
+  when_related: {via: input.customer_id, exists: false}
+  error: ledger.NoSuchCustomer
+  payload: {ledger.NoSuchCustomer: {customer_id: input.customer_id}}
+- name: sealed
+  when_subject: {predicate: defined(approved_by)}
+  error: ledger.IncidentLocked
+  payload: {ledger.IncidentLocked: {approved_by: {subject: approved_by}}}
+```
+
+`{related: {via, field}}` reads at its present type under `when_related: {predicate:
+defined(field)}` over the same `via`. A refusal guarded by a related row the addressed record's
+stored reference names, `when_related: {via: incident_id, …}`, reads that record's stored fields
+with `{subject: …}` (beyond10x/ess#555): the record was read to follow the reference. The suite
+asserts each value in the error. The generated Rust and Go behaviours keep such a command an
+obligation, named by the read. Below `ess/27` each read keeps its refusal, the hint naming
+`ess/27`.

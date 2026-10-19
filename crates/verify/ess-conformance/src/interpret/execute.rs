@@ -2533,6 +2533,10 @@ fn related_head(
     values::selected(ir, field, ir.entity(&selection.entity), key, row)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arm per value source the interpreter determines"
+)]
 fn value_at(
     ir: &EssIr,
     field: &ResolvedPayloadField,
@@ -2575,6 +2579,11 @@ fn value_at(
             field.conversion.as_deref(),
             work.before.as_ref(),
         ),
+        // ess/27 (beyond10x/ess#560): the shared evaluator over the invocation's input and the row
+        // as it was before the outcome; absent leaves the field absent.
+        ResolvedPayloadValue::Expression { expr, .. } => {
+            values::expression(expr, input, work.before.as_ref())
+        }
         ResolvedPayloadValue::Increment { by } => values::increment(
             ir,
             field,

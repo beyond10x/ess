@@ -48,6 +48,7 @@ const sidebars: SidebarsConfig = {
             'guides/specify/commands-and-outcomes',
             'guides/specify/selection-effects',
             'guides/specify/values-and-views',
+            'guides/specify/views',
             'guides/specify/narrowed-inputs',
             'guides/specify/aggregate-views',
             'guides/specify/bindings-and-components',

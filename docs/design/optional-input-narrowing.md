@@ -99,3 +99,29 @@ refuses a present account fails the success scenario.
 handed (`types_with_lifecycles` records it). The nested-leaf check and the compiler read it from the
 specification. Below `ess/16` every read keeps its declared type, and the refusal is the
 `type_mismatch` it was, with the same message.
+
+## From `ess/27`: what a branch establishes
+
+Source format `ess/27` extends the rule to the reads a branch's own guard establishes
+(`story:expression-roots-a-branch-establishes-are-readable`, beyond10x/ess#555, #556, and
+`docs/design/generic-language-features.md` § G1, "Narrowing"):
+
+| Read | Narrowed where | Checked at |
+|---|---|---|
+| `input.x`, `x` declared `Optional<T>` | the branch is a `when_related:` over `via: input.x`: an absent reference reads no row and selects no `when_related` branch | `CommandSpec::narrowed_input_at` (`command/narrowing.rs`), through `admits_input_read`; the compiler's `narrowed_read` |
+| `{subject: f}`, `f` stored `Optional<T>` | the branch's `when_subject:` predicate requires `defined(f)`, alone or in an `all:` | `CommandSpec::narrows_subject_field`; `check_subject` (`command/value_expression.rs`); the compiler's `expression_field` |
+| `{related: {via, field}}`, `field` stored `Optional<T>` | the branch's `when_related:` over the same `via` has a predicate requiring `defined(field)` | `CommandSpec::narrows_related_field`; `check_related`; the compiler's `related_field` |
+
+The error payload of a refusal guarded by a related row the addressed record's stored reference
+names (`when_related: {via: <field>, …}`) reads that record's stored fields: the record was read
+to follow the reference (`subject_fact::error_subject`, `reads_subject_through_reference`). The
+error payload is checked against the registry with the specification's format, so the input rule
+applies there too. As above, the read records `T`; a model that narrows nothing keeps its IR
+bytes. Below `ess/27` each of these keeps its refusal, its hint naming `ess/27`.
+
+Synthesis asserts the read value in the error: a stored identity the arrangement named by a
+literal is resolved through the steps that created and wrote the rows
+(`synthesize/established.rs`). The interpreter reads the record a refusal followed its reference
+from. The generated Rust and Go behaviours read the declared `Optional` and copy no value out of
+it, so a command copying a narrowed read stays an obligation named by the read
+(`ess-synth` `determined::value`).

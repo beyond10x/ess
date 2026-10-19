@@ -20,7 +20,7 @@ authority; this list only helps you find it.
 | Compiled model (IR) | The normalized intermediate representation every name resolves in; compiling the same source twice gives the same bytes. | [The pipeline](../concepts/ess.md#the-pipeline) |
 | Component | A unit of ownership over domains, which can become a module or a process without changing what it owns. | [Logical, interface and delivery owners](../concepts/ess.md#logical-interface-and-delivery-owners) |
 | Concurrent history | A recorded run of several clients, with each call's invoke and return instants, checked against the model. | [Check a concurrent history](../guides/verify/explore.md#check-a-concurrent-history) |
-| Consistency | A view's declaration of whether a generated assertion reads it immediately or eventually. | [View consistency](../guides/specify/values-and-views.md#a-view-declares-its-consistency) |
+| Consistency | A view's declaration of whether a generated assertion reads it immediately or eventually. | [View consistency](../guides/specify/views.md#a-view-declares-its-consistency) |
 | Conversion | A declared reason for a binding to carry a value from one context's type into another's. | [Conversions](../guides/specify/wire-names.md#crossing-contexts-takes-a-declared-conversion) |
 | Declared coverage | An opt-in suite form that retains its declared scope, the selected scenarios and every refusal, so a report can qualify what it covers. | [Declared coverage](../guides/verify/runners.md#opt-into-declared-coverage) |
 | Deliverable descriptor | An `ess-component/1` document naming a deliverable's source paths and release units. | [Component delivery](../concepts/component-delivery.md) |

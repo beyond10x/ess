@@ -54,6 +54,7 @@ pub fn emit_input(
 ) -> Result<BTreeMap<String, Artifact>, crate::admission::AdmissionError> {
     response_replay_supported(input.selected().suite())?;
     refusal_policy_supported(ir)?;
+    computed_fields_supported(ir)?;
     let replay = crate::web_replay::AdmittedReplay::new(ir, input)?;
     let mut out = BTreeMap::new();
     for (path, contents) in [
@@ -263,6 +264,7 @@ fn set_source(set: &ess_compiler::ir::ResolvedPayloadField) -> Option<String> {
         | ess_compiler::ir::ResolvedPayloadValue::RelatedHead { .. }
         | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
         | ess_compiler::ir::ResolvedPayloadValue::PayloadRead { .. }
+        | ess_compiler::ir::ResolvedPayloadValue::Expression { .. }
         | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
         | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
         | ess_compiler::ir::ResolvedPayloadValue::ChangedCount => None,
@@ -312,6 +314,20 @@ fn readme(ir: &EssIr, suite: &ConformanceSuite) -> String {
 /// A failure policy selected per refusal (ess/22, beyond10x/ess#269) has no representation in the
 /// page's model, whose closed binding names one failure word: printing the fallback's would claim
 /// it for every refusal. Refused by name, as the generated targets refuse it.
+/// A view computing a field from its row (`expr:`, ess/27, beyond10x/ess#560) is refused by name: the
+/// player shows a row's fields as the scenario left them and computes none.
+fn computed_fields_supported(ir: &EssIr) -> Result<(), crate::admission::AdmissionError> {
+    match ir.views().values().find(|view| !view.computed.is_empty()) {
+        Some(view) => Err(crate::admission::AdmissionError::new(
+            "UnsupportedConstruct",
+            format!("$model.views.{}.fields", view.name),
+            "the scenario player shows a view's rows as stored and computes no field from them \
+             (`expr:`)",
+        )),
+        None => Ok(()),
+    }
+}
+
 fn refusal_policy_supported(ir: &EssIr) -> Result<(), crate::admission::AdmissionError> {
     match ir
         .bindings()

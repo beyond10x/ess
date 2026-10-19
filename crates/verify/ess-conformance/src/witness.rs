@@ -3180,7 +3180,11 @@ fn byte_lengths(guards: &[&Predicate]) -> BTreeMap<FactPath, Vec<usize>> {
             Predicate::Not(inner) => walk(inner, found),
             Predicate::Compare { left, right, .. } => {
                 for (operand, other) in [(left, right), (right, left)] {
-                    let Operand::Derived(derived) = operand else {
+                    // A byte length only: a function of a fact (ess/27) has no length to resize.
+                    let Operand::Derived(
+                        derived @ ess_primitives::predicate::Derived::Utf8Bytes(_),
+                    ) = operand
+                    else {
                         continue;
                     };
                     let values = found.entry(derived.parent().clone()).or_default();
@@ -3355,8 +3359,8 @@ fn byte_length_pairs(guards: &[&Predicate]) -> Vec<(FactPath, FactPath)> {
             }
             Predicate::Not(inner) => walk(inner, found),
             Predicate::Compare {
-                left: Operand::Derived(left),
-                right: Operand::Derived(right),
+                left: Operand::Derived(left @ ess_primitives::predicate::Derived::Utf8Bytes(_)),
+                right: Operand::Derived(right @ ess_primitives::predicate::Derived::Utf8Bytes(_)),
                 ..
             } if left.parent() != right.parent() => {
                 let pair = (left.parent().clone(), right.parent().clone());

@@ -264,7 +264,10 @@ it may overlap, is refused at the branch's own `command <name>.outcomes.<outcome
 to 61 with beyond10x/ess#534: `validate_before_row`, which refuses a misused `before_row: true`
 from one helper, its `ess/25` format gate `before_row_format`, and the two order refusals of
 `validate_before_row_order`, all written with `ValidationError::at` at the branch's
-`command <name>.outcomes.<outcome>.before_row` site. No string-located site was added.
+`command <name>.outcomes.<outcome>.before_row` site. No string-located site was added. It rose
+to 62 with the 2026-10-19 downstream report (finding 16): a literal a command writes into a field
+whose entity invariant it breaks is refused with `ValidationError::at`. No string-located site was
+added.
 
 `types.rs` rose from 16 to 17 string-located sites, and its `types` head from 8 to 9 literals, with
 beyond10x/ess#426 and #448: a YAML boolean written as an enum variant is refused at
@@ -306,12 +309,17 @@ required scalar, and beside another required field, each from one `ConstructRef`
 at `actor.<name>.system` and beside `attributes:` at `actor.<name>.attributes`. None adds a head
 literal below.
 
+`view.rs` gains four string-located sites with the computed view field (`expr:`, `ess/27`,
+beyond10x/ess#560), in the family the row above defers: `aggregate:` beside `expr:`, `expr:`
+below `ess/27`, `expr:` in an aggregate view, and the expression's own refusal, each at
+`view.<name>.fields[<n>].expr`; one of them adds a `view` head literal below.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
 actor.rs 3 4
 binding.rs 36 0
-command.rs 13 61
+command.rs 13 62
 component.rs 15 9
 domain.rs 5 0
 entity.rs 17 5
@@ -326,7 +334,7 @@ system_issued.rs 0 3
 topology.rs 10 0
 types.rs 23 1
 undeclared_fields.rs 0 4
-view.rs 29 0
+view.rs 33 0
 wire.rs 2 0
 ```
 <!-- inventory:end -->
@@ -377,7 +385,7 @@ types system.rs 3
 types types.rs 13
 types wire.rs 1
 view primitive_admission.rs 3
-view view.rs 13
+view view.rs 14
 view wire.rs 2
 ```
 <!-- heads:end -->

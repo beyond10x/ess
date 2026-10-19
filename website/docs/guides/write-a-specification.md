@@ -21,8 +21,8 @@ one.
    held state or stored fields.
 4. [Commands and outcomes](specify/commands-and-outcomes.md) — wrong-state answers, unknown
    instances, existence, filters, deletion and event value sources.
-5. [Values, credentials and views](specify/values-and-views.md) — value expressions, the caller's
-   credential, and view consistency, paging and aggregates.
+5. [Values and credentials](specify/values-and-views.md) — value expressions and the caller's
+   credential; [Views](specify/views.md) — view consistency, paging and aggregates.
 6. [Components and bindings](specify/bindings-and-components.md) — the layers above the domains
    and bindings between components.
 7. [Selections, periodic causes and delivery context](specify/binding-context.md) — what a binding
@@ -66,8 +66,8 @@ an older link still finds it.
 - <a id="value-expressions"></a>[Value expressions](specify/values-and-views.md#value-expressions)
 - <a id="read-the-callers-credential"></a>[Read the caller's credential](specify/values-and-views.md#read-the-callers-credential)
 - <a id="an-input-refused-when-absent-is-present-afterwards"></a>[An input refused when absent is present afterwards](specify/values-and-views.md#an-input-refused-when-absent-is-present-afterwards)
-- <a id="a-view-declares-its-consistency"></a>[A view declares its consistency](specify/values-and-views.md#a-view-declares-its-consistency)
-- <a id="a-view-can-be-paged"></a>[A view can be paged](specify/values-and-views.md#a-view-can-be-paged)
+- <a id="a-view-declares-its-consistency"></a>[A view declares its consistency](specify/views.md#a-view-declares-its-consistency)
+- <a id="a-view-can-be-paged"></a>[A view can be paged](specify/views.md#a-view-can-be-paged)
 - <a id="aggregate-views"></a>[Aggregate views](specify/aggregate-views.md)
 - <a id="a-binding-says-what-happens-when-it-fails"></a>[A binding says what happens when it fails](specify/bindings-and-components.md#a-binding-says-what-happens-when-it-fails)
 - <a id="bound-a-retry"></a>[Bound a retry](specify/bindings-and-components.md#bound-a-retry)

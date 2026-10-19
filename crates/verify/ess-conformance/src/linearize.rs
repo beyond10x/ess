@@ -437,6 +437,7 @@ fn reads_other_rows(command: &ResolvedCommand) -> bool {
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::CallerAttribute { .. }
             | ResolvedPayloadValue::PayloadRead { .. }
+            | ResolvedPayloadValue::Expression { .. }
             | ResolvedPayloadValue::ChangedField { .. }
             | ResolvedPayloadValue::ChangedState { .. }
             | ResolvedPayloadValue::ChangedCount => false,

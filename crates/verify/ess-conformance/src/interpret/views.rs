@@ -362,6 +362,18 @@ fn project(
         for (fields, _) in selected {
             let mut row = BTreeMap::new();
             for field in &view.fields {
+                // ess/27 (beyond10x/ess#560): computed from the row by the shared evaluator.
+                if let Some(expr) = view.computed.get(&field.name) {
+                    let value = computed(expr, &fields).ok_or_else(unsupported)?;
+                    if value != Node::Null {
+                        crate::input::validate_typed_value(ir, &field.type_ref, &value)
+                            .map_err(|_| unsupported())?;
+                    } else if !field.type_ref.is_optional() {
+                        return Err(unsupported());
+                    }
+                    row.insert(field.name.clone(), value);
+                    continue;
+                }
                 let Some(value) = fields.get(&field.name) else {
                     if field.type_ref.is_optional() {
                         row.insert(field.name.clone(), Node::Null);
@@ -378,6 +390,21 @@ fn project(
     }
 
     Ok(rows)
+}
+
+/// A computed field's value over one source row (`expr:`, ess/27, beyond10x/ess#560): `null` where
+/// it is absent, `None` where it is unknown. A field the row does not hold is absent.
+pub(crate) fn computed(
+    expr: &ess_primitives::expr::Expr,
+    fields: &BTreeMap<String, Node>,
+) -> Option<Node> {
+    use ess_primitives::expr::Reading;
+    let reads = |path: &ess_primitives::facts::FactPath| {
+        fields
+            .get(&path.to_string())
+            .map_or(Reading::Absent, Reading::of_node)
+    };
+    expr.evaluate(&reads).to_node()
 }
 
 /// Whether a filter is unknown only because the read left out an optional parameter a string

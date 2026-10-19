@@ -1,0 +1,63 @@
+format: ess/27
+system: demo
+version: v1
+domain: demo.ledger
+types:
+  - {name: demo.ledger.IncidentId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.ledger.Incident
+    identity: {name: incident_id, type: demo.ledger.IncidentId}
+    fields:
+      - {name: started_at, type: Timestamp}
+      - {name: ended_at, type: Timestamp}
+      - {name: duration, type: Duration}
+      - {name: affected, type: Integer}
+      - {name: total, type: Integer}
+      - {name: share, type: Decimal}
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+      transitions: []
+events:
+  - name: demo.ledger.IncidentRecorded
+    fields:
+      - {name: incident_id, type: demo.ledger.IncidentId}
+      - {name: duration, type: Duration}
+      - {name: share, type: Decimal}
+actors:
+  - name: demo.ledger.Clerk
+    may: [demo.ledger.RecordPastIncident]
+commands:
+  - name: demo.ledger.RecordPastIncident
+    input:
+      - {name: started_at, type: Timestamp}
+      - {name: ended_at, type: Timestamp}
+      - {name: affected, type: Integer}
+      - {name: total, type: Integer}
+    outcomes:
+      - name: recorded
+        creates: demo.ledger.Incident
+        instance: incident_id
+        emits: [demo.ledger.IncidentRecorded]
+        payload:
+          demo.ledger.IncidentRecorded:
+            incident_id: {generated: true}
+            duration: {expr: "input.ended_at - input.started_at"}
+            share: {expr: "coalesce(round(input.affected / input.total, 2, half_even), 0)"}
+        sets:
+          started_at: input.started_at
+          ended_at: input.ended_at
+          duration: {expr: "input.ended_at - input.started_at"}
+          affected: input.affected
+          total: input.total
+          share: {expr: "coalesce(round(input.affected / input.total, 2, half_even), 0)"}
+views:
+  - name: demo.ledger.Incidents
+    source: demo.ledger.Incident
+    consistency: read_your_writes
+    fields:
+      - {name: incident_id, type: demo.ledger.IncidentId}
+      - {name: duration, type: Duration}
+      - {name: share, type: Decimal}
+      - {name: elapsed, type: Duration, expr: "ended_at - started_at"}
