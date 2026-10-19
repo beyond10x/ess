@@ -1,0 +1,81 @@
+format: ess/27
+system: queueing
+version: v1
+domain: queueing.entry
+types:
+  - {name: queueing.entry.EntryId, kind: newtype, of: Uuid}
+  - {name: queueing.entry.WorkerId, kind: newtype, of: Uuid}
+entities:
+  - name: queueing.entry.Worker
+    identity: {name: worker_id, type: queueing.entry.WorkerId}
+    fields:
+      - {name: free, type: Boolean}
+    lifecycle: {initial: Ready, states: [Ready], terminal: [Ready]}
+  - name: queueing.entry.Entry
+    identity: {name: entry_id, type: queueing.entry.EntryId}
+    fields:
+      - {name: worker, type: Optional<queueing.entry.WorkerId>}
+    lifecycle:
+      initial: Waiting
+      states: [Waiting, Assigned]
+      terminal: [Assigned]
+      transitions:
+        - {name: assign, from: [Waiting], to: Assigned}
+errors:
+  - {name: queueing.entry.EntryStateConflict, summary: The entry is not waiting., fields: []}
+  - {name: queueing.entry.DiallerRefused, summary: The dialler refused the call., fields: []}
+events:
+  - name: queueing.entry.WorkerAdded
+    fields:
+      - {name: worker_id, type: queueing.entry.WorkerId}
+  - name: queueing.entry.Enqueued
+    fields:
+      - {name: entry_id, type: queueing.entry.EntryId}
+  - name: queueing.entry.Assigned
+    fields:
+      - {name: entry_id, type: queueing.entry.EntryId}
+      - {name: worker, type: queueing.entry.WorkerId}
+actors:
+  - name: queueing.entry.Caller
+    may: [queueing.entry.AddWorker, queueing.entry.Enqueue]
+  - name: queueing.entry.Scheduler
+    system: true
+    may: [queueing.entry.Assign]
+commands:
+  - name: queueing.entry.AddWorker
+    input:
+      - {name: free, type: Boolean}
+    outcomes:
+      - name: added
+        creates: queueing.entry.Worker
+        instance: worker_id
+        emits: [queueing.entry.WorkerAdded]
+        payload:
+          queueing.entry.WorkerAdded: {worker_id: {generated: true}}
+        sets:
+          free: input.free
+  - name: queueing.entry.Enqueue
+    input: []
+    outcomes:
+      - name: enqueued
+        creates: queueing.entry.Entry
+        instance: entry_id
+        emits: [queueing.entry.Enqueued]
+        payload:
+          queueing.entry.Enqueued: {entry_id: {generated: true}}
+  - name: queueing.entry.Assign
+    input:
+      - {name: entry_id, type: queueing.entry.EntryId}
+      - {name: worker, type: queueing.entry.WorkerId}
+    outcomes:
+      - name: dialler-refused
+        external: the dialler refuses the call
+        error: queueing.entry.DiallerRefused
+      - name: assigned
+        moves: queueing.entry.Entry.assign
+        instance: entry_id
+        emits: [queueing.entry.Assigned]
+        sets: {worker: input.worker}
+        payload:
+          queueing.entry.Assigned: {entry_id: input.entry_id, worker: input.worker}
+      - {name: wrong-state, wrong_state: true, error: queueing.entry.EntryStateConflict}

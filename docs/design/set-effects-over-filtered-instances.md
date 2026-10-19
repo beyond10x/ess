@@ -148,9 +148,9 @@ the scenario is refused by name. `ess-diff/9`'s
 which rows move where. A transition only such an entry takes is performed by its branch in the
 mutation audit's component scoping.
 
-Entity Runtime and the Rust, Go, Web and Clap targets refuse the moving form by name as they refuse
-every `affects:` (below): a generated seam acts on the one instance its request names, so the
-effect stays an obligation the conformance suite checks.
+Entity Runtime refuses the moving form by name as it refuses every `affects:` (below). The Rust,
+Go, Web and Clap targets emit the command as an owed behaviour whose contract names the rows it
+moves (below, "Targets"), so the effect stays an obligation the conformance suite checks.
 
 ## Deleting the selected rows (ess/23, beyond10x/ess#452)
 
@@ -188,8 +188,8 @@ conjunct left out, the command, then each removed row read absent from every imm
 entity with `deletes:`'s absence check (`expect_subject_absent`, `ess-conformance/22`) and each
 other row read as arranged; the bulk form then sends the command again under an input selecting
 nothing, with a count of 0 and every row as the first call left it. No suite step is new. The
-interpreter removes the rows. Entity Runtime refuses both with `SetEffectUnsupported`, and Rust,
-Go, Web and Clap as `MissingRepresentation`, as for every set effect. `ess-diff`'s
+interpreter removes the rows. Entity Runtime refuses both with `SetEffectUnsupported`; Rust, Go,
+Web and Clap owe the command, as for every set effect (below, "Targets"). `ess-diff`'s
 `outcome-set-effect-changed` line names the deletion, and the generated documentation says which
 rows are removed.
 
@@ -284,8 +284,8 @@ no new suite step is taken: a suite carrying the entry keeps the format its othe
 
 **Targets.** The interpreter writes the rows after the subject, element by element in list order,
 skipping an element that names the subject.
-Entity Runtime refuses the entry with `SetEffectUnsupported`, and Rust, Go, Web and Clap synthesis
-as `MissingRepresentation`, as for every `affects:`. `ess-diff`'s `outcome-set-effect-changed` line
+Entity Runtime refuses the entry with `SetEffectUnsupported`; Rust, Go, Web and Clap synthesis owe
+the command, as for every `affects:` (below, "Targets"). `ess-diff`'s `outcome-set-effect-changed` line
 names the entry and its list, and the generated documentation says it writes one row per element of
 the list.
 
@@ -391,8 +391,12 @@ names each per-row event and its state filter.
 ## Targets
 
 Entity Runtime refuses both with `SetEffectUnsupported`: an entity-core operation acts on the one
-instance its request names. Rust, Go, Web and Clap synthesis refuse both by name as
-`MissingRepresentation`. OpenAPI and AsyncAPI change nothing on the wire; the generated
+instance its request names. Rust, Go, Web and Clap synthesis emit the workspace and keep the command
+an owed behaviour, its obligation naming `instances:` or `affects:` and its contract naming the rows
+each set effect changes, its move or removal and the fields it writes. Until beyond10x/ess#547 they
+refused both by name as `MissingRepresentation`; that refusal predated owed behaviour, and the
+generated seam already takes only the input, so nothing in it confines the behaviour to one row
+(`docs/design/set-effect-identity-filters.md`, D4). OpenAPI and AsyncAPI change nothing on the wire; the generated
 documentation says which rows a branch changes. `ess-diff/9` adds `outcome-set-effect-changed`,
 carrying one line per construct on each side.
 

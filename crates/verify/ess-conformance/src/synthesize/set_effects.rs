@@ -43,6 +43,8 @@ use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
 use super::caller::{InvocationModels, InvocationPhase};
 use crate::witness::{Distinction, WitnessGap};
 
+mod pinned;
+
 use super::{
     arrange_toward_bound, arrange_toward_filter, determined_payload, fact_value,
     has_subject_guards, insert, instance_name, lifecycle_state, not_emitted, prepare_in, reach,
@@ -77,7 +79,20 @@ pub(super) fn set_effects(
                 ),
             };
             if let Some(set) = &outcome.instances {
-                match set_scenario(models, command, outcome, set, actors) {
+                // A filter pinning the row's identity (ess/27, beyond10x/ess#547) is witnessed one
+                // named row per send.
+                let built = match pinned::pin_of(models.arrangement, &set.entity, &set.filter) {
+                    Ok(None) => set_scenario(models, command, outcome, set, actors),
+                    Ok(Some(pin)) => {
+                        pinned::set_scenario(models, command, outcome, set, &pin, actors)
+                    }
+                    Err(reason) => Err(gap(
+                        format!("{}.instances", outcome.name),
+                        set.entity.to_string(),
+                        reason,
+                    )),
+                };
+                match built {
                     Ok(scenario) => insert(suite, id.clone(), scenario, refusals),
                     Err(cause) => refusals.push(Refusal::about(&id, cause)),
                 }
@@ -1570,6 +1585,40 @@ fn affect_inputs(
     })
 }
 
+/// The branch's `affects:` entry whose filter pins the row's identity (ess/27, beyond10x/ess#547),
+/// with its position and the pin; `None` where no entry's filter reads the identity. A refusal
+/// where a filter reads it other than by a pin, or where the pinned entry stands beside another
+/// entry: one send names one row, and this cut witnesses a pinned entry as the branch's only one.
+fn pinned_entry<'o>(
+    ir: &EssIr,
+    outcome: &'o ResolvedOutcome,
+) -> Result<Option<(usize, &'o ResolvedAffect, pinned::Pin)>, RefusalCause> {
+    let at = |index: usize| format!("{}.affects[{index}]", outcome.name);
+    let mut found = None;
+    for (index, affect) in outcome.affects.iter().enumerate() {
+        let Some(filter) = &affect.filter else {
+            continue;
+        };
+        match pinned::pin_of(ir, &affect.entity, filter) {
+            Ok(None) => {}
+            Ok(Some(pin)) => found = Some((index, affect, pin)),
+            Err(reason) => return Err(gap(at(index), affect.entity.to_string(), reason)),
+        }
+    }
+    let Some((index, affect, pin)) = found else {
+        return Ok(None);
+    };
+    if outcome.affects.len() > 1 {
+        return Err(gap(
+            at(index),
+            affect.entity.to_string(),
+            "pins the row's identity beside another `affects:` entry; each send names one row, \
+             and this cut witnesses a pinned entry only as the branch's one entry",
+        ));
+    }
+    Ok(Some((index, affect, pin)))
+}
+
 /// The `affects:` segment appended to the branch's own scenario.
 #[allow(clippy::too_many_lines)] // One complete set-effect witness, including invocation authority.
 fn affects_segment(
@@ -1581,6 +1630,16 @@ fn affects_segment(
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
     let ir = models.arrangement;
     let at = |index: usize| format!("{}.affects[{index}]", outcome.name);
+    if let Some((index, affect, pin)) = pinned_entry(ir, outcome)? {
+        return pinned::affects_segment(
+            models,
+            command,
+            outcome,
+            actors,
+            taken,
+            (index, affect, &pin),
+        );
+    }
     let subject = outcome.subject.as_ref().ok_or_else(|| {
         gap(
             at(0),

@@ -26,6 +26,12 @@
 //!   actor synthesis chose, because its scenarios' expectations are read for that actor's values;
 //!   a [`Note::GrantRotationSkipped`] names each such command.
 //!
+//! A command the system issues itself (ess/27, beyond10x/ess#542) is awaited rather than sent, so
+//! its system actors get no `grant/admitted` scenario and no rotation: the await is their witness.
+//! Its refusal is still sent, as the lowest-named actor lacking the grant that is not the system
+//! itself where there is one, because an outside caller must not be able to issue the system's
+//! step.
+//!
 //! A model that declares actors and serves nothing gets one [`Note::GrantEnforcedByCaller`]
 //! instead: no surface answers the refusal, and enforcing a grant is the caller's. A model that
 //! declares no actor says nothing about who may invoke what, and gets none of this.
@@ -61,10 +67,16 @@ pub(super) fn denied(
             continue;
         }
         let command_ref = CommandRef::new(command.name.clone());
-        let Some(sender) = ir
-            .actors()
-            .values()
-            .find(|actor| !grants(actor, &command.name))
+        // A refusal of the system's own step is asked of an outside caller where one lacks the
+        // grant: the system is no caller of its own surface (beyond10x/ess#542).
+        let lacking = || {
+            ir.actors()
+                .values()
+                .filter(|actor| !grants(actor, &command.name))
+        };
+        let Some(sender) = lacking()
+            .find(|actor| command.system_issued && !actor.system)
+            .or_else(|| lacking().next())
         else {
             notes.push(Note::GrantedToEveryActor {
                 command: command_ref,
@@ -156,6 +168,7 @@ pub(super) fn rotated(ir: &EssIr) -> BTreeSet<QualifiedName> {
     }
     served_commands(ir)
         .into_iter()
+        .filter(|command| !system_issued(ir, command))
         .filter(|command| {
             let holders: Vec<&ess_compiler::ir::ResolvedActor> = ir
                 .actors()
@@ -165,6 +178,13 @@ pub(super) fn rotated(ir: &EssIr) -> BTreeSet<QualifiedName> {
             holders.len() >= 2 && holders.iter().all(|actor| actor.attributes.is_empty())
         })
         .collect()
+}
+
+/// Whether the system issues `command` itself (beyond10x/ess#542).
+fn system_issued(ir: &EssIr, command: &QualifiedName) -> bool {
+    ir.commands()
+        .get(command)
+        .is_some_and(|declared| declared.system_issued)
 }
 
 /// The commands a served component accepts.
@@ -384,7 +404,9 @@ fn admit_every_granted_actor(
     notes: &mut Vec<Note>,
 ) {
     for command in ir.commands().values() {
-        if !served.contains(&command.name) {
+        // A system actor's grant is witnessed by the await of the step it issues, never by a send
+        // (beyond10x/ess#542).
+        if !served.contains(&command.name) || command.system_issued {
             continue;
         }
         let holders: Vec<&ess_compiler::ir::ResolvedActor> = ir

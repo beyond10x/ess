@@ -907,7 +907,12 @@ function plan(ir: Node, concurrent = false): Plan {
         });
       }
     }
-    let reason: string | null = null;
+    // A command the system issues itself is no client's operation (ess/27, beyond10x/ess#542): the
+    // suite awaits it, and the explorer never sends it.
+    let reason: string | null =
+      node.system_issued === true
+        ? 'the system issues it itself, so no client sends it; the suite awaits it'
+        : null;
     for (const outcome of outcomes) {
       const kind = outcome.condition?.kind;
       // A condition read from the stored row, and existence of the identity a creation names, are

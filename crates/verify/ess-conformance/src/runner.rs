@@ -52,6 +52,7 @@
 //! that was never established — an unbound instance, a command result that does not exist — and a
 //! cascade of errors buries the one that matters.
 
+mod await_outcome;
 mod bounded_retry;
 mod delivery_context;
 mod disclosure;
@@ -633,6 +634,38 @@ impl<C: Clock> Runner<C> {
                 actor,
                 caller,
             } => execute_command_without_input(command, (actor.as_ref(), caller), run, target),
+            ScenarioStep::AwaitOutcome {
+                command,
+                instance,
+                identity,
+                within,
+                input,
+                shape,
+            } => {
+                let step = await_outcome::Awaited {
+                    command,
+                    instance,
+                    identity,
+                    within: *within,
+                    input,
+                    shape,
+                };
+                self.await_outcome(&step, run, target)
+            }
+            ScenarioStep::ExpectNotIssued {
+                command,
+                instance,
+                within,
+                unpublished,
+            } => {
+                let step = await_outcome::NotIssued {
+                    command,
+                    instance,
+                    within: *within,
+                    unpublished,
+                };
+                self.expect_not_issued(&step, run, target)
+            }
             ScenarioStep::ExpectOutcome { outcome } => expect_outcome(outcome, run),
             ScenarioStep::ExpectNotGranted { actor, unpublished } => {
                 if let Some((view, answer)) = run.read_answer.take() {
@@ -3104,6 +3137,9 @@ struct Run {
     id: ScenarioId,
     context: ScenarioContext,
     last_command: Option<Executed>,
+    /// The input the most recent `AwaitOutcome` answer carried (beyond10x/ess#542): what a
+    /// `{kind: awaited}` value reads.
+    awaited: Option<BTreeMap<String, Node>>,
     last_view: Option<(ViewRef, SemanticViewResult)>,
     /// The view a read-your-writes read could not be made of, and the command that owes the token.
     unreadable: Option<(ViewRef, String)>,
@@ -3156,6 +3192,7 @@ impl Run {
             id,
             context,
             last_command: None,
+            awaited: None,
             last_view: None,
             unreadable: None,
             instances: BTreeMap::new(),
@@ -3188,7 +3225,9 @@ impl Run {
     fn open_act(&mut self, step: &ScenarioStep, after: &[ScenarioStep]) {
         if matches!(
             step,
-            ScenarioStep::ExecuteCommand { .. } | ScenarioStep::ExecuteCommandWithoutInput { .. }
+            ScenarioStep::ExecuteCommand { .. }
+                | ScenarioStep::ExecuteCommandWithoutInput { .. }
+                | ScenarioStep::AwaitOutcome { .. }
         ) {
             self.claimed.clear();
             self.assigned.clear();
@@ -3282,6 +3321,19 @@ impl Run {
                 crate::structured_values::resolve(value, &|element| self.resolve(element))
             }
             ScenarioValue::NowOffset { seconds } => self.now.get(*seconds),
+            // What the system reported it issued its own command with (beyond10x/ess#542).
+            ScenarioValue::Awaited { field } => self
+                .awaited
+                .as_ref()
+                .ok_or_else(|| {
+                    format!("`{{kind: awaited, field: {field}}}` is read before any await_outcome")
+                })
+                .and_then(|input| {
+                    input
+                        .get(field)
+                        .cloned()
+                        .ok_or_else(|| format!("the awaited answer carried no `{field}`"))
+                }),
             ScenarioValue::Instance { instance } => self
                 .instances
                 .get(instance)

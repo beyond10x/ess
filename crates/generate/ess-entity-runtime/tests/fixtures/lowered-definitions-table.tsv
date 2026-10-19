@@ -1,4 +1,4 @@
-#	models=299	lines=433
+#	models=308	lines=442
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -170,6 +170,7 @@ crates/verify/ess-conformance/tests/fixtures/identity-changing-updates.yaml	vaul
 crates/verify/ess-conformance/tests/fixtures/input-guard-overlap.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/keypad.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/minted-value-sources.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-authored.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-clocked-expiry.yaml	components=0
@@ -181,6 +182,7 @@ crates/verify/ess-conformance/tests/fixtures/mutation-stored-guards.yaml	compone
 crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-unwitnessed-outcome.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/now-guard-interpreted.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/occurrence-clock-claims.yaml	components=0
@@ -191,7 +193,9 @@ crates/verify/ess-conformance/tests/fixtures/one-time-caller/with-caller.yaml	co
 crates/verify/ess-conformance/tests/fixtures/one-time-caller/with-view.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/one-time-caller/without-caller.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/one-time-coverage-53/model.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/ordered-related-head.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	orders-server	REFUSED	61a2a96c940475ba9db78e903eade6f2ec6c9e62f644201717a7bb5db4d1b7b9:204
 crates/verify/ess-conformance/tests/fixtures/owned-subject.yaml	components=0
@@ -216,6 +220,7 @@ crates/verify/ess-conformance/tests/fixtures/related-guard-release.yaml	componen
 crates/verify/ess-conformance/tests/fixtures/related-guard-sign-in.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml	task-service	REFUSED	91818f08cd9944820c6db75dc65f53656cdf5d010a6c399654d52405a8bb5828:551
+crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-values-chained.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/relation-via-identity/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/response-payload.yaml	components=0
@@ -223,9 +228,11 @@ crates/verify/ess-conformance/tests/fixtures/response-union.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/restart.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/retained-commit.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/retained-replay.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	vault-lib	REFUSED	58d8ae288e03800715d215c2ca2a653287aec95cef99c363f233a7ae5236c551:422
 crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/state-in-subject-predicate.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/state-scoped-refusals.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/stored-field-guards.yaml	components=0
@@ -238,6 +245,8 @@ crates/verify/ess-conformance/tests/fixtures/subject-history.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/subject-state-source.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/subject-state-source.yaml	docs-service	REFUSED	3a47e494bbe0dc6de6360fca89a26008758a6f567e5c1a2b1074310b7ec8b5e0:1072
 crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/two-sided-pick.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	directory-service	REFUSED	b5d5a4905a4d3b17db9d0adfe1d75c5c52b6df167f36f0ca7f1e4de30c5edfa0:1108
 crates/verify/ess-conformance/tests/fixtures/unique-within-scope.yaml	components=0
@@ -427,7 +436,7 @@ system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.Co
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.ResolveModel	refused, resolved, wrong-state
 system-dir:models/toolchain	verify	toolchain.verify.Comparison	definition=42e634d2278370ff555a992f05b8182154dd7421651292c6a532d940f2c8cdc1:3429
 system-dir:models/toolchain	verify	toolchain.verify.Comparison	create	compared
-system-dir:models/toolchain	verify	toolchain.verify.Run	definition=acd7594b0c5f6a1d03771044dc6472a622ca061091562e89427ca24bc72c2f2e:10392
+system-dir:models/toolchain	verify	toolchain.verify.Run	definition=ac7b2a65c9802ce9ded209c6442ce7b8a27f76c7a0cc3d3e540846c6f4e298a4:10408
 system-dir:models/toolchain	verify	toolchain.verify.Run	create	started
 system-dir:models/toolchain	verify	toolchain.verify.Run	toolchain.verify.ConcludeRun	failed, errored, passed, wrong-state
 system-dir:models/toolchain	verify	toolchain.verify.Suite	definition=fc50927abfd36cb570b0d7b80f94606b00cec4c782621d025c6b8012b550d40e:3959

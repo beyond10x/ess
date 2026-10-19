@@ -388,7 +388,7 @@ fn older_reader_refuses_repeated_claim_suite() {
     let text = std::fs::read_to_string(&runtime).unwrap();
     assert!(
         text.contains("const newestSuiteMajor = 53\n"),
-        "the runtime reads /49"
+        "the runtime reads /53"
     );
     std::fs::write(
         &runtime,

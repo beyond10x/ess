@@ -1,0 +1,101 @@
+format: ess/27
+system: demo
+version: v1
+domain: demo.q
+types:
+  - {name: demo.q.CallId, kind: newtype, of: String}
+  - {name: demo.q.EntryId, kind: newtype, of: String}
+entities:
+  - name: demo.q.Call
+    identity: {name: call_id, type: demo.q.CallId}
+    fields:
+      - {name: line, type: String}
+    lifecycle:
+      initial: Waiting
+      states: [Waiting, Parked, Ended]
+      terminal: [Parked, Ended]
+      transitions:
+        - {name: park, from: [Waiting], to: Parked}
+        - {name: end, from: [Waiting], to: Ended}
+  - name: demo.q.Entry
+    identity: {name: entry_id, type: demo.q.EntryId}
+    fields:
+      - {name: call_id, type: demo.q.CallId}
+    lifecycle:
+      initial: Queued
+      states: [Queued, Expired]
+      terminal: [Expired]
+      transitions:
+        - {name: expire, from: [Queued], to: Expired}
+events:
+  - name: demo.q.CallStarted
+    fields: [{name: call_id, type: demo.q.CallId}]
+  - name: demo.q.CallParked
+    fields: [{name: call_id, type: demo.q.CallId}]
+  - name: demo.q.EntryQueued
+    fields: [{name: entry_id, type: demo.q.EntryId}]
+  - name: demo.q.EntryExpired
+    fields: [{name: entry_id, type: demo.q.EntryId}]
+errors:
+  - name: demo.q.NotWaiting
+  - name: demo.q.NotQueued
+actors:
+  - name: demo.q.Desk
+    may: [demo.q.StartCall, demo.q.ParkCall, demo.q.QueueEntry, demo.q.ExpireEntry]
+commands:
+  - name: demo.q.StartCall
+    input: [{name: line, type: String}]
+    outcomes:
+      - name: started
+        creates: demo.q.Call
+        instance: call_id
+        sets: {line: input.line}
+        emits: [demo.q.CallStarted]
+        payload: {demo.q.CallStarted: {call_id: {generated: true}}}
+  - name: demo.q.ParkCall
+    input: [{name: call_id, type: demo.q.CallId}]
+    outcomes:
+      - name: parked
+        moves: demo.q.Call.park
+        instance: call_id
+        emits: [demo.q.CallParked]
+        payload: {demo.q.CallParked: {call_id: input.call_id}}
+      - {name: not-waiting, wrong_state: true, error: demo.q.NotWaiting}
+  - name: demo.q.QueueEntry
+    input: [{name: call_id, type: demo.q.CallId}]
+    outcomes:
+      - name: queued
+        creates: demo.q.Entry
+        instance: entry_id
+        sets: {call_id: input.call_id}
+        emits: [demo.q.EntryQueued]
+        payload: {demo.q.EntryQueued: {entry_id: {generated: true}}}
+  - name: demo.q.ExpireEntry
+    input: [{name: entry_id, type: demo.q.EntryId}]
+    outcomes:
+      - name: expired
+        moves: demo.q.Entry.expire
+        instance: entry_id
+        emits: [demo.q.EntryExpired]
+        payload:
+          demo.q.EntryExpired: {entry_id: input.entry_id}
+        affects:
+          - entity: demo.q.Call
+            where: call_id == subject.call_id
+            moves: demo.q.Call.end
+      - {name: not-queued, wrong_state: true, error: demo.q.NotQueued}
+views:
+  - name: demo.q.Calls
+    source: demo.q.Call
+    consistency: read_your_writes
+    fields:
+      - {name: call_id, type: demo.q.CallId}
+      - {name: line, type: String}
+      - {name: state, type: demo.q.Call.State}
+  - name: demo.q.Entries
+    source: demo.q.Entry
+    consistency: read_your_writes
+    fields:
+      - {name: entry_id, type: demo.q.EntryId}
+      - {name: call_id, type: demo.q.CallId}
+      - {name: state, type: demo.q.Entry.State}

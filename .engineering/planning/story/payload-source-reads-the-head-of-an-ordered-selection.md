@@ -4,7 +4,7 @@ id: story:payload-source-reads-the-head-of-an-ordered-selection
 kind: story
 status: draft
 title: A payload source reads the head of an ordered selection
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -66,3 +66,15 @@ Each line names the failing test written first.
 - adversary: yes.
 - shared surfaces: related-source code with `story:generated-behaviour-reads-several-related-rows`
   (not in this release).
+
+## Design pass
+
+Design pass (2026-10-13, unit commit 441b8a35f, merged on `integrate/ess-acd-gaps-20261013` as 09f0846d8): `docs/design/ordered-related-head.md`. Its Fit review answers all seven questions of `.agents/skills/assessing-external-requests/SKILL.md` with citations. Decision: **accept, redesigned**.
+
+Departures from the decisions above, accepted by the coordinator:
+
+- Order keys are spelled as a view spells them (`[element_score desc, membership_id]`).
+- The identity is the last key, and nothing may follow it.
+- Generated Rust and Go report a named obligation; generating selector reads becomes its own story.
+- Unit U5 is added: synthesis with several selectors per command.
+- Scope is corrected to `command.rs`, `synthesize/row_set.rs`, `interpret/execute/row_set.rs` + `values.rs` and `determined.rs`.

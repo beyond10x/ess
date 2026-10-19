@@ -2309,7 +2309,7 @@ impl Projector<'_> {
                 let (source, requirement_kind) = match mapping {
                     None => (BoundSource::Identity, SlotRequirement::Identity),
                     Some(mapped) => match &mapped.value {
-                        ResolvedPayloadValue::Generated => (
+                        ResolvedPayloadValue::Generated { .. } => (
                             BoundSource::Generated,
                             SlotRequirement::Generated {
                                 target: target.clone(),
@@ -2356,7 +2356,9 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::Struct { .. }
                         | ResolvedPayloadValue::RelatedField { .. }
                         | ResolvedPayloadValue::RelatedSelection { .. }
+                        | ResolvedPayloadValue::RelatedHead { .. }
                         | ResolvedPayloadValue::CallerAttribute { .. }
+                        | ResolvedPayloadValue::PayloadRead { .. }
                         | ResolvedPayloadValue::ChangedField { .. }
                         | ResolvedPayloadValue::ChangedState { .. }
                         | ResolvedPayloadValue::ChangedCount => {
@@ -3125,7 +3127,10 @@ impl Projector<'_> {
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
-            | ResolvedPayloadValue::RelatedSelection { .. }) => {
+            | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. }
+            | ResolvedPayloadValue::Generated { present: true }
+            | ResolvedPayloadValue::PayloadRead { .. }) => {
                 self.diagnostic_naming(
                     LoweringCode::ValueExpressionUnsupported,
                     subset::value_expression(value),
@@ -3221,7 +3226,7 @@ impl Projector<'_> {
                     })
                 }
             }
-            ResolvedPayloadValue::Generated => {
+            ResolvedPayloadValue::Generated { .. } => {
                 let slot = slots.allocate(
                     None,
                     BoundValue {
@@ -4046,6 +4051,11 @@ fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. }
+            // ess/27 (beyond10x/ess#545): entity-core has no present mint and no read of the
+            // value a payload publishes.
+            | ResolvedPayloadValue::Generated { present: true }
+            | ResolvedPayloadValue::PayloadRead { .. }
     ) || is_input_path(value)
 }
 
@@ -4057,11 +4067,13 @@ fn is_input_path(value: &ResolvedPayloadValue) -> bool {
         if ess_domain::command::input_path::is_path(field))
 }
 
-/// Whether any value of `outcome` reads the one row a selector selects (ess/22).
+/// Whether any value of `outcome` reads the one row a selector selects (ess/22), or the first row
+/// it ranks (ess/27, beyond10x/ess#543).
 fn outcome_reads_selection(outcome: &ResolvedOutcome) -> bool {
     fn reads(value: &ResolvedPayloadValue) -> bool {
         match value {
-            ResolvedPayloadValue::RelatedSelection { .. } => true,
+            ResolvedPayloadValue::RelatedSelection { .. }
+            | ResolvedPayloadValue::RelatedHead { .. } => true,
             ResolvedPayloadValue::Struct { fields } => {
                 fields.iter().any(|field| reads(&field.value))
             }

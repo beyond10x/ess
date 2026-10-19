@@ -1703,6 +1703,11 @@
               "$ref": "#/definitions/Naming"
             }
           ]
+        },
+        "system": {
+          "description": "Whether this actor is the system itself (ess/27). `false` is the same as leaving it out.",
+          "default": false,
+          "type": "boolean"
         }
       },
       "additionalProperties": false
@@ -2120,6 +2125,17 @@
         "name"
       ],
       "properties": {
+        "await_within": {
+          "description": "How soon the system takes this step: positive whole seconds, `PT<seconds>S`, on a command every grant of which is a system actor (`ess/27`, beyond10x/ess#542).",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Period"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "fixture_inputs": {
           "description": "Independently provisioned conformance inputs, keyed by declared input field.",
           "type": "object",
@@ -2628,6 +2644,55 @@
       },
       "additionalProperties": false
     },
+    "RawHead": {
+      "description": "What `related:` holds in a head read.",
+      "type": "object",
+      "required": [
+        "entity",
+        "first",
+        "order_by",
+        "where"
+      ],
+      "properties": {
+        "entity": {
+          "description": "The entity whose rows are candidates.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          ]
+        },
+        "first": {
+          "description": "The field of the head row read.",
+          "type": "string"
+        },
+        "order_by": {
+          "description": "The ranking keys, most significant first: `<field>` or `<field> asc|desc`, ending in the entity's identity.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "ties": {
+          "description": "`unordered` where rows tying on every key are in no order the model fixes; the order then need not end in the identity, and must not hold it.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^unordered$"
+        },
+        "where": {
+          "description": "What a candidate must satisfy: its fields bare, the input under `input.`, the addressed subject under `subject.`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "RawIncrement": {
       "description": "The amount of an `{increment: …}`: a whole number, an unquoted decimal, or quoted decimal text.",
       "anyOf": [
@@ -3036,6 +3101,20 @@
       },
       "additionalProperties": false
     },
+    "RawPayloadRead": {
+      "description": "`{payload: <Event>.<field>}`: the value this outcome publishes in `<field>` of `<Event>`.",
+      "type": "object",
+      "required": [
+        "payload"
+      ],
+      "properties": {
+        "payload": {
+          "description": "The qualified event name, a dot, and the field: `demo.routing.EntryAgentSelected.seq`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "RawPayloadSource": {
       "description": "Closed authored payload source; strings retain their original interpretation.",
       "anyOf": [
@@ -3071,6 +3150,22 @@
           "$ref": "#/definitions/RawCountSource"
         },
         {
+          "description": "`{generated: true, present: true}` (ess/27, beyond10x/ess#545).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawPresentMint"
+            }
+          ]
+        },
+        {
+          "description": "`{payload: <Event>.<field>}` (ess/27, beyond10x/ess#545).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawPayloadRead"
+            }
+          ]
+        },
+        {
           "description": "`{changed: <field>}` (ess/25, beyond10x/ess#531).",
           "allOf": [
             {
@@ -3086,6 +3181,14 @@
           "allOf": [
             {
               "$ref": "#/definitions/RawRelatedSelection"
+            }
+          ]
+        },
+        {
+          "description": "`{related: {entity, where, order_by, first}}` (ess/27, beyond10x/ess#543).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawRelatedHead"
             }
           ]
         }
@@ -3125,6 +3228,25 @@
               "type": "null"
             }
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawPresentMint": {
+      "description": "`{generated: true, present: true}`, written as exactly these two keys.",
+      "type": "object",
+      "required": [
+        "generated",
+        "present"
+      ],
+      "properties": {
+        "generated": {
+          "description": "`true`: the implementation mints the value.",
+          "type": "boolean"
+        },
+        "present": {
+          "description": "`true`: the minted value is present.",
+          "type": "boolean"
         }
       },
       "additionalProperties": false
@@ -3224,6 +3346,19 @@
               "type": "null"
             }
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawRelatedHead": {
+      "description": "`{related: {entity, where, order_by, first}}` as the document writes it.",
+      "type": "object",
+      "required": [
+        "related"
+      ],
+      "properties": {
+        "related": {
+          "$ref": "#/definitions/RawHead"
         }
       },
       "additionalProperties": false

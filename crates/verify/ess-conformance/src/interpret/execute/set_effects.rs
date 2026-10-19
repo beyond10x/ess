@@ -414,6 +414,7 @@ fn select(
                 row: candidate,
                 input,
                 subject: subject.map(|facts| facts as &dyn FactSource),
+                published: None,
             })
         }) {
             Truth::True => selected.push(key.clone()),
@@ -474,9 +475,51 @@ pub(super) struct Facts<'a> {
     pub(super) row: &'a dyn FactSource,
     pub(super) input: &'a dyn FactSource,
     pub(super) subject: Option<&'a dyn FactSource>,
+    /// The values of its own outcome's payload a value read's selector reads (ess/27,
+    /// beyond10x/ess#549); `None` for every other predicate.
+    pub(super) published: Option<Published<'a>>,
 }
+
+/// The published values one selector reads: `facts` holds the value of `reads[i]` under the root
+/// [`Published::slot`]`(i)`, so a path is routed to it only where it names a listed read, never by
+/// the candidate entity's fields.
+#[derive(Clone, Copy)]
+pub(super) struct Published<'a> {
+    pub(super) facts: &'a dyn FactSource,
+    pub(super) reads: &'a [ess_compiler::ir::ResolvedPublishedRead],
+}
+
+impl Published<'_> {
+    /// The root `reads[index]`'s value is held under in [`Published::facts`].
+    pub(super) fn slot(index: usize) -> String {
+        format!("read{index}")
+    }
+
+    /// `payload.<event>.<field>[.<member>…]` routed to the value of the listed read it names, as
+    /// the path below that value's root; `None` for any other path.
+    fn route(&self, path: &FactPath) -> Option<FactPath> {
+        let (root, rest) = path.segments().split_first()?;
+        if root != ess_domain::command::published_operand::ROOT {
+            return None;
+        }
+        self.reads.iter().enumerate().find_map(|(index, read)| {
+            let event = read.event.name().segments();
+            let after = rest.strip_prefix(event)?;
+            let (field, members) = after.split_first()?;
+            (*field == read.field).then(|| {
+                FactPath::from_segments(std::iter::once(Self::slot(index)).chain(members.to_vec()))
+            })
+        })
+    }
+}
+
 impl Facts<'_> {
     fn source(&self, path: &FactPath) -> Option<(&dyn FactSource, FactPath)> {
+        if let Some(published) = &self.published {
+            if let Some(routed) = published.route(path) {
+                return Some((published.facts, routed));
+            }
+        }
         let (first, rest) = path.segments().split_first()?;
         match (first.as_str(), rest.is_empty()) {
             ("input", false) => Some((self.input, FactPath::from_segments(rest))),

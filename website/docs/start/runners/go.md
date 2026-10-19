@@ -83,8 +83,9 @@ method the implementation cannot answer returns `essconform.ErrUnsupported`, and
 reported as `unsupported` in report/2; the default strict run fails. Ordinary target errors remain
 `error` and make execution inconclusive. Specifications that declare more ask for optional interfaces a target may
 also implement: `EntitySetupTarget`, `AbsentInputTarget`, `RepeatedOutcomeTarget`,
-`PeriodicTarget`, `ClockReadingTarget` and `InterleavedTarget`. The generated `README.md` names
-the ones its suite needs.
+`PeriodicTarget`, `ClockReadingTarget`, `InterleavedTarget` and `AwaitTarget`, whose `AwaitOutcome`
+reports a step the system takes itself for a command every actor of which is declared
+`system: true`. The generated `README.md` names the ones its suite needs.
 
 This implementation keeps tasks in a map; a real target calls your service instead:
 

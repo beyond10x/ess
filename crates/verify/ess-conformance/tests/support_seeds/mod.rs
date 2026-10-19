@@ -599,9 +599,9 @@ pub fn forgeries(good: &Value, authored: &Value, authored_id: &str) -> Vec<Forge
             },
         );
     }
-    // Majors no reader implements: /50 and /51 carry `hold_now` and /52 and /53 the wrapped
-    // value-invariant observation, both admitting seeds cumulatively, so the first unimplemented
-    // pair is /54 and /55.
+    // Majors no reader implements: /50 and /51 carry `hold_now` (beyond10x/ess#586) and /52 and /53
+    // the wrapped value-invariant observation and the await vocabulary (beyond10x/ess#542), both admitting seeds cumulatively, so the first
+    // unimplemented pair is /54 and /55.
     for major in [54, 55, 99] {
         add(
             &format!("unimplemented-major-{major}"),

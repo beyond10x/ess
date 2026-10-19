@@ -25,11 +25,11 @@
 //! | [`DomainChange`] | which keys `EssIr::domains` holds — a domain's member sets are each construct's own `domain`, compared by that construct's family, and the naming of a domain both revisions declare stays residual |
 //! | [`TypeChange`] | `ResolvedType::{body, naming, reading}`, and `body` down to every arm of `ResolvedBody` |
 //! | [`EntityChange`] | `ResolvedEntity::{domain, identity, fields, lifecycle, invariants, naming}` — `state_type` is derived from the name, and the lifecycle's *state set* is the synthesised `<Entity>.State` enum, which the type family already reports variant by variant |
-//! | [`CommandChange`] | `ResolvedCommand::{domain, input, outcomes, naming}`, and each outcome down to `ResolvedOutcome::{condition, subject, replays, complete_refusal, emits, payload, error, error_payload, refuses, accepts_nothing, returns, summary, sets, decided_by_caller, instances, affects}` — `test_strategy` is a pure function of the condition (`OutcomeCondition::test_strategy`) and `retains_result` of every outcome's `replays`, so comparing either would report one edit twice; `refs` stays residual |
+//! | [`CommandChange`] | `ResolvedCommand::{domain, input, outcomes, naming, await_within}` — `system_issued` is a pure function of the grants and the actors' `system`, each compared on its own — and each outcome down to `ResolvedOutcome::{condition, subject, replays, complete_refusal, emits, payload, error, error_payload, refuses, accepts_nothing, returns, summary, sets, decided_by_caller, instances, affects}` — `test_strategy` is a pure function of the condition (`OutcomeCondition::test_strategy`) and `retains_result` of every outcome's `replays`, so comparing either would report one edit twice; `refs` stays residual |
 //! | [`EventChange`] | `ResolvedEvent::{domain, fields, naming}` |
 //! | [`ErrorChange`] | `ResolvedError::{domain, summary, fields, naming}` |
 //! | [`ViewChange`] | `ResolvedView::{domain, source, fields, filter, consistency, naming}` — `assertion_style` is a pure function of the consistency (`Consistency::assertion_style`) |
-//! | [`ActorChange`] | `ResolvedActor::{domain, may, naming}` |
+//! | [`ActorChange`] | `ResolvedActor::{domain, may, naming, system}` |
 //! | [`ComponentChange`] | `ResolvedComponent::{owns, accepts, publishes, naming}` |
 //! | [`BindingChange`] | `ResolvedBinding::{cause, context, command, mapping, failure, escalation, naming}` — the context's channel and each field's name, type and wire name are part of the cause, a context field's display name and summary have kinds of their own; `delivery` has one inhabitant, so a change kind for it could never fire (see `a_binding_still_has_one_delivery_a_document_can_write` in `tests/canonical.rs`) |
 //!
@@ -446,6 +446,14 @@ impl SemanticChange {
                 changed: ViewChange::AbsentChanged { .. },
                 ..
             } => ABSENT_DELTA_FORMAT,
+            Self::Actor {
+                changed: ActorChange::SystemChanged { .. },
+                ..
+            }
+            | Self::Command {
+                changed: CommandChange::AwaitWithinChanged { .. },
+                ..
+            } => SYSTEM_ISSUED_DELTA_FORMAT,
             Self::Domain { .. } => DOMAIN_DELTA_FORMAT,
             Self::Command { changed, .. } if changed.is_compensation() => 14,
             Self::Binding { changed, .. } if changed.is_refusal_policy() => 14,
@@ -807,6 +815,15 @@ pub const UNDECLARED_FIELDS_DELTA_FORMAT: u32 = 18;
 /// Above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT) too, so a delta
 /// that carries one is classified even when nobody asked.
 pub const ABSENT_DELTA_FORMAT: u32 = 19;
+/// The first delta format whose vocabulary has `system-changed` on an actor and
+/// `await-within-changed` on a command (`ess/27`, beyond10x/ess#542,
+/// `docs/design/system-issued-commands.md`).
+///
+/// Above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT) too, so a delta
+/// that carries one is classified even when nobody asked. A command becoming system-issued is a
+/// pure function of its grants and its actors' `system:`, so it is reported through those and never
+/// as a change of its own.
+pub const SYSTEM_ISSUED_DELTA_FORMAT: u32 = 20;
 
 /// The first delta format whose vocabulary has `shorthand-changed` on a type: a struct's
 /// `shorthand:` declared, dropped or moved (`ess/27`, beyond10x/ess#594).
@@ -1744,6 +1761,17 @@ pub enum ActorChange {
         /// What it says.
         after: Option<String>,
     },
+    /// The actor became the system itself, or stopped being it (`system:`, `ess/27`,
+    /// beyond10x/ess#542). Only an `ess-diff/20` delta carries it.
+    ///
+    /// An actor that becomes the system stops being a caller of every command it is granted, as a
+    /// grant removed does; one that stops being the system becomes a caller again.
+    SystemChanged {
+        /// Whether it was the system.
+        before: bool,
+        /// Whether it is.
+        after: bool,
+    },
 }
 
 impl ActorChange {
@@ -1758,6 +1786,7 @@ impl ActorChange {
             Self::WireNameChanged { .. } => "wire-name-changed",
             Self::DisplayNameChanged { .. } => "display-name-changed",
             Self::SummaryChanged { .. } => "summary-changed",
+            Self::SystemChanged { .. } => "system-changed",
         }
     }
 
@@ -1801,6 +1830,8 @@ impl ActorChange {
                 optional(before.as_ref()),
                 optional(after.as_ref())
             ),
+            Self::SystemChanged { after: true, .. } => "is now the system itself".to_owned(),
+            Self::SystemChanged { after: false, .. } => "is no longer the system itself".to_owned(),
         }
     }
 }
@@ -2361,6 +2392,14 @@ pub enum CommandChange {
         /// What it does.
         after: ess_domain::types::UndeclaredFields,
     },
+    /// How soon the system claims to take a step it issues itself moved, `await_within:` declared,
+    /// dropped or changed (`ess/27`, beyond10x/ess#542). Only an `ess-diff/20` delta carries it.
+    AwaitWithinChanged {
+        /// The bound it declared, if any.
+        before: Option<ess_domain::binding::periodic::Period>,
+        /// The bound it declares, if any.
+        after: Option<ess_domain::binding::periodic::Period>,
+    },
     /// The command is declared in the later revision and not in the earlier one.
     Added,
     /// The command was declared in the earlier revision and is not in the later one.
@@ -2652,6 +2691,7 @@ impl CommandChange {
         match self {
             Self::ResponseChanged { .. } => "response-changed",
             Self::ResponseUndeclaredFieldsChanged { .. } => "response-undeclared-fields-changed",
+            Self::AwaitWithinChanged { .. } => "await-within-changed",
             Self::OutcomeReplayChanged { .. } => "outcome-replay-changed",
             Self::OutcomeObservationChanged { .. } => "outcome-observation-changed",
             Self::OutcomeResponsePayloadChanged { .. } => "outcome-response-payload-changed",
@@ -2810,7 +2850,7 @@ impl CommandChange {
         format!("outcome `{outcome}` {flag} {before} → {after}")
     }
 
-    /// The clause for an error payload change, and empty for every other change.
+    /// The clause for an error payload change; otherwise [`Self::undeclared_fields_clause`].
     fn error_payload_clause(&self) -> String {
         match self {
             Self::OutcomeErrorPayloadAdded { outcome, after } => format!(
@@ -2830,7 +2870,8 @@ impl CommandChange {
                 after.join(", "),
                 before.join(", ")
             ),
-            _ => String::new(),
+            // `await-within-changed` (ess/27) shares the clause of the other response-side bound.
+            _ => self.undeclared_fields_clause(),
         }
     }
 
@@ -2850,11 +2891,18 @@ impl CommandChange {
         }
     }
 
-    /// The clause for [`Self::InputExampleChanged`], and empty for every other change.
+    /// The clause for [`Self::ResponseUndeclaredFieldsChanged`] and [`Self::AwaitWithinChanged`],
+    /// and empty for every other change.
     fn undeclared_fields_clause(&self) -> String {
         match self {
             Self::ResponseUndeclaredFieldsChanged { before, after } => {
                 format!("response undeclared fields {before} → {after}")
+            }
+            Self::AwaitWithinChanged { before, after } => {
+                let bound = |period: &Option<ess_domain::binding::periodic::Period>| {
+                    period.map_or_else(|| "(none)".to_owned(), |period| period.to_string())
+                };
+                format!("awaited within {} → {}", bound(before), bound(after))
             }
             _ => String::new(),
         }

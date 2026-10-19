@@ -423,7 +423,7 @@ pub(crate) fn refuse_per_row_events(
                     }
                     for field in &mut table.0 {
                         if matches!(field.source, PayloadSource::ChangedField { .. }) {
-                            field.source = PayloadSource::Generated;
+                            field.source = PayloadSource::Generated { present: false };
                         }
                     }
                 }
@@ -804,7 +804,8 @@ fn instance_without_each(name: &str, index: usize, at: String, below_23: bool) -
                  requires specification format ess/23"
             ),
             "drop `instance:`, or declare `format: ess/23` and write one row per element with \
-             `each:` and `instance:`",
+             `each:` and `instance:`; to change one existing row by its identity, write `where: \
+             <identity> == subject.<field>` (ess/27)",
         )
     } else {
         (
@@ -813,7 +814,8 @@ fn instance_without_each(name: &str, index: usize, at: String, below_23: bool) -
                  rows by `where:`; `instance:` names the row an element of `each:` writes"
             ),
             "drop `instance:`, or write one row per element with `each: {in: input.<list>, as: \
-             <name>}` and `instance: <name>.<member>` in place of `where:`",
+             <name>}` and `instance: <name>.<member>` in place of `where:`; to change one existing \
+             row by its identity, write `where: <identity> == subject.<field>` (ess/27)",
         )
     };
     ValidationError::new(ValidationCode::ConflictingDeclaration, at, message).with_hint(hint)
@@ -1272,7 +1274,17 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                             ));
                         }
                     }
-                    errors.extend(check_filter(command, entity, None, types, &set.filter, &at));
+                    errors.extend(check_filter(
+                        spec,
+                        command,
+                        entity,
+                        None,
+                        types,
+                        &set.filter,
+                        &at,
+                        &at.clone().key("where"),
+                        format,
+                    ));
                     errors.extend(identity_set(
                         entity,
                         &site.clone().key("sets"),
@@ -1316,14 +1328,18 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                         }
                     }
                     if let Some(filter) = &affect.filter {
+                        let at = at.clone().key("where");
                         errors.extend(check_filter(
-                            command,
-                            entity,
-                            subject,
-                            types,
-                            filter,
-                            &at.clone().key("where"),
+                            spec, command, entity, subject, types, filter, &at, &at, format,
                         ));
+                        // A pin is read from ess/27; below it the read is refused alone, above.
+                        if format.major() >= FormatVersion::V27.major() {
+                            if let Some(refused) = outcome.subject.as_ref().and_then(|written| {
+                                pins_the_subject(entity, written, filter, &outcome.name, index, &at)
+                            }) {
+                                errors.push(refused);
+                            }
+                        }
                     }
                     if let Some(each) = &affect.each {
                         errors.extend(each_rules(
@@ -1735,26 +1751,164 @@ pub(super) fn count_elsewhere(at: &ConstructRef) -> ValidationError {
     .with_hint("fill this field another way")
 }
 
-/// The filter, checked over `entity`'s fields, the command's input under `input.`, and — for an
-/// `affects:` entry — the subject's fields under `subject.`.
+/// The filter, checked over `entity`'s fields and its identity, the command's input under
+/// `input.`, and — for an `affects:` entry — the subject's fields under `subject.`.
+///
+/// The identity is read from `ess/27` (beyond10x/ess#547, `docs/design/set-effect-identity-filters.md`,
+/// D1), as a row-set selector reads it (`super::row_set::candidate_fields`). Below it a read of the
+/// identity is refused at `gate` as `unsupported_format_version` naming `ess/27`; the check runs
+/// over the identity either way, so that refusal comes alone rather than beside an
+/// `unobservable_fact` for the same read. `state` stays unreadable.
+#[allow(clippy::too_many_arguments)]
 fn check_filter(
+    spec: &Specification,
     command: &CommandSpec,
     entity: &EntitySpec,
     subject: Option<&EntitySpec>,
     types: &TypeRegistry,
     filter: &Predicate,
     at: &ConstructRef,
+    gate: &ConstructRef,
+    format: FormatVersion,
 ) -> ValidationErrors {
-    check_row_predicate(
+    let mut errors = check_row_predicate(
+        spec,
         command,
         entity,
-        &entity.fields,
+        &with_identity(entity),
         subject,
         types,
         filter,
-        at,
+        (at, super::published_operand::Site::Effect),
         false,
-    )
+    );
+    if format.major() < FormatVersion::V27.major() && reads_identity(entity, filter) {
+        let identity = &entity.identity.name;
+        errors.push(
+            ValidationError::at(
+                gate.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                format!(
+                    "`{identity}` is the identity of `{}`; a set effect's filter reads it from \
+                     ess/27",
+                    entity.name
+                ),
+            )
+            .with_hint("declare `format: ess/27`"),
+        );
+    }
+    errors
+}
+
+/// `entity`'s stored fields and its identity: what a set effect's filter reads of a candidate row
+/// (from `ess/27`, beyond10x/ess#547).
+pub(crate) fn with_identity(entity: &EntitySpec) -> Vec<Field> {
+    let mut fields = entity.fields.clone();
+    if !fields
+        .iter()
+        .any(|field| field.name == entity.identity.name)
+    {
+        fields.push(entity.identity.clone());
+    }
+    fields
+}
+
+/// Whether `filter` reads `entity`'s identity: a path rooted at its name, which no stored field
+/// shares.
+fn reads_identity(entity: &EntitySpec, filter: &Predicate) -> bool {
+    !entity
+        .fields
+        .iter()
+        .any(|field| field.name == entity.identity.name)
+        && filter
+            .fact_paths()
+            .iter()
+            .any(|path| path.namespace() == entity.identity.name)
+}
+
+/// The operand `filter` pins `entity`'s identity to: `<identity> == <operand>` on either side, alone
+/// or as the one such conjunct of a top-level `all:`, where the operand reads `subject.` or
+/// `input.` (`docs/design/set-effect-identity-filters.md`, "A pin"). `None` where it pins none.
+fn pinned_operand<'p>(
+    entity: &EntitySpec,
+    filter: &'p Predicate,
+) -> Option<&'p ess_primitives::facts::FactPath> {
+    let identity = entity.identity.name.as_str();
+    let pin = |predicate: &'p Predicate| {
+        let Predicate::Compare {
+            left: ess_primitives::predicate::Operand::Fact(left),
+            op: ess_primitives::predicate::CompareOp::Eq,
+            right: ess_primitives::predicate::Operand::Fact(right),
+            ..
+        } = predicate
+        else {
+            return None;
+        };
+        let bare = |path: &ess_primitives::facts::FactPath| matches!(path.segments(), [only] if only == identity);
+        let operand = |path: &'p ess_primitives::facts::FactPath| {
+            (path.segments().len() > 1
+                && [SUBJECT_NAMESPACE, super::subject_fact::INPUT_NAMESPACE]
+                    .contains(&path.namespace()))
+            .then_some(path)
+        };
+        if bare(left) {
+            operand(right)
+        } else if bare(right) {
+            operand(left)
+        } else {
+            None
+        }
+    };
+    match filter {
+        Predicate::All(children) => {
+            let mut pins = children.iter().filter_map(pin);
+            let first = pins.next()?;
+            pins.next().is_none().then_some(first)
+        }
+        other => pin(other),
+    }
+}
+
+/// The refusal of an `affects:` entry over the subject's own entity whose filter pins the identity
+/// to the subject's own (`subject.<identity>`, or the input field the outcome's `instance:` names):
+/// it selects only the subject, which every entry excepts (beyond10x/ess#547).
+fn pins_the_subject(
+    entity: &EntitySpec,
+    subject: &Subject,
+    filter: &Predicate,
+    outcome: &OutcomeName,
+    index: usize,
+    at: &ConstructRef,
+) -> Option<ValidationError> {
+    if subject.entity != entity.name
+        || entity.fields.iter().any(|field| {
+            [SUBJECT_NAMESPACE, super::subject_fact::INPUT_NAMESPACE].contains(&field.name.as_str())
+        })
+    {
+        return None;
+    }
+    let operand = pinned_operand(entity, filter)?;
+    let identity = &entity.identity.name;
+    let names_subject = match operand.segments() {
+        [namespace, field] if namespace == SUBJECT_NAMESPACE => field == identity,
+        [namespace, rest @ ..] if namespace == super::subject_fact::INPUT_NAMESPACE => {
+            !matches!(subject.effect, Effect::Creates) && rest.join(".") == subject.instance
+        }
+        _ => false,
+    };
+    names_subject.then(|| {
+        ValidationError::at(
+            at.clone(),
+            ValidationCode::ConflictingDeclaration,
+            format!(
+                "`affects[{index}]` of outcome `{outcome}` pins the identity of `{}` to \
+                 `{operand}`, the subject's own, so it selects only the subject, which every \
+                 `affects:` entry excepts",
+                entity.name
+            ),
+        )
+        .with_hint("drop the entry, or write the change in the outcome's own `sets:`".to_owned())
+    })
 }
 
 /// `predicate` checked over `fields` of a row of `entity`, the command's input under `input.`
@@ -1762,18 +1916,24 @@ fn check_filter(
 /// subject's fields under `subject.` (unless the entity declares a field named `subject`). With
 /// `current_time`, `now` reads the decision's one instant, as over a stored row (ess/22, A3): the
 /// environment a row set's selector and `forall` are checked in (`super::row_set`).
+///
+/// From `ess/27` (beyond10x/ess#549) `site` decides `payload.<Event>.<field>`: a value source
+/// reads what its outcome publishes there ([`super::published_operand`]), and every other site
+/// refuses it by name. A candidate field named `payload` keeps being read as itself.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn check_row_predicate(
+    spec: &Specification,
     command: &CommandSpec,
     entity: &EntitySpec,
     fields: &[Field],
     subject: Option<&EntitySpec>,
     types: &TypeRegistry,
     filter: &Predicate,
-    at: &ConstructRef,
+    (at, site): (&ConstructRef, super::published_operand::Site<'_>),
     current_time: bool,
 ) -> ValidationErrors {
     let owner = at.render();
+    let published = super::published_operand::classify(spec, fields, filter, site, at);
     let mut inner = DomainEnvironment::new(types, fields);
     if current_time {
         inner = inner.with_stored_current_time();
@@ -1798,10 +1958,18 @@ pub(super) fn check_row_predicate(
         }),
         identity: subject.map(|subject| &subject.identity),
         current_time,
+        published: (!published.admitted.is_empty()).then_some(&published.admitted),
     };
     let checked = crate::expression::check_predicate(&environment, filter, &owner);
-    let mut errors = ValidationErrors::new();
+    let mut errors = published.errors;
     for error in &checked.errors {
+        if error
+            .path
+            .as_ref()
+            .is_some_and(|path| published.refused.contains(&path))
+        {
+            continue;
+        }
         errors.push(ValidationError::at(
             at.clone(),
             error.code,
@@ -1811,11 +1979,16 @@ pub(super) fn check_row_predicate(
     errors
 }
 
-/// A type the filter environment reads: one of the specification's, or the subject row.
+/// A type the filter environment reads: one of the specification's, the subject row, or a step of
+/// a published read (`payload.<Event>.<field>`, ess/27).
 #[derive(Clone)]
 enum Read {
     Declared(TypeRef),
     Subject,
+    /// The segments after `payload` read so far, a prefix of an admitted event's name.
+    Published(Vec<String>),
+    /// The payload of an admitted event.
+    PublishedEvent(QualifiedName),
 }
 
 impl fmt::Display for Read {
@@ -1823,11 +1996,21 @@ impl fmt::Display for Read {
         match self {
             Self::Declared(type_ref) => type_ref.fmt(f),
             Self::Subject => f.write_str("the subject"),
+            Self::Published(prefix) => {
+                f.write_str(super::published_operand::ROOT)?;
+                prefix
+                    .iter()
+                    .try_for_each(|segment| write!(f, ".{segment}"))
+            }
+            Self::PublishedEvent(event) => {
+                write!(f, "{}.{event}", super::published_operand::ROOT)
+            }
         }
     }
 }
 
-/// [`DomainEnvironment`], with `subject.<field>` reading the subject's declared fields.
+/// [`DomainEnvironment`], with `subject.<field>` reading the subject's declared fields and, in a
+/// value source's selector, `payload.<Event>.<field>` the values its outcome publishes.
 struct WithSubject<'a> {
     inner: DomainEnvironment<'a>,
     /// The subject's fields, and whether the filtered entity declares a field named `subject`
@@ -1836,13 +2019,15 @@ struct WithSubject<'a> {
     identity: Option<&'a Field>,
     /// Whether `now` is admitted, as over a stored row: a row set's selector (ess/22).
     current_time: bool,
+    /// The published reads admitted, where there are any (ess/27, beyond10x/ess#549).
+    published: Option<&'a super::published_operand::Admitted>,
 }
 
 impl WithSubject<'_> {
     fn declared(read: &Read) -> Option<&TypeRef> {
         match read {
             Read::Declared(type_ref) => Some(type_ref),
-            Read::Subject => None,
+            Read::Subject | Read::Published(_) | Read::PublishedEvent(_) => None,
         }
     }
 }
@@ -1868,6 +2053,9 @@ impl TypeEnvironment for WithSubject<'_> {
         match (self.inner.root(name), self.subject) {
             (Some(found), _) => Some(Read::Declared(found)),
             (None, Some((_, false))) if name == SUBJECT_NAMESPACE => Some(Read::Subject),
+            (None, _) if name == super::published_operand::ROOT && self.published.is_some() => {
+                Some(Read::Published(Vec::new()))
+            }
             _ => None,
         }
     }
@@ -1877,7 +2065,7 @@ impl TypeEnvironment for WithSubject<'_> {
     fn shape(&self, reference: &Read) -> Result<Shape<Read>, String> {
         match reference {
             Read::Declared(type_ref) => self.inner.shape(type_ref).map(lifted),
-            Read::Subject => Ok(Shape::Struct),
+            Read::Subject | Read::Published(_) | Read::PublishedEvent(_) => Ok(Shape::Struct),
         }
     }
     fn is_clock_reading(&self, reference: &Read) -> bool {
@@ -1922,6 +2110,16 @@ impl TypeEnvironment for WithSubject<'_> {
                     .find(|field| field.name == name)
                     .map(|field| Read::Declared(field.type_ref.clone()))
             }
+            Read::Published(prefix) => match self.published?.step(prefix, name)? {
+                super::published_operand::Step::Namespace(segments) => {
+                    Some(Read::Published(segments))
+                }
+                super::published_operand::Step::Event(event) => Some(Read::PublishedEvent(event)),
+            },
+            Read::PublishedEvent(event) => self
+                .published?
+                .field(event, name)
+                .map(|type_ref| Read::Declared(type_ref.clone())),
         }
     }
     fn has_parameters(&self) -> bool {
@@ -1987,7 +2185,7 @@ pub(crate) fn refuse_below_ess_16(
                                     format!("{at}.payload.{event}.{}", field.target),
                                     "{count: changed}",
                                 ));
-                                field.source = PayloadSource::Generated;
+                                field.source = PayloadSource::Generated { present: false };
                             }
                         }
                     }
@@ -2353,7 +2551,7 @@ pub(crate) fn refuse_deletions(
                         for (_, table) in &mut outcome.payload.0 {
                             for field in &mut table.0 {
                                 if field.source == PayloadSource::ChangedCount {
-                                    field.source = PayloadSource::Generated;
+                                    field.source = PayloadSource::Generated { present: false };
                                 }
                             }
                         }

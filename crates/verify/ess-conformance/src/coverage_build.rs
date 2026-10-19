@@ -442,7 +442,23 @@ fn classify(
         }
     }
 }
+/// What a generated refusal omitted. The match decides it for each cause, so a new cause cannot
+/// compile without a decision; every reader reads the same decision by code from
+/// [`CHECK_NOT_EMITTED`](crate::synthesize::CHECK_NOT_EMITTED), and every refusal written here is
+/// held to that list.
 fn generated_effect(cause: &crate::RefusalCause) -> Effect {
+    let effect = decided_effect(cause);
+    debug_assert_eq!(
+        effect,
+        crate::coverage::generated_refusal_effect(cause.catalogue_entry().key)
+            .expect("every catalogued code has an effect"),
+        "{} disagrees with CHECK_NOT_EMITTED",
+        cause.code()
+    );
+    effect
+}
+
+fn decided_effect(cause: &crate::RefusalCause) -> Effect {
     use crate::RefusalCause;
     match cause {
         RefusalCause::ViewUndecidable { .. }
@@ -465,7 +481,9 @@ fn generated_effect(cause: &crate::RefusalCause) -> Effect {
         | RefusalCause::WitnessRejected(_)
         | RefusalCause::PrecedenceContradicted { .. }
         | RefusalCause::BindingUnobservable { .. }
-        | RefusalCause::ValueInvariantUnwitnessed { .. } => Effect::CandidateNotEmitted,
+        | RefusalCause::ValueInvariantUnwitnessed { .. }
+        | RefusalCause::SystemIssuedUnaddressed { .. }
+        | RefusalCause::SystemDecidedRefusal { .. } => Effect::CandidateNotEmitted,
     }
 }
 fn authored_refusal(
@@ -519,7 +537,12 @@ fn authored_refusal(
         | Cause::HaltsAtNothing { .. }
         | Cause::InvalidPredicate { .. }
         | Cause::ExternalAnswerUnstated { .. }
-        | Cause::GuardsContradictOutcome { .. } => Effect::CandidateNotEmitted,
+        | Cause::GuardsContradictOutcome { .. }
+        | Cause::GeneratedValuePinned { .. }
+        | Cause::UnorderedTie { .. }
+        | Cause::SystemActorSends { .. }
+        | Cause::AwaitedWithoutInstance { .. }
+        | Cause::NotIssuedClaims { .. } => Effect::CandidateNotEmitted,
     };
     Ok(Refusal {
         origin: Origin::Authored,
@@ -563,10 +586,14 @@ fn coverage_version(
     let observed = crate::value_invariant::coverage_floor(suite).is_some()
         || crate::one_time_response::compact::coverage_floor(suite).is_some();
     let held = crate::hold_now::coverage_floor(suite).is_some();
+    // A system-issued command's await vocabulary (beyond10x/ess#542) is cumulative over every
+    // pair below, the held one included.
+    let awaited = crate::system_issued::coverage_floor(suite).is_some()
+        || crate::system_issued::refused_in(inventory);
     let opened = crate::undeclared_fields::coverage_floor(suite).is_some();
     let constrained = crate::direct_response::constrained_coverage_floor(suite).is_some();
     let counted = crate::event_multiplicity::coverage_floor(suite).is_some();
-    crate::scenario::SuiteFormat::parse(if observed {
+    crate::scenario::SuiteFormat::parse(if observed || awaited {
         "ess-conformance/53"
     } else if held {
         "ess-conformance/51"

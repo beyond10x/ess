@@ -1,4 +1,4 @@
-#	models=258	commands=494
+#	models=264	commands=518
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -456,6 +456,10 @@ crates/verify/ess-conformance/tests/fixtures/keypad.yaml	keypad.dial.SendKeys	in
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	ir=e5ca03db93153d0c79df03994437ff2e2df16254751811567682bdf24fba4717:28645
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	idioms.correlated.Begin	existence: opened | default: superseded
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	idioms.correlated.End	present_related: ambiguous, unmatched | accepting: carried, clamped | default: derived
+crates/verify/ess-conformance/tests/fixtures/minted-value-sources.yaml	ir=afc0a308ae9e5133eb4639e8352fefc67c25edfcc4694cf6bd7149b591ab7a9c:12178
+crates/verify/ess-conformance/tests/fixtures/minted-value-sources.yaml	demo.routing.BridgeEntry	held_state: not-selected | default: bridged
+crates/verify/ess-conformance/tests/fixtures/minted-value-sources.yaml	demo.routing.QueueEntry	default: queued
+crates/verify/ess-conformance/tests/fixtures/minted-value-sources.yaml	demo.routing.SelectAgent	held_state: not-waiting | default: selected
 crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	ir=4f9b5d2d5af0d917c5d9808759cbd93a5c4e16a68d469300aa96a7cfdaf31eb1:14431
 crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	notes.core.Admit	accepting: admitted | default: refused
 crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	notes.core.Edit	default: edited
@@ -493,6 +497,13 @@ crates/verify/ess-conformance/tests/fixtures/mutation-unwitnessed-outcome.yaml	d
 crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	ir=e1ffbf5b823d456089f75da6d9ba2a2e6b66e873e556792eb4d80aa22ae95fa8:11429
 crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	demo.order.Fulfil	existence: not-found | held_state: stale-version, wrong-state | default: applied
 crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	demo.order.Place	default: placed
+crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	ir=2f8adf76d681cd908a05de4f78bb2900d5da738c7a5b71e62697913e7667a334:30677
+crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	demo.nested.CloseSlot	default: closed
+crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	demo.nested.Finish	default: finished
+crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	demo.nested.Join	default: joined
+crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	demo.nested.Leave	default: left
+crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	demo.nested.MatchInGroup	present_related: empty | default: paired
+crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	demo.nested.OpenSlot	default: opened
 crates/verify/ess-conformance/tests/fixtures/now-guard-interpreted.yaml	ir=42abb887d45674d5789eac323db114f48c312913dd2b4c0fc05823f4ebffd6f5:5079
 crates/verify/ess-conformance/tests/fixtures/now-guard-interpreted.yaml	demo.tok.Present	input_refusal: expired | default: accepted
 crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml	ir=fad93168fa11c42db418cd986c510a7310ef87e10eb1077242b76f215de58da8:30720
@@ -527,6 +538,11 @@ crates/verify/ess-conformance/tests/fixtures/one-time-coverage-53/model.yaml	ir=
 crates/verify/ess-conformance/tests/fixtures/one-time-coverage-53/model.yaml	credentials.api.Issue	default: issued
 crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml	ir=e0025ea080b66f2bd4c475cef54f63ee37d555bc2081aa084acc61482d1332ea:8455
 crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml	demo.notes.SubmitNote	input_refusal: account-missing | default: submitted
+crates/verify/ess-conformance/tests/fixtures/ordered-related-head.yaml	ir=e19568fafe85126b8e2020980f84a5c8efbd8d9855a2d2744080915a853e80b1:20387
+crates/verify/ess-conformance/tests/fixtures/ordered-related-head.yaml	demo.ranked.Finish	default: finished
+crates/verify/ess-conformance/tests/fixtures/ordered-related-head.yaml	demo.ranked.Join	default: joined
+crates/verify/ess-conformance/tests/fixtures/ordered-related-head.yaml	demo.ranked.Leave	default: left
+crates/verify/ess-conformance/tests/fixtures/ordered-related-head.yaml	demo.ranked.Pick	present_related: empty | default: picked
 crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	ir=084b1edd33300649c91aa2dcf022cbed42eedf0ce2f99e25a663554399f9464f:8609
 crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	catalog.orders.Collect	existence: unknown | held_state: wrong-collector, already-collected | default: collected
 crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	catalog.orders.Place	default: placed
@@ -629,6 +645,11 @@ crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	demo.shelf.Open
 crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	demo.shelf.Restock	existence: unknown-book | present_related: refused | default: restocked
 crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	demo.shelf.Shelve	present_related: refused | accepting: added | default: replaced
 crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	demo.shelf.Unshelve	present_related: refused | default: removed
+crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	ir=41530db9c552f3a75b69d278511841906742a40441746b2050f33ca41e9ccbcb:15632
+crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.ExpireEntry	held_state: not-queued | default: expired
+crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.ParkCall	held_state: not-waiting | default: parked
+crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.QueueEntry	default: queued
+crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.StartCall	default: started
 crates/verify/ess-conformance/tests/fixtures/state-in-subject-predicate.yaml	ir=93ad22bc62ea70588000c392dcd758719c9df355395b5ef9beef80d9824bb5f4:11608
 crates/verify/ess-conformance/tests/fixtures/state-in-subject-predicate.yaml	demo.shop.MarkReady	default: readied
 crates/verify/ess-conformance/tests/fixtures/state-in-subject-predicate.yaml	demo.shop.PlaceOrder	default: placed
@@ -669,6 +690,15 @@ crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	ir=583250f2bff52
 crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	calls.core.Bridge	held_state: already-bridged | default: bridged
 crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	calls.core.Open	default: opened
 crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	calls.core.Report	held_state: ringing, refreshed, preserved | default: enriched
+crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	ir=78c8c58e784937e45609d4e14eaefcaf1677f4390d1e0c6c1c71d3d50581b6d1:13087
+crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	queueing.entry.AddWorker	default: added
+crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	queueing.entry.Assign	held_state: wrong-state | accepting: dialler-refused | default: assigned
+crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	queueing.entry.Enqueue	default: enqueued
+crates/verify/ess-conformance/tests/fixtures/two-sided-pick.yaml	ir=05821789121845d5e6365da50f9bd7c572bab0308827d3970ef5d1cf413aa13f:22080
+crates/verify/ess-conformance/tests/fixtures/two-sided-pick.yaml	demo.sides.Finish	default: finished
+crates/verify/ess-conformance/tests/fixtures/two-sided-pick.yaml	demo.sides.Join	default: joined
+crates/verify/ess-conformance/tests/fixtures/two-sided-pick.yaml	demo.sides.Leave	default: left
+crates/verify/ess-conformance/tests/fixtures/two-sided-pick.yaml	demo.sides.Pick	present_related: left-empty, right-empty | default: picked
 crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	ir=67ed17e05e544406195c67ad8b3569e26f4990c602accd94a83d13559de4e617:25020
 crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	directory.people.AddContact	default: added
 crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	directory.people.Dial	related_row: no-contact | accepting: wrong-number | default: dialled

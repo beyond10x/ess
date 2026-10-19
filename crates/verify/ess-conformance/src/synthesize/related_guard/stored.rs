@@ -206,9 +206,15 @@ fn relink(
         return Err(gap("the act creating the subject is not a command"));
     };
     // Only where the subject still holds what that act sent: no later act of the arrangement
-    // wrote the field, so the row the branch reads is the one pointed at here.
+    // wrote the field, so the row the branch reads is the one pointed at here. An optional input
+    // the act left out (beyond10x/ess#546) is held as a null copy.
     if let Some(settled) = settled.as_deref() {
-        if settled.get(field).map(|held| &held.value) != sent.get(&input) {
+        let held = settled.get(field).map(|held| &held.value);
+        let kept = match (held, sent.get(&input)) {
+            (Some(ScenarioValue::Literal { value: Node::Null }), None) => true,
+            (held, sent) => held == sent,
+        };
+        if !kept {
             return Err(gap("a later act of the arrangement rewrote it"));
         }
     }

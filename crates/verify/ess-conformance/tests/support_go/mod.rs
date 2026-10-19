@@ -15,11 +15,11 @@ use std::collections::BTreeMap;
 use ess_conformance::report::Status;
 use ess_conformance::target::ConformanceTarget;
 use ess_conformance::target::{
-    AbsentInputRequest, ElapsedObservation, ElapsedObservationRequest, EntitySetupRequest,
-    EventDeliveryRequest, EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity,
-    InstantMark, InvocationObservationRequest, NowHold, ObservedEvent, ObservedInvocation,
-    RedeliveryRequest, ScenarioContext, SemanticCommandRequest, SemanticCommandResult,
-    SemanticViewRequest, SemanticViewResult, TargetError,
+    AbsentInputRequest, AwaitAnswer, AwaitRequest, ElapsedObservation, ElapsedObservationRequest,
+    EntitySetupRequest, EventDeliveryRequest, EventObservationRequest, ExternalOutcomeControl,
+    ImplementationIdentity, InstantMark, InvocationObservationRequest, NowHold, ObservedEvent,
+    ObservedInvocation, RedeliveryRequest, ScenarioContext, SemanticCommandRequest,
+    SemanticCommandResult, SemanticViewRequest, SemanticViewResult, TargetError,
 };
 use ess_conformance::{AdmittedSuite, AdvancingClock, ConformanceSuite, Ids, Runner, RunnerConfig};
 use serde_json::{json, Value};
@@ -441,6 +441,37 @@ impl<T: ConformanceTarget> ConformanceTarget for Recorder<T> {
             described,
             answer,
             |observed| json!({"elapsed_ms": observed.elapsed_ms, "published": observed.published}),
+        )
+    }
+    // An await of a command the system issues itself (beyond10x/ess#542): the instance, the
+    // declared bound in whole seconds, and the names of the compared input fields. The deadline is
+    // each runner's own and is not part of the question.
+    fn await_outcome(&self, request: AwaitRequest) -> Result<AwaitAnswer, TargetError> {
+        let described = json!({
+            "instance": nodes(&request.instance),
+            "within": request.within.map(|within| within.millis() / 1000),
+            "compared": request.compared.iter().collect::<Vec<_>>(),
+        });
+        let key = request.command.to_string();
+        let answer = self.inner.await_outcome(request);
+        self.record(
+            "await_outcome",
+            key,
+            described,
+            answer,
+            |answer| match answer {
+                AwaitAnswer::Reached {
+                    result,
+                    input,
+                    elapsed_ms,
+                } => json!({
+                    "answer": "reached", "result": command_result(result), "input": nodes(input),
+                    "elapsed_ms": elapsed_ms,
+                }),
+                AwaitAnswer::NotIssued { elapsed_ms } => {
+                    json!({"answer": "not_issued", "elapsed_ms": elapsed_ms})
+                }
+            },
         )
     }
 }

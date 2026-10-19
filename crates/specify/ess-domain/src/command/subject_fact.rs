@@ -479,6 +479,12 @@ fn check(
     }
     let checked = crate::expression::check_predicate(&environment, predicate, &owner);
     for error in &checked.errors {
+        if let Some(refused) = error.path.as_ref().and_then(|path| {
+            super::published_operand::guard_refusal(types, path, error.segment.as_deref(), site)
+        }) {
+            errors.push(refused);
+            continue;
+        }
         let mut diagnostic = error.validation_error();
         if let Some(path) = &error.path {
             if error.segment.as_deref() == Some(path.namespace())

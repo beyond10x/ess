@@ -605,15 +605,18 @@ fn succeeded(output: &std::process::Output) -> String {
 }
 
 /// The Rust, Go and TypeScript coverage readers each admit an input carrying `ESS-AUTHOR-041` and
-/// refuse one carrying `ESS-AUTHOR-042`, a code no cause numbers.
+/// one carrying `ESS-AUTHOR-046`, the newest code (beyond10x/ess#542), and refuse one carrying
+/// `ESS-AUTHOR-047`, a code no cause numbers.
 #[test]
 fn every_coverage_reader_admits_the_refusal_and_no_code_after_it() {
     use std::process::Command;
     let input = inventory_with_the_refusal();
     let admitted = input.document().to_canonical_json().unwrap();
     assert!(admitted.contains("ESS-AUTHOR-041"));
-    let unknown = admitted.replace("ESS-AUTHOR-041", "ESS-AUTHOR-042");
+    let unknown = admitted.replace("ESS-AUTHOR-041", "ESS-AUTHOR-047");
+    let newest = admitted.replace("ESS-AUTHOR-041", "ESS-AUTHOR-046");
     assert!(ess_conformance::coverage::AdmittedInput::from_json(&admitted).is_ok());
+    assert!(ess_conformance::coverage::AdmittedInput::from_json(&newest).is_ok());
     assert!(ess_conformance::coverage::AdmittedInput::from_json(&unknown).is_err());
 
     let root = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
@@ -631,6 +634,7 @@ fn every_coverage_reader_admits_the_refusal_and_no_code_after_it() {
     let package = go.join("essconform");
     std::fs::write(package.join("admitted.txt"), &admitted).unwrap();
     std::fs::write(package.join("unknown.txt"), &unknown).unwrap();
+    std::fs::write(package.join("newest.txt"), &newest).unwrap();
     std::fs::write(
         package.join("authored_041_test.go"),
         r#"package essconform
@@ -641,7 +645,7 @@ import (
 )
 
 func TestAuthored041(t *testing.T) {
-    for file, want := range map[string]bool{"admitted.txt": true, "unknown.txt": false} {
+    for file, want := range map[string]bool{"admitted.txt": true, "newest.txt": true, "unknown.txt": false} {
         raw, err := os.ReadFile(file)
         if err != nil { t.Fatal(err) }
         _, err = admitRunInput(string(raw))
@@ -681,14 +685,15 @@ func TestAuthored041(t *testing.T) {
     assert!(output.status.success(), "tsc: {}", succeeded(&output));
     std::fs::write(package.join("admitted.txt"), &admitted).unwrap();
     std::fs::write(package.join("unknown.txt"), &unknown).unwrap();
+    std::fs::write(package.join("newest.txt"), &newest).unwrap();
     std::fs::write(
         package.join("authored041.mjs"),
         r"import {readFileSync} from 'node:fs';
 import {admitRunInput} from './dist/runtime.js';
 const read = (file) => { try { admitRunInput(readFileSync(file, 'utf8')); return true; } catch { return false; } };
-const result = {admitted: read('admitted.txt'), unknown: read('unknown.txt')};
+const result = {admitted: read('admitted.txt'), newest: read('newest.txt'), unknown: read('unknown.txt')};
 console.log(JSON.stringify(result));
-if (!result.admitted || result.unknown) process.exitCode = 1;
+if (!result.admitted || !result.newest || result.unknown) process.exitCode = 1;
 ",
     )
     .unwrap();

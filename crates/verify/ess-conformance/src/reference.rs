@@ -1782,6 +1782,14 @@ impl<T: ConformanceTarget> ConformanceTarget for Untraced<T> {
         self.0.deliver_event(request)
     }
 
+    /// Forwarded: a wrapper that fell back to the default would hide the capability.
+    fn await_outcome(
+        &self,
+        request: crate::target::AwaitRequest,
+    ) -> Result<crate::target::AwaitAnswer, TargetError> {
+        self.0.await_outcome(request)
+    }
+
     fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
         self.0.end_scenario(scenario)
     }

@@ -287,6 +287,12 @@ impl Specification {
         &self.actors
     }
 
+    /// Whether `command` is system-issued: granted by at least one actor, every one of which is
+    /// declared `system: true` (ess/27, beyond10x/ess#542, [`crate::system_issued`]).
+    pub fn is_system_issued(&self, command: &QualifiedName) -> bool {
+        crate::system_issued::is_system_issued(self.actors.values(), command)
+    }
+
     /// Every component, indexed by identity.
     pub fn components(
         &self,
@@ -385,6 +391,9 @@ impl Specification {
             return Err(errors);
         };
 
+        // A present mint and a payload read are `ess/27` sources (beyond10x/ess#545); below it each
+        // mapping is the nested one it was.
+        crate::command::minted_value::read_below_ess_27(system.format, &mut collected.commands);
         // A filtered read is an `ess/22` source; below it the same mapping is the nested one it was.
         crate::command::row_set::read_below_ess_22(
             system.format,
@@ -468,17 +477,24 @@ impl Specification {
         self.validate_after(&Refused::default())
     }
 
+    /// The binding constructs checked across the whole specification: periodic causes, delivery
+    /// contexts, retries, conditions and refusals.
+    fn validate_bindings(&self) -> ValidationErrors {
+        let mut errors = crate::binding::periodic::validate_specification(self);
+        errors.extend(crate::binding::context::validate_specification(self));
+        errors.extend(crate::binding::retry::validate_specification(self));
+        errors.extend(crate::binding::condition::validate_specification(self));
+        errors.extend(crate::binding::refusal::validate_specification(self));
+        errors
+    }
+
     /// Checks every reference, treating the names `refused` holds as declared: their own
     /// conversion already said what is wrong with them, and a reference to one is not a second
     /// fault.
     fn validate_after(&self, refused: &Refused) -> ValidationErrors {
         let mut errors = crate::primitive_admission::specification(self);
         errors.extend(crate::wire::validate(self));
-        errors.extend(crate::binding::periodic::validate_specification(self));
-        errors.extend(crate::binding::context::validate_specification(self));
-        errors.extend(crate::binding::retry::validate_specification(self));
-        errors.extend(crate::binding::condition::validate_specification(self));
-        errors.extend(crate::binding::refusal::validate_specification(self));
+        errors.extend(self.validate_bindings());
 
         // Entities contribute the enum their lifecycle forms, so a view projecting `state` and a
         // filter comparing it are checked against the same set of names.
@@ -556,6 +572,9 @@ impl Specification {
         for actor in self.actors.values() {
             errors.extend(actor.validate_grants(&command_names, &view_names, self.system.format));
         }
+        // An actor that is the system itself, and what it makes of the commands it alone is
+        // granted (ess/27, beyond10x/ess#542).
+        errors.extend(crate::system_issued::validate_specification(self));
 
         errors.extend(self.validate_components(&command_names, &event_names, refused));
 

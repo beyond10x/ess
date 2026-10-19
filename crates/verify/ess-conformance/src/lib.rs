@@ -184,6 +184,7 @@ pub mod subject;
 pub mod suite_diff;
 pub mod synthesis_seeds;
 pub mod synthesize;
+pub mod system_issued;
 pub mod target;
 pub mod text_match_format;
 pub mod ts;
