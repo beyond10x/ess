@@ -23,7 +23,7 @@ relations:
 - delivers: story:payload-source-reads-the-head-of-an-ordered-selection
 - delivers: story:authored-exact-value-on-generated-field-is-refused
 - delivers: story:minted-value-present-and-shared-with-its-payload
-revision: 2
+revision: 3
 ---
 ## Intent
 
@@ -98,5 +98,5 @@ the stories above moved to `implemented` with the gate as evidence.
   then are deleted. Nothing in this release needs them gone, and each is local-only.
 - **D2, 2026-10-19 (operator).** Unit checks are the unit's own tests, the test binaries of the code
   it touches, Clippy on the touched crates and `task fmt-check`. The full gate runs on the
-  integration head only, by pushing it to `queue/ess-integrate-20261018`, whose push runs `ci.yml`:
+  integration head only, by pushing it to `queue/ess-integrate-20261018`, whose pull request runs `ci.yml` in full:
   after wave 1, after wave 2 and on the final head.
