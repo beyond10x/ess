@@ -86,6 +86,8 @@ fn the_example_opens_navigates_filters_opens_an_overlay_and_plays_a_live_event()
     let filtered = screen(&mut app);
     assert!(filtered.contains("Cedar Partners"), "{filtered}");
     assert!(!filtered.contains("Birch Channel"), "{filtered}");
+    // The footer counts the rows the filter keeps, not every row read.
+    assert!(filtered.contains("page 1/1 · 1 rows ·"), "{filtered}");
     scratch("partners-filtered.txt", &filtered);
 
     // `e` is the edit row action: it opens the edit drawer as a full-screen pane.
