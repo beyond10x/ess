@@ -94,6 +94,59 @@ pub(super) fn send_as_first(ir: &EssIr, scenario: &mut ConformanceScenario) {
     }
 }
 
+/// The model read under the two assignments a scenario built after the caller readings may send
+/// a command under: a one-time outcome's follow-up cells. `None` for a model no command of which
+/// reads its caller, whose cells keep being built from the model itself.
+///
+/// A follow-up branch selected by its caller (`owner != caller.user_id`) has no input the plain
+/// model can choose for it: the caller is no value there. The ordinary suite reaches it under an
+/// assignment ([`synthesize`]), and so does a cell, sending every command as `first`, and then
+/// arranging as `first` and acting as `second`, the refusal for a caller who is not the row's.
+pub(super) struct Readings {
+    callers: Callers,
+    first: EssIr,
+    second: EssIr,
+}
+
+impl Readings {
+    pub(super) fn of(ir: &EssIr) -> Option<Self> {
+        if !uses(ir) {
+            return None;
+        }
+        let callers = Callers::of(ir)?;
+        if reading(ir, &callers).is_empty() {
+            return None;
+        }
+        let read_as = |who: Who| {
+            ir.with_commands_rewritten(|command| {
+                written(ir, command, &callers.for_command(ir, who, &command.name))
+            })
+        };
+        let first = read_as(Who::First);
+        let second = read_as(Who::Second);
+        Some(Self {
+            callers,
+            first,
+            second,
+        })
+    }
+
+    /// Every command sent as `first`, its steps left for [`send_as_first`] to mark; then the
+    /// arrangement sent as `first` and the command under test as `second`, marked as they are
+    /// planned.
+    pub(super) fn models<'a>(&'a self, ir: &'a EssIr) -> [InvocationModels<'a>; 2] {
+        [
+            InvocationModels::plain(&self.first),
+            InvocationModels {
+                arrangement: &self.first,
+                acting: &self.second,
+                credentials: Some((ir, &self.callers, Who::First)),
+                seeds: &super::seeds::EMPTY,
+            },
+        ]
+    }
+}
+
 /// Which of the two callers sends a command.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Who {

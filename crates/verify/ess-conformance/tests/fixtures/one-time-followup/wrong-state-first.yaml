@@ -1,0 +1,66 @@
+format: ess/22
+system: devices
+version: v1
+domain: devices.api
+entities:
+  - name: devices.api.Device
+    identity: {name: device_id, type: Uuid}
+    fields:
+      - {name: owner, type: String}
+    lifecycle:
+      initial: Active
+      states: [Active, Retired]
+      terminal: [Retired]
+      transitions:
+        - {name: retire, from: [Active], to: Retired}
+actors:
+  - name: devices.api.Owner
+    attributes:
+      - {name: user_id, type: String}
+    may: [devices.api.PairDevice, devices.api.RetireDevice]
+  - name: devices.api.Support
+    attributes:
+      - {name: user_id, type: String}
+    may: [devices.api.RetireDevice]
+  - name: devices.api.Guest
+    attributes:
+      - {name: user_id, type: String}
+    may: []
+commands:
+  - name: devices.api.PairDevice
+    input:
+      - {name: device_id, type: Uuid}
+    response:
+      - {name: pairing_code, type: String}
+    outcomes:
+      - name: paired
+        creates: devices.api.Device
+        instance: device_id
+        sets: {owner: {caller: user_id}}
+        returns: true
+        one_time_response: [pairing_code]
+        emits: [devices.api.DevicePaired]
+        payload:
+          devices.api.DevicePaired: {device_id: input.device_id}
+  - name: devices.api.RetireDevice
+    input:
+      - {name: device_id, type: Uuid}
+    outcomes:
+      - {name: not-active, wrong_state: true, error: devices.api.NotActive}
+      - name: retired
+        moves: devices.api.Device.retire
+        instance: device_id
+        emits: [devices.api.DeviceRetired]
+        payload:
+          devices.api.DeviceRetired: {device_id: input.device_id}
+events:
+  - name: devices.api.DevicePaired
+    fields:
+      - {name: device_id, type: Uuid}
+  - name: devices.api.DeviceRetired
+    fields:
+      - {name: device_id, type: Uuid}
+errors:
+  - name: devices.api.NotActive
+    summary: The device is not active.
+    fields: []

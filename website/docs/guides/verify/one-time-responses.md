@@ -47,9 +47,14 @@ these cells:
 - For each declared actor (one anonymous caller when the model declares no actor), after an
   origin:
   - `command/<command>/<outcome>`: each outcome of each command the actor is granted, the
-    originating command included.
+    originating command included. The outcome is reached as its ordinary scenario reaches it: a
+    branch that compares the caller (`owner != caller.user_id`) is sent by a second caller over a
+    row the first one created, an `unknown_instance:` branch for an identity no record carries,
+    and a `wrong_state:` branch on a row in a state the command's moves do not start from, or,
+    where no such row can be arranged and observed, for an identity no record carries.
   - `denied/<command>`: each command the actor is not granted, invoked as that actor and expected
-    to be refused for lack of a grant.
+    to be refused for lack of a grant. The invocation is that of the command's first outcome, in
+    declared order, that a granted caller can be sent with an arranged row and input.
   - `read/<view>`: each declared view. The cell is refused when the actor is not granted the
     originating command, because that actor cannot issue the value it would read.
 

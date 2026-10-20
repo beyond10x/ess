@@ -1,7 +1,8 @@
 //! Finite source-owned disclosure inventory, with named refusals for unarrangeable cells.
+use super::caller::{InvocationModels, Readings};
 use super::{
-    exercise, granted_actors, has_subject_guards, purpose, related_guard, run, subject_fact,
-    ActorRef, BTreeMap, CommandRef, ConformanceScenario, Distinction, EssIr, EventRef, OutcomeRef,
+    exercise, granted_actors, has_subject_guards, purpose, related_guard, subject_fact, ActorRef,
+    BTreeMap, CommandRef, ConformanceScenario, Distinction, EssIr, EventRef, OutcomeRef,
     QualifiedName, Refusal, RefusalCause, ResolvedCommand, ResolvedCondition, ResolvedOutcome,
     ScenarioId, ScenarioStep, ScenarioValue, Synthesis, ViewRef, WitnessGap,
 };
@@ -17,6 +18,7 @@ pub(super) fn augment(ir: &EssIr, synthesis: &mut Synthesis) {
         }
     }
     let defaults = granted_actors(ir);
+    let readings = super::caller::Readings::of(ir);
     for command in ir.commands().values() {
         for outcome in &command.outcomes {
             if outcome.one_time_response.is_empty() {
@@ -90,7 +92,13 @@ pub(super) fn augment(ir: &EssIr, synthesis: &mut Synthesis) {
                 }
             }
             for field in &outcome.one_time_response {
-                followups(ir, synthesis, command, outcome, field, &defaults);
+                followups(
+                    ir,
+                    readings.as_ref(),
+                    synthesis,
+                    (command, outcome, field),
+                    &defaults,
+                );
             }
         }
     }
@@ -452,10 +460,9 @@ fn stateless(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
 
 fn followups(
     ir: &EssIr,
+    readings: Option<&Readings>,
     synthesis: &mut Synthesis,
-    origin: &ResolvedCommand,
-    outcome: &ResolvedOutcome,
-    field: &str,
+    (origin, outcome, field): (&ResolvedCommand, &ResolvedOutcome, &str),
     defaults: &BTreeMap<QualifiedName, ActorRef>,
 ) {
     let actors: Vec<_> = if ir.actors().is_empty() {
@@ -477,6 +484,7 @@ fn followups(
             if !granted {
                 denied_cell(
                     ir,
+                    readings,
                     synthesis,
                     (origin, outcome, field),
                     command,
@@ -526,11 +534,14 @@ fn followups(
                         }
                     }
                 }
-                if let Some((steps, source, _)) =
-                    exercise(ir, command, branch, &assigned, &id, &mut synthesis.refusals)
-                {
-                    let followup =
-                        ConformanceScenario::new(purpose(command, branch), steps, source);
+                if let Some(followup) = reached(
+                    ir,
+                    readings,
+                    (command, branch),
+                    &assigned,
+                    &id,
+                    &mut synthesis.refusals,
+                ) {
                     if let Err(reason) =
                         super::caller::append_independent(ir, &mut scenario, &followup)
                     {
@@ -638,8 +649,96 @@ fn read_cells(
     }
 }
 
+/// The follow-up `branch` of `command`, sent as `actors` assigns, built as the ordinary suite
+/// reaches it ([`super::reached_branch`]): from the model itself, and else under each caller
+/// reading of [`Readings`] in turn. Where none reaches it, the model's own refusals.
+fn reached(
+    ir: &EssIr,
+    readings: Option<&Readings>,
+    (command, branch): (&ResolvedCommand, &ResolvedOutcome),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+) -> Option<ConformanceScenario> {
+    let mut own = Vec::new();
+    let plain = InvocationModels::plain(ir);
+    if let Some(scenario) = super::reached_branch(&plain, command, branch, actors, id, &mut own) {
+        refusals.extend(own);
+        return Some(scenario);
+    }
+    for models in readings
+        .map(|readings| readings.models(ir))
+        .into_iter()
+        .flatten()
+    {
+        let Some((command, branch)) = read_as(&models, command, branch) else {
+            continue;
+        };
+        let mut tried = Vec::new();
+        if let Some(scenario) =
+            super::reached_branch(&models, command, branch, actors, id, &mut tried)
+        {
+            refusals.extend(tried);
+            return Some(scenario);
+        }
+    }
+    refusals.extend(own);
+    None
+}
+
+/// `command` and its `branch` as `models` act them: the reading writes the caller's values in.
+fn read_as<'m>(
+    models: &InvocationModels<'m>,
+    command: &ResolvedCommand,
+    branch: &ResolvedOutcome,
+) -> Option<(&'m ResolvedCommand, &'m ResolvedOutcome)> {
+    let command = models.acting.commands().get(&command.name)?;
+    let branch = command
+        .outcomes
+        .iter()
+        .find(|declared| declared.name == branch.name)?;
+    Some((command, branch))
+}
+
+/// An invocation of `command` a granted caller would send, for a denied cell to send as one who is
+/// not: the first branch, in declared order, with an arrangement and an input, from the model
+/// itself and else under each caller reading. A branch only a family of its own reaches (an
+/// identity no record carries, a state the moves leave out) has none, and the next is taken.
+/// Where none has one, the first branch's refusal.
+fn denied_run(
+    ir: &EssIr,
+    readings: Option<&Readings>,
+    command: &ResolvedCommand,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<super::Run, RefusalCause> {
+    let mut first = None;
+    let plain = InvocationModels::plain(ir);
+    let readings = readings.map(|readings| readings.models(ir));
+    for models in std::iter::once(&plain).chain(readings.iter().flatten()) {
+        let Some(command) = models.acting.commands().get(&command.name) else {
+            continue;
+        };
+        for branch in &command.outcomes {
+            match super::run_as(models, command, branch, actors, super::Witness::Full) {
+                Ok(run) => return Ok(run),
+                Err(cause) => {
+                    first.get_or_insert(cause);
+                }
+            }
+        }
+    }
+    Err(first.unwrap_or_else(|| {
+        RefusalCause::NoWitness(WitnessGap {
+            path: command.name.to_string(),
+            type_ref: INVENTORY.into(),
+            reason: "the denied command declares no branch to send",
+        })
+    }))
+}
+
 fn denied_cell(
     ir: &EssIr,
+    readings: Option<&Readings>,
     synthesis: &mut Synthesis,
     origin: (&ResolvedCommand, &ResolvedOutcome, &str),
     command: &ResolvedCommand,
@@ -660,10 +759,10 @@ fn denied_cell(
     let Some(actor) = actor else {
         return;
     };
-    let Some(branch) = command.outcomes.first() else {
+    if command.outcomes.is_empty() {
         return;
-    };
-    let run = match run(ir, command, branch, defaults) {
+    }
+    let run = match denied_run(ir, readings, command, defaults) {
         Ok(run) => run,
         Err(cause) => {
             synthesis.refusals.push(Refusal::about(&id, cause));
@@ -675,8 +774,15 @@ fn denied_cell(
         synthesis.refusals.push(refusal(&id, "denied witness has no typed command invocation"));
         return;
     };
-    if let ScenarioStep::ExecuteCommand { actor: caller, .. } = &mut invoke {
-        *caller = Some(actor.clone());
+    // Sent as the denied actor: a caller a reading marked it with was the granted actor's.
+    if let ScenarioStep::ExecuteCommand {
+        actor: sender,
+        caller,
+        ..
+    } = &mut invoke
+    {
+        *sender = Some(actor.clone());
+        caller.clear();
     }
     steps.push(invoke);
     steps.push(ScenarioStep::ExpectNotGranted {
