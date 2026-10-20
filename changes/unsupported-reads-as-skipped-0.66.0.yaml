@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/unsupported-reads-as-skipped-0.66.0
+repository: ess
+publishedAt: 2026-10-20T00:00:00Z
+title: A generated Go or TypeScript runner shows an unsupported scenario as skipped, and the run still fails
+summary: >-
+  Under report format 2 the generated Go and TypeScript runners end an unsupported required scenario
+  as a skipped subtest or case carrying the target's reason, not a failed assertion. The run still
+  fails once, with one message naming how many required scenarios were unsupported; the report is
+  unchanged.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.66.0
+  version: 0.66.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

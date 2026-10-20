@@ -221,7 +221,7 @@ const target = () => {
 };
 const scope = {diagnostic() {}, skip() {}, async test(_name, body) { try { await body(this); } catch {} }};
 try { await runWith(scope, target, readFileSync(suiteFile, 'utf8')); }
-catch (error) { console.error(String(error)); process.exitCode = 2; }
+catch (error) { console.error(String(error)); process.exitCode = /^Error: \d+ required scenario\(s\) unsupported/.test(String(error)) ? 1 : 2; }
 writeFileSync(divergenceFile, divergences.join('\n'));
 ";
 

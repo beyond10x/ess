@@ -226,6 +226,13 @@ An absolute output path avoids package working-directory differences in `go test
 A failed conformance run still writes its separate counts; report delivery does not turn failures
 or skipped scenarios into passing evidence.
 
+Under report/2, generated Go and TypeScript show each unsupported required scenario as a skipped
+subtest or case carrying the target's reason, so a JUnit or test report does not count it as a
+failed assertion. The run still fails once: the enclosing test fails with one message naming how
+many required scenarios were unsupported, and the process exits nonzero. The report still counts
+those scenarios `unsupported` with `execution_status` `failed`. A held scenario the target cannot
+hold `now` for is skipped without failing the run. Report/1 is unchanged.
+
 ## Opt into declared coverage
 
 The suite/5, original-byte carrier and paired replay features in this section were introduced in

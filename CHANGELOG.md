@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.66.0] — 2026-10-20
+
+### Changed
+
+- Under report format 2 the generated Go and TypeScript runners show an unsupported required
+  scenario as a skipped subtest or case carrying the target's reason (Go `t.Skipf`, TypeScript
+  `t.skip`), where each such subtest used to fail, so a JUnit or test report no longer reads it as a
+  failed assertion. The run still fails once: the enclosing test fails with one message naming how
+  many required scenarios were unsupported, and the process exits nonzero. The report is unchanged
+  (`unsupported`, `execution_status: failed`, `go-scenario-status/2`); a held scenario the target
+  cannot hold `now` for still skips without failing the run, and report format 1 is unchanged
+  (beyond10x/ess#616). Regenerate a Go or TypeScript package to take it up.
+
 ## [0.65.0] — 2026-10-20
 
 ### Fixed

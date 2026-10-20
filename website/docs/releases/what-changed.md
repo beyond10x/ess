@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.66.0 — 2026-10-20
+
+### A generated Go or TypeScript runner shows an unsupported scenario as skipped, and the run still fails
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.66.0)
+
+Under report format 2 the generated Go and TypeScript runners end an unsupported required scenario as a skipped subtest or case carrying the target's reason, not a failed assertion. The run still fails once, with one message naming how many required scenarios were unsupported; the report is unchanged.
+
 ## 0.65.0 — 2026-10-20
 
 ### Synthesis arranges the rows binding, row-set and one-time disclosure scenarios read
