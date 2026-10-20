@@ -117,7 +117,7 @@ pub(crate) fn expand(
     };
     for key in ["shells", "pages", "widgets"] {
         if let Some(value) = document.get_mut(key) {
-            composites.value(value, &root.child(key), Ctx::Plain)?;
+            composites.value(value, &At::Path(&root.child(key)), Ctx::Plain)?;
         }
     }
     expand_widgets(&mut document)?;
@@ -134,7 +134,7 @@ pub(crate) fn expand(
     };
     for key in ["shells", "pages", "widgets"] {
         if let Some(value) = document.get_mut(key) {
-            local.value(value, &root.child(key), Ctx::Plain)?;
+            local.value(value, &At::Path(&root.child(key)), Ctx::Plain)?;
         }
     }
     if let Some(Value::Mapping(declared)) = document.get_mut("widgets") {
@@ -314,6 +314,32 @@ pub(crate) fn entry_segment(entry: &Value) -> String {
     }
 }
 
+/// A position in a walk, whose [`NodePath`] is built only when an error names it. The walks
+/// visit every value of the document and almost never report, so each level holds its parent
+/// and its segment rather than a copy of every segment above it.
+#[derive(Clone, Copy)]
+enum At<'a> {
+    /// A path already built.
+    Path(&'a NodePath),
+    /// One segment below another position.
+    Child(&'a At<'a>, &'a str),
+}
+
+impl<'a> At<'a> {
+    /// This position extended by one segment.
+    fn child(&'a self, segment: &'a str) -> At<'a> {
+        At::Child(self, segment)
+    }
+
+    /// The path of this position.
+    fn path(&self) -> NodePath {
+        match self {
+            At::Path(path) => (*path).clone(),
+            At::Child(parent, segment) => parent.path().child(segment),
+        }
+    }
+}
+
 // ── local shorthands ─────────────────────────────────────────────────────────────────────────
 
 /// What the value being walked is, where a key alone does not say.
@@ -418,13 +444,13 @@ fn not_accepted(at: &NodePath, construct: &str, accepted: &Value, value: &Value)
 }
 
 impl Local<'_> {
-    fn value(&self, value: &mut Value, at: &NodePath, ctx: Ctx) -> Result<()> {
+    fn value(&self, value: &mut Value, at: &At<'_>, ctx: Ctx) -> Result<()> {
         match value {
             Value::Mapping(mapping) => self.mapping(mapping, at, ctx),
             Value::Sequence(entries) => {
                 for entry in entries {
-                    let here = at.child(&entry_segment(entry));
-                    self.value(entry, &here, ctx)?;
+                    let segment = entry_segment(entry);
+                    self.value(entry, &at.child(&segment), ctx)?;
                 }
                 Ok(())
             }
@@ -435,7 +461,7 @@ impl Local<'_> {
     /// Applies every local shorthand at the positions the schema types for it
     /// ([`Schema::positions`]): `Reads`, `Field`, `Node` (the `Composite` shorthand), `Action`
     /// (its `sets`, `confirm` and `name`) and `choice` `options`.
-    fn mapping(&self, mapping: &mut Mapping, at: &NodePath, ctx: Ctx) -> Result<()> {
+    fn mapping(&self, mapping: &mut Mapping, at: &At<'_>, ctx: Ctx) -> Result<()> {
         let positions = self.schema.positions();
         let all = self.scope == Scope::All;
         let component = mapping
@@ -447,12 +473,24 @@ impl Local<'_> {
             if OPAQUE.contains(&key.as_str()) {
                 continue;
             }
+            // Every position the key may be, probed with one owned key rather than a copy each.
+            let mut probe = (key, Shape::One);
+            let mut is = |set: &BTreeSet<(String, Shape)>, shape: Shape| {
+                probe.1 = shape;
+                set.contains(&probe)
+            };
+            let reads_one = is(&positions.reads, Shape::One);
+            let fields_list = is(&positions.fields, Shape::List);
+            let nodes_one = is(&positions.nodes, Shape::One);
+            let nodes_list = is(&positions.nodes, Shape::List);
+            let nodes_map = is(&positions.nodes, Shape::Map);
+            let actions_one = is(&positions.actions, Shape::One);
+            let actions_list = is(&positions.actions, Shape::List);
+            let (key, _) = probe;
             let here = at.child(&key);
-            let is =
-                |set: &BTreeSet<(String, Shape)>, shape: Shape| set.contains(&(key.clone(), shape));
             if all
                 && ctx != Ctx::Export
-                && is(&positions.reads, Shape::One)
+                && reads_one
                 && mapping.get(key.as_str()).is_some_and(is_marker)
             {
                 // `unmapped_marker.renderer: treat_as_absent`: no read, and the marker kept
@@ -466,28 +504,28 @@ impl Local<'_> {
             let Some(child) = mapping.get_mut(key.as_str()) else {
                 continue;
             };
-            if all && ctx != Ctx::Export && is(&positions.reads, Shape::One) && child.is_string() {
+            if all && ctx != Ctx::Export && reads_one && child.is_string() {
                 self.reads(child, &here)?;
             }
-            if all && is(&positions.fields, Shape::List) {
+            if all && fields_list {
                 if let Value::Sequence(entries) = child {
                     for entry in entries.iter_mut() {
-                        let entry_at = here.child(&entry_segment(entry));
-                        self.field(entry, &entry_at)?;
+                        let segment = entry_segment(entry);
+                        self.field(entry, &here.child(&segment))?;
                     }
                 }
             }
             match child {
-                Value::String(_) if is(&positions.nodes, Shape::One) => {
+                Value::String(_) if nodes_one => {
                     self.composite(child, &here)?;
                 }
-                Value::Sequence(entries) if is(&positions.nodes, Shape::List) => {
+                Value::Sequence(entries) if nodes_list => {
                     for entry in entries.iter_mut() {
-                        let entry_at = here.child(&entry_segment(entry));
-                        self.composite(entry, &entry_at)?;
+                        let segment = entry_segment(entry);
+                        self.composite(entry, &here.child(&segment))?;
                     }
                 }
-                Value::Mapping(entries) if is(&positions.nodes, Shape::Map) => {
+                Value::Mapping(entries) if nodes_map => {
                     for (name, entry) in entries.iter_mut() {
                         self.composite(entry, &here.child(&key_text(name)))?;
                     }
@@ -501,7 +539,7 @@ impl Local<'_> {
             } else {
                 Ctx::Plain
             };
-            if is(&positions.actions, Shape::One) {
+            if actions_one {
                 if let Value::Mapping(action) = child {
                     if !action.contains_key("component") && !action.contains_key("primitive") {
                         if all {
@@ -511,7 +549,7 @@ impl Local<'_> {
                     }
                 }
             }
-            if is(&positions.actions, Shape::List) {
+            if actions_list {
                 if let Value::Sequence(entries) = child {
                     if all {
                         for entry in entries.iter_mut() {
@@ -532,10 +570,10 @@ impl Local<'_> {
     }
 
     /// `Reads`: a view name.
-    fn reads(&self, reads: &mut Value, at: &NodePath) -> Result<()> {
+    fn reads(&self, reads: &mut Value, at: &At<'_>) -> Result<()> {
         let accepted = self.schema.accepts("Reads", "");
         if !accepts(accepted, reads) {
-            return Err(not_accepted(at, "Reads", accepted, reads));
+            return Err(not_accepted(&at.path(), "Reads", accepted, reads));
         }
         let written = reads.clone();
         *reads = instantiate(
@@ -550,11 +588,11 @@ impl Local<'_> {
     }
 
     /// `Field`: a bare name, and an absent `name`.
-    fn field(&self, entry: &mut Value, at: &NodePath) -> Result<()> {
+    fn field(&self, entry: &mut Value, at: &At<'_>) -> Result<()> {
         if !entry.is_mapping() {
             let accepted = self.schema.accepts("Field", "");
             if !accepts(accepted, entry) {
-                return Err(not_accepted(at, "Field", accepted, entry));
+                return Err(not_accepted(&at.path(), "Field", accepted, entry));
             }
             let written = entry.clone();
             *entry = instantiate(
@@ -578,13 +616,13 @@ impl Local<'_> {
 
     /// `Composite`: a bare member name where a nested node is expected. A widget is never named
     /// this way; it is used as `{component: <widget>, args: …}`.
-    fn composite(&self, node: &mut Value, at: &NodePath) -> Result<()> {
+    fn composite(&self, node: &mut Value, at: &At<'_>) -> Result<()> {
         if node.is_mapping() {
             return Ok(());
         }
         let accepted = self.schema.accepts("Composite", "");
         if !accepts(accepted, node) {
-            return Err(not_accepted(at, "Composite", accepted, node)
+            return Err(not_accepted(&at.path(), "Composite", accepted, node)
                 .with_hint("a widget is used as `{component: <widget>, args: …}`"));
         }
         let written = node.clone();
@@ -600,7 +638,7 @@ impl Local<'_> {
     }
 
     /// `choice` options: a named enum type, and bare values.
-    fn options(&self, options: &mut Value, at: &NodePath) -> Result<()> {
+    fn options(&self, options: &mut Value, at: &At<'_>) -> Result<()> {
         match options {
             Value::Sequence(entries) => {
                 let accepted = self.schema.accepts("choice", "options[]");
@@ -610,7 +648,7 @@ impl Local<'_> {
                         continue;
                     }
                     if !accepts(accepted, entry) {
-                        return Err(not_accepted(at, "choice option", accepted, entry));
+                        return Err(not_accepted(&at.path(), "choice option", accepted, entry));
                     }
                     let written = entry.clone();
                     *entry = instantiate(
@@ -626,19 +664,19 @@ impl Local<'_> {
             short => {
                 let accepted = self.schema.accepts("choice", "options");
                 if !accepts(accepted, short) {
-                    return Err(not_accepted(at, "choice options", accepted, short));
+                    return Err(not_accepted(&at.path(), "choice options", accepted, short));
                 }
                 let type_name = key_text(short);
                 let declared = self.types.get(type_name.as_str());
                 if declared.is_none() {
-                    *short = self.model_options(&type_name, at)?;
+                    *short = self.model_options(&type_name, &at.path())?;
                     return Ok(());
                 }
                 let values = declared
                     .and_then(|ty| ty["enum"].as_sequence())
                     .ok_or_else(|| {
                         LoadError::new(
-                            at.clone(),
+                            at.path(),
                             format!("`{type_name}` is not an enum type of this document"),
                         )
                     })?;
@@ -716,7 +754,7 @@ impl Local<'_> {
     }
 
     /// `Action`: `sets` toggles, a `confirm` record, and an absent `name`.
-    fn action(&self, action: &mut Mapping, at: &NodePath) -> Result<()> {
+    fn action(&self, action: &mut Mapping, at: &At<'_>) -> Result<()> {
         if let Some(Value::Mapping(sets)) = action.get_mut("sets") {
             let accepted = self.schema.accepts("Action", "sets.*");
             let template = self.schema.template("Action", "sets.*");
@@ -741,7 +779,7 @@ impl Local<'_> {
                 let accepted = self.schema.accepts("Action", "confirm");
                 if !accepts(accepted, &confirm) {
                     return Err(not_accepted(
-                        &at.child("confirm"),
+                        &at.path().child("confirm"),
                         "Action confirm",
                         accepted,
                         &confirm,
@@ -763,7 +801,7 @@ impl Local<'_> {
             let name =
                 first_present(self.schema.template("Action", "name"), action).ok_or_else(|| {
                     LoadError::new(
-                        at.clone(),
+                        at.path(),
                         "an action without a `name` needs one of opens, does, navigate, export, \
                          upload or sets to derive it from; a `copy` action is named explicitly",
                     )
@@ -1203,7 +1241,7 @@ fn expand_widgets(document: &mut Mapping) -> Result<()> {
         if let Some(value) = document.get_mut(key) {
             widget_uses(
                 value,
-                &root.child(key),
+                &At::Path(&root.child(key)),
                 &widgets,
                 &mut Vec::new(),
                 &mut budget,
@@ -1236,9 +1274,9 @@ impl Default for Budget {
     }
 }
 
-fn exceeded(widget: &str, at: &NodePath) -> LoadError {
+fn exceeded(widget: &str, at: &At<'_>) -> LoadError {
     LoadError::new(
-        at.clone(),
+        at.path(),
         format!(
             "widget `{widget}`: widget expansion exceeds {EXPANSION_LIMIT} values for the \
              document; a widget used more than once at each level of nesting grows exponentially"
@@ -1261,7 +1299,7 @@ fn values_in(value: &Value) -> usize {
 
 fn widget_uses(
     value: &mut Value,
-    at: &NodePath,
+    at: &At<'_>,
     widgets: &Mapping,
     stack: &mut Vec<String>,
     budget: &mut Budget,
@@ -1288,8 +1326,8 @@ fn widget_uses(
         }
         Value::Sequence(entries) => {
             for entry in entries {
-                let here = at.child(&entry_segment(entry));
-                widget_uses(entry, &here, widgets, stack, budget)?;
+                let segment = entry_segment(entry);
+                widget_uses(entry, &at.child(&segment), widgets, stack, budget)?;
             }
             Ok(())
         }
@@ -1300,26 +1338,26 @@ fn widget_uses(
 fn instance_body(
     widget: &str,
     instance: &Mapping,
-    at: &NodePath,
+    at: &At<'_>,
     widgets: &Mapping,
     stack: &mut Vec<String>,
     budget: &mut Budget,
 ) -> Result<Value> {
     let Some(definition) = widgets.get(widget) else {
         return Err(LoadError::new(
-            at.child("component"),
+            at.path().child("component"),
             format!("`{widget}` names neither a member of the composite union nor a widget"),
         ));
     };
     if stack.iter().any(|seen| seen == widget) {
         return Err(LoadError::new(
-            at.clone(),
+            at.path(),
             format!("widget `{widget}` contains itself"),
         ));
     }
     if instance.contains_key("body") {
         return Err(LoadError::new(
-            at.child("body"),
+            at.path().child("body"),
             "`body` is written by widget expansion, never by an author",
         ));
     }
@@ -1336,7 +1374,7 @@ fn instance_body(
         if !params.contains_key(key) {
             let key = key_text(key);
             return Err(LoadError::new(
-                at.child("args").child(&key),
+                at.path().child("args").child(&key),
                 format!("widget `{widget}` has no param `{key}`"),
             ));
         }
@@ -1349,7 +1387,7 @@ fn instance_body(
             (None, Some(default)) => default.clone(),
             (None, None) if spec.get("required").and_then(Value::as_bool) == Some(true) => {
                 return Err(LoadError::new(
-                    at.clone(),
+                    at.path(),
                     format!("widget `{widget}` needs the argument `{param}`"),
                 ));
             }
@@ -1373,7 +1411,7 @@ fn instance_body(
         } else {
             format!("`args.{unbound}` names no param of widget `{widget}`")
         };
-        return Err(LoadError::new(at.child("body"), message));
+        return Err(LoadError::new(at.path().child("body"), message));
     }
     stack.push(widget.to_owned());
     let expanded = widget_uses(&mut body, &at.child("body"), widgets, stack, budget);
@@ -1403,7 +1441,7 @@ fn resolve_tones(document: &mut Mapping) -> Result<()> {
                 maps: &maps,
                 declaration: key == "widgets",
             };
-            tones.value(value, &NodePath::root().child(key))?;
+            tones.value(value, &At::Path(&NodePath::root().child(key)))?;
         }
     }
     Ok(())
@@ -1418,14 +1456,14 @@ struct Tones<'a> {
 }
 
 impl Tones<'_> {
-    fn value(&self, value: &mut Value, at: &NodePath) -> Result<()> {
+    fn value(&self, value: &mut Value, at: &At<'_>) -> Result<()> {
         match value {
             Value::Mapping(mapping) => {
                 for (key, child) in mapping.iter_mut() {
                     let key = key_text(key);
                     let here = at.child(&key);
                     if key == "tone_by" {
-                        self.tone_by(child, &here)?;
+                        self.tone_by(child, &here.path())?;
                     } else if !OPAQUE.contains(&key.as_str()) {
                         self.value(child, &here)?;
                     }
@@ -1434,8 +1472,8 @@ impl Tones<'_> {
             }
             Value::Sequence(entries) => {
                 for entry in entries {
-                    let here = at.child(&entry_segment(entry));
-                    self.value(entry, &here)?;
+                    let segment = entry_segment(entry);
+                    self.value(entry, &at.child(&segment))?;
                 }
                 Ok(())
             }
