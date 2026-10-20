@@ -162,6 +162,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-diff", 18, Some("0.58.0")),
     ("ess-diff", 19, Some("0.60.0")),
     ("ess-diff", 20, Some("0.63.0")),
+    ("ess-diff", 21, Some("0.64.0")),
     ("ess-diff-acknowledgements", 1, Some("0.53.0")),
     ("ess-suite-diff", 1, Some("0.63.0")),
     ("ess-conformance", 1, Some("0.1.0")),
@@ -225,6 +226,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     // awaiting a command the system issues itself (beyond10x/ess#542).
     ("ess-conformance", 52, Some("0.63.0")),
     ("ess-conformance", 53, Some("0.63.0")),
+    // A view read through a reference of its source, `<view>/reference/<field>` (beyond10x/ess#564).
+    ("ess-conformance", 54, Some("0.64.0")),
+    ("ess-conformance", 55, Some("0.64.0")),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),

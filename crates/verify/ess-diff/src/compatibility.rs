@@ -56,6 +56,7 @@
 //! | a command response opened (`ess-diff/18`) | breaking for readers: one written against the closed response may be sent a field it refuses; compatible for callers and history |
 //! | a command response closed (`ess-diff/18`) | compatible: it carries only what every reader of the open one admitted |
 //! | a view's answer for an identity no row carries gained, lost or changed (`absent:`, `ess-diff/19`, ess/25) | breaking for readers; compatible for callers and history |
+//! | a view field reads the row a reference names instead of its source's own field, or another one (`field: {related: …}`, `ess-diff/21`, ess/28) | breaking for readers; compatible for callers and history |
 //! | an actor becomes the system itself (`ess-diff/20`, ess/27) | breaking for callers: it stops being a caller, as a grant removed does |
 //! | an actor stops being the system, or a system-issued command's `await_within:` moves (`ess-diff/20`) | compatible |
 //! | a view is removed | breaking for readers |
@@ -734,7 +735,11 @@ fn dimensions(change: &SemanticChange, uses: &BTreeSet<TypeUse>) -> Dimensions {
             // `AbsentChanged`: a read of an unknown identity answers a different row, or a row
             // where it answered none (`absent:`, ess/25): a reader written against the old answer
             // meets the new one. Nothing is sent to a view, and nothing stored changes.
-            ViewChange::Removed | ViewChange::AbsentChanged { .. } => [C, B, C],
+            // `FieldSourceChanged`: a field reads another row's value, or its source's own where it
+            // read through a reference (ess/28, beyond10x/ess#564): a reader meets other values.
+            ViewChange::Removed
+            | ViewChange::AbsentChanged { .. }
+            | ViewChange::FieldSourceChanged { .. } => [C, B, C],
             _ => [U, U, C],
         },
         SemanticChange::Entity { changed, .. } => match changed {

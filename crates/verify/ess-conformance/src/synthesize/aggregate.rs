@@ -486,6 +486,12 @@ fn unchosen(
                  {read}}}}}`, but {why}"
             );
         }
+        ResolvedPayloadValue::RelatedState { via, .. } => {
+            return format!(
+                "the creating command copies {role} from `{{related: {{via: {via}, field: \
+                 state}}}}`, the referenced row's state, which no arrangement here chooses"
+            );
+        }
         ResolvedPayloadValue::Literal { .. } => "a literal it cannot read as its type",
         ResolvedPayloadValue::InputField { .. } => "its input",
         ResolvedPayloadValue::InputOrGenerated { .. } => "an input with a fallback",
@@ -504,6 +510,7 @@ fn unchosen(
         // ess/25 (#531): an event payload source only, never a row's.
         ResolvedPayloadValue::ChangedField { .. } => "`{changed: …}`",
         ResolvedPayloadValue::ChangedState { .. } => "`{changed: state}`",
+        ResolvedPayloadValue::MissingElement { .. } => "`{missing: …}`",
         ResolvedPayloadValue::RelatedSelection { .. } => {
             "a value read from the row a selector selects"
         }
@@ -824,8 +831,9 @@ fn model_literals(ir: &EssIr) -> BTreeSet<String> {
                         texts(input, &mut out);
                     }
                 }
-                ResolvedCondition::Related { test, input, .. } => {
-                    if let ess_compiler::ir::ResolvedRelatedTest::Holds { predicate } = test {
+                condition @ ResolvedCondition::Related { input, .. } => {
+                    // From ess/28 every row an `all:` branch lists.
+                    for (_, _, predicate) in condition.related_predicates() {
                         texts(predicate, &mut out);
                     }
                     if let Some(input) = input {
@@ -3814,7 +3822,8 @@ fn leave_out(
     {
         let reads = match &set.value {
             ResolvedPayloadValue::InputField { field, .. } => field == via,
-            ResolvedPayloadValue::RelatedField { via: read, .. } => {
+            ResolvedPayloadValue::RelatedField { via: read, .. }
+            | ResolvedPayloadValue::RelatedState { via: read, .. } => {
                 via_input(read, mapped) == Some(via)
             }
             _ => false,

@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.64.0 — 2026-10-20
+
+### A view and a guard read the row a reference names
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.64.0)
+
+Format `ess/28` lets a view field and a view filter read the row a reference of the source names, one hop, as it is when the view is read; a value read a referenced row's lifecycle state; a branch require several related rows at once; and a guard refuse a list of references that names a missing row. Suite `ess-conformance/54` witnesses each navigated view.
+
 ## 0.63.0 — 2026-10-19
 
 ### A value can be computed by a typed expression, and every guard answers in one precedence order

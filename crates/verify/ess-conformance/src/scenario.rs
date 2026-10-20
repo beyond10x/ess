@@ -229,10 +229,12 @@ impl ConformanceSuite {
     /// undeclared fields (beyond10x/ess#500), to suite/50 when a scenario holds `now` for a command
     /// (beyond10x/ess#586), and to suite/52 when a view expectation observes a value type's
     /// invariants at a wrapped position or a scenario awaits a system-issued command
-    /// (beyond10x/ess#542). Each pair is cumulative over every major below it, so nothing may
-    /// lower it.
+    /// (beyond10x/ess#542), and to suite/54 when a scenario reads a view through a reference of its
+    /// source (beyond10x/ess#564). Each pair is cumulative over every major below it, so nothing
+    /// may lower it.
     fn raise_for_counted_claims(&mut self) {
-        let floor = crate::value_invariant::ordinary_floor(self)
+        let floor = crate::view_reference::ordinary_floor(self)
+            .or_else(|| crate::value_invariant::ordinary_floor(self))
             .or_else(|| crate::one_time_response::compact::ordinary_floor(self))
             .or_else(|| crate::system_issued::ordinary_floor(self))
             .or_else(|| crate::hold_now::ordinary_floor(self))
@@ -538,7 +540,7 @@ impl SuiteProvenance {
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
     27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
-    51, 52, 53,
+    51, 52, 53, 54, 55,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -948,6 +950,20 @@ pub enum ScenarioId {
         /// The granted actor that reads it.
         actor: ActorRef,
     },
+    /// A view that reads through a reference of its source, read before and after the row the
+    /// reference names changes: `relstate.desk.Tickets/reference/desk_id` (ess/28,
+    /// beyond10x/ess#564, [`crate::view_reference`]).
+    ///
+    /// One per view and reference it reads through, a field reading it or its filter navigating
+    /// it. The view and the reference are the subject: which commands arrange the rows is content.
+    /// Carried by suite majors [`crate::view_reference::ORDINARY`] and
+    /// [`crate::view_reference::COVERAGE`].
+    ViewReference {
+        /// The view.
+        view: ViewRef,
+        /// The source field holding the reference.
+        via: String,
+    },
 }
 
 impl ScenarioId {
@@ -960,6 +976,7 @@ impl ScenarioId {
     const AUTHORED: &'static str = "authored";
     const AGGREGATE: &'static str = "aggregate";
     const GRANT: &'static str = "grant";
+    const REFERENCE: &'static str = "reference";
 
     /// Reads an id back from its rendered form.
     ///
@@ -1076,6 +1093,15 @@ impl ScenarioId {
                 view: ViewRef::new(name(view)?),
                 actor: ActorRef::new(name(actor)?),
             }),
+            [view, Self::REFERENCE, via] => {
+                if !ess_domain::types::is_field_name(via) {
+                    return Err(reject("names no reference field"));
+                }
+                Ok(Self::ViewReference {
+                    view: ViewRef::new(name(view)?),
+                    via: (*via).to_owned(),
+                })
+            }
             [domain, Self::AUTHORED, authored] => Ok(Self::Authored {
                 domain: DomainRef::new(name(domain)?),
                 name: AuthoredName::new(authored)
@@ -1112,7 +1138,8 @@ impl ScenarioId {
                  `<binding>/binding/<aspect>`, \
                  `<binding>/binding/refusal/<outcome>`, \
                  `<view>/aggregate`, `<command>/grant/denied`, `<command>/grant/admitted/<actor>`, \
-                 `<view>/grant/read/denied`, `<view>/grant/read/admitted/<actor>` or \
+                 `<view>/grant/read/denied`, `<view>/grant/read/admitted/<actor>`, \
+                 `<view>/reference/<field>` or \
                  `<domain>/authored/<name>`",
             )),
         }
@@ -1195,6 +1222,7 @@ impl fmt::Display for ScenarioId {
             Self::ReadGrantAdmitted { view, actor } => {
                 write!(f, "{view}/{}/read/admitted/{actor}", Self::GRANT)
             }
+            Self::ViewReference { view, via } => write!(f, "{view}/{}/{via}", Self::REFERENCE),
         }
     }
 }
@@ -3551,12 +3579,14 @@ mod tests {
             "ess-conformance/51",
             "ess-conformance/52",
             "ess-conformance/53",
+            "ess-conformance/54",
+            "ess-conformance/55",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/54").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/56").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

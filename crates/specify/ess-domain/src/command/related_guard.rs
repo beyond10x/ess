@@ -87,6 +87,17 @@ impl RelatedTest {
     }
 }
 
+/// One further row a `when_related: {all: […]}` branch requires (ess/28, the downstream report of
+/// 2026-10-19, finding 11): the row another input identity names, satisfying a predicate over its
+/// stored fields (and `input.`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelatedAlso {
+    /// The input field carrying that row's identity.
+    pub via: RelatedVia,
+    /// What must hold of it.
+    pub predicate: Predicate,
+}
+
 /// `when_related:` as a document writes it: one row named by an input identity (`via`), or, from
 /// `ess/22`, the rows a selector selects (`entity`, `where`) with one test of them.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
@@ -119,6 +130,10 @@ pub struct RawRelatedGuard {
     /// Over a selector (ess/22): what every selected row satisfies; true of no rows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forall: Option<WrittenPredicate>,
+    /// Several rows, each named by an input identity, every one of them present and satisfying its
+    /// own `predicate:` (ess/28): `all: [{via, predicate}, …]`, written alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub all: Option<Vec<RawRelatedGuard>>,
 }
 
 /// What a `when_related:` reads, as [`RawRelatedGuard::read`] decides from its keys.
@@ -128,6 +143,9 @@ pub(super) enum ReadGuard {
     Identity(RelatedVia, RelatedTest),
     /// The rows a selector selects (ess/22).
     RowSet(super::row_set::RowSelection, super::row_set::RowSetTest),
+    /// Several rows, each named by an input identity and satisfying its own predicate (ess/28,
+    /// `all:`): the first, and the rest.
+    All(RelatedVia, Predicate, Vec<RelatedAlso>),
 }
 
 impl RawRelatedGuard {
@@ -141,8 +159,28 @@ impl RawRelatedGuard {
             predicate: None,
             count: None,
             forall: None,
+            all: None,
         };
         match condition {
+            OutcomeCondition::Related {
+                via, test, also, ..
+            } if !also.is_empty() => {
+                let one = |via: &RelatedVia, predicate: &Predicate| Self {
+                    via: Some(via.to_string()),
+                    predicate: Some(predicate.clone().into()),
+                    ..empty.clone()
+                };
+                let first = test.predicate().map(|predicate| one(via, predicate));
+                Some(Self {
+                    all: Some(
+                        first
+                            .into_iter()
+                            .chain(also.iter().map(|row| one(&row.via, &row.predicate)))
+                            .collect(),
+                    ),
+                    ..empty
+                })
+            }
             OutcomeCondition::Related { via, test, .. } => {
                 let via = Some(via.to_string());
                 Some(match test {
@@ -192,6 +230,10 @@ impl RawRelatedGuard {
     }
 
     /// The row the guard reads and its test, or why the keys say neither.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one reading of the keys a document wrote, in the order they are decided"
+    )]
     pub(super) fn read(self, name: &super::OutcomeName) -> Result<ReadGuard, ValidationErrors> {
         let at = |code: ValidationCode, message: String, hint: &str| {
             ValidationErrors::from(
@@ -199,6 +241,19 @@ impl RawRelatedGuard {
                     .with_hint(hint.to_owned()),
             )
         };
+        if let Some(all) = self.all {
+            return Self::read_all(
+                name,
+                all,
+                self.via.is_some()
+                    || self.entity.is_some()
+                    || self.filter.is_some()
+                    || self.exists.is_some()
+                    || self.predicate.is_some()
+                    || self.count.is_some()
+                    || self.forall.is_some(),
+            );
+        }
         let selects = self.entity.is_some()
             || self.filter.is_some()
             || self.count.is_some()
@@ -291,6 +346,92 @@ impl RawRelatedGuard {
             }
         };
         Ok(ReadGuard::Identity(via, test))
+    }
+}
+
+impl RawRelatedGuard {
+    /// `all: [{via, predicate}, …]` (ess/28): at least two rows, each named by a distinct input
+    /// identity with a predicate over it, written alone; or why not. The format is gated by
+    /// [`validate`].
+    fn read_all(
+        name: &super::OutcomeName,
+        all: Vec<Self>,
+        beside: bool,
+    ) -> Result<ReadGuard, ValidationErrors> {
+        let at = |code: ValidationCode, message: String, hint: &str| {
+            ValidationErrors::from(
+                ValidationError::new(code, format!("outcomes.{name}.{KEY}.all"), message)
+                    .with_hint(hint.to_owned()),
+            )
+        };
+        if beside {
+            return Err(at(
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "outcome `{name}` writes `all:` beside another key of `{KEY}`; the rows it \
+                     requires are its elements"
+                ),
+                "move the other key into an element of `all:`",
+            ));
+        }
+        let mut rows: Vec<(RelatedVia, Predicate)> = Vec::new();
+        let mut errors = ValidationErrors::new();
+        for element in all {
+            if element.all.is_some() {
+                errors.extend(at(
+                    ValidationCode::UnsupportedConstruct,
+                    format!("outcome `{name}` nests `all:` inside `all:`"),
+                    "list every row in the one `all:`",
+                ));
+                continue;
+            }
+            match element.read(name) {
+                Ok(ReadGuard::Identity(
+                    via @ RelatedVia::Input(_),
+                    RelatedTest::Holds(predicate),
+                )) => {
+                    if rows.iter().any(|(read, _)| *read == via) {
+                        errors.extend(at(
+                            ValidationCode::ConflictingDeclaration,
+                            format!(
+                                "outcome `{name}` lists `{via}` twice in `all:`; one row is \
+                                 tested once"
+                            ),
+                            "join the two predicates over that row with `all:` inside its \
+                             `predicate:`",
+                        ));
+                        continue;
+                    }
+                    rows.push((via, predicate));
+                }
+                Ok(_) => errors.extend(at(
+                    ValidationCode::UnsupportedConstruct,
+                    format!(
+                        "outcome `{name}` lists in `all:` something other than a row an input \
+                         identity names with a `predicate:` over it"
+                    ),
+                    "write each element as `{via: input.<field>, predicate: …}`; a missing row \
+                     is answered by its own `exists: false` branch",
+                )),
+                Err(refused) => errors.extend(refused),
+            }
+        }
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        let mut rows = rows.into_iter();
+        let (Some((via, predicate)), Some(second)) = (rows.next(), rows.next()) else {
+            return Err(at(
+                ValidationCode::EmptyDeclaration,
+                format!("outcome `{name}` lists fewer than two rows in `all:`"),
+                "write a single row as `{via: input.<field>, predicate: …}`",
+            ));
+        };
+        let also = std::iter::once(second)
+            .chain(rows)
+            .map(|(via, predicate)| RelatedAlso { via, predicate })
+            .collect();
+        Ok(ReadGuard::All(via, predicate, also))
     }
 }
 
@@ -446,9 +587,12 @@ pub fn read_via(command: &CommandSpec) -> Option<&RelatedVia> {
 pub fn read_vias(command: &CommandSpec) -> Vec<&RelatedVia> {
     let mut vias: Vec<&RelatedVia> = Vec::new();
     for outcome in &command.outcomes {
-        if let OutcomeCondition::Related { via, .. } = &outcome.condition {
-            if !vias.contains(&via) {
-                vias.push(via);
+        if let OutcomeCondition::Related { via, also, .. } = &outcome.condition {
+            // ess/28: every row an `all:` branch reads is one of them.
+            for via in std::iter::once(via).chain(also.iter().map(|row| &row.via)) {
+                if !vias.contains(&via) {
+                    vias.push(via);
+                }
             }
         }
     }
@@ -520,9 +664,11 @@ pub fn related_entity<'a>(
             .and_then(|subject| spec.entities().get(&subject.entity));
         related_value::input_carrier(outcome, subject, via)
     });
+    // A list of references names one entity's rows, each element its identity (ess/28).
+    let declared = super::related_list::element(&read.type_ref).unwrap_or(&read.type_ref);
     related_value::referenced_entity(
         spec,
-        identity_type(&read.type_ref),
+        identity_type(declared),
         carrier
             .as_ref()
             .map(|(entity, field)| (*entity, field.as_str())),
@@ -785,9 +931,12 @@ fn missing_row_answers(
     several: bool,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
-    let reads = |outcome: &&super::Outcome| {
-        matches!(&outcome.condition, OutcomeCondition::Related { via: read, .. }
-                if group.is_none_or(|group| read == group))
+    // An `all:` branch (ess/28) reads every row it lists.
+    let reads = |outcome: &&super::Outcome| match &outcome.condition {
+        OutcomeCondition::Related {
+            via: read, also, ..
+        } => group.is_none_or(|group| read == group || also.iter().any(|row| &row.via == group)),
+        _ => false,
     };
     let absent: Vec<_> = command
         .outcomes
@@ -1046,7 +1195,8 @@ pub fn implied_relations(spec: &Specification) -> ValidationErrors {
                 continue;
             }
             let Some(outcome) = command.outcomes.iter().find(|outcome| {
-                matches!(&outcome.condition, OutcomeCondition::Related { via: read, .. } if read == via)
+                matches!(&outcome.condition, OutcomeCondition::Related { via: read, also, .. }
+                    if read == via || also.iter().any(|row| &row.via == via))
             }) else {
                 continue;
             };
@@ -1106,6 +1256,10 @@ fn carried<'a>(
 
 /// The format gate, the entity `via` names, the predicates against that entity's fields, and the
 /// joint related-field × input partition.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the format gates, the entity and the partition of one command, in the order they answer"
+)]
 pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     for command in spec.commands().values().filter(|command| uses(command)) {
@@ -1125,9 +1279,45 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
             }
             continue;
         }
+        // `all:` (ess/28): several rows in one branch.
+        if spec.system().format.major() < crate::system::FormatVersion::V28.major() {
+            let below: Vec<ValidationError> = command
+                .outcomes
+                .iter()
+                .filter(|outcome| {
+                    matches!(&outcome.condition, OutcomeCondition::Related { also, .. } if !also.is_empty())
+                })
+                .map(|outcome| {
+                    ValidationError::at(
+                        site(command, outcome),
+                        ValidationCode::UnsupportedFormatVersion,
+                        format!(
+                            "outcome `{}` requires several related rows at once (`all:`), which \
+                             requires specification format ess/28",
+                            outcome.name
+                        ),
+                    )
+                    .with_hint(
+                        "declare `format: ess/28`, or split the rows into one refusal each",
+                    )
+                })
+                .collect();
+            if !below.is_empty() {
+                for refusal in below {
+                    errors.push(refusal);
+                }
+                continue;
+            }
+        }
         let gated = gates(spec, command);
         if !gated.is_empty() {
             errors.extend(gated);
+            continue;
+        }
+        // ess/28 (beyond10x/ess#558): the rows a list of references names, `exists: false` only.
+        let listed = super::related_list::gates(spec, command);
+        if !listed.is_empty() {
+            errors.extend(listed);
             continue;
         }
         let Some(first) = read_via(command) else {
@@ -1445,8 +1635,10 @@ fn entity_or_refusal<'a>(
     via: &str,
     errors: &mut ValidationErrors,
 ) -> Option<&'a EntitySpec> {
+    // From ess/28 an `all:` branch reads every row it lists.
     let outcome = command.outcomes.iter().find(|outcome| {
-        matches!(&outcome.condition, OutcomeCondition::Related { via: read, .. } if read == via)
+        matches!(&outcome.condition, OutcomeCondition::Related { via: read, also, .. }
+            if read == via || also.iter().any(|row| row.via == *via))
     })?;
     let at = site(command, outcome);
     let Some(read) = command.input_field(via) else {
@@ -1463,8 +1655,11 @@ fn entity_or_refusal<'a>(
         );
         return None;
     };
+    // From ess/28 a `List<…>` input names a row per element (beyond10x/ess#558); the gate
+    // refused it below ess/28 before this is read.
+    let declared = super::related_list::element(&read.type_ref).unwrap_or(&read.type_ref);
     if !matches!(
-        identity_type(&read.type_ref),
+        identity_type(declared),
         TypeRef::Primitive(_) | TypeRef::Named(_)
     ) {
         errors.push(
@@ -1858,13 +2053,10 @@ fn validate_several(
         return errors;
     }
     for outcome in &command.outcomes {
-        if let OutcomeCondition::Related {
-            via,
-            test: RelatedTest::Holds(predicate),
-            ..
-        } = &outcome.condition
-        {
-            let Some((_, entity)) = rows.iter().find(|(read, _)| *read == via) else {
+        // Each row a branch reads, with the predicate it holds of it: from ess/28 every row an
+        // `all:` branch lists.
+        for (via, entity) in &rows {
+            let Some(predicate) = predicate_over(&outcome.condition, via) else {
                 continue;
             };
             errors.extend(check(
@@ -1953,9 +2145,15 @@ fn validate_joint_partition(
         return errors;
     };
     let sides: Vec<&Vec<RowCase>> = sides.iter().flatten().collect();
-    let related_of = |index: usize| match &guarded[index].condition {
-        OutcomeCondition::Related { via, .. } => rows.iter().position(|(read, _)| read == &via),
-        _ => None,
+    // Every row a branch reads: one, or from ess/28 each an `all:` branch lists.
+    let related_of = |index: usize| -> Vec<usize> {
+        match &guarded[index].condition {
+            OutcomeCondition::Related { via, also, .. } => std::iter::once(via)
+                .chain(also.iter().map(|row| &row.via))
+                .filter_map(|via| rows.iter().position(|(read, _)| read == &via))
+                .collect(),
+            _ => Vec::new(),
+        }
     };
     let combinations: usize = sides.iter().map(|side| side.len()).product();
     for input in inputs {
@@ -1968,9 +2166,15 @@ fn validate_joint_partition(
             }
             let selected: Vec<usize> = (0..guarded.len())
                 .filter(|index| input.selected.contains(index))
-                .filter(|index| match related_of(*index) {
-                    None => !matches!(guarded[*index].condition, OutcomeCondition::Related { .. }),
-                    Some(at) => sides[at][combination[at]].selected.contains(index),
+                .filter(|index| {
+                    let reading = related_of(*index);
+                    if reading.is_empty() {
+                        !matches!(guarded[*index].condition, OutcomeCondition::Related { .. })
+                    } else {
+                        reading
+                            .iter()
+                            .all(|at| sides[*at][combination[*at]].selected.contains(index))
+                    }
                 })
                 .collect();
             let answering = several_selected(&selected, &guarded, composition);
@@ -2121,6 +2325,26 @@ fn analyze_fields(
     }
 }
 
+/// The predicate `condition` holds of the row `via` names: a `when_related:` predicate over it, or
+/// from ess/28 the one an `all:` element states over it. `None` where it reads that row with none.
+fn predicate_over<'c>(condition: &'c OutcomeCondition, via: &RelatedVia) -> Option<&'c Predicate> {
+    let OutcomeCondition::Related {
+        via: read,
+        test,
+        also,
+        ..
+    } = condition
+    else {
+        return None;
+    };
+    if read == via {
+        return test.predicate();
+    }
+    also.iter()
+        .find(|row| &row.via == via)
+        .map(|row| &row.predicate)
+}
+
 /// One row's side of [`validate_joint_partition`]: every assignment of the fields its predicates
 /// read, with the guarded branches over it each selects, and its absence where its reference is
 /// Optional. `None` where the prover declines.
@@ -2135,14 +2359,7 @@ fn row_side(
     let guards: Vec<_> = guarded
         .iter()
         .map(|outcome| super::finite::FieldGuard {
-            fields: match &outcome.condition {
-                OutcomeCondition::Related {
-                    via: read,
-                    test: RelatedTest::Holds(predicate),
-                    ..
-                } if read == via => Some(predicate),
-                _ => None,
-            },
+            fields: predicate_over(&outcome.condition, via),
             input: None,
         })
         .collect();
@@ -2159,10 +2376,7 @@ fn row_side(
             selected: case
                 .selected
                 .into_iter()
-                .filter(|index| {
-                    matches!(&guarded[*index].condition,
-                        OutcomeCondition::Related { via: read, .. } if read == via)
-                })
+                .filter(|index| predicate_over(&guarded[*index].condition, via).is_some())
                 .collect(),
         })
         .collect();

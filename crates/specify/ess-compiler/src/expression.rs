@@ -14,6 +14,8 @@ pub struct Environment<'a> {
     fields: &'a [ResolvedField],
     /// A command's input, read under `input.` by a stored-field predicate (beyond10x/ess#157).
     input: Option<&'a [ResolvedField]>,
+    /// The references a view filter navigates one hop (ess/28, beyond10x/ess#564).
+    references: &'a [(String, Vec<ResolvedField>)],
 }
 
 impl<'a> Environment<'a> {
@@ -23,6 +25,7 @@ impl<'a> Environment<'a> {
             ir,
             fields,
             input: None,
+            references: &[],
         }
     }
 
@@ -30,6 +33,14 @@ impl<'a> Environment<'a> {
     #[must_use]
     pub fn with_input(mut self, input: &'a [ResolvedField]) -> Self {
         self.input = Some(input);
+        self
+    }
+
+    /// Navigate these references one hop (ess/28, beyond10x/ess#564): `<via>.<member>` reads a
+    /// member of the row `<via>` names. A view filter's environment.
+    #[must_use]
+    pub fn with_references(mut self, references: &'a [(String, Vec<ResolvedField>)]) -> Self {
+        self.references = references;
         self
     }
 }
@@ -129,6 +140,29 @@ impl TypeEnvironment for Environment<'_> {
             .find(|field| field.name == name)
             .map(|field| field.type_ref.clone())
     }
+    fn navigated(&self, root: &str, member: &str) -> Option<Self::Type> {
+        let (_, far) = self.references.iter().find(|(via, _)| via == root)?;
+        // A struct identity's own member keeps the meaning it had (beyond10x/ess#428).
+        let mut held = self.root(root)?;
+        loop {
+            match held {
+                ResolvedTypeRef::Optional { of } => held = *of,
+                ResolvedTypeRef::Declared { ref name } => {
+                    match &self.ir.types().get(name.name())?.body {
+                        ResolvedBody::Newtype { of, .. } => held = of.clone(),
+                        ResolvedBody::Struct { .. } if self.member(&held, member).is_some() => {
+                            return None
+                        }
+                        _ => break,
+                    }
+                }
+                _ => break,
+            }
+        }
+        far.iter()
+            .find(|field| field.name == member)
+            .map(|field| field.type_ref.clone())
+    }
     fn has_parameters(&self) -> bool {
         self.input.is_some()
     }
@@ -194,18 +228,25 @@ pub struct PredicateSite<'ir> {
     /// everywhere else, and where the entity declares a field named `input`, which keeps being read
     /// as itself.
     pub input: Vec<ResolvedField>,
+    /// The references a view filter navigates one hop (ess/28, beyond10x/ess#564): each source field
+    /// with the observable fields of the row it names. Empty everywhere else.
+    pub references: Vec<(String, Vec<ResolvedField>)>,
 }
 
 impl PredicateSite<'_> {
     /// Checks this predicate against its owner fields: every read, resolved.
     pub fn check(&self, ir: &EssIr) -> Checked<ResolvedTypeRef> {
-        check_predicate_with_input(
-            ir,
-            &self.fields,
-            (!self.input.is_empty()).then_some(self.input.as_slice()),
-            self.predicate,
-            &self.site.render(),
-        )
+        let environment = Environment::new(ir, &self.fields).with_references(&self.references);
+        let owner = self.site.render();
+        if self.input.is_empty() {
+            expression::check_predicate(&environment, self.predicate, &owner)
+        } else {
+            expression::check_predicate(
+                &environment.with_input(&self.input),
+                self.predicate,
+                &owner,
+            )
+        }
     }
 }
 
@@ -236,6 +277,7 @@ pub fn predicate_sites(ir: &EssIr) -> Vec<PredicateSite<'_>> {
                 predicate: &invariant.predicate,
                 fields: fields.clone(),
                 input: Vec::new(),
+                references: Vec::new(),
             });
         }
     }
@@ -249,6 +291,7 @@ pub fn predicate_sites(ir: &EssIr) -> Vec<PredicateSite<'_>> {
                 predicate: &invariant.predicate,
                 fields: fields.clone(),
                 input: Vec::new(),
+                references: Vec::new(),
             });
         }
     }
@@ -262,6 +305,17 @@ pub fn predicate_sites(ir: &EssIr) -> Vec<PredicateSite<'_>> {
                 predicate: filter,
                 fields: entity_fields(ir.entity(&view.source)),
                 input: Vec::new(),
+                // ess/28 (beyond10x/ess#564): the rows the view's references name.
+                references: view
+                    .references
+                    .iter()
+                    .map(|reference| {
+                        (
+                            reference.via.clone(),
+                            ir.entity(&reference.entity).observable_fields(),
+                        )
+                    })
+                    .collect(),
             });
         }
     }
@@ -287,6 +341,7 @@ pub fn predicate_sites(ir: &EssIr) -> Vec<PredicateSite<'_>> {
                         .map(|item| vec![owner_field("item", item)])
                         .unwrap_or_default(),
                     input: Vec::new(),
+                    references: Vec::new(),
                 });
             }
         }
@@ -311,6 +366,7 @@ fn command_sites<'ir>(
                 predicate,
                 fields: command.input.clone(),
                 input: Vec::new(),
+                references: Vec::new(),
             });
         }
         if let ResolvedCondition::SubjectPredicate { predicate, .. } = &outcome.condition {
@@ -322,22 +378,30 @@ fn command_sites<'ir>(
                 site: at.clone().key("when_subject"),
                 predicate,
                 input: stored_input(&fields, &command.input),
+                references: Vec::new(),
                 fields,
             });
         }
         if let ResolvedCondition::Related {
             entity,
             test: crate::ir::ResolvedRelatedTest::Holds { predicate },
+            also,
             ..
         } = &outcome.condition
         {
-            let fields = ir.entity(entity).fields.clone();
-            found.push(PredicateSite {
-                site: at.key("when_related"),
-                predicate,
-                input: stored_input(&fields, &command.input),
-                fields,
-            });
+            // From ess/28 every row an `all:` branch lists, each over its own entity's fields.
+            let rows = std::iter::once((entity, predicate))
+                .chain(also.iter().map(|row| (&row.entity, &row.predicate)));
+            for (entity, predicate) in rows {
+                let fields = ir.entity(entity).fields.clone();
+                found.push(PredicateSite {
+                    site: at.clone().key("when_related"),
+                    predicate,
+                    input: stored_input(&fields, &command.input),
+                    references: Vec::new(),
+                    fields,
+                });
+            }
         }
     }
 }

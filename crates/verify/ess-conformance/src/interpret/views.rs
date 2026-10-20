@@ -149,11 +149,40 @@ fn select(
                 .map(|condition| (name, condition))
         })
         .collect();
+    // The observable fields of each row a reference names (ess/28), typing what a filter reads
+    // through it.
+    let far_fields: Vec<(String, Vec<ess_compiler::ir::ResolvedField>)> = view
+        .references
+        .iter()
+        .map(|reference| {
+            (
+                reference.via.clone(),
+                ir.entity(&reference.entity).observable_fields(),
+            )
+        })
+        .collect();
     let mut selected = Vec::new();
     for (identity, instance) in store.instances_of(&entity.name) {
         let mut fields = instance.fields.clone();
         fields.insert(entity.identity.name.clone(), identity.clone());
         fields.insert("state".into(), Node::Text(instance.state.to_string()));
+        // The rows the source's references name, as they are now (ess/28, beyond10x/ess#564):
+        // none where the reference is absent or names no row.
+        let far = referenced_rows(ir, view, store, &fields);
+        let mut navigated = BTreeMap::new();
+        for (via, declared) in &far_fields {
+            if let Some(Some(row)) = far.get(via) {
+                navigated.insert(
+                    via.clone(),
+                    crate::input::TypedFacts::new(
+                        ir,
+                        declared,
+                        crate::input::bind(ir, declared, row, crate::input::Completeness::Partial)
+                            .map_err(|_| unsupported())?,
+                    ),
+                );
+            }
+        }
         let mut admitted_by = std::collections::BTreeSet::new();
         if view.filter.is_some() || !conditions.is_empty() {
             let row = crate::input::TypedFacts::new(
@@ -163,14 +192,20 @@ fn select(
                     .map_err(|_| unsupported())?,
             );
             let facts = ViewFacts {
+                ir,
+                view,
                 row: &row,
                 parameters,
+                navigated: &navigated,
             };
             if let Some(filter) = &view.filter {
                 match filter.evaluate(&facts) {
                     Truth::True => {}
                     Truth::False => continue,
                     Truth::Unknown if absent_text_operands(view, filter, &facts) => continue,
+                    // A comparison over the row a reference does not name is unknown, and a row
+                    // whose filter is unknown is not shown, as every target reads one.
+                    Truth::Unknown if absent_navigation(&facts, filter) => continue,
                     Truth::Unknown => return Err(unsupported()),
                 }
             }
@@ -184,9 +219,66 @@ fn select(
                 }
             }
         }
+        // Each view field read through a reference: the referenced row's value, or nothing.
+        for reference in &view.references {
+            let held = far.get(&reference.via).and_then(Option::as_ref);
+            for read in &reference.fields {
+                let value = held
+                    .and_then(|row| row.get(&read.read))
+                    .cloned()
+                    .unwrap_or(Node::Null);
+                fields.insert(read.field.clone(), value);
+            }
+        }
         selected.push((fields, admitted_by));
     }
     Ok(selected)
+}
+
+/// The row each reference `view` reads through names in `store`, from the source row `fields`: its
+/// stored fields, its identity and `state`, or `None` where the reference is absent or names no
+/// row (ess/28, beyond10x/ess#564).
+fn referenced_rows(
+    ir: &EssIr,
+    view: &ResolvedView,
+    store: &Store,
+    fields: &ViewRow,
+) -> BTreeMap<String, Option<ViewRow>> {
+    view.references
+        .iter()
+        .map(|reference| {
+            let far = ir.entity(&reference.entity);
+            let row = fields
+                .get(&reference.via)
+                .filter(|address| **address != Node::Null)
+                .and_then(|address| {
+                    let held = store.instance_typed(&far.name, address)?;
+                    let mut row = held.fields.clone();
+                    row.insert(far.identity.name.clone(), address.clone());
+                    row.insert("state".into(), Node::Text(held.state.to_string()));
+                    Some(row)
+                });
+            (reference.via.clone(), row)
+        })
+        .collect()
+}
+
+/// Whether a filter is unknown only because a path it reads through a reference reads no row: the
+/// reference is absent or names none (ess/28, beyond10x/ess#564).
+fn absent_navigation(facts: &ViewFacts<'_>, filter: &ess_primitives::predicate::Predicate) -> bool {
+    use ess_primitives::facts::FactSource;
+    let mut unobserved = filter
+        .fact_paths()
+        .into_iter()
+        .filter(|path| facts.observe(path).is_none())
+        .peekable();
+    unobserved.peek().is_some()
+        && unobserved.all(|path| {
+            facts
+                .view
+                .navigated(facts.ir, path)
+                .is_some_and(|(reference, _)| !facts.navigated.contains_key(&reference.via))
+        })
 }
 
 fn kind(ir: &EssIr, ty: &ResolvedTypeRef) -> crate::aggregate::ValueKind {
@@ -435,25 +527,36 @@ fn absent_text_operands(
 
 /// Keep parameter and entity namespaces distinct without discarding their declared scalar kinds.
 struct ViewFacts<'a> {
+    ir: &'a EssIr,
+    view: &'a ResolvedView,
     row: &'a crate::input::TypedFacts<'a>,
     parameters: &'a crate::input::TypedFacts<'a>,
+    /// The rows the view's references name, by reference (ess/28, beyond10x/ess#564); a reference
+    /// that names none is not here.
+    navigated: &'a BTreeMap<String, crate::input::TypedFacts<'a>>,
 }
 impl ViewFacts<'_> {
+    /// Where `path` is read: the parameters, the row a reference names (`None` where it names
+    /// none), or the source row.
     fn source<'a>(
         &'a self,
         path: &ess_primitives::facts::FactPath,
-    ) -> (
+    ) -> Option<(
         &'a crate::input::TypedFacts<'a>,
         ess_primitives::facts::FactPath,
-    ) {
+    )> {
         if let Some(parameter) = path
             .to_string()
             .strip_prefix("param.")
             .and_then(|name| ess_primitives::facts::FactPath::new(name).ok())
         {
-            (self.parameters, parameter)
+            Some((self.parameters, parameter))
+        } else if let Some((reference, _)) = self.view.navigated(self.ir, path) {
+            let far = self.navigated.get(&reference.via)?;
+            let rest = ess_primitives::facts::FactPath::from_segments(&path.segments()[1..]);
+            Some((far, rest))
         } else {
-            (self.row, path.clone())
+            Some((self.row, path.clone()))
         }
     }
 }
@@ -462,22 +565,22 @@ impl ess_primitives::facts::FactSource for ViewFacts<'_> {
         &self,
         path: &ess_primitives::facts::FactPath,
     ) -> Option<ess_primitives::facts::FactValue> {
-        let (source, path) = self.source(path);
+        let (source, path) = self.source(path)?;
         source.fact(&path)
     }
     fn present(&self, path: &ess_primitives::facts::FactPath) -> bool {
-        let (source, path) = self.source(path);
-        source.present(&path)
+        self.source(path)
+            .is_some_and(|(source, path)| source.present(&path))
     }
     fn scales(&self) -> &ess_primitives::facts::Scales {
         self.row.scales()
     }
     fn orders_as_instant(&self, path: &ess_primitives::facts::FactPath) -> bool {
-        let (source, path) = self.source(path);
-        source.orders_as_instant(&path)
+        self.source(path)
+            .is_some_and(|(source, path)| source.orders_as_instant(&path))
     }
     fn orders_text_by_bytes(&self, path: &ess_primitives::facts::FactPath) -> bool {
-        let (source, path) = self.source(path);
-        source.orders_text_by_bytes(&path)
+        self.source(path)
+            .is_some_and(|(source, path)| source.orders_text_by_bytes(&path))
     }
 }

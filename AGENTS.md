@@ -25,27 +25,18 @@ rest of this file does not apply to you.
 ## Crate tree
 
 `crates/<area>/<crate>/`. The area is the directory only; a crate's name is its identity and is
-never changed to follow a move.
+never changed to follow a move. The areas and every crate in them are listed in
+[README.md § The crate tree](README.md#the-crate-tree); the dependency rules are here.
 
-- **`crates/specify/`** — `ess-yaml`, `ess-primitives`, `ess-domain`, `ess-compiler`,
-  `ess-composition`, `ess-realization`, `ess-http`: an authored system becomes a validated,
-  resolved IR. `ess-yaml` is a leaf with no ESS dependency and the only crate that names a YAML
+- `crates/specify/ess-yaml` is a leaf with no ESS dependency and the only crate that names a YAML
   library; every other crate reads and writes YAML through it, and a crate depends on neither
   `serde_yaml` nor `unsafe-libyaml` (`crates/edge/ess-xtask/tests/layout.rs`,
   `docs/design/yaml-parser-replacement.md`).
-- **`crates/generate/`** — `ess-gen`, `ess-synth`, `ess-openapi`, `schema-contract`,
-  `ess-deployment`: that IR becomes artifacts, and nothing here applies one to a running system.
-- **`crates/verify/`** — `ess-conformance`, `ess-diff`: an implementation held to the
-  specification, and one revision of a specification against another.
-- **`crates/infra/`** — `infra-domain`, `infra-compiler`, `infra-analyze`, `infra-spec`,
-  `infra-project`, `ess-kubernetes`: the observed cluster, a separate bounded context whose only
-  dependency on the rest is `ess-primitives`. It reads YAML through `ess_primitives::yaml`, which
-  re-exports `ess-yaml`.
-- **`crates/ui/`** — `ess-ui`: a renderer-neutral UI document (`ess-ui/1`, schema at
-  `schemas/ui/ess-ui.schema.yaml`) loaded into typed Rust, with no dependency on the rest except
-  the leaf `ess-yaml`.
-- **`crates/edge/`** — `ess-cli`, `ess-xtask`: the `ess` binary an adopter runs, and this
-  repository's own tooling.
+- `crates/infra/` is a separate bounded context whose only dependency on the rest is
+  `ess-primitives`. It reads YAML through `ess_primitives::yaml`, which re-exports `ess-yaml`.
+- `crates/ui/ess-ui` (schema at `schemas/ui/ess-ui.schema.yaml`) has no dependency on the rest
+  except the leaf `ess-yaml`.
+- Nothing under `crates/generate/` applies an artifact to a running system.
 
 `ess-deployment` sits under `generate/` rather than `infra/` because its dependencies are
 `ess-compiler` and `ess-realization` and it has no `infra-*` dependency at all — an environment
@@ -118,8 +109,10 @@ SCCACHE_SERVER_PORT=4303 SCCACHE_CACHE_SIZE=2G`. Never the default port 4226, ne
 with another repository, and never in `.cargo/config.toml` or a global cargo configuration: CI and
 release builds run without it.
 
-**Consumer coverage is opt-in.** Revision 3 of the ESS evolution plan (`ESS-EVOLUTION.md`, plan
-ess-evolution-20260915, 2026-09-25) parked feature-preservation accounting: `task check` runs
+**Consumer coverage is opt-in.** Revision 3 of the ESS evolution plan (plan
+ess-evolution-20260915, 2026-09-25) parked feature-preservation accounting, as recorded in
+`decision-blocker:consumer-accounting-parked` and the 2026-09-25 amendment to
+`architecture-decision-record:ess-evolution-01-evolve-without-feature-loss`: `task check` runs
 `consumer-check` only with `CONSUMER_CHECKS=true`, no CI lane runs it, and it is not part of the
 release bar. `task consumer-check` still runs it on its own. The code,
 `initial-baseline.json`, the classifications and the rebound reviewed cases stay in the tree. The
@@ -370,7 +363,7 @@ list, and neither says which line a commit is on. AEP hit the same shape one ver
 
 | What | Where |
 |---|---|
-| The plan: epics, stories, blockers | `.engineering/planning/`, mutated only through `aep artifact` — never by editing a store file, never by writing `status:` |
+| The plan: epics, stories, blockers | `.engineering/planning/`, mutated only through `aep plan artifact` — never by editing a store file, never by writing `status:` |
 | The protocol tree the store obeys | `.engineering/project.yaml` (a pinned `git+…#<40-hex>` source) |
 | Binding designs | `docs/design/` — a construct is a design page before it is code |
 | What shipped | `CHANGELOG.md`, and `git tag -n99` |

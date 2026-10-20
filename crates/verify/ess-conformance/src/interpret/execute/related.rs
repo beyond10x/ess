@@ -58,21 +58,58 @@ pub(super) fn missing(
     condition: &ResolvedCondition,
 ) -> bool {
     let ResolvedCondition::Related {
-        via: ResolvedRelatedVia::Input { field, type_ref },
-        entity,
-        ..
+        via, entity, also, ..
     } = condition
     else {
         return false;
     };
-    if absent_optional(type_ref, input.get(field)) {
-        return false;
+    // ess/28: an `all:` branch's row is missing where any row it lists is.
+    std::iter::once((via, entity))
+        .chain(also.iter().map(|row| (&row.via, &row.entity)))
+        .any(|(via, entity)| {
+            let ResolvedRelatedVia::Input { field, type_ref } = via else {
+                return false;
+            };
+            !absent_optional(type_ref, input.get(field))
+                && input
+                    .get(field)
+                    .is_some_and(|value| names_missing(ir, store, (via, entity), value))
+        })
+}
+
+/// Whether `value`, read through `via`, names an identity no row of `entity` carries: one
+/// identity, or for a list of references (ess/28, beyond10x/ess#558) any of its elements. An empty
+/// list names none.
+pub(super) fn names_missing(
+    ir: &EssIr,
+    store: &State,
+    (via, entity): (&ResolvedRelatedVia, &EntityHandle),
+    value: &Node,
+) -> bool {
+    first_missing(ir, store, (via, entity), value).is_some()
+}
+
+/// The first identity `value` names, in list order for a list of references (ess/28,
+/// beyond10x/ess#558), that no row of `entity` carries; `None` where every one names a row.
+pub(super) fn first_missing(
+    ir: &EssIr,
+    store: &State,
+    (via, entity): (&ResolvedRelatedVia, &EntityHandle),
+    value: &Node,
+) -> Option<Node> {
+    let name = &ir.entity(entity).name;
+    let carried = |identity: &Node| store.instance_typed(name, identity).is_some();
+    match (via.type_ref(), value) {
+        (ResolvedTypeRef::List { .. }, Node::Seq(items)) => {
+            items.iter().find(|item| !carried(item)).cloned()
+        }
+        _ => (!carried(value)).then(|| value.clone()),
     }
-    input.get(field).is_some_and(|identity| {
-        store
-            .instance_typed(&ir.entity(entity).name, identity)
-            .is_none()
-    })
+}
+
+/// Whether `via` reads a list of references (ess/28, beyond10x/ess#558).
+pub(super) fn lists(via: &ResolvedRelatedVia) -> bool {
+    matches!(via.type_ref(), ResolvedTypeRef::List { .. })
 }
 
 /// One branch per related row the command reads, in the order its rows are read when looking for a
@@ -143,16 +180,41 @@ pub(super) fn held<'a>(
     input: &BTreeMap<String, Node>,
     condition: &ResolvedCondition,
 ) -> Result<Option<Held<'a>>, Undetermined> {
-    let ResolvedCondition::Related { via, entity, .. } = condition else {
+    let ResolvedCondition::Related {
+        via, entity, also, ..
+    } = condition
+    else {
         return Ok(None);
     };
+    let Some(mut held) = held_row(ir, store, input, (via, entity))? else {
+        return Ok(None);
+    };
+    // ess/28: every further row an `all:` branch lists, read the same way; one absent Optional
+    // reference selects no branch over them.
+    for row in also {
+        let Some(further) = held_row(ir, store, input, (&row.via, &row.entity))? else {
+            return Ok(None);
+        };
+        held.also.push(further);
+    }
+    Ok(Some(held))
+}
+
+/// The row `via` names in `store`, held for its predicates; `None` for an absent Optional reference.
+fn held_row<'a>(
+    ir: &'a EssIr,
+    store: &'a State,
+    input: &BTreeMap<String, Node>,
+    (via, entity): (&ResolvedRelatedVia, &EntityHandle),
+) -> Result<Option<Held<'a>>, Undetermined> {
     let ResolvedRelatedVia::Input { field, type_ref } = via else {
         return Err(Undetermined::NotInterpreted {
             construct: "a related guard not named by command input".into(),
         });
     };
-    // An absent Optional reference holds no row, so its related branches are never selected.
-    if absent_optional(type_ref, input.get(field)) {
+    // An absent Optional reference holds no row, so its related branches are never selected; a
+    // list of references (ess/28) is tested for a missing row only, and holds no row either.
+    if absent_optional(type_ref, input.get(field)) || lists(via) {
         return Ok(None);
     }
     let identity = input

@@ -36,9 +36,10 @@ the input or a literal:
 | `{increment: <number>}` | `sets:` | the target is a required `Integer` (a whole number) or `Decimal`; a negative number decrements |
 | `{input: <field>, else: {generated: true}}` | `payload:`, `sets:` | the input is `Optional<…>` |
 | `{input: <field>, else: <literal>}` | `payload:`, `sets:` | source `ess/16`; the input is `Optional<…>` and the literal is one the target admits |
-| `{related: {via: <field>, field: <field>}}` | `payload:`, `sets:` | source `ess/16`; `via` is a field of an existing subject, or `input.<field>`, typed as exactly one entity's identity; from `ess/22` also `Optional<…>` of it, or a list of two references |
+| `{related: {via: <field>, field: <field>}}` | `payload:`, `sets:` | source `ess/16`; `via` is a field of an existing subject, or `input.<field>`, typed as exactly one entity's identity; from `ess/22` also `Optional<…>` of it, or a list of two references; from `ess/28` `field: state` reads the referenced row's lifecycle state, typed as that entity's `State` |
 | `{related: {entity: <Entity>, where: <predicate>, field: <field>}}` | `payload:`, `sets:` | source `ess/22`; `field` of the one row of `<Entity>` that `where` selects, read before the outcome, at the field's declared type the target admits; none or several selected rows supply no value. `where` reads as a [row-set guard](../../reference/predicates.md#a-guard-over-the-rows-a-selector-selects)'s, and from `ess/27` may [test each candidate's related rows](../../reference/predicates.md#from-ess27-a-test-over-each-candidates-related-rows); below `ess/22` the same mapping is the nested mapping it always was |
 | `{caller: <attribute>}` | `payload:`, `sets:` | source `ess/16`; every actor that may invoke the command declares the attribute, at one type the target admits |
+| `{missing: input.<list>}` | `payload:` | source `ess/28`; the branch is guarded by `when_related: {via: input.<list>, exists: false}` over a `List<…>` of one entity's identity; the first element naming no row, typed as the element ([guide](../../reference/predicates.md#the-rows-a-list-of-references-names)) |
 | a nested mapping | `payload:`, `sets:` | the target is a struct; every struct field has a source |
 | `{generated: true}` | `sets:` | always (`payload:` has admitted it since `ess/4`) |
 | `{cleared: true}` | `sets:` | the target field is `Optional<…>`; refused in `payload:`. Synthesis asserts the field is empty in the view, so a target that keeps the old value fails |
@@ -165,6 +166,21 @@ absent is reported as `ESS-SYNTH-020`, naming it; the scenario stands.
 Below `ess/16` the source is refused with `unsupported_format_version`, and Entity
 Runtime lowering refuses it. Generated Rust and Go behaviour keeps a command with a `{related: …}`
 value an obligation.
+
+From `ess/28` (beyond10x/ess#557) `field: state` reads the lifecycle state of the referenced row,
+as its guards read `state`: a refusal can name the state that blocked it.
+
+```yaml
+- name: desk-not-open
+  when_related: {via: input.desk_id, predicate: state != Open}
+  error: relstate.desk.DeskNotOpen
+  payload:
+    relstate.desk.DeskNotOpen:
+      current: {related: {via: input.desk_id, field: state}}   # typed relstate.desk.Desk.State
+```
+
+The refusal's scenario asserts the state the arranged row holds. Below `ess/28` the read is refused
+with `unsupported_format_version` naming `ess/28`.
 
 A literal over a `Decimal` target is admitted in every format, quoted (`'0.25'`) or unquoted
 (`0.25`): an optional `-`, digits without a leading zero, optionally a point and digits.

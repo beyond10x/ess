@@ -278,6 +278,15 @@ pub trait TypeEnvironment {
     }
     /// One declared struct member, without using wire aliases.
     fn member(&self, reference: &Self::Type, name: &str) -> Option<Self::Type>;
+    /// The type of `member` — a field, the identity or `state` — of the row the root `root`
+    /// references, where this site navigates that reference (ess/28, beyond10x/ess#564,
+    /// `docs/design/generic-language-features.md` § G2): `<root>.<member>` then reads the referenced
+    /// row, one hop, and is absent where the reference is or names no row.
+    ///
+    /// `None` by default: only a view filter navigates.
+    fn navigated(&self, _root: &str, _member: &str) -> Option<Self::Type> {
+        None
+    }
     /// The typed attributes of the enum this terminal type is, with each variant's values read as
     /// facts (`ess/23`, beyond10x/ess#450); `None` where it is no enum, or one that declares none.
     ///
@@ -464,6 +473,7 @@ pub struct DomainEnvironment<'a> {
     namespace: &'static str,
     current_time: CurrentTimeSite,
     caller: Option<&'a [Field]>,
+    references: &'a [crate::view::navigation::ViewReference],
 }
 
 /// Which predicate site a [`DomainEnvironment`] admits the current-time operand at.
@@ -491,6 +501,7 @@ impl<'a> DomainEnvironment<'a> {
             namespace: "param",
             current_time: CurrentTimeSite::None,
             caller: None,
+            references: &[],
         }
     }
     /// Enable the `caller` namespace over the attributes every actor that may invoke the command
@@ -498,6 +509,16 @@ impl<'a> DomainEnvironment<'a> {
     #[must_use]
     pub fn with_caller(mut self, attributes: &'a [Field]) -> Self {
         self.caller = Some(attributes);
+        self
+    }
+    /// Navigate these references one hop (ess/28, beyond10x/ess#564): `<via>.<member>` reads a
+    /// member of the row `<via>` names. A view filter's environment.
+    #[must_use]
+    pub fn with_references(
+        mut self,
+        references: &'a [crate::view::navigation::ViewReference],
+    ) -> Self {
+        self.references = references;
         self
     }
     /// Enable the reserved param namespace, including when no parameters are declared.
@@ -724,6 +745,30 @@ impl TypeEnvironment for DomainEnvironment<'_> {
             .find(|field| field.name == name)
             .map(|field| field.type_ref.clone())
     }
+    fn navigated(&self, root: &str, member: &str) -> Option<TypeRef> {
+        let reference = self
+            .references
+            .iter()
+            .find(|reference| reference.via == root)?;
+        // A struct identity's own member keeps the meaning it had (beyond10x/ess#428).
+        let mut held = self.root(root)?;
+        loop {
+            match held {
+                TypeRef::Optional(of) => held = *of,
+                TypeRef::Named(ref declared) => match &self.registry.get(declared)?.body {
+                    TypeBody::Newtype { of, .. } => held = of.clone(),
+                    TypeBody::Struct { .. } if self.member(&held, member).is_some() => return None,
+                    _ => break,
+                },
+                _ => break,
+            }
+        }
+        reference
+            .fields
+            .iter()
+            .find(|field| field.name == member)
+            .map(|field| field.type_ref.clone())
+    }
     fn has_parameters(&self) -> bool {
         self.params.is_some()
     }
@@ -813,10 +858,20 @@ fn root_cursor<E: TypeEnvironment>(
         format!(" in binder `{}`", binding.name)
     });
     let mut position = 1;
-    let optional = binder.is_some_and(|binding| binding.optional);
+    let mut optional = binder.is_some_and(|binding| binding.optional);
     let access = binder.map_or(Access::default(), |binding| binding.access);
+    // A reference navigated one hop (ess/28, beyond10x/ess#564): `<reference>.<member>` reads the
+    // referenced row's member, absent where the reference is or names no row.
+    let navigated = (binder.is_none() && environment.root(root).is_some())
+        .then(|| segments.get(1))
+        .flatten()
+        .and_then(|member| environment.navigated(root, member));
     let current = if let Some(binding) = binder {
         binding.reference.clone()
+    } else if let Some(far) = navigated {
+        position = 2;
+        optional = true;
+        Some(far)
     } else if environment.has_parameters() && root == environment.parameter_namespace() {
         let (space, article, noun) = if root == "param" {
             ("parameter", "a", "parameter")

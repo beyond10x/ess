@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:row-queries-quantify-over-a-list-of-references
 kind: story
-status: draft
+status: active
 title: A guard quantifies over the rows a List of references names
 tags:
 - adopter-report
@@ -13,7 +13,10 @@ relations:
 - serves: vision:O2
 - decomposes: epic:generic-row-queries
 - informed_by: story:accepted-input-arranges-referenced-list-rows
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-20T09:13:37Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-20T09:13:37Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 

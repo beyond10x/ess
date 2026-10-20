@@ -421,6 +421,7 @@ fn reads_other_rows(command: &ResolvedCommand) -> bool {
     fn cross(value: &ResolvedPayloadValue) -> bool {
         match value {
             ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedState { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. } => true,
             ResolvedPayloadValue::Struct { fields } => {
@@ -440,6 +441,7 @@ fn reads_other_rows(command: &ResolvedCommand) -> bool {
             | ResolvedPayloadValue::Expression { .. }
             | ResolvedPayloadValue::ChangedField { .. }
             | ResolvedPayloadValue::ChangedState { .. }
+            | ResolvedPayloadValue::MissingElement { .. }
             | ResolvedPayloadValue::ChangedCount => false,
         }
     }

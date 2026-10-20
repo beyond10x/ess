@@ -175,3 +175,45 @@ the invariants after every outcome, so the mapping is checked in every state som
 branch that forgets its `sets:` still validates; the model's interpreter reports a broken invariant,
 naming the one over `state`, when it runs that branch. See
 [where a predicate is accepted](../../reference/predicates.md#where-a-predicate-is-accepted).
+
+## A view reads the row a reference names
+
+From `ess/28` (beyond10x/ess#564) a view reads the row a reference of its source names, one hop, as
+that row is when the view is read. A reference is a field of the source typed as one entity's
+identity, or `Optional` of one, decided as `{related: …}` decides it. A field declares
+`field: {related: {via: <reference>, field: <field>}}`, where `<field>` is a declared field, the
+identity or `state` of the referenced row; a filter reads the same value as `<reference>.<field>`:
+
+```yaml
+views:
+  - name: relstate.desk.Tickets
+    source: relstate.desk.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: relstate.desk.TicketId}
+      - name: desk_state
+        type: Optional<relstate.desk.Desk.State>
+        field: {related: {via: desk_id, field: state}}
+  - name: relstate.desk.TicketsAtOpenDesks
+    source: relstate.desk.Ticket
+    consistency: read_your_writes
+    fields: [{name: ticket_id, type: relstate.desk.TicketId}]
+    filter: desk_id.state == Open
+```
+
+The value is absent where the reference is absent or names no row, so the field is declared
+`Optional`; a comparison over it is unknown, and a row whose filter is unknown is not shown. One hop
+only: a field of the referenced row that is itself a reference is read as the identity it holds. A
+struct identity's own member keeps its meaning: `<reference>.<member>` reads the member where the
+reference's type has one. Navigation in an aggregate view, beside `paging:` or `absent:`, or as an
+`order_by:` key is refused with `unsupported_construct`; a field read through a reference under the
+name of a source field with `conflicting_declaration`; a required field with `type_mismatch`. Below
+`ess/28` each is refused with `unsupported_format_version` naming `ess/28`.
+
+Synthesis writes one `<view>/reference/<field>` scenario per view and reference (suite/54, /55): two
+referenced rows, a source row pointed at each, one more pointed at nothing where the reference may
+be absent, one referenced row changed, and a read requiring each source row with what its own
+referenced row holds; then the named referenced row changes and the view is read again. A target
+that copies the value when the source row is written, or reads another row of the referenced
+entity, fails. Generated Rust and Go keep such a view's query an obligation, named; `ess verify
+diff` reports a field's source moving as `field-source-changed`.

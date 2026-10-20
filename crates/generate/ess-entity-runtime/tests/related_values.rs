@@ -19,9 +19,14 @@ use ess_synth::SynthesisPlan;
 
 /// The focused contract fixture at ess/16, with each `(file, before, after)` edit applied once.
 fn contract(changes: &[(&str, &str, &str)]) -> EssIr {
+    contract_at("format: ess/16", changes)
+}
+
+/// The focused contract fixture at `format`, with each `(file, before, after)` edit applied once.
+fn contract_at(format: &str, changes: &[(&str, &str, &str)]) -> EssIr {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");
     let mut changes = changes.to_vec();
-    changes.push(("system.yaml", "format: ess/4", "format: ess/16"));
+    changes.push(("system.yaml", "format: ess/4", format));
     let mut paths = Vec::new();
     let mut pending = vec![base.clone()];
     while let Some(directory) = pending.pop() {
@@ -98,4 +103,26 @@ fn a_related_source_is_refused_by_name() {
 fn the_fixture_at_ess_16_without_it_is_not_refused_for_a_value_expression() {
     let ir = contract(&[]);
     assert!(!refused_codes(&ir).contains(&LoweringCode::ValueExpressionUnsupported));
+}
+
+/// The referenced row's lifecycle state (ess/28, beyond10x/ess#557) is a `{related: …}` read like
+/// any other, and refused by the same name.
+#[test]
+fn a_related_state_is_refused_by_name() {
+    let ir = contract_at(
+        "format: ess/28",
+        &[
+        (
+            "domains/local.yaml",
+            "      - name: memo\n        type: Optional<String>\n",
+            "      - name: memo\n        type: Optional<String>\n      - name: owner_state\n        type: Optional<contract.foreign.Owner.State>\n",
+        ),
+        (
+            "domains/local.yaml",
+            "          owner_id: input.owner_id\n",
+            "          owner_id: input.owner_id\n          owner_state: {related: {via: input.owner_id, field: state}}\n",
+        ),
+        ],
+    );
+    assert!(refused_codes(&ir).contains(&LoweringCode::ValueExpressionUnsupported));
 }

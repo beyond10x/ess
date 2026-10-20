@@ -47,25 +47,59 @@ pub(super) struct Reads<'a> {
 }
 
 impl<'a> Reads<'a> {
+    /// `{missing: input.<list>}` (ess/28, beyond10x/ess#558): the first element of the list the
+    /// outcome's `when_related: {via: input.<list>, exists: false}` guard reads that names no row
+    /// of the guard's entity in the original store; no value where every element names one.
+    pub(super) fn missing_element(
+        self,
+        ir: &EssIr,
+        field: &str,
+        input: &super::Context<'_>,
+    ) -> Option<Value> {
+        let ess_compiler::ir::ResolvedCondition::Related { via, entity, .. } =
+            &self.outcome.condition
+        else {
+            return None;
+        };
+        if via.field() != field {
+            return None;
+        }
+        let value = input.get(field)?;
+        super::related::first_missing(ir, self.original, (via, entity), value).map(Value::Known)
+    }
+
     /// `{related: …}` (ess/16): the field of the row the reference names, read from the original
     /// store. From ess/22 (beyond10x/ess#285) a reference may be `Optional<…>` and a chain follows
     /// one further reference from that row: an absent reference reads no row and yields an absent
     /// value, and a present one naming no row is the missing row it always was — never absent.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one related read: the reference chain, the row, and the field or state it holds"
+    )]
     pub(super) fn related(
         self,
         ir: &EssIr,
         target: &ResolvedPayloadField,
         input: &super::Context<'_>,
     ) -> Result<Option<Value>, Undetermined> {
-        let ResolvedPayloadValue::RelatedField {
-            via,
-            through,
-            entity,
-            field,
-            type_ref,
-        } = &target.value
-        else {
-            unreachable!("only related sources use this evaluator")
+        // ess/28 (beyond10x/ess#557): `{related: {…, field: state}}` reads the row's state, which
+        // no declared field holds.
+        let state = ess_domain::entity::EntitySpec::STATE.to_owned();
+        let (via, through, entity, field, type_ref, reads_state) = match &target.value {
+            ResolvedPayloadValue::RelatedField {
+                via,
+                through,
+                entity,
+                field,
+                type_ref,
+            } => (via, through, entity, field, type_ref, false),
+            ResolvedPayloadValue::RelatedState {
+                via,
+                through,
+                entity,
+                type_ref,
+            } => (via, through, entity, &state, type_ref, true),
+            _ => unreachable!("only related sources use this evaluator"),
         };
         let absent = || {
             checked_read(
@@ -138,7 +172,9 @@ impl<'a> Reads<'a> {
             address = next_address;
             row = self.row(ir, current, &address, &format!("{via} through {hop}"))?;
         }
-        let value = if *field == current.identity.name {
+        let value = if reads_state {
+            Some(Value::Known(Node::Text(row.state.to_string())))
+        } else if *field == current.identity.name {
             Some(Value::Known(address))
         } else {
             row.fields.get(field).cloned()

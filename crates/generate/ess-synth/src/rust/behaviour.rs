@@ -2919,6 +2919,7 @@ impl<'a> Writer<'a> {
                 }
             }
             ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedState { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::ChangedCount
@@ -2926,6 +2927,7 @@ impl<'a> Writer<'a> {
             | ResolvedPayloadValue::Expression { .. }
             | ResolvedPayloadValue::ChangedField { .. }
             | ResolvedPayloadValue::ChangedState { .. }
+            | ResolvedPayloadValue::MissingElement { .. }
             | ResolvedPayloadValue::ResponseField { .. } => {
                 unreachable!("the plan keeps this source's command an obligation")
             }

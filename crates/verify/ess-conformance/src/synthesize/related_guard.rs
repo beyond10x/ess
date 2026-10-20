@@ -157,12 +157,14 @@ pub(super) fn reads_entity(command: &ResolvedCommand, entity: &EntityHandle) -> 
     rows(command).iter().any(|(_, related)| *related == entity)
 }
 
-/// Whether any branch of this command reads a related row.
+/// Whether any branch of this command reads a related row; a command guarding on the rows a list
+/// of references names is arranged by [`super::related_list`] instead (ess/28).
 pub(super) fn uses(command: &ResolvedCommand) -> bool {
-    command
-        .outcomes
-        .iter()
-        .any(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }))
+    !super::related_list::uses(command)
+        && command
+            .outcomes
+            .iter()
+            .any(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }))
 }
 
 /// Whether this strategy arranges the scenario for `outcome`: every branch of a command reading a
@@ -427,9 +429,17 @@ fn read(command: &ResolvedCommand) -> Option<(&ResolvedRelatedVia, &EntityHandle
 fn rows(command: &ResolvedCommand) -> Vec<(&ResolvedRelatedVia, &EntityHandle)> {
     let mut rows: Vec<(&ResolvedRelatedVia, &EntityHandle)> = Vec::new();
     for outcome in &command.outcomes {
-        if let ResolvedCondition::Related { via, entity, .. } = &outcome.condition {
-            if !rows.iter().any(|(read, _)| read.field() == via.field()) {
-                rows.push((via, entity));
+        if let ResolvedCondition::Related {
+            via, entity, also, ..
+        } = &outcome.condition
+        {
+            // ess/28: every row an `all:` branch lists is one of the command's rows.
+            let listed = std::iter::once((via, entity))
+                .chain(also.iter().map(|row| (&row.via, &row.entity)));
+            for (via, entity) in listed {
+                if !rows.iter().any(|(read, _)| read.field() == via.field()) {
+                    rows.push((via, entity));
+                }
             }
         }
     }
@@ -513,15 +523,78 @@ fn predicates_over(command: &ResolvedCommand, field: &str) -> Vec<Predicate> {
     command
         .outcomes
         .iter()
-        .filter_map(|outcome| match &outcome.condition {
-            ResolvedCondition::Related {
-                via,
-                test: ResolvedRelatedTest::Holds { predicate },
-                ..
-            } if via.field() == field => Some(predicate.clone()),
-            _ => None,
-        })
+        .filter_map(|outcome| over(outcome, field).cloned())
         .collect()
+}
+
+/// The predicate `outcome` holds of the row `field` names: its `when_related:` predicate over that
+/// row, or from ess/28 the one an `all:` element states over it. `None` where it reads that row with
+/// none, or reads it not at all.
+fn over<'o>(outcome: &'o ResolvedOutcome, field: &str) -> Option<&'o Predicate> {
+    let ResolvedCondition::Related {
+        via, test, also, ..
+    } = &outcome.condition
+    else {
+        return None;
+    };
+    if via.field() == field {
+        return match test {
+            ResolvedRelatedTest::Holds { predicate } => Some(predicate),
+            ResolvedRelatedTest::Absent => None,
+        };
+    }
+    also.iter()
+        .find(|row| row.via.field() == field)
+        .map(|row| &row.predicate)
+}
+
+/// Whether `outcome` requires the row `field` names as one of the further rows of an `all:` branch
+/// (ess/28), rather than as the row its guard reads first.
+fn lists(outcome: &ResolvedOutcome, field: &str) -> bool {
+    matches!(&outcome.condition, ResolvedCondition::Related { also, .. }
+        if also.iter().any(|row| row.via.field() == field))
+}
+
+/// `projected`, read with the rows `others` arranged beside its focus row: each branch requiring
+/// further rows at once (ess/28, `all:`) decided on those rows — reading the focus row alone where
+/// every further row holds its predicate there, dropped where one does not. The branch under test
+/// reads its further rows as arranged for it ([`leaves_to`]), and one a row leaves undecided is
+/// read on the focus row alone, which only narrows what the search admits.
+fn decided_beside(
+    ir: &EssIr,
+    projected: &ResolvedCommand,
+    under_test: &ResolvedOutcome,
+    others: &[Beside<'_>],
+) -> ResolvedCommand {
+    let mut decided = projected.clone();
+    decided.outcomes.retain_mut(|branch| {
+        let ResolvedCondition::Related { also, .. } = &mut branch.condition else {
+            return true;
+        };
+        if also.is_empty() {
+            return true;
+        }
+        let refuted = branch.name != under_test.name
+            && also.iter().any(|row| {
+                others
+                    .iter()
+                    .find(|other| other.via.field() == row.via.field())
+                    .is_some_and(|other| {
+                        subject_fact::guard_truth_with(
+                            ir,
+                            other.entity,
+                            &other.row.settled,
+                            &other.row.unwritten,
+                            Some(&other.row.state),
+                            &row.predicate,
+                            None,
+                        ) == Truth::False
+                    })
+            });
+        also.clear();
+        !refuted
+    });
+    decided
 }
 
 /// A row a scenario names beside the one it is arranged around (beyond10x/ess#283): one of its own
@@ -582,7 +655,22 @@ fn leaves_to(
     let facts = input
         .map(|input| flatten(ir, command, input).map_err(RefusalCause::WitnessRejected))
         .transpose()?;
-    let mut leaves = Truth::True;
+    // ess/28: a row the branch under test lists in `all:` holds the predicate it states over it.
+    let mut leaves = if lists(outcome, field) {
+        over(outcome, field).map_or(Truth::True, |required| {
+            subject_fact::guard_truth_with(
+                ir,
+                entity,
+                &row.settled,
+                &row.unwritten,
+                Some(&row.state),
+                required,
+                input.map(|input| (command, input)),
+            )
+        })
+    } else {
+        Truth::True
+    };
     for branch in &command.outcomes {
         let ResolvedCondition::Related {
             via,
@@ -1421,6 +1509,8 @@ fn drive_several(
         }
         bound.insert(other.via.field().to_owned(), other.row.instance.clone());
     }
+    // ess/28: a branch over several rows at once is decided on the rows arranged beside.
+    let projected = decided_beside(ir, &projected, driver.outcome, &others);
     let reduced = (!left.is_empty()).then(|| leaving_out(&projected, &left));
     let command = reduced.as_ref().unwrap_or(&projected);
     let without = input.filter(|_| !left.is_empty()).map(|chosen| {
@@ -1590,6 +1680,21 @@ pub(super) fn drive_on(
     let mut bound = bound.clone();
     bound.insert(field.to_owned(), row.instance.clone());
     Ok(super::invoke_with(ir, driver, None, actors, &bound, input))
+}
+
+/// [`drive`] on a related row the caller arranged itself, as the steps so far leave it: an input searched
+/// for that selects `driver`'s branch on `row`, sent with `bound`, which names `row` through the
+/// guard's input (ess/28, beyond10x/ess#564: a view read through a reference is witnessed on rows the
+/// scenario points at the referenced rows it arranged).
+pub(super) fn drive_held(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    row: &Arrangement,
+) -> Result<super::Invocation, RefusalCause> {
+    on_held(ir, driver, None, actors, distinction, bound, None, row)
 }
 
 /// [`drive`] where the related row is of an entity `arranging` already names: one level deep, a
@@ -1972,6 +2077,9 @@ fn arranged(
         distinction,
         (BESIDE, false),
     )?;
+    // ess/28: a branch over several rows at once is decided on the rows arranged beside.
+    let projected = decided_beside(ir, &projected, outcome, &others);
+    let own = kept(&projected, own)?;
     let around = Around {
         command,
         outcome,
@@ -2576,6 +2684,8 @@ fn overlaps(
     for (index, (via, entity)) in rows(command)
         .into_iter()
         .filter(|(via, _)| via.field() != focus)
+        // ess/28: a row the branch lists in `all:` is the one arranged to hold, never replaced.
+        .filter(|(via, _)| !lists(outcome, via.field()))
         .enumerate()
     {
         let over = |branch: &&ResolvedOutcome| {

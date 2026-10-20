@@ -9,6 +9,9 @@ pub(super) struct Held<'a> {
     state: &'a StateName,
     row: super::history::Facts<'a>,
     fields: &'a [ess_compiler::ir::ResolvedField],
+    /// The further rows a `when_related: {all: […]}` branch reads (ess/28), in the order it lists
+    /// them after the first; empty for every other branch.
+    pub(super) also: Vec<Held<'a>>,
 }
 impl<'a> Held<'a> {
     pub(super) fn new(
@@ -21,6 +24,25 @@ impl<'a> Held<'a> {
             state: &instance.state,
             row,
             fields: &entity.fields,
+            also: Vec::new(),
+        })
+    }
+
+    /// Whether `predicate` holds of this row, its `input.` read from `input`.
+    fn holds(
+        &self,
+        predicate: &Predicate,
+        input: &input::InputFacts<'_>,
+        caller: Option<&super::caller::Caller<'_>>,
+        now: Option<crate::occurrence_clock::DecisionInstant>,
+    ) -> Truth {
+        self.row.evaluate_with(|row| {
+            predicate.evaluate(&super::caller::Facts::new(
+                &RowAndInput { row, input },
+                caller,
+                self.fields,
+                now,
+            ))
         })
     }
 
@@ -54,20 +76,21 @@ impl<'a> Held<'a> {
             ResolvedCondition::SubjectPredicate {
                 predicate,
                 input: additional,
-            }
-            | ResolvedCondition::Related {
+            } => (
+                self.holds(predicate, input, caller, now),
+                additional.as_ref(),
+            ),
+            // ess/28: an `all:` branch holds where every row it lists holds its own predicate.
+            ResolvedCondition::Related {
                 test: ResolvedRelatedTest::Holds { predicate },
                 input: additional,
+                also,
                 ..
             } => (
-                self.row.evaluate_with(|row| {
-                    predicate.evaluate(&super::caller::Facts::new(
-                        &RowAndInput { row, input },
-                        caller,
-                        self.fields,
-                        now,
-                    ))
-                }),
+                self.also.iter().zip(also).fold(
+                    self.holds(predicate, input, caller, now),
+                    |truth, (held, row)| truth.and(held.holds(&row.predicate, input, caller, now)),
+                ),
                 additional.as_ref(),
             ),
             ResolvedCondition::Related {

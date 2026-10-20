@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.64.0](#a-view-and-a-guard-read-the-row-a-reference-names) | A view and a guard read the row a reference names | capability | notable |
 | [0.63.0](#a-value-can-be-computed-by-a-typed-expression-and-every-guard-answers-in-one-precedence-order) | A value can be computed by a typed expression, and every guard answers in one precedence order | capability | notable |
 | [0.62.0](#a-suite-holds-a-command-at-a-fixed-now-so-a-guard-on-a-time-boundary-is-tested-exactly-there) | A suite holds a command at a fixed now, so a guard on a time boundary is tested exactly there | capability | notable |
 | [0.61.0](#concurrent-histories-record-each-calls-input-and-events-and-check-history-holds-them) | Concurrent histories record each call's input and events, and check-history holds them | capability | notable |
@@ -72,6 +73,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.64.0 — 2026-10-20
+
+### A view and a guard read the row a reference names
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.64.0)
+
+Format `ess/28` lets a view field and a view filter read the row a reference of the source names, one hop, as it is when the view is read; a value read a referenced row's lifecycle state; a branch require several related rows at once; and a guard refuse a list of references that names a missing row. Suite `ess-conformance/54` witnesses each navigated view.
 
 ## 0.63.0 — 2026-10-19
 

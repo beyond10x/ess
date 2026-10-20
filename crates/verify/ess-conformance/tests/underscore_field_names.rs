@@ -150,11 +150,13 @@ fn no_runtime_spells_the_field_name_rule_other_than_the_specification_does() {
         "a runtime refuses a field name the specification admits:\n{}",
         stale.join("\n")
     );
-    // runtime.go ×4, replay.go, reading.go, reading.ts, runtime.ts, predicate.go, predicate.ts,
+    // runtime.go ×5, replay.go, reading.go, reading.ts, runtime.ts ×2, predicate.go, predicate.ts,
     // coverage-admission.js twice (fact grammar and operand classifier), direct_response.ts,
-    // one_time_response.ts, one_time_identity.go, response.go and response.ts.
+    // one_time_response.ts, one_time_identity.go, response.go and response.ts. The fifth
+    // runtime.go and second runtime.ts check the field of a `<view>/reference/<field>` scenario
+    // identity (ess/28, beyond10x/ess#564).
     assert_eq!(
-        current, 17,
+        current, 19,
         "every check this file knows of carries the published rule"
     );
 }

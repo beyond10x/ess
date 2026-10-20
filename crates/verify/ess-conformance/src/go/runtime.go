@@ -101,7 +101,7 @@ func suiteReference(value any) error {
 //
 // Keep this aligned with the emitter's capability boundary. New majors require admission,
 // execution and report parity; changing this number alone supplies none of those semantics.
-const newestSuiteMajor = 53
+const newestSuiteMajor = 55
 
 // suiteMajorsNotRead are the majors below newestSuiteMajor that other work has allocated and this
 // runtime has no reader for yet. A suite labelled with one is refused by version, never read as
@@ -1890,7 +1890,7 @@ func Run(t *testing.T, newTarget func() Target) {
 		t.Fatalf("suite admission: %v", err)
 	}
 	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
-		t.Fatalf("suite/8 through /53 require explicit ESS_REPORT_FORMAT=2 before execution")
+		t.Fatalf("suite/8 through /55 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -4508,6 +4508,9 @@ func scenarioIdentity(id string) error {
 	case len(p) == 6 && p[1] == "invariant-wrapped" && p[2] == "at":
 		// A value type's invariants at a wrapped view position (suite/52): the position's digest.
 		valid = q(p[0]) && q(p[3]) && p[4] != "" && positionDigest.MatchString(p[5])
+	case len(p) == 3 && p[1] == "reference":
+		// A view read through a reference of its source (ess/28, beyond10x/ess#564).
+		valid = q(p[0]) && regexp.MustCompile(`^_*[A-Za-z][A-Za-z0-9_]*$`).MatchString(p[2])
 	case len(p) == 2 && p[1] == "aggregate":
 		valid = q(p[0])
 	case len(p) == 3 && p[1] == "grant":
@@ -4603,6 +4606,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		// The refusal an ungranted actor gets (beyond10x/ess#265) arrived in suite/26 and /27.
 		if (strings.HasSuffix(id, "/grant/denied") || strings.Contains(id, "/grant/admitted/")) && major < 26 {
 			return suite, fmt.Errorf("the refusal an ungranted actor gets requires suite/26 or /27")
+		}
+		// A view read through a reference (ess/28, beyond10x/ess#564) arrived in suite/54 and /55.
+		if parts := strings.Split(id, "/"); len(parts) == 3 && parts[1] == "reference" && major < 54 {
+			return suite, fmt.Errorf("a view read through a reference requires suite/54 or /55")
 		}
 		// A read of a read-granted view (beyond10x/ess#286) arrived in suite/34 and /35.
 		if strings.Contains(id, "/grant/read/") && major < 34 {

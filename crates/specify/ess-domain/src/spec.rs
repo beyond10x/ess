@@ -409,6 +409,7 @@ impl Specification {
         crate::command::caller_value::read_below_ess_16(system.format, &mut collected.commands);
         crate::command::set_effects::read_below_ess_16(system.format, &mut collected.commands);
         crate::command::set_effects::read_below_ess_25(system.format, &mut collected.commands);
+        crate::command::related_list::read_below_ess_28(system.format, &mut collected.commands);
         let mut specification = Self {
             system,
             entities: collected.entities,
@@ -556,9 +557,12 @@ impl Specification {
 
         let catalogue = EntityCatalogue::new(self.entities.values());
         for view in self.views.values() {
-            if let Err(view_errors) = view.validate(&registry, &catalogue) {
+            // A filter navigates the source's references one hop (ess/28, beyond10x/ess#564).
+            let references = crate::view::navigation::references(self, view);
+            if let Err(view_errors) = view.validate_navigating(&registry, &catalogue, &references) {
                 errors.extend(view_errors);
             }
+            errors.extend(crate::view::navigation::validate(self, view));
             // `absent:` (ess/25) reads the source entity's identity, which the catalogue does not carry.
             errors.extend(crate::view::absent::validate(
                 view,

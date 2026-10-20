@@ -832,6 +832,7 @@ pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
             entity,
             test,
             input,
+            also,
         } => match test {
             ess_compiler::ir::ResolvedRelatedTest::Absent => format!(
                 "when no `{}` carries the identity `{via}` names{}",
@@ -841,8 +842,18 @@ pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
                     .map_or(String::new(), |guard| format!(" and `{guard}`")),
             ),
             ess_compiler::ir::ResolvedRelatedTest::Holds { predicate } => format!(
-                "when the `{}` that `{via}` names satisfies `{predicate}`{}",
+                "when the `{}` that `{via}` names satisfies `{predicate}`{}{}",
                 entity.name(),
+                also.iter().fold(String::new(), |mut rows, row| {
+                    let _ = write!(
+                        rows,
+                        ", the `{}` that `{}` names satisfies `{}`",
+                        row.entity.name(),
+                        row.via,
+                        row.predicate
+                    );
+                    rows
+                }),
                 input
                     .as_ref()
                     .map_or(String::new(), |guard| format!(" and `{guard}`")),

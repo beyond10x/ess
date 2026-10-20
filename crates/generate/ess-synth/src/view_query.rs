@@ -42,6 +42,17 @@ pub(crate) fn view(ir: &EssIr, view: &ResolvedView) -> Result<(), String> {
              compute"
         ));
     }
+    // ess/28 (beyond10x/ess#564): a generated query reads its source's rows alone, and a view
+    // reading the row a reference names reads a second entity's, as it is when the view is read.
+    if let Some(reference) = view.references.first() {
+        return Err(format!(
+            "a read through the reference `{}` to `{}` (`field: {{related: …}}` or `{}.<field>` \
+             in `filter:`), which reads a second entity's rows",
+            reference.via,
+            reference.entity.name(),
+            reference.via
+        ));
+    }
     params(ir, view)?;
     let entity = ir.entity(&view.source);
     if let Some(filter) = &view.filter {

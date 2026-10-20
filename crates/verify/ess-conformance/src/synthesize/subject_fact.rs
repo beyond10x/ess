@@ -696,14 +696,10 @@ fn related_over(command: &ResolvedCommand, entity: &EntityHandle) -> Vec<Predica
     command
         .outcomes
         .iter()
-        .filter_map(|outcome| match &outcome.condition {
-            ResolvedCondition::Related {
-                entity: read,
-                test: ess_compiler::ir::ResolvedRelatedTest::Holds { predicate },
-                ..
-            } if read == entity => Some(predicate.clone()),
-            _ => None,
-        })
+        // From ess/28 every row an `all:` branch lists.
+        .flat_map(|outcome| outcome.condition.related_predicates())
+        .filter(|(_, read, _)| *read == entity)
+        .map(|(_, _, predicate)| predicate.clone())
         .collect()
 }
 

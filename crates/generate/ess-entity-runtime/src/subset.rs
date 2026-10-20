@@ -123,7 +123,7 @@ pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -
             INPUT_PATH
         }
         Source::Struct { .. } => STRUCT,
-        Source::RelatedField { .. } => RELATED_VALUE,
+        Source::RelatedField { .. } | Source::RelatedState { .. } => RELATED_VALUE,
         Source::RelatedSelection { .. } | Source::RelatedHead { .. } => ROW_SET,
         Source::Expression { .. } => EXPRESSION,
         Source::ResponseField { .. }
@@ -135,6 +135,7 @@ pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -
         | Source::CallerAttribute { .. }
         | Source::ChangedField { .. }
         | Source::ChangedState { .. }
+        | Source::MissingElement { .. }
         | Source::ChangedCount => LoweringCode::ValueExpressionUnsupported.construct(),
     }
 }

@@ -1,4 +1,4 @@
-#	models=271	commands=552
+#	models=275	commands=562
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -490,6 +490,9 @@ crates/verify/ess-conformance/tests/fixtures/keypad.yaml	keypad.dial.SendKeys	in
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	ir=e5ca03db93153d0c79df03994437ff2e2df16254751811567682bdf24fba4717:28645
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	idioms.correlated.Begin	existence: opened | default: superseded
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	idioms.correlated.End	present_related: ambiguous, unmatched | accepting: carried, clamped | default: derived
+crates/verify/ess-conformance/tests/fixtures/list-of-references.yaml	ir=b47cee86cc41230127050eb9ea953b24bbb904c44d7bae85587388388224ae03:12069
+crates/verify/ess-conformance/tests/fixtures/list-of-references.yaml	ledger.desk.AddService	default: added
+crates/verify/ess-conformance/tests/fixtures/list-of-references.yaml	ledger.desk.OpenIncident	present_related: unknown-service | default: opened
 crates/verify/ess-conformance/tests/fixtures/minted-value-sources.yaml	ir=afc0a308ae9e5133eb4639e8352fefc67c25edfcc4694cf6bd7149b591ab7a9c:12178
 crates/verify/ess-conformance/tests/fixtures/minted-value-sources.yaml	demo.routing.BridgeEntry	held_state: not-selected | default: bridged
 crates/verify/ess-conformance/tests/fixtures/minted-value-sources.yaml	demo.routing.QueueEntry	default: queued
@@ -528,6 +531,14 @@ crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	billing.invo
 crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	billing.invoice.PayInvoice	held_state: wrong-state | accepting: settled | default: rejected
 crates/verify/ess-conformance/tests/fixtures/mutation-unwitnessed-outcome.yaml	ir=b5578cde0ecd97b1fa0974fd383e76495693931a17b5628b38ffe80eaba9bbaa:6169
 crates/verify/ess-conformance/tests/fixtures/mutation-unwitnessed-outcome.yaml	desk.ticket.FileTicket	input_refusal: contradictory, refused | default: filed
+crates/verify/ess-conformance/tests/fixtures/navigate-a-reference.yaml	ir=b57fbaf95abe9b9b3ee7e10cd7a019069eca7248e5249cca09a02df0e6fb6081:17525
+crates/verify/ess-conformance/tests/fixtures/navigate-a-reference.yaml	relstate.desk.CloseDesk	held_state: wrong-state | default: closed
+crates/verify/ess-conformance/tests/fixtures/navigate-a-reference.yaml	relstate.desk.OpenDesk	default: opened
+crates/verify/ess-conformance/tests/fixtures/navigate-a-reference.yaml	relstate.desk.OpenTicket	present_related: unknown-desk, desk-not-open | default: opened
+crates/verify/ess-conformance/tests/fixtures/navigate-absent-reference.yaml	ir=3e14eec4ee0f72c1622e3ad3fdab895273ce1bfa288addf3c9055fa370fdce16:16857
+crates/verify/ess-conformance/tests/fixtures/navigate-absent-reference.yaml	ledger.incident.OpenIncident	default: opened
+crates/verify/ess-conformance/tests/fixtures/navigate-absent-reference.yaml	ledger.incident.PlanWindow	default: planned
+crates/verify/ess-conformance/tests/fixtures/navigate-absent-reference.yaml	ledger.incident.ResolveIncident	held_state: wrong-state | default: resolved
 crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	ir=e1ffbf5b823d456089f75da6d9ba2a2e6b66e873e556792eb4d80aa22ae95fa8:11429
 crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	demo.order.Fulfil	existence: not-found | held_state: stale-version, wrong-state | default: applied
 crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	demo.order.Place	default: placed
@@ -735,6 +746,9 @@ crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	ir=78c8c58
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	queueing.entry.AddWorker	default: added
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	queueing.entry.Assign	held_state: wrong-state | accepting: dialler-refused | default: assigned
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	queueing.entry.Enqueue	default: enqueued
+crates/verify/ess-conformance/tests/fixtures/two-rows-one-branch.yaml	ir=2c4e615ef9639cd067ec9af4b3b610cb02b815727058ed3057e6bc8ada354ca5:15428
+crates/verify/ess-conformance/tests/fixtures/two-rows-one-branch.yaml	wiring.board.AddPort	default: added
+crates/verify/ess-conformance/tests/fixtures/two-rows-one-branch.yaml	wiring.board.Connect	present_related: no-source, no-sink, both-inbound, both-outbound | default: connected
 crates/verify/ess-conformance/tests/fixtures/two-sided-pick.yaml	ir=05821789121845d5e6365da50f9bd7c572bab0308827d3970ef5d1cf413aa13f:22080
 crates/verify/ess-conformance/tests/fixtures/two-sided-pick.yaml	demo.sides.Finish	default: finished
 crates/verify/ess-conformance/tests/fixtures/two-sided-pick.yaml	demo.sides.Join	default: joined

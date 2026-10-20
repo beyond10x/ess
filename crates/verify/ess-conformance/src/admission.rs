@@ -211,7 +211,7 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     if !crate::go::admitted_major(version.major()) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–53",
+            "execution readers admit suite majors 1–55",
         ));
     }
     match p.get("synthesis_seeds") {
@@ -272,11 +272,12 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
             | 49
             | 51
             | 53
+            | 55
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /53",
+            "coverage is required exactly for odd suite majors from /5 through /55",
         ));
     }
     compact_spellings(value, version.major())?;
@@ -845,6 +846,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::undeclared_fields::admit(suite)?;
     crate::hold_now::admit(suite)?;
     crate::value_invariant::admit(suite)?;
+    crate::view_reference::admit(suite)?;
     crate::system_issued::admit(suite)?;
     crate::delivery_context::admit(suite)?;
     crate::no_invocation::admit(suite)?;

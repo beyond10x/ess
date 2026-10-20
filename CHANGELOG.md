@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+## [0.64.0] — 2026-10-20
+
+### Added
+
+- From `format: ess/28` a view reads the row a reference of its source names, one hop, as that
+  row is when the view is read (`docs/design/generic-language-features.md` § G2, navigation,
+  grid R's view-field and view-filter rows): a field declares `field: {related: {via:
+  <reference>, field: <field | state>}}`, typed `Optional` since it is absent where the reference
+  is absent or names no row, and a filter reads `<reference>.<field>`, unknown there, so the row
+  is not shown. The interpreter reads the referenced row at query time; synthesis files one
+  `<view>/reference/<field>` scenario per view and reference (suite `ess-conformance/54`, or `/55`
+  with coverage) reading the view before and after the referenced row changes, beside a decoy row
+  and an absent reference; the Rust, Go and TypeScript runners give one verdict on it; generated
+  Rust and Go keep such a query an obligation, named; `ess verify diff` reports a field's source
+  moving as `field-source-changed` (`ess-diff/21`). An aggregate, paged or `absent:` view and an
+  order key read through a reference are refused by name; below `ess/28` every such read is
+  refused naming `ess/28`, and a model without one keeps its IR and suite bytes
+  (beyond10x/ess#564, beyond10x/ess#447).
+- From `format: ess/28` a branch requires several related rows at once, `when_related: {all:
+  [{via: input.<field>, predicate: …}, …]}`, each row named by its own input identity and
+  satisfying its own predicate: two ports both facing inbound refuse a wire in one branch. Validation
+  partitions it with the other rows' branches and requires each row's `exists: false` answer; the
+  interpreter reads every row; synthesis arranges each listed row to hold its predicate, the others
+  beside it so that nothing answers first, and decoys around the first; the Rust, Go and
+  TypeScript runners give one verdict on it. Generated Rust and Go keep the command an obligation
+  and Entity Runtime lowering refuses it, each by name; below `ess/28` it is refused naming
+  `ess/28` (downstream report 2026-10-19, finding 11).
+- From `format: ess/28` a value reads the lifecycle state of the row a reference names,
+  `{related: {via, field: state}}`, typed as that entity's `State`: a refusal names the state that
+  blocked it, and its scenario asserts the state the arranged row holds. Generated Rust and Go keep
+  the command an obligation and Entity Runtime lowering refuses it, each by name; below `ess/28`
+  it is refused naming `ess/28` (beyond10x/ess#557, downstream report 2026-10-19, finding 9).
+- From `format: ess/28` a guard refuses a list of references naming a missing row,
+  `when_related: {via: input.<list>, exists: false}` over a `List<…>` of one entity's identity
+  (grid R's `when_related:` row, the existential over a list's elements of
+  `docs/design/generic-language-features.md` § G2): taken when some element names no row, never
+  for an empty list, and the refusal publishes the first such element with `{missing:
+  input.<list>}`. The interpreter reads every element; synthesis sends the refusal a created row
+  then an unknown identity and asserts the payload names the second, the accepting branch two
+  created rows, and every other run of the command an empty list. A `predicate:` over the listed
+  rows, a list in `all:`, a stored list and a list beside another related row are refused by
+  name; generated Rust and Go keep the command an obligation and Entity Runtime lowering refuses
+  it, each by name; below `ess/28` the guard keeps its refusal, its hint naming `ess/28`
+  (beyond10x/ess#558).
+
+Language: 0 general, 0 one-to-one, 4 part (general share 0%; cumulative 19%).
+
 ## [0.63.0] — 2026-10-19
 
 ### Added

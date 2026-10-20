@@ -216,6 +216,23 @@ fn outcome(
                     .to_owned(),
             )
         }
+        // Several rows in one branch (ess/28, `when_related: {all: …}`): no emitter reads two related
+        // rows for one branch in this cut, so the command stays an obligation, named.
+        ResolvedCondition::Related { also, .. } if !also.is_empty() => {
+            return Err(
+                "a guard over several related rows at once (`when_related: {all: […]}`)".to_owned(),
+            )
+        }
+        // The rows a list of references names (ess/28, beyond10x/ess#558): no emitter reads a row
+        // per element in this cut, so the command stays an obligation, named.
+        ResolvedCondition::Related { via, .. }
+            if matches!(via.type_ref(), ess_compiler::ir::ResolvedTypeRef::List { .. }) =>
+        {
+            return Err(format!(
+                "a guard over the rows the list `{via}` names (`when_related: {{via: <list>, \
+                 exists: false}}`)"
+            ))
+        }
         ResolvedCondition::Related {
             entity,
             test,
@@ -546,8 +563,23 @@ fn value(
             };
             return Err(format!("`{{related:}}`{form} for `{}`", field.target));
         }
+        // The referenced row's lifecycle state (ess/28, beyond10x/ess#557) is owed as every
+        // `{related:}` value is, named for what it reads.
+        ResolvedPayloadValue::RelatedState { .. } => {
+            return Err(format!(
+                "`{{related: {{…, field: state}}}}`, the referenced row's state, for `{}`",
+                field.target
+            ));
+        }
         ResolvedPayloadValue::ChangedCount => {
             return Err(format!("`{{count: changed}}` for `{}`", field.target));
+        }
+        // A list guard's missing element (ess/28, beyond10x/ess#558).
+        ResolvedPayloadValue::MissingElement { .. } => {
+            return Err(format!(
+                "`{{missing: …}}`, the element of a list of references naming no row, for `{}`",
+                field.target
+            ));
         }
         // A set outcome is refused before its sources are read (ess/25, beyond10x/ess#531).
         ResolvedPayloadValue::ChangedField { .. } | ResolvedPayloadValue::ChangedState { .. } => {

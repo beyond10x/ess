@@ -1,4 +1,4 @@
-#	models=315	lines=449
+#	models=319	lines=453
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -176,6 +176,7 @@ crates/verify/ess-conformance/tests/fixtures/identity-changing-updates.yaml	vaul
 crates/verify/ess-conformance/tests/fixtures/input-guard-overlap.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/keypad.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/list-of-references.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/minted-value-sources.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-arms.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-authored.yaml	components=0
@@ -187,6 +188,8 @@ crates/verify/ess-conformance/tests/fixtures/mutation-sets-entries.yaml	componen
 crates/verify/ess-conformance/tests/fixtures/mutation-stored-guards.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-survivor.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/mutation-unwitnessed-outcome.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/navigate-a-reference.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/navigate-absent-reference.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/now-guard-interpreted.yaml	components=0
@@ -253,6 +256,7 @@ crates/verify/ess-conformance/tests/fixtures/subject-state-source.yaml	component
 crates/verify/ess-conformance/tests/fixtures/subject-state-source.yaml	docs-service	REFUSED	3a47e494bbe0dc6de6360fca89a26008758a6f567e5c1a2b1074310b7ec8b5e0:1072
 crates/verify/ess-conformance/tests/fixtures/subject-state.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/two-rows-one-branch.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/two-sided-pick.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	directory-service	REFUSED	b5d5a4905a4d3b17db9d0adfe1d75c5c52b6df167f36f0ca7f1e4de30c5edfa0:1108
@@ -437,7 +441,7 @@ system-dir:models/toolchain	infra	toolchain.infra.Observation	create	refused, co
 system-dir:models/toolchain	infra	toolchain.infra.Observation	toolchain.infra.ImportObservation	refused, imported, wrong-state
 system-dir:models/toolchain	release-automation	REFUSED	fca88a6cb61e25f86e28e8a69b4bf8ee5aadc05cb16ff6e4a728fb0ef5f0e657:375
 system-dir:models/toolchain	specify	toolchain.specify.Declaration	definition=f008c7ec58b6b8996de589cd7e5ce17e0cc8ba0610e93e9ac4e1f24d786ff2aa:1384
-system-dir:models/toolchain	specify	toolchain.specify.Model	definition=db5c46da42596edfaca69a09c1cf3bcc3c53a4463b3770cd14f3e19bf9888716:7084
+system-dir:models/toolchain	specify	toolchain.specify.Model	definition=83ee69f5d4c1cade98097e606c57213ec78ecc74e717a3016f2587f69474085f:7102
 system-dir:models/toolchain	specify	toolchain.specify.Model	create	refused, selected
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.CompileModel	refused, compiled, wrong-state
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.ResolveModel	refused, resolved, wrong-state

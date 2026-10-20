@@ -2389,6 +2389,7 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::InputOrGenerated { .. }
                         | ResolvedPayloadValue::Struct { .. }
                         | ResolvedPayloadValue::RelatedField { .. }
+                        | ResolvedPayloadValue::RelatedState { .. }
                         | ResolvedPayloadValue::RelatedSelection { .. }
                         | ResolvedPayloadValue::RelatedHead { .. }
                         | ResolvedPayloadValue::CallerAttribute { .. }
@@ -2396,6 +2397,7 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::Expression { .. }
                         | ResolvedPayloadValue::ChangedField { .. }
                         | ResolvedPayloadValue::ChangedState { .. }
+                        | ResolvedPayloadValue::MissingElement { .. }
                         | ResolvedPayloadValue::ChangedCount => {
                             unreachable!(
                                 "literals, clears and value expressions were handled above"
@@ -3134,6 +3136,17 @@ impl Projector<'_> {
                 );
                 None
             }
+            // A list guard's missing element (ess/28, beyond10x/ess#558): its branch reads a
+            // related row, refused before this too.
+            ResolvedPayloadValue::MissingElement { .. } => {
+                self.diagnostic(
+                    LoweringCode::RelatedGuardUnsupported,
+                    format!("{}.{}", command.name, outcome.name.as_str()),
+                    "`{missing: …}` (ess/28) reads the element of a list of references that names \
+                     no row, which entity-core does not",
+                );
+                None
+            }
             // Admitted on a set outcome only (ess/25, beyond10x/ess#531), refused before this too.
             ResolvedPayloadValue::ChangedField { .. }
             | ResolvedPayloadValue::ChangedState { .. } => {
@@ -3162,6 +3175,7 @@ impl Projector<'_> {
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedState { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::Generated { present: true }
@@ -4086,6 +4100,7 @@ fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedState { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. }
             // ess/27 (beyond10x/ess#545): entity-core has no present mint and no read of the

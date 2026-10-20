@@ -1136,7 +1136,7 @@ test('the runtime admits the new suite majors and a fold in them', () => {
     'ess-conformance/26',
   );
   assert.match(
-    raised(() => admitSuite(document('ess-conformance/54', false))),
+    raised(() => admitSuite(document('ess-conformance/56', false))),
     /unsupported suite version/,
   );
 });

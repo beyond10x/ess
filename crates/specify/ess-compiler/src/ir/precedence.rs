@@ -42,12 +42,16 @@ impl<'c> PrecedencePlan<'c> {
         let mut rows: Vec<&str> = command
             .outcomes
             .iter()
-            .filter_map(|outcome| match &outcome.condition {
-                ResolvedCondition::Related {
-                    via: ResolvedRelatedVia::Input { field, .. },
-                    ..
-                } => Some(field.as_str()),
-                _ => None,
+            .flat_map(|outcome| match &outcome.condition {
+                // ess/28: every row an `all:` branch lists, as the domain's composition counts.
+                ResolvedCondition::Related { via, also, .. } => std::iter::once(via)
+                    .chain(also.iter().map(|row| &row.via))
+                    .filter_map(|via| match via {
+                        ResolvedRelatedVia::Input { field, .. } => Some(field.as_str()),
+                        ResolvedRelatedVia::Subject { .. } => None,
+                    })
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
             })
             .collect();
         rows.sort_unstable();

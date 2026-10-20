@@ -314,6 +314,12 @@ beyond10x/ess#560), in the family the row above defers: `aggregate:` beside `exp
 below `ess/27`, `expr:` in an aggregate view, and the expression's own refusal, each at
 `view.<name>.fields[<n>].expr`; one of them adds a `view` head literal below.
 
+`view.rs` gains two string-located sites with beyond10x/ess#564, a view field declaring both
+`aggregate:` and `field:`, and one declaring both `expr:` and `field:`, each at
+`view.<name>.fields[<index>].field`, written through the view's own `at` helper, so they add no
+head literal below. The rest of that construct's refusals are in `view/navigation.rs`, which this
+census does not walk, as it does not walk `view/absent.rs`.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
@@ -334,7 +340,7 @@ system_issued.rs 0 3
 topology.rs 10 0
 types.rs 23 1
 undeclared_fields.rs 0 4
-view.rs 33 0
+view.rs 35 0
 wire.rs 2 0
 ```
 <!-- inventory:end -->

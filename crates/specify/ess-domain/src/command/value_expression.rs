@@ -512,6 +512,20 @@ fn check(
                 errors.push(super::minted_value::read_elsewhere(at));
             }
         }
+        // ess/28 (beyond10x/ess#558): below it the shape is read back as a nested mapping.
+        PayloadSource::MissingElement { field } => {
+            if let Some(refusal) = super::related_list::check(
+                context.command,
+                context.outcome,
+                at,
+                target,
+                field,
+                depth == 0 && place == Place::Payload,
+                |from, to| context.resolved.conversions.permits(from, to),
+            ) {
+                errors.push(refusal);
+            }
+        }
         // ess/27 (beyond10x/ess#560): below it the shape is read back as a nested mapping.
         PayloadSource::Expression { .. } if depth > 0 => {
             errors.push(super::expression_value::nested_elsewhere(at));
@@ -588,6 +602,7 @@ fn kind(source: &PayloadSource) -> &'static str {
         PayloadSource::CallerAttribute { .. } => "`{caller: …}`",
         PayloadSource::ChangedCount => "`{count: changed}`",
         PayloadSource::ChangedField { .. } => "`{changed: …}`",
+        PayloadSource::MissingElement { .. } => "`{missing: …}`",
         _ => "payload",
     }
 }
@@ -869,6 +884,10 @@ fn ambiguous(
 /// names one further reference: a field of the row `via` names, typed the same way, which the
 /// relation that row's entity declares on it decides as the subject's does. Where any reference
 /// may be absent, so may the value, and the target must admit that.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one related read: the reference chain, the field or state read, and its type against the target"
+)]
 fn check_related(
     context: &Context<'_>,
     at: &ConstructRef,
@@ -922,21 +941,33 @@ fn check_related(
         entity = next;
         absent |= may_be_absent;
     }
-    let Some(read) = entity_field(entity, field) else {
+    let state;
+    let read_type = if let Some(read) = entity_field(entity, field) {
+        &read.type_ref
+    } else if field == crate::entity::EntitySpec::STATE {
+        // ess/28 (beyond10x/ess#557, `docs/design/generic-language-features.md` § G2): the
+        // referenced row's lifecycle state, as its guards read it, typed as its entity's `State`.
+        if context.spec.system().format.major() < FormatVersion::V28.major() {
+            errors.push(related_state_below(at, entity));
+            return;
+        }
+        state = TypeRef::Named(entity.name.child(crate::entity::EntitySpec::STATE_TYPE));
+        &state
+    } else {
         errors.push(not_a_field(at, entity, field));
         return;
     };
-    let value_type = if absent && !matches!(read.type_ref, TypeRef::Optional(_)) {
-        TypeRef::Optional(Box::new(read.type_ref.clone()))
+    let value_type = if absent && !matches!(read_type, TypeRef::Optional(_)) {
+        TypeRef::Optional(Box::new(read_type.clone()))
     } else {
-        read.type_ref.clone()
+        read_type.clone()
     };
     let conversions = &context.resolved.conversions;
     if conversions.permits(&value_type, &target.type_ref) {
         return;
     }
     // ess/27 (beyond10x/ess#556): the branch's own guard requires the field present.
-    let narrowable = match &read.type_ref {
+    let narrowable = match read_type {
         TypeRef::Optional(present) => {
             through.is_empty()
                 && context
@@ -965,7 +996,7 @@ fn check_related(
         );
         return;
     }
-    if absent && conversions.permits(&read.type_ref, &target.type_ref) {
+    if absent && conversions.permits(read_type, &target.type_ref) {
         errors.push(absent_into_required(at, entity, field, target));
         return;
     }
@@ -1031,6 +1062,21 @@ fn related_shape_refused(
         ));
     }
     None
+}
+
+/// The refusal of `{related: {…, field: state}}` below `ess/28`, where `state` was no field of the
+/// referenced row.
+fn related_state_below(at: &ConstructRef, entity: &crate::entity::EntitySpec) -> ValidationError {
+    ValidationError::at(
+        at.clone(),
+        ValidationCode::UnsupportedFormatVersion,
+        format!(
+            "`{{related: {{…, field: state}}}}` reads the lifecycle state of the `{}` row the \
+             reference names, which requires specification format ess/28",
+            entity.name
+        ),
+    )
+    .with_hint("declare `format: ess/28`, or read a declared field of the referenced row")
 }
 
 /// The refusal of a value read through a reference that may be absent into a target that cannot be

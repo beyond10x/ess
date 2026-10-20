@@ -356,6 +356,13 @@ pub(crate) enum Site {
         command: QualifiedName,
         outcome: OutcomeName,
     },
+    /// One element of an outcome's `when_related: {all: […]}` (ess/28), by position, over the row
+    /// that element names and `input.`.
+    RelatedAll {
+        command: QualifiedName,
+        outcome: OutcomeName,
+        index: usize,
+    },
     /// An outcome's row-set `when_related: {where}` (ess/22), over a candidate row and `input.`.
     RowSetWhere {
         command: QualifiedName,
@@ -415,6 +422,15 @@ impl Site {
                 command,
                 outcome: name,
             } => outcome(command, name, "when_related.predicate"),
+            Self::RelatedAll {
+                command,
+                outcome: name,
+                index,
+            } => outcome(
+                command,
+                name,
+                &format!("when_related.all[{index}].predicate"),
+            ),
             Self::RowSetWhere {
                 command,
                 outcome: name,
@@ -517,6 +533,22 @@ impl Written {
                         .get("when_related")
                         .and_then(|it| it.get("predicate")),
                 );
+                for (index, element) in outcome
+                    .get("when_related")
+                    .map(|guard| items(guard, "all"))
+                    .unwrap_or_default()
+                    .iter()
+                    .enumerate()
+                {
+                    put(
+                        Site::RelatedAll {
+                            command: name.clone(),
+                            outcome: outcome_name.clone(),
+                            index,
+                        },
+                        element.get("predicate"),
+                    );
+                }
                 put(
                     at(|command, outcome| Site::RowSetWhere { command, outcome }),
                     outcome.get("when_related").and_then(|it| it.get("where")),
@@ -642,6 +674,10 @@ fn input_guard_mut(condition: &mut OutcomeCondition) -> Option<&mut Predicate> {
 
 /// The predicate an assembled specification holds at `site`, to write. `None` where the site no
 /// longer exists in that shape, which leaves it as it is.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one dispatch over every site a predicate is written at"
+)]
 pub(crate) fn slot<'a>(
     site: &Site,
     commands: &'a mut BTreeMap<QualifiedName, CommandSpec>,
@@ -678,6 +714,21 @@ pub(crate) fn slot<'a>(
                 test: crate::command::related_guard::RelatedTest::Holds(predicate),
                 ..
             } => Some(predicate),
+            _ => None,
+        },
+        Site::RelatedAll {
+            command,
+            outcome: name,
+            index,
+        } => match &mut outcome(commands, command, name)?.condition {
+            OutcomeCondition::Related {
+                test: crate::command::related_guard::RelatedTest::Holds(predicate),
+                also,
+                ..
+            } if !also.is_empty() => match index.checked_sub(1) {
+                None => Some(predicate),
+                Some(at) => also.get_mut(at).map(|row| &mut row.predicate),
+            },
             _ => None,
         },
         Site::RowSetWhere {
@@ -879,6 +930,36 @@ pub(crate) fn resolutions(
                     over_row(&fields, entity, command, lexical),
                 ))
             }),
+            // One element of `all:` (ess/28): over the row that element names.
+            Site::RelatedAll {
+                command,
+                outcome: name,
+                index,
+            } => outcome(command, name).and_then(|(command, outcome)| {
+                let OutcomeCondition::Related {
+                    via,
+                    test: crate::command::related_guard::RelatedTest::Holds(predicate),
+                    also,
+                    ..
+                } = &outcome.condition
+                else {
+                    return None;
+                };
+                let (via, predicate) = match index.checked_sub(1) {
+                    None => (via, predicate),
+                    Some(at) => also.get(at).map(|row| (&row.via, &row.predicate))?,
+                };
+                let crate::command::related_value::Referenced::Entity(entity) =
+                    crate::command::related_guard::related_entity_via(spec, command, via)
+                else {
+                    return None;
+                };
+                let fields = crate::command::subject_fact::readable_fields(entity, true);
+                Some((
+                    predicate.clone(),
+                    over_row(&fields, entity, command, lexical),
+                ))
+            }),
             Site::RowSetWhere {
                 command,
                 outcome: name,
@@ -978,8 +1059,11 @@ pub(crate) fn resolutions(
                 let filter = view.filter.as_ref()?;
                 let entity = spec.entities().get(&view.source)?;
                 let fields = entity.observable_fields();
-                let environment =
-                    DomainEnvironment::new(registry, &fields).with_params(&view.params);
+                // A path through a reference reads the row it names (ess/28, beyond10x/ess#564).
+                let references = crate::view::navigation::references(spec, view);
+                let environment = DomainEnvironment::new(registry, &fields)
+                    .with_params(&view.params)
+                    .with_references(&references);
                 Some((
                     filter.clone(),
                     lower(
@@ -1101,16 +1185,22 @@ pub(crate) fn identity_orderings(
                 OutcomeCondition::Related {
                     via,
                     test: crate::command::related_guard::RelatedTest::Holds(predicate),
+                    also,
                     ..
                 } => {
-                    if let crate::command::related_value::Referenced::Entity(entity) =
-                        crate::command::related_guard::related_entity_via(spec, command, via)
-                    {
-                        found.extend(
-                            over_row(entity, command, predicate)
-                                .into_iter()
-                                .map(|ordering| ("when_related", ordering)),
-                        );
+                    // From ess/28 every row an `all:` branch lists, each over its own row.
+                    let rows = std::iter::once((via, predicate))
+                        .chain(also.iter().map(|row| (&row.via, &row.predicate)));
+                    for (via, predicate) in rows {
+                        if let crate::command::related_value::Referenced::Entity(entity) =
+                            crate::command::related_guard::related_entity_via(spec, command, via)
+                        {
+                            found.extend(
+                                over_row(entity, command, predicate)
+                                    .into_iter()
+                                    .map(|ordering| ("when_related", ordering)),
+                            );
+                        }
                     }
                 }
                 OutcomeCondition::RelatedSet {
