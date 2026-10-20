@@ -420,11 +420,9 @@ fn unprojected_identity(ir: &EssIr, selection: &ResolvedRowSelection) -> bool {
                 && identity::member_type(ir, &selection.entity, &path.segments().join("."))
                     .is_some()
         })
-        && !ir.drivers().get(&selection.entity).is_some_and(|drivers| {
-            drivers.iter().any(|driver| {
-                matches!(driver.effect, ResolvedEffect::Creates)
-                    && super::published_identity_input(driver.outcome).is_some()
-            })
+        && !ir.drivers_of(&selection.entity).iter().any(|driver| {
+            matches!(driver.effect, ResolvedEffect::Creates)
+                && super::published_identity_input(driver.outcome).is_some()
         })
 }
 
