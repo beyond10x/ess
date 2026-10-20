@@ -220,6 +220,8 @@ fn validate_instance_documents<'a>(
 ) -> (Vec<ValidInstance>, Vec<ValidationIssue>) {
     let mut valid = Vec::new();
     let mut issues = Vec::new();
+    // Each selected schema is compiled once, however many instances select it.
+    let mut compiled_schemas = BTreeMap::new();
     let mut ordered_instances = instances.to_vec();
     ordered_instances.sort_by_key(|document| document.location);
     for instance in ordered_instances {
@@ -238,7 +240,7 @@ fn validate_instance_documents<'a>(
             ));
             continue;
         };
-        let Some(schema) = indexed.get(identifier) else {
+        let Some((identifier, schema)) = indexed.get_key_value(identifier) else {
             issues.push(issue(
                 IssueCode::UnknownSchema,
                 instance.location,
@@ -247,14 +249,17 @@ fn validate_instance_documents<'a>(
             ));
             continue;
         };
-        let compiled = match validator(schema.value, registry) {
+        let compiled = match compiled_schemas
+            .entry(identifier.as_str())
+            .or_insert_with(|| validator(schema.value, registry).map_err(|error| error.to_string()))
+        {
             Ok(compiled) => compiled,
-            Err(error) => {
+            Err(message) => {
                 issues.push(issue(
                     IssueCode::UnresolvedSchema,
                     schema.location,
                     "",
-                    error.to_string(),
+                    message.clone(),
                 ));
                 continue;
             }

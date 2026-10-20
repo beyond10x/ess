@@ -242,9 +242,15 @@ pub fn project(args: &ProjectArgs) -> Result<ExitCode> {
 pub fn validate(args: &ValidateArgs) -> Result<ExitCode> {
     let imported = read(&args.bundle)?;
     let mut valid = 0;
+    // Compiled at the first instance, so an empty run and the first read fail as before.
+    let mut validator = None;
     for path in &args.instances {
         let instance = crate::schema::read_instance(path)?;
-        let errors = imported.validate(&args.root, &instance)?;
+        let validator = match &mut validator {
+            Some(validator) => validator,
+            empty => empty.insert(imported.validator(&args.root)?),
+        };
+        let errors = validator.validate(&instance);
         if errors.is_empty() {
             valid += 1;
         }
