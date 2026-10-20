@@ -510,6 +510,7 @@ fn unchosen(
         // ess/25 (#531): an event payload source only, never a row's.
         ResolvedPayloadValue::ChangedField { .. } => "`{changed: …}`",
         ResolvedPayloadValue::ChangedState { .. } => "`{changed: state}`",
+        ResolvedPayloadValue::MissingElement { .. } => "`{missing: …}`",
         ResolvedPayloadValue::RelatedSelection { .. } => {
             "a value read from the row a selector selects"
         }

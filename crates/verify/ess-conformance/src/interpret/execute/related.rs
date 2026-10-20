@@ -71,12 +71,45 @@ pub(super) fn missing(
                 return false;
             };
             !absent_optional(type_ref, input.get(field))
-                && input.get(field).is_some_and(|identity| {
-                    store
-                        .instance_typed(&ir.entity(entity).name, identity)
-                        .is_none()
-                })
+                && input
+                    .get(field)
+                    .is_some_and(|value| names_missing(ir, store, (via, entity), value))
         })
+}
+
+/// Whether `value`, read through `via`, names an identity no row of `entity` carries: one
+/// identity, or for a list of references (ess/28, beyond10x/ess#558) any of its elements. An empty
+/// list names none.
+pub(super) fn names_missing(
+    ir: &EssIr,
+    store: &State,
+    (via, entity): (&ResolvedRelatedVia, &EntityHandle),
+    value: &Node,
+) -> bool {
+    first_missing(ir, store, (via, entity), value).is_some()
+}
+
+/// The first identity `value` names, in list order for a list of references (ess/28,
+/// beyond10x/ess#558), that no row of `entity` carries; `None` where every one names a row.
+pub(super) fn first_missing(
+    ir: &EssIr,
+    store: &State,
+    (via, entity): (&ResolvedRelatedVia, &EntityHandle),
+    value: &Node,
+) -> Option<Node> {
+    let name = &ir.entity(entity).name;
+    let carried = |identity: &Node| store.instance_typed(name, identity).is_some();
+    match (via.type_ref(), value) {
+        (ResolvedTypeRef::List { .. }, Node::Seq(items)) => {
+            items.iter().find(|item| !carried(item)).cloned()
+        }
+        _ => (!carried(value)).then(|| value.clone()),
+    }
+}
+
+/// Whether `via` reads a list of references (ess/28, beyond10x/ess#558).
+pub(super) fn lists(via: &ResolvedRelatedVia) -> bool {
+    matches!(via.type_ref(), ResolvedTypeRef::List { .. })
 }
 
 /// One branch per related row the command reads, in the order its rows are read when looking for a
@@ -179,8 +212,9 @@ fn held_row<'a>(
             construct: "a related guard not named by command input".into(),
         });
     };
-    // An absent Optional reference holds no row, so its related branches are never selected.
-    if absent_optional(type_ref, input.get(field)) {
+    // An absent Optional reference holds no row, so its related branches are never selected; a
+    // list of references (ess/28) is tested for a missing row only, and holds no row either.
+    if absent_optional(type_ref, input.get(field)) || lists(via) {
         return Ok(None);
     }
     let identity = input

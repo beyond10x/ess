@@ -32,6 +32,18 @@
   blocked it, and its scenario asserts the state the arranged row holds. Generated Rust and Go keep
   the command an obligation and Entity Runtime lowering refuses it, each by name; below `ess/28`
   it is refused naming `ess/28` (beyond10x/ess#557, downstream report 2026-10-19, finding 9).
+- From `format: ess/28` a guard refuses a list of references naming a missing row,
+  `when_related: {via: input.<list>, exists: false}` over a `List<…>` of one entity's identity
+  (grid R's `when_related:` row, the existential over a list's elements of
+  `docs/design/generic-language-features.md` § G2): taken when some element names no row, never
+  for an empty list, and the refusal publishes the first such element with `{missing:
+  input.<list>}`. The interpreter reads every element; synthesis sends the refusal a created row
+  then an unknown identity and asserts the payload names the second, the accepting branch two
+  created rows, and every other run of the command an empty list. A `predicate:` over the listed
+  rows, a list in `all:`, a stored list and a list beside another related row are refused by
+  name; generated Rust and Go keep the command an obligation and Entity Runtime lowering refuses
+  it, each by name; below `ess/28` the guard keeps its refusal, its hint naming `ess/28`
+  (beyond10x/ess#558).
 
 ## [0.63.0] — 2026-10-19
 

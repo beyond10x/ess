@@ -22,7 +22,7 @@ decided today.
 |---|---|---|---|---|---|---|---|---|
 | `when:` | yes | no (separate key) | no (separate key) | no (separate key) | part: `==`/`!=` against a field (`ess/16`) | yes (`ess/16`) | n/a | `dom/command.rs:3263-3265`; `dom/command/caller_value.rs:359-363, 422-428`; `dom/expression.rs:487-505` |
 | `when_subject:` | yes (`ess/15`) | yes; `state` from `ess/18` | no | no | I don't know | yes (`ess/22`) | n/a | `dom/command/subject_fact.rs:370-384, 403-405, 446-479` |
-| `when_related:` predicate | yes | no | yes, its own row; `state` from `ess/20` | no: one kind of related row per command | I don't know | yes (`ess/22`) | n/a | `dom/command/related_guard.rs:1440-1487`; `dom/command/row_set.rs:295-297` |
+| `when_related:` predicate | yes | no | yes, its own row; `state` from `ess/20`; each row a `List` of references names, `exists: false` only (`ess/28`) | no: one kind of related row per command | I don't know | yes (`ess/22`) | n/a | `dom/command/related_guard.rs:1440-1487`; `dom/command/row_set.rs:295-297` |
 | row-set `where:` / `forall:` | yes | yes (`subject.`) | candidate row only | the selection itself | I don't know | yes (`ess/22`) | n/a | `dom/command/row_set.rs:242-251, 269-284` |
 | `instances:` / `affects:` `where:` | yes | `affects:` only | candidate row only | the selection itself | no | no | n/a | `dom/command/set_effects.rs:1738-1757, 1766-1800` |
 | entity / type invariant | n/a | own fields and `state` | no | no | n/a | no | n/a | `dom/entity.rs:970-978, 1053-1057` |

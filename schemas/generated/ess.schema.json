@@ -2770,6 +2770,20 @@
       },
       "additionalProperties": false
     },
+    "RawMissingSource": {
+      "description": "`{missing: input.<list>}` as written.",
+      "type": "object",
+      "required": [
+        "missing"
+      ],
+      "properties": {
+        "missing": {
+          "description": "The list input a `when_related: {via: input.<list>, exists: false}` guard of the branch reads, written `input.<list>`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "RawNestedSources": {
       "type": "object",
       "additionalProperties": {
@@ -3203,6 +3217,14 @@
           "allOf": [
             {
               "$ref": "#/definitions/RawChangedSource"
+            }
+          ]
+        },
+        {
+          "description": "`{missing: input.<list>}` (ess/28, beyond10x/ess#558).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawMissingSource"
             }
           ]
         },

@@ -196,6 +196,7 @@ pub(crate) mod precedence;
 mod refusal_policy;
 mod related;
 mod related_guard;
+mod related_list;
 mod repeated_identity;
 mod row_set;
 mod seeds;
@@ -3788,8 +3789,30 @@ fn run_as(
     // ess/27 (beyond10x/ess#543): the ties of a ranked head no creating input steers, each a gap
     // the scenario stands with.
     let mut row_gaps: Vec<RefusalCause> = Vec::new();
+    // ess/28 (beyond10x/ess#558): the list of references the branch is sent, where it guards on one.
+    let mut listed: Option<related_list::Listed> = None;
     let (setup, input) =
-        if rows {
+        if related_list::routes(command, outcome) {
+            if witness != Witness::Full {
+                return Err(related_guard::unarranged());
+            }
+            // A refusal acting on no row has nothing of its own to arrange: the rows its list
+            // names are the whole arrangement.
+            let (mut setup, input) = if outcome.subject.is_none() && outcome.error.is_some() {
+                let input = candidates(ir, command, &[], Distinction::PLAIN)
+                    .map_err(RefusalCause::NoWitness)?
+                    .into_iter()
+                    .next()
+                    .ok_or_else(related_guard::unarranged)?;
+                (Setup::none(), input)
+            } else {
+                arranged_as(ir, command, outcome, actors, routed, witness)?
+            };
+            listed = Some(related_list::arrange(
+                ir, command, outcome, actors, &mut setup, &input,
+            )?);
+            (setup, input)
+        } else if rows {
             if witness != Witness::Full {
                 return Err(row_set::unarranged());
             }
@@ -3918,7 +3941,7 @@ fn run_as(
     } else {
         outcome.subject.as_ref()
     };
-    let supplied = supply(
+    let mut supplied = supply(
         ir,
         command,
         &input,
@@ -3926,6 +3949,11 @@ fn run_as(
         setup.instance.as_ref(),
         &setup.bound,
     );
+    let mut listed_after = Vec::new();
+    if let Some(list) = listed {
+        supplied.insert(list.field, list.value);
+        listed_after = list.after;
+    }
     invoke.push(ScenarioStep::ExecuteCommand {
         caller: std::collections::BTreeMap::new(),
         command: command_ref,
@@ -3992,6 +4020,8 @@ fn run_as(
         (Vec::new(), Vec::new(), Vec::new(), BTreeSet::new())
     };
     refused.extend(row_gaps);
+    // ess/28 (#558): the accepting branch sent an empty list once its own claims are read.
+    after_steps.extend(listed_after);
     accepts_nothing(ir, outcome, &mut setup, &mut invoke, &mut after_steps);
     collision_witness(
         ir,
@@ -6540,6 +6570,14 @@ fn supply(
             };
             (field.clone(), supplied)
         })
+        .collect::<BTreeMap<_, _>>()
+        .into_iter()
+        // A list of references a guard reads (ess/28, beyond10x/ess#558) is sent empty by every
+        // run but the one `related_list` arranges, which names no missing row.
+        .map(|(field, supplied)| match related_list::empty(command) {
+            Some((listed, empty)) if listed == field => (field, empty),
+            _ => (field, supplied),
+        })
         .collect()
 }
 
@@ -7785,6 +7823,12 @@ fn determined_fields(
                     values.insert(field.target.clone(), value);
                 }
             }
+            // ess/28 (#558): the element of the sent list the scenario arranged no row for.
+            ResolvedPayloadValue::MissingElement { field: list, .. } => {
+                if let Some(value) = related_list::first_missing(supplied, list) {
+                    values.insert(field.target.clone(), value);
+                }
+            }
             // ess/14: asserted where the arrangement determined what they read, as a literal.
             ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::SubjectState { .. }
@@ -8941,6 +8985,10 @@ fn expression_value_at(
         | ResolvedPayloadValue::ChangedState { .. } => {
             before.get(HELD_STATE).map(|held| held.value.clone())
         }
+        // ess/28 (#558): the element of the sent list the scenario arranged no row for.
+        ResolvedPayloadValue::MissingElement { field: list, .. } => {
+            related_list::first_missing(supplied, list).map(ScenarioValue::literal)
+        }
         // ess/16 (#166): the referenced row's value, which `related::arrange` settled — absent
         // where a reference it follows was left absent (ess/22, beyond10x/ess#285).
         ResolvedPayloadValue::RelatedField {
@@ -9828,6 +9876,7 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         | ResolvedPayloadValue::PayloadRead { .. }
         | ResolvedPayloadValue::ChangedField { .. }
         | ResolvedPayloadValue::ChangedState { .. }
+        | ResolvedPayloadValue::MissingElement { .. }
         | ResolvedPayloadValue::ChangedCount => {}
     }
 }
@@ -10375,6 +10424,8 @@ fn settled(
             // ess/25 (#531): an event payload source only, never a row's.
             | ResolvedPayloadValue::ChangedField { .. }
             | ResolvedPayloadValue::ChangedState { .. }
+            // ess/28 (#558): a refusal's or an event's payload source only, never a row's.
+            | ResolvedPayloadValue::MissingElement { .. }
             | ResolvedPayloadValue::ChangedCount => continue,
         };
         out.insert(

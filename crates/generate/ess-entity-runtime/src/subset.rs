@@ -135,6 +135,7 @@ pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -
         | Source::CallerAttribute { .. }
         | Source::ChangedField { .. }
         | Source::ChangedState { .. }
+        | Source::MissingElement { .. }
         | Source::ChangedCount => LoweringCode::ValueExpressionUnsupported.construct(),
     }
 }

@@ -1278,6 +1278,7 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 | ess_compiler::ir::ResolvedPayloadValue::Expression { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::MissingElement { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
             let conversion = field
@@ -2363,6 +2364,7 @@ fn written_sets(
                 | ess_compiler::ir::ResolvedPayloadValue::Expression { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::MissingElement { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
             let conversion = field

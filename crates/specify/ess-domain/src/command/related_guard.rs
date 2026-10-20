@@ -664,9 +664,11 @@ pub fn related_entity<'a>(
             .and_then(|subject| spec.entities().get(&subject.entity));
         related_value::input_carrier(outcome, subject, via)
     });
+    // A list of references names one entity's rows, each element its identity (ess/28).
+    let declared = super::related_list::element(&read.type_ref).unwrap_or(&read.type_ref);
     related_value::referenced_entity(
         spec,
-        identity_type(&read.type_ref),
+        identity_type(declared),
         carrier
             .as_ref()
             .map(|(entity, field)| (*entity, field.as_str())),
@@ -1312,6 +1314,12 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
             errors.extend(gated);
             continue;
         }
+        // ess/28 (beyond10x/ess#558): the rows a list of references names, `exists: false` only.
+        let listed = super::related_list::gates(spec, command);
+        if !listed.is_empty() {
+            errors.extend(listed);
+            continue;
+        }
         let Some(first) = read_via(command) else {
             continue;
         };
@@ -1647,8 +1655,11 @@ fn entity_or_refusal<'a>(
         );
         return None;
     };
+    // From ess/28 a `List<…>` input names a row per element (beyond10x/ess#558); the gate
+    // refused it below ess/28 before this is read.
+    let declared = super::related_list::element(&read.type_ref).unwrap_or(&read.type_ref);
     if !matches!(
-        identity_type(&read.type_ref),
+        identity_type(declared),
         TypeRef::Primitive(_) | TypeRef::Named(_)
     ) {
         errors.push(

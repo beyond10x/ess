@@ -47,6 +47,27 @@ pub(super) struct Reads<'a> {
 }
 
 impl<'a> Reads<'a> {
+    /// `{missing: input.<list>}` (ess/28, beyond10x/ess#558): the first element of the list the
+    /// outcome's `when_related: {via: input.<list>, exists: false}` guard reads that names no row
+    /// of the guard's entity in the original store; no value where every element names one.
+    pub(super) fn missing_element(
+        self,
+        ir: &EssIr,
+        field: &str,
+        input: &super::Context<'_>,
+    ) -> Option<Value> {
+        let ess_compiler::ir::ResolvedCondition::Related { via, entity, .. } =
+            &self.outcome.condition
+        else {
+            return None;
+        };
+        if via.field() != field {
+            return None;
+        }
+        let value = input.get(field)?;
+        super::related::first_missing(ir, self.original, (via, entity), value).map(Value::Known)
+    }
+
     /// `{related: …}` (ess/16): the field of the row the reference names, read from the original
     /// store. From ess/22 (beyond10x/ess#285) a reference may be `Optional<…>` and a chain follows
     /// one further reference from that row: an absent reference reads no row and yields an absent

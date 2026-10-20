@@ -157,12 +157,14 @@ pub(super) fn reads_entity(command: &ResolvedCommand, entity: &EntityHandle) -> 
     rows(command).iter().any(|(_, related)| *related == entity)
 }
 
-/// Whether any branch of this command reads a related row.
+/// Whether any branch of this command reads a related row; a command guarding on the rows a list
+/// of references names is arranged by [`super::related_list`] instead (ess/28).
 pub(super) fn uses(command: &ResolvedCommand) -> bool {
-    command
-        .outcomes
-        .iter()
-        .any(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }))
+    !super::related_list::uses(command)
+        && command
+            .outcomes
+            .iter()
+            .any(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }))
 }
 
 /// Whether this strategy arranges the scenario for `outcome`: every branch of a command reading a

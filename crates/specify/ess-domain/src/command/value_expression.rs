@@ -512,6 +512,20 @@ fn check(
                 errors.push(super::minted_value::read_elsewhere(at));
             }
         }
+        // ess/28 (beyond10x/ess#558): below it the shape is read back as a nested mapping.
+        PayloadSource::MissingElement { field } => {
+            if let Some(refusal) = super::related_list::check(
+                context.command,
+                context.outcome,
+                at,
+                target,
+                field,
+                depth == 0 && place == Place::Payload,
+                |from, to| context.resolved.conversions.permits(from, to),
+            ) {
+                errors.push(refusal);
+            }
+        }
         // ess/27 (beyond10x/ess#560): below it the shape is read back as a nested mapping.
         PayloadSource::Expression { .. } if depth > 0 => {
             errors.push(super::expression_value::nested_elsewhere(at));
@@ -588,6 +602,7 @@ fn kind(source: &PayloadSource) -> &'static str {
         PayloadSource::CallerAttribute { .. } => "`{caller: …}`",
         PayloadSource::ChangedCount => "`{count: changed}`",
         PayloadSource::ChangedField { .. } => "`{changed: …}`",
+        PayloadSource::MissingElement { .. } => "`{missing: …}`",
         _ => "payload",
     }
 }

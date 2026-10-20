@@ -97,3 +97,26 @@ fn generated_behaviour_names_two_rows_in_one_branch_owed() {
         );
     }
 }
+
+const LEDGER: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/list-of-references.yaml");
+
+/// A guard over the rows a list of references names (`when_related: {via: input.<list>, exists:
+/// false}`, ess/28, beyond10x/ess#558) keeps its command owed, named for the list.
+#[test]
+fn generated_behaviour_names_a_list_of_references_owed() {
+    let ir = model(LEDGER);
+    for target in [Target::Rust, Target::Go] {
+        let synthesis = synthesize_for(&ir, target).expect("a realizable target");
+        let reason = owed(
+            &synthesis,
+            CapabilityKind::CommandBehavior,
+            "ledger.desk.OpenIncident",
+        )
+        .unwrap_or_else(|| panic!("{target:?}: `OpenIncident` is owed"));
+        assert!(
+            reason.contains("the list `input.services`"),
+            "{target:?}: the list is named: {reason}"
+        );
+    }
+}

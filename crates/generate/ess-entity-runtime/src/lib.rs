@@ -2397,6 +2397,7 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::Expression { .. }
                         | ResolvedPayloadValue::ChangedField { .. }
                         | ResolvedPayloadValue::ChangedState { .. }
+                        | ResolvedPayloadValue::MissingElement { .. }
                         | ResolvedPayloadValue::ChangedCount => {
                             unreachable!(
                                 "literals, clears and value expressions were handled above"
@@ -3132,6 +3133,17 @@ impl Projector<'_> {
                     format!("{}.{}", command.name, outcome.name.as_str()),
                     "`{count: changed}` (ess/16) counts the rows a set outcome changed, which \
                      entity-core does not",
+                );
+                None
+            }
+            // A list guard's missing element (ess/28, beyond10x/ess#558): its branch reads a
+            // related row, refused before this too.
+            ResolvedPayloadValue::MissingElement { .. } => {
+                self.diagnostic(
+                    LoweringCode::RelatedGuardUnsupported,
+                    format!("{}.{}", command.name, outcome.name.as_str()),
+                    "`{missing: …}` (ess/28) reads the element of a list of references that names \
+                     no row, which entity-core does not",
                 );
                 None
             }

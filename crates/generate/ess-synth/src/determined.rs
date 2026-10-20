@@ -223,6 +223,16 @@ fn outcome(
                 "a guard over several related rows at once (`when_related: {all: […]}`)".to_owned(),
             )
         }
+        // The rows a list of references names (ess/28, beyond10x/ess#558): no emitter reads a row
+        // per element in this cut, so the command stays an obligation, named.
+        ResolvedCondition::Related { via, .. }
+            if matches!(via.type_ref(), ess_compiler::ir::ResolvedTypeRef::List { .. }) =>
+        {
+            return Err(format!(
+                "a guard over the rows the list `{via}` names (`when_related: {{via: <list>, \
+                 exists: false}}`)"
+            ))
+        }
         ResolvedCondition::Related {
             entity,
             test,
@@ -563,6 +573,13 @@ fn value(
         }
         ResolvedPayloadValue::ChangedCount => {
             return Err(format!("`{{count: changed}}` for `{}`", field.target));
+        }
+        // A list guard's missing element (ess/28, beyond10x/ess#558).
+        ResolvedPayloadValue::MissingElement { .. } => {
+            return Err(format!(
+                "`{{missing: …}}`, the element of a list of references naming no row, for `{}`",
+                field.target
+            ));
         }
         // A set outcome is refused before its sources are read (ess/25, beyond10x/ess#531).
         ResolvedPayloadValue::ChangedField { .. } | ResolvedPayloadValue::ChangedState { .. } => {

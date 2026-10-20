@@ -464,6 +464,7 @@ fn include_payload_field(
         | ResolvedPayloadValue::SubjectState { type_ref }
         | ResolvedPayloadValue::ChangedField { type_ref, .. }
         | ResolvedPayloadValue::ChangedState { type_ref }
+        | ResolvedPayloadValue::MissingElement { type_ref, .. }
         | ResolvedPayloadValue::InputOrGenerated { type_ref, .. }
         | ResolvedPayloadValue::CallerAttribute { type_ref, .. }
         | ResolvedPayloadValue::PayloadRead { type_ref, .. }

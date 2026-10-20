@@ -1270,6 +1270,16 @@ pub enum ResolvedPayloadValue {
         /// The entity's `State` type, or `Optional<…>` of it where a reference may be absent.
         type_ref: ResolvedTypeRef,
     },
+    /// The first element, in list order, of a list input that names no row of the entity the
+    /// branch's `when_related: {via: input.<list>, exists: false}` guard reads (ess/28,
+    /// beyond10x/ess#558): `{missing: input.<list>}`. Only a model using it carries it, so every
+    /// other model keeps its bytes.
+    MissingElement {
+        /// The list input read.
+        field: String,
+        /// The element's type.
+        type_ref: ResolvedTypeRef,
+    },
     /// An attribute of the authenticated caller (ess/16, beyond10x/ess#168): `{caller:
     /// account_id}`. Every actor that may invoke the command declares it, at this type.
     CallerAttribute {
@@ -1906,6 +1916,9 @@ impl ResolvedPayloadValue {
             }
             Self::ChangedState { .. } => {
                 "the state the changed row held before the outcome".to_owned()
+            }
+            Self::MissingElement { field, .. } => {
+                format!("the first element of input.{field} that names no row")
             }
             Self::Increment { by } => format!("its previous value plus {by}"),
             Self::InputOrGenerated {

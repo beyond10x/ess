@@ -409,6 +409,7 @@ impl Specification {
         crate::command::caller_value::read_below_ess_16(system.format, &mut collected.commands);
         crate::command::set_effects::read_below_ess_16(system.format, &mut collected.commands);
         crate::command::set_effects::read_below_ess_25(system.format, &mut collected.commands);
+        crate::command::related_list::read_below_ess_28(system.format, &mut collected.commands);
         let mut specification = Self {
             system,
             entities: collected.entities,

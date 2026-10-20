@@ -3272,6 +3272,39 @@ impl<'a> Resolver<'a> {
                 };
                 read
             }
+            // The first element of a list of references naming no row (ess/28,
+            // beyond10x/ess#558), at the element's type: `ess-domain` admitted it only on the
+            // branch whose guard refuses that list for a missing row.
+            PayloadSource::MissingElement { field } => {
+                let element = input
+                    .and_then(|input| input.iter().find(|held| held.name == *field))
+                    .and_then(|held| match &held.type_ref {
+                        ResolvedTypeRef::List { of } => Some((**of).clone()),
+                        _ => None,
+                    });
+                let Some(element) = element else {
+                    self.refuse_payload(
+                        command,
+                        outcome,
+                        block,
+                        Some((&target.name, source)),
+                        codes::COMMAND_UNDECLARED_REFERENCE,
+                        format!(
+                            "outcome `{}` of `{}` reads `{{missing: input.{field}}}`, and                              `input.{field}` is no list input",
+                            outcome.name, command.name
+                        ),
+                        Vec::new(),
+                    );
+                    return None;
+                };
+                (
+                    ResolvedPayloadValue::MissingElement {
+                        field: field.clone(),
+                        type_ref: element.clone(),
+                    },
+                    element,
+                )
+            }
             _ => unreachable!("every other source is resolved by `payload_field`"),
         };
         let conversion = self.crossing(command, outcome, block, target, source, &from)?;
@@ -5977,6 +6010,7 @@ fn payload_constant_source(
         | PayloadSource::CallerAttribute { .. }
         | PayloadSource::PayloadRead { .. }
         | PayloadSource::Expression { .. }
+        | PayloadSource::MissingElement { .. }
         | PayloadSource::ChangedField { .. } => return None,
         PayloadSource::ChangedCount => ResolvedPayloadValue::ChangedCount,
         PayloadSource::Increment { by, .. } => ResolvedPayloadValue::Increment { by: by.clone() },

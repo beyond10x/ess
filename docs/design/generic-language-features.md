@@ -234,6 +234,11 @@ two rows (`E[input.a].direction == E[input.b].direction`) is one such branch per
 navigation reaches guard predicates. Aggregate, paged and `absent:` views refuse navigation by name. Each
 navigated view is witnessed by a `<view>/reference/<field>` scenario (suite/54 and /55): two
 referenced rows, a decoy, an absent reference, and a second read after the named row changes.
+The same format quantifies over a list of references (beyond10x/ess#558): `when_related: {via:
+input.<list>, exists: false}` over a `List<…>` of one entity's identity is `not forall(id in
+input.<list>: exists(E[id]))`, false for an empty list, and `{missing: input.<list>}` reads the
+first element naming no row. A predicate over each listed row waits for navigation in guard
+predicates and is refused by name.
 
 | existing construct | as G2 |
 |---|---|

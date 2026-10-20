@@ -441,6 +441,7 @@ fn reads_other_rows(command: &ResolvedCommand) -> bool {
             | ResolvedPayloadValue::Expression { .. }
             | ResolvedPayloadValue::ChangedField { .. }
             | ResolvedPayloadValue::ChangedState { .. }
+            | ResolvedPayloadValue::MissingElement { .. }
             | ResolvedPayloadValue::ChangedCount => false,
         }
     }

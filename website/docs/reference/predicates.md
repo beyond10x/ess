@@ -1352,6 +1352,38 @@ unchecked. Where every writer refuses such an identity, synthesis reports `ESS-S
 `exists: false` branch, naming it unreachable. Generated Rust, Go, Web and clap targets keep the
 command a hand-written obligation, and their contract states this order.
 
+### The rows a list of references names
+
+From `ess/28` (beyond10x/ess#558) `via:` may name an input typed `List<…>` of one entity's
+identity. The guard is taken when some element names no row of that entity; an empty list names
+no missing row and selects no such branch. The refusal may publish the first element, in list
+order, that names no row, with `{missing: input.<list>}`, typed as the element:
+
+```yaml
+- name: unknown-service
+  when_related: {via: input.services, exists: false}
+  error: ledger.desk.UnknownService
+  payload: {ledger.desk.UnknownService: {service_id: {missing: input.services}}}
+- name: opened
+  creates: ledger.desk.Incident
+  instance: incident_id
+  sets: {services: input.services}
+```
+
+A list is tested for a missing row only: a `predicate:` over the rows it names is refused as
+`unsupported_construct` (test each row's fields with a row-set guard), as is a list in `all:`; a
+command guarding on a list reads no other related row (`conflicting_declaration`); a stored list
+field keeps the `type_mismatch` it had. `{missing: …}` anywhere but a whole payload field of the
+branch guarding that list is refused by name. Under `ess/27` and earlier the list guard is refused
+as `type_mismatch`, its hint naming `ess/28`, and `{missing: …}` is the nested mapping it always
+was.
+
+Synthesis sends the refusal a list whose first element names a row the scenario created and whose
+second names none, and asserts that the payload names the second; it sends the accepting branch a
+list naming two created rows, and every other run of the command an empty list. A target that
+checks only the first element, answers "some row exists", or refuses an empty list fails. Generated
+Rust and Go keep the command an obligation, named, and Entity Runtime lowering refuses it.
+
 ## A guard over the rows a selector selects
 
 From `ess/22` (beyond10x/ess#228, beyond10x/ess#299), a branch may be guarded by the rows of an

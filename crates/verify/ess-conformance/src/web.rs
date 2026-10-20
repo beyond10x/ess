@@ -268,6 +268,7 @@ fn set_source(set: &ess_compiler::ir::ResolvedPayloadField) -> Option<String> {
         | ess_compiler::ir::ResolvedPayloadValue::Expression { .. }
         | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
         | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
+        | ess_compiler::ir::ResolvedPayloadValue::MissingElement { .. }
         | ess_compiler::ir::ResolvedPayloadValue::ChangedCount => None,
     }
 }

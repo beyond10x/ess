@@ -217,6 +217,7 @@ pub(crate) mod outcome_shapes;
 pub mod precedence;
 pub mod published_operand;
 pub mod related_guard;
+pub mod related_list;
 pub use related_guard::RelatedTest;
 pub mod related_rows;
 pub mod related_value;
@@ -1260,6 +1261,13 @@ pub enum PayloadSource {
         /// The entity field read, the identity included, or `state`.
         field: String,
     },
+    /// The first element, in list order, of the list a `when_related: {via: input.<list>, exists:
+    /// false}` guard of this branch reads that names no row: `{missing: input.<list>}` (ess/28,
+    /// beyond10x/ess#558, [`related_list`]).
+    MissingElement {
+        /// The list input read.
+        field: String,
+    },
     /// A value computed by an expression: `{expr: "input.ended_at - input.started_at"}` (ess/27,
     /// beyond10x/ess#560, [`expression_value`], `docs/design/generic-language-features.md` § G1).
     ///
@@ -1344,6 +1352,9 @@ impl fmt::Display for PayloadSource {
             Self::ChangedCount => f.write_str("{count: changed}"),
             Self::ChangedField { field } => write!(f, "{{changed: {field}}}"),
             Self::Expression { expr } => write!(f, "{{expr: \"{expr}\"}}"),
+            Self::MissingElement { field } => {
+                write!(f, "{{missing: {}{field}}}", Self::INPUT_PREFIX)
+            }
             Self::Increment { by, .. } => write!(f, "increment by {by}"),
             Self::InputOrGenerated {
                 field,
@@ -1385,7 +1396,8 @@ impl PayloadSource {
             | Self::RelatedHead { .. }
             | Self::CallerAttribute { .. }
             | Self::ChangedCount
-            | Self::ChangedField { .. } => true,
+            | Self::ChangedField { .. }
+            | Self::MissingElement { .. } => true,
             Self::ResponseField { .. }
             | Self::Generated { .. }
             | Self::PayloadRead { .. }
@@ -1451,6 +1463,8 @@ enum RawPayloadSource {
     Expr(expression_value::RawExprSource),
     /// `{changed: <field>}` (ess/25, beyond10x/ess#531).
     Changed(set_effects::RawChangedSource),
+    /// `{missing: input.<list>}` (ess/28, beyond10x/ess#558).
+    Missing(related_list::RawMissingSource),
     Nested(RawNestedSources),
     /// A list of texts, read only as the `via:` of `{related: …}` (ess/22, beyond10x/ess#285) and
     /// refused anywhere else; the schema gives it there and nowhere else.
@@ -1675,6 +1689,9 @@ impl<'de> serde::de::Visitor<'de> for Source {
         }
         if let Some(changed) = set_effects::RawChangedSource::recognise(&entries) {
             return Ok(RawPayloadSource::Changed(changed));
+        }
+        if let Some(missing) = related_list::RawMissingSource::recognise(&entries) {
+            return Ok(RawPayloadSource::Missing(missing));
         }
         if !entries.is_empty()
             && entries
@@ -1990,6 +2007,7 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
             RawPayloadSource::PayloadRead(read) => Ok(read.into_source()),
             RawPayloadSource::Expr(expression) => Ok(expression.into_source()),
             RawPayloadSource::Changed(changed) => Ok(changed.into_source()),
+            RawPayloadSource::Missing(missing) => Ok(missing.into_source()),
             RawPayloadSource::Nested(RawNestedSources(entries)) => entries
                 .into_iter()
                 .map(|(target, source)| {
@@ -2233,6 +2251,9 @@ impl From<&PayloadSource> for RawPayloadSource {
             PayloadSource::ChangedCount => Self::Count(set_effects::RawCountSource::changed()),
             PayloadSource::ChangedField { field } => {
                 Self::Changed(set_effects::RawChangedSource::of(field))
+            }
+            PayloadSource::MissingElement { field } => {
+                Self::Missing(related_list::RawMissingSource::of(field))
             }
             PayloadSource::Increment { by, scalar } => explicit(&|e| {
                 e.increment = Some(match scalar {
@@ -4163,7 +4184,9 @@ fn check_payload_entry(
         | PayloadSource::RelatedHead { .. }
         | PayloadSource::CallerAttribute { .. }
         // Checked with the changed rows' entity in hand by `set_effects::validate`.
-        | PayloadSource::ChangedField { .. } => {}
+        | PayloadSource::ChangedField { .. }
+        // Checked against the branch's list guard by `value_expression`.
+        | PayloadSource::MissingElement { .. } => {}
         PayloadSource::ChangedCount => {
             errors.extend(set_effects::check_count(at, outcome, filled));
         }
@@ -4406,6 +4429,7 @@ fn reads_row(source: &PayloadSource) -> bool {
         | PayloadSource::Cleared
         | PayloadSource::PayloadRead { .. }
         | PayloadSource::CallerAttribute { .. }
+        | PayloadSource::MissingElement { .. }
         | PayloadSource::ChangedCount => false,
     }
 }
