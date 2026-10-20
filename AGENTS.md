@@ -89,14 +89,22 @@ the checkout's own `target/`, because test binaries bake `CARGO_BIN_EXE_*` and
 shards leave a partition unrun, or when `Gate` misses a job. Local `task test` still runs
 `cargo test` over everything.
 
-**A pull request runs the feature-off build on number semantics only.** With `FEATURE_OFF` set to
-`number-semantics` (pull requests only), the feature-off archive keeps every feature-off package
-except ess-cli, plus ess-cli's unit tests and its `binary64*`, `normalization*`, `schema*` and
+**A pull request from an ordinary branch runs the feature-off build on number semantics only.**
+With `FEATURE_OFF` set to `number-semantics` (a `pull_request` run whose head is not a `queue/`
+branch of this repository, and a `merge_group` run), the feature-off archive keeps every feature-off package except
+ess-cli, plus ess-cli's unit tests and its `binary64*`, `normalization*`, `schema*` and
 `execution_recovery` binaries (`FEATURE_OFF_NUMBER_SEMANTICS` in `Taskfile.yml`). The rest of
 ess-cli's feature-off run — every other ess-cli integration binary compiled without
-`arbitrary_precision` — has moved to the `main` push, the nightly `schedule` run and the release
-gate, which archive all of it. `ci_lanes.rs` fails if an ess-cli test binary whose source names
-`arbitrary_precision` falls outside the filter.
+`arbitrary_precision` — runs on the `main` push, the nightly `schedule` run, the release gate and
+the pull-request run of a `queue/**` head, which archive all of it. `ci_lanes.rs` fails if an
+ess-cli test binary whose source names `arbitrary_precision` falls outside the filter.
+
+**A queue head runs CI once, as its pull request, and that run is full.** `ci.yml` does not run
+on a `queue/**` push (`package.yml` still does): on 2026-10-19 one queue push started two 27-job
+runs of the same commit (push 39285366577 and pull_request 39285374142) against the plan's 20
+concurrent jobs, and shards waited 1,500–3,900 s. The pull-request run is the one the ruleset's
+required `Gate` reads and the one whose compile cache `rust-cache` saves, so it is the one kept,
+and it archives every feature-off case because the release tag reuses it (below).
 
 Test builds carry line tables only (`[profile.dev] debug`), and `sha2`, `flate2` and `tar` are
 optimised in them. CI's Linux jobs link with lld through
@@ -176,10 +184,12 @@ a one-line `package.json` change, `npm --prefix website install`, and `cargo xta
 refusal saying the IR is not the compiled model means `ess-ui`'s pinned ESS release and this
 workspace compile the example differently: move the `ess-ui` pin to a commit built on this release.
 
-**The release gate is the CI run on the tag.** `release.yml` runs the reusable `ci.yml` gate on
-the tagged commit, always and in full (below); that run is the full pre-release suite. Run no
-local pre-release suite and no local full gate before a release: each unit passes its package
-gates, the pull request's CI gates the merge into `main`, and the tag run gates the release. A wave holds at most 5 stories and ends in one release.
+**The release gate is a full CI gate on the tagged tree.** `release.yml` runs the reusable
+`ci.yml` gate on the tagged commit in full unless every check the ruleset requires already passed
+on that tree in a qualifying run (below); either run is the full pre-release suite. Run no local pre-release suite and no local
+full gate before a release: each unit passes its package gates, the queue pull request's CI gates
+the merge into `main`, and that run or the tag run gates the release. A wave holds at most 5
+stories and ends in one release.
 
 `task test-browser-product` and `task test-slow-probes` run in no CI lane (those Firefox tests and
 slow probes are ignored in the CI test shards); run them locally when a change touches what they
@@ -198,20 +208,52 @@ cases in `ess-ui-react` exit 127 and `cargo test` stops there.
 Consumer coverage is not part of that bar while it is parked (revision 3, above).
 The release workflow runs the reusable gate, the WebAssembly realization check and native
 packaging concurrently at that exact commit, then retains a read-only preparation artifact only
-after all succeed. It runs the full reusable gate on every tag and never reuses a pull-request or
-`main` `Gate`, whatever already ran on the tagged bytes: the tag run is the release gate, and a
-pull-request `Gate` runs the narrowed feature-off build (above). A call from `release.yml` passes
+after all succeed. Its `prior-gate` step skips the gate only when every check the ruleset
+requires — `Gate`, `Output ownership (macos-15)` and `Output ownership (macos-15-intel)` — already
+passed on the tagged bytes in a qualifying run. Of a commit's check-runs of one name (GitHub
+Actions' own, newest first, at most one page of 100), the first whose workflow run qualifies
+decides, and only a completed success passes; at most the newest ten are looked up. A run
+qualifies when it is this repository's `ci.yml` at that commit (`head_repository`, `head_sha`) and
+archived every feature-off case: a `push` or `schedule` run of `main`, or a `pull_request` run
+whose head branch is `queue/…` (a pull request from any other head or from a fork, and a
+`merge_group` run, are narrowed, above, and never count). The gate is skipped when **either** of
+these holds:
+
+1. the tagged commit itself passed every required check, normally in the `main` push run; or
+2. all of the following hold:
+   - `GET /repos/{owner}/{repo}/commits/{sha}/pulls` returns exactly one merged pull request of
+     this repository (`head.repo`) into `main` whose `merge_commit_sha` is the tagged commit, and
+     that pull request's head is the tagged commit's second parent;
+   - `git rev-parse <sha>^{tree}` equals `<head>^{tree}` (the merge into `main` is a new commit,
+     so trees are compared, not commits);
+   - the tagged commit's first parent (`main` before the merge) is an ancestor of that head;
+   - that head passed every required check in a qualifying run, normally its queue pull-request
+     run (a `main` push or nightly run at that commit would count too).
+
+Anything else runs the gate: a backfill (`workflow_dispatch`), an API failure, a squash, a merge
+whose base moved, a merge whose tree is not its head's, a fork's pull request or run. The tree
+equality makes the tested bytes the tagged bytes. The ancestry makes the head's run a test of
+those bytes: a `pull_request` run tests the head merged into the base of its day, and under the
+ruleset's strict status-check policy that is the head's own tree. So tag the merge commit as soon
+as it lands; there is no need to wait for `main`'s run. A call from `release.yml` passes
 `checkout-ref`, which `ci.yml` never narrows, so a backfill dispatched from any branch runs it in
-full too. The macOS output-ownership witnesses run on every tag as well; only a backfill
-(`workflow_dispatch`), which may gate a commit older than their test target, skips them. `ci_lanes.rs` (`a_release_tag_always_runs_its_full_gate`) holds both workflows to that.
+full. The macOS output-ownership witnesses run in a tag's gate and in every pull-request run, and
+a tag that reuses a commit's checks requires both witnesses green there beside `Gate`; only a
+backfill, which may gate a commit older than their test target, skips them. `ci_lanes.rs`
+(`a_release_runs_its_full_gate_unless_a_full_gate_passed_the_tagged_tree`,
+`a_release_reuses_a_full_gate_on_the_tagged_tree_and_otherwise_runs_it`) holds both workflows to
+that and runs the step against real Git histories.
 
 The four archives are usually built before the tag exists. `.github/workflows/package.yml` runs
 on every `queue/**` push and packages the commit when its workspace version has a dated changelog
-section and no tag yet. The release's `prebuilt` step uses that run's archives only when
-all of these hold: it is a successful `package.yml` push run of a `queue/` branch, at the tagged
-commit, and it still holds all four `release-<target>` artifacts unexpired. Anything else, including
-an API failure, calls `package.yml` from the release and builds them there. Either way the
-preparation job checks the four names and `SHA256SUMS` and runs the Linux x86_64 binary's
+section and no tag yet. That commit is the queue head, never the merge commit a tag names, so the
+release's `prebuilt` step is keyed on the head `prior-gate` resolved (rule 2's head, reported
+whenever its tree is the tagged tree; keyed on the tagged commit, 0.61.0 and 0.62.0 both logged
+"no successful queue package run built …" and built again). It uses that run's archives only when
+all of these hold: a head was resolved, it is a successful `package.yml` push run of a `queue/`
+branch at that head, and it still holds all four `release-<target>` artifacts unexpired. Anything
+else, including an API failure, calls `package.yml` from the release and builds them there. Either
+way the preparation job checks the four names and `SHA256SUMS` and runs the Linux x86_64 binary's
 `--version` against the tag. `ci_lanes.rs` runs the `prebuilt` step against canned API answers.
 
 Compile caches are saved only by `main` and pull-request runs (`save-if` on every

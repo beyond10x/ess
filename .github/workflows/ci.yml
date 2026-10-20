@@ -16,12 +16,11 @@ name: CI
 
 on:
   push:
-    branches: [main, 'queue/**']
+    branches: [main]
+  # A queue head runs once, as its pull request; a `queue/**` push runs no `ci.yml`.
   pull_request:
   merge_group:
     types: [checks_requested]
-  # A pull request runs the feature-off cases on number semantics only (`FEATURE_OFF` below);
-  # `main` pushes, this nightly run and the release gate run every one of them.
   schedule:
     - cron: "17 3 * * *"
   workflow_call:
@@ -204,11 +203,13 @@ jobs:
     env:
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_TEST_DEBUG: "0"
-      # A pull request's feature-off archive holds the number-semantics cases only
-      # (`FEATURE_OFF_NUMBER_SEMANTICS` in the Taskfile); every other event archives all of them.
-      # A call from `release.yml` passes `checkout-ref` and always archives all of them, whatever
-      # branch a backfill was dispatched from: the tag run is the release gate.
-      FEATURE_OFF: ${{ inputs.checkout-ref == '' && (github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')) && 'number-semantics' || 'full' }}
+      # A pull request from an ordinary head and a merge-group run archive the number-semantics
+      # cases only (`FEATURE_OFF_NUMBER_SEMANTICS` in the Taskfile). A pull request from a
+      # `queue/` head of this repository (a fork can name a branch anything), a `main` push, the
+      # nightly run and a call from `release.yml` (`checkout-ref`, whatever branch a backfill was
+      # dispatched from) archive all of them: the release tag reuses the queue head's run in place
+      # of its own gate.
+      FEATURE_OFF: ${{ inputs.checkout-ref == '' && (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && !(startsWith(github.head_ref, 'queue/') && github.event.pull_request.head.repo.full_name == github.repository))) && 'number-semantics' || 'full' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -488,10 +489,12 @@ jobs:
 
   output-ownership-macos:
     name: Output ownership (${{ matrix.runner }})
-    # Branch/PR validation and every release tag qualify the protocol on both shipped macOS
-    # architectures. Only a release backfill (`workflow_dispatch`) skips it: it can ask this
-    # reusable workflow to gate an older source commit that predates this test target, and that
-    # commit's own Taskfile and native packaging remain authoritative.
+    # A pull request, a `main` push, the nightly run and a release tag's own gate run the protocol
+    # on both shipped macOS architectures; the ruleset requires both witnesses, and a release that
+    # reuses a commit's checks (`release.yml`'s `prior-gate` step) requires them green there too.
+    # Only a release backfill (`workflow_dispatch`) skips it: it can ask this reusable workflow to
+    # gate an older source commit that predates this test target, and that commit's own Taskfile
+    # and native packaging remain authoritative.
     if: ${{ inputs.checkout-ref == '' || github.event_name != 'workflow_dispatch' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30

@@ -9,7 +9,8 @@ vars:
   # The feature-off cases a pull request runs, when `FEATURE_OFF=number-semantics`: every package
   # but ess-cli, ess-cli's unit tests, and the ess-cli binaries about number semantics — every one
   # whose source names `arbitrary_precision` among them, which `ci_lanes.rs` checks. The `main`
-  # push, the nightly run, the release gate and local `task test` run all of it.
+  # push, the nightly run, the release gate, a queue head's pull-request run and local `task test`
+  # run all of it.
   FEATURE_OFF_NUMBER_SEMANTICS: >-
     not package(ess-cli) | kind(lib) | kind(bin) | binary(/^(binary64|normalization|schema|execution_recovery)/)
 
