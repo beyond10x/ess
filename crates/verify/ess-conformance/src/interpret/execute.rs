@@ -1590,8 +1590,7 @@ fn related_absent(
                 branch(spec, read)
             ));
         };
-        let entity = &ir.entity(entity).name;
-        if store.instance_typed(entity, identity).is_some() {
+        if !related::names_missing(ir, store, (via, entity), identity) {
             continue;
         }
         return missing_row(ir, spec, store, input, generated, responses, Some(field));
@@ -1992,7 +1991,12 @@ fn error_value(
             field.conversion.as_deref(),
             reads.before,
         )?,
-        ResolvedPayloadValue::RelatedField { .. } => reads.related(ir, field, input)?,
+        ResolvedPayloadValue::RelatedField { .. } | ResolvedPayloadValue::RelatedState { .. } => {
+            reads.related(ir, field, input)?
+        }
+        ResolvedPayloadValue::MissingElement { field: read, .. } => {
+            reads.missing_element(ir, read, input)
+        }
         ResolvedPayloadValue::InputField { field: read, .. } => input
             .get(read)
             .filter(|value| **value != Node::Null)
@@ -2556,7 +2560,12 @@ fn value_at(
         ResolvedPayloadValue::ResponseField { .. } => {
             values::response(ir, field, work.response.as_ref()).map(|value| value.map(Value::Known))
         }
-        ResolvedPayloadValue::RelatedField { .. } => work.reads().related(ir, field, input),
+        ResolvedPayloadValue::RelatedField { .. } | ResolvedPayloadValue::RelatedState { .. } => {
+            work.reads().related(ir, field, input)
+        }
+        ResolvedPayloadValue::MissingElement { field: read, .. } => {
+            Ok(work.reads().missing_element(ir, read, input))
+        }
         // The one row the selector selects in the store as it was before the outcome (ess/22,
         // beyond10x/ess#299); none or several supply no value.
         ResolvedPayloadValue::RelatedSelection { selection, .. } => {

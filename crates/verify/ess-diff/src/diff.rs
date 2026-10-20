@@ -1129,19 +1129,32 @@ fn written_condition(condition: &ResolvedCondition) -> String {
                 .as_ref()
                 .map_or(String::new(), |guard| format!(" and {guard}")),
         ),
+        // Every row an `all:` branch lists (ess/28): a row added, dropped or retested moves it.
         ResolvedCondition::Related {
             via,
             entity,
             test,
             input,
+            also,
         } => format!(
-            "when {}{}",
+            "when {}{}{}",
             match test {
                 ess_compiler::ir::ResolvedRelatedTest::Absent =>
                     format!("no {} carries {via}", entity.name()),
                 ess_compiler::ir::ResolvedRelatedTest::Holds { predicate } =>
                     format!("the {} {via} names satisfies {predicate}", entity.name()),
             },
+            also.iter().fold(String::new(), |mut rows, row| {
+                use std::fmt::Write as _;
+                let _ = write!(
+                    rows,
+                    " and the {} {} names satisfies {}",
+                    row.entity.name(),
+                    row.via,
+                    row.predicate
+                );
+                rows
+            }),
             input
                 .as_ref()
                 .map_or(String::new(), |guard| format!(" and {guard}")),
@@ -1255,6 +1268,7 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedState { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedHead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
@@ -1264,6 +1278,7 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 | ess_compiler::ir::ResolvedPayloadValue::Expression { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::MissingElement { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
             let conversion = field
@@ -1871,6 +1886,8 @@ fn compare_views(
         }),
     });
 
+    compare_field_sources(was, is, push);
+
     let (old_params, new_params) = (
         parameter_contracts(&was.params),
         parameter_contracts(&is.params),
@@ -1937,6 +1954,29 @@ fn computes<'v>(
     view.aggregation
         .as_ref()
         .and_then(|aggregation| aggregation.functions.get(field))
+}
+
+/// Where each field present on both sides reads its value (ess/28, beyond10x/ess#564): its source's own
+/// field, or `<reference>.<field>` of the row a reference names. A view reading through no reference
+/// on either side reports nothing here, so its delta keeps its format.
+fn compare_field_sources(was: &ResolvedView, is: &ResolvedView, push: &mut impl FnMut(ViewChange)) {
+    let read = |view: &ResolvedView, field: &str| {
+        view.related_read(field)
+            .map(|(reference, read)| format!("{}.{read}", reference.via))
+    };
+    for field in &is.fields {
+        if was.field(&field.name).is_none() {
+            continue;
+        }
+        let (before, after) = (read(was, &field.name), read(is, &field.name));
+        if before != after {
+            push(ViewChange::FieldSourceChanged {
+                field: field.name.clone(),
+                before,
+                after,
+            });
+        }
+    }
 }
 
 /// A view's answer for an identity no row carries (`absent:`, ess/25): the default row only, since
@@ -2314,6 +2354,7 @@ fn written_sets(
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedState { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedSelection { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedHead { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
@@ -2323,6 +2364,7 @@ fn written_sets(
                 | ess_compiler::ir::ResolvedPayloadValue::Expression { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedState { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::MissingElement { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
             let conversion = field
@@ -2716,6 +2758,9 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                     "assertion_style",
                     "aggregation",
                     "computed",
+                    // `field-source-changed` and `filter-changed` (ess/28, beyond10x/ess#564); the
+                    // entity each reference names is the source entity's relation.
+                    "references",
                 ],
             );
         }

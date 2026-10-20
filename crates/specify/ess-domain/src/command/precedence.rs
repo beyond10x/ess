@@ -396,12 +396,16 @@ impl Composition {
         let mut rows: Vec<&str> = command
             .outcomes
             .iter()
-            .filter_map(|outcome| match &outcome.condition {
-                OutcomeCondition::Related {
-                    via: RelatedVia::Input(field),
-                    ..
-                } => Some(field.as_str()),
-                _ => None,
+            .flat_map(|outcome| match &outcome.condition {
+                // ess/28: every row an `all:` branch reads counts as one of the rows.
+                OutcomeCondition::Related { via, also, .. } => std::iter::once(via)
+                    .chain(also.iter().map(|row| &row.via))
+                    .filter_map(|via| match via {
+                        RelatedVia::Input(field) => Some(field.as_str()),
+                        RelatedVia::Subject(_) => None,
+                    })
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
             })
             .collect();
         rows.sort_unstable();

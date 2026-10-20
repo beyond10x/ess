@@ -103,11 +103,12 @@ pub(crate) fn admitted_in(major: u32) -> bool {
         || crate::hold_now::ADMITTED.contains(&major)
         || crate::value_invariant::ADMITTED.contains(&major)
         || crate::system_issued::ADMITTED.contains(&major)
+        || crate::view_reference::ADMITTED.contains(&major)
 }
 
 /// What refuses seed provenance under any other major.
 pub(crate) const OUTSIDE: &str =
-    "synthesis seeds require suite/42 or /43, or a cumulative pair above them: /44 or /45, /46 or /47, /48 or /49, /50 or /51, /52 or /53";
+    "synthesis seeds require suite/42 or /43, or a cumulative pair above them: /44 or /45, /46 or /47, /48 or /49, /50 or /51, /52 or /53, /54 or /55";
 
 fn refuse(path: &str, detail: impl Into<String>) -> AdmissionError {
     AdmissionError::new("InvalidSynthesisSeeds", path, detail)
@@ -177,7 +178,7 @@ fn addressed(steps: &[ScenarioStep], at: usize, instance: &InstanceName) -> Opti
     .then_some(position)
 }
 
-/// Refuse seed provenance outside suite/42 through /53, its absence in /42 and /43, and any record
+/// Refuse seed provenance outside suite/42 through /55, its absence in /42 and /43, and any record
 /// that is not bound to the suite's own steps. `coverage` is the admitted inventory, where there
 /// is one: a selected coverage suite may name an application whose scenario its selection filter
 /// moved outside, and its retained parent proves that use.

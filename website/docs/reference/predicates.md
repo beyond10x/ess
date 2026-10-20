@@ -29,7 +29,7 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 | an entity's `invariants` | the entity's own fields and its lifecycle `state` | Checked after every branch that creates or changes the entity. A required field an invariant reads must be set by every `creates:` branch, or declared `Optional<…>`; otherwise validate refuses it with `ESS-COMMAND-018`. |
 | a struct type's `invariants` | the struct's own fields | Same grammar, checked against the type. |
 | a newtype's `invariants` | the wrapped value, as `value` | For example `value != ""` on a newtype of `String`. |
-| a view's `filter` | the source entity's fields and its lifecycle `state` | Selects the rows the view returns. |
+| a view's `filter` | the source entity's fields and its lifecycle `state`; from `ess/28` also a field, the identity or `state` of the row a reference of the source names, as `<reference>.<field>`, one hop | Selects the rows the view returns. A path through a reference is unknown where the reference is absent or names no row, and the row is then not shown; see [a view reads the row a reference names](../guides/specify/views.md#a-view-reads-the-row-a-reference-names). |
 | a binding cause's `where` (`ess/22`) | the triggering event's payload, as `event.<member>` | A bounded fragment: presence, `==`/`!=` of a String or enum leaf against a text literal and, from `ess/27`, of a Boolean leaf against `true` or `false`, and `all`/`any`/`not`. A bare Boolean path is no comparison. See [binding conditions](../guides/specify/binding-conditions.md). |
 | a binding selection's `where` | one list item's fields | A bounded fragment: presence, typed equality and inequality of a String or enum leaf and, from `ess/27`, of a Boolean leaf against `true` or `false`, and `all`/`any`/`not`. See [select ordered records in a binding](../guides/specify/binding-context.md#select-ordered-records-in-a-binding). |
 
@@ -1293,6 +1293,26 @@ both rows missing for the first declared `exists: false`, an earlier Optional re
 beside a missing row, a refusing row beside a missing one, and two refusing rows for the first
 declared refusal. A target that reads the rows in another order, or ignores one, fails.
 
+From `ess/28` (downstream report 2026-10-19, finding 11) one branch may require several of those
+rows at once: `all:` lists each row, named by an input of its own, with the predicate it must hold.
+
+```text
+- name: both-inbound
+  when_related:
+    all:
+      - {via: input.from_port, predicate: direction == inbound}
+      - {via: input.to_port, predicate: direction == inbound}
+  error: wiring.board.SameDirection
+```
+
+The branch holds where every listed row exists and holds its predicate; it is a present-related
+refusal (or acceptance) like any other, and each listed row needs its own `exists: false` answer.
+At least two rows, each listed once, each `{via: input.<field>, predicate: …}`, and `all:` alone;
+every other shape is refused by name, and below `ess/28` the branch is refused naming `ess/28`. A
+comparison across rows, `from.direction == to.direction`, is written as one branch per value.
+Synthesis arranges every listed row to hold its predicate and every other row beside it so that
+nothing answers first; a target reading one of the rows only fails.
+
 ### A stored reference
 
 From `ess/22` (beyond10x/ess#304), `via` may name a stored field of the subject the command
@@ -1331,6 +1351,38 @@ stored identity no row carries is witnessed only where the act that writes the f
 unchecked. Where every writer refuses such an identity, synthesis reports `ESS-SYNTH-003` for the
 `exists: false` branch, naming it unreachable. Generated Rust, Go, Web and clap targets keep the
 command a hand-written obligation, and their contract states this order.
+
+### The rows a list of references names
+
+From `ess/28` (beyond10x/ess#558) `via:` may name an input typed `List<…>` of one entity's
+identity. The guard is taken when some element names no row of that entity; an empty list names
+no missing row and selects no such branch. The refusal may publish the first element, in list
+order, that names no row, with `{missing: input.<list>}`, typed as the element:
+
+```yaml
+- name: unknown-service
+  when_related: {via: input.services, exists: false}
+  error: ledger.desk.UnknownService
+  payload: {ledger.desk.UnknownService: {service_id: {missing: input.services}}}
+- name: opened
+  creates: ledger.desk.Incident
+  instance: incident_id
+  sets: {services: input.services}
+```
+
+A list is tested for a missing row only: a `predicate:` over the rows it names is refused as
+`unsupported_construct` (test each row's fields with a row-set guard), as is a list in `all:`; a
+command guarding on a list reads no other related row (`conflicting_declaration`); a stored list
+field keeps the `type_mismatch` it had. `{missing: …}` anywhere but a whole payload field of the
+branch guarding that list is refused by name. Under `ess/27` and earlier the list guard is refused
+as `type_mismatch`, its hint naming `ess/28`, and `{missing: …}` is the nested mapping it always
+was.
+
+Synthesis sends the refusal a list whose first element names a row the scenario created and whose
+second names none, and asserts that the payload names the second; it sends the accepting branch a
+list naming two created rows, and every other run of the command an empty list. A target that
+checks only the first element, answers "some row exists", or refuses an empty list fails. Generated
+Rust and Go keep the command an obligation, named, and Entity Runtime lowering refuses it.
 
 ## A guard over the rows a selector selects
 

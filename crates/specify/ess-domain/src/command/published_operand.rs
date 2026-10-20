@@ -428,6 +428,7 @@ fn not_a_snapshot(source: &PayloadSource, members: &[String]) -> Option<&'static
         | PayloadSource::RelatedSelection { .. }
         | PayloadSource::RelatedHead { .. }
         | PayloadSource::CallerAttribute { .. }
+        | PayloadSource::MissingElement { .. }
         | PayloadSource::PayloadRead { .. } => None,
     }
 }

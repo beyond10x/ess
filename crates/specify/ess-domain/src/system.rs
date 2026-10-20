@@ -52,7 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27,
+    27, 28,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -290,6 +290,17 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 28,
+        release: None,
+        added: &[
+            "A value may read the lifecycle state of the row a reference names, `{related: {via, field: state}}`, through a chained `via:` too, typed as that entity's `State` and read as the row's guards read `state`; a refusal's error payload reading the row its `when_related:` guard reads is asserted by the refusal's scenario; below `ess/28` the read is refused as `unsupported_format_version` naming `ess/28` (beyond10x/ess#557).",
+            "A view may read the row a reference of its source names, one hop, as that row is when the view is read: a field declaring `field: {related: {via: <reference>, field: <field | state>}}`, typed `Optional` because it is absent where the reference is absent or names no row, and a filter path `<reference>.<field>`, unknown there, so the row is not shown; a reference is a field typed as one entity's identity, or `Optional` of one, by the rule `{related: …}` follows. Navigation in an aggregate view, beside `paging:` or `absent:`, or as an `order_by:` key is refused as `unsupported_construct`, a field read through a reference under the name of a source field as `conflicting_declaration`, and below `ess/28` each is refused as `unsupported_format_version` naming `ess/28`; a model without it keeps its IR bytes. Each such view is witnessed by a `<view>/reference/<field>` scenario (suite/54 and /55) reading it before and after the referenced row changes, and generated Rust and Go keep its query an obligation, named (beyond10x/ess#564).",
+            "A branch may require several related rows at once, `when_related: {all: [{via: input.<field>, predicate: …}, …]}`: at least two rows, each named by a distinct input identity, every one present and satisfying its own predicate; it answers among the present related rows' refusals, each row it lists needs its own `exists: false` answer, an element that is not a row an input names with a `predicate:`, a repeated row, a single row and `all:` beside another key are refused, and below `ess/28` the branch is refused as `unsupported_format_version` naming `ess/28`; generated Rust and Go keep the command an obligation and Entity Runtime lowering refuses it, each by name (downstream report 2026-10-19, finding 11).",
+            "A `when_related:` guard may read an input typed `List<…>` of one entity's identity, `when_related: {via: input.<list>, exists: false}`: taken when some element names no row of that entity, so an empty list selects no such branch; the branch's error or event payload may read the first element, in list order, that names no row, `{missing: input.<list>}`, typed as the element. A `predicate:` over the rows a list names, a list in `all:`, a stored list field and a list beside another related row are refused by name; below `ess/28` the list guard keeps its `type_mismatch`, its hint naming `ess/28`, and `{missing: …}` is the nested mapping it was. Synthesis sends the refusal a created row then an identity no row carries and asserts the payload names the second, sends the accepting branch two created rows, and every other run an empty list; generated Rust and Go keep the command an obligation and Entity Runtime lowering refuses it, each by name (beyond10x/ess#558).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -402,6 +413,12 @@ impl FormatVersion {
     /// shorthand field, a value written as that field alone (beyond10x/ess#594), and a selector
     /// testing each candidate's related rows (beyond10x/ess#551).
     pub const V27: Self = Self(27);
+    /// Queries over rows, the rest of the first cut after `ess/27` shipped
+    /// (`docs/design/generic-language-features.md` § G2): a related row's lifecycle state as a
+    /// value (beyond10x/ess#557), a view reading the row a reference of its source names
+    /// (beyond10x/ess#564), several related rows required in one branch, and a guard over the
+    /// rows a list of references names (beyond10x/ess#558).
+    pub const V28: Self = Self(28);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

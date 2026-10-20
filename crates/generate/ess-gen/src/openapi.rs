@@ -2398,9 +2398,10 @@ fn condition_description(condition: &ResolvedCondition) -> String {
             entity,
             test,
             input,
+            also,
         } => format!(
             "{}{}.",
-            ess_compiler::ir::related_sentence(via, entity, test),
+            ess_compiler::ir::related_rows_sentence(via, entity, test, also),
             input.as_ref().map_or(String::new(), |guard| format!(
                 " and `{guard}` holds of the input"
             )),

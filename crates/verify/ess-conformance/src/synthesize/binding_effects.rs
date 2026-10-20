@@ -1050,6 +1050,9 @@ fn related_decided<'a>(
             ResolvedCondition::Otherwise => true,
             // Answered first, for an identity a row already carries; the event fills a fresh one.
             ResolvedCondition::ExistingInstance => false,
+            // A branch also requiring further rows (ess/28, `all:`) is decided by rows this does not
+            // arrange.
+            ResolvedCondition::Related { also, .. } if !also.is_empty() => return None,
             ResolvedCondition::Related {
                 via: read,
                 test,

@@ -62,6 +62,7 @@ fn every_condition() -> Vec<(OutcomeCondition, bool)> {
                 via: RelatedVia::Input("tenant".into()),
                 test: RelatedTest::Absent,
                 input: None,
+                also: Vec::new(),
             },
             true,
         ),
@@ -174,6 +175,7 @@ fn a_branch_shape_carries_the_facts_its_phase_depends_on() {
             via: RelatedVia::Subject("assignee".into()),
             test: RelatedTest::Holds(predicate("active == false")),
             input: None,
+            also: Vec::new(),
         }),
         ConditionShape::Related {
             stored: true,
@@ -425,6 +427,7 @@ fn stored_related(test: RelatedTest) -> OutcomeCondition {
         via: RelatedVia::Subject("blocked_by".into()),
         test,
         input: None,
+        also: Vec::new(),
     }
 }
 

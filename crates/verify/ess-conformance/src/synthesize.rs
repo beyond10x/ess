@@ -196,6 +196,7 @@ pub(crate) mod precedence;
 mod refusal_policy;
 mod related;
 mod related_guard;
+mod related_list;
 mod repeated_identity;
 mod row_set;
 mod seeds;
@@ -206,6 +207,7 @@ mod subject_fact;
 pub(crate) mod system_issued;
 mod value_invariant;
 mod view_grant;
+mod view_reference;
 
 pub use seeds::{AdmittedSeeds, SeedAdmissionError, SeedSelection};
 
@@ -2579,6 +2581,8 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
         // (`docs/design/aggregate-group-selection.md`); the final selection below still runs.
         suite.select_fresh_format();
         aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
+        // A view read through a reference of its source (ess/28, beyond10x/ess#564).
+        view_reference::references(ir, &actors, &mut suite, &mut refusals);
     }
     // Every scenario sending a row-set command keeps only the branch its rows decide (ess/22).
     row_set::contradictions(ir, &mut suite, &mut refusals);
@@ -3785,8 +3789,30 @@ fn run_as(
     // ess/27 (beyond10x/ess#543): the ties of a ranked head no creating input steers, each a gap
     // the scenario stands with.
     let mut row_gaps: Vec<RefusalCause> = Vec::new();
+    // ess/28 (beyond10x/ess#558): the list of references the branch is sent, where it guards on one.
+    let mut listed: Option<related_list::Listed> = None;
     let (setup, input) =
-        if rows {
+        if related_list::routes(command, outcome) {
+            if witness != Witness::Full {
+                return Err(related_guard::unarranged());
+            }
+            // A refusal acting on no row has nothing of its own to arrange: the rows its list
+            // names are the whole arrangement.
+            let (mut setup, input) = if outcome.subject.is_none() && outcome.error.is_some() {
+                let input = candidates(ir, command, &[], Distinction::PLAIN)
+                    .map_err(RefusalCause::NoWitness)?
+                    .into_iter()
+                    .next()
+                    .ok_or_else(related_guard::unarranged)?;
+                (Setup::none(), input)
+            } else {
+                arranged_as(ir, command, outcome, actors, routed, witness)?
+            };
+            listed = Some(related_list::arrange(
+                ir, command, outcome, actors, &mut setup, &input,
+            )?);
+            (setup, input)
+        } else if rows {
             if witness != Witness::Full {
                 return Err(row_set::unarranged());
             }
@@ -3915,7 +3941,7 @@ fn run_as(
     } else {
         outcome.subject.as_ref()
     };
-    let supplied = supply(
+    let mut supplied = supply(
         ir,
         command,
         &input,
@@ -3923,6 +3949,11 @@ fn run_as(
         setup.instance.as_ref(),
         &setup.bound,
     );
+    let mut listed_after = Vec::new();
+    if let Some(list) = listed {
+        supplied.insert(list.field, list.value);
+        listed_after = list.after;
+    }
     invoke.push(ScenarioStep::ExecuteCommand {
         caller: std::collections::BTreeMap::new(),
         command: command_ref,
@@ -3989,6 +4020,8 @@ fn run_as(
         (Vec::new(), Vec::new(), Vec::new(), BTreeSet::new())
     };
     refused.extend(row_gaps);
+    // ess/28 (#558): the accepting branch sent an empty list once its own claims are read.
+    after_steps.extend(listed_after);
     accepts_nothing(ir, outcome, &mut setup, &mut invoke, &mut after_steps);
     collision_witness(
         ir,
@@ -6179,12 +6212,12 @@ fn invoke_created_with(
     // A payload-only source keeps its existing outer arrangement. This seam is for stored
     // copies needed by a later subject/view; arranging payload-only reads here would duplicate
     // the sources that the later branch already arranges (#166).
-    if !driver
-        .outcome
-        .sets
-        .iter()
-        .any(|set| matches!(set.value, ResolvedPayloadValue::RelatedField { .. }))
-    {
+    if !driver.outcome.sets.iter().any(|set| {
+        matches!(
+            set.value,
+            ResolvedPayloadValue::RelatedField { .. } | ResolvedPayloadValue::RelatedState { .. }
+        )
+    }) {
         return Ok(invoke_with(ir, driver, None, actors, bound, input));
     }
     let mut setup = Setup::none();
@@ -6536,6 +6569,14 @@ fn supply(
                 },
             };
             (field.clone(), supplied)
+        })
+        .collect::<BTreeMap<_, _>>()
+        .into_iter()
+        // A list of references a guard reads (ess/28, beyond10x/ess#558) is sent empty by every
+        // run but the one `related_list` arranges, which names no missing row.
+        .map(|(field, supplied)| match related_list::empty(command) {
+            Some((listed, empty)) if listed == field => (field, empty),
+            _ => (field, supplied),
         })
         .collect()
 }
@@ -7782,6 +7823,12 @@ fn determined_fields(
                     values.insert(field.target.clone(), value);
                 }
             }
+            // ess/28 (#558): the element of the sent list the scenario arranged no row for.
+            ResolvedPayloadValue::MissingElement { field: list, .. } => {
+                if let Some(value) = related_list::first_missing(supplied, list) {
+                    values.insert(field.target.clone(), value);
+                }
+            }
             // ess/14: asserted where the arrangement determined what they read, as a literal.
             ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::SubjectState { .. }
@@ -7789,6 +7836,7 @@ fn determined_fields(
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedState { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::CallerAttribute { .. }
@@ -7868,6 +7916,7 @@ fn absent_by_reference_leaves(
 /// beyond10x/ess#285).
 fn absent_by_reference(value: &ResolvedPayloadValue) -> bool {
     matches!(value, ResolvedPayloadValue::RelatedField { via, through, .. }
+        | ResolvedPayloadValue::RelatedState { via, through, .. }
         if ess_compiler::ir::related_may_be_absent(via, through))
 }
 
@@ -8936,6 +8985,10 @@ fn expression_value_at(
         | ResolvedPayloadValue::ChangedState { .. } => {
             before.get(HELD_STATE).map(|held| held.value.clone())
         }
+        // ess/28 (#558): the element of the sent list the scenario arranged no row for.
+        ResolvedPayloadValue::MissingElement { field: list, .. } => {
+            related_list::first_missing(supplied, list).map(ScenarioValue::literal)
+        }
         // ess/16 (#166): the referenced row's value, which `related::arrange` settled — absent
         // where a reference it follows was left absent (ess/22, beyond10x/ess#285).
         ResolvedPayloadValue::RelatedField {
@@ -8945,6 +8998,15 @@ fn expression_value_at(
             ..
         } => before
             .get(&related::key(via, through, read))
+            .map(|held| held.value.clone()),
+        // ess/28 (#557): the referenced row's state, which `related` settled under the key of
+        // `state` where it arranged that row.
+        ResolvedPayloadValue::RelatedState { via, through, .. } => before
+            .get(&related::key(
+                via,
+                through,
+                ess_domain::entity::EntitySpec::STATE,
+            ))
             .map(|held| held.value.clone()),
         // ess/22 (#299): the one selected row's value, which `row_set` settled where it arranged
         // exactly one row the selector selects.
@@ -9776,6 +9838,10 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         ResolvedPayloadValue::RelatedField {
             via: ess_compiler::ir::ResolvedRelatedVia::Input { field, .. },
             ..
+        }
+        | ResolvedPayloadValue::RelatedState {
+            via: ess_compiler::ir::ResolvedRelatedVia::Input { field, .. },
+            ..
         } => out.push((field, Read::Needed)),
         ResolvedPayloadValue::Struct { fields } => {
             for leaf in fields {
@@ -9803,12 +9869,14 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         | ResolvedPayloadValue::SubjectField { .. }
         | ResolvedPayloadValue::RelatedField { .. }
         | ResolvedPayloadValue::Increment { .. }
+        | ResolvedPayloadValue::RelatedState { .. }
         | ResolvedPayloadValue::SubjectState { .. }
         | ResolvedPayloadValue::CallerAttribute { .. }
         // ess/27 (#545): what the payload field reads is collected from the payload itself.
         | ResolvedPayloadValue::PayloadRead { .. }
         | ResolvedPayloadValue::ChangedField { .. }
         | ResolvedPayloadValue::ChangedState { .. }
+        | ResolvedPayloadValue::MissingElement { .. }
         | ResolvedPayloadValue::ChangedCount => {}
     }
 }
@@ -10336,6 +10404,7 @@ fn settled(
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedState { .. }
             | ResolvedPayloadValue::RelatedSelection { .. }
             | ResolvedPayloadValue::RelatedHead { .. }
             | ResolvedPayloadValue::CallerAttribute { .. }
@@ -10355,6 +10424,8 @@ fn settled(
             // ess/25 (#531): an event payload source only, never a row's.
             | ResolvedPayloadValue::ChangedField { .. }
             | ResolvedPayloadValue::ChangedState { .. }
+            // ess/28 (#558): a refusal's or an event's payload source only, never a row's.
+            | ResolvedPayloadValue::MissingElement { .. }
             | ResolvedPayloadValue::ChangedCount => continue,
         };
         out.insert(
@@ -11984,6 +12055,20 @@ fn row_truth(
     identity: Option<&ScenarioValue>,
     params: &BTreeMap<String, ScenarioValue>,
 ) -> Result<bool, Vec<FactPath>> {
+    row_truth_with(ir, view, filter, (state, settled), identity, params, &[])
+}
+
+/// [`row_truth`], with `navigated` bound beside the row: what a filter path reading through a
+/// reference (`<via>.<member>`, ess/28, beyond10x/ess#564) reads of the row it names.
+fn row_truth_with(
+    ir: &EssIr,
+    view: &ResolvedView,
+    filter: &Predicate,
+    (state, settled): (&StateName, &BTreeMap<String, Determined>),
+    identity: Option<&ScenarioValue>,
+    params: &BTreeMap<String, ScenarioValue>,
+    navigated: &[(FactPath, FactValue)],
+) -> Result<bool, Vec<FactPath>> {
     // A filter reads the source's rows. A row-level view projects them at the source's types, so
     // its own fields type the facts; an aggregate view's fields are group keys and results, and
     // `talk_seconds` in its filter is the row's value and never the sum a field of that name holds.
@@ -12062,6 +12147,9 @@ fn row_truth(
     }
     for (path, token) in identity::facts(ir, view, settled, identity, params) {
         facts.set(path, token);
+    }
+    for (path, value) in navigated {
+        facts.set(path.clone(), value.clone());
     }
 
     match filter.evaluate(&facts) {
@@ -17110,7 +17198,9 @@ fn granted_actors(ir: &EssIr) -> BTreeMap<QualifiedName, ActorRef> {
 fn row_projections(ir: &EssIr) -> BTreeMap<&EntityHandle, Vec<&ResolvedView>> {
     let mut out = ir.projections();
     for views in out.values_mut() {
-        views.retain(|view| !view.is_aggregate());
+        // A view reading through a reference (ess/28, beyond10x/ess#564) answers what another
+        // entity's row holds when it is read; `view_reference` witnesses it on rows of its own.
+        views.retain(|view| !view.is_aggregate() && !view.reads_through());
     }
     out.retain(|_, views| !views.is_empty());
     out
@@ -17132,13 +17222,13 @@ fn subject_of(id: &ScenarioId) -> EssSemanticRef {
         ScenarioId::Binding { binding, .. } | ScenarioId::BindingRefusal { binding, .. } => {
             binding.clone().into()
         }
-        ScenarioId::Aggregate { view } => view.clone().into(),
         ScenarioId::Grant { command } | ScenarioId::GrantAdmitted { command, .. } => {
             command.clone().into()
         }
-        ScenarioId::ReadGrant { view } | ScenarioId::ReadGrantAdmitted { view, .. } => {
-            view.clone().into()
-        }
+        ScenarioId::Aggregate { view }
+        | ScenarioId::ReadGrant { view }
+        | ScenarioId::ReadGrantAdmitted { view, .. }
+        | ScenarioId::ViewReference { view, .. } => view.clone().into(),
         // Synthesis mints every id it refuses about and mints no authored one — an authored
         // scenario is a person's claim, compiled and refused by [`crate::authored`] in a vocabulary
         // of its own. The arm is here because the match is total, and it answers with the one

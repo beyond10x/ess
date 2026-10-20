@@ -942,10 +942,12 @@ fn unguarded(trigger: &Trigger<'_>, members: &[Member]) -> Result<(), String> {
                     .outcomes
                     .iter()
                     .any(|outcome| match &outcome.condition {
+                        // From ess/28 an `all:` branch reads every row it lists.
                         ResolvedCondition::Related {
                             via: ResolvedRelatedVia::Input { field, .. },
+                            also,
                             ..
-                        } => field == via,
+                        } => field == via || also.iter().any(|row| row.via.field() == via),
                         ResolvedCondition::Related { .. }
                         | ResolvedCondition::RelatedSet { .. } => true,
                         _ => false,

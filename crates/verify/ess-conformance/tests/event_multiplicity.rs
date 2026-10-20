@@ -387,13 +387,13 @@ fn older_reader_refuses_repeated_claim_suite() {
     let runtime = directory.join("essconform/runtime.go");
     let text = std::fs::read_to_string(&runtime).unwrap();
     assert!(
-        text.contains("const newestSuiteMajor = 53\n"),
+        text.contains("const newestSuiteMajor = 55\n"),
         "the runtime reads /53"
     );
     std::fs::write(
         &runtime,
         text.replace(
-            "const newestSuiteMajor = 53\n",
+            "const newestSuiteMajor = 55\n",
             "const newestSuiteMajor = 43\n",
         ),
     )

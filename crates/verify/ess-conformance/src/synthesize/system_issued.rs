@@ -357,6 +357,10 @@ fn source(value: &ResolvedPayloadValue, identity: &str) -> Source {
         ResolvedPayloadValue::RelatedField {
             via: ResolvedRelatedVia::Input { field, .. },
             ..
+        }
+        | ResolvedPayloadValue::RelatedState {
+            via: ResolvedRelatedVia::Input { field, .. },
+            ..
         } if field != identity => Source::Uncompared,
         ResolvedPayloadValue::RelatedSelection { selection, .. }
         | ResolvedPayloadValue::RelatedHead { selection, .. }

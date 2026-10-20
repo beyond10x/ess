@@ -446,6 +446,10 @@ impl SemanticChange {
                 changed: ViewChange::AbsentChanged { .. },
                 ..
             } => ABSENT_DELTA_FORMAT,
+            Self::View {
+                changed: ViewChange::FieldSourceChanged { .. },
+                ..
+            } => FIELD_SOURCE_DELTA_FORMAT,
             Self::Actor {
                 changed: ActorChange::SystemChanged { .. },
                 ..
@@ -839,6 +843,14 @@ pub const SHORTHAND_DELTA_FORMAT: u32 = 20;
 /// Above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT) too, so a delta
 /// that carries one is classified even when nobody asked.
 pub const DOMAIN_NAMING_DELTA_FORMAT: u32 = 20;
+
+/// The first delta format whose vocabulary has `field-source-changed` on a view: a view field
+/// comes to read the row a reference of its source names, or another one (`ess/28`,
+/// beyond10x/ess#564).
+///
+/// Above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT) too, so a delta
+/// that carries one is classified even when nobody asked.
+pub const FIELD_SOURCE_DELTA_FORMAT: u32 = 21;
 
 /// A domain entered in, or dropped from, the system's `domains:` list.
 ///
@@ -3259,6 +3271,17 @@ pub enum ViewChange {
         /// The default row it has.
         after: Option<std::collections::BTreeMap<String, String>>,
     },
+    /// Where a view field reads its value differs (`ess-diff/21`, ess/28 `field: {related: …}`,
+    /// beyond10x/ess#564): each side `<reference>.<field>`, the row a reference of the source names,
+    /// or `None` where the field is the source's own of that name.
+    FieldSourceChanged {
+        /// The view field.
+        field: String,
+        /// What it read.
+        before: Option<String>,
+        /// What it reads.
+        after: Option<String>,
+    },
 }
 
 impl ViewChange {
@@ -3269,6 +3292,7 @@ impl ViewChange {
             Self::RankingChanged { .. } => "ranking-changed",
             Self::PagingChanged { .. } => "paging-changed",
             Self::AbsentChanged { .. } => "absent-changed",
+            Self::FieldSourceChanged { .. } => "field-source-changed",
             Self::Added => "added",
             Self::Removed => "removed",
             Self::DomainChanged { .. } => "domain-changed",
@@ -3299,7 +3323,8 @@ impl ViewChange {
             | Self::FieldWireNameChanged { field, .. }
             | Self::FieldDisplayNameChanged { field, .. }
             | Self::FieldSummaryChanged { field, .. }
-            | Self::FieldAggregateChanged { field, .. } => Some(field.clone()),
+            | Self::FieldAggregateChanged { field, .. }
+            | Self::FieldSourceChanged { field, .. } => Some(field.clone()),
             _ => None,
         }
     }
@@ -3312,6 +3337,10 @@ impl ViewChange {
     }
 
     /// One clause saying what moved.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one sentence per view change, every change named"
+    )]
     pub fn describe(&self) -> String {
         match self {
             Self::ParamsChanged { before, after } => {
@@ -3330,6 +3359,23 @@ impl ViewChange {
                 default_row(after.as_ref()),
                 default_row(before.as_ref())
             ),
+            Self::FieldSourceChanged {
+                field,
+                before,
+                after,
+            } => {
+                let read = |side: &Option<String>| {
+                    side.as_ref().map_or_else(
+                        || "the source's own field".to_owned(),
+                        |read| format!("`{read}` through a reference"),
+                    )
+                };
+                format!(
+                    "field `{field}` reads {}, read {}",
+                    read(after),
+                    read(before)
+                )
+            }
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),
             Self::DomainChanged { before, after } => format!("owned by {after}, was {before}"),

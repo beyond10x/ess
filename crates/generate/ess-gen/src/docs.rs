@@ -1895,13 +1895,14 @@ fn related_condition(condition: &ResolvedCondition) -> Vec<Inline> {
         entity,
         test,
         input,
+        also,
     } = condition
     else {
         return Vec::new();
     };
     input_guarded(
-        vec![Inline::text(ess_compiler::ir::related_sentence(
-            via, entity, test,
+        vec![Inline::text(ess_compiler::ir::related_rows_sentence(
+            via, entity, test, also,
         ))],
         input.as_ref(),
     )

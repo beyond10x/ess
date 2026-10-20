@@ -345,6 +345,7 @@ fn a_target_refusing_whenever_a_blocker_is_set_fails() {
             entity: entity.clone(),
             test: ResolvedRelatedTest::Holds { predicate: either },
             input: input.clone(),
+            also: Vec::new(),
         }
     });
     let faulty = statuses(&result, &Interpreted::for_model(any_blocker));

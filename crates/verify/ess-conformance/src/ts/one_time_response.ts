@@ -697,7 +697,9 @@ export function admitDisclosureId(
     !['ess-conformance/50', 'ess-conformance/51'].includes(version) &&
     // And a wrapped value-invariant observation, and awaiting a system-issued command
     // (beyond10x/ess#542).
-    !['ess-conformance/52', 'ess-conformance/53'].includes(version)
+    !['ess-conformance/52', 'ess-conformance/53'].includes(version) &&
+    // And a view read through a reference of its source (beyond10x/ess#564).
+    !['ess-conformance/54', 'ess-conformance/55'].includes(version)
   ) {
     return fail();
   }

@@ -33,8 +33,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
     EssIr, ResolvedCommand, ResolvedCondition, ResolvedField, ResolvedInstance,
-    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia,
-    ResolvedRowSetTest,
+    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedVia, ResolvedRowSetTest,
 };
 use ess_domain::command::caller_value::CALLER_NAMESPACE;
 use ess_domain::name::QualifiedName;
@@ -1591,11 +1590,14 @@ fn selected(
                     fields.extend(super::row_set::input_reads(predicate).map(str::to_owned));
                 }
             }
-            ResolvedCondition::Related { via, test, .. } => {
-                if let ResolvedRelatedVia::Input { field, .. } = via {
-                    fields.insert(field.clone());
+            ResolvedCondition::Related { via, also, .. } => {
+                // From ess/28 every row an `all:` branch lists, and the predicate over each.
+                for via in std::iter::once(via).chain(also.iter().map(|row| &row.via)) {
+                    if let ResolvedRelatedVia::Input { field, .. } = via {
+                        fields.insert(field.clone());
+                    }
                 }
-                if let ResolvedRelatedTest::Holds { predicate } = test {
+                for (_, _, predicate) in outcome.condition.related_predicates() {
                     fields.extend(super::row_set::input_reads(predicate).map(str::to_owned));
                 }
             }

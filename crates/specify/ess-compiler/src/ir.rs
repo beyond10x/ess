@@ -638,6 +638,12 @@ pub enum ResolvedCondition {
         /// The ordinary input guard, when declared.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         input: Option<Predicate>,
+        /// The further rows the branch requires at once (`when_related: {all: […]}`, ess/28, the
+        /// downstream report of 2026-10-19, finding 11): each named by another input identity and
+        /// satisfying its own predicate; `via`, `entity` and `test` are the first. Empty, and then
+        /// omitted, for a guard over one row, so every other model keeps its IR bytes.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        also: Vec<ResolvedRelatedAlso>,
     },
     /// The rows of an entity a selector selects pass a test — `exists`, `count` or `forall` — and
     /// the optional input guard holds (`when_related: {entity, where, …}`, ess/22,
@@ -1253,6 +1259,34 @@ pub enum ResolvedPayloadValue {
         /// reference may be absent and the field is not already `Optional<…>`.
         type_ref: ResolvedTypeRef,
     },
+    /// The lifecycle state of the row a reference names, as it was immediately before this outcome
+    /// (ess/28, beyond10x/ess#557, `docs/design/generic-language-features.md` § G2):
+    /// `{related: {via: desk_id, field: state}}`, read as the row's guards read `state`.
+    ///
+    /// A variant of its own, as [`Self::SubjectState`] is beside [`Self::SubjectField`], so a
+    /// reader that looks a field up among the entity's declared fields never meets one that is not
+    /// there. Only a model using it carries it, so every other model keeps its bytes.
+    RelatedState {
+        /// Where the other row's identity is read.
+        via: ResolvedRelatedVia,
+        /// The further references followed after `via`, as [`Self::RelatedField`] follows them.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        through: Vec<ResolvedRelatedHop>,
+        /// The entity the last reference names, whose state is read.
+        entity: EntityHandle,
+        /// The entity's `State` type, or `Optional<…>` of it where a reference may be absent.
+        type_ref: ResolvedTypeRef,
+    },
+    /// The first element, in list order, of a list input that names no row of the entity the
+    /// branch's `when_related: {via: input.<list>, exists: false}` guard reads (ess/28,
+    /// beyond10x/ess#558): `{missing: input.<list>}`. Only a model using it carries it, so every
+    /// other model keeps its bytes.
+    MissingElement {
+        /// The list input read.
+        field: String,
+        /// The element's type.
+        type_ref: ResolvedTypeRef,
+    },
     /// An attribute of the authenticated caller (ess/16, beyond10x/ess#168): `{caller:
     /// account_id}`. Every actor that may invoke the command declares it, at this type.
     CallerAttribute {
@@ -1392,6 +1426,18 @@ pub fn read_input<'a>(
     Some(value)
 }
 
+/// One further row a [`ResolvedCondition::Related`] branch requires at once (`when_related: {all:
+/// […]}`, ess/28): the row another input identity names, which exists and satisfies `predicate`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedRelatedAlso {
+    /// The input field carrying that row's identity.
+    pub via: ResolvedRelatedVia,
+    /// The entity whose identity it carries.
+    pub entity: EntityHandle,
+    /// What must hold of the row's stored fields — and `input.`.
+    pub predicate: Predicate,
+}
+
 /// What a [`ResolvedCondition::Related`] branch requires of the row the input names (ess/18).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -1438,6 +1484,57 @@ pub fn related_sentence(
             entity.name()
         ),
     }
+}
+
+impl ResolvedCondition {
+    /// Every row a [`Self::Related`] guard reads with a predicate, and that predicate: the first
+    /// row's, where it holds one, then each further row an `all:` branch lists (ess/28). Empty for
+    /// every other condition, and for an `exists: false` branch.
+    pub fn related_predicates(&self) -> Vec<(&ResolvedRelatedVia, &EntityHandle, &Predicate)> {
+        let Self::Related {
+            via,
+            entity,
+            test,
+            also,
+            ..
+        } = self
+        else {
+            return Vec::new();
+        };
+        let first = match test {
+            ResolvedRelatedTest::Holds { predicate } => Some((via, entity, predicate)),
+            ResolvedRelatedTest::Absent => None,
+        };
+        first
+            .into_iter()
+            .chain(
+                also.iter()
+                    .map(|row| (&row.via, &row.entity, &row.predicate)),
+            )
+            .collect()
+    }
+}
+
+/// [`related_sentence`], followed by every further row an `all:` branch requires at once (ess/28):
+/// one sentence for the whole conjunction.
+pub fn related_rows_sentence(
+    via: &ResolvedRelatedVia,
+    entity: &EntityHandle,
+    test: &ResolvedRelatedTest,
+    also: &[ResolvedRelatedAlso],
+) -> String {
+    use std::fmt::Write as _;
+    let mut sentence = related_sentence(via, entity, test);
+    for row in also {
+        let _ = write!(
+            sentence,
+            ", and the `{}` that `{}` names exists and its stored fields satisfy `{}`",
+            row.entity.name(),
+            row.via,
+            row.predicate
+        );
+    }
+    sentence
 }
 
 /// The rows of an entity a selector selects (ess/22, beyond10x/ess#228, #299,
@@ -1732,6 +1829,10 @@ impl fmt::Display for ResolvedRelatedVia {
 
 impl ResolvedPayloadValue {
     /// The source as a reader of generated documentation or a delta sees it.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one sentence per payload source, every source named"
+    )]
     pub fn describe(&self) -> String {
         match self {
             Self::InputField { field, .. } => format!("input.{field}"),
@@ -1765,6 +1866,26 @@ impl ResolvedPayloadValue {
                 } else {
                     format!("{}.{field} of {named}", entity.name())
                 }
+            }
+            Self::RelatedState {
+                via,
+                through,
+                entity,
+                ..
+            } => {
+                let mut named = format!("the row {via} names");
+                for hop in through {
+                    named = format!("the row {hop} of {named}");
+                }
+                let absent = if related_may_be_absent(via, through) {
+                    ", absent where a reference is"
+                } else {
+                    ""
+                };
+                format!(
+                    "the state {} held before the outcome in {named}{absent}",
+                    entity.name()
+                )
             }
             Self::CallerAttribute { attribute, .. } => format!("the caller's {attribute}"),
             Self::RelatedSelection {
@@ -1802,6 +1923,9 @@ impl ResolvedPayloadValue {
             }
             Self::ChangedState { .. } => {
                 "the state the changed row held before the outcome".to_owned()
+            }
+            Self::MissingElement { field, .. } => {
+                format!("the first element of input.{field} that names no row")
             }
             Self::Increment { by } => format!("its previous value plus {by}"),
             Self::InputOrGenerated {
@@ -2223,6 +2347,14 @@ pub struct ResolvedView {
     /// Omitted when `None`, so the IR bytes and digest of every model without one are unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub absent: Option<ResolvedAbsent>,
+    /// The references of its source it reads through, one hop (ess/28, beyond10x/ess#564): each
+    /// with the entity it names and the view fields read from that row. A filter path
+    /// `<via>.<member>` reads the row a reference here names.
+    ///
+    /// Omitted when empty, so the IR bytes and digest of every model whose views read their
+    /// source's own fields only are unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<ResolvedViewReference>,
     /// How soon it reflects a command that has already returned.
     pub consistency: Consistency,
     /// The block a generated scenario must assert this view in.
@@ -2235,6 +2367,31 @@ pub struct ResolvedView {
     pub assertion_style: AssertionStyle,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
+}
+
+/// A reference of a view's source the view reads through, one hop (ess/28, beyond10x/ess#564,
+/// `docs/design/generic-language-features.md` § G2): the row it names, read when the view is read.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedViewReference {
+    /// The source field holding the other row's identity.
+    pub via: String,
+    /// Its resolved type: the other entity's identity, or `Optional<…>` of it.
+    pub via_type: ResolvedTypeRef,
+    /// The entity it names.
+    pub entity: EntityHandle,
+    /// The view fields read from that row, in declaration order. Empty where only the filter
+    /// navigates the reference.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<ResolvedViewRead>,
+}
+
+/// One view field read from the row a reference names: `field: {related: {via, field}}`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedViewRead {
+    /// The view field.
+    pub field: String,
+    /// What it reads of the referenced row: a declared field, the identity, or `state`.
+    pub read: String,
 }
 
 /// What a view read answers for an identity no row of its source carries (`absent:`, ess/25,
@@ -2403,6 +2560,60 @@ impl ResolvedView {
             .as_ref()
             .map(Predicate::fact_paths)
             .unwrap_or_default()
+    }
+
+    /// Whether this view reads through a reference of its source (ess/28, beyond10x/ess#564): a
+    /// field reads the row it names, or the filter navigates it.
+    pub fn reads_through(&self) -> bool {
+        !self.references.is_empty()
+    }
+
+    /// The reference a view field reads through, and what it reads of that row, where the field is
+    /// `field: {related: …}` (ess/28).
+    pub fn related_read(&self, field: &str) -> Option<(&ResolvedViewReference, &str)> {
+        self.references.iter().find_map(|reference| {
+            reference
+                .fields
+                .iter()
+                .find(|read| read.field == field)
+                .map(|read| (reference, read.read.as_str()))
+        })
+    }
+
+    /// The reference `path` navigates and the member it reads of the row it names, where `path` is
+    /// `<via>.<member>…` over a reference this view reads through and `<member>` is an observable
+    /// field of that row that no struct member of `<via>`'s own type is called (ess/28).
+    pub fn navigated<'v>(
+        &'v self,
+        ir: &EssIr,
+        path: &FactPath,
+    ) -> Option<(&'v ResolvedViewReference, String)> {
+        let [root, member, ..] = path.segments() else {
+            return None;
+        };
+        let reference = self.references.iter().find(|held| held.via == *root)?;
+        let far = ir.entity(&reference.entity);
+        if !far
+            .observable_fields()
+            .iter()
+            .any(|field| field.name == *member)
+        {
+            return None;
+        }
+        let mut held = reference.via_type.required();
+        while let ResolvedTypeRef::Declared { name } = held {
+            match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, .. } => held = of.required(),
+                ResolvedBody::Struct { fields, .. } => {
+                    if fields.iter().any(|field| field.name == *member) {
+                        return None;
+                    }
+                    break;
+                }
+                _ => break,
+            }
+        }
+        Some((reference, member.clone()))
     }
 }
 

@@ -1,0 +1,72 @@
+format: ess/28
+system: ledger
+version: v1
+domain: ledger.desk
+summary: An incident names the services it affects; one naming a service no row carries is refused, and the refusal names that service.
+types:
+  - {name: ledger.desk.ServiceId, kind: newtype, of: Uuid}
+  - {name: ledger.desk.IncidentId, kind: newtype, of: Uuid}
+entities:
+  - name: ledger.desk.Service
+    identity: {name: service_id, type: ledger.desk.ServiceId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+  - name: ledger.desk.Incident
+    identity: {name: incident_id, type: ledger.desk.IncidentId}
+    fields:
+      - {name: services, type: "List<ledger.desk.ServiceId>"}
+    relations:
+      - {name: services, kind: references, target: ledger.desk.Service, cardinality: many, via: services}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+errors:
+  - name: ledger.desk.UnknownService
+    summary: A service the incident names does not exist.
+    fields:
+      - {name: service_id, type: ledger.desk.ServiceId}
+events:
+  - name: ledger.desk.ServiceAdded
+    fields: [{name: service_id, type: ledger.desk.ServiceId}]
+  - name: ledger.desk.IncidentOpened
+    fields: [{name: incident_id, type: ledger.desk.IncidentId}]
+actors:
+  - name: ledger.desk.Operator
+    may: [ledger.desk.AddService, ledger.desk.OpenIncident]
+commands:
+  - name: ledger.desk.AddService
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: added
+        creates: ledger.desk.Service
+        instance: service_id
+        emits: [ledger.desk.ServiceAdded]
+        payload: {ledger.desk.ServiceAdded: {service_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: ledger.desk.OpenIncident
+    input:
+      - {name: services, type: "List<ledger.desk.ServiceId>"}
+    outcomes:
+      - name: unknown-service
+        when_related: {via: input.services, exists: false}
+        error: ledger.desk.UnknownService
+        payload: {ledger.desk.UnknownService: {service_id: {missing: input.services}}}
+      - name: opened
+        creates: ledger.desk.Incident
+        instance: incident_id
+        emits: [ledger.desk.IncidentOpened]
+        payload: {ledger.desk.IncidentOpened: {incident_id: {generated: true}}}
+        sets: {services: input.services}
+views:
+  - name: ledger.desk.Incidents
+    source: ledger.desk.Incident
+    consistency: read_your_writes
+    fields:
+      - {name: incident_id, type: ledger.desk.IncidentId}
+      - {name: services, type: "List<ledger.desk.ServiceId>"}
+  - name: ledger.desk.Services
+    source: ledger.desk.Service
+    consistency: read_your_writes
+    fields:
+      - {name: service_id, type: ledger.desk.ServiceId}
+      - {name: label, type: String}

@@ -50,6 +50,7 @@ use crate::types::{Field, Primitive, TypeBody, TypeRef, TypeRegistry, MAX_TYPE_D
 
 pub(crate) mod absent;
 mod measure;
+pub mod navigation;
 mod paging;
 pub use absent::Absent;
 pub use paging::Paging;
@@ -787,10 +788,21 @@ pub struct RawViewField {
     /// `docs/design/generic-language-features.md` § G1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
+    /// What it reads where it is not its source's own field of that name: `{related: {via,
+    /// field}}`, the row a reference names (ess/28, [`navigation`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field: Option<navigation::ViewFieldSource>,
 }
 
 impl RawViewField {
-    fn split(self) -> (Field, Option<RawAggregate>, Option<String>) {
+    fn split(
+        self,
+    ) -> (
+        Field,
+        Option<RawAggregate>,
+        Option<String>,
+        Option<navigation::ViewFieldSource>,
+    ) {
         (
             Field {
                 name: self.name,
@@ -799,6 +811,7 @@ impl RawViewField {
             },
             self.aggregate,
             self.expr,
+            self.field,
         )
     }
 }
@@ -979,6 +992,10 @@ pub struct ViewSpec {
     /// What a read answers for an identity no row of the source carries, where the view declares
     /// it (ess/25, [`Absent`]). `None`: no row.
     pub absent: Option<Absent>,
+    /// The view fields read from the row a reference of the source names, by name (ess/28,
+    /// [`navigation`]): `field: {related: {via, field}}`. Empty for a view reading its source's own
+    /// fields only.
+    pub related: BTreeMap<String, navigation::ViewRelated>,
     /// How soon it reflects a command that has already returned.
     pub consistency: Consistency,
     /// What it is called on the wire and shown as.
@@ -1133,6 +1150,17 @@ impl ViewSpec {
         types: &TypeRegistry,
         entities: &impl EntityFields,
     ) -> Result<(), ValidationErrors> {
+        self.validate_navigating(types, entities, &[])
+    }
+
+    /// [`Self::validate`], with the filter reading through `references` of the source, one hop
+    /// (ess/28, [`navigation`]).
+    pub fn validate_navigating(
+        &self,
+        types: &TypeRegistry,
+        entities: &impl EntityFields,
+        references: &[navigation::ViewReference],
+    ) -> Result<(), ValidationErrors> {
         let mut errors = self.validate_shape();
         let at = |suffix: &str| format!("view.{}.{suffix}", self.name);
 
@@ -1169,6 +1197,7 @@ impl ViewSpec {
         if let Some(filter) = &self.filter {
             let environment = crate::expression::DomainEnvironment::new(types, source_fields)
                 .with_params(&self.params)
+                .with_references(references)
                 .in_view_filter();
             let checked = crate::expression::check_predicate(&environment, filter, &at("filter"));
             for error in &checked.errors {
@@ -1275,6 +1304,10 @@ impl ViewSpec {
                 format!("fields[{index}]")
             };
             errors.extend(types.resolve(&field.type_ref, &at(&format!("{field_at}.type"))));
+            // Read through a reference (ess/28): checked against the row it names by `navigation`.
+            if self.related.contains_key(&field.name) {
+                continue;
+            }
             if let Some(own) = self.validate_aggregate(&field_at, field, types, source_fields) {
                 errors.extend(own);
                 continue;
@@ -1943,11 +1976,26 @@ impl TryFrom<RawViewSpec> for ViewSpec {
     fn try_from(raw: RawViewSpec) -> Result<Self, Self::Error> {
         let mut fields = Vec::with_capacity(raw.fields.len());
         let mut functions = BTreeMap::new();
+        let mut related = BTreeMap::new();
         let mut grouping = ValidationErrors::new();
         let at = |suffix: &str| format!("view.{}.{suffix}", raw.name);
         let mut computed = BTreeMap::new();
         for (index, written) in raw.fields.into_iter().enumerate() {
-            let (field, aggregate, expr) = written.split();
+            let (field, aggregate, expr, source) = written.split();
+            if expr.is_some() && source.is_some() {
+                grouping.push(
+                    ValidationError::new(
+                        ValidationCode::ConflictingDeclaration,
+                        at(&format!("fields[{index}].field")),
+                        format!(
+                            "`{}` declares both `expr:` and `field:`; a field is computed from its \
+                             source row or read from the row a reference names, not both",
+                            field.name
+                        ),
+                    )
+                    .with_hint("keep one of the two"),
+                );
+            }
             if let Some(expr) = expr {
                 if aggregate.is_some() {
                     grouping.push(
@@ -1964,6 +2012,20 @@ impl TryFrom<RawViewSpec> for ViewSpec {
                     );
                 }
                 computed.insert(field.name.clone(), expr);
+            }
+            if let Some(source) = source {
+                if aggregate.is_some() {
+                    grouping.push(ValidationError::new(
+                        ValidationCode::ConflictingDeclaration,
+                        at(&format!("fields[{index}].field")),
+                        format!(
+                            "`{}` declares both `aggregate:` and `field:`; a field is computed or \
+                             read, not both",
+                            field.name
+                        ),
+                    ));
+                }
+                related.insert(field.name.clone(), source.related);
             }
             if let Some(aggregate) = &aggregate {
                 let read = aggregate.read(
@@ -2042,6 +2104,7 @@ impl TryFrom<RawViewSpec> for ViewSpec {
             order_by: raw.order_by,
             paging: raw.paging,
             absent: raw.absent,
+            related,
             consistency: raw.consistency,
             naming: raw.naming,
         };
@@ -2063,6 +2126,11 @@ impl From<ViewSpec> for RawViewSpec {
             .map(|field| RawViewField {
                 aggregate: functions.get(&field.name).map(RawAggregate::from),
                 expr: view.computed.get(&field.name).cloned(),
+                field: view
+                    .related
+                    .get(&field.name)
+                    .cloned()
+                    .map(|related| navigation::ViewFieldSource { related }),
                 name: field.name,
                 type_ref: field.type_ref,
                 naming: field.naming,
