@@ -1,4 +1,4 @@
-#	models=275	commands=562
+#	models=278	commands=568
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -581,6 +581,15 @@ crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml	ir=e1a
 crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml	credentials.api.Issue	default: issued
 crates/verify/ess-conformance/tests/fixtures/one-time-coverage-53/model.yaml	ir=e1adf075661567026afe7fd1544929ec38dfc636c00f623acaff407892846f00:1197
 crates/verify/ess-conformance/tests/fixtures/one-time-coverage-53/model.yaml	credentials.api.Issue	default: issued
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/caller-guard.yaml	ir=7ee442b98bdcd1d712728e588c8552fad5bc1233c6ed778b9618e7c527e20060:9160
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/caller-guard.yaml	devices.api.PairDevice	default: paired
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/caller-guard.yaml	devices.api.RenameDevice	held_state: not-owner | default: renamed
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/unknown-first.yaml	ir=61bb22cfb19ecc11ead29a86aae021cad374ad37dd6e140f1792644045cae528:9064
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/unknown-first.yaml	devices.api.PairDevice	default: paired
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/unknown-first.yaml	devices.api.RenameDevice	existence: no-device | default: renamed
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/wrong-state-first.yaml	ir=9b757c3d248ef46e4aed82d7db3c8af8da25f2c1cc2c05c8cc982214671412e8:8523
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/wrong-state-first.yaml	devices.api.PairDevice	default: paired
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/wrong-state-first.yaml	devices.api.RetireDevice	held_state: not-active | default: retired
 crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml	ir=e0025ea080b66f2bd4c475cef54f63ee37d555bc2081aa084acc61482d1332ea:8455
 crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml	demo.notes.SubmitNote	input_refusal: account-missing | default: submitted
 crates/verify/ess-conformance/tests/fixtures/ordered-related-head.yaml	ir=e19568fafe85126b8e2020980f84a5c8efbd8d9855a2d2744080915a853e80b1:20387
