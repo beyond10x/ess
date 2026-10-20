@@ -704,6 +704,44 @@ impl Selection<'_> {
     }
 }
 
+/// One row `set`'s filter selects when `command` is sent `input`, resting in a state `rests`
+/// admits, named apart from every instance in `taken`: the row a scenario that sends `command`
+/// some other way than its own `/outcome/` scenario arranges so that the branch changes a row — a
+/// binding's trigger, whose bound invocation publishes an event once per changed row (a downstream
+/// adopter's report of 2026-10-20). `None` where the filter reads an input `input` does not hold,
+/// or no arranging command produces such a row.
+pub(super) fn selected_row(
+    ir: &EssIr,
+    (command, outcome, set): (&ResolvedCommand, &ResolvedOutcome, &ResolvedSetSubject),
+    input: &BTreeMap<String, Node>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    rests: &dyn Fn(&StateName) -> bool,
+    taken: &mut BTreeSet<InstanceName>,
+) -> Option<Arrangement> {
+    let closed = written_in(&set.filter, &|path| input_value(path, input));
+    let unread = closed.fact_paths().iter().any(|path| {
+        path.segments().first().map(String::as_str)
+            == Some(ess_domain::command::subject_fact::INPUT_NAMESPACE)
+    });
+    if unread {
+        return None;
+    }
+    let supplied = supply(ir, command, input, None, None, &BTreeMap::new());
+    let selection = Selection {
+        ir,
+        command,
+        entity: &set.entity,
+        filter: set.filter.clone(),
+        closed,
+        input,
+        supplied: &supplied,
+        sets: outcome,
+        symbols: BTreeMap::new(),
+        other: None,
+    };
+    selection.row(actors, taken, rests, false)
+}
+
 /// The rows a set effect is witnessed on: those it must change, and those it must leave.
 struct Rows {
     changed: Vec<Arrangement>,

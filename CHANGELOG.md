@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A binding into a set effect that publishes an event once per changed row (`each: changed`) gets
+  `flow` and `delivery` scenarios that pass. Before, they waited for the event with no row
+  arranged, so the interpreter failed ESS's own suite. Synthesis now creates one row the filter
+  selects before the trigger, resting where the event's `when_state:` publishes it. Where it cannot,
+  both scenarios are refused with `ESS-SYNTH-010`, naming the set effect (downstream report,
+  2026-10-20).
+- A binding whose failure policy is selected per refusal gets its
+  `<binding>/binding/refusal/<outcome>` scenario for a `when_related: {via: input.<field>, exists:
+  false}` refusal. The refusal is no longer refused as one that cannot be forced: the trigger is sent
+  naming a row that does not exist, so the invoked command answers the refusal on every attempt.
+  This holds where the binding maps that input unconverted from an event field the triggering
+  command copies from its own input (downstream report, 2026-10-20).
+- A row-set `when_related:` guard is witnessed in a model that declares bindings, as long as no
+  binding writes the guarded entity. Any binding used to make every row-set guard unwitnessable.
+  Where a binding does write the entity, the refusal's help now says so and points to an authored
+  scenario, instead of asking for a creating command to write the filter's fields (downstream
+  report, 2026-10-20).
+- An `affects:` entry's rows are arranged when their creating command refuses a missing related row
+  (`when_related: {via: input.<field>, exists: false}`) and the filter ties that input to the
+  outcome's subject: the creation is sent naming the arranged subject, which exists (downstream
+  report, 2026-10-20).
+- A binding whose target row is named by a stored field of the trigger's row (`{subject: <field>}`
+  in the triggering payload) gets its `flow`, `mapping` and `delivery` scenarios. Synthesis arranges
+  the target row first, and the trigger's row is created holding its identity. This needs the
+  trigger's creating command to write that field from an input, unconverted. Otherwise the
+  `ESS-SYNTH-010` refusal names the stored field (downstream report, 2026-10-20).
+
 ## [0.63.0] — 2026-10-19
 
 ### Added
