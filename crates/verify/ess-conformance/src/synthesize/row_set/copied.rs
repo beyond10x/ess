@@ -360,8 +360,7 @@ pub(super) fn steered(
     (distinction, owner): (Distinction, Option<&InstanceName>),
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
-    let all = ir.drivers();
-    let drivers = all.get(entity)?;
+    let drivers = &ir.drivers_of(entity);
     let states = &ir.entity(entity).lifecycle.states;
     let mut conjuncts: Vec<&Predicate> = Vec::new();
     flattened(goal, &mut conjuncts);

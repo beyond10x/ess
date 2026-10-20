@@ -643,3 +643,47 @@ fn the_fixture_carries_something_the_normative_example_does_not() {
          maintained"
     );
 }
+
+// ---- the one-entity lookups agree with the whole surfaces they search ----------------------------
+
+#[test]
+fn drivers_of_is_the_entry_drivers_holds_for_that_entity() {
+    for name in [NORMATIVE, FIXTURE] {
+        let ir = compiled(name);
+        let all = ir.drivers();
+        assert!(!all.is_empty(), "examples/{name} has drivers to compare");
+        for (entity, drivers) in &all {
+            assert_eq!(&ir.drivers_of(entity), drivers, "examples/{name}");
+        }
+        let counted: usize = all.values().map(Vec::len).sum();
+        let outcomes = ir
+            .commands()
+            .values()
+            .flat_map(|command| &command.outcomes)
+            .filter(|outcome| outcome.subject.is_some())
+            .count();
+        assert_eq!(counted, outcomes, "examples/{name}");
+    }
+}
+
+#[test]
+fn observable_field_finds_what_observable_fields_finds_first() {
+    for name in [NORMATIVE, FIXTURE] {
+        let ir = compiled(name);
+        for entity in ir.entities().values() {
+            let surface = entity.observable_fields();
+            let names = surface.iter().map(|field| field.name.as_str()).chain([
+                "state",
+                "no-such-field",
+                "",
+            ]);
+            for wanted in names {
+                assert_eq!(
+                    entity.observable_field(wanted),
+                    surface.iter().find(|field| field.name == wanted).cloned(),
+                    "examples/{name}: {wanted}"
+                );
+            }
+        }
+    }
+}

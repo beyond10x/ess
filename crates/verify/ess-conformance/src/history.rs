@@ -947,6 +947,7 @@ fn read_admitting(
         return Err(HistoryRefusal::NoClients);
     }
     let mut seen = BTreeSet::new();
+    let mut sent: BTreeSet<(String, u64, &QualifiedName)> = BTreeSet::new();
     for (index, operation) in history.operations.iter().enumerate() {
         if !seen.insert(operation.operation_id.as_str().to_ascii_lowercase()) {
             return Err(HistoryRefusal::DuplicateOperation {
@@ -963,14 +964,11 @@ fn read_admitting(
         check(operation, history.clients)?;
         if let Some(original) = &operation.retry_of {
             lower_case(original)?;
-            let sent_before = history.operations[..index].iter().any(|earlier| {
-                earlier
-                    .operation_id
-                    .as_str()
-                    .eq_ignore_ascii_case(original.as_str())
-                    && earlier.client == operation.client
-                    && earlier.command == operation.command
-            });
+            let sent_before = sent.contains(&(
+                original.as_str().to_ascii_lowercase(),
+                operation.client,
+                &operation.command,
+            ));
             if !sent_before {
                 return Err(HistoryRefusal::RetryOfUnknown {
                     operation_id: operation.operation_id.as_str().to_owned(),
@@ -978,6 +976,11 @@ fn read_admitting(
                 });
             }
         }
+        sent.insert((
+            operation.operation_id.as_str().to_ascii_lowercase(),
+            operation.client,
+            &operation.command,
+        ));
     }
     Ok(history)
 }

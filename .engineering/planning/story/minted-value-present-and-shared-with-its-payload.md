@@ -2,9 +2,15 @@
 format: aep.planning-md/3
 id: story:minted-value-present-and-shared-with-its-payload
 kind: story
-status: draft
+status: implemented
 title: A minted value is stored present and read from its own payload
-revision: 1
+relations:
+- serves: vision:O2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-19T21:15:04Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-19T21:15:04Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-19T21:15:05Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:json-type-discriminated-union
 kind: story
-status: active
+status: implemented
 title: A short-or-long wire form told apart by JSON type can be declared, or is refused by name
 summary: A struct may be written as its one scalar shorthand field (#594, option c, ess/27)
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-17T10:08:03Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-10-17T10:08:03Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-10-19T21:15:15Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

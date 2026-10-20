@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-19T21:14:59Z",
+  "actor": "human:timo",
+  "artifact": "story:system-issued-command-is-awaited-not-driven",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "https://github.com/beyond10x/ess/actions/runs/39303029081 (0.63.0 Release preparation Gate green at be102be67, PR 602)"
+  }
+}

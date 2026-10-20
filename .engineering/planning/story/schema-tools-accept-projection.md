@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:schema-tools-accept-projection
 kind: story
-status: draft
+status: implemented
 title: ESS's own schema tools accept what ess generate --kind schema writes
 summary: Projected roots can carry an $id, YAML instances validate, alphabet is asserted, import-document accepts x-ess-* (#590-#593)
 refs:
@@ -17,7 +17,11 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-19T21:15:12Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-19T21:15:12Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-19T21:15:13Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

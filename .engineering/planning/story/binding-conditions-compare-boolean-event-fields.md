@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:binding-conditions-compare-boolean-event-fields
 kind: story
-status: draft
+status: implemented
 title: A binding condition may compare a Boolean event field with true or false
 tags:
 - feature-request
@@ -11,7 +11,11 @@ refs:
   reference: beyond10x/ess#492
 relations:
 - serves: vision:O2
-revision: 2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-19T21:15:20Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-19T21:15:20Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-19T21:15:21Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

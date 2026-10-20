@@ -5,6 +5,7 @@
 //! hints). An open overlay takes the whole frame above the bottom lines. Every composite and
 //! primitive is drawn as lines of text; a section is a bordered block around its lines.
 
+use std::borrow::Cow;
 use std::fmt::Write as _;
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -1086,15 +1087,13 @@ impl App {
             return vec![Line::styled("(no reads)", dim())];
         };
         let request = self.request(reads, &place.ctx);
-        let all = match self.read_state(&request) {
-            Some(ReadState::Ready(_)) => self
-                .read_rows(reads, &place.ctx)
-                .map(|result| result.rows.clone())
-                .unwrap_or_default(),
+        let read = match self.read_state(&request) {
+            Some(ReadState::Ready(_)) => self.read_rows(reads, &place.ctx),
             Some(ReadState::Failed(error)) => return vec![Line::from(format!("failed: {error}"))],
             _ => return vec![Line::styled("loading…", dim())],
         };
-        let columns: Vec<Field> = columns_of(collection, &all)
+        let all: &[Value] = read.as_ref().map_or(&[], |result| &result.rows);
+        let columns: Vec<Field> = columns_of(collection, all)
             .into_iter()
             .filter(|field| {
                 self.visible(
@@ -1103,7 +1102,9 @@ impl App {
                 )
             })
             .collect();
-        let (rows, pages) = self.page_rows(place.ui, collection, &place.ctx);
+        // Filtered and sorted once: the page shown and the footer's row count both read it.
+        let arranged = self.arranged_rows(place.ui, collection, all);
+        let (rows, pages) = self.page_of(place.ui, &arranged);
         let state = self.ui(place.ui);
         let cursor = state.cursor.min(rows.len().saturating_sub(1));
         let cards = matches!(
@@ -1120,9 +1121,10 @@ impl App {
         let record_cells = table || collection.item.is_empty();
         let mut lines = Vec::new();
         // Each row as shown: a `label_from` column holds its label (beyond10x/ess#364).
-        let shown_rows: Vec<Value> = rows
+        let labels = self.label_index(&columns);
+        let shown_rows: Vec<Cow<'_, Value>> = rows
             .iter()
-            .map(|row| self.labelled(&columns, row))
+            .map(|row| App::labelled_by(&labels, &columns, row))
             .collect();
         let widths: Vec<usize> = columns
             .iter()
@@ -1198,7 +1200,7 @@ impl App {
         let mut group = None;
         // The groups in the order they are shown, and how many of them are already drawn: a
         // declared group no row falls under is drawn, empty, where it stands in that order.
-        let groups = group_names(collection, &all);
+        let groups = group_names(collection, all);
         let mut drawn = 0;
         let empty_heading = |name: &str, lines: &mut Vec<Line<'static>>| {
             if let Some(by) = &collection.group_by {
@@ -1212,7 +1214,7 @@ impl App {
         };
         // Each recorded row: its key, its line and its data.
         let mut recorded: Vec<(String, usize, &Value)> = Vec::new();
-        for (index, row) in rows.iter().enumerate() {
+        for (index, &row) in rows.iter().enumerate() {
             if let Some(by) = &collection.group_by {
                 let current = display(&row[by.as_str()]);
                 if group.as_ref() != Some(&current) {
@@ -1313,7 +1315,7 @@ impl App {
                 empty_heading(name, &mut lines);
             }
         }
-        let row = rows.get(cursor);
+        let row = rows.get(cursor).copied();
         let row_ctx = Ctx { row, ..place.ctx };
         if row.is_some() {
             let inner = Place {
@@ -1346,10 +1348,7 @@ impl App {
             }
         }
         let mut footer = vec![format!("page {}/{pages}", state.page.min(pages - 1) + 1)];
-        footer.push(format!(
-            "{} rows",
-            self.arranged_rows(place.ui, collection, &all).len()
-        ));
+        footer.push(format!("{} rows", arranged.len()));
         if let Some((by, descending)) = state.sort.clone().or_else(|| {
             collection
                 .sort

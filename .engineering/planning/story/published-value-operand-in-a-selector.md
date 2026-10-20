@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:published-value-operand-in-a-selector
 kind: story
-status: draft
+status: implemented
 title: A head of an ordered selection cannot be scoped by another value the same outcome publishes
 summary: 'payload.<Event>.<field> as an operand in a value read''s where:'
 owner: timo
@@ -11,7 +11,13 @@ tags:
 refs:
 - provider: github
   reference: beyond10x/ess#549
-revision: 1
+relations:
+- serves: vision:O2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-19T21:15:09Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-19T21:15:09Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-19T21:15:10Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:alphabet-projects-an-anchored-pattern
 kind: story
-status: draft
+status: implemented
 title: A String newtype's alphabet is asserted by the projected schema as an anchored pattern
 summary: The projection carries pattern beside x-ess-alphabet, so schema validate refuses a value outside the alphabet (#592)
 tags:
@@ -27,7 +27,11 @@ scope:
   path: generated
 - confidence: inferred
   path: website/data
-revision: 4
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-19T21:15:13Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-10-19T21:15:13Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-10-19T21:15:14Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

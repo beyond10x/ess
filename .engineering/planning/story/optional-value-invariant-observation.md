@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:optional-value-invariant-observation
 kind: story
-status: draft
+status: implemented
 title: Observe declared value invariants through all wrapped view positions
 relations:
 - decomposes: epic:downstream-reported-gaps
@@ -97,7 +97,11 @@ scope:
   path: crates/verify/ess-conformance/tests/wrapped_value_invariants.rs
 - confidence: inferred
   path: docs/design/wrapped-value-invariant-observations.md
-revision: 20
+revision: 23
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-19T21:15:21Z", actor: "human:timo", revision: 21, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "proposed", to: "active", at: "2026-10-19T21:15:21Z", actor: "human:timo", revision: 22, decided_on: {"recorded":{"review_outcome":1}}}
+- {from: "active", to: "implemented", at: "2026-10-19T21:15:23Z", actor: "human:timo", revision: 23, decided_on: {"recorded":{"test_result":2,"review_outcome":1}}}
 ---
 ## Outcome
 

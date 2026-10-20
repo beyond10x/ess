@@ -2,7 +2,8 @@
 //!
 //! Nothing here draws; [`crate::view`] renders an [`App`] into a ratatui frame.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -1472,24 +1473,47 @@ impl App {
     /// its value keys, where the related view has one (beyond10x/ess#364). The row an action
     /// sees keeps the value.
     pub(crate) fn labelled(&self, fields: &[Field], row: &Value) -> Value {
-        let mut shown = row.clone();
-        for field in fields {
-            let Some(label_from) = &field.label_from else {
+        Self::labelled_by(&self.label_index(fields), fields, row).into_owned()
+    }
+
+    /// For each of `fields`, the labels its `label_from` view holds, by the shown value of the
+    /// related row's key; the first related row with a key wins. Built once for many rows.
+    pub(crate) fn label_index(&self, fields: &[Field]) -> Vec<Option<HashMap<String, &Value>>> {
+        fields
+            .iter()
+            .map(|field| {
+                let label_from = field.label_from.as_ref()?;
+                let mut labels = HashMap::new();
+                if let Some(result) = self.rows_of(&Self::label_request(label_from)) {
+                    for related in &result.rows {
+                        labels
+                            .entry(display(&related[label_from.key()]))
+                            .or_insert(&related[label_from.field.as_str()]);
+                    }
+                }
+                Some(labels)
+            })
+            .collect()
+    }
+
+    /// `row` as `labelled` shows it, looked up in `index` (from `label_index` over the same
+    /// `fields`); the row is copied only when a label replaces a value.
+    pub(crate) fn labelled_by<'r>(
+        index: &[Option<HashMap<String, &Value>>],
+        fields: &[Field],
+        row: &'r Value,
+    ) -> Cow<'r, Value> {
+        let mut shown = Cow::Borrowed(row);
+        for (field, labels) in fields.iter().zip(index) {
+            let Some(labels) = labels else {
                 continue;
             };
             let key = display(&row[field.field.as_str()]);
-            let label = self
-                .rows_of(&Self::label_request(label_from))
-                .and_then(|result| {
-                    result
-                        .rows
-                        .iter()
-                        .find(|related| display(&related[label_from.key()]) == key)
-                })
-                .map(|related| related[label_from.field.as_str()].clone());
-            if let (Some(label), Value::Mapping(shown)) = (label, &mut shown) {
-                if !label.is_null() {
-                    shown.insert(Value::from(field.field.as_str()), label);
+            if let Some(label) = labels.get(&key) {
+                if !label.is_null() && row.is_mapping() {
+                    if let Value::Mapping(shown) = shown.to_mut() {
+                        shown.insert(Value::from(field.field.as_str()), (*label).clone());
+                    }
                 }
             }
         }
@@ -1514,16 +1538,16 @@ impl App {
     }
 
     /// The rows of a collection after its local filter and sort, before paging.
-    pub(crate) fn arranged_rows(
+    pub(crate) fn arranged_rows<'r>(
         &self,
         ui: &str,
         collection: &ess_ui::Collection,
-        rows: &[Value],
-    ) -> Vec<Value> {
+        rows: &'r [Value],
+    ) -> Vec<&'r Value> {
         let state = self.ui(ui);
         let columns = columns_of(collection, rows);
         let needle = state.filter.to_lowercase();
-        let mut rows: Vec<Value> = rows
+        let mut rows: Vec<&Value> = rows
             .iter()
             .filter(|row| {
                 needle.is_empty()
@@ -1533,7 +1557,6 @@ impl App {
                             .contains(&needle)
                     })
             })
-            .cloned()
             .collect();
         let sort = state.sort.clone().or_else(|| {
             collection
@@ -1552,7 +1575,7 @@ impl App {
             });
         }
         if let Some(group) = &collection.group_by {
-            let groups = group_names(collection, &rows);
+            let groups = ordered_groups(collection, rows.iter().copied());
             rows.sort_by_key(|row| {
                 let value = display(&row[group.as_str()]);
                 groups.iter().position(|name| *name == value)
@@ -1574,12 +1597,22 @@ impl App {
         let Some(result) = self.read_rows(reads, ctx) else {
             return (Vec::new(), 0);
         };
-        let rows = self.arranged_rows(ui, collection, &result.rows);
+        let (rows, pages) = self.page_of(ui, &self.arranged_rows(ui, collection, &result.rows));
+        (rows.into_iter().cloned().collect(), pages)
+    }
+
+    /// The page of `arranged` (from `arranged_rows`) shown, and how many pages there are.
+    pub(crate) fn page_of<'r>(&self, ui: &str, arranged: &[&'r Value]) -> (Vec<&'r Value>, usize) {
         let size = self.options.page_size.max(1);
-        let pages = rows.len().div_ceil(size).max(1);
+        let pages = arranged.len().div_ceil(size).max(1);
         let page = self.ui(ui).page.min(pages - 1);
         (
-            rows.into_iter().skip(page * size).take(size).collect(),
+            arranged
+                .iter()
+                .copied()
+                .skip(page * size)
+                .take(size)
+                .collect(),
             pages,
         )
     }
@@ -4160,6 +4193,14 @@ pub(crate) fn form_fields(form: &Form, tab: usize) -> Vec<&Field> {
 /// The groups of a grouped collection, in the order they are shown: its `group_order`, then
 /// every other value in the order it first appears in `rows` (beyond10x/ess#351).
 pub(crate) fn group_names(collection: &ess_ui::Collection, rows: &[Value]) -> Vec<String> {
+    ordered_groups(collection, rows)
+}
+
+/// `group_names` over borrowed rows.
+fn ordered_groups<'r>(
+    collection: &ess_ui::Collection,
+    rows: impl IntoIterator<Item = &'r Value>,
+) -> Vec<String> {
     let mut groups = collection.group_order.clone();
     if let Some(by) = &collection.group_by {
         for row in rows {

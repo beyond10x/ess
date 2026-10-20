@@ -170,11 +170,7 @@ impl<'a> Reader<'a> {
         let mut related = set_effects::Related::new();
         for (name, entity, fields) in &walked {
             let mut rows = Vec::new();
-            for (_, key, row) in self
-                .store
-                .instances()
-                .filter(|(held, _, _)| **held == entity.name)
-            {
+            for (key, row) in self.store.instances_of(&entity.name) {
                 rows.push(set_effects::row_facts(self.ir, fields, entity, key, row)?);
             }
             related.insert((*name).to_owned(), rows);
@@ -189,11 +185,7 @@ impl<'a> Reader<'a> {
             });
         }
         let mut members = Vec::new();
-        for (_, key, row) in self
-            .store
-            .instances()
-            .filter(|(name, _, _)| **name == entity.name)
-        {
+        for (key, row) in self.store.instances_of(&entity.name) {
             let candidate = set_effects::row_facts(self.ir, &fields, entity, key, row)?;
             let truth = |predicate: &Predicate| {
                 candidate.evaluate_with(|candidate| {
@@ -437,9 +429,8 @@ fn subject<'a>(
         return Subject::Missing;
     };
     let Some((key, row)) = store
-        .instances()
-        .find(|(name, held, _)| **name == entity.name && *held == key)
-        .map(|(_, key, row)| (key, row))
+        .instances_of(&entity.name)
+        .find(|(held, _)| *held == key)
     else {
         return Subject::Missing;
     };

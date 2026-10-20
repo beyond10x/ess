@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:each-entry-moves-the-rows-its-elements-name
 kind: story
-status: draft
+status: implemented
 title: 'An each: entry moves or deletes the row each element names, by a per-element where:'
 summary: One call takes each named row to its own transition by the answer the input carries for it (#596)
 tags:
@@ -32,7 +32,11 @@ scope:
   path: schemas/generated/ess.schema.json
 - confidence: cited
   path: website/docs/guides/specify/selection-effects.md
-revision: 4
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-19T21:15:17Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-10-19T21:15:17Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-10-19T21:15:18Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

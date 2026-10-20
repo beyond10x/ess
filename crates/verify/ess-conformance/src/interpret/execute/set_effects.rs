@@ -242,14 +242,11 @@ fn elements(
     work: &mut Work<'_>,
 ) -> Result<Vec<Node>, Undetermined> {
     let entity = plan.entity;
-    let items = match supplied.get(&each.list) {
-        Some(Node::Seq(items)) => items.clone(),
-        _ => {
-            return Err(Undetermined::Request(format!(
-                "`input.{}` holds no list for an `each:` entry",
-                each.list
-            )))
-        }
+    let Some(Node::Seq(items)) = supplied.get(&each.list) else {
+        return Err(Undetermined::Request(format!(
+            "`input.{}` holds no list for an `each:` entry",
+            each.list
+        )));
     };
     let mut written = Vec::with_capacity(items.len());
     for (index, item) in items.iter().enumerate() {
@@ -284,19 +281,27 @@ fn elements(
             index.to_string(),
             "sets".into(),
         ];
-        // Updated if held, created in `initial` if not; moved or removed only if held.
-        let held = work.next.instance_typed(&entity.name, &key).cloned();
+        // Updated if held, created in `initial` if not; moved or removed only if held. A held row
+        // is taken out of `work` while `act` reads it, which reads no row of `work.next`, and
+        // rests again under its identity below unless removed; an error discards `work` whole.
+        let held = work
+            .next
+            .instances
+            .get_mut(&entity.name)
+            .and_then(|rows| rows.remove(&key));
         let names_held = !matches!(plan.effect, ResolvedEffect::Updates);
         let mut after = if let Some(held) = held {
             match act(ir, plan.sets, &plan.effect, &held, supplied, work)? {
                 Acted::Rests(after) => after,
-                Acted::NotFromHere => continue,
-                Acted::Removed => {
-                    if let Some(rows) = work.next.instances.get_mut(&entity.name) {
-                        rows.remove(&key);
-                    }
+                Acted::NotFromHere => {
+                    work.next
+                        .instances
+                        .entry(entity.name.clone())
+                        .or_default()
+                        .insert(key, held);
                     continue;
                 }
+                Acted::Removed => continue,
             }
         } else if names_held {
             continue;
@@ -487,9 +492,9 @@ fn select(
 ) -> Result<Vec<Node>, Undetermined> {
     let fields = fields(entity);
     let mut selected = Vec::new();
-    for (_, key, row) in store
-        .instances()
-        .filter(|(name, key, _)| *name == &entity.name && Some(*key) != eligibility.excluded)
+    for (key, row) in store
+        .instances_of(&entity.name)
+        .filter(|(key, _)| Some(*key) != eligibility.excluded)
     {
         if matches!(eligibility.effect, Some(ResolvedEffect::Moves { transition })
             if !transition.from.contains(&row.state))

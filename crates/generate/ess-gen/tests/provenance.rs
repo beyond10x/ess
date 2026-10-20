@@ -136,6 +136,11 @@ fn the_whole_model_contract_digest_is_not_the_source_digest() {
         ProvenanceMint::new(&ir).whole().provenance.contract_digest,
         "`Provenance::of` and the mint's whole-model answer are one answer"
     );
+    assert_eq!(
+        provenance.contract_digest,
+        ProvenanceMint::new(&ir).digest_of(&ModelSlice::WholeModel),
+        "the digest `artifact::run` cross-checks a whole-model stamp against is that answer too"
+    );
 }
 
 #[test]
