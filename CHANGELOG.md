@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.66.0] — 2026-10-20
+
 ### Changed
 
 - Under report format 2 the generated Go and TypeScript runners show an unsupported required

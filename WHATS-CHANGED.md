@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.66.0](#a-generated-go-or-typescript-runner-shows-an-unsupported-scenario-as-skipped-and-the-run-still-fails) | A generated Go or TypeScript runner shows an unsupported scenario as skipped, and the run still fails | capability | notable |
 | [0.65.0](#synthesis-arranges-the-rows-binding-row-set-and-one-time-disclosure-scenarios-read) | Synthesis arranges the rows binding, row-set and one-time disclosure scenarios read | capability | notable |
 | [0.64.0](#a-view-and-a-guard-read-the-row-a-reference-names) | A view and a guard read the row a reference names | capability | notable |
 | [0.63.0](#a-value-can-be-computed-by-a-typed-expression-and-every-guard-answers-in-one-precedence-order) | A value can be computed by a typed expression, and every guard answers in one precedence order | capability | notable |
@@ -74,6 +75,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.66.0 — 2026-10-20
+
+### A generated Go or TypeScript runner shows an unsupported scenario as skipped, and the run still fails
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.66.0)
+
+Under report format 2 the generated Go and TypeScript runners end an unsupported required scenario as a skipped subtest or case carrying the target's reason, not a failed assertion. The run still fails once, with one message naming how many required scenarios were unsupported; the report is unchanged.
 
 ## 0.65.0 — 2026-10-20
 
