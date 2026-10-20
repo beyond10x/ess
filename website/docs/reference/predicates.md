@@ -1359,7 +1359,7 @@ identity. The guard is taken when some element names no row of that entity; an e
 no missing row and selects no such branch. The refusal may publish the first element, in list
 order, that names no row, with `{missing: input.<list>}`, typed as the element:
 
-```yaml
+```text
 - name: unknown-service
   when_related: {via: input.services, exists: false}
   error: ledger.desk.UnknownService
