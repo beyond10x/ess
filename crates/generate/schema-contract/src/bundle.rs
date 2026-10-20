@@ -264,16 +264,31 @@ impl Bundle {
 
     /// Validates a value against one selected root without changing the instance or applying defaults.
     pub fn validate(&self, root: &str, instance: &Value) -> Result<Vec<Diagnostic>, ImportError> {
+        Ok(self.validator(root)?.validate(instance))
+    }
+
+    /// Compiles one selected root once, for validating many values against it.
+    pub fn validator(&self, root: &str) -> Result<RootValidator, ImportError> {
         let schema = self.schema(root, "urn:ess:bundle:validation")?;
-        let validator = compile(&schema, self.wire.document_root.as_deref())?;
-        Ok(validator
+        compile(&schema, self.wire.document_root.as_deref()).map(RootValidator)
+    }
+}
+
+/// One selected root, compiled by [`Bundle::validator`].
+pub struct RootValidator(jsonschema::Validator);
+
+impl RootValidator {
+    /// Validates a value without changing the instance or applying defaults.
+    #[must_use]
+    pub fn validate(&self, instance: &Value) -> Vec<Diagnostic> {
+        self.0
             .iter_errors(instance)
             .map(|error| Diagnostic {
                 unresolved_reference: false,
                 pointer: error.instance_path().to_string(),
                 message: error.to_string(),
             })
-            .collect())
+            .collect()
     }
 }
 
