@@ -11,8 +11,10 @@ use ess_conformance::coverage::{Inventory, Origins, Scope};
 use ess_conformance::coverage_build::{self, CoverageSource};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 
-/// `all: [limit > 0, amount > 0, amount <= limit]` over one struct input: the default's row where
-/// `amount <= limit` alone fails compares two facts, which the bounded search does not solve.
+/// `all: [open == true, s > j, s > k]` over one struct input: `open` alone failing gives the
+/// default its scenario, and the default's row where `s > k` alone fails orders two texts against
+/// each other, which the bounded search does not solve (it solves an order between two `Integer`
+/// facts, beyond10x/ess#622, but not one between two texts).
 const MODEL: &str = r"format: ess/23
 system: demo
 version: v1
@@ -22,8 +24,10 @@ types:
   - name: demo.terms.Terms
     kind: struct
     fields:
-      - {name: limit, type: Integer}
-      - {name: amount, type: Integer}
+      - {name: s, type: String}
+      - {name: j, type: String}
+      - {name: k, type: String}
+      - {name: open, type: Boolean}
 
 errors:
   - name: demo.terms.Invalid
@@ -36,16 +40,16 @@ commands:
       - name: valid
         when:
           all:
-            - terms.limit > 0
-            - terms.amount > 0
-            - terms.amount <= terms.limit
+            - terms.open == true
+            - terms.s > terms.j
+            - terms.s > terms.k
         accepts: nothing
       - name: invalid
         error: demo.terms.Invalid
 ";
 
 /// The child the search leaves unwitnessed, as the refusal prints it.
-const CHILD: &str = "not (terms.amount <= terms.limit)";
+const CHILD: &str = "not (terms.s > terms.k)";
 
 fn ir() -> EssIr {
     let raw = RawSpecFile::parse(MODEL).unwrap_or_else(|error| panic!("{error}\n{MODEL}"));
@@ -54,8 +58,8 @@ fn ir() -> EssIr {
     compile(&spec, &SourceMap::new()).expect("the fixture compiles")
 }
 
-/// One authored scenario sending `limit` and `amount` and expecting `outcome`.
-fn authored(name: &str, limit: i64, amount: i64, outcome: &str) -> String {
+/// One authored scenario sending `s`, `j` and `k` with `open` true and expecting `outcome`.
+fn authored(name: &str, [s, j, k]: [&str; 3], outcome: &str) -> String {
     let error = if outcome == "invalid" {
         "\n    error: {name: demo.terms.Invalid}"
     } else {
@@ -65,13 +69,13 @@ fn authored(name: &str, limit: i64, amount: i64, outcome: &str) -> String {
         "type: ess-scenario/1
 domain: demo.terms
 scenario: {name}
-summary: Terms with limit {limit} and amount {amount}.
+summary: Terms with s {s}, j {j} and k {k}.
 
 timeline:
   - at: 2026-01-01T00:00:00Z
     command: demo.terms.Check
     input:
-      terms: {{limit: {limit}, amount: {amount}}}
+      terms: {{s: {s}, j: {j}, k: {k}, open: true}}
     outcome: {outcome}{error}
 "
     )
@@ -122,14 +126,14 @@ fn without_an_authored_scenario_the_child_is_refused() {
     assert_eq!(counted(&inventory), inventory.refused.len());
 }
 
-/// The issue's case: an amount above a positive limit isolates `amount <= limit` and takes the
-/// default branch, so the refusal for that child is withdrawn and the count falls by one.
+/// The issue's case: an `s` above `j` but not above `k` isolates `s > k` and takes the default
+/// branch, so the refusal for that child is withdrawn and the count falls by one.
 #[test]
 fn an_admitted_authored_scenario_that_isolates_the_child_withdraws_its_refusal() {
     let before = inventory(&[]);
     let after = inventory(&[(
-        "amount-above-limit.yaml",
-        authored("amount-above-limit", 5, 6, "invalid"),
+        "s-between-j-and-k.yaml",
+        authored("s-between-j-and-k", ["b", "a", "c"], "invalid"),
     )]);
     assert_eq!(after.authored.len(), 1, "the authored scenario is admitted");
     assert!(
@@ -159,8 +163,8 @@ fn an_admitted_authored_scenario_that_isolates_the_child_withdraws_its_refusal()
 #[test]
 fn an_authored_scenario_that_does_not_isolate_the_child_leaves_its_refusal() {
     let after = inventory(&[(
-        "amount-above-zero-limit.yaml",
-        authored("amount-above-zero-limit", 0, 6, "invalid"),
+        "s-below-j-and-k.yaml",
+        authored("s-below-j-and-k", ["a", "b", "c"], "invalid"),
     )]);
     assert_eq!(after.authored.len(), 1, "the authored scenario is admitted");
     assert_eq!(
@@ -175,8 +179,8 @@ fn an_authored_scenario_that_does_not_isolate_the_child_leaves_its_refusal() {
 #[test]
 fn an_authored_scenario_of_the_other_branch_leaves_its_refusal() {
     let after = inventory(&[(
-        "amount-within-limit.yaml",
-        authored("amount-within-limit", 6, 5, "valid"),
+        "s-above-j-and-k.yaml",
+        authored("s-above-j-and-k", ["c", "a", "b"], "valid"),
     )]);
     assert_eq!(after.authored.len(), 1, "the authored scenario is admitted");
     assert_eq!(child_refusals(&after).len(), 1);
@@ -190,8 +194,8 @@ fn the_ordinary_path_withdraws_the_same_refusal() {
     let authoring = ess_conformance::authored::compile(
         &ir,
         &[ess_conformance::authored::Source::new(
-            "amount-above-limit.yaml",
-            authored("amount-above-limit", 5, 6, "invalid"),
+            "s-between-j-and-k.yaml",
+            authored("s-between-j-and-k", ["b", "a", "c"], "invalid"),
         )],
     );
     assert!(authoring.is_complete(), "{:#?}", authoring.refusals);
