@@ -68,6 +68,15 @@ pub(super) enum Destination<'a> {
         /// The publishing command's input carrying the identity.
         field: String,
     },
+    /// Another row, whose identity the row the publishing step acts on holds in its stored field
+    /// `field`: the event field is `{subject: <field>}` (a downstream adopter's report of
+    /// 2026-10-20).
+    TriggerSubjectField {
+        /// Its entity.
+        entity: &'a EntityHandle,
+        /// The stored field of the trigger's row carrying the identity.
+        field: String,
+    },
     /// No identity for the row is knowable before the trigger runs.
     Unavailable {
         /// The invoked command's input naming the row.
@@ -180,6 +189,14 @@ pub(super) fn destination<'a>(
         ),
         Some((ResolvedPayloadValue::ResponseField { .. }, _)) => {
             unavailable("the triggering event carries a response value, known only after the trigger")
+        }
+        Some((ResolvedPayloadValue::SubjectField { field: stored, .. }, false))
+            if trigger.subject.is_some() =>
+        {
+            Destination::TriggerSubjectField {
+                entity,
+                field: stored.clone(),
+            }
         }
         _ => unavailable(
             "the triggering event field is not one the trigger's caller supplies, so no row can be \
@@ -981,6 +998,18 @@ pub(super) fn prepare<'a>(
                     return Ok(prepared);
                 }
             }
+            if let Ok(branch) = reached {
+                if let Some(prepared) = per_row_decided(
+                    ir,
+                    binding,
+                    (invoked, branch),
+                    published_by,
+                    trigger,
+                    actors,
+                ) {
+                    return Ok(prepared);
+                }
+            }
             Ok(Prepared {
                 setup: trigger.setup.clone(),
                 invoke: trigger.invoke.clone(),
@@ -1002,6 +1031,9 @@ pub(super) fn prepare<'a>(
         }
         Destination::TriggerInput { entity, field } => {
             arranged_destination(ir, invoked, published_by, entity, &field, trigger, actors)
+        }
+        Destination::TriggerSubjectField { entity, field } => {
+            stored_destination(ir, invoked, published_by, entity, &field, trigger, actors)
         }
     }
 }
@@ -1133,6 +1165,217 @@ fn related_decided<'a>(
     })
 }
 
+/// The trigger of a binding whose invocation reaches a set effect publishing an event once per row
+/// it changes (`each: changed`), with one row its filter selects arranged first, resting where a
+/// per-row event's `when_state:` publishes it (a downstream adopter's report of 2026-10-20): with
+/// no such row the honest system publishes nothing, and a flow waiting for the event cannot pass.
+///
+/// The row is arranged against the input the bound invocation will carry: every input the filter
+/// reads is mapped unconverted from an event field the trigger fills unconverted from an input it
+/// is sent as a literal, or mapped from a literal. Where that does not hold, or no arranging
+/// command produces such a row, the branch is the gap [`BindingGap::ChangedRowUnarranged`], so the
+/// flow and delivery scenarios are refused by name rather than filed unpassable. `None` for a
+/// branch publishing no per-row event, which keeps the arrangement it had.
+fn per_row_decided<'a>(
+    ir: &'a EssIr,
+    binding: &'a ResolvedBinding,
+    (invoked, reached): (&'a ResolvedCommand, &'a ResolvedOutcome),
+    published_by: &'a ResolvedOutcome,
+    trigger: &Run,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Option<Prepared<'a>> {
+    let set = reached.instances.as_ref()?;
+    if set.events.is_empty() {
+        return None;
+    }
+    let unarranged = || BindingGap::ChangedRowUnarranged {
+        outcome: OutcomeRef::new(CommandRef::new(invoked.name.clone()), reached.name.clone()),
+        entity: EntityRef::from(&set.entity),
+    };
+    let arranged = per_row_input(ir, binding, published_by, trigger).and_then(|input| {
+        let movable = |state: &StateName| match &set.effect {
+            ResolvedEffect::Moves { transition } => transition.from.contains(state),
+            _ => true,
+        };
+        let rests = |state: &StateName| {
+            movable(state)
+                && set.events.iter().any(|entry| {
+                    entry.when_state.is_empty()
+                        || entry.when_state.iter().any(|held| held == state.as_str())
+                })
+        };
+        let mut taken = captured(trigger);
+        let before = taken.clone();
+        let row = super::set_effects::selected_row(
+            ir,
+            (invoked, reached, set),
+            &input,
+            actors,
+            &rests,
+            &mut taken,
+        )?;
+        let collides = row.steps.iter().any(|step| {
+            matches!(step, ScenarioStep::CaptureInstance { instance, .. } if before.contains(instance))
+        });
+        (!collides).then_some(row)
+    });
+    let Some(row) = arranged else {
+        return Some(Prepared {
+            setup: trigger.setup.clone(),
+            invoke: trigger.invoke.clone(),
+            capture: Vec::new(),
+            reached: Err(unarranged()),
+            row: None,
+            source: BTreeSet::new(),
+        });
+    };
+    let mut setup = trigger.setup.clone();
+    setup.extend(row.steps.iter().cloned());
+    let mut source = row.source.clone();
+    source.insert(EntityRef::from(&set.entity).into());
+    Some(Prepared {
+        setup,
+        invoke: trigger.invoke.clone(),
+        capture: Vec::new(),
+        reached: Ok(reached),
+        row: None,
+        source,
+    })
+}
+
+/// The input the bound invocation carries, where the scenario chose it: each input mapped from a
+/// literal, or unconverted from an event field the trigger fills unconverted from an input it is
+/// sent as a literal. Inputs filled any other way are left out; `None` where the binding has no
+/// event.
+fn per_row_input(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    published_by: &ResolvedOutcome,
+    trigger: &Run,
+) -> Option<BTreeMap<String, Node>> {
+    let event = binding.cause.event()?;
+    let sent = trigger.invoke.iter().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand { input, .. } => Some(input),
+        _ => None,
+    })?;
+    let mut input = BTreeMap::new();
+    for mapped in &binding.mapping {
+        let value = match (&mapped.value, &mapped.conversion) {
+            (ResolvedMappingValue::Literal { value }, _) => {
+                crate::input::mapping_literal(ir, &mapped.target_type, value)
+            }
+            (ResolvedMappingValue::EventField { field, .. }, None) => {
+                match payload_source(published_by, event, field) {
+                    Some((ResolvedPayloadValue::InputField { field: from, .. }, false))
+                        if !ess_domain::command::input_path::is_path(from) =>
+                    {
+                        match sent.get(from) {
+                            Some(ScenarioValue::Literal { value }) => Some(value.clone()),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        if let Some(value) = value {
+            input.insert(mapped.target.clone(), value);
+        }
+    }
+    Some(input)
+}
+
+/// The trigger's invocation sent naming a related row no row carries, so that the bound invocation
+/// answers `refusal`, a `when_related: {via: input.<f>, exists: false}` branch, as the honest
+/// system does: no injection, and nothing to arrange (a downstream adopter's report of 2026-10-20).
+///
+/// As [`related_decided`] requires for the accepting branch: the invoked command acts on no
+/// existing row of its own, and every branch it can take unforced reads the one related row the
+/// refusal reads, through no input guard, or is the default; the input naming the row is mapped
+/// unconverted from an event field the trigger fills unconverted from an input of its own. `refusal`
+/// is the first `exists: false` branch declared, so no other one answers before it. `None` where
+/// any of that does not hold, so the refusal keeps the gap it had.
+pub(super) fn related_missing(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    invoked: &ResolvedCommand,
+    published_by: &ResolvedOutcome,
+    refusal: &ResolvedOutcome,
+    trigger: &Run,
+) -> Option<Vec<ScenarioStep>> {
+    use super::related_guard;
+    use ess_compiler::ir::{ResolvedRelatedTest, ResolvedRelatedVia};
+
+    if refusal.error.is_none()
+        || addressed(invoked).is_some()
+        || related_guard::several(invoked)
+        || related_guard::stored::field(invoked).is_some()
+    {
+        return None;
+    }
+    let ResolvedCondition::Related {
+        via: via @ ResolvedRelatedVia::Input { .. },
+        test: ResolvedRelatedTest::Absent,
+        input: None,
+        ..
+    } = &refusal.condition
+    else {
+        return None;
+    };
+    let via = via.field();
+    let mut earlier = true;
+    for outcome in &invoked.outcomes {
+        if std::ptr::eq(outcome, refusal) {
+            earlier = false;
+        }
+        match &outcome.condition {
+            _ if outcome.test_strategy == TestStrategy::InjectFault => {}
+            ResolvedCondition::Otherwise => {}
+            ResolvedCondition::Related {
+                via: read,
+                test,
+                input: None,
+                ..
+            } if read.field() == via => {
+                // An `exists: false` branch over the same row declared earlier answers first.
+                if earlier && matches!(test, ResolvedRelatedTest::Absent) {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+        if outcome.replays.is_some() {
+            return None;
+        }
+    }
+
+    let event = binding.cause.event()?;
+    let mapped = binding.mapping.iter().find(|mapped| mapped.target == via)?;
+    let field = match (&mapped.value, &mapped.conversion) {
+        (ResolvedMappingValue::EventField { field, .. }, None) => field.as_str(),
+        _ => return None,
+    };
+    let from = match payload_source(published_by, event, field)? {
+        (ResolvedPayloadValue::InputField { field: from, .. }, false)
+            if !ess_domain::command::input_path::is_path(from) =>
+        {
+            from.clone()
+        }
+        _ => return None,
+    };
+    let fresh = super::fresh_identity(ir, invoked, via, None).ok()?;
+    let mut invoke = trigger.invoke.clone();
+    invoke.iter_mut().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand { input, .. } if input.contains_key(&from) => {
+            input.insert(from.clone(), ScenarioValue::literal(fresh.clone()));
+            Some(())
+        }
+        _ => None,
+    })?;
+    Some(invoke)
+}
+
 /// [`prepare`] where the destination is the trigger's own row: its state is where the trigger
 /// leaves it, and it is named by the trigger's arrangement or captured from the trigger's event.
 fn same_row_destination<'a>(
@@ -1211,43 +1454,7 @@ fn arranged_destination<'a>(
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<Prepared<'a>, BindingGap> {
     let command = || CommandRef::new(invoked.name.clone());
-    let mut eligible = Vec::new();
-    let mut branches: BTreeSet<_> = BTreeSet::new();
-    for state in &ir.entity(entity).lifecycle.states {
-        if let Reached::Accepted(branch) = bound_branch(invoked, state)? {
-            eligible.push(state.clone());
-            branches.insert(branch.name.clone());
-        }
-    }
-    // Two accepting branches, each in its own states, are two outcomes the arranged state would
-    // pick between: that is a choice, and it stays named rather than made by position.
-    if branches.len() > 1 {
-        return Err(BindingGap::BranchUndecided {
-            command: command(),
-            branches: branches.into_iter().collect(),
-        });
-    }
-    let Some(first) = eligible.first().cloned() else {
-        return Err(BindingGap::DestinationIneligible {
-            command: command(),
-            state: ir.entity(entity).lifecycle.initial.clone(),
-        });
-    };
-    let (_, distinction) = unused_name(ir, entity, trigger);
-    let arrangement =
-        arrange_first(ir, entity, &eligible, actors, distinction, &[]).map_err(|reason| {
-            BindingGap::DestinationUnreachable {
-                entity: EntityRef::from(entity),
-                state: first,
-                reason: Box::new(reason),
-            }
-        })?;
-    let Reached::Accepted(reached) = bound_branch(invoked, &arrangement.state)? else {
-        return Err(BindingGap::DestinationIneligible {
-            command: command(),
-            state: arrangement.state.clone(),
-        });
-    };
+    let (arrangement, reached) = eligible_row(ir, invoked, entity, trigger, actors)?;
     let identity = arrangement.identity();
     let mut invoke = trigger.invoke.clone();
     let named = invoke.iter_mut().rev().find_map(|step| match step {
@@ -1289,6 +1496,180 @@ fn arranged_destination<'a>(
         )),
         source: arrangement.source,
     })
+}
+
+/// [`prepare`] where the row the trigger acts on holds the destination's identity in its stored
+/// field `stored` (`{subject: <field>}` in the trigger's payload): the destination is arranged
+/// first, in a state the one accepting branch admits, and the trigger's own arrangement creates its
+/// row holding that identity (a downstream adopter's report of 2026-10-20).
+///
+/// Only where that arrangement creates the trigger's row with `stored` set unconverted from an
+/// input, and the row still holds what that input was sent when the trigger runs; otherwise the
+/// identity stays unavailable, named.
+fn stored_destination<'a>(
+    ir: &'a EssIr,
+    invoked: &'a ResolvedCommand,
+    published_by: &'a ResolvedOutcome,
+    entity: &'a EntityHandle,
+    stored: &str,
+    trigger: &Run,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<Prepared<'a>, BindingGap> {
+    let unavailable = |why| BindingGap::DestinationIdentityUnavailable {
+        command: CommandRef::new(invoked.name.clone()),
+        input: field_name(invoked),
+        why,
+    };
+    let (arrangement, reached) = eligible_row(ir, invoked, entity, trigger, actors)?;
+    let identity = arrangement.identity();
+    let named = stored_in_setup(ir, published_by, stored, trigger, &identity).ok_or_else(|| {
+        unavailable(
+            "the triggering event carries a stored field of the row the trigger acts on, and the \
+             trigger's arrangement does not create that row with the field from an input it sends",
+        )
+    })?;
+    let taken = captured(trigger);
+    if arrangement.steps.iter().any(|step| {
+        matches!(step, ScenarioStep::CaptureInstance { instance, .. } if taken.contains(instance))
+    }) {
+        return Err(unavailable(
+            "arranging the row names an instance the trigger's arrangement already names",
+        ));
+    }
+    let mut setup = arrangement.steps.clone();
+    setup.extend(named);
+    Ok(Prepared {
+        setup,
+        invoke: trigger.invoke.clone(),
+        capture: Vec::new(),
+        reached: Ok(reached),
+        row: Some(row(
+            ir,
+            published_by,
+            entity,
+            identity,
+            arrangement.state.clone(),
+            fan_out(
+                ir,
+                published_by,
+                &Destination::TriggerSubjectField {
+                    entity,
+                    field: stored.to_owned(),
+                },
+            ),
+            Ok(()),
+        )),
+        source: arrangement.source,
+    })
+}
+
+/// The trigger's arrangement with the row the trigger acts on created holding `identity` in its
+/// stored field `stored`: the creating step's input that `sets:` copies into it, unconverted,
+/// replaced. `None` where the arrangement does not create the row so, or where the row no longer
+/// holds what that input was sent by the time the trigger runs.
+fn stored_in_setup(
+    ir: &EssIr,
+    published_by: &ResolvedOutcome,
+    stored: &str,
+    trigger: &Run,
+    identity: &ScenarioValue,
+) -> Option<Vec<ScenarioStep>> {
+    let subject = published_by.subject.as_ref()?;
+    let instance = trigger.instance.as_ref()?;
+    let held = trigger.before_settled.get(stored)?;
+    let mut setup = trigger.setup.clone();
+    let at = setup.iter().position(|step| {
+        matches!(step, ScenarioStep::CaptureInstance { instance: captured, .. } if captured == instance)
+    })?;
+    let sent = setup[..at]
+        .iter()
+        .rposition(|step| matches!(step, ScenarioStep::ExecuteCommand { .. }))?;
+    let taken = match setup.get(sent + 1) {
+        Some(ScenarioStep::ExpectOutcome { outcome }) => outcome.outcome.clone(),
+        _ => return None,
+    };
+    let ScenarioStep::ExecuteCommand { command, input, .. } = &mut setup[sent] else {
+        return None;
+    };
+    let creator = ir
+        .commands()
+        .get(command.name())?
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.name == taken)?;
+    let creates = creator.subject.as_ref().is_some_and(|created| {
+        matches!(created.effect, ResolvedEffect::Creates) && created.entity == subject.entity
+    });
+    if !creates {
+        return None;
+    }
+    let from = creator
+        .sets
+        .iter()
+        .find(|set| set.target == stored && set.conversion.is_none())
+        .and_then(|set| match &set.value {
+            ResolvedPayloadValue::InputField { field, .. }
+                if !ess_domain::command::input_path::is_path(field) =>
+            {
+                Some(field.clone())
+            }
+            _ => None,
+        })?;
+    if input.get(&from) != Some(&held.value) {
+        return None;
+    }
+    input.insert(from, identity.clone());
+    Some(setup)
+}
+
+/// The row the invoked command acts on, arranged in a state its one accepting branch admits under
+/// a name no step of `trigger` uses, and that branch.
+fn eligible_row<'a>(
+    ir: &'a EssIr,
+    invoked: &'a ResolvedCommand,
+    entity: &'a EntityHandle,
+    trigger: &Run,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<(Arrangement, &'a ResolvedOutcome), BindingGap> {
+    let command = || CommandRef::new(invoked.name.clone());
+    let mut eligible = Vec::new();
+    let mut branches: BTreeSet<_> = BTreeSet::new();
+    for state in &ir.entity(entity).lifecycle.states {
+        if let Reached::Accepted(branch) = bound_branch(invoked, state)? {
+            eligible.push(state.clone());
+            branches.insert(branch.name.clone());
+        }
+    }
+    // Two accepting branches, each in its own states, are two outcomes the arranged state would
+    // pick between: that is a choice, and it stays named rather than made by position.
+    if branches.len() > 1 {
+        return Err(BindingGap::BranchUndecided {
+            command: command(),
+            branches: branches.into_iter().collect(),
+        });
+    }
+    let Some(first) = eligible.first().cloned() else {
+        return Err(BindingGap::DestinationIneligible {
+            command: command(),
+            state: ir.entity(entity).lifecycle.initial.clone(),
+        });
+    };
+    let (_, distinction) = unused_name(ir, entity, trigger);
+    let arrangement =
+        arrange_first(ir, entity, &eligible, actors, distinction, &[]).map_err(|reason| {
+            BindingGap::DestinationUnreachable {
+                entity: EntityRef::from(entity),
+                state: first,
+                reason: Box::new(reason),
+            }
+        })?;
+    let Reached::Accepted(reached) = bound_branch(invoked, &arrangement.state)? else {
+        return Err(BindingGap::DestinationIneligible {
+            command: command(),
+            state: arrangement.state.clone(),
+        });
+    };
+    Ok((arrangement, reached))
 }
 
 fn field_name(invoked: &ResolvedCommand) -> String {

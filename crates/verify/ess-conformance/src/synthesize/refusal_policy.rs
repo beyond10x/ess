@@ -5,8 +5,10 @@
 //! specification declares `external:` — and observed through the attempt count, the escalation
 //! event, and its absence for the whole window
 //! ([`ExpectNoPublication`](crate::ScenarioStep::ExpectNoPublication): the escalation is the
-//! binding's, so the last command's direct events cannot show it). An unforceable refusal is
-//! refused by name, a coverage limitation and never a fabricated result. The untyped fallback is no
+//! binding's, so the last command's direct events cannot show it). A `when_related: {via:
+//! input.<f>, exists: false}` refusal is answered rather than forced, on every attempt, where the
+//! trigger can be sent naming a row no row carries ([`super::binding_effects::related_missing`]).
+//! An unforceable refusal is refused by name, a coverage limitation and never a fabricated result. The untyped fallback is no
 //! declared refusal and no suite can force one; the runtime controls witness it.
 //!
 //! | the refusal's policy | forced | required |
@@ -25,7 +27,7 @@ use super::{
     accepting_component, clipped, insert, payload_shape, publishes, ActorRef, BTreeMap, BTreeSet,
     BindingGap, BindingRef, Built, CommandRef, ConformanceScenario, ConformanceSuite, EssIr,
     EssSemanticRef, EventRef, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedBinding,
-    ResolvedCommand, Run, ScenarioId, ScenarioStep, TestStrategy,
+    ResolvedCommand, ResolvedOutcome, Run, ScenarioId, ScenarioStep, TestStrategy,
 };
 
 /// Every declared refusal's scenario, or the refusal that says why there is none.
@@ -35,7 +37,7 @@ pub(super) fn witnesses(
     binding: &ResolvedBinding,
     policy: &ResolvedRefusalPolicy,
     invoked: &ResolvedCommand,
-    trigger: &Run,
+    (published_by, trigger): (&ResolvedOutcome, &Run),
     prepared: &Result<super::binding_effects::Prepared<'_>, BindingGap>,
     event: &EventRef,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -59,7 +61,7 @@ pub(super) fn witnesses(
                 &rule.outcome,
                 &rule.action,
                 invoked,
-                trigger,
+                (published_by, trigger),
                 event,
                 actors,
             )
@@ -117,13 +119,39 @@ fn witness(
     outcome: &ess_domain::command::OutcomeName,
     action: &ResolvedRefusalAction,
     invoked: &ResolvedCommand,
-    trigger: &Run,
+    (published_by, trigger): (&ResolvedOutcome, &Run),
     event: &EventRef,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Built {
     let command = CommandRef::new(invoked.name.clone());
-    let forced_ref = forcible(ir.format(), invoked, outcome)?;
+    let forced = forcible(ir.format(), invoked, outcome);
     let alternative = super::bounded_retry::clean_trigger(ir, binding, trigger, actors)?;
+    // A missing related row is a refusal the honest system answers on every attempt, where the
+    // trigger names a row no row carries: no injection is needed to reach it (a downstream
+    // adopter's report of 2026-10-20). Only on the trigger as it is; one whose arrangement sets
+    // the binding off is sent from another publisher, which this does not read.
+    let answered = match (&forced, &alternative) {
+        (Err(_), None) => invoked
+            .outcomes
+            .iter()
+            .find(|candidate| &candidate.name == outcome)
+            .and_then(|refusal| {
+                super::binding_effects::related_missing(
+                    ir,
+                    binding,
+                    invoked,
+                    published_by,
+                    refusal,
+                    trigger,
+                )
+            }),
+        _ => None,
+    };
+    let forced_ref = match (forced, &answered) {
+        (Ok(forced_ref), _) => forced_ref,
+        (Err(_), Some(_)) => OutcomeRef::new(command.clone(), outcome.clone()),
+        (Err(gap), None) => return Err(gap),
+    };
     let trigger = alternative.as_ref().map_or(trigger, |(run, _)| run);
     let mut source: BTreeSet<EssSemanticRef> = [command.clone().into(), forced_ref.clone().into()]
         .into_iter()
@@ -141,8 +169,12 @@ fn witness(
         text,
     } = owed(ir, binding, policy, outcome, action, invoked, &mut source);
     let mut steps = trigger.setup.clone();
-    steps.push(super::bounded_retry::force(forced_ref, times));
-    steps.extend(trigger.invoke.iter().cloned());
+    if let Some(invoke) = answered {
+        steps.extend(invoke);
+    } else {
+        steps.push(super::bounded_retry::force(forced_ref, times));
+        steps.extend(trigger.invoke.iter().cloned());
+    }
     steps.push(ScenarioStep::ExpectEvent {
         event: event.clone(),
         payload: BTreeMap::new(),

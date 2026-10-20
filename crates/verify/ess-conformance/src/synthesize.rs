@@ -1255,6 +1255,13 @@ impl RefusalCause {
                  input or from a caller attribute (`{caller: <attribute>}`), so the arranged rows \
                  can hold values on both sides of the filter"
             }
+            // Rows a binding or a set effect changes while the scenario is arranged (a downstream
+            // adopter's report of 2026-10-20): no field the creating commands write repairs that.
+            Self::NoWitness(gap) if gap.reason == row_set::ROWS_UNFOLLOWED => {
+                "the rows the selector reads are changed by a binding, a set effect or a direct \
+                 setup the arrangement sets off, whose effect on them synthesis does not follow; \
+                 cover the branch with an authored scenario (ess-scenario/1)"
+            }
             Self::NoWitness(gap) if set_effects::UNARRANGED.contains(&gap.reason) => {
                 "let a command that creates the entity write each field the filter reads from an \
                  input or from a caller attribute (`{caller: <attribute>}`) rather than from a \
@@ -1471,7 +1478,8 @@ crate::authored::diagnostic_catalogue! {
                 | BindingGap::DestinationUnreachable { .. }
                 | BindingGap::UnchangedUnobservable { .. }
                 | BindingGap::EffectUnsettled { .. }
-                | BindingGap::ConditionUnarranged { .. },
+                | BindingGap::ConditionUnarranged { .. }
+                | BindingGap::ChangedRowUnarranged { .. },
             ..
         } => 10,
             "A binding clause has nothing a scenario could observe.",
@@ -1981,6 +1989,16 @@ pub enum BindingGap {
         /// Which side, and why.
         why: String,
     },
+    /// The branch the binding reaches publishes an event once per row its set effect changes, and
+    /// no row its filter selects, resting where the event is published for it, can be arranged
+    /// before the trigger: the honest system would publish nothing, so a flow waiting for the
+    /// event is not filed (a downstream adopter's report of 2026-10-20).
+    ChangedRowUnarranged {
+        /// The branch.
+        outcome: OutcomeRef,
+        /// The entity whose rows it changes.
+        entity: EntityRef,
+    },
 }
 
 impl BindingGap {
@@ -2056,6 +2074,11 @@ impl BindingGap {
                 "let the trigger copy every event member the condition reads from an input it \
                  does not guard on, or cover the condition with an authored scenario \
                  (ess-scenario/1)"
+            }
+            Self::ChangedRowUnarranged { .. } => {
+                "let the trigger copy every input the filter reads from an input of its own, and \
+                 a command that creates the entity write each field the filter reads from an \
+                 input; or cover the binding with an authored scenario (ess-scenario/1)"
             }
         }
     }
@@ -2151,6 +2174,11 @@ impl fmt::Display for BindingGap {
                     "invokes only when its event-payload condition holds, and {why}"
                 )
             }
+            Self::ChangedRowUnarranged { outcome, entity } => write!(
+                f,
+                "invokes `{outcome}`, which publishes an event once per `{entity}` it changes, and \
+                 no row its filter selects can be arranged before the trigger"
+            ),
         }
     }
 }
@@ -11548,7 +11576,8 @@ fn creator_bindings(
             Some(bound)
         })?;
     if !bound.is_empty()
-        && (related_guard::routes(creator.command, creator.outcome)
+        && ((related_guard::routes(creator.command, creator.outcome)
+            && !related_guard::present_in(creator.command, &bound))
             || creator
                 .command
                 .outcomes
@@ -16457,7 +16486,16 @@ fn binding_aspects(
     }
     if let Some(policy) = &binding.refusal_policy {
         refusal_policy::witnesses(
-            ir, binding, policy, invoked, trigger, &prepared, &event, actors, &source, suite,
+            ir,
+            binding,
+            policy,
+            invoked,
+            (published_by, trigger),
+            &prepared,
+            &event,
+            actors,
+            &source,
+            suite,
             refusals,
         );
         return;

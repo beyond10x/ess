@@ -182,8 +182,11 @@ refusal is forced on an `external:` branch, and the scenario requires the attemp
 owes, the escalation event published exactly once where it escalates (`expect_publication_count`),
 and, where it does not, that the escalation event is published no times for the whole window
 (`expect_no_publication`). An unbounded retry is witnessed as the universal `retry` is, through the
-same arrangement of the row the command addresses. A refusal no scenario can force
-is refused by name. These scenarios need suite/36 or /37. The generated Rust, Go and Web targets
+same arrangement of the row the command addresses. A `when_related: {via: input.<field>, exists:
+false}` refusal needs no `external:`: where the binding maps that input unconverted from an event
+field the triggering command copies from its own input, the scenario sends the trigger naming a row
+that does not exist, and the invoked command answers the refusal on every attempt. A refusal no
+scenario can force or answer is refused by name. These scenarios need suite/36 or /37. The generated Rust, Go and Web targets
 and the scenario player cannot select a policy per refusal yet, so they refuse such a binding by
 name (`bindings.<name>.on_failure`).
 
@@ -342,6 +345,33 @@ predicate branch that does. Each branch of the command keeps its own outcome sce
 also reads the invoked command's input, or the row is named by a value the implementation mints,
 the branch depends on values the scenario does not choose, and the binding's scenarios are still
 refused with `ESS-SYNTH-010`.
+
+The row the invoked command acts on may also be named by a stored field of the row the trigger
+acts on. The triggering branch then publishes that field with `{subject: <field>}`:
+
+```yaml
+  - name: demo.device.RedeemToken
+    input: [{name: token_id, type: demo.device.TokenId}]
+    outcomes:
+      - name: redeemed
+        moves: demo.device.Token.redeem
+        instance: token_id
+        emits: [demo.device.TokenRedeemed]
+        payload:
+          demo.device.TokenRedeemed: {token_id: input.token_id, device_id: {subject: device_id}}
+```
+
+A binding mapping `device_id: event.device_id` into a command that updates the device gets its
+`flow`, `mapping` and `delivery` scenarios: the device is arranged first, and the token is created
+holding its identity. This needs the token's creating command to write `device_id` from an input,
+unconverted. Otherwise the binding is refused with `ESS-SYNTH-010`, naming the stored field.
+
+When the invoked command is a set effect that publishes an event once per changed row
+(`each: changed`), the binding's `flow` and `delivery` scenarios first create one row the filter
+selects. That row rests in a state the event's `when_state:` admits. Without such a row the honest
+system publishes nothing. Synthesis can create the row when every input the filter reads is mapped
+from a literal, or unconverted from an event field the triggering command copies from its own input.
+Otherwise the two scenarios are refused with `ESS-SYNTH-010`, naming the set effect.
 
 A `mapping:` value written as `{related: …}` is refused as an unknown field of a selection.
 
