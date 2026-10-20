@@ -149,6 +149,15 @@ impl State {
         })
     }
 
+    /// The rows of one entity, by identity: what [`Self::instances`] yields for it, without
+    /// walking every other entity's rows.
+    pub(super) fn instances_of(
+        &self,
+        entity: &QualifiedName,
+    ) -> impl Iterator<Item = (&Node, &Row)> {
+        self.instances.get(entity).into_iter().flatten()
+    }
+
     pub(crate) fn lifecycle(&self, entity: &QualifiedName, identity: &str) -> Option<&StateName> {
         self.instance_typed(entity, &Node::Text(identity.into()))
             .map(|row| &row.state)

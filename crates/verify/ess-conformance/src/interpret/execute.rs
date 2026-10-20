@@ -127,6 +127,15 @@ impl Store {
         })
     }
 
+    /// The instances of one entity, by identity: what [`Self::instances`] yields for it, without
+    /// walking every other entity's instances.
+    pub(crate) fn instances_of(
+        &self,
+        entity: &QualifiedName,
+    ) -> impl Iterator<Item = (&Node, &Instance)> {
+        self.instances.get(entity).into_iter().flatten()
+    }
+
     /// Only rows whose identities are text; use [`Self::instances`] to enumerate every row.
     pub fn text_instances(&self) -> impl Iterator<Item = (&QualifiedName, &str, &Instance)> {
         self.instances().filter_map(|(entity, identity, instance)| {
