@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.65.0] — 2026-10-20
+
 ### Fixed
 
 - A binding into a set effect that publishes an event once per changed row (`each: changed`) gets
@@ -30,6 +32,14 @@
   the target row first, and the trigger's row is created holding its identity. This needs the
   trigger's creating command to write that field from an input, unconverted. Otherwise the
   `ESS-SYNTH-010` refusal names the stored field (downstream report, 2026-10-20).
+- A one-time outcome's `command/<command>/<outcome>` disclosure cell reaches its branch the way the
+  ordinary suite does: a branch comparing the caller is sent by a second caller over a row the first
+  created, an `unknown_instance:` branch for an identity no record carries, and a `wrong_state:`
+  branch on a row in a state the command's moves leave out. Before, these cells were refused with
+  `ESS-SYNTH-003`, or with `ESS-SYNTH-008` saying the scenarios "drifted apart" (downstream report,
+  2026-10-20).
+- A `denied/<command>` cell sends the first branch that can be arranged, not the first declared
+  (downstream report, 2026-10-20).
 
 ## [0.64.0] — 2026-10-20
 

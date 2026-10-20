@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.65.0](#synthesis-arranges-the-rows-binding-row-set-and-one-time-disclosure-scenarios-read) | Synthesis arranges the rows binding, row-set and one-time disclosure scenarios read | capability | notable |
 | [0.64.0](#a-view-and-a-guard-read-the-row-a-reference-names) | A view and a guard read the row a reference names | capability | notable |
 | [0.63.0](#a-value-can-be-computed-by-a-typed-expression-and-every-guard-answers-in-one-precedence-order) | A value can be computed by a typed expression, and every guard answers in one precedence order | capability | notable |
 | [0.62.0](#a-suite-holds-a-command-at-a-fixed-now-so-a-guard-on-a-time-boundary-is-tested-exactly-there) | A suite holds a command at a fixed now, so a guard on a time boundary is tested exactly there | capability | notable |
@@ -73,6 +74,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.65.0 — 2026-10-20
+
+### Synthesis arranges the rows binding, row-set and one-time disclosure scenarios read
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.65.0)
+
+Binding scenarios arrange the rows a per-row event, a refusal policy or a stored target names; row-set guards are witnessed beside bindings; `affects:` rows are arranged behind a missing-row guard; and one-time disclosure cells reach caller, unknown-instance and wrong-state branches the way the ordinary suite does.
 
 ## 0.64.0 — 2026-10-20
 
