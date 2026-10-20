@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:related-rows-quantifier-in-a-selector
 kind: story
-status: draft
+status: implemented
 title: A row selector cannot test each candidate's related rows
 summary: 'exists: walks an entity''s rows (in: {entity: E}, as, that) in value selectors and row-set guards, from ess/25'
 owner: timo
@@ -11,7 +11,13 @@ tags:
 refs:
 - provider: github
   reference: beyond10x/ess#551
-revision: 1
+relations:
+- serves: vision:O2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-19T21:15:15Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-19T21:15:16Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-19T21:15:17Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:set-effect-filters-read-the-identity
 kind: story
-status: draft
+status: implemented
 title: 'affects: cannot address a related record by its identity, and code targets refuse affects: over filtered rows'
 summary: 'Identity readable in affects:/instances: filters from ess/25; code targets generate with an obligation'
 owner: timo
@@ -11,7 +11,13 @@ tags:
 refs:
 - provider: github
   reference: beyond10x/ess#547
-revision: 1
+relations:
+- serves: vision:O2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-19T21:15:07Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-19T21:15:07Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-19T21:15:09Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":2}}}
 ---
 Suggested id: story:set-effect-filters-read-the-identity-and-code-targets-owe-set-effects
 Suggested title: A set effect's filter reads the row's identity, and code targets owe set effects instead of refusing them
