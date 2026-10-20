@@ -1570,9 +1570,12 @@ child alone fails. Below the top level, the input must also be one where that co
 the whole guard. So a target that writes `or` for a nested `and`, such as
 `any: [all: [a, b], all: [a, c]]`, fails a scenario. Where none of the guard's own candidates is
 such an input, synthesis solves for it directly, so a wide guard, such as an `any` of four
-three-way `all`s, is witnessed at every child too. Where that finds none either, and the search did
-not try every value of every field, the scenario stands and an `ESS-SYNTH-022` refusal beside it
-names the input it could not build.
+three-way `all`s, is witnessed at every child too. Where the input orders two `Integer` fields
+against each other, such as `amount <= limit` failing beside `limit > 0` and `amount > 0`, one
+field is placed relative to the other, inside each field's declared range (`limit 1, amount 2`).
+Where those orders and ranges leave no input at all, the child is not refused. Where the search
+finds none and did not try every value of every field, the scenario stands and an `ESS-SYNTH-022`
+refusal beside it names the input it could not build.
 
 Every input also satisfies the invariants over it. That covers the invariants of each struct the
 input holds, and those of each entity a branch copies the input into. For

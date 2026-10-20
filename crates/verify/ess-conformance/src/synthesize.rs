@@ -14834,10 +14834,12 @@ fn one_per_child(
         // An input that isolates the child but selects another branch is that branch's, and a
         // search that tried every region of every leaf shows no input isolates it at all, and so
         // does a goal whose text literals contradict each other (`not starts_with "A"` beside
-        // `starts_with "AB"`); only a search that stopped short leaves the row unwitnessed
-        // without saying why.
+        // `starts_with "AB"`), or whose orders between `Integer` inputs do (`limit <= 0` beside
+        // `amount > 0` and `amount <= limit`, beyond10x/ess#622); only a search that stopped short
+        // leaves the row unwitnessed without saying why.
         if !found
             && !crate::witness::unsatisfiable(&goal)
+            && !crate::witness::infeasible(ir, command, &goal)
             && !crate::witness::exhausts(ir, command, &[&goal])
         {
             missed.push(RefusalCause::ChildUnwitnessed {

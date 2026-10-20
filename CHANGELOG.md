@@ -17,6 +17,14 @@
   own rather than the owner the scope names, so the branch was refused as having no arrangement of
   rows. The rows are now created naming that owner, with or without an `exists` test in the outer
   selection. Other suites are unchanged; a specification needs no change (beyond10x/ess#621).
+- A connective's child that orders two `Integer` inputs against each other, such as
+  `amount <= limit` beside `limit > 0` and `amount > 0`, is witnessed: where no candidate of the
+  search is the input the child needs, one input is placed relative to the other inside the
+  declared ranges, so the `ESS-SYNTH-022` refusal naming that child is gone and the default branch
+  gets the row. A child whose orders and declared ranges leave no input at all (`limit <= 0` beside
+  `amount > 0` and `amount <= limit`) is no longer refused either. Other suites are unchanged; a
+  specification needs no change, and an authored scenario written only to cover such a child can
+  be dropped (beyond10x/ess#622).
 
 ## [0.66.0] — 2026-10-20
 
