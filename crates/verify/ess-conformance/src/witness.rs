@@ -144,6 +144,8 @@ use ess_primitives::time::{CurrentTime, Rfc3339Instant};
 
 use crate::decision::Decision;
 
+mod relative;
+
 /// How many candidate inputs one outcome is tried against before synthesis refuses.
 ///
 /// A bound rather than a budget to spend: §11 asks for a constrained strategy, and the honest
@@ -654,8 +656,60 @@ pub(crate) fn solving(
     goal: &Predicate,
     distinction: Distinction,
 ) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
-    search_with(ir, command, &[goal], distinction, false, Goals::Satisfied)
-        .map(|(inputs, _)| inputs)
+    let (mut inputs, _) = search_with(ir, command, &[goal], distinction, false, Goals::Satisfied)?;
+    let satisfied = |input: &BTreeMap<String, Node>| {
+        crate::input::flatten(ir, command, input)
+            .is_ok_and(|facts| matches!(facts.decide(goal), Decision::Satisfied))
+    };
+    // Where none satisfies a goal ordering two `Integer` leaves, one of them is moved relative to
+    // the other (beyond10x/ess#622); every goal a candidate already met keeps its candidates.
+    if !inputs.iter().any(satisfied) {
+        if let Some(bounds) = goal_bounds(ir, command, goal, distinction) {
+            let moved = inputs
+                .iter()
+                .filter_map(|input| bounds.moved(input))
+                .find(|input| {
+                    satisfied(input)
+                        && !admitted_inputs(ir, command, vec![input.clone()]).is_empty()
+                });
+            inputs.extend(moved);
+        }
+    }
+    Ok(inputs)
+}
+
+/// Whether the bounds `goal` places on the `Integer` leaves of `command`'s input, two of which it
+/// compares with each other, admit no values at all — the leaves' declared ranges included — so
+/// that no input satisfies it (beyond10x/ess#622). `false` for a goal comparing no two such leaves.
+pub(crate) fn infeasible(ir: &EssIr, command: &ResolvedCommand, goal: &Predicate) -> bool {
+    goal_bounds(ir, command, goal, Distinction::PLAIN).is_some_and(|bounds| bounds.infeasible())
+}
+
+/// The bounds `goal` places on the `Integer` leaves of `command`'s input and on their declared
+/// ranges ([`relative::Bounds`]); `None` where it compares no two of them.
+fn goal_bounds(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    goal: &Predicate,
+    distinction: Distinction,
+) -> Option<relative::Bounds> {
+    let mut builder = Builder::new(
+        ir,
+        distinction,
+        list_reads(&[goal]),
+        positional_reads(&[goal]),
+    );
+    builder.input(command, &BTreeMap::new()).ok()?;
+    relative::Bounds::of(
+        goal,
+        &|path| {
+            matches!(
+                builder.leaves.get(path),
+                Some((Leaf::Number { integral: true }, _))
+            )
+        },
+        &|path| builder.invariants.get(path).cloned().unwrap_or_default(),
+    )
 }
 
 /// Which goals [`Directed`] solves for.

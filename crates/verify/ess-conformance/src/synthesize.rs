@@ -11390,6 +11390,30 @@ fn arrange_toward_owned(
     )
 }
 
+/// [`arrange_toward_filter`] for an owned row whose `filter` pins its owner link to the literal
+/// identity of an owner the scenario already holds (beyond10x/ess#621): the creating input names
+/// that owner as the steering chose it, and no owner of its own is arranged, which would give the
+/// row a link no such filter selects.
+fn arrange_toward_named_owner(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    filter: &Predicate,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    accept: &dyn Fn(&Arrangement) -> bool,
+) -> Option<Arrangement> {
+    arrange_toward_with(
+        ir,
+        entity,
+        filter,
+        actors,
+        distinction,
+        (None, true),
+        &BTreeMap::new(),
+        accept,
+    )
+}
+
 /// The same bounded arrangement search with fields populated from already captured instances.
 /// Only a direct, unconverted `sets: field: input.field` proves which creator input to bind.
 /// The identities stay symbolic throughout: a generated ID is never replaced by a sample value.
@@ -11401,6 +11425,31 @@ fn arrange_toward_bound(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
     owner: Option<&InstanceName>,
+    fields: &BTreeMap<String, InstanceName>,
+    accept: &dyn Fn(&Arrangement) -> bool,
+) -> Option<Arrangement> {
+    arrange_toward_with(
+        ir,
+        entity,
+        filter,
+        actors,
+        distinction,
+        (owner, false),
+        fields,
+        accept,
+    )
+}
+
+/// [`arrange_toward_bound`], and where `named` is set, the owner left to the input the steering
+/// chose ([`arrange_toward_named_owner`]).
+#[allow(clippy::too_many_arguments)]
+fn arrange_toward_with(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    filter: &Predicate,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    (owner, named): (Option<&InstanceName>, bool),
     fields: &BTreeMap<String, InstanceName>,
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
@@ -11464,7 +11513,7 @@ fn arrange_toward_bound(
                 creator,
                 actors,
                 distinction,
-                under,
+                (under, named),
                 &bound,
                 &input,
             );
@@ -11595,7 +11644,9 @@ fn creator_bindings(
     Some(bound)
 }
 
-/// Create one row with explicit captured inputs, preserving any declared owner arrangement.
+/// Create one row with explicit captured inputs, preserving any declared owner arrangement; where
+/// `named` is set and no owner is given, the input names the owner (beyond10x/ess#621) and none is
+/// arranged.
 #[allow(clippy::too_many_arguments)]
 fn created_bound(
     ir: &EssIr,
@@ -11603,7 +11654,7 @@ fn created_bound(
     creator: &Driver<'_>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
-    owner: Option<(String, Arrangement)>,
+    (owner, named): (Option<(String, Arrangement)>, bool),
     bound: &BTreeMap<String, InstanceName>,
     input: &BTreeMap<String, Node>,
 ) -> Result<Arrangement, Unreachable> {
@@ -11619,11 +11670,24 @@ fn created_bound(
                 Some(under),
                 Some(input),
             ),
+            None if named => created_owned(
+                ir,
+                entity,
+                creator,
+                actors,
+                distinction,
+                &[],
+                None,
+                Some(input),
+            ),
             None => created(ir, entity, creator, actors, distinction, &[], Some(input)),
         };
     }
-    let arranged_owner =
-        owner.or_else(|| arrange_owner(ir, creator.outcome, entity, actors, distinction, &[]));
+    let arranged_owner = owner.or_else(|| {
+        (!named)
+            .then(|| arrange_owner(ir, creator.outcome, entity, actors, distinction, &[]))
+            .flatten()
+    });
     created_by(
         ir,
         entity,
@@ -14770,10 +14834,12 @@ fn one_per_child(
         // An input that isolates the child but selects another branch is that branch's, and a
         // search that tried every region of every leaf shows no input isolates it at all, and so
         // does a goal whose text literals contradict each other (`not starts_with "A"` beside
-        // `starts_with "AB"`); only a search that stopped short leaves the row unwitnessed
-        // without saying why.
+        // `starts_with "AB"`), or whose orders between `Integer` inputs do (`limit <= 0` beside
+        // `amount > 0` and `amount <= limit`, beyond10x/ess#622); only a search that stopped short
+        // leaves the row unwitnessed without saying why.
         if !found
             && !crate::witness::unsatisfiable(&goal)
+            && !crate::witness::infeasible(ir, command, &goal)
             && !crate::witness::exhausts(ir, command, &[&goal])
         {
             missed.push(RefusalCause::ChildUnwitnessed {

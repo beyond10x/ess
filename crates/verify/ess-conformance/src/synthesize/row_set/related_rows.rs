@@ -33,8 +33,8 @@ use ess_primitives::predicate::{Collection, CompareOp, Operand, Predicate, Quant
 use super::super::{fact_value, map_paths, ActorRef, Arrangement, InstanceName, RefusalCause};
 use super::super::{ScenarioStep, ScenarioValue, WitnessGap};
 use super::{
-    arrange_row, arranged_key, compared, misses, next, ordered_head, subject_fact, walk,
-    written_in, Reading, Row,
+    arrange_row, arranged_key, compared, held_owners, misses, next, ordered_head, subject_fact,
+    walk, written_in, Owner, Reading, Row,
 };
 
 /// The roots a rows quantifier's body reads that are neither the candidate nor the related row.
@@ -480,12 +480,19 @@ impl Context<'_> {
             return Some(());
         }
         let distinction = next(ir, &entity, self.taken);
+        let owners_held = held_owners(ir, &entity, self.steps, None);
         let row = arrange_row(
             ir,
             &entity,
             &goal,
             self.actors,
-            (distinction, None),
+            (
+                distinction,
+                Owner {
+                    under: None,
+                    held: &owners_held,
+                },
+            ),
             &accept,
         )?;
         let mut after = self.steps.clone();
@@ -662,7 +669,7 @@ fn one_failing(
         owner,
         &goal,
         context.actors,
-        (distinction, None),
+        (distinction, Owner::NONE),
         &accept,
     )?;
     let before = context.steps.clone();
