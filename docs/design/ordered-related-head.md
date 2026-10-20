@@ -327,6 +327,13 @@ selected row:
 - **A declared range.** Where a key's declared range leaves no value beyond S1 on the side S2 must
   take, S1 is dealt the distinction at the other end of the pool and the rows are steered from
   there. Only an arrangement that otherwise fails is dealt again.
+- **Owned rows.** Where the selected entity is owned (`kind: owns`) and the selector's filter, with
+  a published value written in, compares the owner link with the literal identity of an owner row
+  the steps already hold — the head row of another selector — each row is created naming that
+  owner as the steering chose it, and no owner of its own is arranged, which would give it a link
+  no such filter selects (beyond10x/ess#621). The same holds for the related rows an `exists` test
+  places and for the rows ranked above the head under another selected owner. A decoy refuting
+  the owner link is left out, as no owner the steps hold is steered for it.
 - **Distinct values.** The `first` value of the head differs from every other selected row's, from
   every decoy's and from zero, so copying any other row is visible.
 - **Checked, never assumed.** The head is computed over the rows the steps leave (`walk`), with the

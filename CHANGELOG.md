@@ -12,6 +12,11 @@
   says so; where a declared range leaves no value above the first row dealt, the rows are dealt
   from the other end of the range. Other suites are unchanged; a specification needs no change
   (beyond10x/ess#618).
+- A ranked head over rows another entity owns (`kind: owns`), scoped by another head's published
+  owner, is synthesized. Before, each row the head selects was created under a new owner of its
+  own rather than the owner the scope names, so the branch was refused as having no arrangement of
+  rows. The rows are now created naming that owner, with or without an `exists` test in the outer
+  selection. Other suites are unchanged; a specification needs no change (beyond10x/ess#621).
 
 ## [0.66.0] — 2026-10-20
 

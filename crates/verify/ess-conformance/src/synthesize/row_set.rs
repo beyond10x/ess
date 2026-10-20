@@ -51,7 +51,7 @@ use ess_domain::entity::StateName;
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
 use ess_domain::view::{Direction, Ranking};
-use ess_primitives::facts::FactPath;
+use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
 
@@ -63,10 +63,10 @@ use super::set_effects::{input_value, misses, subject_value, written_in};
 mod copied;
 mod related_rows;
 use super::{
-    absorb, arrange_toward_owned, candidates, flatten, instance_name, prepare_in, settled,
-    still_unwritten, subject_fact, supply, unwritten_by, ActorRef, Arrangement, ConformanceSuite,
-    Decision, Determined, Distinction, EntityRef, InstanceName, Refusal, RefusalCause,
-    ScenarioStep, ScenarioValue, Setup, WitnessGap,
+    absorb, arrange_toward_named_owner, arrange_toward_owned, candidates, flatten, instance_name,
+    prepare_in, settled, still_unwritten, subject_fact, supply, unwritten_by, ActorRef,
+    Arrangement, ConformanceSuite, Decision, Determined, Distinction, EntityRef, InstanceName,
+    Refusal, RefusalCause, ScenarioStep, ScenarioValue, Setup, WitnessGap,
 };
 
 /// How many rows the selector selects, in the order they are tried.
@@ -1507,8 +1507,13 @@ fn arrange_rows(
     head: &mut Head<'_>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     taken: &mut BTreeSet<InstanceName>,
-    (before, owner): (&[ScenarioStep], Option<&InstanceName>),
+    (before, under): (&[ScenarioStep], Option<&InstanceName>),
 ) -> Option<Vec<Arrangement>> {
+    let owners_held = held_owners(ir, entity, before, under);
+    let owner = Owner {
+        under,
+        held: &owners_held,
+    };
     // Whether the steps so far, and `row`'s after them, leave every row-set command they send
     // taking the branch it is required to: a row arranged through such a command is kept only
     // where the rows before it decide that command's branch.
@@ -1768,7 +1773,7 @@ fn arrange_head(
     order_by: &[Ranking],
     count: usize,
     (goal_for, holds, fresh, placed): HeadChecks<'_>,
-    (actors, owner): (&BTreeMap<QualifiedName, ActorRef>, Option<&InstanceName>),
+    (actors, owner): (&BTreeMap<QualifiedName, ActorRef>, Owner<'_>),
     taken: &mut BTreeSet<InstanceName>,
     gaps: &mut Vec<RefusalCause>,
     (already, crowded): (&[Vec<Node>], &std::cell::Cell<bool>),
@@ -2013,6 +2018,84 @@ fn arrange_head(
     Some(placed_rows)
 }
 
+/// The owner the rows of a selector are created under (beyond10x/ess#553, #621).
+#[derive(Clone, Copy)]
+struct Owner<'o> {
+    /// The subject the send addresses, which the rows are filed under by their owner link.
+    under: Option<&'o InstanceName>,
+    /// The literal identities of the rows of the owning entity the steps so far hold.
+    held: &'o [FactValue],
+}
+
+impl Owner<'_> {
+    /// No subject, and no held owner a goal names.
+    const NONE: Owner<'static> = Owner {
+        under: None,
+        held: &[],
+    };
+
+    /// Whether `goal` pins the owner link of `entity` to the identity of a row the steps hold: a
+    /// conjunct `via == <literal>` naming it, as a published value written into a selector's
+    /// filter leaves it (beyond10x/ess#621). Such a row is created naming that owner, not under an
+    /// owner of its own, which no goal pinning the link to another row's identity would select.
+    fn names_held(&self, ir: &EssIr, entity: &EntityHandle, goal: &Predicate) -> bool {
+        let Some(owned) = ir.owner_of(entity) else {
+            return false;
+        };
+        let mut conjuncts: Vec<&Predicate> = Vec::new();
+        conjoined(goal, &mut conjuncts);
+        conjuncts.iter().any(|conjunct| match conjunct {
+            Predicate::Compare {
+                left: Operand::Fact(path),
+                op: CompareOp::Eq,
+                right: Operand::Literal(value),
+                ..
+            }
+            | Predicate::Compare {
+                left: Operand::Literal(value),
+                op: CompareOp::Eq,
+                right: Operand::Fact(path),
+                ..
+            } => path.segments() == [owned.via.to_owned()] && self.held.contains(value),
+            _ => false,
+        })
+    }
+}
+
+/// Every conjunct of `predicate`, nested conjunctions flattened.
+fn conjoined<'p>(predicate: &'p Predicate, out: &mut Vec<&'p Predicate>) {
+    match predicate {
+        Predicate::All(children) => {
+            for child in children {
+                conjoined(child, out);
+            }
+        }
+        other => out.push(other),
+    }
+}
+
+/// The literal identities of the rows of `entity`'s owner the steps `before` leave, where `entity`
+/// has an owner and the rows are not filed under an addressed subject; empty otherwise.
+fn held_owners(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    before: &[ScenarioStep],
+    under: Option<&InstanceName>,
+) -> Vec<FactValue> {
+    let Some(owned) = ir.owner_of(entity).filter(|_| under.is_none()) else {
+        return Vec::new();
+    };
+    let Ok(rows) = walk(ir, before, false) else {
+        return Vec::new();
+    };
+    rows.held
+        .iter()
+        .filter(|row| row.entity == owned.owner)
+        .filter_map(|row| row.identity.as_ref()?.as_literal())
+        .filter_map(super::fact_value)
+        .collect()
+}
+
 /// One row `accept` takes, its creating input steered by `goal`; where no creator's input maps every
 /// field `goal` reads — an `Optional` field one creator leaves unwritten — by the conjuncts over the
 /// required fields alone, and then by nothing. `accept` decides; the steering only proposes.
@@ -2021,7 +2104,7 @@ fn arrange_row(
     entity: &EntityHandle,
     goal: &Predicate,
     actors: &BTreeMap<QualifiedName, ActorRef>,
-    (distinction, owner): (Distinction, Option<&InstanceName>),
+    (distinction, owner): (Distinction, Owner<'_>),
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
     let optional: BTreeSet<&str> = ir
@@ -2048,11 +2131,23 @@ fn arrange_row(
         other if required(other) => other.clone(),
         _ => Predicate::Always,
     };
-    copied::steered(ir, entity, goal, actors, (distinction, owner), accept).or_else(|| {
+    copied::steered(ir, entity, goal, actors, (distinction, owner.under), accept).or_else(|| {
         [goal.clone(), relaxed, Predicate::Always]
             .iter()
             .find_map(|steer| {
-                arrange_toward_owned(ir, entity, steer, actors, distinction, owner, accept)
+                if owner.under.is_none() && owner.names_held(ir, entity, steer) {
+                    arrange_toward_named_owner(ir, entity, steer, actors, distinction, accept)
+                } else {
+                    arrange_toward_owned(
+                        ir,
+                        entity,
+                        steer,
+                        actors,
+                        distinction,
+                        owner.under,
+                        accept,
+                    )
+                }
             })
     })
 }
@@ -2528,12 +2623,26 @@ impl<'p> Plan<'p> {
                         })
                 };
                 let distinction = next(ir, entity, taken);
-                let placed = arrange_row(ir, entity, &goal, actors, (distinction, None), &accept)
-                    .filter(|row| {
-                        let mut after = steps.clone();
-                        after.extend(row.steps.iter().cloned());
-                        walk(ir, &after, true).is_ok()
-                    });
+                let owners_held = held_owners(ir, entity, steps, None);
+                let placed = arrange_row(
+                    ir,
+                    entity,
+                    &goal,
+                    actors,
+                    (
+                        distinction,
+                        Owner {
+                            under: None,
+                            held: &owners_held,
+                        },
+                    ),
+                    &accept,
+                )
+                .filter(|row| {
+                    let mut after = steps.clone();
+                    after.extend(row.steps.iter().cloned());
+                    walk(ir, &after, true).is_ok()
+                });
                 match placed {
                     Some(row) => {
                         steps.extend(row.steps.iter().cloned());
