@@ -67,6 +67,23 @@ func oneTimeActorMatches(step map[string]any, actor *string) bool {
 	return step["actor"] == *actor
 }
 
+// oneTimeReadAsReader reports whether view is read after the origin selected at selected as
+// reader: the actor of the last read_as before the read, or no actor where none stands before it
+// (suite/56, beyond10x/ess#614). The origin's own checks may read the view before that.
+func oneTimeReadAsReader(steps []any, selected int, view string, reader *string) bool {
+	inForce := map[string]any{}
+	for index, raw := range steps {
+		step := raw.(map[string]any)
+		if step["step"] == "read_as" {
+			inForce = map[string]any{"actor": step["actor"]}
+		}
+		if (step["step"] == "query_view" || step["step"] == "eventually_view") && index > selected && step["view"] == view && oneTimeActorMatches(inForce, reader) {
+			return true
+		}
+	}
+	return false
+}
+
 // One actual invocation and its selected outcome; the subsequent search begins after that
 // assertion, so a repeated assertion cannot supply another originating invocation.
 func oneTimeSelected(steps []any, expected OutcomeRef, filterActor bool, actor *string) (int, int, bool) {
@@ -155,7 +172,10 @@ func admitOneTimeCell(id string, scenario map[string]any, policy *oneTimeTrace, 
 	case "rotation":
 		_, _, fulfilled = oneTimeSelected(tail, cell.Origin, true, cell.Actor)
 	case "read":
-		if oneTimeActorMatches(origin, cell.Actor) {
+		if major >= 56 {
+			// From suite/56 the cell's actor is the reader (beyond10x/ess#614).
+			fulfilled = oneTimeReadAsReader(steps, selected, cell.View, cell.Actor)
+		} else if oneTimeActorMatches(origin, cell.Actor) {
 			for _, raw := range tail {
 				step := raw.(map[string]any)
 				if (step["step"] == "query_view" || step["step"] == "eventually_view") && step["view"] == cell.View {

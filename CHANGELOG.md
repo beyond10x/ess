@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- A one-time response's read cell,
+  `<command>/disclosure/<outcome>/<field>/read/<view>/as/actor/<A>`, now names the reader: the
+  value is issued by `A` where `A` may issue it, else by the first actor that may, and the view is
+  then read as `A` through a `read_as` step. An actor who may read the view but not issue the
+  value gets a cell where it used to get a refusal; a read cell is still refused where the view's
+  read grant does not name `A`. A suite holding such a cell is written at the new
+  `ess-conformance/56` (`/57` with coverage), which Rust, Go and TypeScript admit and run.
+  Regenerate a suite to get the new cells; an existing suite keeps its bytes and is read as
+  before, its read cells naming the issuer and reading as no actor (beyond10x/ess#614).
+
 ## [0.66.0] — 2026-10-20
 
 ### Changed

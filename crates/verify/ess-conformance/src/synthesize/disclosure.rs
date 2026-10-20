@@ -581,22 +581,34 @@ fn read_cells(
             Aspect::Read(ViewRef::new(view.name.clone())),
             actor.cloned(),
         );
-        if actor.is_some_and(|actor| {
-            !ir.actors()[actor.name()]
+        // The cell's actor is the reader (suite/56, beyond10x/ess#614). The value is issued by the
+        // reader where its grant allows, else by the command's first granted actor, as the
+        // follow-up and denied cells arrange their origin.
+        let issues = actor.is_none_or(|actor| {
+            ir.actors()[actor.name()]
                 .may
                 .iter()
                 .any(|grant| grant.name() == &origin.name)
-        }) {
+        });
+        if actor.is_some() && !issues && !defaults.contains_key(&origin.name) {
             synthesis.refusals.push(refusal(
                 &id,
-                "the read's originating caller has no grant to issue this value",
+                "no declared actor is granted the command that issues this value",
             ));
             continue;
         }
-        // Views use the existing public query seam. The cell's caller binds the actual
-        // originating invocation, as admission requires; it does not invent a view grant.
+        if actor.is_some_and(|actor| {
+            ir.read_granted(&view.name) && !ir.actors()[actor.name()].may_read(&view.name)
+        }) {
+            synthesis.refusals.push(refusal(
+                &id,
+                "the view's read grant does not name the reader, so the read is refused before \
+                 anything is read",
+            ));
+            continue;
+        }
         let mut assigned = defaults.clone();
-        if let Some(actor) = actor {
+        if let Some(actor) = actor.filter(|_| issues) {
             assigned.insert(origin.name.clone(), actor.clone());
         }
         let Some((steps, source, origin_run)) =
@@ -636,16 +648,70 @@ fn read_cells(
             params,
         };
         let rotation = scenario.clone();
+        // Every later read is sent as the reader, through the seam a read-granted view is read
+        // by. A model with no actor reads as no actor, as it always did, with no step saying so.
+        if let Some(reader) = actor {
+            scenario.steps.push(ScenarioStep::ReadAs {
+                actor: Some(reader.clone()),
+            });
+            scenario.source.insert(reader.clone().into());
+        }
         scenario.steps.push(read.clone());
+        let rotated = scenario.steps.len();
         if let Err(reason) = super::caller::append_independent(ir, &mut scenario, &rotation) {
             synthesis.refusals.push(refusal(&id, reason));
             continue;
+        }
+        if let Some(reader) = actor {
+            read_rotation_as_granted(ir, &mut scenario, rotated, reader);
         }
         scenario.steps.push(read);
         scenario
             .source
             .insert(ViewRef::new(view.name.clone()).into());
         insert(ir, synthesis, id, scenario);
+    }
+}
+
+/// The rotation a read cell appends from `from` on reads what its own outcome checks while the
+/// cell's `reader` is in force. A read of a view whose grant does not name the reader is sent as
+/// the view's lowest-named reader instead, as the ordinary suite sends it
+/// ([`super::view_grant`]), and the cell's reader is put back for its closing read.
+fn read_rotation_as_granted(
+    ir: &EssIr,
+    scenario: &mut ConformanceScenario,
+    from: usize,
+    reader: &ActorRef,
+) {
+    let tail = scenario.steps.split_off(from);
+    let mut in_force = reader.clone();
+    for step in tail {
+        let read = match &step {
+            ScenarioStep::QueryView { view, .. }
+            | ScenarioStep::EventuallyView { view, .. }
+            | ScenarioStep::ExpectHalt { view, .. }
+            | ScenarioStep::EventuallyHalt { view, .. } => Some(view.name().clone()),
+            _ => None,
+        };
+        if let Some(view) = read.filter(|view| ir.read_granted(view)) {
+            let holds = ir
+                .actors()
+                .get(in_force.name())
+                .is_some_and(|declared| declared.may_read(&view));
+            if let Some(granted) = ir.readers(&view).next().filter(|_| !holds) {
+                in_force = ActorRef::new(granted.name.clone());
+                scenario.steps.push(ScenarioStep::ReadAs {
+                    actor: Some(in_force.clone()),
+                });
+                scenario.source.insert(in_force.clone().into());
+            }
+        }
+        scenario.steps.push(step);
+    }
+    if &in_force != reader {
+        scenario.steps.push(ScenarioStep::ReadAs {
+            actor: Some(reader.clone()),
+        });
     }
 }
 

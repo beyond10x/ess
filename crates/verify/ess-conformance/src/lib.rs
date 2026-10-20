@@ -160,6 +160,7 @@ pub mod mutate;
 pub mod no_invocation;
 pub mod now_offset;
 pub mod occurrence_clock;
+pub mod one_time_reader;
 pub mod one_time_response;
 pub mod outcome_shapes;
 pub mod periodic;

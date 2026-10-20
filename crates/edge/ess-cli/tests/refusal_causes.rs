@@ -15,7 +15,7 @@ use std::{
 };
 
 /// `IssueToken` returns a one-time `secret`; `EditNote` updates a `Note` nothing creates. `Owner`
-/// may send both, `Guest` and `Auditor` neither.
+/// may send both and read `Notes`, `Guest` and `Auditor` none of these.
 const MODEL: &str = r"format: ess/24
 system: vault
 version: v1
@@ -33,7 +33,7 @@ entities:
     identity: {name: token_id, type: vault.keys.TokenId}
     lifecycle: {initial: Live, states: [Live], terminal: [Live]}
 actors:
-  - {name: vault.keys.Owner, may: [vault.keys.IssueToken, vault.keys.EditNote]}
+  - {name: vault.keys.Owner, may: [vault.keys.IssueToken, vault.keys.EditNote, vault.keys.Notes]}
   - {name: vault.keys.Guest, may: []}
   - {name: vault.keys.Auditor, may: []}
 events:
@@ -129,10 +129,10 @@ fn synthesize_prints_one_block_per_cause() {
             "refused: refusal[ESS-SYNTH-001]: outcome vault.keys.IssueToken/issued has no scenario \
              `vault.keys.IssueToken/disclosure/issued/secret/read/vault.keys.Notes/as/actor/\
              vault.keys.Auditor`",
-            "  the disclosure cell cannot be arranged or observed: the read's originating caller \
-             has no grant to issue this value",
-            "  help: the line above names what the cell lacks; a `read/<view>` cell for an actor \
-             not granted the originating command is refused by design and needs no change",
+            "  the disclosure cell cannot be arranged or observed: the view's read grant does not \
+             name the reader, so the read is refused before anything is read",
+            "  help: the line above names what the cell lacks; a `read/<view>` cell whose view's \
+             read grant does not name the cell's actor has nothing to read and needs no change",
             "  and 1 more disclosure scenario(s) refused for the same cause",
         ],
         "{printed}"

@@ -1284,8 +1284,8 @@ impl RefusalCause {
                  value a row holds at a position"
             }
             Self::NoWitness(gap) if gap.type_ref == disclosure::INVENTORY => {
-                "the line above names what the cell lacks; a `read/<view>` cell for an actor not \
-                 granted the originating command is refused by design and needs no change"
+                "the line above names what the cell lacks; a `read/<view>` cell whose view's read \
+                 grant does not name the cell's actor has nothing to read and needs no change"
             }
             // A head no scenario arranges refuses its branch alone (beyond10x/ess#552).
             Self::NoWitness(gap) if ordered_head::unarranged(gap.reason) => {
