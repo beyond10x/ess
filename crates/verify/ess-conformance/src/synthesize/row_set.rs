@@ -179,6 +179,18 @@ pub(super) fn unarranged() -> RefusalCause {
 pub(super) const ROWS_UNARRANGED: &str = "has no arrangement of rows the declared commands \
      produce on which the rows its selector selects take this branch";
 
+/// Why the rows a selector reads are not the scenario's steps' to decide.
+const UNFOLLOWED: &str = "a step of the scenario changes rows of the selector's entity in a way \
+     synthesis does not follow (a set effect, a binding or a direct setup)";
+
+/// Why no rows were arranged that take a row-set branch, where every arrangement tried left rows
+/// of the selector's entity to a step synthesis does not follow ([`UNFOLLOWED`]): no field the
+/// creating commands write would change that, so the help says what would (a downstream adopter's
+/// report of 2026-10-20).
+pub(super) const ROWS_UNFOLLOWED: &str = "has no arrangement whose rows synthesis can follow: a \
+     set effect, a binding or a direct setup changes rows of the selector's entity while the \
+     scenario is arranged";
+
 fn gap(path: String, reason: &'static str) -> RefusalCause {
     RefusalCause::NoWitness(WitnessGap {
         path,
@@ -583,10 +595,7 @@ pub(super) struct Rows {
 impl Rows {
     fn of(&self, entity: &EntityHandle) -> Result<Vec<&Row>, &'static str> {
         if self.all_opaque || self.opaque.contains(entity) {
-            return Err(
-                "a step of the scenario changes rows of the selector's entity in a way synthesis \
-                 does not follow (a set effect, a binding or a direct setup)",
-            );
+            return Err(UNFOLLOWED);
         }
         Ok(self
             .held
@@ -1227,7 +1236,7 @@ fn read_value(ir: &EssIr, read: &ReadRow<'_>) -> Option<ScenarioValue> {
 /// is set: the first whose required branch the rows do not decide is the error.
 pub(super) fn walk(ir: &EssIr, steps: &[ScenarioStep], check: bool) -> Result<Rows, String> {
     let mut rows = Rows {
-        all_opaque: !ir.bindings().is_empty(),
+        opaque: bound_writes(ir),
         ..Rows::default()
     };
     for (at, step) in steps.iter().enumerate() {
@@ -1285,6 +1294,34 @@ pub(super) fn walk(ir: &EssIr, steps: &[ScenarioStep], check: bool) -> Result<Ro
         }
     }
     Ok(rows)
+}
+
+/// The entities whose rows a binding may change: every entity a branch of a command some binding
+/// invokes creates, moves, updates or deletes, as its subject, its `instances:` or an `affects:`
+/// entry. A binding runs when the transport delivers, which a scenario's steps do not follow, so
+/// those rows are not the steps' to decide; every other entity's are, whatever bindings the model
+/// declares (a downstream adopter's report of 2026-10-20: any binding at all made every row-set
+/// guard opaque).
+fn bound_writes(ir: &EssIr) -> BTreeSet<EntityHandle> {
+    let mut written = BTreeSet::new();
+    for binding in ir.bindings().values() {
+        for outcome in &ir.command(&binding.command).outcomes {
+            if outcome.error.is_some() {
+                continue;
+            }
+            if let Some(subject) = &outcome.subject {
+                if !matches!(subject.effect, ResolvedEffect::Preserves) || !outcome.sets.is_empty()
+                {
+                    written.insert(subject.entity.clone());
+                }
+            }
+            if let Some(set) = &outcome.instances {
+                written.insert(set.entity.clone());
+            }
+            written.extend(outcome.affects.iter().map(|affect| affect.entity.clone()));
+        }
+    }
+    written
 }
 
 /// What one taken branch does to the rows.
@@ -2603,9 +2640,17 @@ pub(super) fn prepare(
             super::set_effects::unwritten(ir, &selection.entity, &selection.filter)
         })
         .unwrap_or_else(|| {
+            let reason = if first_failure
+                .as_deref()
+                .is_some_and(|why| why.contains(UNFOLLOWED))
+            {
+                ROWS_UNFOLLOWED
+            } else {
+                ROWS_UNARRANGED
+            };
             gap(
                 first_failure.map_or_else(at, |why| format!("{}: {why}", at())),
-                ROWS_UNARRANGED,
+                reason,
             )
         }))
 }

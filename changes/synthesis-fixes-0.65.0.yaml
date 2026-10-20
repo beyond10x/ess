@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/synthesis-fixes-0.65.0
+repository: ess
+publishedAt: 2026-10-20T00:00:00Z
+title: Synthesis arranges the rows binding, row-set and one-time disclosure scenarios read
+summary: >-
+  Binding scenarios arrange the rows a per-row event, a refusal policy or a stored target names;
+  row-set guards are witnessed beside bindings; `affects:` rows are arranged behind a missing-row
+  guard; and one-time disclosure cells reach caller, unknown-instance and wrong-state branches the
+  way the ordinary suite does.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.65.0
+  version: 0.65.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

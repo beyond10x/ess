@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.65.0 — 2026-10-20
+
+### Synthesis arranges the rows binding, row-set and one-time disclosure scenarios read
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.65.0)
+
+Binding scenarios arrange the rows a per-row event, a refusal policy or a stored target names; row-set guards are witnessed beside bindings; `affects:` rows are arranged behind a missing-row guard; and one-time disclosure cells reach caller, unknown-instance and wrong-state branches the way the ordinary suite does.
+
 ## 0.64.0 — 2026-10-20
 
 ### A view and a guard read the row a reference names

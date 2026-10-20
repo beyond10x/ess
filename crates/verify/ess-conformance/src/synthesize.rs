@@ -1255,6 +1255,13 @@ impl RefusalCause {
                  input or from a caller attribute (`{caller: <attribute>}`), so the arranged rows \
                  can hold values on both sides of the filter"
             }
+            // Rows a binding or a set effect changes while the scenario is arranged (a downstream
+            // adopter's report of 2026-10-20): no field the creating commands write repairs that.
+            Self::NoWitness(gap) if gap.reason == row_set::ROWS_UNFOLLOWED => {
+                "the rows the selector reads are changed by a binding, a set effect or a direct \
+                 setup the arrangement sets off, whose effect on them synthesis does not follow; \
+                 cover the branch with an authored scenario (ess-scenario/1)"
+            }
             Self::NoWitness(gap) if set_effects::UNARRANGED.contains(&gap.reason) => {
                 "let a command that creates the entity write each field the filter reads from an \
                  input or from a caller attribute (`{caller: <attribute>}`) rather than from a \
@@ -1471,7 +1478,8 @@ crate::authored::diagnostic_catalogue! {
                 | BindingGap::DestinationUnreachable { .. }
                 | BindingGap::UnchangedUnobservable { .. }
                 | BindingGap::EffectUnsettled { .. }
-                | BindingGap::ConditionUnarranged { .. },
+                | BindingGap::ConditionUnarranged { .. }
+                | BindingGap::ChangedRowUnarranged { .. },
             ..
         } => 10,
             "A binding clause has nothing a scenario could observe.",
@@ -1981,6 +1989,16 @@ pub enum BindingGap {
         /// Which side, and why.
         why: String,
     },
+    /// The branch the binding reaches publishes an event once per row its set effect changes, and
+    /// no row its filter selects, resting where the event is published for it, can be arranged
+    /// before the trigger: the honest system would publish nothing, so a flow waiting for the
+    /// event is not filed (a downstream adopter's report of 2026-10-20).
+    ChangedRowUnarranged {
+        /// The branch.
+        outcome: OutcomeRef,
+        /// The entity whose rows it changes.
+        entity: EntityRef,
+    },
 }
 
 impl BindingGap {
@@ -2056,6 +2074,11 @@ impl BindingGap {
                 "let the trigger copy every event member the condition reads from an input it \
                  does not guard on, or cover the condition with an authored scenario \
                  (ess-scenario/1)"
+            }
+            Self::ChangedRowUnarranged { .. } => {
+                "let the trigger copy every input the filter reads from an input of its own, and \
+                 a command that creates the entity write each field the filter reads from an \
+                 input; or cover the binding with an authored scenario (ess-scenario/1)"
             }
         }
     }
@@ -2151,6 +2174,11 @@ impl fmt::Display for BindingGap {
                     "invokes only when its event-payload condition holds, and {why}"
                 )
             }
+            Self::ChangedRowUnarranged { outcome, entity } => write!(
+                f,
+                "invokes `{outcome}`, which publishes an event once per `{entity}` it changes, and \
+                 no row its filter selects can be arranged before the trigger"
+            ),
         }
     }
 }
@@ -11548,7 +11576,8 @@ fn creator_bindings(
             Some(bound)
         })?;
     if !bound.is_empty()
-        && (related_guard::routes(creator.command, creator.outcome)
+        && ((related_guard::routes(creator.command, creator.outcome)
+            && !related_guard::present_in(creator.command, &bound))
             || creator
                 .command
                 .outcomes
@@ -12918,6 +12947,110 @@ fn unknown_instances(
             Err(cause) => refusals.push(Refusal::about(&id, cause)),
         }
     }
+}
+
+/// `branch` of `command` sent as the ordinary suite reaches it, for a scenario that sends it after
+/// another: a one-time outcome's follow-up cells (`disclosure::augment`).
+///
+/// An `unknown_instance:` branch is sent for an identity no record carries, as
+/// [`unknown_instances`] sends it, and a `wrong_state:` branch of a command whose moves leave
+/// states out on a row driven to the first such state that witnesses it, as [`lifecycle`] does,
+/// and else for an identity no record carries. Every other branch is [`exercise_as`]'s. Neither of the two has a guard [`run_as`] could
+/// choose an input for: sent there, each read as two parts of ess drifted apart (`ESS-SYNTH-008`).
+fn reached_branch(
+    models: &caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    branch: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+) -> Option<ConformanceScenario> {
+    if branch.condition == ResolvedCondition::UnknownInstance
+        && !existence::creates_on_unknown(command)
+    {
+        let acting = unknown_reachable(command);
+        return unknown_instance(models.arrangement, command, &acting, branch, actors)
+            .map_err(|cause| refusals.push(Refusal::about(id, cause)))
+            .ok();
+    }
+    if branch.condition == ResolvedCondition::WrongState && !has_subject_guards(command) {
+        let mut tried = Vec::new();
+        let reached = wrong_state_reached(models, command, branch, actors, id, &mut tried);
+        if reached.is_some() {
+            refusals.extend(tried);
+            return reached;
+        }
+        // Where no row is witnessed in a state the moves leave out, the branch is still the
+        // command's answer for an identity no record carries, as [`unknown_instances`] sends it
+        // when the command declares no other answer.
+        let acting = unknown_reachable(command);
+        let unanswered = !existence::creates_on_unknown(command)
+            && !command
+                .outcomes
+                .iter()
+                .any(|outcome| outcome.condition == ResolvedCondition::UnknownInstance)
+            && not_found(models.arrangement, command, &acting).is_empty();
+        if unanswered {
+            if let Ok(scenario) =
+                unknown_instance(models.arrangement, command, &acting, branch, actors)
+            {
+                return Some(scenario);
+            }
+        }
+        refusals.extend(tried);
+        return None;
+    }
+    exercise_as(models, command, branch, actors, id, refusals, Witness::Full)
+        .map(|(steps, source, _)| ConformanceScenario::new(purpose(command, branch), steps, source))
+}
+
+/// The scenario of the first state, in declared order, in which `command`'s moves leave its entity
+/// and [`wrong_state_scenario`] witnesses its `wrong_state:` branch; the first state's refusals
+/// where none does.
+fn wrong_state_reached(
+    models: &caller::InvocationModels<'_>,
+    command: &ResolvedCommand,
+    branch: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+) -> Option<ConformanceScenario> {
+    let ir = models.arrangement;
+    let mut first: Option<Vec<Refusal>> = None;
+    for (handle, wrong) in models.acting.wrong_states(command) {
+        let drivers = models.acting.drivers_of(handle);
+        for state in &ir.entity(handle).lifecycle.states {
+            if !wrong.contains(state) {
+                continue;
+            }
+            let mut tried = Vec::new();
+            let mut notes = Vec::new();
+            if let Some(scenario) = wrong_state_scenario(
+                models,
+                handle,
+                &drivers,
+                &command.name,
+                state,
+                actors,
+                id,
+                &mut tried,
+                &mut notes,
+            ) {
+                refusals.extend(tried);
+                return Some(scenario);
+            }
+            first.get_or_insert(tried);
+        }
+    }
+    refusals.extend(first.unwrap_or_else(|| {
+        vec![Refusal::about(
+            id,
+            RefusalCause::StrategyWithoutGuard {
+                strategy: branch.test_strategy,
+            },
+        )]
+    }));
+    None
 }
 
 /// The outcomes a command declares as its answer for an identity naming no record.
@@ -16457,7 +16590,16 @@ fn binding_aspects(
     }
     if let Some(policy) = &binding.refusal_policy {
         refusal_policy::witnesses(
-            ir, binding, policy, invoked, trigger, &prepared, &event, actors, &source, suite,
+            ir,
+            binding,
+            policy,
+            invoked,
+            (published_by, trigger),
+            &prepared,
+            &event,
+            actors,
+            &source,
+            suite,
             refusals,
         );
         return;

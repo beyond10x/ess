@@ -412,6 +412,37 @@ pub(super) fn reads(command: &ResolvedCommand) -> Option<(&str, &EntityHandle)> 
     read(command).map(|(via, entity)| (via.field(), entity))
 }
 
+/// Whether `bound` points the command's one related guard at a row the arrangement already
+/// captured, and every branch reading that row tests only that it is missing (`exists: false`, no
+/// input guard beside it). A captured row exists, so no such branch answers, and every other branch
+/// is selected as it would be without the guard: a creator sent with a captured row in that input
+/// is decided by the rest of its input alone (a downstream adopter's report of 2026-10-20, an
+/// `affects:` row whose creating command refuses a missing related row).
+pub(super) fn present_in(
+    command: &ResolvedCommand,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+) -> bool {
+    if several(command) || stored::field(command).is_some() {
+        return false;
+    }
+    let Some((via, _)) = reads(command) else {
+        return false;
+    };
+    bound.contains_key(via)
+        && command
+            .outcomes
+            .iter()
+            .all(|outcome| match &outcome.condition {
+                ResolvedCondition::Related {
+                    test: ResolvedRelatedTest::Absent,
+                    input: None,
+                    ..
+                } => outcome.error.is_some(),
+                ResolvedCondition::Related { .. } => false,
+                _ => true,
+            })
+}
+
 /// The input field the command's related guards read and the entity whose row it names.
 fn read(command: &ResolvedCommand) -> Option<(&ResolvedRelatedVia, &EntityHandle)> {
     command
