@@ -150,10 +150,7 @@ fn select(
         })
         .collect();
     let mut selected = Vec::new();
-    for (name, identity, instance) in store.instances() {
-        if name != &entity.name {
-            continue;
-        }
+    for (identity, instance) in store.instances_of(&entity.name) {
         let mut fields = instance.fields.clone();
         fields.insert(entity.identity.name.clone(), identity.clone());
         fields.insert("state".into(), Node::Text(instance.state.to_string()));

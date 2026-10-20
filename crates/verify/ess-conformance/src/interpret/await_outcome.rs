@@ -343,9 +343,8 @@ fn choices(
             }
             if let Some(entity) = related.get(field.name.as_str()) {
                 values.extend(
-                    base.instances()
-                        .filter(|(held, _, _)| held == entity)
-                        .map(|(_, identity, _)| Some(identity.clone())),
+                    base.instances_of(entity)
+                        .map(|(identity, _)| Some(identity.clone())),
                 );
             } else {
                 values.push(Some(base.mint(model, &field.type_ref)?));
