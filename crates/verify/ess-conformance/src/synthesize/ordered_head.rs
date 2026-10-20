@@ -64,6 +64,11 @@ pub(super) fn minted(ir: &EssIr, entity: &EntityHandle, name: &str) -> bool {
 /// The reason a branch reading a head over at most one selected row is refused.
 pub(super) const UNOBSERVABLE: &str =
     "the ranked head is not observable: the branch reading it admits at most one selected row";
+/// The reason a head is not arranged above the rows its selector already selects, the related rows
+/// another selector's test placed in its scope (beyond10x/ess#618): as a gap where the scenario
+/// stands on the rows arranged without regard to them, as the branch's refusal where none stands.
+pub(super) const CROWDED: &str = "the ranked head is not arranged above the rows another \
+     selector's test places in its scope: no creating input ranks it above them without a tie";
 /// The reason a head decided by a minted identity is not arranged with a tie on it.
 pub(super) const MINTED: &str = "the ranked head is decided by an identity the target mints, \
      which no scenario orders in advance";
