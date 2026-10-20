@@ -1034,9 +1034,12 @@ pub enum RefusalCause {
     /// the connective decides the guard (<https://github.com/beyond10x/ess/issues/501>). Raised only
     /// where the search did not try every value of every field the predicate reads, so the input may
     /// exist; the connective's mutant may then go unkilled.
+    ///
+    /// An admitted authored scenario that sends such an input and expects the branch withdraws the
+    /// refusal ([`withdraw_witnessed_children`], <https://github.com/beyond10x/ess/issues/619>).
     ChildUnwitnessed {
-        /// The input that was searched for, as it reads.
-        predicate: String,
+        /// The input that was searched for; it prints as it reads.
+        predicate: Box<Predicate>,
         /// How many solved candidates were decided against it.
         tried: usize,
     },
@@ -1547,7 +1550,8 @@ crate::authored::diagnostic_catalogue! {
              `{compare: {left, op, right, as: timestamp}}`";
         Self::ChildUnwitnessed { .. } => CHILD_UNWITNESSED,
             "No input was found where one child of an `any`/`all` alone decides it and it decides \
-             the guard; the branch's scenario stands without that input.",
+             the guard; the branch's scenario stands without that input. An admitted authored \
+             scenario that sends such an input and expects the branch withdraws the refusal.",
             CHILD_REPAIR;
         Self::SystemIssuedUnaddressed { .. } => SYSTEM_ISSUED_UNADDRESSED,
             "A command the system issues itself, whose outcome addresses no existing record \
@@ -14843,11 +14847,99 @@ fn one_per_child(
             && !crate::witness::exhausts(ir, command, &[&goal])
         {
             missed.push(RefusalCause::ChildUnwitnessed {
-                predicate: goal.to_string(),
+                predicate: Box::new(goal),
                 tried,
             });
         }
     }
+}
+
+/// Drops each `ESS-SYNTH-022` refusal an admitted authored scenario covers
+/// (<https://github.com/beyond10x/ess/issues/619>): the refusal's repair is an authored scenario
+/// that sends the row the search did not find, so one that does leaves nothing unwitnessed.
+///
+/// A scenario covers the refusal when one of its steps invokes the refused branch's command with
+/// literal input that satisfies the refused row's predicate (the child alone deciding the
+/// connective), that input selects the refused branch by the same reading synthesis keeps its own
+/// rows under, and the step expects that branch. Every other refusal is kept as it is.
+pub fn withdraw_witnessed_children<'s>(
+    ir: &EssIr,
+    refusals: &mut Vec<Refusal>,
+    authored: impl IntoIterator<Item = &'s ConformanceScenario>,
+) {
+    let authored: Vec<&ConformanceScenario> = authored.into_iter().collect();
+    if authored.is_empty() {
+        return;
+    }
+    refusals.retain(|refusal| {
+        !authored
+            .iter()
+            .any(|scenario| witnesses_child(ir, refusal, scenario))
+    });
+}
+
+/// Whether `scenario` sends the row an `ESS-SYNTH-022` `refusal` names, and expects its branch.
+fn witnesses_child(ir: &EssIr, refusal: &Refusal, scenario: &ConformanceScenario) -> bool {
+    let RefusalCause::ChildUnwitnessed { predicate, .. } = &refusal.cause else {
+        return false;
+    };
+    let Some(
+        ScenarioId::Outcome { outcome: wanted }
+        | ScenarioId::HeldOutcome {
+            outcome: wanted, ..
+        },
+    ) = &refusal.scenario
+    else {
+        return false;
+    };
+    let Some(command) = ir.commands().get(wanted.command.name()) else {
+        return false;
+    };
+    let Some(branch) = command
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.name == wanted.outcome)
+    else {
+        return false;
+    };
+    let steps = &scenario.steps;
+    steps.iter().enumerate().any(|(at, step)| {
+        let ScenarioStep::ExecuteCommand {
+            command: sent,
+            input,
+            ..
+        } = step
+        else {
+            return false;
+        };
+        // The expectations that read this invocation run until the next one.
+        let expected = steps[at + 1..]
+            .iter()
+            .take_while(|later| {
+                !matches!(
+                    later,
+                    ScenarioStep::ExecuteCommand { .. }
+                        | ScenarioStep::ExecuteCommandWithoutInput { .. }
+                        | ScenarioStep::AwaitOutcome { .. }
+                )
+            })
+            .any(|later| matches!(later, ScenarioStep::ExpectOutcome { outcome } if outcome == wanted));
+        if sent != &wanted.command || !expected {
+            return false;
+        }
+        // Only a value the scenario states is one a guard reads; a reference to an arranged row
+        // is a name, and the row's predicate cannot be decided over it.
+        let values: BTreeMap<String, Node> = input
+            .iter()
+            .filter_map(|(field, value)| match value {
+                ScenarioValue::Literal { value } => Some((field.clone(), value.clone())),
+                _ => None,
+            })
+            .collect();
+        flatten(ir, command, &values)
+            .is_ok_and(|facts| matches!(facts.decide(predicate), Decision::Satisfied))
+            && selects_branch(ir, command, branch, None, &values).unwrap_or(false)
+    })
 }
 
 /// The input [`one_per_child`] asks for, as one predicate: the child at `index` decides `alone`,
