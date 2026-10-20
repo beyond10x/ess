@@ -787,7 +787,10 @@ test('report/1 without a skip, and report/2, print no notice', async () => {
   try {
     const counted = await captureStderr(() =>
       withEnvironmentAsync({ ESS_REPORT_FORMAT: '2', ESS_REPORT_OUT: path }, () =>
-        runWith(new Recorder('conformance'), () => new ExampleTarget(), suiteText()),
+        assert.rejects(
+          runWith(new Recorder('conformance'), () => new ExampleTarget(), suiteText()),
+          /1 required scenario\(s\) unsupported/,
+        ),
       ),
     );
     assert.equal(counted, '');
@@ -823,8 +826,18 @@ test('report/2 counts every terminal verdict and is refused for an incomplete ru
   const path = join(directory, 'report.json');
   try {
     const recorder = new Recorder('conformance');
-    await withEnvironmentAsync({ ESS_REPORT_FORMAT: '2', ESS_REPORT_OUT: path }, () =>
-      runWith(recorder, () => new ExampleTarget(), suiteText()),
+    // The unsupported scenario reads as skipped, with the target's reason, and the run still fails
+    // once, naming how many required scenarios were unsupported.
+    await assert.rejects(
+      withEnvironmentAsync({ ESS_REPORT_FORMAT: '2', ESS_REPORT_OUT: path }, () =>
+        runWith(recorder, () => new ExampleTarget(), suiteText()),
+      ),
+      /^Error: 1 required scenario\(s\) unsupported/,
+    );
+    assert.deepEqual(recorder.verdicts(), ['passed', 'failed', 'skipped']);
+    assert.match(
+      recorder.children[2]?.skipped ?? '',
+      /`billing\.Unanswerable` has no caller a target can be/,
     );
     const document = JSON.parse(readFileSync(path, 'utf8')) as any;
     assert.equal(document.format, 'ess-conformance-report/2');
@@ -1046,7 +1059,11 @@ test('the execution context binds the exact report and suite bytes and nothing e
         ESS_CONFORMANCE_STRICT: undefined,
         ESS_CONFORMANCE_ALLOW_INCOMPLETE: undefined,
       },
-      () => runWith(new Recorder('context'), target, text),
+      () =>
+        assert.rejects(
+          runWith(new Recorder('context'), target, text),
+          /1 required scenario\(s\) unsupported/,
+        ),
     );
     const written = readFileSync(report, 'utf8');
     const reportDocument = JSON.parse(written);

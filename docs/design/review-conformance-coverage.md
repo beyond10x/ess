@@ -399,3 +399,13 @@ error. Strict mode additionally rejects every nonqualifying report, including em
 coverage. Cross-runtime tests compare the exact report/2 categories and counts rather than mapping
 native unsupported to generated skipped. Old-profile reader controls remain alongside the new
 profile's healthy/error/unsupported/explicit-skip round trips.
+
+**Refinement, 2026-10-20.** The nonzero exit for an unsupported result is now produced once per
+run, not once per scenario. Under report/2 the generated Go and TypeScript runners show each
+unsupported required scenario as a skipped subtest or case with the target's reason, so a JUnit or
+test report does not read it as a failed assertion, and fail the parent test once with a summary
+naming how many required scenarios were unsupported. The report bytes are unchanged: the scenario
+is `unsupported`, `execution_status` is `failed`, and `go-scenario-status/2` keeps its meaning,
+because the profile defines the report's categories and verdict and says nothing of how a test
+framework presents a scenario. A held scenario the target cannot hold `now` for (beyond10x/ess#586)
+is skipped without failing the run, as before; report/1 is unchanged.

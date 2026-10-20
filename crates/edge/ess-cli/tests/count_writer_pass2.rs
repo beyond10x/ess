@@ -89,12 +89,7 @@ fn generated_go_admits_only_typed_predicate_paths_and_operator_envelopes() {
     let valid = document(&json!({"ready": {"eq": true}})).to_string();
     let suite = AdmittedSuite::from_json(&valid).unwrap();
     std::fs::write(directory.join("essconform/suite.json"), valid).unwrap();
-    assert_eq!(
-        invoke(&directory, "valid", "begin-skip", true)
-            .status
-            .code(),
-        Some(1)
-    );
+    assert_unsupported_run(&invoke(&directory, "valid", "begin-skip", true));
     let report = std::fs::read_to_string(directory.join("valid.report.json")).unwrap();
     assert_unsupported_report(&report, &suite);
 
@@ -136,12 +131,7 @@ fn generated_go_abnormal_unsupported_error_formatting_cannot_complete() {
     let original = document(&json!(true)).to_string();
     let suite = AdmittedSuite::from_json(&original).unwrap();
     std::fs::write(directory.join("essconform/suite.json"), original).unwrap();
-    assert_eq!(
-        invoke(&directory, "ordinary-skip", "begin-skip", true)
-            .status
-            .code(),
-        Some(1)
-    );
+    assert_unsupported_run(&invoke(&directory, "ordinary-skip", "begin-skip", true));
     let text = std::fs::read_to_string(directory.join("ordinary-skip.report.json")).unwrap();
     assert_unsupported_report(&text, &suite);
     let mut completed = Vec::new();
@@ -161,6 +151,44 @@ fn generated_go_abnormal_unsupported_error_formatting_cannot_complete() {
         completed.is_empty(),
         "an error formatter that exits before SkipNow cannot complete a report:\n{}",
         completed.join("\n")
+    );
+}
+
+/// The one unsupported scenario reads as skipped with the target's reason, and the run still
+/// fails once, on the parent test, naming how many required scenarios were unsupported.
+fn assert_unsupported_run(output: &Output) {
+    let printed = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(output.status.code(), Some(1), "{printed}");
+    let lines: Vec<&str> = printed.lines().map(str::trim).collect();
+    let skipped = format!("--- SKIP: TestReviewSecond/{ID} (");
+    assert!(
+        lines.iter().any(|line| line.starts_with(&skipped)),
+        "{printed}"
+    );
+    assert!(
+        !lines
+            .iter()
+            .any(|line| line.starts_with("--- FAIL: TestReviewSecond/")),
+        "{printed}"
+    );
+    assert!(
+        printed.contains("ESS-CF-TARGET: the target does not support this scenario"),
+        "{printed}"
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.starts_with("--- FAIL: TestReviewSecond ("))
+            .count(),
+        1,
+        "{printed}"
+    );
+    assert_eq!(
+        printed
+            .matches("1 required scenario(s) unsupported")
+            .count(),
+        1,
+        "{printed}"
     );
 }
 

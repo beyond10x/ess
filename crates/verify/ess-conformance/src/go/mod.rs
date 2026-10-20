@@ -411,7 +411,9 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
             )
             .replace(
                 "reported as skipped, which is a different fact from a failed one",
-                "reported as unsupported under `go-scenario-status/2`, with a nonzero test exit",
+                "reported as unsupported under `go-scenario-status/2` and shown as a skipped subtest \
+                 carrying your reason; the run still fails once, with one message naming how many \
+                 required scenarios were unsupported, and exits nonzero",
             )
             .replace(
                 "run `inconclusive`, because a target that could not answer a question has not shown the answer.",

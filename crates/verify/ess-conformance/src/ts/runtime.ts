@@ -2881,6 +2881,8 @@ export async function runWith(
   // entirely, so its status keeps the optimistic default; counting terminations is the only way
   // to tell a run that answered from one that was never asked.
   let terminated = 0;
+  // How many required scenarios ended unsupported, and were shown skipped, under report/2.
+  let unsupportedRequired = 0;
   for (const id of ids) {
     const scenario = suite.scenarios[id] as Scenario;
     const refusal = scenario.refused;
@@ -2937,15 +2939,25 @@ export async function runWith(
       if (thrown instanceof FatalSignal) {
         throw new Error(thrown.message);
       }
+      // Under report/2 an unsupported required scenario is shown skipped, with its reason, and
+      // counted: the run fails once on the count below, because an unsupported required scenario
+      // fails the run while it is not a failed assertion, which is what a test report reads a
+      // failed case as.
       if (thrown === undefined && status === statusUnsupported) {
-        if (config.version === '2') throw new Error('required target observation is unsupported');
+        if (config.version === '2') {
+          unsupportedRequired += 1;
+          subtest.skip(
+            scenarioRun.unsupportedReason ?? 'required target observation is unsupported',
+          );
+          return;
+        }
         subtest.skip('required target observation is unsupported');
       }
       if (thrown instanceof SkipSignal) {
         // A held scenario the target cannot hold `now` for stays unsupported in the report but
         // does not fail the run, as in the Rust runner's verdict (beyond10x/ess#586).
         const optional = scenarioRun.holdUnsupported && heldScenarioId(id);
-        if (config.version === '2' && !optional) throw new Error(thrown.message);
+        if (config.version === '2' && !optional) unsupportedRequired += 1;
         subtest.skip(thrown.message);
       }
     });
@@ -2957,7 +2969,17 @@ export async function runWith(
     }
   }
   if (config.version === '2') {
-    writeCountReport(t, suite, identity, results, terminated, config.strict, execution);
+    if (unsupportedRequired === 0) {
+      writeCountReport(t, suite, identity, results, terminated, config.strict, execution);
+      return;
+    }
+    const summary = unsupportedSummary(unsupportedRequired);
+    try {
+      writeCountReport(t, suite, identity, results, terminated, config.strict, execution);
+    } catch (error) {
+      throw new Error(`${summary}\n${errorText(error)}`);
+    }
+    throw new Error(summary);
   } else {
     // report/1 retains its frozen three-category diagnostic vocabulary.
     const legacy = results.map((result) => ({
@@ -2971,6 +2993,17 @@ export async function runWith(
     }));
     writeReport(t, suite, identity, legacy, terminated);
   }
+}
+
+/**
+ * unsupportedSummary is the one failure a report/2 run reports for its unsupported required
+ * scenarios, after each was shown skipped with its own reason.
+ */
+export function unsupportedSummary(count: number): string {
+  return (
+    `${count} required scenario(s) unsupported: each is shown skipped with its reason, and an ` +
+    'unsupported required scenario fails the run (report/2 counts it as unsupported)'
+  );
 }
 
 // ---- the report ---------------------------------------------------------------------------------
@@ -3437,6 +3470,8 @@ export class ScenarioRun {
   held: { instant: number; seconds: number } | undefined = undefined;
   /** Whether this scenario ended unsupported because the target cannot hold its `now` (beyond10x/ess#586). */
   holdUnsupported = false;
+  /** The first observation the target could not expose, the reason a report/2 scenario that ran on past it is skipped with. */
+  unsupportedReason: string | undefined = undefined;
   /** The token the last command returned, for a read_your_writes query. */
   consistency = '';
   /** A read-your-writes query suppressed because the preceding command returned no token. */
@@ -5121,12 +5156,7 @@ export class ScenarioRun {
       if (isUnsupported(error)) {
         // The one method the model explicitly refuses to require. Unsupported is a fact about the
         // target, not a failure of the specification.
-        this.recordStatus(statusUnsupported);
-        this.t.diagnostic(
-          this.disclosure === undefined
-            ? errorText(error)
-            : 'ESS-CF-TARGET: protected target observation',
-        );
+        this.observationUnsupported(error);
         return true;
       }
       return this.targetError(index, `observing \`${step.binding}\`: ${errorText(error)}`);
@@ -5540,12 +5570,7 @@ export class ScenarioRun {
         );
       } catch (error) {
         if (isUnsupported(error)) {
-          this.recordStatus(statusUnsupported);
-          this.t.diagnostic(
-            this.disclosure === undefined
-              ? errorText(error)
-              : 'ESS-CF-TARGET: protected target observation',
-          );
+          this.observationUnsupported(error);
           return true;
         }
         return this.targetError(index, `observing every invocation: ${errorText(error)}`);
@@ -5584,12 +5609,7 @@ export class ScenarioRun {
           })) ?? [];
       } catch (error) {
         if (isUnsupported(error)) {
-          this.recordStatus(statusUnsupported);
-          this.t.diagnostic(
-            this.disclosure === undefined
-              ? errorText(error)
-              : 'ESS-CF-TARGET: protected target observation',
-          );
+          this.observationUnsupported(error);
           return true;
         }
         return this.targetError(index, `observing zero invocations: ${errorText(error)}`);
@@ -5625,12 +5645,7 @@ export class ScenarioRun {
           })) ?? [];
       } catch (error) {
         if (isUnsupported(error)) {
-          this.recordStatus(statusUnsupported);
-          this.t.diagnostic(
-            this.disclosure === undefined
-              ? errorText(error)
-              : 'ESS-CF-TARGET: protected target observation',
-          );
+          this.observationUnsupported(error);
           return true;
         }
         return this.targetError(
@@ -5647,6 +5662,20 @@ export class ScenarioRun {
       this.fail(index, `\`${step.event}\` was not published exactly ${count} time(s)`);
     }
     return true;
+  }
+
+  /**
+   * An observation the target cannot expose: the scenario is unsupported and runs on, in case a
+   * later assertion still fails it, and the first such reason is the one it is skipped with.
+   */
+  observationUnsupported(error: unknown): void {
+    this.recordStatus(statusUnsupported);
+    const reason =
+      this.disclosure === undefined
+        ? errorText(error)
+        : 'ESS-CF-TARGET: protected target observation';
+    this.unsupportedReason ??= reason;
+    this.t.diagnostic(reason);
   }
 
   recordStatus(status: string): void {

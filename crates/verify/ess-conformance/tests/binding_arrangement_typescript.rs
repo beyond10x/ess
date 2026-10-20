@@ -104,7 +104,7 @@ const target=()=>({
 let failed=false;
 const scope={diagnostic(){},skip(){},async test(name,body){try{await body(this);}catch(error){failed=true;console.error(`${name}: ${String(error)}`);}}};
 try {await runWith(scope,target,readFileSync(file,'utf8'));if(failed)process.exitCode=1;}
-catch(error){console.error(String(error));process.exitCode=2;}
+catch(error){console.error(String(error));process.exitCode=/^Error: \d+ required scenario\(s\) unsupported/.test(String(error))?1:2;}
 ";
 
 fn nodes(value: &Value) -> std::collections::BTreeMap<String, Node> {

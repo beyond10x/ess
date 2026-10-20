@@ -68,6 +68,22 @@ An adopter has already had to write *"read the report document, not the exit cod
 contributor instructions to survive this. That is a defect in the Go runner's exit behaviour, not a
 feature of the Go runner, and it should be filed rather than relied upon.
 
+### Refinement, 2026-10-20: skipped per scenario, failed per run
+
+Report/2 closed that defect by failing each unsupported scenario's subtest, so `go test` exited
+nonzero. It also made every JUnit or test report read an unsupported scenario as a failed assertion,
+which it is not: the target said it cannot answer, and a reader of the test report could no longer
+tell that from a wrong answer.
+
+Under report format 2 the generated Go and TypeScript runners now end each unsupported required
+scenario as a **skipped** subtest or case, with the target's reason as the skip message, and the
+**run still fails once**: the parent test fails with one summary naming how many required scenarios
+were unsupported. The sentence above still holds — an unsupported required scenario fails the run,
+and the process exits nonzero — and it is now said once, on the run, rather than once per scenario.
+The report is unchanged: those scenarios are `unsupported` and `execution_status` is `failed`. A
+held scenario the target cannot hold `now` for (beyond10x/ess#586) is skipped and does not fail the
+run, as before. Report format 1 is unchanged.
+
 ## The four delivery modes
 
 How the runner reaches the implementation is orthogonal to what is substituted. Four modes, of which
