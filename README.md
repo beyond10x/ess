@@ -154,17 +154,63 @@ Crates sit under the area they serve, and the command surface says the same thin
 `ess` per directory here. The name of a crate is its identity and no move changed one; the
 directory says which half of the pipeline it belongs to.
 
-- **`crates/specify/`** — `ess-primitives`, `ess-domain`, `ess-compiler`, `ess-composition`,
-  `ess-realization`: an authored system becomes a validated, resolved IR.
-- **`crates/generate/`** — `ess-gen`, `ess-synth`, `ess-openapi`, `schema-contract`,
-  `ess-deployment`: that IR becomes artifacts, and nothing here applies one to a running system.
-- **`crates/verify/`** — `ess-conformance`, `ess-diff`: an implementation held to the
-  specification, and one revision of a specification against another.
-- **`crates/infra/`** — `infra-domain`, `infra-compiler`, `infra-analyze`, `infra-spec`,
-  `infra-project`, `ess-kubernetes`: the observed cluster, a separate bounded context whose only
-  dependency on the rest is `ess-primitives`.
-- **`crates/edge/`** — `ess-cli`, `ess-xtask`: the `ess` binary an adopter runs, and this
-  repository's own tooling.
+This is the one list of the workspace's crates, in `[workspace] members` order; each line comes
+from the crate's own `Cargo.toml` description.
+
+- **`crates/specify/`** — an authored system becomes a validated, resolved IR.
+  - `ess-yaml` — the one crate that names a YAML library; every other crate reads YAML through it.
+  - `ess-primitives` — validation, value, predicate, identity, time, digest and consistency
+    primitives.
+  - `ess-domain` — the typed model of a specification.
+  - `ess-compiler` — resolution, the normalized IR and diagnostics.
+  - `ess-composition` — composition IR and client plans for independently compiled services.
+  - `ess-realization` — validated physical realizations of an exact specification.
+  - `ess-transport` — event transport bindings: broker, subject, stream and envelope.
+  - `ess-http` — HTTP bindings: the method and path of each command and view.
+  - `ess-cli-contract` — closed, resolved CLI presentation bindings over the model types.
+  - `ess-service-contract` — service-scoped contracts taken from a resolved model and its
+    synthesis plan.
+- **`crates/generate/`** — that IR becomes artifacts, and nothing here applies one to a running
+  system.
+  - `ess-gen` — documentation, schema and contract projections.
+  - `ess-publisher` — generated Go and Rust event publishers from a component's transport binding.
+  - `ess-synth` — structural synthesis: one disposition per capability, and the generated Rust
+    workspace.
+  - `ess-openapi` — OpenAPI import and projection for service interfaces.
+  - `schema-contract` — offline validation and projections for adopter-owned JSON Schema
+    contracts.
+  - `ess-deployment` — build, realization, release, stack, environment and deployment IR.
+  - `ess-cli-project` — the Rust/Clap parser and process projection for CLI bindings.
+  - `ess-entity-runtime` — service contracts projected to Entity Runtime definitions and host
+    binding plans.
+- **`crates/ui/`** — renderer-neutral UI documents (`ess-ui/1`).
+  - `ess-ui` — an `ess-ui/1` document loaded into typed Rust, every node addressed by its
+    canonical path.
+  - `ess-ui-check` — every check a document is held to, against the schema and, with a model,
+    the views, commands, events and grants it names.
+  - `ess-ui-docs` — the `ess-ui/1` reference, generated as one HTML page and as Markdown.
+  - `ess-ui-react` — a plain React and TypeScript application generated from a document.
+  - `ess-ui-tui` — a terminal renderer that runs any document as a ratatui application.
+  - `ess-ui-test` — `ess-ui-test/1` behaviour tests, run headless on the terminal renderer and
+    emitted as a Playwright spec.
+- **`crates/verify/`** — an implementation held to the specification, and one revision of a
+  specification against another.
+  - `ess-conformance` — the scenario IR, guard satisfaction, and the suite a specification
+    obliges.
+  - `ess-diff` — a typed semantic delta between two compiled IRs.
+- **`crates/infra/`** — the observed cluster, a separate bounded context whose only dependency
+  on the rest is `ess-primitives`.
+  - `infra-domain` — the observation model: a scanned cluster, parsed permissively and validated
+    strictly.
+  - `infra-compiler` — a validated observation to the content-addressed infrastructure IR.
+  - `infra-analyze` — the typed dependency graph, diagnosis and workload properties.
+  - `infra-spec` — desired state, its simulation against a snapshot, and drift between snapshots.
+  - `infra-project` — manifest patches that would close a simulation's gaps, and the obligations
+    that refuse one.
+  - `ess-kubernetes` — the credential-edge Kubernetes import adapter.
+- **`crates/edge/`** — the `ess` binary an adopter runs, and this repository's own tooling.
+  - `ess-cli` — the `ess` command-line interface.
+  - `ess-xtask` — repository-only maintenance checks.
 
 Run the complete offline gate with:
 
