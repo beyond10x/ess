@@ -4998,6 +4998,12 @@ fn synthesize_suite(
     // suite carrying a check nobody can resolve is the artifact this whole verb exists to avoid.
     let authoring = ess_conformance::authored::compile(&ir, &authored_sources(scenarios)?);
     let complete = authoring.is_complete();
+    // A connective's child an authored scenario witnesses is not refused (beyond10x/ess#619).
+    ess_conformance::synthesize::withdraw_witnessed_children(
+        &ir,
+        &mut synthesis.refusals,
+        authoring.scenarios.values(),
+    );
     let authored = file_authored(&ir, component, &mut synthesis, authoring.scenarios)?;
     if !complete {
         for refusal in &authoring.refusals {

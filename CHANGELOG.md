@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- An admitted authored scenario (`ess-scenario/1`) that sends an input where one child of an
+  `any`/`all` alone decides the connective, and expects the branch that input selects, now withdraws
+  the `ESS-SYNTH-022` refusal naming that child, as the refusal's help says. Before, the refusal
+  stayed in `conform synthesize`'s refusal list, its counts and the coverage inventory whatever the
+  authored scenarios sent (beyond10x/ess#619). A specification changes nothing; a suite generated
+  with such a scenario loses that refusal when regenerated.
+
 ## [0.66.0] — 2026-10-20
 
 ### Changed

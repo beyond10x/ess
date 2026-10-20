@@ -256,21 +256,6 @@ fn finish_inventory(
             refused: 0,
         },
     };
-    for refusal in synthesis.refusals {
-        let message = refusal.to_string();
-        inventory.refused.push(Refusal {
-            origin: Origin::Generated,
-            scenario: refusal.scenario,
-            subject: Some(refusal.subject),
-            source: None,
-            code: refusal.cause.code().to_string(),
-            message,
-            effect: generated_effect(&refusal.cause),
-            retained: None,
-            scope: RefusalScope::InScope,
-            needs: Vec::new(),
-        });
-    }
     let rejected_needs = append_authored(
         ir,
         component,
@@ -279,6 +264,7 @@ fn finish_inventory(
         &mut inventory,
         &mut owners,
     )?;
+    append_generated(ir, synthesis.refusals, &suite, &mut inventory, &owners);
     partition(
         &mut suite,
         &mut inventory,
@@ -293,6 +279,44 @@ fn finish_inventory(
     suite.provenance.suite_version = coverage_version(ir, &suite, &inventory);
     let original = coverage::suite_document(&suite, &inventory)?;
     AdmittedInput::from_suite(AdmittedSuite::from_json(&original)?)
+}
+
+/// Files synthesis's refusals in the inventory, after the authored scenarios are merged.
+///
+/// A connective's child an admitted authored scenario witnesses is not refused
+/// (<https://github.com/beyond10x/ess/issues/619>); the refusal list, its counts and the
+/// inventory's completeness all read this one withdrawal.
+fn append_generated(
+    ir: &EssIr,
+    mut refusals: Vec<crate::Refusal>,
+    suite: &ConformanceSuite,
+    inventory: &mut Inventory,
+    owners: &BTreeMap<ScenarioId, Retained>,
+) {
+    crate::synthesize::withdraw_witnessed_children(
+        ir,
+        &mut refusals,
+        suite
+            .scenarios
+            .iter()
+            .filter(|(id, _)| owners[*id].origin == Origin::Authored)
+            .map(|(_, scenario)| scenario),
+    );
+    for refusal in refusals {
+        let message = refusal.to_string();
+        inventory.refused.push(Refusal {
+            origin: Origin::Generated,
+            scenario: refusal.scenario,
+            subject: Some(refusal.subject),
+            source: None,
+            code: refusal.cause.code().to_string(),
+            message,
+            effect: generated_effect(&refusal.cause),
+            retained: None,
+            scope: RefusalScope::InScope,
+            needs: Vec::new(),
+        });
+    }
 }
 
 fn append_authored(
