@@ -612,6 +612,9 @@ fn coverage_version(
     // A view read through a reference of its source (beyond10x/ess#564) is cumulative over every
     // pair below, the observed one included.
     let referenced = crate::view_reference::coverage_floor(suite).is_some();
+    // A one-time read cell that names its reader (beyond10x/ess#614) is cumulative over every pair
+    // below, the referenced one included.
+    let reader = crate::one_time_reader::coverage_floor(suite).is_some();
     let held = crate::hold_now::coverage_floor(suite).is_some();
     // A system-issued command's await vocabulary (beyond10x/ess#542) is cumulative over every
     // pair below, the held one included.
@@ -620,7 +623,9 @@ fn coverage_version(
     let opened = crate::undeclared_fields::coverage_floor(suite).is_some();
     let constrained = crate::direct_response::constrained_coverage_floor(suite).is_some();
     let counted = crate::event_multiplicity::coverage_floor(suite).is_some();
-    crate::scenario::SuiteFormat::parse(if referenced {
+    crate::scenario::SuiteFormat::parse(if reader {
+        "ess-conformance/57"
+    } else if referenced {
         "ess-conformance/55"
     } else if observed || awaited {
         "ess-conformance/53"

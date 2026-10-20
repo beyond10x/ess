@@ -55,8 +55,12 @@ these cells:
   - `denied/<command>`: each command the actor is not granted, invoked as that actor and expected
     to be refused for lack of a grant. The invocation is that of the command's first outcome, in
     declared order, that a granted caller can be sent with an arranged row and input.
-  - `read/<view>`: each declared view. The cell is refused when the actor is not granted the
-    originating command, because that actor cannot issue the value it would read.
+  - `read/<view>`: each declared view, read as the actor. The value is issued by the actor where
+    it is granted the originating command, and otherwise by the first actor granted it; then a
+    `read_as` step names the actor and the view is read, before and after a rotation. An actor
+    who may read the view but may not issue the value gets a cell of its own. A suite holding such
+    a cell is written at `ess-conformance/56` (`/57` with coverage). With no declared actor the
+    view is read as no actor and the suite keeps its earlier format.
 
 Each cell has its own scenario id:
 `<command>/disclosure/<outcome>/<field>/<aspect>/as/<actor>`, where `<aspect>` is one of the names
@@ -70,7 +74,10 @@ out. The common refusals are:
   created, so it is a create of an existing key, and the model does not say how that is answered.
   Declare `existing_instance: true` with an `error:` on the command, and the retry cell expects
   that refusal.
-- `read/<view>` for an actor not granted the originating command, as above.
+- `read/<view>` when the view's read grant (`may:` naming the view) does not name the actor: the
+  read would be refused before anything is read. Where a served component answers the view,
+  `<view>/grant/read/denied` checks that refusal. A `read/<view>` cell is also refused when no
+  declared actor is granted the originating command.
 - Any cell whose arrangement is refused for the same reason the ordinary outcome scenario would
   be.
 
@@ -79,8 +86,9 @@ A cell refused for the same cause as an ordinary outcome scenario it sends or ar
 refusal, not as a refusal of its own. A gap such as an entity no command creates then reads once,
 however many actors and follow-ups repeat it. A cell refused for its own reason is linked to the
 first cell of the same field and aspect refused for that reason. Each `read/<view>` cell of an
-actor not granted the origin is linked that way. In this model `vault.keys.EditNote` updates a
-`vault.keys.Note` that no command creates, and two of three actors are granted nothing:
+actor the view's grant does not name is linked that way. In this model `vault.keys.EditNote`
+updates a `vault.keys.Note` that no command creates, the view `vault.keys.Notes` is read-granted to
+`vault.keys.Owner` alone, and two of three actors are granted nothing:
 
 ```shell-session
 $ ess verify conform synthesize --path system.yaml
@@ -89,8 +97,8 @@ refused: refusal[ESS-SYNTH-004]: outcome vault.keys.EditNote/edited has no scena
   help: give some command outcome `creates:` for this entity; nothing can act on an instance nothing brings into existence
   and 3 disclosure scenario(s) that send `vault.keys.EditNote`, refused for the same cause
 refused: refusal[ESS-SYNTH-001]: outcome vault.keys.IssueToken/issued has no scenario `vault.keys.IssueToken/disclosure/issued/secret/read/vault.keys.Notes/as/actor/vault.keys.Auditor`
-  the disclosure cell cannot be arranged or observed: the read's originating caller has no grant to issue this value
-  help: the line above names what the cell lacks; a `read/<view>` cell for an actor not granted the originating command is refused by design and needs no change
+  the disclosure cell cannot be arranged or observed: the view's read grant does not name the reader, so the read is refused before anything is read
+  help: the line above names what the cell lacks; a `read/<view>` cell whose view's read grant does not name the cell's actor has nothing to read and needs no change
   and 1 more disclosure scenario(s) refused for the same cause
 8 scenario(s) (0 authored), 6 refusal(s), 2 distinct cause(s), nothing written
 ```
@@ -173,14 +181,15 @@ keys.api.IssueKey/disclosure/issued/secret/retry/as/actor/keys.api.Admin
 Adding a second command, `LabelKey`, which updates the key and is granted to `Admin` and to a
 third actor, `Operator`, adds one ordinary scenario and four disclosure cells: `command` cells for
 `Admin` and `Operator`, and `denied` cells for `Operator` on `IssueKey` and for `Viewer` on
-`LabelKey`. Adding one view of `ApiKey` adds one `read` cell for `Admin`; the `read` cells for
-`Operator` and `Viewer` are refused.
+`LabelKey`. Adding one view of `ApiKey` adds one `read` cell for each of the three actors: each
+reads the view as itself after `Admin` issues the key. Before `ess-conformance/56` only `Admin`'s
+was built, read as no actor, and the cells for `Operator` and `Viewer` were refused.
 
 | model | scenarios | disclosure scenarios |
 |---|---|---|
 | 1 command, 2 actors | 5 | 4 |
 | 2 commands, 3 actors | 10 | 8 |
-| 2 commands, 3 actors, 1 view | 11 | 9 |
+| 2 commands, 3 actors, 1 view | 13 | 11 |
 
 ## What the suite observes
 
@@ -190,6 +199,14 @@ scenario and checks subsequent responses, view rows and independently observed e
 checks unexpected JSON members and object keys: placing a value inside a larger string or under
 an extra field does not exempt it. Only the exact originating response field may contain the
 newly issued value; an older value or another marked field's value is not exempt there.
+
+From `ess-conformance/56` (ordinary) and `ess-conformance/57` (coverage), a `read/<view>` cell
+reads the view as the actor its id names, through the target's read-as-actor seam
+(`query_view_as`, or the actor the Go and TypeScript runtimes send with the read). Below them the
+same id names the actor that issued the value, and the view is read as no actor; every reader keeps
+that meaning for an older suite, so it keeps its bytes and what they assert. Regenerate a suite to
+get the new cells. Rust, Go and TypeScript run both, and an older reader refuses `/56` and `/57`
+by version.
 
 An event adapter must observe the implementation's event log independently of a command's direct
 events. A declared window includes its closing boundary, even when an earlier observation already

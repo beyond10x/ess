@@ -678,6 +678,9 @@ export function parseDisclosureId(id: string): DisclosureCell {
   return { origin, field: field!, aspect, actor };
 }
 
+/** The suite versions whose one-time read cells read as the actor they name (beyond10x/ess#614). */
+const READER_VERSIONS = ['ess-conformance/56', 'ess-conformance/57'];
+
 export function admitDisclosureId(
   id: string,
   scenario: Node,
@@ -699,7 +702,9 @@ export function admitDisclosureId(
     // (beyond10x/ess#542).
     !['ess-conformance/52', 'ess-conformance/53'].includes(version) &&
     // And a view read through a reference of its source (beyond10x/ess#564).
-    !['ess-conformance/54', 'ess-conformance/55'].includes(version)
+    !['ess-conformance/54', 'ess-conformance/55'].includes(version) &&
+    // And a one-time read cell that reads as the actor it names (beyond10x/ess#614).
+    !READER_VERSIONS.includes(version)
   ) {
     return fail();
   }
@@ -761,6 +766,21 @@ export function admitDisclosureId(
       fulfilled = selected(tail, cell.origin, cell.actor) !== null;
       break;
     case 'read':
+      if (READER_VERSIONS.includes(version)) {
+        // From suite/56 the cell's actor is the reader: the view is read after the origin as it,
+        // after a `read_as` naming it or, for no actor, with none naming another.
+        let inForce: string | null = null;
+        fulfilled = steps.some((step, index) => {
+          if (step.step === 'read_as') inForce = step.actor ?? null;
+          return (
+            index > origin[1] &&
+            ['query_view', 'eventually_view'].includes(step.step) &&
+            step.view === cell.aspect[1] &&
+            inForce === cell.actor
+          );
+        });
+        break;
+      }
       fulfilled =
         sameActor &&
         tail.some(

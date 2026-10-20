@@ -72,9 +72,13 @@ impl Cell {
         })
     }
 
+    /// Whether `scenario` carries the obligation this cell names, read as a suite of `major`
+    /// carries it: from suite/[`crate::one_time_reader::ORDINARY`] a read cell's actor is the
+    /// reader, below it the issuer.
     pub(super) fn validate(
         &self,
         scenario: &crate::ConformanceScenario,
+        major: u32,
     ) -> Result<(), &'static str> {
         let policy = scenario
             .one_time_response
@@ -98,6 +102,9 @@ impl Cell {
             Aspect::Origin => origin_actor == Some(&self.actor),
             Aspect::Retry => origin_actor == Some(&self.actor) && tail.contains(&steps[invoked]),
             Aspect::Rotation => selected(tail, &self.origin, Some(&self.actor)).next().is_some(),
+            Aspect::Read(view) if major >= crate::one_time_reader::ORDINARY => {
+                read_as_reader(steps, selected_at, view, self.actor.as_ref())
+            }
             Aspect::Read(view) => origin_actor == Some(&self.actor) && tail.iter().any(|step| matches!(step, crate::ScenarioStep::QueryView { view: queried, .. } | crate::ScenarioStep::EventuallyView { view: queried, .. } if view == queried)),
             Aspect::Command(expected) => selected(tail, expected, Some(&self.actor)).next().is_some(),
             Aspect::Denied(command) => denied(tail, command, self.actor.as_ref()),
@@ -108,6 +115,30 @@ impl Cell {
             Err("disclosure identity has no matching follow-up obligation")
         }
     }
+}
+
+/// Whether `view` is read after the origin selected at `selected_at` as `reader`: the actor of the
+/// last [`ReadAs`](crate::ScenarioStep::ReadAs) before the read, or no actor where none stands
+/// before it (suite/56, beyond10x/ess#614). The origin's own checks may read the view on the
+/// harness's authority before that.
+fn read_as_reader(
+    steps: &[crate::ScenarioStep],
+    selected_at: usize,
+    view: &ViewRef,
+    reader: Option<&ActorRef>,
+) -> bool {
+    let mut in_force: Option<&ActorRef> = None;
+    steps.iter().enumerate().any(|(index, step)| match step {
+        crate::ScenarioStep::ReadAs { actor } => {
+            in_force = actor.as_ref();
+            false
+        }
+        crate::ScenarioStep::QueryView { view: queried, .. }
+        | crate::ScenarioStep::EventuallyView { view: queried, .. } => {
+            index > selected_at && queried == view && in_force == reader
+        }
+        _ => false,
+    })
 }
 
 fn invocation(step: &crate::ScenarioStep) -> Option<(&CommandRef, &Option<ActorRef>)> {

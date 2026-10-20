@@ -607,6 +607,16 @@ it, the 52/53 pair included. Rust, Go and TypeScript run it, older readers refus
 by version, and every reader refuses the identity under a lower major. A suite without it keeps
 its earlier format and bytes.
 
+`ess-conformance/56` and `ess-conformance/57`, unreleased, make a one-time read cell name its
+reader (beyond10x/ess#614): `<command>/disclosure/<outcome>/<field>/read/<view>/as/actor/<A>`
+issues the value as `A` where `A` is granted the issuing command, else as its first granted
+actor, and then reads the view as `A` after a `read_as` step, so an actor who may read the view but
+may not issue the value has a cell of its own. Below 56 the same id names the issuer and the view
+is read as no actor, and every reader keeps that meaning for an older suite. A suite holding such a
+cell is written at 56 (ordinary) or 57 (declared coverage); each implies every major below it, the
+54/55 pair included. Rust, Go and TypeScript run it, and older readers refuse these envelopes by
+version. A suite without such a cell keeps its earlier format and bytes.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named
