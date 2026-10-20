@@ -247,7 +247,9 @@ impl<'a> ProvenanceMint<'a> {
     #[must_use]
     pub fn digest_of(&self, slice: &ModelSlice) -> String {
         match slice {
-            ModelSlice::WholeModel => slice_digest(self.ir, None),
+            // `Provenance::of` already computed `slice_digest(self.ir, None)` for `self.whole`;
+            // re-serializing the whole model once per artifact was the cost.
+            ModelSlice::WholeModel => self.whole.contract_digest.clone(),
             ModelSlice::Constructs { seeds } => {
                 let members = self.graph.slice(seeds);
                 format!("slice-sha256/2:{}", slice_digest(self.ir, Some(&members)))
