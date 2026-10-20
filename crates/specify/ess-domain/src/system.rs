@@ -292,7 +292,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
     },
     FormatHistoryEntry {
         major: 28,
-        release: None,
+        release: Some("0.64.0"),
         added: &[
             "A value may read the lifecycle state of the row a reference names, `{related: {via, field: state}}`, through a chained `via:` too, typed as that entity's `State` and read as the row's guards read `state`; a refusal's error payload reading the row its `when_related:` guard reads is asserted by the refusal's scenario; below `ess/28` the read is refused as `unsupported_format_version` naming `ess/28` (beyond10x/ess#557).",
             "A view may read the row a reference of its source names, one hop, as that row is when the view is read: a field declaring `field: {related: {via: <reference>, field: <field | state>}}`, typed `Optional` because it is absent where the reference is absent or names no row, and a filter path `<reference>.<field>`, unknown there, so the row is not shown; a reference is a field typed as one entity's identity, or `Optional` of one, by the rule `{related: …}` follows. Navigation in an aggregate view, beside `paging:` or `absent:`, or as an `order_by:` key is refused as `unsupported_construct`, a field read through a reference under the name of a source field as `conflicting_declaration`, and below `ess/28` each is refused as `unsupported_format_version` naming `ess/28`; a model without it keeps its IR bytes. Each such view is witnessed by a `<view>/reference/<field>` scenario (suite/54 and /55) reading it before and after the referenced row changes, and generated Rust and Go keep its query an obligation, named (beyond10x/ess#564).",

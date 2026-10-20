@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: release-plan:ess-063-downstream
 kind: release-plan
-status: draft
+status: implemented
 title: 'Release ESS 0.63.0: the downstream asks of 2026-10-18 and the salvaged work of 2026-10-13 and 2026-10-17, under ess/27'
 summary: One integration branch, one source format, one suite pair, one delta format; waves 1-4 and what follows
 relations:
@@ -23,7 +23,9 @@ relations:
 - delivers: story:payload-source-reads-the-head-of-an-ordered-selection
 - delivers: story:authored-exact-value-on-generated-field-is-refused
 - delivers: story:minted-value-present-and-shared-with-its-payload
-revision: 3
+revision: 4
+transitions:
+- {from: "draft", to: "implemented", at: "2026-10-20T10:58:49Z", actor: "human:timo", revision: 4}
 ---
 ## Intent
 

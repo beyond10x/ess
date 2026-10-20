@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/queries-over-rows-first-slice-0.64.0
+repository: ess
+publishedAt: 2026-10-20T00:00:00Z
+title: A view and a guard read the row a reference names
+summary: >-
+  Format `ess/28` lets a view field and a view filter read the row a reference of the source
+  names, one hop, as it is when the view is read; a value read a referenced row's lifecycle state;
+  a branch require several related rows at once; and a guard refuse a list of references that
+  names a missing row. Suite `ess-conformance/54` witnesses each navigated view.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.64.0
+  version: 0.64.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

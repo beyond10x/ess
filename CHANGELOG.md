@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.64.0] — 2026-10-20
+
 ### Added
 
 - From `format: ess/28` a view reads the row a reference of its source names, one hop, as that
@@ -45,11 +47,13 @@
   it, each by name; below `ess/28` the guard keeps its refusal, its hint naming `ess/28`
   (beyond10x/ess#558).
 
+Language: 0 general, 0 one-to-one, 4 part (general share 0%; cumulative 19%).
+
 ## [0.63.0] — 2026-10-19
 
 ### Added
 
-- From `format: ess/28` a value may be computed by an expression, `{expr: "<expression>"}`, in
+- From `format: ess/27` a value may be computed by an expression, `{expr: "<expression>"}`, in
   `sets:`, an event's `payload:` and an error's `payload:`, and a view field may be computed from
   its source row, `{name: elapsed, type: Duration, expr: "ended_at - started_at"}` — the first
   cut of the typed expression language (G1, `docs/design/generic-language-features.md`; grid O's
