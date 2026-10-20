@@ -1000,6 +1000,31 @@ fn move_order(operations: &[Prepared<'_>]) -> Vec<usize> {
     order
 }
 
+/// The two earliest of `bounds`, earliest first; a bound two of them share fills both.
+fn earliest_returns(bounds: impl Iterator<Item = ReturnBound>) -> [Option<ReturnBound>; 2] {
+    let mut earliest = [None, None];
+    for bound in bounds {
+        if earliest[0].is_none_or(|first| bound < first) {
+            earliest = [Some(bound), earliest[0]];
+        } else if earliest[1].is_none_or(|second| bound < second) {
+            earliest[1] = Some(bound);
+        }
+    }
+    earliest
+}
+
+/// Whether an operation returning by `bound` and invoked at `invoked` waits on another operation
+/// still outside the order that returned before it was invoked. `earliest` is
+/// [`earliest_returns`] over every operation still outside the order, this one among them.
+fn held_back(earliest: [Option<ReturnBound>; 2], bound: ReturnBound, invoked: u64) -> bool {
+    let others = if earliest[0] == Some(bound) {
+        earliest[1]
+    } else {
+        earliest[0]
+    };
+    others.is_some_and(|other| other < ReturnBound::At(invoked))
+}
+
 /// The moves from one state: every operation nothing still outside the order returned before,
 /// with every state it can leave. `None` when the budget ran out.
 fn next_moves(
@@ -1013,17 +1038,18 @@ fn next_moves(
 ) -> Result<Option<Alternatives<(usize, Held)>>, CheckRefusal> {
     let mut found: Vec<(usize, Held)> = Vec::new();
     let mut unresolved = None;
+    let earliest = earliest_returns(
+        order
+            .iter()
+            .filter(|&&index| !done.has(index))
+            .map(|&index| operations[index].operation.return_bound()),
+    );
     for &index in order {
         if done.has(index) {
             continue;
         }
-        let invoked = operations[index].operation.invoked_at;
-        let held_back = order.iter().any(|&other| {
-            other != index
-                && !done.has(other)
-                && operations[other].operation.return_bound() < ReturnBound::At(invoked)
-        });
-        if held_back {
+        let operation = operations[index].operation;
+        if held_back(earliest, operation.return_bound(), operation.invoked_at) {
             continue;
         }
         if *budget == 0 {
@@ -1928,9 +1954,11 @@ fn without(current: &History, drop: impl Fn(&Operation) -> bool) -> Option<Histo
         .operations
         .iter()
         .partition(|operation| drop(operation));
-    let needed = gone
-        .iter()
-        .any(|removed| kept.iter().any(|stays| precedes(removed, stays)));
+    let earliest = gone.iter().map(|removed| removed.return_bound()).min();
+    let latest = kept.iter().map(|stays| stays.invoked_at).max();
+    let needed = earliest
+        .zip(latest)
+        .is_some_and(|(returned, invoked)| returned < ReturnBound::At(invoked));
     (!gone.is_empty() && !needed).then(|| only(current, |operation| !drop(operation)))
 }
 
@@ -2533,5 +2561,68 @@ impl Report {
             }
         }
         text
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{earliest_returns, held_back, Done, ReturnBound};
+
+    const BOUNDS: [ReturnBound; 4] = [
+        ReturnBound::At(0),
+        ReturnBound::At(1),
+        ReturnBound::At(2),
+        ReturnBound::AfterEveryOther,
+    ];
+
+    /// Every combination of `size` picks from `0..choices`.
+    fn every(size: usize, choices: usize) -> Vec<Vec<usize>> {
+        (0..choices.pow(u32::try_from(size).unwrap()))
+            .map(|mut code| {
+                (0..size)
+                    .map(|_| {
+                        let pick = code % choices;
+                        code /= choices;
+                        pick
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn held_back_answers_what_a_scan_of_every_other_operation_answers() {
+        for size in 0..=4 {
+            for bounds in every(size, BOUNDS.len()) {
+                let bounds: Vec<ReturnBound> =
+                    bounds.into_iter().map(|pick| BOUNDS[pick]).collect();
+                for invoked in every(size, 3) {
+                    for mask in 0..1_usize << size {
+                        let mut done = Done::new(size);
+                        for index in (0..size).filter(|index| mask & (1 << index) != 0) {
+                            done = done.with(index);
+                        }
+                        let earliest = earliest_returns(
+                            (0..size)
+                                .filter(|&index| !done.has(index))
+                                .map(|index| bounds[index]),
+                        );
+                        for index in (0..size).filter(|&index| !done.has(index)) {
+                            let invoked_at = u64::try_from(invoked[index]).unwrap();
+                            let scanned = (0..size).any(|other| {
+                                other != index
+                                    && !done.has(other)
+                                    && bounds[other] < ReturnBound::At(invoked_at)
+                            });
+                            assert_eq!(
+                                held_back(earliest, bounds[index], invoked_at),
+                                scanned,
+                                "{bounds:?} {invoked:?} done {mask:#b} operation {index}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 }
