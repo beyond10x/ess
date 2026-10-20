@@ -592,7 +592,9 @@ string keeps the value where a number would silently round it. Answer such a val
 `ErrUnsupported`, not an ordinary error. A scenario whose semantic the implementation does not
 expose is recorded as `unsupported`; an ordinary target error is recorded as `error`.
 Report/2 keeps both categories under `go-scenario-status/2`: unsupported makes execution fail,
-while an error leaves execution inconclusive. Both fail the test invocation. Report/1 retains
+while an error leaves execution inconclusive. Both fail the test invocation. An unsupported
+scenario is shown as a skipped case carrying your reason, not as a failed assertion; the run still
+fails once, with one message naming how many required scenarios were unsupported. Report/1 retains
 its legacy skipped/failed diagnostic presentation.
 
 Every method may say it, `executeCommand` included: a command whose actor is the implementation

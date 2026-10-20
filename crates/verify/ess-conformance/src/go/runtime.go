@@ -1938,6 +1938,10 @@ func Run(t *testing.T, newTarget func() Target) {
 	// entirely, so its `status` keeps the optimistic default and no defer corrects it; counting
 	// terminations is the only way to tell a run that answered from one that was never asked.
 	terminated := 0
+	// How many required scenarios ended unsupported under report/2. Each is shown skipped, with
+	// its reason, so a JUnit or test report does not read it as a failed assertion; the run fails
+	// once on their count instead, because an unsupported required scenario fails the run.
+	unsupportedRequired := 0
 	for _, id := range ids {
 		scenario := suite.Scenarios[id]
 		// Read after the subtest, not returned from it: Skipf and Fatalf leave through Goexit,
@@ -1969,9 +1973,17 @@ func Run(t *testing.T, newTarget func() Target) {
 				if config.version == "2" && t.Failed() && status == statusPassed {
 					status = statusFailed
 				}
+				if run.unsupportedRequired && status == statusUnsupported && !t.Failed() {
+					unsupportedRequired++
+				}
 			}()
 			run.execute(id, scenario)
 			returned = true
+			// An observation the target could not expose lets the scenario run on, in case a later
+			// assertion still fails; if none did, the scenario ends here, skipped with that reason.
+			if run.preciseStatuses && run.status == statusUnsupported && !t.Failed() {
+				run.endUnsupported()
+			}
 		})
 		if terminal {
 			terminated++
@@ -1984,6 +1996,9 @@ func Run(t *testing.T, newTarget func() Target) {
 		encoded := writeCountReport(t, suite, identity, results, terminated, config.strict)
 		if execution != nil && encoded != nil {
 			writeExecutionContext(t, suite, identity, encoded, *execution)
+		}
+		if unsupportedRequired > 0 {
+			t.Errorf("%s", unsupportedSummary(unsupportedRequired))
 		}
 	} else {
 		writeReport(t, suite, identity, results, terminated)
@@ -2206,6 +2221,13 @@ type run struct {
 	// heldScenario says this scenario is a held one (`<command>/outcome/<outcome>/held/<field>/<seconds>`):
 	// one the target lacking `hold_now` leaves unsupported without failing the run (beyond10x/ess#586).
 	heldScenario bool
+	// unsupportedRequired says this scenario ended skipped as an unsupported required one under
+	// report/2, which `Run` counts toward the run's one failure.
+	unsupportedRequired bool
+	// unsupportedFormat and unsupportedArgs are the first observation the target could not expose,
+	// for the skip that ends a report/2 scenario no later assertion failed.
+	unsupportedFormat string
+	unsupportedArgs   []any
 	// status is what this scenario has come to so far: passed until a step fails or skips.
 	status string
 	// callbacksComplete records returned callbacks, independently of a provisional skip/failure.
@@ -3523,16 +3545,38 @@ func (r *run) fail(index int, format string, args ...any) bool {
 // a reason and `evidence.rs:99-104` reads everything after the first space as the scenario identity
 // — appending one would corrupt that field for every reader. Carrying the cause into the document
 // needs a new field in a new format, which is `story:a-report-says-why-a-scenario-was-skipped`.
+//
+// Under report/2 the scenario is still shown skipped, with that reason, and counted: `Run` fails
+// the run once on the count, because an unsupported required scenario fails the run while it is
+// not a failed assertion of its own. A JUnit or test report reads a failed subtest as one.
 func (r *run) skip(format string, args ...any) {
 	r.recordStatus(statusUnsupported)
 	if r.disclosure != nil {
 		format, args = "ESS-CF-TARGET: protected unavailable observation", nil
 	}
-	if r.preciseStatuses {
-		r.t.Fatalf(format, args...)
-		return
-	}
+	r.unsupportedRequired = r.preciseStatuses
 	r.t.Skipf(format, args...)
+}
+
+// endUnsupported is skip for a report/2 scenario that ran on past an observation the target could
+// not expose and failed no later assertion: it ends skipped with the first such reason.
+func (r *run) endUnsupported() {
+	format, args := r.unsupportedFormat, r.unsupportedArgs
+	if format == "" {
+		format, args = "required target observation is unsupported", nil
+	}
+	r.recordStatus(statusUnsupported)
+	r.unsupportedRequired = true
+	r.t.Skipf(format, args...)
+}
+
+// unsupportedSummary is the one failure a report/2 run reports for its unsupported required
+// scenarios, after each was shown skipped with its own reason.
+func unsupportedSummary(count int) string {
+	return fmt.Sprintf(
+		"%d required scenario(s) unsupported: each is shown skipped with its reason, and an "+
+			"unsupported required scenario fails the run (report/2 counts it as unsupported)",
+		count)
 }
 
 // skipHold is skip for a target that cannot hold its `now`. A held scenario it ends stays

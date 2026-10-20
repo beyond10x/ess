@@ -244,7 +244,7 @@ const scope = {
   },
 };
 try { await runWith(scope, target, readFileSync(suiteFile, 'utf8')); }
-catch (error) { console.error(String(error)); process.exitCode = 2; }
+catch (error) { console.error(String(error)); process.exitCode = /^Error: \d+ required scenario\(s\) unsupported/.test(String(error)) ? 1 : 2; }
 writeFileSync(divergenceFile, divergences.join('\n'));
 process.stdout.write(skips.join('\n'));
 ";

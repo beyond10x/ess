@@ -173,8 +173,8 @@ const target=()=>({
  queryView:async r=>({rows:(await call('query',upper(r))).Rows}),observeEvents:async r=>events(await call('events',upper(r))),
  observeInvocations:r=>call('invocations',upper(r)),redeliverEvent:r=>call('redeliver',upper(r)),configureExternalOutcome:r=>call('configure',upper(r))
 });
-let failed=false;const scope={diagnostic:console.log,skip(){},async test(name,body){try{await body(this)}catch(error){failed=true;console.error(name,String(error))}}};
-try{await runWith(scope,target,readFileSync(file,'utf8'));if(failed)process.exitCode=1}catch(error){console.error(String(error));process.exitCode=2}
+let failed=false;const scope={diagnostic:console.log,skip(message){console.error(String(message))},async test(name,body){try{await body(this)}catch(error){failed=true;console.error(name,String(error))}}};
+try{await runWith(scope,target,readFileSync(file,'utf8'));if(failed)process.exitCode=1}catch(error){console.error(String(error));process.exitCode=/^Error: \d+ required scenario\(s\) unsupported/.test(String(error))?1:2}
 ";
 
 pub fn wasm(suite: &ess_conformance::AdmittedSuite) -> Value {

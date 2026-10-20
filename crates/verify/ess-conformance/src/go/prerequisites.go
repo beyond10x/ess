@@ -679,6 +679,15 @@ func (r *run) recordStatus(status string) {
 // still establish a contradiction. Executing commands and delivering events stop on errors.
 func (r *run) unsupportedObservation(index int, err error) bool {
 	r.recordStatus(statusUnsupported)
+	if r.preciseStatuses {
+		// Report/2 shows the scenario skipped with this reason once it ends (`Run`), unless a
+		// later assertion fails it.
+		if r.unsupportedFormat == "" {
+			r.unsupportedFormat = "step %d: ESS-CF-INVOCATION: unsupported observation: %v"
+			r.unsupportedArgs = []any{index, err}
+		}
+		return true
+	}
 	r.t.Errorf("step %d: ESS-CF-INVOCATION: unsupported observation: %v", index, err)
 	return true
 }

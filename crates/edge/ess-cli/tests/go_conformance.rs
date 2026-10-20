@@ -739,7 +739,29 @@ func TestConformance(t *testing.T) { essconform.Run(t, func() essconform.Target 
         "{raw}\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(scenarios(&raw, "FAIL").len(), 34, "{raw}");
+    // Each unsupported scenario reads as skipped, with the target's reason, so a JUnit or test
+    // report does not count it a failed assertion; the run still fails once, on the parent test,
+    // naming how many required scenarios were unsupported.
+    assert_eq!(scenarios(&raw, "FAIL"), Vec::<String>::new(), "{raw}");
+    assert_eq!(scenarios(&raw, "SKIP").len(), 34, "{raw}");
+    assert_eq!(
+        raw.matches("ESS-CF-TARGET: the target does not support this scenario: the target does not expose this")
+            .count(),
+        34,
+        "every skipped scenario carries its reason:\n{raw}"
+    );
+    assert_eq!(
+        raw.lines()
+            .filter(|line| line.trim().starts_with("--- FAIL: TestConformance ("))
+            .count(),
+        1,
+        "{raw}"
+    );
+    assert_eq!(
+        raw.matches("34 required scenario(s) unsupported").count(),
+        1,
+        "{raw}"
+    );
     let text = std::fs::read_to_string(report_path(&directory)).unwrap();
     let value: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(value["format"], "ess-conformance-report/2", "{text}");

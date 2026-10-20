@@ -338,7 +338,7 @@ const target = () => ({
 });
 const scope = {diagnostic(){}, skip(){}, async test(_name, body){try {await body(this);} catch {}}};
 try {await runWith(scope,target,readFileSync(file,'utf8')); console.log(JSON.stringify({calls}));}
-catch (error) { console.log(JSON.stringify({calls,error:String(error)})); process.exitCode=2; }
+catch (error) { console.log(JSON.stringify({calls,error:String(error)})); process.exitCode=/^Error: \d+ required scenario\(s\) unsupported/.test(String(error))?1:2; }
 "#;
 
 struct StatusTarget<'a> {
@@ -417,8 +417,11 @@ fn typescript_reports_native_error_and_unsupported_counts_without_normalization(
             .env("ESS_REPORT_OUT", &report)
             .output()
             .unwrap();
-        assert!(
-            output.status.success(),
+        // An unsupported required scenario is shown skipped and fails the run once (exit 1),
+        // naming the count; an error is reported by its subtest, which this scope swallows.
+        assert_eq!(
+            output.status.code(),
+            Some(i32::from(mode == "unsupported")),
             "{}{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
@@ -434,6 +437,14 @@ fn typescript_reports_native_error_and_unsupported_counts_without_normalization(
         );
         let callbacks: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(callbacks["calls"], json!(["begin", "execute", "end"]));
+        if mode == "unsupported" {
+            assert!(
+                callbacks["error"]
+                    .as_str()
+                    .is_some_and(|error| error.contains("1 required scenario(s) unsupported")),
+                "{callbacks}"
+            );
+        }
     }
 }
 
@@ -478,7 +489,7 @@ const target=()=>({
 let failed=false;
 const scope={diagnostic(){},skip(){},async test(name,body){try{await body(this);}catch(error){failed=true;console.error(`${name}: ${String(error)}`);}}};
 try {await runWith(scope,target,readFileSync(file,'utf8'));if(failed)process.exitCode=1;}
-catch(error){console.error(String(error));process.exitCode=2;}
+catch(error){console.error(String(error));process.exitCode=/^Error: \d+ required scenario\(s\) unsupported/.test(String(error))?1:2;}
 ";
 
 fn live_run(
