@@ -541,10 +541,17 @@ impl ResolvedEntity {
     /// because a predicate carries paths rather than handles — the one place in this IR where a
     /// reference is a name. `ess-domain` refuses a predicate reading something absent, so `None`
     /// means a `Specification` nothing validated.
+    ///
+    /// Searches [`ResolvedEntity::observable_fields`]' order without building it, and clones only
+    /// the match: synthesis asks this once per row.
     pub fn observable_field(&self, name: &str) -> Option<ResolvedField> {
-        self.observable_fields()
-            .into_iter()
-            .find(|field| field.name == name)
+        if self.identity.name == name {
+            return Some(self.identity.clone());
+        }
+        if let Some(field) = self.fields.iter().find(|field| field.name == name) {
+            return Some(field.clone());
+        }
+        (name == EntitySpec::STATE).then(|| self.state_field())
     }
 
     /// Every named type this entity reaches, through its identity and its fields.
@@ -3387,6 +3394,27 @@ impl EssIr {
                         outcome,
                         effect: &subject.effect,
                     });
+                }
+            }
+        }
+        out
+    }
+
+    /// The drivers of one entity: [`EssIr::drivers`]' entry for `entity`, in the same order, and
+    /// empty where the map has no entry.
+    ///
+    /// For a caller that reads one entity, which would otherwise build the map for all of them.
+    pub fn drivers_of(&self, entity: &EntityHandle) -> Vec<Driver<'_>> {
+        let mut out = Vec::new();
+        for command in self.commands.values() {
+            for outcome in &command.outcomes {
+                match &outcome.subject {
+                    Some(subject) if subject.entity == *entity => out.push(Driver {
+                        command,
+                        outcome,
+                        effect: &subject.effect,
+                    }),
+                    _ => {}
                 }
             }
         }

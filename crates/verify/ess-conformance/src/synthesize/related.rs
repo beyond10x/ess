@@ -363,17 +363,15 @@ fn via_may_be_left_absent(
 /// Whether some branch creating a row of `entity` fills `field` from an Optional input unchanged,
 /// so a row can be created with `field` absent.
 fn created_absent(ir: &EssIr, entity: &EntityHandle, field: &str) -> bool {
-    ir.drivers().get(entity).is_some_and(|drivers| {
-        drivers.iter().any(|driver| {
-            matches!(driver.effect, ResolvedEffect::Creates)
-                && set_from_input(driver.outcome, field).is_some_and(|input| {
-                    driver
-                        .command
-                        .input
-                        .iter()
-                        .any(|declared| declared.name == input && declared.type_ref.is_optional())
-                })
-        })
+    ir.drivers_of(entity).iter().any(|driver| {
+        matches!(driver.effect, ResolvedEffect::Creates)
+            && set_from_input(driver.outcome, field).is_some_and(|input| {
+                driver
+                    .command
+                    .input
+                    .iter()
+                    .any(|declared| declared.name == input && declared.type_ref.is_optional())
+            })
     })
 }
 
@@ -689,8 +687,8 @@ fn changed(
     first: usize,
     decoys: &[&BTreeMap<String, Determined>],
 ) -> Option<(Vec<String>, Invocation)> {
-    let all = ir.drivers();
-    let driver = all.get(read.entity)?.iter().find(|driver| {
+    let drivers = ir.drivers_of(read.entity);
+    let driver = drivers.iter().find(|driver| {
         matches!(driver.effect, ResolvedEffect::Updates)
             && driver.outcome.test_strategy != TestStrategy::InjectFault
             && !super::subject_fact::uses(driver.command)
@@ -1207,8 +1205,8 @@ fn retargeted(
     first: usize,
     arranging: &[&EntityHandle],
 ) -> Option<(Arrangement, Invocation)> {
-    let all = ir.drivers();
-    let (driver, input) = all.get(&hop.entity)?.iter().find_map(|driver| {
+    let drivers = ir.drivers_of(&hop.entity);
+    let (driver, input) = drivers.iter().find_map(|driver| {
         let usable = matches!(driver.effect, ResolvedEffect::Updates)
             && driver.outcome.test_strategy != TestStrategy::InjectFault
             && !super::subject_fact::uses(driver.command);
