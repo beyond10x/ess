@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T22:40:38Z",
+  "actor": "human:timo",
+  "artifact": "story:response-string-newtype-constraints-checked-not-refused",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave ess-0680 2026-10-22 at 262c66ca8: cargo test -p ess-conformance --test adversary_e1_reachability 9 passed (was 3 executed, 2 ignored); direct_response_constraints 15 passed with ESS_TYPES_NODE; ess-conformance --lib 166 passed; typed_diagnostics 8 passed; task test-xtask ok; clippy -p ess-conformance exit 0",
+    "reference": "262c66ca8"
+  }
+}
