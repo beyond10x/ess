@@ -9,6 +9,7 @@
 ### Fixed
 
 - A generated Go package passes `go vet` from Go language 1.26; regenerate the package (#629).
+- A ranked head filtering on a field a later command sets is arranged through that command; specs unchanged (#626).
 
 ## [0.67.0] — 2026-10-21
 
