@@ -2023,8 +2023,8 @@ pub(super) fn check_row_predicate(
             continue;
         }
         let refused = ValidationError::at(at.clone(), error.code, error.message.clone());
-        errors.push(match &error.hint {
-            Some(hint) => refused.with_hint(hint.clone()),
+        errors.push(match error.hint() {
+            Some(hint) => refused.with_hint(hint.to_owned()),
             None => refused,
         });
     }

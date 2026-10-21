@@ -443,12 +443,22 @@ pub struct ExpressionError {
     pub path: Option<FactPath>,
     /// The first selector that could not be resolved.
     pub segment: Option<String>,
-    /// An aggregate boundary crossed by a forbidden selector, for existing projection refusals.
-    pub boundary: Option<&'static str>,
     /// The complete diagnostic without a fabricated source span.
     pub message: String,
+    /// The boundary and the repair, present on a minority of refusals.
+    ///
+    /// Boxed: an `ExpressionError` is returned in `Result::Err`, and both fields inline put the
+    /// error variant at 144 bytes, which `clippy::result_large_err` refuses.
+    pub detail: Option<Box<ExpressionErrorDetail>>,
+}
+
+/// The fields of an [`ExpressionError`] that most refusals leave out.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExpressionErrorDetail {
+    /// An aggregate boundary crossed by a forbidden selector, for existing projection refusals.
+    pub boundary: Option<&'static str>,
     /// How to repair it, where the format that admits it is newer than the source's: kept apart
-    /// from [`Self::message`], which stays the refusal older formats print.
+    /// from [`ExpressionError::message`], which stays the refusal older formats print.
     pub hint: Option<String>,
 }
 
@@ -456,10 +466,26 @@ impl ExpressionError {
     /// Convert without changing the public diagnostic wire shape.
     pub fn validation_error(&self) -> ValidationError {
         let error = ValidationError::new(self.code, self.owner.clone(), self.message.clone());
-        match &self.hint {
-            Some(hint) => error.with_hint(hint.clone()),
+        match self.hint() {
+            Some(hint) => error.with_hint(hint.to_owned()),
             None => error,
         }
+    }
+
+    /// The aggregate boundary a forbidden selector crossed, if any.
+    pub fn boundary(&self) -> Option<&'static str> {
+        self.detail.as_ref().and_then(|detail| detail.boundary)
+    }
+
+    /// The repair for a form a newer format admits, if any.
+    pub fn hint(&self) -> Option<&str> {
+        self.detail
+            .as_ref()
+            .and_then(|detail| detail.hint.as_deref())
+    }
+
+    fn detail_mut(&mut self) -> &mut ExpressionErrorDetail {
+        self.detail.get_or_insert_with(Box::default)
     }
 }
 
@@ -864,9 +890,8 @@ fn error(
         owner: owner.to_owned(),
         path: path.cloned(),
         segment: segment.map(str::to_owned),
-        boundary: None,
         message,
-        hint: None,
+        detail: None,
     }
 }
 
@@ -1128,7 +1153,9 @@ fn resolve<E: TypeEnvironment>(
                         format!("`{path}` cannot select `{segment}` from `{declared}` (resolved prefix type `{identity}`){context}")
                     };
                     let mut failed = error(owner, ValidationCode::UnobservableFact, Some(path), Some(segment), message);
-                    failed.boundary = boundary;
+                    if boundary.is_some() {
+                        failed.detail_mut().boundary = boundary;
+                    }
                     failed
                 })?;
                 declared = current.to_string();
@@ -2247,7 +2274,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 ),
             );
             if coalescing == Some(false) {
-                refused.hint = Some(format!(
+                refused.detail_mut().hint = Some(format!(
                     "declare `format: ess/30`, where a selector's `where:` compares `{expr}` with \
                      a literal, an absent `{parent}` reading as the default"
                 ));

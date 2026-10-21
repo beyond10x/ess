@@ -4253,12 +4253,11 @@ impl<'a> Compiler<'a> {
                         owner: format!("authored row {view}.satisfies"),
                         path: window.at.fact_path().cloned(),
                         segment: None,
-                        boundary: None,
                         message: format!(
                             "`{window}` is a calendar window, which is admitted only in a command \
                              outcome's guard and never in a suite predicate such as `satisfies:`"
                         ),
-                        hint: None,
+                        detail: None,
                     },
                 });
                 return None;

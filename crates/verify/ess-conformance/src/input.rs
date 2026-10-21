@@ -1434,7 +1434,7 @@ pub fn resolve_path(ir: &EssIr, fields: &[ResolvedField], path: &FactPath) -> Ta
         Err(error) if error.code == ess_primitives::error::ValidationCode::SelfReference => {
             Target::TooDeep
         }
-        Err(error) => match error.boundary {
+        Err(error) => match error.boundary() {
             Some(boundary) => Target::Aggregate(boundary),
             None => Target::Undeclared(error.segment.unwrap_or_else(|| path.to_string())),
         },
