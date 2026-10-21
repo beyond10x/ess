@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: decision-blocker:publish-0670-release-post
 kind: decision-blocker
-status: open
+status: cleared
 title: Decide whether the 0.67.0 release post (branch blog/0.67.0) is published
 relations:
 - blocks: story:restore-blog-lag-three
-revision: 2
+revision: 4
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-21T08:24:15Z", actor: "human:timo", revision: 4}
 ---
 # Decide whether the 0.67.0 release post (branch blog/0.67.0) is published
 
@@ -25,3 +27,9 @@ public announcement, which needs Timo's word.
 ## Decider
 
 Timo.
+
+## Decision
+
+Timo, 2026-10-21, relayed by b10x-chef-orchestrator: "we can skip blog post this time". The 0.67.0
+post is not published. Branch `blog/0.67.0` stays on the remote; deleting it is Timo's call. The
+answer covers this post only: each later post still needs his word.
