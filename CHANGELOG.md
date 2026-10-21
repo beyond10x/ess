@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A generated Go package passes `go vet` from Go language 1.26; regenerate the package (#629).
+
 ## [0.67.0] — 2026-10-21
 
 ### Added

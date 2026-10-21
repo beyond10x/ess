@@ -602,6 +602,54 @@ fn run_in(directory: &std::path::Path, program: &str, args: &[&str]) -> (bool, S
     )
 }
 
+/// The installed toolchain's language version, `1.27` for `go1.27.0`.
+fn go_language() -> String {
+    let (ran, version) = run_in(&std::env::temp_dir(), "go", &["env", "GOVERSION"]);
+    assert!(ran, "go env GOVERSION:\n{version}");
+    let version = version.trim().trim_start_matches("go");
+    version.split('.').take(2).collect::<Vec<_>>().join(".")
+}
+
+/// Every format call in the emitted package takes a literal format or forwards its own `format`
+/// parameter, so vet from language version 1.26 admits the package on any toolchain CI runs
+/// (beyond10x/ess#629).
+#[test]
+fn every_format_call_in_the_emitted_package_has_a_constant_format() {
+    const CALLS: [&str; 7] = [
+        ".Errorf(",
+        ".Fatalf(",
+        ".Skipf(",
+        ".Logf(",
+        ".Printf(",
+        ".Sprintf(",
+        ".Fprintf(",
+    ];
+    let mut offending = Vec::new();
+    for artifact in ess_conformance::go::emit(&ledger_suite()).unwrap() {
+        let text = &artifact.contents;
+        for call in CALLS {
+            for (at, _) in text.match_indices(call) {
+                let mut argument = text[at + call.len()..].trim_start();
+                if call == ".Fprintf(" {
+                    // The writer comes first.
+                    argument = argument
+                        .split_once(',')
+                        .map_or("", |(_, rest)| rest.trim_start());
+                }
+                let constant = argument.starts_with('"')
+                    || argument.starts_with('`')
+                    || argument.starts_with("format,");
+                if !constant {
+                    let line = text[..at].matches('\n').count() + 1;
+                    let source = text.lines().nth(line - 1).unwrap_or("").trim();
+                    offending.push(format!("{}:{line}: {source}", artifact.path));
+                }
+            }
+        }
+    }
+    assert!(offending.is_empty(), "{}", offending.join("\n"));
+}
+
 #[test]
 fn the_emitted_suite_34_package_is_gofmt_clean_and_passes_go_vet() {
     for (label, suite) in [
@@ -609,6 +657,13 @@ fn the_emitted_suite_34_package_is_gofmt_clean_and_passes_go_vet() {
         ("adv-fmt-ledger", ledger_suite()),
     ] {
         let directory = support_go::package(label, &suite, &[]);
+        // vet's checks follow the module's language version (the non-constant format check starts
+        // at 1.26), so the module declares the toolchain's own.
+        std::fs::write(
+            directory.join("go.mod"),
+            format!("module example.invalid/goparity\n\ngo {}\n", go_language()),
+        )
+        .unwrap();
         let (_, unformatted) = run_in(&directory, "gofmt", &["-l", "essconform"]);
         let (vetted, vet) = run_in(&directory, "go", &["vet", "./essconform"]);
         std::fs::remove_dir_all(&directory).unwrap();

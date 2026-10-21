@@ -396,7 +396,18 @@ func (r *run) disclosureViolation(code string) bool {
 	} else {
 		r.recordStatus(statusFailed)
 	}
-	r.t.Errorf(code + ": protected observation")
+	switch code {
+	case "ESS-CF-PAYLOAD":
+		r.t.Errorf("ESS-CF-PAYLOAD: protected observation")
+	case "ESS-CF-TARGET":
+		r.t.Errorf("ESS-CF-TARGET: protected observation")
+	case "ESS-CF-SUITE":
+		r.t.Errorf("ESS-CF-SUITE: protected observation")
+	case "ESS-CF-INVOCATION":
+		r.t.Errorf("ESS-CF-INVOCATION: protected observation")
+	default:
+		r.t.Errorf("ESS-CF-DISCLOSURE: protected observation")
+	}
 	return false
 }
 func (r *run) disclosureMaps(maps []map[string]Node) bool {
