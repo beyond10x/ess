@@ -112,6 +112,11 @@ Rules every form follows:
   one form (`expression-family-source22.md:176-180`). `Unknown` is never silently false; a view
   observation with an `Unknown` leaf is undetermined, as a measure condition is today
   (`conditional-aggregate-measures.md:47`).
+- **Absence in a guard.** Where an implementation decides a record whose `Optional` is absent, the
+  specification says so with `coalesce(x, default)` as the comparison's operand, never by reading
+  `Unknown` as false: `coalesce(is_error, true) == false`, written on the left of a compact
+  comparison from `ess/29` (https://github.com/beyond10x/ess/issues/620). Synthesis sends such an
+  `x` absent as one of its arms.
 - **Time.** Elapsed seconds only. No days, months, calendars or zones; those remain the calendar
   window's (`docs/design/calendar-window-guards.md`). `== now` and `!= now` stay refused
   (`current-time-guards.md:43`).

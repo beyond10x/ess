@@ -776,6 +776,14 @@ fn search_with(
     for path in unread_optionals(ir, command, &builder, &expanded, &constrained) {
         presence_omits.entry(path).or_insert(Choice::Omit);
     }
+    // A guard that says what an absent value compares as, `coalesce(is_error, true) == false`, is
+    // decided where the value is absent, so a member read only that way is sent absent first in
+    // the same way, wherever a candidate does not set it: each branch that does not need it
+    // present is witnessed on its absence (beyond10x/ess#620). Only commands with such a guard
+    // get it, so every other suite keeps its bytes.
+    for path in coalesced_absences(&expanded, &builder.optionals) {
+        presence_omits.entry(path).or_insert(Choice::Omit);
+    }
 
     if !between {
         if let Some(inputs) = finite_partition(ir, command, guards, &mut builder, &presence_omits)?
@@ -878,6 +886,22 @@ fn search_with(
         inputs.retain(|input| !refuting.contains(input));
         refuting.extend(inputs);
         inputs = refuting;
+        inputs.truncate(MAX_CANDIDATES);
+    }
+    // And each such member alone left out, every other leaf at its base, is tried before any
+    // other candidate: the branch that one absence selects is sent it, even where the candidates
+    // before it fill every other member (beyond10x/ess#620).
+    let mut absent = Vec::new();
+    for path in coalesced_absences(&expanded, &builder.optionals) {
+        let input = builder.input(command, &BTreeMap::from([(path, Choice::Omit)]))?;
+        if !absent.contains(&input) {
+            absent.push(input);
+        }
+    }
+    if !absent.is_empty() {
+        inputs.retain(|input| !absent.contains(input));
+        absent.extend(inputs);
+        inputs = absent;
         inputs.truncate(MAX_CANDIDATES);
     }
     // A `distinct` guard is decided by lists that hold two or more elements ([`decisive_first`]).
@@ -2451,7 +2475,7 @@ fn ordered_at(guards: &[&Predicate], path: &FactPath) -> bool {
                 op.needs_ordering()
                     && [left, right]
                         .into_iter()
-                        .any(|operand| matches!(operand, Operand::Fact(read) if read == path))
+                        .any(|operand| reads_at(operand, path))
             }
             Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
                 walk(&quantified.body, path)
@@ -2460,6 +2484,65 @@ fn ordered_at(guards: &[&Predicate], path: &FactPath) -> bool {
         }
     }
     guards.iter().any(|guard| walk(guard, path))
+}
+
+/// Whether `operand` reads the fact at `path` as it is where present: the fact itself, or
+/// `coalesce(<path>, <literal>)` (beyond10x/ess#620), whose literals and orderings are the
+/// fact's own wherever it is present.
+fn reads_at(operand: &Operand, path: &FactPath) -> bool {
+    match operand {
+        Operand::Fact(read) => read == path,
+        Operand::Derived(derived) => derived.coalesced().is_some_and(|(read, _)| read == path),
+        Operand::Literal(_) | Operand::Offset(_) => false,
+    }
+}
+
+/// The `Optional` members a guard reads only through `coalesce(…)` (beyond10x/ess#620), each by
+/// the outermost optional prefix of what it reads, as [`omissions`] names them. Absent, such a
+/// member decides the guard as the call's other argument does, so the absent input is a witness
+/// like any other; a member any comparison also reads directly is left out, because there its
+/// absence is `Unknown`.
+fn coalesced_absences(guards: &[&Predicate], optionals: &BTreeSet<FactPath>) -> Vec<FactPath> {
+    fn walk(predicate: &Predicate, coalesced: &mut Vec<FactPath>, direct: &mut Vec<FactPath>) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, coalesced, direct);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, coalesced, direct),
+            Predicate::Defined(_) => {}
+            Predicate::Compare { left, right, .. } => {
+                for operand in [left, right] {
+                    match operand {
+                        Operand::Derived(derived) if derived.reads_absence() => {
+                            coalesced.push(derived.parent().clone());
+                        }
+                        other => direct.extend(other.fact_path().cloned()),
+                    }
+                }
+            }
+            other => direct.extend(other.fact_paths().into_iter().cloned()),
+        }
+    }
+    let (mut coalesced, mut direct) = (Vec::new(), Vec::new());
+    for guard in guards {
+        walk(guard, &mut coalesced, &mut direct);
+    }
+    let member = |path: &FactPath| {
+        let segments = path.segments();
+        (1..=segments.len())
+            .rev()
+            .map(|end| FactPath::from_segments(&segments[..end]))
+            .find(|prefix| optionals.contains(prefix))
+    };
+    let direct: BTreeSet<FactPath> = direct.iter().filter_map(member).collect();
+    let found: BTreeSet<FactPath> = coalesced
+        .iter()
+        .filter_map(member)
+        .filter(|path| !direct.contains(path))
+        .collect();
+    found.into_iter().collect()
 }
 
 /// The walk behind [`literals_at`].
@@ -2475,7 +2558,7 @@ fn collect_literals(predicate: &Predicate, path: &FactPath, found: &mut Vec<Fact
             left, op: _, right, ..
         } => {
             for (operand, other) in [(left, right), (right, left)] {
-                if matches!(operand, Operand::Fact(read) if read == path) {
+                if reads_at(operand, path) {
                     if let Operand::Literal(value) = other {
                         found.push(value.clone());
                     }

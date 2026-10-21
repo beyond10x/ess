@@ -2102,6 +2102,9 @@ impl TypeEnvironment for WithSubject<'_> {
     fn admits_calls(&self) -> bool {
         self.inner.admits_calls()
     }
+    fn admits_left_calls(&self) -> bool {
+        self.inner.admits_left_calls()
+    }
     /// A selector reads candidate rows, and a function of a fact is a command guard's operand only
     /// in this release (ess/27, beyond10x/ess#584).
     fn calls_here(&self) -> bool {

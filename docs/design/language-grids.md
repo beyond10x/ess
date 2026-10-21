@@ -75,6 +75,7 @@ field** take any expression over their row (G3).
 | length | n/a | n/a | n/a | n/a | n/a | `.count` (`ess/11`), `utf8_bytes` (`ess/22`) | n/a | n/a | n/a | `.count` | `dom/expression.rs:897-905, 942-1005, 1036-1083` |
 | `lower` `upper` `trim` | n/a | n/a | n/a | n/a | n/a | no | n/a | n/a | n/a | n/a | absent from `Predicate` (`prim/predicate.rs:1278-1367`) |
 | `defined()` | Optional of any type | | | | | | | | | Optional aggregate from `ess/16` | `dom/expression.rs:3087-3121` |
+| `coalesce(x, d)` | yes | yes | no | yes | yes | yes | no | yes | no | no | a value from `ess/27`; a command guard's operand, structured from `ess/27` and on the left of a compact comparison from `ess/29`, an absent `x` reading as `d` (beyond10x/ess#620); `prim/expr.rs` `Function::Coalesce`, `prim/predicate.rs` `Derived::value` |
 | `forall` `exists` `distinct` | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | yes | `dom/expression.rs:2470-2471` |
 | measure `sum` `avg` | yes | yes | no | no | no | no | no | no | no | no | `dom/view.rs:865-909` |
 | measure `min` `max` | yes | yes | no | yes | no | yes | no | no | no | no | `dom/view.rs:865-909` |

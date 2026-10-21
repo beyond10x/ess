@@ -1117,9 +1117,27 @@ pub(crate) fn resolve_derived(
             "`{derived}`, a byte length the generated view query does not compare"
         ));
     }
-    // The generated behaviours compute no function of a fact yet (ess/27, beyond10x/ess#584): the
-    // command stays owed, named by the expression, rather than decided otherwise than the shared
-    // evaluator decides it.
+    // `coalesce(<fact>, <literal>)` (beyond10x/ess#620) is the fact where present and the literal
+    // where absent, compared as the fact is: the behaviour reads the fact and puts the literal in
+    // for an absent one. A literal of another kind than the fact's stays
+    // owed, as does every other function of a fact (ess/27, beyond10x/ess#584): the command is
+    // named by the expression rather than decided otherwise than the shared evaluator decides it.
+    if let Some((parent, default)) = derived.coalesced() {
+        let resolved = resolve(ir, env, parent)?;
+        let leaf = leaf_primitive(ir, &resolved);
+        let fits = match (&resolved.kind, &default) {
+            (Kind::Bool, FactValue::Bool(_))
+            | (Kind::Number(Primitive::Decimal), FactValue::Number(_)) => true,
+            (Kind::Number(Primitive::Integer), FactValue::Number(number)) => {
+                number.as_i64().is_some()
+            }
+            (Kind::Text, FactValue::Text(_)) => leaf == Some(Primitive::String),
+            _ => false,
+        };
+        if fits {
+            return Ok(resolved);
+        }
+    }
     let parent = match derived {
         Derived::Utf8Bytes(parent) => parent,
         Derived::Call(expr) => {

@@ -52,7 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28,
+    27, 28, 29,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -301,6 +301,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 29,
+        release: None,
+        added: &[
+            "A command outcome's guard (`when:`, `when_subject:`, `when_related:`) may call a function of one fact on the left of a compact comparison, `coalesce(is_error, true) == false` or `coalesce(retries, 0) > 3`, the spelling of the structured `{compare: {left: {expr: \"…\"}, op, right}}`: a guard over an `Optional` fact says what an absent value compares as, and is decided for every record, absent ones included. Text on the left that is no function of exactly one fact is refused as `type_mismatch`, a call on the left outside a command outcome's guards as `unsupported_construct`, and below `ess/29` the spelling is refused as `unsupported_format_version` naming `ess/29`, where it was a parse refusal at every format (beyond10x/ess#620).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -419,6 +427,11 @@ impl FormatVersion {
     /// (beyond10x/ess#564), several related rows required in one branch, and a guard over the
     /// rows a list of references names (beyond10x/ess#558).
     pub const V28: Self = Self(28);
+    /// The rest of the typed expression language after `ess/28` shipped
+    /// (`docs/design/generic-language-features.md` § G1): a function of one fact on the left of a
+    /// compact comparison, so a guard says what an absent `Optional` compares as
+    /// (beyond10x/ess#620).
+    pub const V29: Self = Self(29);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

@@ -259,6 +259,15 @@ pub trait TypeEnvironment {
     fn admits_calls(&self) -> bool {
         true
     }
+    /// Whether the format reads a function call written on the left of a compact comparison,
+    /// `coalesce(retries, 0) > 3`, as the expression it spells, which `ess/29` introduced
+    /// (beyond10x/ess#620). Below it the spelling stays the text the reader kept, which the checker
+    /// refuses naming `ess/29`.
+    ///
+    /// `true` by default, for the reason [`Self::admits_text_length`] is.
+    fn admits_left_calls(&self) -> bool {
+        true
+    }
     /// Whether this site admits a function of a fact as an operand: a command outcome's guards
     /// (`when:`, `when_subject:`, `when_related:`), which are decided while a request is handled
     /// and never carried into a suite.
@@ -603,6 +612,11 @@ impl TypeEnvironment for DomainEnvironment<'_> {
         self.registry
             .format()
             .is_none_or(|format| format.major() >= crate::system::FormatVersion::V27.major())
+    }
+    fn admits_left_calls(&self) -> bool {
+        self.registry
+            .format()
+            .is_none_or(|format| format.major() >= crate::system::FormatVersion::V29.major())
     }
     fn calls_here(&self) -> bool {
         matches!(
@@ -1477,9 +1491,54 @@ pub(crate) fn resolve_lexical_reading<E: TypeEnvironment>(
         },
         &mut Vec::new(),
     );
+    let resolved = if environment.admits_left_calls() {
+        left_calls(resolved)
+    } else {
+        resolved
+    };
     let resolved = derive_selectors(environment, resolved, &mut Vec::new(), input_namespace);
     let tagged = tag_instants(environment, resolved, &mut Vec::new());
     key_kinds(environment, tagged, &mut Vec::new(), input_namespace)
+}
+
+/// Reads each function call the compact reader kept as text on the left of a comparison,
+/// `coalesce(retries, 0) > 3`, as the expression it spells where that expression reads one fact
+/// through a function (`ess/29`, beyond10x/ess#620). Text that is no such expression stays text,
+/// and [`Checker::compare`] refuses it by name.
+fn left_calls(predicate: Predicate) -> Predicate {
+    let quantified = |quantified: Quantified| Quantified {
+        over: quantified.over,
+        bind: quantified.bind,
+        body: left_calls(quantified.body),
+    };
+    match predicate {
+        Predicate::Compare {
+            left: Operand::Literal(FactValue::Text(text)),
+            op,
+            right,
+            kind,
+        } => {
+            let left = ess_primitives::expr::Expr::parse(&text)
+                .ok()
+                .and_then(Derived::call)
+                .map_or_else(
+                    || Operand::Literal(FactValue::Text(text.clone())),
+                    Operand::Derived,
+                );
+            Predicate::Compare {
+                left,
+                op,
+                right,
+                kind,
+            }
+        }
+        Predicate::All(children) => Predicate::All(children.into_iter().map(left_calls).collect()),
+        Predicate::Any(children) => Predicate::Any(children.into_iter().map(left_calls).collect()),
+        Predicate::Not(inner) => Predicate::Not(Box::new(left_calls(*inner))),
+        Predicate::Forall(inner) => Predicate::Forall(Box::new(quantified(*inner))),
+        Predicate::Exists(inner) => Predicate::Exists(Box::new(quantified(*inner))),
+        other => other,
+    }
 }
 
 /// Writes the key kind of every `distinct` the source left it out of, read off the declarations
@@ -2932,6 +2991,11 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     }
 
     fn compare(&mut self, predicate: &Predicate, left: &Operand, op: CompareOp, right: &Operand) {
+        if let Operand::Literal(FactValue::Text(text)) = left {
+            if Operand::is_call_spelling(text) {
+                return self.left_text(text, op);
+            }
+        }
         match (left, right) {
             (_, Operand::Offset(offset)) => return self.offset(predicate, left, offset),
             (Operand::Offset(offset), _) => {
@@ -3008,6 +3072,43 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 }
             }
         }
+    }
+
+    /// A comparison whose left side the compact reader kept as text: a function call that is no
+    /// function of one fact, or one written below `ess/29`, which reads a call on the left as an
+    /// expression (beyond10x/ess#620). Never a comparison of a constant: the text is refused.
+    fn left_text(&mut self, text: &str, op: CompareOp) {
+        let call = ess_primitives::expr::Expr::parse(text)
+            .ok()
+            .and_then(Derived::call);
+        let (code, message) = match call {
+            Some(_) if !self.environment.admits_left_calls() => (
+                ValidationCode::UnsupportedFormatVersion,
+                format!(
+                    "`{text} {op} …` calls a function on the left of a comparison, which requires \
+                     specification format ess/29; below it, write the structured form \
+                     `{{compare: {{left: {{expr: \"{text}\"}}, op: …, right: …}}}}`"
+                ),
+            ),
+            Some(_) => (
+                ValidationCode::UnsupportedConstruct,
+                format!(
+                    "`{text} {op} …` computes a value with a function, and a function of a fact is \
+                     admitted only in a command outcome's guards (`when:`, `when_subject:`, \
+                     `when_related:`)"
+                ),
+            ),
+            None => (
+                ValidationCode::TypeMismatch,
+                format!(
+                    "`{text} {op} …`: the left side of a comparison is a fact path or a function \
+                     of exactly one fact, such as `coalesce(retries, 0)`; `{text}` is neither"
+                ),
+            ),
+        };
+        self.checked
+            .errors
+            .push(error(self.owner, code, None, None, message));
     }
 
     /// One constant offset on the right (`docs/design/expression-family-source22.md`, A2): from

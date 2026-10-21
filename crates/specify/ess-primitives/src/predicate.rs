@@ -718,8 +718,50 @@ impl Derived {
     }
 
     /// The value this derivation reads from `facts`, or `None` where it is `Unknown`.
+    ///
+    /// A call reads its fact as the expression language reads a path ([`crate::expr::SourceReads`]):
+    /// a bound value, an `Optional` the source observed absent, or nothing observed. So
+    /// `coalesce(retries, 0)` is `0` where `retries` is absent, as `defined(retries)` is false
+    /// there, and `Unknown` only where nothing was observed (beyond10x/ess#620); every other
+    /// function passes an absent read on, which is `Unknown` here as before.
     pub fn value(&self, facts: &dyn FactSource) -> Option<FactValue> {
-        self.value_with(&|path| facts.fact(path))
+        match self {
+            Self::Call(expr) => expr.evaluate(&crate::expr::SourceReads(facts)).to_fact(),
+            Self::Utf8Bytes(_) => self.value_with(&|path| facts.fact(path)),
+        }
+    }
+
+    /// `coalesce(<fact>, <literal>)`: the fact this call reads and the constant it reads as where
+    /// that fact is absent, or `None` for any other call (beyond10x/ess#620). What a generated
+    /// behaviour decides without the expression evaluator, and what synthesis witnesses absent.
+    pub fn coalesced(&self) -> Option<(&FactPath, FactValue)> {
+        let Self::Call(expr) = self else {
+            return None;
+        };
+        let crate::expr::Expr::Call {
+            function: crate::expr::Function::Coalesce,
+            arguments,
+        } = expr.as_ref()
+        else {
+            return None;
+        };
+        let [crate::expr::Expr::Read { path, .. }, default] = arguments.as_slice() else {
+            return None;
+        };
+        if !default.reads().is_empty() || default.reads_now() || !default.functions().is_empty() {
+            return None;
+        }
+        let nothing = |_: &FactPath| crate::expr::Reading::Unknown;
+        default
+            .evaluate(&nothing)
+            .to_fact()
+            .map(|value| (path, value))
+    }
+
+    /// Whether this call replaces an absent read with another value, `coalesce(…)` anywhere in it:
+    /// such a call is decided where its fact is absent, so synthesis sends that absence too.
+    pub fn reads_absence(&self) -> bool {
+        matches!(self, Self::Call(expr) if expr.functions().contains(&crate::expr::Function::Coalesce))
     }
 
     /// [`Self::value`], reading each fact through `fact`: what a synthesizer writes in for a derived
@@ -1117,7 +1159,7 @@ impl Operand {
     /// Whether `raw` is unquoted text spelled as a function call — a name, `(`, and `)` last —
     /// which this reader keeps as text and a source format may read as an expression (`ess/27`,
     /// beyond10x/ess#584).
-    fn is_call_spelling(raw: &str) -> bool {
+    pub fn is_call_spelling(raw: &str) -> bool {
         let trimmed = raw.trim();
         let Some(open) = trimmed.find('(') else {
             return false;
@@ -3791,12 +3833,22 @@ impl Predicate {
                     });
                 }
             }
-            let left_path = FactPath::new(left.trim()).map_err(|error| {
-                ParseError::predicate(
-                    expression,
-                    format!("left-hand side must be a fact path: {error}"),
-                )
-            })?;
+            // A function call on the left, `coalesce(retries, 0) > 3`, is kept as the text it is
+            // spelled as, as one on the right is: a source format reads it as an expression from
+            // `ess/29` (beyond10x/ess#620), and the checker refuses the text below it. Anything
+            // else on the left must be a fact path, as it always had to be.
+            let left_operand = match FactPath::new(left.trim()) {
+                Ok(path) => Operand::Fact(path),
+                Err(_) if Operand::is_call_spelling(left) => {
+                    Operand::Literal(FactValue::Text(left.trim().to_owned()))
+                }
+                Err(error) => {
+                    return Err(ParseError::predicate(
+                        expression,
+                        format!("left-hand side must be a fact path: {error}"),
+                    ));
+                }
+            };
             if right.trim().is_empty() {
                 return Err(ParseError::predicate(
                     expression,
@@ -3822,7 +3874,7 @@ impl Predicate {
             words.written(right, binders);
             return Ok(Self::Compare {
                 kind: CompareKind::Value,
-                left: Operand::Fact(left_path),
+                left: left_operand,
                 op,
                 right: Operand::parse_in(right, binders),
             });
