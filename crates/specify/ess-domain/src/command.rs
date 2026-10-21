@@ -636,6 +636,25 @@ pub enum OutcomeCondition {
         /// author can act on.
         cause: String,
     },
+    /// An externally decided outcome narrowed to the records a predicate over the addressed
+    /// subject's stored fields selects, conjunctive with an optional input guard (`external:`
+    /// beside `when_subject: {predicate: …}`, ess/29,
+    /// `story:external-branch-narrowed-by-subject-guard`, option 2 of beyond10x/ess#584).
+    ///
+    /// It reads the addressed row, so the one precedence rule
+    /// (`docs/design/generic-language-features.md` § G4) answers it at the held-state step, among
+    /// the branches the stored row selects in declaration order. On a row its predicate does not
+    /// select, the provider is not asked and the branch is not taken. A refusal naming no subject
+    /// of its own reads the one its siblings name, as a
+    /// [`SubjectPredicate`](Self::SubjectPredicate) refusal does.
+    ExternalSubject {
+        /// What outside the input decides this branch, as for [`External`](Self::External).
+        cause: String,
+        /// The records the cause applies to: a predicate over the subject's stored fields.
+        predicate: Predicate,
+        /// Additional input eligibility, the ordinary `when:`.
+        input: Option<Predicate>,
+    },
     /// Taken when the instance the command would move is resting in a state none of this command's
     /// declared moves start from.
     ///
@@ -678,6 +697,7 @@ impl OutcomeCondition {
             | Self::StateChange { predicate, .. }
             | Self::SubjectField { predicate, .. } => predicate.as_ref(),
             Self::SubjectPredicate { input, .. }
+            | Self::ExternalSubject { input, .. }
             | Self::Related { input, .. }
             | Self::RelatedSet { input, .. } => input.as_ref(),
             Self::Otherwise
@@ -692,7 +712,9 @@ impl OutcomeCondition {
     /// What decides this branch from outside the input, when something does.
     pub fn cause(&self) -> Option<&str> {
         match self {
-            Self::External { cause } | Self::ExternalWhen { cause, .. } => Some(cause),
+            Self::External { cause }
+            | Self::ExternalWhen { cause, .. }
+            | Self::ExternalSubject { cause, .. } => Some(cause),
             Self::When(_)
             | Self::SubjectState { .. }
             | Self::SubjectField { .. }
@@ -720,7 +742,9 @@ impl OutcomeCondition {
                 TestStrategy::ConstructInputInState
             }
             Self::Otherwise => TestStrategy::DefaultBranch,
-            Self::External { .. } | Self::ExternalWhen { .. } => TestStrategy::InjectFault,
+            Self::External { .. } | Self::ExternalWhen { .. } | Self::ExternalSubject { .. } => {
+                TestStrategy::InjectFault
+            }
             Self::WrongState => TestStrategy::ArrangeState,
             Self::UnknownInstance => TestStrategy::SendUnknownIdentity,
             Self::InputAbsent => TestStrategy::SendNoInput,
@@ -744,7 +768,9 @@ impl OutcomeCondition {
     pub fn reads_subject_fact(&self) -> bool {
         matches!(
             self,
-            Self::SubjectField { .. } | Self::SubjectPredicate { .. }
+            Self::SubjectField { .. }
+                | Self::SubjectPredicate { .. }
+                | Self::ExternalSubject { .. }
         )
     }
 
@@ -756,7 +782,9 @@ impl OutcomeCondition {
     /// spell — which the declaration checks refuse on their own.
     pub fn subject_predicate(&self) -> Option<Predicate> {
         match self {
-            Self::SubjectPredicate { predicate, .. } => Some(predicate.clone()),
+            Self::SubjectPredicate { predicate, .. } | Self::ExternalSubject { predicate, .. } => {
+                Some(predicate.clone())
+            }
             Self::SubjectField { field, equals, .. } => Some(Predicate::Compare {
                 kind: ess_primitives::predicate::CompareKind::Value,
                 left: ess_primitives::predicate::Operand::Fact(
@@ -2653,6 +2681,7 @@ impl Outcome {
             | OutcomeCondition::StateChange { .. }
             | OutcomeCondition::External { .. }
             | OutcomeCondition::ExternalWhen { .. }
+            | OutcomeCondition::ExternalSubject { .. }
             | OutcomeCondition::WrongState
             | OutcomeCondition::SubjectField { .. }
             | OutcomeCondition::SubjectPredicate { .. }
@@ -4393,8 +4422,35 @@ fn before_row_format(
     })
 }
 
+/// The format gate of an external branch narrowed by a subject guard (`external:` beside
+/// `when_subject: {predicate: …}`, ess/29, `story:external-branch-narrowed-by-subject-guard`).
+/// Below it the pair keeps the refusal it had at every format, its hint naming `ess/29`.
+fn narrowed_external_format(
+    format: crate::system::FormatVersion,
+    outcome: &Outcome,
+    at: &ConstructRef,
+) -> Option<ValidationError> {
+    (matches!(outcome.condition, OutcomeCondition::ExternalSubject { .. })
+        && format.major() < crate::system::FormatVersion::V29.major())
+    .then(|| {
+        ValidationError::at(
+            at.clone().key("when_subject"),
+            ValidationCode::ConflictingDeclaration,
+            format!(
+                "outcome `{}` declares `external:` beside `when_subject:`; below specification \
+                 format ess/29 a subject fact has one selection authority",
+                outcome.name
+            ),
+        )
+        .with_hint(
+            "declare `format: ess/29`, where `when_subject: {predicate: …}` narrows an \
+             `external:` branch to the records it selects, or drop one of the two",
+        )
+    })
+}
+
 /// The format gates of an outcome's refusal markers: `compensates:` (ess/22) and `before_row:`
-/// (ess/25).
+/// (ess/25), and of an external branch narrowed by a subject guard (ess/29).
 fn marker_formats(
     format: crate::system::FormatVersion,
     outcome: &Outcome,
@@ -4403,6 +4459,7 @@ fn marker_formats(
     compensation_format(format, outcome, at)
         .into_iter()
         .chain(before_row_format(format, outcome, at))
+        .chain(narrowed_external_format(format, outcome, at))
 }
 
 /// Whether a payload source reads a stored row: the addressed one (`{subject: …}`, an increment),
@@ -4464,6 +4521,19 @@ fn validate_before_row(outcome: &Outcome, at: &ConstructRef) -> ValidationErrors
                  input refusal already answers"
             ),
             "decide the branch with `external:`, or drop `before_row:`",
+        );
+        return errors;
+    }
+    // ess/29: a branch narrowed to the records `when_subject:` selects reads the row to know
+    // whether the cause applies to it, so it cannot be answered before the row is read.
+    if matches!(outcome.condition, OutcomeCondition::ExternalSubject { .. }) {
+        refuse(
+            format!(
+                "outcome `{name}` declares `before_row: true` and is narrowed by `when_subject:`; \
+                 a branch the stored row narrows reads that row, so it is not answered before it"
+            ),
+            "drop `before_row:`, and the narrowed branch answers at the held-state step in \
+             declaration order, or drop `when_subject:`",
         );
         return errors;
     }
@@ -6479,7 +6549,8 @@ impl RawSubjectFact {
                     equals: equals.clone(),
                 }))
             }
-            OutcomeCondition::SubjectPredicate { predicate, .. } => {
+            OutcomeCondition::SubjectPredicate { predicate, .. }
+            | OutcomeCondition::ExternalSubject { predicate, .. } => {
                 Some(Self::Predicate(RawSubjectPredicate {
                     predicate: predicate.clone().into(),
                 }))
@@ -7036,7 +7107,6 @@ impl TryFrom<RawOutcome> for Outcome {
         if subject_fact.is_some()
             && (raw.when_subject_state.is_some()
                 || raw.when_state_changes.is_some()
-                || raw.external.is_some()
                 || raw.wrong_state)
         {
             return Err(conflict(
@@ -7045,6 +7115,23 @@ impl TryFrom<RawOutcome> for Outcome {
                 "keep the subject fact and optional input predicate",
             ));
         }
+        // ess/29 (`story:external-branch-narrowed-by-subject-guard`): an external cause that applies
+        // only to some records is narrowed to them by a predicate over the stored row. The
+        // `{field, equals}` shape is the one-leaf predicate, written as one; the format gate is
+        // `narrowed_external_format`'s, and `validate_before_row` refuses `before_row:` beside it.
+        let narrowed_external = match (&subject_fact, &raw.external) {
+            (Some(RawSubjectFact::Field(_)), Some(_)) => {
+                return Err(conflict(
+                    "when_subject",
+                    "a subject fact has one selection authority".into(),
+                    "from `format: ess/29` an `external:` branch may be narrowed to the records \
+                     `when_subject: {predicate: <field> == <value>}` selects; write the field \
+                     test as that predicate",
+                ));
+            }
+            (Some(RawSubjectFact::Predicate(_)), Some(cause)) => Some(cause.clone()),
+            _ => None,
+        };
         // The unknown-instance marker is a condition of its own and composes with none of the
         // others: an identity no record carries has no state, no stored field and no input guard
         // that could narrow it further.
@@ -7089,12 +7176,17 @@ impl TryFrom<RawOutcome> for Outcome {
                 predicate: input_predicate,
             },
             // Read above: a subject predicate that did not parse has already been refused.
-            (Some(RawSubjectFact::Predicate(_)), Some(predicate)) => {
-                OutcomeCondition::SubjectPredicate {
+            (Some(RawSubjectFact::Predicate(_)), Some(predicate)) => match narrowed_external {
+                Some(cause) => OutcomeCondition::ExternalSubject {
+                    cause,
                     predicate,
                     input: input_predicate,
-                }
-            }
+                },
+                None => OutcomeCondition::SubjectPredicate {
+                    predicate,
+                    input: input_predicate,
+                },
+            },
             (Some(RawSubjectFact::Predicate(_)) | None, _) => match related {
                 // `related_guard::alone` admitted `when:` and nothing else beside it.
                 Some(related_guard::ReadGuard::Identity(via, test)) => OutcomeCondition::Related {
@@ -7539,6 +7631,9 @@ impl From<Outcome> for RawOutcome {
                 OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
                 OutcomeCondition::ExternalWhen { cause, predicate } => {
                     (Some(predicate), None, None, Some(cause), false)
+                }
+                OutcomeCondition::ExternalSubject { cause, input, .. } => {
+                    (input, None, None, Some(cause), false)
                 }
                 OutcomeCondition::WrongState => (None, None, None, None, true),
             };

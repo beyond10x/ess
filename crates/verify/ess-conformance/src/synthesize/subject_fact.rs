@@ -82,12 +82,34 @@ fn stored(condition: &ResolvedCondition) -> Option<Predicate> {
         | ResolvedCondition::Otherwise
         | ResolvedCondition::ExternalWhen { .. }
         | ResolvedCondition::External { .. }
+        | ResolvedCondition::ExternalSubject { .. }
         | ResolvedCondition::Related { .. }
         | ResolvedCondition::RelatedSet { .. }
         | ResolvedCondition::WrongState
         | ResolvedCondition::UnknownInstance
         | ResolvedCondition::InputAbsent
         | ResolvedCondition::ExistingInstance => None,
+    }
+}
+
+/// The rows a narrowed external branch may answer for (`external:` beside `when_subject:`,
+/// ess/29): its stored-field predicate. Not a selection: the provider decides the branch, so it is
+/// read apart from the guarded branches, only where that branch is witnessed. `None` for any other
+/// branch.
+pub(super) fn narrowing(condition: &ResolvedCondition) -> Option<&Predicate> {
+    match condition {
+        ResolvedCondition::ExternalSubject { predicate, .. } => Some(predicate),
+        _ => None,
+    }
+}
+
+/// The input eligibility of an external branch: the `when:` beside `external:`, also on a narrowed
+/// one (ess/29). `None` for an unguarded external branch and every other branch.
+pub(super) fn external_input(condition: &ResolvedCondition) -> Option<&Predicate> {
+    match condition {
+        ResolvedCondition::ExternalWhen { predicate, .. } => Some(predicate),
+        ResolvedCondition::ExternalSubject { input, .. } => input.as_ref(),
+        _ => None,
     }
 }
 
@@ -125,6 +147,7 @@ pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bo
             outcome.condition,
             ResolvedCondition::External { .. }
                 | ResolvedCondition::ExternalWhen { .. }
+                | ResolvedCondition::ExternalSubject { .. }
                 | ResolvedCondition::WrongState
         )
         && (outcome.subject.is_some() || common(command).is_some())
@@ -180,6 +203,7 @@ fn guarded(command: &ResolvedCommand) -> impl Iterator<Item = &ResolvedOutcome> 
                 branch.condition,
                 ResolvedCondition::External { .. }
                     | ResolvedCondition::ExternalWhen { .. }
+                    | ResolvedCondition::ExternalSubject { .. }
                     | ResolvedCondition::WrongState
                     | ResolvedCondition::UnknownInstance
                     | ResolvedCondition::InputAbsent
@@ -2333,6 +2357,14 @@ pub(super) fn external_witness(
         return Ok((setup, input));
     };
     let entity = &subject.entity;
+    // ess/29: a narrowed branch keeps its declared place among the held-state branches, so it is
+    // witnessed, where any row and input allow, on one a held-state branch declared after it
+    // selects too: a target answering it after those branches answers the later one there.
+    if narrowing(&outcome.condition).is_some() {
+        if let Ok(found) = external_witness_searched(ir, command, outcome, actors, subject, true) {
+            return Ok(found);
+        }
+    }
     if let (Some(instance), Some(state)) = (&setup.instance, &setup.before) {
         let plain = Arrangement {
             instance: instance.clone(),
@@ -2347,11 +2379,36 @@ pub(super) fn external_witness(
             return Ok((setup, input));
         }
     }
+    external_witness_searched(ir, command, outcome, actors, subject, false)
+}
+
+/// The search half of [`external_witness`]: a row and input the external branch answers on once
+/// forced, arranged and observed. With `later`, only one on which a held-state branch the
+/// precedence plan reads after it selects too ([`claimed_later`]).
+fn external_witness_searched(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    subject: &ResolvedSubject,
+    later: bool,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    let entity = &subject.entity;
     let fields = read_fields(ir, entity, &hints(command));
     // The branch's own guard, read over the row where a sibling compares the inputs it reads with
     // stored fields, steers the rows searched toward one an input it admits can match.
     let mut hints = hints(command);
     hints.extend(own_guard_on_row(command, outcome));
+    // ess/29: a narrowed branch is taken only on a row its subject guard selects.
+    hints.extend(narrowing(&outcome.condition).cloned());
+    let fields = match narrowing(&outcome.condition) {
+        Some(narrowed) => {
+            let mut fields = fields;
+            fields.extend(read_fields(ir, entity, std::slice::from_ref(narrowed)));
+            fields
+        }
+        None => fields,
+    };
     let label = fields.iter().cloned().collect::<Vec<_>>().join(",");
     if let Some(refusal) = unarrangeable(ir, entity, &fields) {
         return Err(refusal);
@@ -2377,7 +2434,9 @@ pub(super) fn external_witness(
             }
             for input in external_inputs(ir, command, outcome, entity, node)? {
                 tried.set(tried.get() + 1);
-                if leaves_external(ir, command, outcome, entity, node, &input)? {
+                if leaves_external(ir, command, outcome, entity, node, &input)?
+                    && (!later || claimed_later(ir, command, outcome, entity, node, &input)?)
+                {
                     return Ok(Some(input));
                 }
             }
@@ -2407,6 +2466,9 @@ pub(super) fn external_witness(
         (Some(&arrangement.state), &arrangement.settled),
         &|moved| {
             leaves_external(ir, command, outcome, entity, &arrangement, moved).unwrap_or(false)
+                && (!later
+                    || claimed_later(ir, command, outcome, entity, &arrangement, moved)
+                        .unwrap_or(false))
         },
     );
     let bound = bind_links(
@@ -2421,6 +2483,51 @@ pub(super) fn external_witness(
     )?;
     observe_prepared(ir, entity, fields, false, &mut arrangement)?;
     Ok((external_setup(outcome, subject, arrangement, bound), input))
+}
+
+/// Whether a branch the stored row selects, which the precedence plan reads after `outcome`, is
+/// selected for the row `arrangement` holds and `input` too (ess/29): its stored guard true on the
+/// row and its input guard, where it has one, true of the input.
+fn claimed_later(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    input: &BTreeMap<String, Node>,
+) -> Result<bool, RefusalCause> {
+    let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+    for branch in guarded(command) {
+        if !super::precedence::answers_before(ir.format(), command, branch)
+            .iter()
+            .any(|earlier| earlier.name == outcome.name)
+        {
+            continue;
+        }
+        let Some(predicate) = stored(&branch.condition) else {
+            continue;
+        };
+        if guard_truth_with(
+            ir,
+            entity,
+            &arrangement.settled,
+            &arrangement.unwritten,
+            Some(&arrangement.state),
+            &predicate,
+            Some((command, input)),
+        ) != Truth::True
+        {
+            continue;
+        }
+        let holds = match input_guard(&branch.condition) {
+            Some(guard) => decides(&facts, &[guard], true)?,
+            None => true,
+        };
+        if holds {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// The setup of an external branch [`external_witness`] found `arrangement` for, its links
@@ -2478,9 +2585,7 @@ fn external_setup(
 /// witness the sibling does not claim sends the row's value, so only a row the guard admits has
 /// one. `None` for any other branch.
 fn own_guard_on_row(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> Option<Predicate> {
-    let ResolvedCondition::ExternalWhen { predicate, .. } = &outcome.condition else {
-        return None;
-    };
+    let predicate = external_input(&outcome.condition)?;
     let mut compared: BTreeMap<FactPath, FactPath> = BTreeMap::new();
     for hint in hints(command) {
         let mut found = Vec::new();
@@ -2530,7 +2635,9 @@ pub(super) fn external_step(
 ) -> Option<Arrangement> {
     if !matches!(
         driver.outcome.condition,
-        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+        ResolvedCondition::External { .. }
+            | ResolvedCondition::ExternalWhen { .. }
+            | ResolvedCondition::ExternalSubject { .. }
     ) {
         return None;
     }
@@ -2601,7 +2708,7 @@ fn external_inputs(
     entity: &EntityHandle,
     arrangement: &Arrangement,
 ) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
-    let ResolvedCondition::ExternalWhen { predicate: own, .. } = &outcome.condition else {
+    let Some(own) = external_input(&outcome.condition) else {
         return linked_inputs(ir, command, entity, arrangement);
     };
     let grounded = grounded(ir, entity, &arrangement.settled, &hints(command));
@@ -2660,8 +2767,23 @@ fn leaves_external(
     input: &BTreeMap<String, Node>,
 ) -> Result<bool, RefusalCause> {
     let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
-    if let ResolvedCondition::ExternalWhen { predicate, .. } = &outcome.condition {
+    if let Some(predicate) = external_input(&outcome.condition) {
         if !decides(&facts, &[predicate], true)? {
+            return Ok(false);
+        }
+    }
+    // ess/29: a narrowed branch answers only on a row its subject guard selects.
+    if let Some(narrowed) = narrowing(&outcome.condition) {
+        if guard_truth_with(
+            ir,
+            entity,
+            &arrangement.settled,
+            &arrangement.unwritten,
+            Some(&arrangement.state),
+            narrowed,
+            Some((command, input)),
+        ) != Truth::True
+        {
             return Ok(false);
         }
     }

@@ -1,4 +1,4 @@
-#	models=279	commands=569
+#	models=280	commands=571
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -460,6 +460,9 @@ crates/verify/ess-conformance/tests/fixtures/expression-roots.yaml	demo.review.S
 crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	ir=5b9804acff0e81eee23558ad3a1f1e3df0cb34e7ec8f77eb2e74cd02dfa92bc7:12384
 crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	demo.desk.CheckPick	held_state: stale, wrong-state | accepting: unlisted | default: accepted
 crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	demo.desk.MakePick	default: picked
+crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-subject.yaml	ir=708c1b55eee0a6544cb0010f8ccb140f417d1a17cb7b109044d2f05b882059e1:12437
+crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-subject.yaml	demo.vault.Issue	default: issued
+crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-subject.yaml	demo.vault.Redeem	held_state: hashed-mismatch, redirect-mismatch, plain-mismatch, already-redeemed | default: redeemed
 crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	ir=7285eaf9793c22d81245f49c1445aeff62638f3e2afdce1c23f1c9db425b5b98:26346
 crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	demo.jobs.CheckLimit	accepting: within-limit | default: over-limit
 crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	demo.jobs.Close	existence: unknown-attempt | held_state: already-closed | present_related: crowded | default: closed

@@ -137,6 +137,7 @@ pub(super) fn routes(
             outcome.condition,
             ResolvedCondition::External { .. }
                 | ResolvedCondition::ExternalWhen { .. }
+                | ResolvedCondition::ExternalSubject { .. }
                 | ResolvedCondition::ExistingInstance
                 | ResolvedCondition::UnknownInstance
                 | ResolvedCondition::WrongState
@@ -504,6 +505,7 @@ fn unrefutable(other: &ResolvedOutcome) -> bool {
         ResolvedCondition::Otherwise => true,
         ResolvedCondition::SubjectField { .. }
         | ResolvedCondition::SubjectPredicate { .. }
+        | ResolvedCondition::ExternalSubject { .. }
         | ResolvedCondition::Related { .. }
         | ResolvedCondition::RelatedSet { .. }
         | ResolvedCondition::When { .. }

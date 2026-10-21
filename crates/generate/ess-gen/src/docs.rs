@@ -1742,6 +1742,10 @@ fn instance_sentence(ir: &EssIr, subject: &ResolvedSubject) -> Vec<Inline> {
 /// transitions already do. A page that printed only "the subject is in the wrong state" would leave
 /// a reader to do that subtraction by hand across a lifecycle and a command, which is exactly the
 /// work [`EssIr::wrong_states`] exists to have already done.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one sentence per condition, in one match with no wildcard arm"
+)]
 fn condition_sentence(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -1811,6 +1815,19 @@ fn condition_sentence(
         ResolvedCondition::ExternalWhen { cause, predicate } => vec![Inline::text(format!(
             "Eligible when {predicate}; externally decided: {cause}."
         ))],
+        // ess/29: the cause applies only to the records the stored-field predicate selects.
+        ResolvedCondition::ExternalSubject {
+            cause,
+            predicate,
+            input,
+        } => input_guarded(
+            vec![
+                Inline::text("Eligible when the existing subject's stored fields satisfy "),
+                Inline::code(predicate.to_string()),
+                Inline::text(format!("; externally decided: {cause}")),
+            ],
+            input.as_ref(),
+        ),
         ResolvedCondition::External { cause } => vec![
             Inline::text(format!(
                 "Decided outside the input: {cause}. No predicate over the input reaches this \

@@ -2461,6 +2461,7 @@ impl Projector<'_> {
         let reads_state = matches!(
             &outcome.condition,
             ResolvedCondition::SubjectPredicate { predicate, .. }
+            | ResolvedCondition::ExternalSubject { predicate, .. }
                 if ess_domain::command::subject_fact::reads_state(predicate)
         ) && !entity
             .fields
@@ -2585,6 +2586,23 @@ impl Projector<'_> {
                 when = Some(Condition::All {
                     all: vec![eligible, evidence],
                 });
+            }
+            // ess/29: an external branch narrowed to the rows its subject guard selects is the
+            // stored-field predicate over the loaded row, its input guard, and the host's
+            // evidence, read in that order at its place among the held-state branches.
+            ResolvedCondition::ExternalSubject {
+                cause,
+                predicate,
+                input: guard,
+            } => {
+                let mut all = vec![lower_typed(predicate, &stored_rewrite, &stored)];
+                all.extend(
+                    guard
+                        .as_ref()
+                        .map(|guard| lower_typed(guard, &PathRewrite::Input, &input)),
+                );
+                all.push(external_evidence(command, outcome, cause, slots));
+                when = Some(Condition::All { all });
             }
             ResolvedCondition::WrongState => wrong_state = true,
             // Selection by existence (ess/16): a creation taken for an identity no record carries.

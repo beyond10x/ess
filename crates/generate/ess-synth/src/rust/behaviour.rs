@@ -332,7 +332,9 @@ fn external_names(ir: &EssIr, plan: &SynthesisPlan) -> BTreeMap<QualifiedName, S
                 && command.outcomes.iter().any(|outcome| {
                     matches!(
                         outcome.condition,
-                        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+                        ResolvedCondition::External { .. }
+                            | ResolvedCondition::ExternalWhen { .. }
+                            | ResolvedCondition::ExternalSubject { .. }
                     )
                 })
         })
@@ -1185,12 +1187,13 @@ enum Held {
 }
 
 /// Whether a branch selects by the addressed row: `when_subject`, `when_subject_state`,
-/// `when_state_changes`.
+/// `when_state_changes`, and an `external:` branch `when_subject:` narrows (ess/29).
 fn selects_by_row(outcome: &ResolvedOutcome) -> bool {
     matches!(
         outcome.condition,
         ResolvedCondition::SubjectField { .. }
             | ResolvedCondition::SubjectPredicate { .. }
+            | ResolvedCondition::ExternalSubject { .. }
             | ResolvedCondition::SubjectState { .. }
             | ResolvedCondition::StateChange { .. }
     )
@@ -1461,6 +1464,23 @@ impl<'a> Writer<'a> {
                     let _ = writeln!(
                         out,
                         "        // `{}`: selected by the addressed row.\n        if {guard} \
+                         {{\n{taken}        }}",
+                        outcome.name
+                    );
+                }
+                // ess/29: an external branch narrowed to the rows its subject guard selects. The
+                // context is asked only for a row the guard selects, in declaration order.
+                ResolvedCondition::ExternalSubject { .. } => {
+                    let entity = entity.expect("the held-state phase read the addressed row");
+                    let guard = self
+                        .subject_guard(outcome, entity)
+                        .expect("a narrowed external branch selects by the addressed row");
+                    let ask = self.external(outcome);
+                    let taken = self.take(outcome, Held::Selected);
+                    let _ = writeln!(
+                        out,
+                        "        // `{}`: an external branch on a row its subject guard selects, \
+                         where the context takes it.\n        if {guard} && {ask} \
                          {{\n{taken}        }}",
                         outcome.name
                     );
@@ -2015,7 +2035,10 @@ impl<'a> Writer<'a> {
                     predicate.as_ref(),
                 )
             }
-            ResolvedCondition::SubjectPredicate { predicate, input } => (
+            ResolvedCondition::SubjectPredicate { predicate, input }
+            | ResolvedCondition::ExternalSubject {
+                predicate, input, ..
+            } => (
                 self.guards()
                     .predicate(&Env::Subject(command, entity), predicate),
                 input.as_ref(),

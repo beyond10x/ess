@@ -5968,6 +5968,15 @@ fn condition_of(
         OutcomeCondition::External { cause } => ResolvedCondition::External {
             cause: cause.clone(),
         },
+        OutcomeCondition::ExternalSubject {
+            cause,
+            predicate,
+            input,
+        } => ResolvedCondition::ExternalSubject {
+            cause: cause.clone(),
+            predicate: predicate.clone(),
+            input: input.clone(),
+        },
         OutcomeCondition::WrongState => ResolvedCondition::WrongState,
         OutcomeCondition::UnknownInstance => ResolvedCondition::UnknownInstance,
         OutcomeCondition::InputAbsent => ResolvedCondition::InputAbsent,

@@ -1181,6 +1181,41 @@ value, or `forall` for `exists`, fails; where the whole collection decides it, t
 more elements. Where no arrangement reaches that shape, the row with one entry is used. An entity
 that declares a stored field named `input` keeps reading `input.<member>` as that field.
 
+### From `ess/29`: an external branch narrowed to some records
+
+An `external:` branch may carry a `when_subject:` predicate, which narrows it to the records the
+predicate selects: an external cause that applies only to some configured records is declared once,
+for those records.
+
+```yaml
+- name: hashed-mismatch
+  external: the outside service finds the hashed verifier differs from the stored challenge
+  when_subject:
+    predicate: method == hashed
+  error: demo.vault.VerifierMismatch
+- name: redirect-mismatch
+  when_subject:
+    predicate: redirect != input.redirect
+  error: demo.vault.RedirectMismatch
+```
+
+The provider is asked, and the branch taken, only on a record the predicate selects; on any other
+record the branch is not taken whatever the provider would say. It reads the stored row, so the one
+precedence rule answers it at the held-state step, in declaration order among the branches the
+stored row selects and before `wrong_state:`: declared first here, a forced `hashed-mismatch`
+answers a hashed grant with a wrong redirect too. A `when:` beside it is its input eligibility, as
+on any external branch. A refusal naming no subject of its own reads the subject its siblings name.
+Write the guard in the predicate form: `{field, equals}` beside `external:` is refused as
+`conflicting_declaration`, and so is `before_row: true`, since the branch reads the row it would be
+answered before. Below `ess/29` the pair keeps its `conflicting_declaration`, "a subject fact has
+one selection authority", its hint naming `ess/29`.
+
+Synthesis forces the branch on a record the predicate selects, where it can on one a held-state
+branch declared after it selects too, and forces it beside each other branch witnessed on a record
+the predicate does not select, where that branch must still answer. The generated Rust and Go
+behaviours ask the provider only after the guard holds, and Entity Runtime lowers the branch to the
+guard and the host's external evidence.
+
 ## A guard over another entity's row
 
 From `ess/18`, a branch may be guarded by one row of another entity: the row whose identity an input

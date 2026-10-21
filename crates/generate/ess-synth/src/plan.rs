@@ -806,6 +806,10 @@ fn related_precedence(ir: &EssIr, command: &ResolvedCommand) -> String {
 /// `pub(crate)` because the Rust emitter's doc comments quote the same phrasing: one sentence per
 /// condition, however many documents carry it, or the plan and the code drift apart in wording
 /// over the one fact they must agree on.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one phrase per condition, in one match with no wildcard arm"
+)]
 pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
     match condition {
         ResolvedCondition::When { predicate } => format!("when `{predicate}`"),
@@ -898,6 +902,17 @@ pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
             format!("externally decided ({cause}) when eligible ({predicate})")
         }
         ResolvedCondition::External { cause } => format!("externally decided ({cause})"),
+        ResolvedCondition::ExternalSubject {
+            cause,
+            predicate,
+            input,
+        } => format!(
+            "externally decided ({cause}) when the existing subject's stored fields satisfy \
+             `{predicate}`{}",
+            input
+                .as_ref()
+                .map_or(String::new(), |guard| format!(" and `{guard}`")),
+        ),
         ResolvedCondition::WrongState => "from a state no declared move starts in".to_owned(),
         ResolvedCondition::UnknownInstance => "for an identity no record carries".to_owned(),
         ResolvedCondition::InputAbsent => "for a request with no input at all".to_owned(),

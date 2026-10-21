@@ -189,7 +189,9 @@ fn guard_reads_caller(
     {
         return true;
     }
-    let OutcomeCondition::SubjectPredicate { predicate, .. } = &outcome.condition else {
+    let (OutcomeCondition::SubjectPredicate { predicate, .. }
+    | OutcomeCondition::ExternalSubject { predicate, .. }) = &outcome.condition
+    else {
         return false;
     };
     let fields = super::subject_fact::reading_subject(command, outcome)
@@ -373,7 +375,9 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                     );
                 }
             }
-            if let OutcomeCondition::SubjectPredicate { predicate, .. } = &outcome.condition {
+            if let OutcomeCondition::SubjectPredicate { predicate, .. }
+            | OutcomeCondition::ExternalSubject { predicate, .. } = &outcome.condition
+            {
                 let Some(entity) = super::subject_fact::reading_subject(command, outcome)
                     .and_then(|subject| spec.entities().get(&subject.entity))
                 else {

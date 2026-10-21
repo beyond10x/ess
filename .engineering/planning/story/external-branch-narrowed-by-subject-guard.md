@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:external-branch-narrowed-by-subject-guard
 kind: story
-status: draft
+status: active
 title: An external branch is narrowed to the records a subject guard selects
 tags:
 - adopter-report
@@ -11,7 +11,10 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 3
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-21T02:37:44Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-21T02:37:44Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
@@ -45,3 +48,25 @@ reads the held row), so declaration order among held-state branches decides; tha
 this story's design page must state. For #584 the preferred answer is
 `story:digest-and-encoding-functions-in-expressions`, which removes the need for an external branch
 there; this story stays for causes that are truly outside the specification.
+
+## State 2026-10-21
+
+Shipped on the 0.67.0 batch branch, from `format: ess/29`, as decided in
+`docs/design/generic-language-features.md` § G4 "An external branch narrowed by a subject guard":
+`external:` beside `when_subject: {predicate: …}` is admitted; the branch answers at the held-state
+step in declaration order, only on a record the predicate selects. Below `ess/29` the pair keeps its
+`conflicting_declaration`, the hint naming `ess/29`; `before_row: true` and the `{field, equals}`
+shape beside `external:` stay refused.
+
+Evidence, one test binary each: `crates/specify/ess-domain/tests/external_narrowed_by_subject.rs`
+(validation, placement, refusals), `crates/verify/ess-conformance/tests/external_narrowed_by_subject.rs`
+(interpreter; synthesis witnesses the branch on a selected row where a later held-state branch
+also holds, forces it beside siblings on unselected rows; a target ignoring the narrowing or moving
+it after the later branch fails), `crates/generate/ess-synth/tests/external_narrowed_served.rs`
+(generated Rust and Go ask the provider only on a selected row),
+`crates/generate/ess-entity-runtime/tests/external_narrowed.rs` (lowered to the row guard and the
+host's evidence). Fixture: `crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-subject.yaml`.
+
+Not done: a narrowed external refusal with `compensates: true` keeps the refusal every non-external
+compensation gets; the doc comment of the generated `Context::external` port still says the
+provider is asked before the branch's input guard.

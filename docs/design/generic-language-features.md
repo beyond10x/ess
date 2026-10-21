@@ -412,6 +412,34 @@ What changes, from the format that carries G4:
   (`cross-record-and-stored-field-guards.md:823-825`); `when_subject_state: [A, B]` is
   `subject.state in [A, B]`.
 
+### An external branch narrowed by a subject guard (`ess/29`)
+
+Option 2 of https://github.com/beyond10x/ess/issues/584, `story:external-branch-narrowed-by-subject-guard`.
+An external cause that applies only to some configured records is declared once, for those
+records: `external:` beside `when_subject: {predicate: P}` (and an optional `when:`), from `ess/29`.
+Below it the pair keeps its `conflicting_declaration` ("a subject fact has one selection
+authority"), its hint naming `ess/29`.
+
+- **Selection.** The branch is taken where the provider takes it, its input guard holds and `P`
+  holds of the addressed row. On a row `P` does not select, the provider is not asked and the
+  branch is not taken, whatever it would say. `P` is not a selector beside the others: the joint
+  stored-field partition leaves the branch out, as it leaves every external branch out.
+- **Place.** It reads the held row, so it is a step-3 branch of the rule, in declaration order
+  among `when_subject_state:`, `when_state_changes:` and `when_subject:`, before `wrong_state:`.
+  Declared first, it answers a row a later held-state refusal selects too, which is the order the
+  downstream service checks in (#584). The held-state declaration rule (#486) refuses neither order
+  beside a held-state branch, since both are step 3.
+- **Refused.** `before_row: true` beside it (the branch reads the row it would answer before), and
+  the `{field, equals}` shape beside `external:` (write it as the predicate).
+- **IR.** A new condition, `external_subject` (`cause`, `predicate`, `input` when declared); no
+  model below `ess/29` changes its bytes.
+- **Consumers.** The interpreter reads `P` over the held row before it reads the provider.
+  Synthesis witnesses the branch forced on a row `P` selects, where it can on one a held-state
+  branch declared after it selects too, and forces it beside every sibling witnessed on a row `P`
+  decides false, where that sibling must still answer. Generated Rust and Go read the row, then
+  `P`, then ask the context. Entity Runtime lowers it to `P` over the loaded row, the input guard
+  and the host's external evidence, all required.
+
 What stays: the phase plan as the one executable definition, derived on demand and never serialised
 (`selection-plan.md:174-181`); the one test seam `with_phase_order` (`selection-plan.md:183-191`);
 the pinned table (`selection-plan.md:199-209`); every answer on every model below the G4 format.

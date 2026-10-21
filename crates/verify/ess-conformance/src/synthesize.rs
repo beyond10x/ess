@@ -218,10 +218,10 @@ use std::fmt;
 
 use ess_compiler::diagnostic::Code;
 use ess_compiler::ir::{
-    Driver, EntityHandle, EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedComponent,
-    ResolvedCondition, ResolvedEffect, ResolvedFailure, ResolvedFallback, ResolvedInstance,
-    ResolvedOutcome, ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedTypeRef,
-    ResolvedView,
+    Driver, EntityHandle, EssIr, PrecedencePlan, ResolvedBinding, ResolvedBody, ResolvedCommand,
+    ResolvedComponent, ResolvedCondition, ResolvedEffect, ResolvedFailure, ResolvedFallback,
+    ResolvedInstance, ResolvedOutcome, ResolvedPayloadValue, ResolvedSubject, ResolvedType,
+    ResolvedTypeRef, ResolvedView,
 };
 use ess_domain::binding::Delivery;
 use ess_domain::command::{OutcomeName, TestStrategy};
@@ -3429,15 +3429,100 @@ fn exercise_as(
     // The branch run here is the one the scenario observes: an Optional input it copies is sent
     // present, while the steps arranging it leave theirs absent (beyond10x/ess#546).
     let _under_test = crate::witness::under_test(models.arrangement, command, outcome);
-    let run = match run_as(models, command, outcome, actors, witness) {
+    let mut run = match run_as(models, command, outcome, actors, witness) {
         Ok(run) => run,
         Err(cause) => {
             refusals.push(Refusal::about(id, cause));
             return None;
         }
     };
+    if witness == Witness::Full {
+        force_beside_unnarrowed(models.arrangement, command, outcome, &mut run);
+    }
 
     exercise_run_in(models, command, outcome, actors, id, refusals, run)
+}
+
+/// ess/29 (`story:external-branch-narrowed-by-subject-guard`): where `command` declares an external
+/// branch narrowed to the rows a subject guard selects, the witness of a sibling `outcome` the
+/// arranged row does not select it on is sent with that branch forced. The row selects the sibling
+/// whatever the provider says, so a target that takes the forced branch on a row its guard leaves
+/// out answers it instead and fails. The first such branch in declaration order is forced; nothing
+/// changes for a command without one, an external sibling, a sibling answered before the row is
+/// read, or a row on which the guard is not decided false.
+fn force_beside_unnarrowed(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    run: &mut Run,
+) {
+    if outcome.test_strategy == TestStrategy::InjectFault || outcome.replays.is_some() {
+        return;
+    }
+    let narrowed: Vec<&ResolvedOutcome> = command
+        .outcomes
+        .iter()
+        .filter(|branch| subject_fact::narrowing(&branch.condition).is_some())
+        .collect();
+    if narrowed.is_empty() {
+        return;
+    }
+    let plan = PrecedencePlan::new(command, ir.format());
+    let reads_row = plan.phases().iter().any(|planned| {
+        matches!(
+            planned.phase,
+            ess_domain::command::precedence::Phase::HeldState
+                | ess_domain::command::precedence::Phase::PresentRelated
+                | ess_domain::command::precedence::Phase::Accepting
+                | ess_domain::command::precedence::Phase::Default
+        ) && planned
+            .branches
+            .iter()
+            .any(|branch| branch.name == outcome.name)
+    });
+    let (Some(state), Some(subject)) =
+        (run.before.as_ref(), subject_fact::reading(command, outcome))
+    else {
+        return;
+    };
+    if !reads_row {
+        return;
+    }
+    let input: BTreeMap<String, Node> = run
+        .input
+        .iter()
+        .filter_map(|(field, value)| match value {
+            ScenarioValue::Literal { value } => Some((field.clone(), value.clone())),
+            _ => None,
+        })
+        .collect();
+    let Some(forced) = narrowed.into_iter().find(|branch| {
+        subject_fact::narrowing(&branch.condition).is_some_and(|predicate| {
+            subject_fact::guard_truth_with(
+                ir,
+                &subject.entity,
+                &run.before_settled,
+                &BTreeSet::new(),
+                Some(state),
+                predicate,
+                Some((command, &input)),
+            ) == Truth::False
+        })
+    }) else {
+        return;
+    };
+    let Some(at) = run.invoke.iter().position(|step| {
+        matches!(step, ScenarioStep::ExecuteCommand { command: sent, .. } if sent.name() == &command.name)
+    }) else {
+        return;
+    };
+    run.invoke.insert(
+        at,
+        ScenarioStep::ConfigureExternalOutcome {
+            force: OutcomeRef::new(CommandRef::new(command.name.clone()), forced.name.clone()),
+            times: None,
+        },
+    );
 }
 
 /// Assert a branch whose invocation was arranged by the caller, including post-state retries.
@@ -4400,7 +4485,9 @@ fn external_read_back(
 ) -> Result<BTreeSet<String>, RefusalCause> {
     let external = matches!(
         outcome.condition,
-        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+        ResolvedCondition::External { .. }
+            | ResolvedCondition::ExternalWhen { .. }
+            | ResolvedCondition::ExternalSubject { .. }
     );
     if !outcome.complete_refusal || !external || outcome.subject.is_some() {
         return Ok(BTreeSet::new());
@@ -4531,10 +4618,9 @@ fn reaches_external(
     let Ok(facts) = flatten(ir, command, input) else {
         return false;
     };
-    let own: Vec<&Predicate> = match &outcome.condition {
-        ResolvedCondition::ExternalWhen { predicate, .. } => vec![predicate],
-        _ => Vec::new(),
-    };
+    let own: Vec<&Predicate> = subject_fact::external_input(&outcome.condition)
+        .into_iter()
+        .collect();
     let refusals: Vec<&Predicate> = sibling_refusals(ir.format(), command, outcome)
         .filter_map(when)
         .collect();
@@ -5190,6 +5276,7 @@ fn replay_condition(
             ResolvedCondition::Otherwise
             | ResolvedCondition::External { .. }
             | ResolvedCondition::ExternalWhen { .. }
+            | ResolvedCondition::ExternalSubject { .. }
             | ResolvedCondition::UnknownInstance
             | ResolvedCondition::InputAbsent
             | ResolvedCondition::ExistingInstance => return Ok(false),
@@ -6657,6 +6744,7 @@ fn admitted_states(condition: &ResolvedCondition) -> Option<BTreeSet<&StateName>
         | ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
         | ResolvedCondition::ExternalWhen { .. }
+        | ResolvedCondition::ExternalSubject { .. }
         | ResolvedCondition::WrongState
         | ResolvedCondition::SubjectField { .. }
         | ResolvedCondition::SubjectPredicate { .. }
@@ -6915,10 +7003,9 @@ fn reach_external_beside(
     distinction: Distinction,
     held: &[&Predicate],
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
-    let guards = match &outcome.condition {
-        ResolvedCondition::ExternalWhen { predicate, .. } => vec![predicate],
-        _ => Vec::new(),
-    };
+    let guards: Vec<&Predicate> = subject_fact::external_input(&outcome.condition)
+        .into_iter()
+        .collect();
     // An input-guarded refusal is taken before the external decision is asked for (beyond10x/ess
     // #178), so the witness refutes every one; searched first over the branch's own guard, as it
     // always was, and over the refusals' guards as well only where that finds none.
@@ -7312,7 +7399,8 @@ pub(crate) fn accepting_input_half(outcome: &ResolvedOutcome) -> Option<&Predica
         ResolvedCondition::When { predicate }
         | ResolvedCondition::ExternalWhen { predicate, .. } => Some(predicate),
         ResolvedCondition::SubjectField { predicate, .. } => predicate.as_ref(),
-        ResolvedCondition::SubjectPredicate { input, .. } => input.as_ref(),
+        ResolvedCondition::SubjectPredicate { input, .. }
+        | ResolvedCondition::ExternalSubject { input, .. } => input.as_ref(),
         _ => None,
     }
 }
@@ -7405,6 +7493,11 @@ fn forced_eligibility(
             reason: "GuardedExternalEligibility: fault eligibility requires an observation of the binding-mapped input".into(),
         });
     }
+    if matches!(forced.condition, ResolvedCondition::ExternalSubject { .. }) {
+        return Some(BindingGap::AccessorObservation {
+            reason: "NarrowedExternalEligibility: fault eligibility requires an observation of the addressed row".into(),
+        });
+    }
     if !earlier_accepting(format, invoked, forced).is_empty() {
         return Some(BindingGap::AccessorObservation {
             reason: "PrecededExternalEligibility: an accepting branch declared before the forced one decides the binding-mapped input first".into(),
@@ -7417,7 +7510,9 @@ fn forced_eligibility(
 fn is_external(outcome: &ResolvedOutcome) -> bool {
     matches!(
         outcome.condition,
-        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+        ResolvedCondition::External { .. }
+            | ResolvedCondition::ExternalWhen { .. }
+            | ResolvedCondition::ExternalSubject { .. }
     )
 }
 
@@ -7483,11 +7578,9 @@ fn selects_branch(
         if claimed_by(&facts, &earlier_accepting(ir.format(), command, outcome)) {
             return Ok(false);
         }
-        return match &outcome.condition {
-            ResolvedCondition::ExternalWhen { predicate, .. } => {
-                decides(&facts, &[predicate], true)
-            }
-            _ => Ok(true),
+        return match subject_fact::external_input(&outcome.condition) {
+            Some(predicate) => decides(&facts, &[predicate], true),
+            None => Ok(true),
         };
     }
     if let ResolvedCondition::SubjectState { state, .. } = &outcome.condition {
@@ -13883,6 +13976,7 @@ pub(super) fn input_guards(command: &ResolvedCommand) -> Vec<&Predicate> {
         .filter_map(|outcome| match &outcome.condition {
             ResolvedCondition::ExternalWhen { predicate, .. } => Some(predicate),
             ResolvedCondition::SubjectPredicate { input, .. }
+            | ResolvedCondition::ExternalSubject { input, .. }
             | ResolvedCondition::Related { input, .. } => input.as_ref(),
             _ => when(outcome),
         })

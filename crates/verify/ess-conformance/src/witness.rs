@@ -4392,6 +4392,7 @@ fn input_guard(outcome: &ess_compiler::ir::ResolvedOutcome) -> Option<&Predicate
         | ResolvedCondition::SubjectState { predicate, .. }
         | ResolvedCondition::StateChange { predicate, .. } => predicate.as_ref(),
         ResolvedCondition::SubjectPredicate { input, .. }
+        | ResolvedCondition::ExternalSubject { input, .. }
         | ResolvedCondition::Related { input, .. } => input.as_ref(),
         _ => None,
     }

@@ -850,7 +850,7 @@ command keeps the six steps and its answers.
 | 0 | `input_absent:` | `InputAbsent` |
 | 1 — the request alone | input-guarded refusals, and `external:` marked `before_row: true`, in declaration order | `InputRefusal` |
 | 2 — existence of the addressed record | `existing_instance:` on every command, also one reading a related row or a row set; then `unknown_instance:` | `Existence` |
-| 3 — the held state | `when_subject_state:`, `when_state_changes:`, `when_subject:`, then `wrong_state:` | `HeldState` |
+| 3 — the held state | `when_subject_state:`, `when_state_changes:`, `when_subject:` and from `ess/29` an `external:` branch `when_subject:` narrows, in declaration order; then `wrong_state:` | `HeldState` |
 | 4 — the rows around it | every `exists: false` over a row the input or a stored field names, in declaration order; then every present related row's and row set's refusal, in declaration order, whatever else the command declares; then a row-set upsert's `unknown_instance:` | `PresentRelated` |
 | 5 — acceptance and external causes | accepting `when:`, `external:`, accepting `when_related:` and row-set branches, in declaration order | `Accepting` |
 | 6 | `otherwise:` | `Default` |

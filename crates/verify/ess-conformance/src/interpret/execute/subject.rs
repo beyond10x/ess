@@ -76,6 +76,12 @@ impl<'a> Held<'a> {
             ResolvedCondition::SubjectPredicate {
                 predicate,
                 input: additional,
+            }
+            // ess/29: whether the row is one the narrowed external branch may answer for.
+            | ResolvedCondition::ExternalSubject {
+                predicate,
+                input: additional,
+                ..
             } => (
                 self.holds(predicate, input, caller, now),
                 additional.as_ref(),

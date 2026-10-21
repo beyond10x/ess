@@ -369,7 +369,9 @@ fn command_sites<'ir>(
                 references: Vec::new(),
             });
         }
-        if let ResolvedCondition::SubjectPredicate { predicate, .. } = &outcome.condition {
+        if let ResolvedCondition::SubjectPredicate { predicate, .. }
+        | ResolvedCondition::ExternalSubject { predicate, .. } = &outcome.condition
+        {
             let fields = command
                 .selection_subject(outcome)
                 .map(|subject| ir.entity(&subject.entity).fields.clone())
@@ -428,6 +430,7 @@ fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
         | ResolvedCondition::StateChange { predicate, .. }
         | ResolvedCondition::SubjectField { predicate, .. } => predicate.as_ref(),
         ResolvedCondition::SubjectPredicate { input, .. }
+        | ResolvedCondition::ExternalSubject { input, .. }
         | ResolvedCondition::Related { input, .. }
         | ResolvedCondition::RelatedSet { input, .. } => input.as_ref(),
         ResolvedCondition::Otherwise
