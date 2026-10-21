@@ -78,14 +78,17 @@ synthesis and the interpreted model over the fixture
 `crates/verify/ess-conformance/tests/fixtures/enforced-reference.yaml`, generated Rust and Go
 keeping the command an obligation by name, docs and format history.
 
+Acceptance 3 is met (`unit/ess-0680-g2owed`). Under `ess/30`, synthesis reads the referenced row
+again after every accepting branch that writes a row of the referencing or the referenced entity,
+and requires the row present (`crates/verify/ess-conformance/src/synthesize/reference_integrity.rs`).
+`a_target_that_deletes_the_referenced_row_fails` in
+`crates/verify/ess-conformance/tests/enforced_reference.rs` is no longer ignored, and it passes.
+The reads are filed under the existing `<entity>/invariant/after/<command>/<outcome>` id, so no
+suite format was needed. Specs below `ess/30`, and specs that waive no branch, keep their suite
+bytes.
+
 Owed:
 
-- Acceptance 3. No scenario reads the referenced row again after a command that could remove it,
-  so a target deleting it passes: `a_target_that_deletes_the_referenced_row_fails` in
-  `crates/verify/ess-conformance/tests/enforced_reference.rs` is ignored and red. The integrity
-  scenario (for each reading command whose branch is waived, read the row again after every
-  accepting command of the spec that touches the subject's or the referenced entity's rows)
-  probably needs a suite format; not sized.
 - Generated Rust and Go: bind the related read without an `exists: false` branch and lift the
   obligation.
 - Synthesis's own unreachability proof (`related_guard/stored.rs`, `unreachable`) reads writers

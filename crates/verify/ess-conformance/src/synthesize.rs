@@ -193,6 +193,7 @@ mod identity;
 mod ordered_head;
 mod paging;
 pub(crate) mod precedence;
+mod reference_integrity;
 mod refusal_policy;
 mod related;
 mod related_guard;
@@ -2615,6 +2616,9 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     notes.extend(partial);
     notes.extend(unseparated_notes);
     invariants(models, &actors, focus, &mut suite, &mut refusals);
+    // A stored reference kept present needs no `exists: false` branch (ess/30, beyond10x/ess#509);
+    // its row is read again after every branch that could remove it.
+    reference_integrity::references(models, &actors, focus, &mut suite, &mut refusals);
     if focus.is_whole() {
         bindings(ir, &actors, &mut suite, &mut refusals);
         // The fresh suite's `Empty` authority, established before the aggregate planner reads it

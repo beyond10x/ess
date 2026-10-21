@@ -321,10 +321,19 @@ Why derived over an authored integrity key (`integrity: enforced` on the relatio
 - **The cost, accepted.** The guarantee is non-local: a deleting command added elsewhere refuses the
   reading command. The refusal names the deleting branch, so the cause is one hop away.
 
-Not in this cut, and owed by the story: conformance does not read the referenced row again after a
-command that could remove it, so a target that deletes it passes the suite
-(`conf/tests/enforced_reference.rs`, `a_target_that_deletes_the_referenced_row_fails`, ignored and
-red). Generated Rust and Go keep such a command an obligation, named
+Conformance checks the derived integrity (acceptance 3, `conf/synthesize/reference_integrity.rs`).
+After every accepting branch that writes a row of the referencing or the referenced entity, the
+suite reads the row each arranged reference names through an unfiltered view of the referenced
+entity and requires it present. A branch about a referenced row that no arranged reference names
+first points a new referencing row at it, through the creating branch that stores the reference
+from its input. A target that deletes the row fails
+(`conf/tests/enforced_reference.rs`, `a_target_that_deletes_the_referenced_row_fails`). The
+reads are filed under the referencing entity's `<entity>/invariant/after/<command>/<outcome>` id,
+where they join the reads of any declared invariants. The id says what holds of that entity after
+the branch, and reusing it gives the suite no identity an older reader refuses, so the suite major
+stays put. A specification that leaves no branch out keeps its suite bytes.
+
+Not in this cut, and owed by the story: generated Rust and Go keep such a command an obligation, named
 (`synth/determined.rs`, `related_composition`): the generated related read is bound by the
 `exists: false` branch. Synthesis's own unreachability proof reads writers only, not deletions,
 so beside a deleting command it still reports a present `exists: false` branch unreachable.

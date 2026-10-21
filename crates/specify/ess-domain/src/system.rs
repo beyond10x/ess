@@ -317,6 +317,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         release: None,
         added: &[
             "A command reading the row a stored reference names needs no `exists: false` branch where the specification keeps that row present: every branch writing the field writes nothing, its own value or an input its command refuses first with `exists: false` over the same entity, every branch creating the subject sets it, and no branch deletes a row of the referenced entity. A deleting branch or an unchecked writer keeps the branch required as `non_exhaustive_branches`, its hint naming each; below `ess/30` the branch stays required, its hint naming `ess/30`. Generated Rust and Go keep such a command an obligation, named (`docs/design/generic-language-features.md` § G2, beyond10x/ess#509).",
+            "Where a reading command leaves that branch out, the suite reads the row each arranged reference names again after every accepting branch writing a row of the referencing or the referenced entity, through a view of the referenced entity, and requires it present, so a target that removes it fails; the reads are filed under that branch's `<entity>/invariant/after/<command>/<outcome>` scenario of the referencing entity, joining the declared invariants' reads where that scenario exists, so the suite keeps its major; a specification that leaves no branch out keeps its suite bytes (beyond10x/ess#509).",
         ],
         stricter: &[],
     },

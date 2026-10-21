@@ -1454,9 +1454,13 @@ A specification that later gains a deleting branch or an unchecked writer gets
 `non_exhaustive_branches` on the reading command again, its hint naming each branch that breaks
 the guarantee. Below `ess/30` the branch is still required, and the hint names `ess/30` when the
 guarantee holds. Synthesis witnesses the predicate branches over a row arranged through the
-checking writer, and sends no missing row. No scenario yet reads the row again after a command
-that could remove it, so a target that deletes it is not caught. Generated Rust and Go keep such a
-command an obligation, named.
+checking writer, and sends no missing row. After every accepting branch that writes a row of the
+subject's entity or of the referenced entity, the suite reads the row each arranged reference names
+again, through a view showing every row of the referenced entity, and requires it present, so a
+target that deletes it fails. A branch about a referenced row no arranged reference names first
+points a new referencing row at it. These reads are filed under the subject entity's
+`<entity>/invariant/after/<command>/<outcome>` scenario, beside any declared invariants' reads.
+Generated Rust and Go keep such a command an obligation, named.
 
 ### The rows a list of references names
 

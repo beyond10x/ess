@@ -110,10 +110,10 @@ fn failing_on(target: &str) -> Vec<String> {
         .collect()
 }
 
-/// Acceptance 3 of `story:enforced-reference-needs-no-missing-target-branch`, red: no scenario
-/// reads the referenced row again after a command that could remove it, so this target passes.
+/// Acceptance 3 of `story:enforced-reference-needs-no-missing-target-branch`: the referenced row is
+/// read again after every accepting branch that writes ports or nodes, so a target that removes it
+/// fails the scenario run after the branch that removes it.
 #[test]
-#[ignore = "known limitation: the integrity scenario is owed by story:enforced-reference-needs-no-missing-target-branch"]
 fn a_target_that_deletes_the_referenced_row_fails() {
     // The target removes a port's node when the port is renamed; it answers the node it removed
     // as missing, which the specification it is held to never does.
@@ -137,4 +137,118 @@ fn a_target_that_deletes_the_referenced_row_fails() {
         !failed.is_empty(),
         "the deleting target passes every scenario"
     );
+    assert!(
+        failed
+            .iter()
+            .any(|id| id == "integrity.board.Port/invariant/after/integrity.board.Rename/renamed"),
+        "the scenario reading the node again after the rename fails: {failed:?}"
+    );
+}
+
+/// The views `id`'s scenario requires something of, in order, each with the expectation's kind.
+fn required(suite: &ConformanceSuite, id: &str) -> Vec<(String, String)> {
+    let (_, scenario) = suite
+        .scenarios
+        .iter()
+        .find(|(key, _)| key.to_string() == id)
+        .unwrap_or_else(|| panic!("no scenario {id}"));
+    scenario
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExpectView {
+                view, expectation, ..
+            }
+            | ScenarioStep::EventuallyView {
+                view, expectation, ..
+            } => {
+                let kind = serde_json::to_value(expectation).expect("an expectation serialises")
+                    ["expect"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned();
+                Some((view.to_string(), kind))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn the_node_is_read_again_after_every_branch_writing_a_port_or_a_node() {
+    let suite = suite(&ir(BOARD));
+    let integrity: Vec<String> = suite
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .filter(|id| id.starts_with("integrity.board.Port/invariant/after/"))
+        .collect();
+    assert_eq!(
+        integrity,
+        [
+            "integrity.board.Port/invariant/after/integrity.board.AddNode/added",
+            "integrity.board.Port/invariant/after/integrity.board.AddPort/added",
+            "integrity.board.Port/invariant/after/integrity.board.Rename/renamed",
+            "integrity.board.Port/invariant/after/integrity.board.Seal/sealed",
+        ],
+        "one scenario per accepting branch writing a port or a node, none for a refusal"
+    );
+    for id in &integrity {
+        assert_eq!(
+            required(&suite, id).last(),
+            Some(&("integrity.board.Nodes".to_owned(), "contains".to_owned())),
+            "{id} ends reading the node a port names"
+        );
+    }
+    // Sealing a node no arranged port names: the scenario points a port at it first.
+    let sent = sent(
+        &suite,
+        "integrity.board.Port/invariant/after/integrity.board.Seal/sealed",
+    );
+    assert_eq!(
+        sent,
+        [
+            "integrity.board.AddNode",
+            "integrity.board.AddPort",
+            "integrity.board.Seal"
+        ]
+    );
+}
+
+#[test]
+fn declared_invariants_and_the_node_read_share_one_scenario() {
+    // A port also declares an invariant: the scenario `invariants` files for each port branch
+    // gains the node read, and stays one scenario under one id.
+    let board = BOARD.replacen(
+        "    relations:\n      - {name: node, kind: references",
+        "    invariants: ['name != \"none\"']\n    relations:\n      - {name: node, kind: references",
+        1,
+    );
+    assert_ne!(board, BOARD);
+    let model = ir(&board);
+    let suite = suite(&model);
+    for branch in ["AddPort/added", "Rename/renamed"] {
+        let id = format!("integrity.board.Port/invariant/after/integrity.board.{branch}");
+        let required = required(&suite, &id);
+        assert!(
+            required.contains(&("integrity.board.Ports".to_owned(), "satisfies".to_owned())),
+            "{id} still reads the declared invariant: {required:?}"
+        );
+        assert_eq!(
+            required.last(),
+            Some(&("integrity.board.Nodes".to_owned(), "contains".to_owned())),
+            "{id} ends reading the node: {required:?}"
+        );
+    }
+    let admitted = AdmittedSuite::from_suite(&suite).expect("the suite is admitted");
+    let run = Runner::for_suite(admitted.suite()).run_admitted(
+        &admitted,
+        &ess_conformance::interpret::Interpreted::for_model(model),
+    );
+    let failed: Vec<_> = run
+        .scenarios
+        .iter()
+        .filter(|result| result.status != Status::Passed)
+        .collect();
+    assert!(failed.is_empty(), "{failed:#?}");
 }

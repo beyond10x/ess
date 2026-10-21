@@ -253,7 +253,7 @@ fn read_members(
 
 /// A new source row created by `creator`, its input `input` pointed at `far` — or, with `far`
 /// `None`, left out.
-fn point_at(
+pub(super) fn point_at(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     (creator, input): (&Driver<'_>, &str),
