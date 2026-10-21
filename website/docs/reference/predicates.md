@@ -1187,7 +1187,7 @@ An `external:` branch may carry a `when_subject:` predicate, which narrows it to
 predicate selects: an external cause that applies only to some configured records is declared once,
 for those records.
 
-```yaml
+```text
 - name: hashed-mismatch
   external: the outside service finds the hashed verifier differs from the stored challenge
   when_subject:

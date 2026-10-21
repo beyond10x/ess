@@ -1423,7 +1423,10 @@ mod tests {
 
     #[test]
     fn release_notes_summarize_lead_with_breaking_and_cap_each_list() {
-        let fixed: String = (1..=8).map(|n| format!("- Fix {n} (#{n}).\n")).collect();
+        let fixed = (1..=8).fold(String::new(), |mut s, n| {
+            let _ = writeln!(s, "- Fix {n} (#{n}).");
+            s
+        });
         let changelog = format!(
             "# Changelog\n\n## [Unreleased]\n\n## [0.2.0] — 2026-10-21\n\n### Added\n\n\
              - A new key; set `format: ess/2` to use it (#10).\n\n### Changed\n\n\
