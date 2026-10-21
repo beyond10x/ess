@@ -3873,8 +3873,10 @@ impl CommandSpec {
             }) else {
                 continue;
             };
+            // The step the plan reads the phase at: its position in the phase order, numbered as
+            // the precedence order numbers that position, so an exchanged order is named as read.
             let step = |phase: precedence::Phase| {
-                phase
+                precedence::Phase::PRECEDENCE[phase.position()]
                     .step_in(format)
                     .map_or_else(|| phase.to_string(), |step| step.to_string())
             };

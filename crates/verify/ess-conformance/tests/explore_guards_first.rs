@@ -154,6 +154,17 @@ fn typescript(root: &Path, ir: &EssIr, cases: &Value) -> Lane {
 }
 
 fn go(root: &Path, ir: &EssIr, cases: &Value) -> Lane {
+    go_with(
+        root,
+        ir,
+        cases,
+        "explore_guards_first_target.go",
+        "newExploreOrderTarget(one.Mode)",
+    )
+}
+
+/// The Go lane with the target `target` (a fixture), made by the driver as `constructor`.
+fn go_with(root: &Path, ir: &EssIr, cases: &Value, target: &str, constructor: &str) -> Lane {
     let module = root.join("go");
     for artifact in ess_conformance::go::emit_with_model(&suite(ir), ir).unwrap() {
         write(&module.join(&artifact.path), &artifact.contents);
@@ -163,14 +174,12 @@ fn go(root: &Path, ir: &EssIr, cases: &Value) -> Lane {
         "module example.invalid/exploreorder\n\ngo 1.24\n",
     );
     std::fs::copy(
-        fixture("explore_guards_first_target.go"),
+        fixture(target),
         module.join("essconform/explore_guards_first_target_test.go"),
     )
     .expect("the target copies");
-    let driver = read_fixture("explore_preconditions_driver_test.go").replace(
-        "newExplorePreTarget(one.Mode)",
-        "newExploreOrderTarget(one.Mode)",
-    );
+    let driver = read_fixture("explore_preconditions_driver_test.go")
+        .replace("newExplorePreTarget(one.Mode)", constructor);
     write(
         &module.join("essconform/explore_guards_first_driver_test.go"),
         &driver,
@@ -309,4 +318,157 @@ fn a_target_out_of_entity_runtime_order_is_caught() {
             }
         }
     }
+}
+
+// ---- one declaration-order pass at ess/29 (beyond10x/ess#554) ---------------------------------
+
+/// The guard-pair corpus of `story:every-guard-combination-validates-under-the-rule` at `ess/29`,
+/// where validation refuses a declaration order that contradicts the step order.
+fn pairs_29() -> String {
+    let text = include_str!("fixtures/guard-pair-corpus.yaml");
+    let at = text.replacen("format: ess/27\n", "format: ess/29\n", 1);
+    assert_ne!(at, text, "the corpus is at ess/27");
+    at
+}
+
+/// The guard-pair corpus compiled at `ess/29`, after the interpreter has passed every synthesized
+/// scenario of it, with the `command/outcome` every scenario expects.
+fn interpreted_pairs_29() -> (EssIr, std::collections::BTreeSet<String>) {
+    use ess_conformance::interpret::Interpreted;
+    use ess_conformance::report::Status;
+    use ess_conformance::scenario::ScenarioStep;
+    use ess_conformance::{AdmittedSuite, AdvancingClock, Ids, Runner, RunnerConfig};
+
+    let text = pairs_29();
+    let mut sources = SourceMap::new();
+    sources.insert("guard-pair-corpus.yaml", text.as_str());
+    let raw = RawSpecFile::parse(&text).expect("the corpus parses");
+    let specification = Specification::assemble(vec![(Source::new("guard-pair-corpus.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("the corpus validates at ess/29:\n{errors}"));
+    let ir =
+        compile(&specification, &sources).unwrap_or_else(|diagnostics| panic!("{diagnostics}"));
+
+    let synthesis = ess_conformance::synthesize(&ir);
+    assert!(
+        synthesis.refusals.is_empty(),
+        "synthesis refuses no branch: {:#?}",
+        synthesis.refusals
+    );
+    let admitted =
+        AdmittedSuite::from_suite(&synthesis.suite).unwrap_or_else(|error| panic!("{error}"));
+    let report = Runner::new(
+        RunnerConfig::default(),
+        AdvancingClock::default(),
+        Ids::for_suite(&synthesis.suite),
+    )
+    .run_admitted(&admitted, &Interpreted::for_model(ir.clone()))
+    .into_report();
+    let failed: Vec<String> = report
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+        .map(|scenario| format!("{:?} {:?}", scenario.scenario, scenario.status))
+        .collect();
+    assert!(failed.is_empty(), "the interpreter: {failed:#?}");
+    let expected: std::collections::BTreeSet<String> = synthesis
+        .suite
+        .scenarios
+        .values()
+        .flat_map(|scenario| &scenario.steps)
+        .filter_map(|step| match step {
+            ScenarioStep::ExpectOutcome { outcome } => Some(outcome.to_string()),
+            _ => None,
+        })
+        .collect();
+    (ir, expected)
+}
+
+/// From `ess/29` a command that validates is answered by one declaration-order pass as the plan
+/// answers it (`story:declaration-order-agrees-with-every-step-pair`): over the guard-pair corpus,
+/// the interpreter passes every synthesized scenario, and the Go explorer, exploring a target that
+/// takes the first declared branch whose condition holds, finds no draw where it expects another
+/// branch and reaches every branch the scenarios expect of every command it explores. A target
+/// that departs from declaration order is caught.
+#[test]
+fn on_a_validating_format_a_command_one_declaration_order_pass_gives_the_plans_answer() {
+    let (ir, expected) = interpreted_pairs_29();
+
+    let cases = json!([
+        {"name": "declared", "allowExcluded": true},
+        {"name": "vip-first", "mode": "vip-first", "allowExcluded": true},
+    ]);
+    let root = scratch("declared");
+    let lane = go_with(
+        &root,
+        &ir,
+        &cases,
+        "explore_declared_order_target.go",
+        "newExploreDeclaredTarget(one.Mode)",
+    );
+    std::fs::remove_dir_all(&root).ok();
+
+    let found = &lane.results["declared"];
+    assert_eq!(lane.asserts["declared"], "ok", "{found}\n{}", lane.log);
+    let excluded: Vec<&str> = found["excluded"]
+        .as_array()
+        .expect("an exclusion list")
+        .iter()
+        .map(|exclusion| exclusion["subject"].as_str().expect("a subject"))
+        .collect();
+    for command in [
+        "demo.pairs.Release",
+        "demo.pairs.Retire",
+        "demo.pairs.SubjectBesideState",
+        "demo.pairs.StateBesideWrongState",
+    ] {
+        assert!(
+            !excluded.contains(&command),
+            "{command} is explored: {found}"
+        );
+    }
+    let explored: std::collections::BTreeSet<String> = expected
+        .iter()
+        .filter(|outcome| {
+            let command = outcome.split('/').next().expect("a command");
+            !excluded.contains(&command)
+        })
+        .cloned()
+        .collect();
+    let reached: std::collections::BTreeSet<String> = strings(&found["reached"])
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    // Every branch a scenario expects is one the explorer reaches. The explorer reaches one more:
+    // `StateBesideWrongState/not-held` on a retired seat, which no synthesized scenario expects;
+    // the interpreter's answer there is pinned by `precedence_plan_answers.rs`
+    // (`guard_pair_corpus_answers_by_the_rule`, a retired seat answers `not-held`).
+    let unreached: Vec<&String> = explored.difference(&reached).collect();
+    assert!(
+        unreached.is_empty(),
+        "the explorer reaches the branches the scenarios expect: {unreached:?}\n{found}"
+    );
+    let beyond: Vec<&String> = reached.difference(&explored).collect();
+    assert_eq!(
+        beyond,
+        ["demo.pairs.StateBesideWrongState/not-held"],
+        "{found}"
+    );
+    for draw in strings(&found["ambiguous"]) {
+        assert!(
+            draw.ends_with(": no record for the supplied instance"),
+            "`{draw}` was redrawn\n{found}"
+        );
+    }
+
+    let caught = &lane.results["vip-first"];
+    assert!(
+        lane.asserts["vip-first"].starts_with("failed: "),
+        "`vip-first` passed: {}\n{caught}",
+        lane.asserts["vip-first"]
+    );
+    let failure = caught["failure"].to_string();
+    assert!(
+        failure.contains("demo.pairs.SubjectBesideState") && failure.contains("released"),
+        "{failure}"
+    );
 }
