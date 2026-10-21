@@ -241,6 +241,59 @@ fn disjoint_guards_stay_free_in_the_exchanged_order() {
     });
 }
 
+// ---- the declaration order of every step pair (ess/29, beyond10x/ess#554) ----------------------
+
+/// `pick` at `ess/29`, where one check holds every pair of steps
+/// (`story:declaration-order-agrees-with-every-step-pair`).
+fn pick_29(branches: &[&str], tail: &str) -> String {
+    replaced(
+        &pick(branches, tail),
+        "format: ess/20\n",
+        "format: ess/29\n",
+    )
+}
+
+/// The declaration-order refusal of `later`, read at step `at`, below `earlier`, read at step
+/// `above`: the message and hint `CommandSpec::validate_step_order` writes.
+fn step_order(later: &str, at: u8, earlier: &str, above: u8) -> String {
+    format!(
+        "[conflicting_declaration] command.demo.desk.CheckPick.outcomes.{later}: `{later}` answers \
+         at step {at} of the precedence order and `{earlier}`, declared above it, at step {above}; \
+         where both hold, the declaration order and the precedence order disagree (hint: declare \
+         `{later}` before `{earlier}`: step {at} answers first in either order)"
+    )
+}
+
+/// From `ess/29` the declaration-order check reads the plan's steps through the one test seam:
+/// with the held-state and accepting phases exchanged, the order it refused validates, the order
+/// it admitted is refused against the branch now read second, and each branch is named at the step
+/// the plan reads it in, not at a second, fixed numbering.
+#[test]
+fn the_declaration_order_check_follows_the_plan_under_with_phase_order() {
+    let accepting_first = pick_29(&[RUSHED, STALE], FIELD_TAIL);
+    let held_first = pick_29(&[STALE, RUSHED], FIELD_TAIL);
+
+    let errors = refused(&accepting_first).to_string();
+    assert!(
+        errors.contains(&step_order("stale", 3, "rushed", 5)),
+        "{errors}"
+    );
+    accepted(&held_first);
+
+    with_phase_order(exchanged(Phase::HeldState, Phase::Accepting), || {
+        accepted(&accepting_first);
+        let errors = refused(&held_first).to_string();
+        assert!(
+            errors.contains(&step_order("rushed", 3, "stale", 5)),
+            "{errors}"
+        );
+        assert!(
+            !errors.contains("declare `stale` before `rushed`"),
+            "the default order's refusal is not also reported: {errors}"
+        );
+    });
+}
+
 // ---- input refusals before the held state (beyond10x/ess#227) ---------------------------------
 
 const ROTATE: &str =
