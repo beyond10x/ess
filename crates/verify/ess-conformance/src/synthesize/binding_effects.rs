@@ -260,6 +260,7 @@ pub(super) fn bound_branch<'a>(
         match &outcome.condition {
             ResolvedCondition::External { .. }
             | ResolvedCondition::ExternalWhen { .. }
+            | ResolvedCondition::ExternalSubject { .. }
             | ResolvedCondition::WrongState
             | ResolvedCondition::UnknownInstance
             | ResolvedCondition::ExistingInstance

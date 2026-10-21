@@ -896,6 +896,11 @@ fn on_failure(ir: &EssIr, delivered: &Delivered<'_>) -> Built {
             reason: "GuardedExternalEligibility: fault eligibility requires an observation of the binding-mapped input".into(),
         });
     }
+    if matches!(forced.condition, ResolvedCondition::ExternalSubject { .. }) {
+        return Err(BindingGap::AccessorObservation {
+            reason: "NarrowedExternalEligibility: fault eligibility requires an observation of the addressed row".into(),
+        });
+    }
     let forced_ref = OutcomeRef::new(delivered.command(), forced.name.clone());
     let mut steps = vec![
         ScenarioStep::ConfigureExternalOutcome {

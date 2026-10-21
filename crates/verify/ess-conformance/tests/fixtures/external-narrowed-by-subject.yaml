@@ -1,0 +1,88 @@
+format: ess/29
+system: demo
+version: v1
+domain: demo.vault
+summary: A grant redeemed with a verifier, checked by an outside service where its method says so.
+types:
+  - {name: demo.vault.GrantId, kind: newtype, of: Uuid}
+  - {name: demo.vault.Method, kind: enum, variants: [plain, hashed]}
+entities:
+  - name: demo.vault.Grant
+    identity: {name: grant_id, type: demo.vault.GrantId}
+    fields:
+      - {name: method, type: demo.vault.Method}
+      - {name: challenge, type: String}
+      - {name: redirect, type: String}
+    lifecycle:
+      initial: Issued
+      states: [Issued, Redeemed]
+      terminal: [Redeemed]
+      transitions:
+        - {name: redeem, from: [Issued], to: Redeemed}
+actors:
+  - name: demo.vault.Client
+    may: [demo.vault.Issue, demo.vault.Redeem]
+commands:
+  - name: demo.vault.Issue
+    input:
+      - {name: method, type: demo.vault.Method}
+      - {name: challenge, type: String}
+      - {name: redirect, type: String}
+    outcomes:
+      - name: issued
+        creates: demo.vault.Grant
+        instance: grant_id
+        sets: {method: input.method, challenge: input.challenge, redirect: input.redirect}
+        emits: [demo.vault.Issued]
+        payload:
+          demo.vault.Issued: {grant_id: {generated: true}}
+  - name: demo.vault.Redeem
+    input:
+      - {name: grant_id, type: demo.vault.GrantId}
+      - {name: verifier, type: String}
+      - {name: redirect, type: String}
+    outcomes:
+      - name: hashed-mismatch
+        external: the outside service finds the hashed verifier differs from the stored challenge
+        when_subject:
+          predicate: method == hashed
+        error: demo.vault.VerifierMismatch
+      - name: redirect-mismatch
+        when_subject:
+          predicate: redirect != input.redirect
+        error: demo.vault.RedirectMismatch
+      - name: plain-mismatch
+        when_subject:
+          predicate:
+            all:
+              - method == plain
+              - challenge != input.verifier
+        error: demo.vault.VerifierMismatch
+      - name: redeemed
+        moves: demo.vault.Grant.redeem
+        instance: grant_id
+        emits: [demo.vault.Redeemed]
+        payload:
+          demo.vault.Redeemed: {grant_id: input.grant_id}
+      - name: already-redeemed
+        wrong_state: true
+        error: demo.vault.AlreadyRedeemed
+events:
+  - name: demo.vault.Issued
+    fields: [{name: grant_id, type: demo.vault.GrantId}]
+  - name: demo.vault.Redeemed
+    fields: [{name: grant_id, type: demo.vault.GrantId}]
+errors:
+  - name: demo.vault.VerifierMismatch
+  - name: demo.vault.RedirectMismatch
+  - name: demo.vault.AlreadyRedeemed
+views:
+  - name: demo.vault.Grants
+    source: demo.vault.Grant
+    consistency: read_your_writes
+    fields:
+      - {name: grant_id, type: demo.vault.GrantId}
+      - {name: method, type: demo.vault.Method}
+      - {name: challenge, type: String}
+      - {name: redirect, type: String}
+      - {name: state, type: demo.vault.Grant.State}

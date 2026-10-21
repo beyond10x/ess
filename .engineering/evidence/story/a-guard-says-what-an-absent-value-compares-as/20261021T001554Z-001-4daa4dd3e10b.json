@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T00:15:54Z",
+  "actor": "human:timo",
+  "artifact": "story:a-guard-says-what-an-absent-value-compares-as",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-conformance --locked --test coalesce_guards: 3 passed; 0 failed",
+    "reference": "crates/verify/ess-conformance/tests/coalesce_guards.rs"
+  }
+}

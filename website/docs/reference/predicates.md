@@ -434,6 +434,49 @@ refusal is also witnessed on a row and input where a refusal declared after it h
 requires the first declared. The generated Rust and Go behaviours keep such a command an obligation,
 and Entity Runtime refuses the guard as `FunctionCallUnsupported`.
 
+### From `ess/29`: what an absent value compares as
+
+A comparison that reads an absent `Optional` is unknown, so a guard over records whose optional
+fields may be absent cannot decide them, while an implementation does. Say what absence compares
+as with `coalesce(<fact>, <default>)`, the fact where it is present and the default where it is
+absent. From `ess/29` (beyond10x/ess#620) a command outcome's guard may write such a call on the
+left of a comparison:
+
+```text
+- name: completed                       # an absent verdict is no success
+  when:
+    all:
+      - terminal == true
+      - coalesce(is_error, true) == false
+- name: retry                           # absent attempts are none
+  when: coalesce(attempts, 0) < 3
+```
+
+| The value of `is_error` | `is_error == false` | `coalesce(is_error, true) == false` |
+|---|---|---|
+| `false` | true | true |
+| `true` | false | false |
+| absent | unknown | false |
+
+Inside a YAML flow mapping, quote the comparison: the comma between the call's arguments would
+otherwise end the entry, as in `when_subject: {predicate: "coalesce(retries, 0) >= 3"}`.
+
+`defined(is_error)` beside the comparison does not do this: `all: [defined(is_error), is_error ==
+false]` is false where `is_error` is absent, but synthesis must also witness each child alone
+deciding the conjunction, and `is_error == false` cannot decide it where `is_error` is absent.
+
+The default has the fact's type (an Integer and a Decimal mix as a Decimal), and the call reads one
+fact; anything else on the left is refused as `type_mismatch`. A call on the left outside a command
+outcome's guards is refused as `unsupported_construct`. The canonical form is the structured
+`{compare: {left: {expr: "coalesce(is_error, true)"}, op: eq, right: false}}`, which validates from
+`ess/27`; below `ess/29` the compact spelling is refused as `unsupported_format_version` naming
+`ess/29` and that form.
+
+Synthesis sends each `Optional` a guard reads only through `coalesce` absent first, so the branch
+the absence selects is witnessed on it, and the present values as for the fact itself. The generated
+Rust and Go behaviours decide `coalesce(<fact>, <literal>)` over a Boolean, Integer, Decimal or
+String; Entity Runtime refuses the guard as `FunctionCallUnsupported`.
+
 ### Absence is not `null`
 
 An unquoted `null` on the right of `==` or `!=` is refused, with a hint that names `defined(x)` or
@@ -1138,6 +1181,41 @@ value, or `forall` for `exists`, fails; where the whole collection decides it, t
 more elements. Where no arrangement reaches that shape, the row with one entry is used. An entity
 that declares a stored field named `input` keeps reading `input.<member>` as that field.
 
+### From `ess/29`: an external branch narrowed to some records
+
+An `external:` branch may carry a `when_subject:` predicate, which narrows it to the records the
+predicate selects: an external cause that applies only to some configured records is declared once,
+for those records.
+
+```text
+- name: hashed-mismatch
+  external: the outside service finds the hashed verifier differs from the stored challenge
+  when_subject:
+    predicate: method == hashed
+  error: demo.vault.VerifierMismatch
+- name: redirect-mismatch
+  when_subject:
+    predicate: redirect != input.redirect
+  error: demo.vault.RedirectMismatch
+```
+
+The provider is asked, and the branch taken, only on a record the predicate selects; on any other
+record the branch is not taken whatever the provider would say. It reads the stored row, so the one
+precedence rule answers it at the held-state step, in declaration order among the branches the
+stored row selects and before `wrong_state:`: declared first here, a forced `hashed-mismatch`
+answers a hashed grant with a wrong redirect too. A `when:` beside it is its input eligibility, as
+on any external branch. A refusal naming no subject of its own reads the subject its siblings name.
+Write the guard in the predicate form: `{field, equals}` beside `external:` is refused as
+`conflicting_declaration`, and so is `before_row: true`, since the branch reads the row it would be
+answered before. Below `ess/29` the pair keeps its `conflicting_declaration`, "a subject fact has
+one selection authority", its hint naming `ess/29`.
+
+Synthesis forces the branch on a record the predicate selects, where it can on one a held-state
+branch declared after it selects too, and forces it beside each other branch witnessed on a record
+the predicate does not select, where that branch must still answer. The generated Rust and Go
+behaviours ask the provider only after the guard holds, and Entity Runtime lowers the branch to the
+guard and the host's external evidence.
+
 ## A guard over another entity's row
 
 From `ess/18`, a branch may be guarded by one row of another entity: the row whose identity an input
@@ -1570,9 +1648,12 @@ child alone fails. Below the top level, the input must also be one where that co
 the whole guard. So a target that writes `or` for a nested `and`, such as
 `any: [all: [a, b], all: [a, c]]`, fails a scenario. Where none of the guard's own candidates is
 such an input, synthesis solves for it directly, so a wide guard, such as an `any` of four
-three-way `all`s, is witnessed at every child too. Where that finds none either, and the search did
-not try every value of every field, the scenario stands and an `ESS-SYNTH-022` refusal beside it
-names the input it could not build.
+three-way `all`s, is witnessed at every child too. Where the input orders two `Integer` fields
+against each other, such as `amount <= limit` failing beside `limit > 0` and `amount > 0`, one
+field is placed relative to the other, inside each field's declared range (`limit 1, amount 2`).
+Where those orders and ranges leave no input at all, the child is not refused. Where the search
+finds none and did not try every value of every field, the scenario stands and an `ESS-SYNTH-022`
+refusal beside it names the input it could not build.
 
 Every input also satisfies the invariants over it. That covers the invariants of each struct the
 input holds, and those of each entity a branch copies the input into. For

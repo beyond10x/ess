@@ -112,6 +112,11 @@ Rules every form follows:
   one form (`expression-family-source22.md:176-180`). `Unknown` is never silently false; a view
   observation with an `Unknown` leaf is undetermined, as a measure condition is today
   (`conditional-aggregate-measures.md:47`).
+- **Absence in a guard.** Where an implementation decides a record whose `Optional` is absent, the
+  specification says so with `coalesce(x, default)` as the comparison's operand, never by reading
+  `Unknown` as false: `coalesce(is_error, true) == false`, written on the left of a compact
+  comparison from `ess/29` (https://github.com/beyond10x/ess/issues/620). Synthesis sends such an
+  `x` absent as one of its arms.
 - **Time.** Elapsed seconds only. No days, months, calendars or zones; those remain the calendar
   window's (`docs/design/calendar-window-guards.md`). `== now` and `!= now` stay refused
   (`current-time-guards.md:43`).
@@ -406,6 +411,48 @@ What changes, from the format that carries G4:
   the row does not hold" at the end of step 3, unchanged in meaning
   (`cross-record-and-stored-field-guards.md:823-825`); `when_subject_state: [A, B]` is
   `subject.state in [A, B]`.
+
+### An external branch narrowed by a subject guard (`ess/29`)
+
+Option 2 of https://github.com/beyond10x/ess/issues/584, `story:external-branch-narrowed-by-subject-guard`.
+An external cause that applies only to some configured records is declared once, for those
+records: `external:` beside `when_subject: {predicate: P}` (and an optional `when:`), from `ess/29`.
+Below it the pair keeps its `conflicting_declaration` ("a subject fact has one selection
+authority"), its hint naming `ess/29`.
+
+- **Selection.** The branch is taken where the provider takes it, its input guard holds and `P`
+  holds of the addressed row. On a row `P` does not select, the provider is not asked and the
+  branch is not taken, whatever it would say. `P` is not a selector beside the others: the joint
+  stored-field partition leaves the branch out, as it leaves every external branch out.
+- **Place.** It reads the held row, so it is a step-3 branch of the rule, in declaration order
+  among `when_subject_state:`, `when_state_changes:` and `when_subject:`, before `wrong_state:`.
+  Declared first, it answers a row a later held-state refusal selects too, which is the order the
+  downstream service checks in (#584). The held-state declaration rule (#486) refuses neither order
+  beside a held-state branch, since both are step 3.
+- **Refused.** `before_row: true` beside it (the branch reads the row it would answer before), and
+  the `{field, equals}` shape beside `external:` (write it as the predicate).
+- **IR.** A new condition, `external_subject` (`cause`, `predicate`, `input` when declared); no
+  model below `ess/29` changes its bytes.
+- **Consumers.** The interpreter reads `P` over the held row before it reads the provider.
+  Synthesis witnesses the branch forced on a row `P` selects, where it can on one a held-state
+  branch declared after it selects too, and forces it beside every sibling witnessed on a row `P`
+  decides false, where that sibling must still answer. Generated Rust and Go read the row, then
+  `P`, then ask the context. Entity Runtime lowers it to `P` over the loaded row, the input guard
+  and the host's external evidence, all required.
+
+### Entity Runtime and `when_related:` (decided 2026-10-21)
+
+Every guard pair the rule admits lowers to Entity Runtime or is refused by name (answer 10). A
+command with a `when_related:` branch stays refused as `RelatedGuardUnsupported`, at every format,
+and the refusal says why. entity-core decides an operation on its arguments and the one row its
+request names, and has no lookup of another row by design (`entity-core/src/definition.rs`, "no
+lookup"). The one lowering ESS could make on its own, the host reading the other row and binding a
+copy as arguments as it binds external evidence, is not taken: that copy is read apart from the
+decision that commits, so a guard such as `exists: false` could hold on a row another operation has
+already removed, which no ESS target answers. It would also add binding targets and requirements to
+the public binding plan, which is a contract change for every host. It lowers when entity-core can
+read another entity's row inside the decision (the catalogue's `Needs::EntityCore`); a row set
+(`RowSetUnsupported`) waits for the same capability.
 
 What stays: the phase plan as the one executable definition, derived on demand and never serialised
 (`selection-plan.md:174-181`); the one test seam `with_phase_order` (`selection-plan.md:183-191`);

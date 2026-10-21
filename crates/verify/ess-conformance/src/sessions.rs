@@ -276,6 +276,7 @@ impl<T: Interleaved, V: ConformanceTarget> Recording<'_, T, V> {
                             outcome.condition,
                             ResolvedCondition::External { .. }
                                 | ResolvedCondition::ExternalWhen { .. }
+                                | ResolvedCondition::ExternalSubject { .. }
                         )
                 })
             })

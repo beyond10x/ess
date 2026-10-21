@@ -218,10 +218,10 @@ use std::fmt;
 
 use ess_compiler::diagnostic::Code;
 use ess_compiler::ir::{
-    Driver, EntityHandle, EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedComponent,
-    ResolvedCondition, ResolvedEffect, ResolvedFailure, ResolvedFallback, ResolvedInstance,
-    ResolvedOutcome, ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedTypeRef,
-    ResolvedView,
+    Driver, EntityHandle, EssIr, PrecedencePlan, ResolvedBinding, ResolvedBody, ResolvedCommand,
+    ResolvedComponent, ResolvedCondition, ResolvedEffect, ResolvedFailure, ResolvedFallback,
+    ResolvedInstance, ResolvedOutcome, ResolvedPayloadValue, ResolvedSubject, ResolvedType,
+    ResolvedTypeRef, ResolvedView,
 };
 use ess_domain::binding::Delivery;
 use ess_domain::command::{OutcomeName, TestStrategy};
@@ -1034,9 +1034,12 @@ pub enum RefusalCause {
     /// the connective decides the guard (<https://github.com/beyond10x/ess/issues/501>). Raised only
     /// where the search did not try every value of every field the predicate reads, so the input may
     /// exist; the connective's mutant may then go unkilled.
+    ///
+    /// An admitted authored scenario that sends such an input and expects the branch withdraws the
+    /// refusal ([`withdraw_witnessed_children`], <https://github.com/beyond10x/ess/issues/619>).
     ChildUnwitnessed {
-        /// The input that was searched for, as it reads.
-        predicate: String,
+        /// The input that was searched for; it prints as it reads.
+        predicate: Box<Predicate>,
         /// How many solved candidates were decided against it.
         tried: usize,
     },
@@ -1284,8 +1287,8 @@ impl RefusalCause {
                  value a row holds at a position"
             }
             Self::NoWitness(gap) if gap.type_ref == disclosure::INVENTORY => {
-                "the line above names what the cell lacks; a `read/<view>` cell for an actor not \
-                 granted the originating command is refused by design and needs no change"
+                "the line above names what the cell lacks; a `read/<view>` cell whose view's read \
+                 grant does not name the cell's actor has nothing to read and needs no change"
             }
             // A head no scenario arranges refuses its branch alone (beyond10x/ess#552).
             Self::NoWitness(gap) if ordered_head::unarranged(gap.reason) => {
@@ -1547,7 +1550,8 @@ crate::authored::diagnostic_catalogue! {
              `{compare: {left, op, right, as: timestamp}}`";
         Self::ChildUnwitnessed { .. } => CHILD_UNWITNESSED,
             "No input was found where one child of an `any`/`all` alone decides it and it decides \
-             the guard; the branch's scenario stands without that input.",
+             the guard; the branch's scenario stands without that input. An admitted authored \
+             scenario that sends such an input and expects the branch withdraws the refusal.",
             CHILD_REPAIR;
         Self::SystemIssuedUnaddressed { .. } => SYSTEM_ISSUED_UNADDRESSED,
             "A command the system issues itself, whose outcome addresses no existing record \
@@ -2368,6 +2372,14 @@ impl fmt::Display for InstanceNeed {
 /// `tests/synthesis.rs` synthesises the billing example twice and compares bytes.
 pub fn synthesize(ir: &EssIr) -> Synthesis {
     synthesize_in(ir, &seeds::EMPTY)
+}
+
+/// What `run` returns, and how many arrangements of row counts the row-set strategy tried on this
+/// thread while it ran: the work its search does, which a test bounds where a wall-clock bound
+/// would depend on the machine (beyond10x/ess#624). Not part of the suite.
+#[doc(hidden)]
+pub fn row_set_arrangements_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    row_set::counting(run)
 }
 
 /// [`synthesize`], with explicitly admitted synthesis seeds (beyond10x/ess#413,
@@ -3425,15 +3437,100 @@ fn exercise_as(
     // The branch run here is the one the scenario observes: an Optional input it copies is sent
     // present, while the steps arranging it leave theirs absent (beyond10x/ess#546).
     let _under_test = crate::witness::under_test(models.arrangement, command, outcome);
-    let run = match run_as(models, command, outcome, actors, witness) {
+    let mut run = match run_as(models, command, outcome, actors, witness) {
         Ok(run) => run,
         Err(cause) => {
             refusals.push(Refusal::about(id, cause));
             return None;
         }
     };
+    if witness == Witness::Full {
+        force_beside_unnarrowed(models.arrangement, command, outcome, &mut run);
+    }
 
     exercise_run_in(models, command, outcome, actors, id, refusals, run)
+}
+
+/// ess/29 (`story:external-branch-narrowed-by-subject-guard`): where `command` declares an external
+/// branch narrowed to the rows a subject guard selects, the witness of a sibling `outcome` the
+/// arranged row does not select it on is sent with that branch forced. The row selects the sibling
+/// whatever the provider says, so a target that takes the forced branch on a row its guard leaves
+/// out answers it instead and fails. The first such branch in declaration order is forced; nothing
+/// changes for a command without one, an external sibling, a sibling answered before the row is
+/// read, or a row on which the guard is not decided false.
+fn force_beside_unnarrowed(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    run: &mut Run,
+) {
+    if outcome.test_strategy == TestStrategy::InjectFault || outcome.replays.is_some() {
+        return;
+    }
+    let narrowed: Vec<&ResolvedOutcome> = command
+        .outcomes
+        .iter()
+        .filter(|branch| subject_fact::narrowing(&branch.condition).is_some())
+        .collect();
+    if narrowed.is_empty() {
+        return;
+    }
+    let plan = PrecedencePlan::new(command, ir.format());
+    let reads_row = plan.phases().iter().any(|planned| {
+        matches!(
+            planned.phase,
+            ess_domain::command::precedence::Phase::HeldState
+                | ess_domain::command::precedence::Phase::PresentRelated
+                | ess_domain::command::precedence::Phase::Accepting
+                | ess_domain::command::precedence::Phase::Default
+        ) && planned
+            .branches
+            .iter()
+            .any(|branch| branch.name == outcome.name)
+    });
+    let (Some(state), Some(subject)) =
+        (run.before.as_ref(), subject_fact::reading(command, outcome))
+    else {
+        return;
+    };
+    if !reads_row {
+        return;
+    }
+    let input: BTreeMap<String, Node> = run
+        .input
+        .iter()
+        .filter_map(|(field, value)| match value {
+            ScenarioValue::Literal { value } => Some((field.clone(), value.clone())),
+            _ => None,
+        })
+        .collect();
+    let Some(forced) = narrowed.into_iter().find(|branch| {
+        subject_fact::narrowing(&branch.condition).is_some_and(|predicate| {
+            subject_fact::guard_truth_with(
+                ir,
+                &subject.entity,
+                &run.before_settled,
+                &BTreeSet::new(),
+                Some(state),
+                predicate,
+                Some((command, &input)),
+            ) == Truth::False
+        })
+    }) else {
+        return;
+    };
+    let Some(at) = run.invoke.iter().position(|step| {
+        matches!(step, ScenarioStep::ExecuteCommand { command: sent, .. } if sent.name() == &command.name)
+    }) else {
+        return;
+    };
+    run.invoke.insert(
+        at,
+        ScenarioStep::ConfigureExternalOutcome {
+            force: OutcomeRef::new(CommandRef::new(command.name.clone()), forced.name.clone()),
+            times: None,
+        },
+    );
 }
 
 /// Assert a branch whose invocation was arranged by the caller, including post-state retries.
@@ -4396,7 +4493,9 @@ fn external_read_back(
 ) -> Result<BTreeSet<String>, RefusalCause> {
     let external = matches!(
         outcome.condition,
-        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+        ResolvedCondition::External { .. }
+            | ResolvedCondition::ExternalWhen { .. }
+            | ResolvedCondition::ExternalSubject { .. }
     );
     if !outcome.complete_refusal || !external || outcome.subject.is_some() {
         return Ok(BTreeSet::new());
@@ -4527,10 +4626,9 @@ fn reaches_external(
     let Ok(facts) = flatten(ir, command, input) else {
         return false;
     };
-    let own: Vec<&Predicate> = match &outcome.condition {
-        ResolvedCondition::ExternalWhen { predicate, .. } => vec![predicate],
-        _ => Vec::new(),
-    };
+    let own: Vec<&Predicate> = subject_fact::external_input(&outcome.condition)
+        .into_iter()
+        .collect();
     let refusals: Vec<&Predicate> = sibling_refusals(ir.format(), command, outcome)
         .filter_map(when)
         .collect();
@@ -5186,6 +5284,7 @@ fn replay_condition(
             ResolvedCondition::Otherwise
             | ResolvedCondition::External { .. }
             | ResolvedCondition::ExternalWhen { .. }
+            | ResolvedCondition::ExternalSubject { .. }
             | ResolvedCondition::UnknownInstance
             | ResolvedCondition::InputAbsent
             | ResolvedCondition::ExistingInstance => return Ok(false),
@@ -6653,6 +6752,7 @@ fn admitted_states(condition: &ResolvedCondition) -> Option<BTreeSet<&StateName>
         | ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
         | ResolvedCondition::ExternalWhen { .. }
+        | ResolvedCondition::ExternalSubject { .. }
         | ResolvedCondition::WrongState
         | ResolvedCondition::SubjectField { .. }
         | ResolvedCondition::SubjectPredicate { .. }
@@ -6911,10 +7011,9 @@ fn reach_external_beside(
     distinction: Distinction,
     held: &[&Predicate],
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
-    let guards = match &outcome.condition {
-        ResolvedCondition::ExternalWhen { predicate, .. } => vec![predicate],
-        _ => Vec::new(),
-    };
+    let guards: Vec<&Predicate> = subject_fact::external_input(&outcome.condition)
+        .into_iter()
+        .collect();
     // An input-guarded refusal is taken before the external decision is asked for (beyond10x/ess
     // #178), so the witness refutes every one; searched first over the branch's own guard, as it
     // always was, and over the refusals' guards as well only where that finds none.
@@ -7308,7 +7407,8 @@ pub(crate) fn accepting_input_half(outcome: &ResolvedOutcome) -> Option<&Predica
         ResolvedCondition::When { predicate }
         | ResolvedCondition::ExternalWhen { predicate, .. } => Some(predicate),
         ResolvedCondition::SubjectField { predicate, .. } => predicate.as_ref(),
-        ResolvedCondition::SubjectPredicate { input, .. } => input.as_ref(),
+        ResolvedCondition::SubjectPredicate { input, .. }
+        | ResolvedCondition::ExternalSubject { input, .. } => input.as_ref(),
         _ => None,
     }
 }
@@ -7401,6 +7501,11 @@ fn forced_eligibility(
             reason: "GuardedExternalEligibility: fault eligibility requires an observation of the binding-mapped input".into(),
         });
     }
+    if matches!(forced.condition, ResolvedCondition::ExternalSubject { .. }) {
+        return Some(BindingGap::AccessorObservation {
+            reason: "NarrowedExternalEligibility: fault eligibility requires an observation of the addressed row".into(),
+        });
+    }
     if !earlier_accepting(format, invoked, forced).is_empty() {
         return Some(BindingGap::AccessorObservation {
             reason: "PrecededExternalEligibility: an accepting branch declared before the forced one decides the binding-mapped input first".into(),
@@ -7413,7 +7518,9 @@ fn forced_eligibility(
 fn is_external(outcome: &ResolvedOutcome) -> bool {
     matches!(
         outcome.condition,
-        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+        ResolvedCondition::External { .. }
+            | ResolvedCondition::ExternalWhen { .. }
+            | ResolvedCondition::ExternalSubject { .. }
     )
 }
 
@@ -7479,11 +7586,9 @@ fn selects_branch(
         if claimed_by(&facts, &earlier_accepting(ir.format(), command, outcome)) {
             return Ok(false);
         }
-        return match &outcome.condition {
-            ResolvedCondition::ExternalWhen { predicate, .. } => {
-                decides(&facts, &[predicate], true)
-            }
-            _ => Ok(true),
+        return match subject_fact::external_input(&outcome.condition) {
+            Some(predicate) => decides(&facts, &[predicate], true),
+            None => Ok(true),
         };
     }
     if let ResolvedCondition::SubjectState { state, .. } = &outcome.condition {
@@ -11390,6 +11495,30 @@ fn arrange_toward_owned(
     )
 }
 
+/// [`arrange_toward_filter`] for an owned row whose `filter` pins its owner link to the literal
+/// identity of an owner the scenario already holds (beyond10x/ess#621): the creating input names
+/// that owner as the steering chose it, and no owner of its own is arranged, which would give the
+/// row a link no such filter selects.
+fn arrange_toward_named_owner(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    filter: &Predicate,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    accept: &dyn Fn(&Arrangement) -> bool,
+) -> Option<Arrangement> {
+    arrange_toward_with(
+        ir,
+        entity,
+        filter,
+        actors,
+        distinction,
+        (None, true),
+        &BTreeMap::new(),
+        accept,
+    )
+}
+
 /// The same bounded arrangement search with fields populated from already captured instances.
 /// Only a direct, unconverted `sets: field: input.field` proves which creator input to bind.
 /// The identities stay symbolic throughout: a generated ID is never replaced by a sample value.
@@ -11401,6 +11530,31 @@ fn arrange_toward_bound(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
     owner: Option<&InstanceName>,
+    fields: &BTreeMap<String, InstanceName>,
+    accept: &dyn Fn(&Arrangement) -> bool,
+) -> Option<Arrangement> {
+    arrange_toward_with(
+        ir,
+        entity,
+        filter,
+        actors,
+        distinction,
+        (owner, false),
+        fields,
+        accept,
+    )
+}
+
+/// [`arrange_toward_bound`], and where `named` is set, the owner left to the input the steering
+/// chose ([`arrange_toward_named_owner`]).
+#[allow(clippy::too_many_arguments)]
+fn arrange_toward_with(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    filter: &Predicate,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    (owner, named): (Option<&InstanceName>, bool),
     fields: &BTreeMap<String, InstanceName>,
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
@@ -11464,7 +11618,7 @@ fn arrange_toward_bound(
                 creator,
                 actors,
                 distinction,
-                under,
+                (under, named),
                 &bound,
                 &input,
             );
@@ -11595,7 +11749,9 @@ fn creator_bindings(
     Some(bound)
 }
 
-/// Create one row with explicit captured inputs, preserving any declared owner arrangement.
+/// Create one row with explicit captured inputs, preserving any declared owner arrangement; where
+/// `named` is set and no owner is given, the input names the owner (beyond10x/ess#621) and none is
+/// arranged.
 #[allow(clippy::too_many_arguments)]
 fn created_bound(
     ir: &EssIr,
@@ -11603,7 +11759,7 @@ fn created_bound(
     creator: &Driver<'_>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
-    owner: Option<(String, Arrangement)>,
+    (owner, named): (Option<(String, Arrangement)>, bool),
     bound: &BTreeMap<String, InstanceName>,
     input: &BTreeMap<String, Node>,
 ) -> Result<Arrangement, Unreachable> {
@@ -11619,11 +11775,24 @@ fn created_bound(
                 Some(under),
                 Some(input),
             ),
+            None if named => created_owned(
+                ir,
+                entity,
+                creator,
+                actors,
+                distinction,
+                &[],
+                None,
+                Some(input),
+            ),
             None => created(ir, entity, creator, actors, distinction, &[], Some(input)),
         };
     }
-    let arranged_owner =
-        owner.or_else(|| arrange_owner(ir, creator.outcome, entity, actors, distinction, &[]));
+    let arranged_owner = owner.or_else(|| {
+        (!named)
+            .then(|| arrange_owner(ir, creator.outcome, entity, actors, distinction, &[]))
+            .flatten()
+    });
     created_by(
         ir,
         entity,
@@ -13815,6 +13984,7 @@ pub(super) fn input_guards(command: &ResolvedCommand) -> Vec<&Predicate> {
         .filter_map(|outcome| match &outcome.condition {
             ResolvedCondition::ExternalWhen { predicate, .. } => Some(predicate),
             ResolvedCondition::SubjectPredicate { input, .. }
+            | ResolvedCondition::ExternalSubject { input, .. }
             | ResolvedCondition::Related { input, .. } => input.as_ref(),
             _ => when(outcome),
         })
@@ -14770,18 +14940,108 @@ fn one_per_child(
         // An input that isolates the child but selects another branch is that branch's, and a
         // search that tried every region of every leaf shows no input isolates it at all, and so
         // does a goal whose text literals contradict each other (`not starts_with "A"` beside
-        // `starts_with "AB"`); only a search that stopped short leaves the row unwitnessed
-        // without saying why.
+        // `starts_with "AB"`), or whose orders between `Integer` inputs do (`limit <= 0` beside
+        // `amount > 0` and `amount <= limit`, beyond10x/ess#622); only a search that stopped short
+        // leaves the row unwitnessed without saying why.
         if !found
             && !crate::witness::unsatisfiable(&goal)
+            && !crate::witness::infeasible(ir, command, &goal)
             && !crate::witness::exhausts(ir, command, &[&goal])
         {
             missed.push(RefusalCause::ChildUnwitnessed {
-                predicate: goal.to_string(),
+                predicate: Box::new(goal),
                 tried,
             });
         }
     }
+}
+
+/// Drops each `ESS-SYNTH-022` refusal an admitted authored scenario covers
+/// (<https://github.com/beyond10x/ess/issues/619>): the refusal's repair is an authored scenario
+/// that sends the row the search did not find, so one that does leaves nothing unwitnessed.
+///
+/// A scenario covers the refusal when one of its steps invokes the refused branch's command with
+/// literal input that satisfies the refused row's predicate (the child alone deciding the
+/// connective), that input selects the refused branch by the same reading synthesis keeps its own
+/// rows under, and the step expects that branch. Every other refusal is kept as it is.
+pub fn withdraw_witnessed_children<'s>(
+    ir: &EssIr,
+    refusals: &mut Vec<Refusal>,
+    authored: impl IntoIterator<Item = &'s ConformanceScenario>,
+) {
+    let authored: Vec<&ConformanceScenario> = authored.into_iter().collect();
+    if authored.is_empty() {
+        return;
+    }
+    refusals.retain(|refusal| {
+        !authored
+            .iter()
+            .any(|scenario| witnesses_child(ir, refusal, scenario))
+    });
+}
+
+/// Whether `scenario` sends the row an `ESS-SYNTH-022` `refusal` names, and expects its branch.
+fn witnesses_child(ir: &EssIr, refusal: &Refusal, scenario: &ConformanceScenario) -> bool {
+    let RefusalCause::ChildUnwitnessed { predicate, .. } = &refusal.cause else {
+        return false;
+    };
+    let Some(
+        ScenarioId::Outcome { outcome: wanted }
+        | ScenarioId::HeldOutcome {
+            outcome: wanted, ..
+        },
+    ) = &refusal.scenario
+    else {
+        return false;
+    };
+    let Some(command) = ir.commands().get(wanted.command.name()) else {
+        return false;
+    };
+    let Some(branch) = command
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.name == wanted.outcome)
+    else {
+        return false;
+    };
+    let steps = &scenario.steps;
+    steps.iter().enumerate().any(|(at, step)| {
+        let ScenarioStep::ExecuteCommand {
+            command: sent,
+            input,
+            ..
+        } = step
+        else {
+            return false;
+        };
+        // The expectations that read this invocation run until the next one.
+        let expected = steps[at + 1..]
+            .iter()
+            .take_while(|later| {
+                !matches!(
+                    later,
+                    ScenarioStep::ExecuteCommand { .. }
+                        | ScenarioStep::ExecuteCommandWithoutInput { .. }
+                        | ScenarioStep::AwaitOutcome { .. }
+                )
+            })
+            .any(|later| matches!(later, ScenarioStep::ExpectOutcome { outcome } if outcome == wanted));
+        if sent != &wanted.command || !expected {
+            return false;
+        }
+        // Only a value the scenario states is one a guard reads; a reference to an arranged row
+        // is a name, and the row's predicate cannot be decided over it.
+        let values: BTreeMap<String, Node> = input
+            .iter()
+            .filter_map(|(field, value)| match value {
+                ScenarioValue::Literal { value } => Some((field.clone(), value.clone())),
+                _ => None,
+            })
+            .collect();
+        flatten(ir, command, &values)
+            .is_ok_and(|facts| matches!(facts.decide(predicate), Decision::Satisfied))
+            && selects_branch(ir, command, branch, None, &values).unwrap_or(false)
+    })
 }
 
 /// The input [`one_per_child`] asks for, as one predicate: the child at `index` decides `alone`,

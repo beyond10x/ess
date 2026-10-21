@@ -850,10 +850,16 @@ command keeps the six steps and its answers.
 | 0 | `input_absent:` | `InputAbsent` |
 | 1 — the request alone | input-guarded refusals, and `external:` marked `before_row: true`, in declaration order | `InputRefusal` |
 | 2 — existence of the addressed record | `existing_instance:` on every command, also one reading a related row or a row set; then `unknown_instance:` | `Existence` |
-| 3 — the held state | `when_subject_state:`, `when_state_changes:`, `when_subject:`, then `wrong_state:` | `HeldState` |
+| 3 — the held state | `when_subject_state:`, `when_state_changes:`, `when_subject:` and from `ess/29` an `external:` branch `when_subject:` narrows, in declaration order; then `wrong_state:` | `HeldState` |
 | 4 — the rows around it | every `exists: false` over a row the input or a stored field names, in declaration order; then every present related row's and row set's refusal, in declaration order, whatever else the command declares; then a row-set upsert's `unknown_instance:` | `PresentRelated` |
 | 5 — acceptance and external causes | accepting `when:`, `external:`, accepting `when_related:` and row-set branches, in declaration order | `Accepting` |
 | 6 | `otherwise:` | `Default` |
+
+From `ess/29` validation holds the declaration order to these steps for every pair of steps 1 to
+5: a guarded branch declared below a branch a later step answers is refused where one request can
+satisfy both (input guards the finite prover shows disjoint excepted), naming both and the order
+to declare them in; a marker declared below a guarded branch is not refused. Below `ess/29` only
+the held-state rule (#486) and the `before_row:` rule (#534) hold, one pair each.
 
 The one move from the six steps is a missing row the input names: step 1 there, step 4 here, after
 the addressed record's existence and held state, as a stored reference's already was. Request-only

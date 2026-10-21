@@ -36,8 +36,9 @@ const BLOG: &str = "website/blog";
 /// Not one per release: a release whose only content is a fix has nothing to write about, and a
 /// gate that fires on one becomes a gate people silence. Three is the point at which the notes
 /// have stopped being a record of the project and started being a record of one month of it — the
-/// state they were in on 2026-09-21, nineteen minors behind, which nothing noticed.
-const BLOG_LAG: u64 = 3;
+/// state they were in on 2026-09-21, nineteen minors behind, which nothing noticed. It is four from
+/// 0.67.0, whose post was skipped; it returns to three in the next release that carries a post.
+const BLOG_LAG: u64 = 4;
 
 /// The pages whose version literals must name the newest release.
 ///
@@ -229,6 +230,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     // A view read through a reference of its source, `<view>/reference/<field>` (beyond10x/ess#564).
     ("ess-conformance", 54, Some("0.64.0")),
     ("ess-conformance", 55, Some("0.64.0")),
+    // A one-time read cell names its reader and reads as it (beyond10x/ess#614).
+    ("ess-conformance", 56, Some("0.67.0")),
+    ("ess-conformance", 57, Some("0.67.0")),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),

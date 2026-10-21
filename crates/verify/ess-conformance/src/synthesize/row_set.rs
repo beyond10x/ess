@@ -51,7 +51,7 @@ use ess_domain::entity::StateName;
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
 use ess_domain::view::{Direction, Ranking};
-use ess_primitives::facts::FactPath;
+use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
 
@@ -63,10 +63,10 @@ use super::set_effects::{input_value, misses, subject_value, written_in};
 mod copied;
 mod related_rows;
 use super::{
-    absorb, arrange_toward_owned, candidates, flatten, instance_name, prepare_in, settled,
-    still_unwritten, subject_fact, supply, unwritten_by, ActorRef, Arrangement, ConformanceSuite,
-    Decision, Determined, Distinction, EntityRef, InstanceName, Refusal, RefusalCause,
-    ScenarioStep, ScenarioValue, Setup, WitnessGap,
+    absorb, arrange_toward_named_owner, arrange_toward_owned, candidates, flatten, instance_name,
+    prepare_in, settled, still_unwritten, subject_fact, supply, unwritten_by, ActorRef,
+    Arrangement, ConformanceSuite, Decision, Determined, Distinction, EntityRef, InstanceName,
+    Refusal, RefusalCause, ScenarioStep, ScenarioValue, Setup, WitnessGap,
 };
 
 /// How many rows the selector selects, in the order they are tried.
@@ -75,6 +75,11 @@ const COUNTS: [usize; 4] = [1, 2, 0, 3];
 /// How many rows a selector whose head the branch reads selects, in the order they are tried
 /// (ess/27, beyond10x/ess#543): three, so the head is the middle one inserted, then two.
 const HEAD_COUNTS: [usize; 2] = [3, 2];
+
+/// How many arrangements one branch's search tries before the branch is refused
+/// ([`ROWS_SEARCH_CUT`], beyond10x/ess#624). The combinations of counts grow fourfold with every
+/// selector a command reads; no repository model's branch tries more than 33.
+const ARRANGEMENTS: usize = 4096;
 
 /// The key a selected row's value is settled under in the arrangement's fields: not a field name
 /// — it holds spaces — so nothing reading fields by name finds it.
@@ -137,6 +142,7 @@ pub(super) fn routes(
             outcome.condition,
             ResolvedCondition::External { .. }
                 | ResolvedCondition::ExternalWhen { .. }
+                | ResolvedCondition::ExternalSubject { .. }
                 | ResolvedCondition::ExistingInstance
                 | ResolvedCondition::UnknownInstance
                 | ResolvedCondition::WrongState
@@ -190,6 +196,11 @@ const UNFOLLOWED: &str = "a step of the scenario changes rows of the selector's 
 pub(super) const ROWS_UNFOLLOWED: &str = "has no arrangement whose rows synthesis can follow: a \
      set effect, a binding or a direct setup changes rows of the selector's entity while the \
      scenario is arranged";
+
+/// Why a row-set branch was refused after [`ARRANGEMENTS`] arrangements of its selectors' counts
+/// none of which took it (beyond10x/ess#624).
+pub(super) const ROWS_SEARCH_CUT: &str = "has more arrangements of its selectors' row counts than \
+     synthesis tries for one branch, and none of those tried takes this branch";
 
 fn gap(path: String, reason: &'static str) -> RefusalCause {
     RefusalCause::NoWitness(WitnessGap {
@@ -504,6 +515,7 @@ fn unrefutable(other: &ResolvedOutcome) -> bool {
         ResolvedCondition::Otherwise => true,
         ResolvedCondition::SubjectField { .. }
         | ResolvedCondition::SubjectPredicate { .. }
+        | ResolvedCondition::ExternalSubject { .. }
         | ResolvedCondition::Related { .. }
         | ResolvedCondition::RelatedSet { .. }
         | ResolvedCondition::When { .. }
@@ -1507,8 +1519,13 @@ fn arrange_rows(
     head: &mut Head<'_>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     taken: &mut BTreeSet<InstanceName>,
-    (before, owner): (&[ScenarioStep], Option<&InstanceName>),
+    (before, under): (&[ScenarioStep], Option<&InstanceName>),
 ) -> Option<Vec<Arrangement>> {
+    let owners_held = held_owners(ir, entity, before, under);
+    let owner = Owner {
+        under,
+        held: &owners_held,
+    };
     // Whether the steps so far, and `row`'s after them, leave every row-set command they send
     // taking the branch it is required to: a row arranged through such a command is kept only
     // where the rows before it decide that command's branch.
@@ -1628,6 +1645,34 @@ fn arrange_rows(
             walk(ir, &steps, true).is_ok()
         };
         let holds = |row: &Arrangement, goal: &Predicate| truth(row, goal) == Truth::True;
+        // The rows the steps so far leave that the selector already selects, by their keys: the
+        // related rows another selector's test placed in this one's scope (beyond10x/ess#618). A
+        // row a key of which the steps leave undetermined is no row the head is ranked against.
+        let already: Vec<Vec<Node>> = walk(ir, before, false)
+            .map(|rows| {
+                rows.held
+                    .iter()
+                    .filter(|row| {
+                        row.entity == *entity
+                            && subject_fact::row_truth_with(
+                                ir,
+                                entity,
+                                &row.settled,
+                                &row.unwritten,
+                                Some(&row.state),
+                                filter,
+                                None,
+                            ) == Truth::True
+                    })
+                    .filter_map(|row| {
+                        order_by
+                            .iter()
+                            .map(|ranking| row_key(ir, row, &ranking.field))
+                            .collect::<Option<Vec<Node>>>()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         arranged.extend(arrange_head(
             ir,
             entity,
@@ -1637,6 +1682,7 @@ fn arrange_rows(
             (actors, owner),
             taken,
             &mut *head.gaps,
+            (&already, head.crowded),
         )?);
     } else {
         for nth in 0..count {
@@ -1666,6 +1712,9 @@ fn arrange_rows(
 struct Head<'h> {
     order_by: Option<&'h [Ranking]>,
     gaps: &'h mut Vec<RefusalCause>,
+    /// Set where rows the selector already selected left no arrangement ranking the head above
+    /// them (beyond10x/ess#618).
+    crowded: &'h std::cell::Cell<bool>,
 }
 
 /// What [`arrange_head`] reads of its caller: the goal of the `nth` selected row, whether a row
@@ -1725,7 +1774,10 @@ fn compared(field: &str, op: CompareOp, value: &Node) -> Option<Predicate> {
 /// "Synthesis"): S1, S2 and S3 (or S1 and S2 for `count` two) created in that order, the first key
 /// steered so that S2 ranks first, S1 second and S3 last; then, for each key after the first, a
 /// tie row created before S2 that agrees with S2 on every key before it and loses on that one. A
-/// tie no creating input steers is left out and recorded in `gaps`, and the scenario stands.
+/// tie no creating input steers is left out and recorded in `gaps`, and the scenario stands. Rows
+/// the selector `already` selects, by their keys, rank below S2 and tie no arranged row
+/// (beyond10x/ess#618); where no arrangement does so, `crowded` is set and the rows arranged
+/// without regard to them stand with a gap.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn arrange_head(
     ir: &EssIr,
@@ -1733,9 +1785,10 @@ fn arrange_head(
     order_by: &[Ranking],
     count: usize,
     (goal_for, holds, fresh, placed): HeadChecks<'_>,
-    (actors, owner): (&BTreeMap<QualifiedName, ActorRef>, Option<&InstanceName>),
+    (actors, owner): (&BTreeMap<QualifiedName, ActorRef>, Owner<'_>),
     taken: &mut BTreeSet<InstanceName>,
     gaps: &mut Vec<RefusalCause>,
+    (already, crowded): (&[Vec<Node>], &std::cell::Cell<bool>),
 ) -> Option<Vec<Arrangement>> {
     use std::cmp::Ordering;
     let value = |row: &Arrangement, name: &str| arranged_key(ir, entity, row, name);
@@ -1755,64 +1808,152 @@ fn arrange_head(
     // Distinctions, claimed in ascending order and dealt so that the identities a further
     // distinction moves rank as the arrangement needs them: by identity alone, S2 first; with a key
     // before the identity, the tie row T loses to S2 on it. `accept` checks; the dealing proposes.
-    let pool: Vec<Distinction> = (0..=count).map(|_| next(ir, entity, taken)).collect();
-    let (rows_at, tie_at): (Vec<Distinction>, Distinction) = if by_identity {
-        let mut ranked: Vec<Distinction> = pool[..count].to_vec();
-        if first.direction == Direction::Descending {
-            ranked.reverse();
-        }
-        // S1 second, S2 first, S3 third.
-        let mut dealt = vec![ranked[1], ranked[0]];
-        dealt.extend(ranked.get(2).copied());
-        (dealt, pool[count])
-    } else if tie_breaks_up {
-        (pool[..count].to_vec(), pool[count])
-    } else {
-        (pool[1..].to_vec(), pool[0])
-    };
+    let deal =
+        |taken: &mut BTreeSet<InstanceName>, flip: bool| -> (Vec<Distinction>, Distinction) {
+            let pool: Vec<Distinction> = (0..=count).map(|_| next(ir, entity, taken)).collect();
+            if by_identity {
+                let mut ranked: Vec<Distinction> = pool[..count].to_vec();
+                if first.direction == Direction::Descending {
+                    ranked.reverse();
+                }
+                // S1 second, S2 first, S3 third.
+                let mut dealt = vec![ranked[1], ranked[0]];
+                dealt.extend(ranked.get(2).copied());
+                (dealt, pool[count])
+            } else if tie_breaks_up != flip {
+                (pool[..count].to_vec(), pool[count])
+            } else {
+                (pool[1..].to_vec(), pool[0])
+            }
+        };
     let (better, worse) = if first.direction == Direction::Descending {
         (CompareOp::Gt, CompareOp::Lt)
     } else {
         (CompareOp::Lt, CompareOp::Gt)
     };
-    let mut selected: Vec<Arrangement> = Vec::new();
-    for (nth, distinction) in rows_at.iter().enumerate() {
-        let mut goal = goal_for(nth);
-        let wanted = match nth {
-            0 => None,
-            1 => Some(Ordering::Less),
-            _ => Some(Ordering::Greater),
-        };
-        if let (Some(wanted), false) = (wanted, by_identity) {
-            let op = if wanted == Ordering::Less {
-                better
-            } else {
-                worse
-            };
-            if let Some(steer) =
-                value(&selected[0], &first.field).and_then(|held| compared(&first.field, op, &held))
-            {
-                goal = Predicate::All(vec![goal, steer]);
+    // How an arranged row ranks against a row the selector already selected, by every key.
+    let against = |row: &Arrangement, keys: &[Node]| {
+        for (ranking, key) in order_by.iter().zip(keys) {
+            match ordered_head::on(
+                ir,
+                entity,
+                ranking,
+                value(row, &ranking.field).as_ref(),
+                Some(key),
+            )? {
+                Ordering::Equal => {}
+                decided => return Some(decided),
             }
         }
-        let accept = |row: &Arrangement| {
-            holds(row, &goal)
-                && fresh(row, &selected)
-                && wanted.is_none_or(|wanted| on(first, row, &selected[0]) == Some(wanted))
-                && (nth < 2 || on(first, row, &selected[1]) == Some(Ordering::Greater))
-        };
-        selected.push(arrange_row(
-            ir,
-            entity,
-            &goal,
-            actors,
-            (*distinction, owner),
-            &accept,
-        )?);
+        Some(Ordering::Equal)
+    };
+    // S2 ranks above every row already selected, and no arranged row ties one on every key.
+    let clear = |selected: &[Arrangement]| {
+        already.iter().all(|keys| {
+            against(&selected[1], keys) == Some(Ordering::Less)
+                && selected
+                    .iter()
+                    .all(|row| against(row, keys) != Some(Ordering::Equal))
+        })
+    };
+    // The first already selected row on the first key, which S2 is steered above where the rows
+    // arranged without regard to it do not clear it.
+    let leading = already
+        .iter()
+        .filter_map(|keys| keys.first())
+        .min_by(|left, right| {
+            ordered_head::on(ir, entity, first, Some(left), Some(right)).unwrap_or(Ordering::Equal)
+        });
+    let rank = |rows_at: &[Distinction], above: Option<&Node>| -> Option<Vec<Arrangement>> {
+        let mut selected: Vec<Arrangement> = Vec::new();
+        for (nth, distinction) in rows_at.iter().enumerate() {
+            let mut goal = goal_for(nth);
+            let wanted = match nth {
+                0 => None,
+                1 => Some(Ordering::Less),
+                _ => Some(Ordering::Greater),
+            };
+            if let (Some(wanted), false) = (wanted, by_identity) {
+                let op = if wanted == Ordering::Less {
+                    better
+                } else {
+                    worse
+                };
+                if let Some(steer) = value(&selected[0], &first.field)
+                    .and_then(|held| compared(&first.field, op, &held))
+                {
+                    goal = Predicate::All(vec![goal, steer]);
+                }
+            }
+            if let (1, Some(above), false) = (nth, above, by_identity) {
+                if let Some(steer) = compared(&first.field, better, above) {
+                    goal = Predicate::All(vec![goal, steer]);
+                }
+            }
+            let accept = |row: &Arrangement| {
+                holds(row, &goal)
+                    && fresh(row, &selected)
+                    && wanted.is_none_or(|wanted| on(first, row, &selected[0]) == Some(wanted))
+                    && (nth < 2 || on(first, row, &selected[1]) == Some(Ordering::Greater))
+                    && (above.is_none()
+                        || already.iter().all(|keys| {
+                            let ranked = against(row, keys);
+                            ranked != Some(Ordering::Equal)
+                                && (nth != 1 || ranked == Some(Ordering::Less))
+                        }))
+            };
+            selected.push(arrange_row(
+                ir,
+                entity,
+                &goal,
+                actors,
+                (*distinction, owner),
+                &accept,
+            )?);
+        }
+        placed(&selected).then_some(selected)
+    };
+    let (rows_at, mut tie_at) = deal(taken, false);
+    let mut unregarded = rank(&rows_at, None);
+    // Where a key's declared range leaves no value beyond S1 on the side S2 must take, S1 is dealt
+    // the distinction at the other end of the pool and the rows are steered from there; only an
+    // arrangement that otherwise fails is dealt again, so every other suite keeps its rows.
+    if unregarded.is_none() && !by_identity {
+        let kept = taken.clone();
+        let (rows_at, flipped) = deal(taken, true);
+        unregarded = rank(&rows_at, None);
+        if unregarded.is_some() {
+            tie_at = flipped;
+        } else {
+            *taken = kept;
+        }
     }
-    if !placed(&selected) {
-        return None;
-    }
+    // Rows the selector already selects — the related rows another selector's test placed in this
+    // one's scope (beyond10x/ess#618) — were created before S1: where S2 does not rank above them,
+    // or an arranged row ties one, the head would be one of them, the first created, or no head at
+    // all under `ties: unordered`. The rows are arranged again, S2 steered above them.
+    let selected = match (unregarded, leading) {
+        (Some(selected), _) if clear(&selected) => selected,
+        (unregarded, Some(leading)) => {
+            let kept = taken.clone();
+            let (rows_at, again) = deal(taken, false);
+            if let Some(selected) = rank(&rows_at, Some(leading)).filter(|selected| clear(selected))
+            {
+                tie_at = again;
+                selected
+            } else {
+                *taken = kept;
+                let selected = unregarded?;
+                crowded.set(true);
+                gaps.push(gap(
+                    format!("{}: `{}`", entity.name(), first.field),
+                    ordered_head::CROWDED,
+                ));
+                selected
+            }
+        }
+        (unregarded, None) => unregarded?,
+    };
     // The tie rows, each created before S2.
     let mut ties: Vec<Arrangement> = Vec::new();
     for at in 1..order_by.len() {
@@ -1889,6 +2030,84 @@ fn arrange_head(
     Some(placed_rows)
 }
 
+/// The owner the rows of a selector are created under (beyond10x/ess#553, #621).
+#[derive(Clone, Copy)]
+struct Owner<'o> {
+    /// The subject the send addresses, which the rows are filed under by their owner link.
+    under: Option<&'o InstanceName>,
+    /// The literal identities of the rows of the owning entity the steps so far hold.
+    held: &'o [FactValue],
+}
+
+impl Owner<'_> {
+    /// No subject, and no held owner a goal names.
+    const NONE: Owner<'static> = Owner {
+        under: None,
+        held: &[],
+    };
+
+    /// Whether `goal` pins the owner link of `entity` to the identity of a row the steps hold: a
+    /// conjunct `via == <literal>` naming it, as a published value written into a selector's
+    /// filter leaves it (beyond10x/ess#621). Such a row is created naming that owner, not under an
+    /// owner of its own, which no goal pinning the link to another row's identity would select.
+    fn names_held(&self, ir: &EssIr, entity: &EntityHandle, goal: &Predicate) -> bool {
+        let Some(owned) = ir.owner_of(entity) else {
+            return false;
+        };
+        let mut conjuncts: Vec<&Predicate> = Vec::new();
+        conjoined(goal, &mut conjuncts);
+        conjuncts.iter().any(|conjunct| match conjunct {
+            Predicate::Compare {
+                left: Operand::Fact(path),
+                op: CompareOp::Eq,
+                right: Operand::Literal(value),
+                ..
+            }
+            | Predicate::Compare {
+                left: Operand::Literal(value),
+                op: CompareOp::Eq,
+                right: Operand::Fact(path),
+                ..
+            } => path.segments() == [owned.via.to_owned()] && self.held.contains(value),
+            _ => false,
+        })
+    }
+}
+
+/// Every conjunct of `predicate`, nested conjunctions flattened.
+fn conjoined<'p>(predicate: &'p Predicate, out: &mut Vec<&'p Predicate>) {
+    match predicate {
+        Predicate::All(children) => {
+            for child in children {
+                conjoined(child, out);
+            }
+        }
+        other => out.push(other),
+    }
+}
+
+/// The literal identities of the rows of `entity`'s owner the steps `before` leave, where `entity`
+/// has an owner and the rows are not filed under an addressed subject; empty otherwise.
+fn held_owners(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    before: &[ScenarioStep],
+    under: Option<&InstanceName>,
+) -> Vec<FactValue> {
+    let Some(owned) = ir.owner_of(entity).filter(|_| under.is_none()) else {
+        return Vec::new();
+    };
+    let Ok(rows) = walk(ir, before, false) else {
+        return Vec::new();
+    };
+    rows.held
+        .iter()
+        .filter(|row| row.entity == owned.owner)
+        .filter_map(|row| row.identity.as_ref()?.as_literal())
+        .filter_map(super::fact_value)
+        .collect()
+}
+
 /// One row `accept` takes, its creating input steered by `goal`; where no creator's input maps every
 /// field `goal` reads — an `Optional` field one creator leaves unwritten — by the conjuncts over the
 /// required fields alone, and then by nothing. `accept` decides; the steering only proposes.
@@ -1897,7 +2116,7 @@ fn arrange_row(
     entity: &EntityHandle,
     goal: &Predicate,
     actors: &BTreeMap<QualifiedName, ActorRef>,
-    (distinction, owner): (Distinction, Option<&InstanceName>),
+    (distinction, owner): (Distinction, Owner<'_>),
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
     let optional: BTreeSet<&str> = ir
@@ -1924,11 +2143,23 @@ fn arrange_row(
         other if required(other) => other.clone(),
         _ => Predicate::Always,
     };
-    copied::steered(ir, entity, goal, actors, (distinction, owner), accept).or_else(|| {
+    copied::steered(ir, entity, goal, actors, (distinction, owner.under), accept).or_else(|| {
         [goal.clone(), relaxed, Predicate::Always]
             .iter()
             .find_map(|steer| {
-                arrange_toward_owned(ir, entity, steer, actors, distinction, owner, accept)
+                if owner.under.is_none() && owner.names_held(ir, entity, steer) {
+                    arrange_toward_named_owner(ir, entity, steer, actors, distinction, accept)
+                } else {
+                    arrange_toward_owned(
+                        ir,
+                        entity,
+                        steer,
+                        actors,
+                        distinction,
+                        owner.under,
+                        accept,
+                    )
+                }
             })
     })
 }
@@ -1947,7 +2178,13 @@ struct Plan<'p> {
     copied: Vec<Vec<&'p str>>,
     /// The order of the head the branch reads from each selector, where it reads one (ess/27).
     heads: Vec<Option<&'p [Ranking]>>,
+    /// Whether an attempt found no arrangement ranking a head above the rows its selector already
+    /// selected (beyond10x/ess#618).
+    crowded: std::cell::Cell<bool>,
 }
+
+/// What one attempt of [`Plan::arrange`] arranges: the steps, the rows and the witness gaps.
+type Attempt = (Vec<ScenarioStep>, Vec<Arrangement>, Vec<RefusalCause>);
 
 /// The selections of a branch and, beside each, the owner row arranged under it (beyond10x/ess#553).
 type Selections<'p> = (
@@ -2007,6 +2244,7 @@ impl<'p> Plan<'p> {
                 .iter()
                 .map(|selection| head_order(outcome, selection))
                 .collect(),
+            crowded: std::cell::Cell::new(false),
         }
     }
 
@@ -2023,8 +2261,11 @@ impl<'p> Plan<'p> {
     }
 
     /// The steps after `before` that arrange `counts[i]` rows of selector `i`, each selector's
-    /// after the one before it, the `forall` `violate` names refuted; and the rows arranged. `None`
-    /// where some selector's rows cannot be arranged.
+    /// after the one before it, the `forall` `violate` names refuted; and the rows arranged. Where
+    /// some selector's rows cannot be arranged, the index of the first such selector: what it and
+    /// the selectors before it arrange reads only their own counts and a `violate` naming one of
+    /// them, so every attempt agreeing with this one up to that selector fails there too
+    /// (beyond10x/ess#624).
     fn arrange(
         &self,
         ir: &EssIr,
@@ -2033,7 +2274,7 @@ impl<'p> Plan<'p> {
         actors: &BTreeMap<QualifiedName, ActorRef>,
         before: &[ScenarioStep],
         supplied: &BTreeMap<String, ScenarioValue>,
-    ) -> Option<(Vec<ScenarioStep>, Vec<Arrangement>, Vec<RefusalCause>)> {
+    ) -> Result<Attempt, usize> {
         let mut taken = captured(before);
         let mut gaps: Vec<RefusalCause> = Vec::new();
         let mut steps = before.to_vec();
@@ -2048,11 +2289,11 @@ impl<'p> Plan<'p> {
             // beyond10x/ess#549): the selectors supplying them come first.
             let filters = self.resolved(ir, supplied, &steps);
             if reads_published(&filters[at], &selection.reads) {
-                return None;
+                return Err(at);
             }
             // A selector testing each candidate's related rows (ess/27, beyond10x/ess#551) selects
             // its candidates by the rest of its `where:`, and the related rows are arranged after.
-            let tests = related_rows::tests(&filters[at]).ok()?;
+            let tests = related_rows::tests(&filters[at]).map_err(|()| at)?;
             let own = related_rows::stripped(&filters[at]);
             let others: Vec<Predicate> = self
                 .selections
@@ -2083,11 +2324,13 @@ impl<'p> Plan<'p> {
                 &mut Head {
                     order_by: self.heads[at],
                     gaps: &mut gaps,
+                    crowded: &self.crowded,
                 },
                 actors,
                 &mut taken,
                 (&steps, self.owners[at]),
-            )?;
+            )
+            .ok_or(at)?;
             for row in &rows {
                 steps.extend(row.steps.iter().cloned());
             }
@@ -2101,7 +2344,8 @@ impl<'p> Plan<'p> {
                     &selection.entity,
                     &own,
                     &rows,
-                )?;
+                )
+                .ok_or(at)?;
                 failing.push((at, tests, own));
                 related
             };
@@ -2135,7 +2379,7 @@ impl<'p> Plan<'p> {
             );
             arranged.extend(made);
         }
-        Some((steps, arranged, gaps))
+        Ok((steps, arranged, gaps))
     }
 
     /// What arranging related rows for this branch reads (ess/27, beyond10x/ess#551).
@@ -2399,12 +2643,26 @@ impl<'p> Plan<'p> {
                         })
                 };
                 let distinction = next(ir, entity, taken);
-                let placed = arrange_row(ir, entity, &goal, actors, (distinction, None), &accept)
-                    .filter(|row| {
-                        let mut after = steps.clone();
-                        after.extend(row.steps.iter().cloned());
-                        walk(ir, &after, true).is_ok()
-                    });
+                let owners_held = held_owners(ir, entity, steps, None);
+                let placed = arrange_row(
+                    ir,
+                    entity,
+                    &goal,
+                    actors,
+                    (
+                        distinction,
+                        Owner {
+                            under: None,
+                            held: &owners_held,
+                        },
+                    ),
+                    &accept,
+                )
+                .filter(|row| {
+                    let mut after = steps.clone();
+                    after.extend(row.steps.iter().cloned());
+                    walk(ir, &after, true).is_ok()
+                });
                 match placed {
                     Some(row) => {
                         steps.extend(row.steps.iter().cloned());
@@ -2579,23 +2837,51 @@ pub(super) fn prepare(
             }
         }
     }
+    // Every combination of the selectors' counts is tried in the order it always was, the first
+    // selector's count varying slowest, and each with its `forall` variants in turn; the first that
+    // stands is the scenario. Only attempts that cannot stand are passed over (beyond10x/ess#624):
+    // those agreeing with a failed one up to the selector whose rows it could not arrange, and, for
+    // a branch no rows can take, every attempt after the first whose rows were decided. What is
+    // left is cut at `ARRANGEMENTS` attempts, the branch refused as having more than synthesis
+    // tries.
+    let unstandable = unstandable(ir, command, outcome);
+    let variants = plan.variants();
     let mut first_failure: Option<String> = None;
+    let mut tried = 0;
     let mut search = |heads: &[usize]| {
         let lists: Vec<&[usize]> = plan
             .heads
             .iter()
             .map(|head| if head.is_some() { heads } else { &COUNTS[..] })
             .collect();
-        for counts in count_tuples(&lists) {
-            for violate in &plan.variants() {
+        let last = lists.len() - 1;
+        let mut next = vec![0; lists.len()];
+        loop {
+            let counts: Vec<usize> = lists
+                .iter()
+                .zip(&next)
+                .map(|(list, at)| list[*at])
+                .collect();
+            // The selector up to which every attempt agreeing with these counts fails as these did.
+            let mut agreed = 0;
+            for violate in &variants {
                 if violate.is_some_and(|(at, _)| counts[at] == 0) {
                     continue;
                 }
-                let Some((steps, arranged, gaps)) =
-                    plan.arrange(ir, &counts, *violate, actors, &setup.steps, &supplied)
-                else {
-                    continue;
-                };
+                if tried == ARRANGEMENTS {
+                    return Search::Cut;
+                }
+                tried += 1;
+                TRIED.with(|count| count.set(count.get() + 1));
+                let (steps, arranged, gaps) =
+                    match plan.arrange(ir, &counts, *violate, actors, &setup.steps, &supplied) {
+                        Ok(made) => made,
+                        Err(failed) => {
+                            agreed = agreed.max(failed);
+                            continue;
+                        }
+                    };
+                agreed = last;
                 let rows = match walk(ir, &steps, true) {
                     Ok(rows) => rows,
                     Err(why) => {
@@ -2607,12 +2893,40 @@ pub(super) fn prepare(
                     first_failure.get_or_insert(why);
                     continue;
                 }
-                return Some((steps, arranged, gaps, rows));
+                return Search::Found(steps, arranged, gaps, rows);
+            }
+            if unstandable && first_failure.is_some() {
+                return Search::Exhausted;
+            }
+            // The next counts: selector `agreed`'s next, every later selector's first.
+            for later in &mut next[agreed + 1..] {
+                *later = 0;
+            }
+            let mut at = agreed;
+            loop {
+                next[at] += 1;
+                if next[at] < lists[at].len() {
+                    break;
+                }
+                next[at] = 0;
+                if at == 0 {
+                    return Search::Exhausted;
+                }
+                at -= 1;
             }
         }
-        None
     };
-    if let Some((steps, arranged, gaps, rows)) = search(&HEAD_COUNTS) {
+    let cut = || {
+        gap(
+            format!("{}: {ARRANGEMENTS} arrangements tried", at()),
+            ROWS_SEARCH_CUT,
+        )
+    };
+    let searched = search(&HEAD_COUNTS);
+    if matches!(searched, Search::Cut) {
+        return Err(cut());
+    }
+    if let Search::Found(steps, arranged, gaps, rows) = searched {
         let mut found = setup;
         found.steps = steps;
         for row in &arranged {
@@ -2629,8 +2943,22 @@ pub(super) fn prepare(
         return Ok((found, input, gaps));
     }
     // A branch whose rows take it with one selected row and never more never observes its order.
-    if plan.heads.iter().any(Option::is_some) && search(&[1]).is_some() {
-        return Err(gap(at(), ordered_head::UNOBSERVABLE));
+    if plan.heads.iter().any(Option::is_some) {
+        // Rows another selector's test placed in a head's scope that no arrangement ranks the head
+        // above are named as such (beyond10x/ess#618), not as a branch admitting one row.
+        let crowded = plan.crowded.get();
+        match search(&[1]) {
+            Search::Found(..) => {
+                let reason = if crowded {
+                    ordered_head::CROWDED
+                } else {
+                    ordered_head::UNOBSERVABLE
+                };
+                return Err(gap(at(), reason));
+            }
+            Search::Cut => return Err(cut()),
+            Search::Exhausted => {}
+        }
     }
     // A selector reading a field no declared command writes is refused by that field
     // (downstream report, 2026-10-18); of several selectors, the first that reads one.
@@ -2916,21 +3244,62 @@ fn copied<'o>(outcome: &'o ResolvedOutcome, selection: &ResolvedRowSelection) ->
         .collect()
 }
 
-/// Every combination of row counts, one per selector, each drawn from its own list in order, the
-/// first selector's count varying slowest: for one selector, its list itself.
-fn count_tuples(lists: &[&[usize]]) -> Vec<Vec<usize>> {
-    let mut out: Vec<Vec<usize>> = vec![Vec::new()];
-    for list in lists {
-        out = out
-            .into_iter()
-            .flat_map(|prefix| {
-                list.iter().map(move |count| {
-                    let mut next = prefix.clone();
-                    next.push(*count);
-                    next
+/// What one search of [`prepare`] ends in: the first arrangement that stands, with its steps,
+/// rows, witness gaps and the rows the steps leave; none; or the cut at [`ARRANGEMENTS`].
+enum Search {
+    Found(Vec<ScenarioStep>, Vec<Arrangement>, Vec<RefusalCause>, Rows),
+    Exhausted,
+    Cut,
+}
+
+/// Whether no rows can take `outcome` (beyond10x/ess#624): it reads the one row or the head a
+/// selector selects, or its own guard needs a selected row, of an entity no declared command
+/// creates. Only a creation adds a row to those [`walk`] leaves, so [`consistent`] finds none
+/// there and fails every attempt it is asked about, whatever the counts.
+fn unstandable(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
+    // What `consistent` passes without reading a row.
+    if matches!(
+        outcome.condition,
+        ResolvedCondition::ExistingInstance
+            | ResolvedCondition::UnknownInstance
+            | ResolvedCondition::WrongState
+            | ResolvedCondition::InputAbsent
+    ) || (outcome.error.is_some() && matches!(outcome.condition, ResolvedCondition::When { .. }))
+        || !rows_decide(ir.format(), command, outcome)
+    {
+        return false;
+    }
+    let guarded = match &outcome.condition {
+        ResolvedCondition::RelatedSet {
+            selection, test, ..
+        } if test.decide(&[]) == Truth::False => Some(selection),
+        _ => None,
+    };
+    let created = |entity: &EntityHandle| {
+        ir.commands().values().any(|command| {
+            command.outcomes.iter().any(|outcome| {
+                outcome.subject.as_ref().is_some_and(|subject| {
+                    subject.entity == *entity && subject.effect == ResolvedEffect::Creates
                 })
             })
-            .collect();
-    }
-    out
+        })
+    };
+    reads(outcome)
+        .into_iter()
+        .filter_map(|read| read_selection(&read.value))
+        .chain(guarded)
+        .any(|selection| !created(&selection.entity))
+}
+
+thread_local! {
+    /// How many arrangements [`prepare`] has tried on this thread (beyond10x/ess#624).
+    static TRIED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many arrangements of row counts [`prepare`] tried on this thread
+/// while it ran.
+pub(super) fn counting<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = TRIED.with(std::cell::Cell::get);
+    let out = run();
+    (out, TRIED.with(std::cell::Cell::get) - before)
 }

@@ -289,9 +289,9 @@ fn claim_of(outcome: &ResolvedOutcome) -> Claim {
             Claim::Unclaimable("a refusing default, taken for the inputs no other branch takes,")
         }
         ResolvedCondition::InputAbsent => Claim::Unclaimable("`input_absent:`"),
-        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. } => {
-            Claim::Reached
-        }
+        ResolvedCondition::External { .. }
+        | ResolvedCondition::ExternalWhen { .. }
+        | ResolvedCondition::ExternalSubject { .. } => Claim::Reached,
     }
 }
 

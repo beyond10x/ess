@@ -316,6 +316,24 @@ selected row:
   head on the keys before it and loses on that key, where the creating inputs can steer it. A key
   that cannot be steered is reported as a named witness gap for that key. It is not silently
   unobserved, and the scenario still stands.
+- **Rows already selected.** Where the steps before S1 already leave rows the selector selects —
+  the related rows another selector's `exists` test placed in the scope of a head that reads a
+  published value (beyond10x/ess#618) — S2 is steered above every one of them, and no arranged row
+  ties one on every key. Otherwise the head is the first such row, which is the first created, or
+  under `ties: unordered` there is no head at all. Where no creating input ranks S2 above them,
+  the rows arranged without regard to them stand with the named gap below, and a branch that then
+  has no arrangement of several rows is refused with that gap rather than as a branch admitting one
+  row.
+- **A declared range.** Where a key's declared range leaves no value beyond S1 on the side S2 must
+  take, S1 is dealt the distinction at the other end of the pool and the rows are steered from
+  there. Only an arrangement that otherwise fails is dealt again.
+- **Owned rows.** Where the selected entity is owned (`kind: owns`) and the selector's filter, with
+  a published value written in, compares the owner link with the literal identity of an owner row
+  the steps already hold — the head row of another selector — each row is created naming that
+  owner as the steering chose it, and no owner of its own is arranged, which would give it a link
+  no such filter selects (beyond10x/ess#621). The same holds for the related rows an `exists` test
+  places and for the rows ranked above the head under another selected owner. A decoy refuting
+  the owner link is left out, as no owner the steps hold is steered for it.
 - **Distinct values.** The `first` value of the head differs from every other selected row's, from
   every decoy's and from zero, so copying any other row is visible.
 - **Checked, never assumed.** The head is computed over the rows the steps leave (`walk`), with the
@@ -327,6 +345,7 @@ Named gaps (`RefusalCause::NoWitness`), each with its reason:
 | --- | --- |
 | no creating command's input steers the first key | "the ranked head is not arranged: no creating command writes `<key>` from its input" |
 | the reading branch admits at most one selected row | "the ranked head is not observable: the branch reading it admits at most one selected row" |
+| no creating input ranks the head above the rows another selector's test already placed in its scope | "the ranked head is not arranged above the rows another selector's test places in its scope: no creating input ranks it above them without a tie" (a standing gap where the scenario stands without it; the branch's refusal where no arrangement of several rows stands) |
 | the head would be decided by an identity the target mints | "the ranked head is decided by an identity the target mints, which no scenario orders in advance" (arranged without ties instead, where the earlier keys decide) |
 
 ### Several selectors in one command

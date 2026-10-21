@@ -1,0 +1,42 @@
+format: ess/29
+system: demo
+version: v1
+domain: demo.closing
+types:
+  - {name: demo.closing.Reason, kind: enum, variants: [budget, completed, retry, failed]}
+events:
+  - name: demo.closing.Classified
+    fields: [{name: reason, type: demo.closing.Reason}]
+actors:
+  - name: demo.closing.Reader
+    may: [demo.closing.Classify]
+commands:
+  - name: demo.closing.Classify
+    input:
+      - {name: terminal, type: Boolean}
+      - {name: is_error, type: Optional<Boolean>, presence: null_when_absent}
+      - {name: stop_reason, type: Optional<String>, presence: null_when_absent}
+      - {name: attempts, type: Optional<Integer>, presence: null_when_absent}
+    outcomes:
+      - name: budget-stop
+        when: coalesce(stop_reason, "none") == "budget"
+        emits: [demo.closing.Classified]
+        payload:
+          demo.closing.Classified: {reason: budget}
+      - name: completed
+        when:
+          all:
+            - terminal == true
+            - coalesce(is_error, true) == false
+        emits: [demo.closing.Classified]
+        payload:
+          demo.closing.Classified: {reason: completed}
+      - name: retry
+        when: coalesce(attempts, 0) < 3
+        emits: [demo.closing.Classified]
+        payload:
+          demo.closing.Classified: {reason: retry}
+      - name: failed
+        emits: [demo.closing.Classified]
+        payload:
+          demo.closing.Classified: {reason: failed}

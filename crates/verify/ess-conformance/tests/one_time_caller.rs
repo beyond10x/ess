@@ -353,7 +353,7 @@ fn one_time_guide_lists_the_cells() {
     let worked = [
         ("1 command, 2 actors", WITH_CALLER, (5, 4)),
         ("2 commands, 3 actors", TWO_COMMANDS, (10, 8)),
-        ("2 commands, 3 actors, 1 view", WITH_VIEW, (11, 9)),
+        ("2 commands, 3 actors, 1 view", WITH_VIEW, (13, 11)),
     ];
     for (variant, text, expected) in worked {
         let (scenarios, disclosures) = counts(&model(text));

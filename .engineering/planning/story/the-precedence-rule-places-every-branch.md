@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-precedence-rule-places-every-branch
 kind: story
-status: draft
+status: active
 title: Under format A the precedence plan places every branch by the one rule
 tags:
 - adopter-report
@@ -12,7 +12,10 @@ refs:
 relations:
 - decomposes: epic:generic-guard-precedence
 - serves: vision:O2
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-21T02:54:26Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-21T02:54:26Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
@@ -130,3 +133,13 @@ the `FORMAT_HISTORY` row names the rule either way. This wave runs after
 `task:land-the-2026-10-13-port` and `task:salvage-the-related-rows-quantifier-tree`, which rewrite
 `crates/specify/ess-domain/src/command.rs`, `command/related_guard.rs`, `command/row_set.rs` and
 `crates/verify/ess-conformance/src/synthesize/precedence.rs`'s neighbours.
+
+## State 2026-10-21
+
+Shipped in 0.63.0 under `ess/27` (format A is `ess/27`). Every acceptance test named above passes
+on the 0.67.0 batch branch, with one deviation: the suite of the format-A fixture is run against
+the interpreted target only (`selection_precedence.rs`,
+`format_a_fixture_suite_passes_on_the_interpreted_target`), not against generated Rust and Go;
+the generated behaviours of the rule are covered by `ess-synth`'s own tests. Entity Runtime keeps
+refusing `when_related:` by name, the reason recorded in
+`docs/design/generic-language-features.md` § G4 "Entity Runtime and `when_related:`".

@@ -176,6 +176,7 @@ pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bo
             outcome.condition,
             ResolvedCondition::External { .. }
                 | ResolvedCondition::ExternalWhen { .. }
+                | ResolvedCondition::ExternalSubject { .. }
                 // The command's own identity, checked first: the existence family arranges it.
                 | ResolvedCondition::ExistingInstance
                 // Under the one rule (ess/27) answered before the related row is read, by the
@@ -257,7 +258,9 @@ pub(super) fn stored_external_refused(
 fn is_external(outcome: &ResolvedOutcome) -> bool {
     matches!(
         outcome.condition,
-        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+        ResolvedCondition::External { .. }
+            | ResolvedCondition::ExternalWhen { .. }
+            | ResolvedCondition::ExternalSubject { .. }
     )
 }
 
@@ -330,7 +333,7 @@ fn leaves_external(
     input: &BTreeMap<String, Node>,
 ) -> Result<bool, RefusalCause> {
     let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
-    if let ResolvedCondition::ExternalWhen { predicate, .. } = &outcome.condition {
+    if let Some(predicate) = subject_fact::external_input(&outcome.condition) {
         if !decides(&facts, &[predicate], true)? {
             return Ok(false);
         }
@@ -1021,6 +1024,7 @@ fn selects<'c>(
                 branch.condition,
                 ResolvedCondition::External { .. }
                     | ResolvedCondition::ExternalWhen { .. }
+                    | ResolvedCondition::ExternalSubject { .. }
                     | ResolvedCondition::ExistingInstance
                     // Selected from the addressed row's held state, before this row is read.
                     | ResolvedCondition::WrongState
@@ -2229,6 +2233,7 @@ fn selects_absent<'c>(
                 branch.condition,
                 ResolvedCondition::External { .. }
                     | ResolvedCondition::ExternalWhen { .. }
+                    | ResolvedCondition::ExternalSubject { .. }
                     | ResolvedCondition::ExistingInstance
                     | ResolvedCondition::WrongState
                     | ResolvedCondition::Related { .. }
@@ -3481,7 +3486,7 @@ fn with_row(
     let mut guards: Vec<&Predicate> = command.outcomes.iter().filter_map(input_guard).collect();
     // An external branch's own guard, so an input it admits is among the candidates
     // (beyond10x/ess#464).
-    if let ResolvedCondition::ExternalWhen { predicate, .. } = &outcome.condition {
+    if let Some(predicate) = subject_fact::external_input(&outcome.condition) {
         guards.push(predicate);
     }
     let predicates = predicates(command);

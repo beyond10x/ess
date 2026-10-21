@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T02:54:28Z",
+  "actor": "human:timo",
+  "artifact": "story:unknown-instance-beside-preserving-and-update-selection",
+  "kind": "story",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-domain --locked --test outcome_shapes: 28 passed; --test subject_fact_create_or_update: 8 passed; -p ess-conformance --test unknown_instance: 6 passed; --test external_beside_held_guard: 15 passed; -p ess-entity-runtime --test upsert_by_existence: 5 passed; 0 failed in each",
+    "reference": "crates/specify/ess-domain/tests/outcome_shapes.rs"
+  }
+}

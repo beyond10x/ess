@@ -79,7 +79,7 @@ The last column says what lowering the construct would need. *entity-core* means
 | `input_absent:` | `InputAbsentUnsupported` | No form: a request with no input is a transport fact that never reaches entity-core |
 | the caller (`{caller: …}`, `caller.<attribute>`) | `CallerUnsupported` | entity-core: an operand for who sent the command |
 | a set effect (`instances:`, `affects:`, `{count: changed}`) | `SetEffectUnsupported` | entity-core: an operation over more than the one instance its request names |
-| `when_related:` | `RelatedGuardUnsupported` | entity-core: a read of another entity's row |
+| `when_related:` | `RelatedGuardUnsupported` | entity-core: a read of another entity's row inside the operation's decision; a copy the host binds as an argument is decided apart from the operation that commits on it |
 | a union variant with no payload (ess/22) | `UnitVariantUnsupported` | entity-core: a union variant that admits no payload member; every entity-core variant admits one |
 | one constant offset (`upper == lower + 5`, `issued_at - 24h`) | `OffsetUnsupported` | entity-core: an operand that moves a value by a constant |
 | distinct list members (`distinct: {in, as, by}`) | `DistinctUnsupported` | entity-core: a condition that compares keys across a list's elements |

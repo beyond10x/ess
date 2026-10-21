@@ -144,6 +144,8 @@ use ess_primitives::time::{CurrentTime, Rfc3339Instant};
 
 use crate::decision::Decision;
 
+mod relative;
+
 /// How many candidate inputs one outcome is tried against before synthesis refuses.
 ///
 /// A bound rather than a budget to spend: §11 asks for a constrained strategy, and the honest
@@ -654,8 +656,60 @@ pub(crate) fn solving(
     goal: &Predicate,
     distinction: Distinction,
 ) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
-    search_with(ir, command, &[goal], distinction, false, Goals::Satisfied)
-        .map(|(inputs, _)| inputs)
+    let (mut inputs, _) = search_with(ir, command, &[goal], distinction, false, Goals::Satisfied)?;
+    let satisfied = |input: &BTreeMap<String, Node>| {
+        crate::input::flatten(ir, command, input)
+            .is_ok_and(|facts| matches!(facts.decide(goal), Decision::Satisfied))
+    };
+    // Where none satisfies a goal ordering two `Integer` leaves, one of them is moved relative to
+    // the other (beyond10x/ess#622); every goal a candidate already met keeps its candidates.
+    if !inputs.iter().any(satisfied) {
+        if let Some(bounds) = goal_bounds(ir, command, goal, distinction) {
+            let moved = inputs
+                .iter()
+                .filter_map(|input| bounds.moved(input))
+                .find(|input| {
+                    satisfied(input)
+                        && !admitted_inputs(ir, command, vec![input.clone()]).is_empty()
+                });
+            inputs.extend(moved);
+        }
+    }
+    Ok(inputs)
+}
+
+/// Whether the bounds `goal` places on the `Integer` leaves of `command`'s input, two of which it
+/// compares with each other, admit no values at all — the leaves' declared ranges included — so
+/// that no input satisfies it (beyond10x/ess#622). `false` for a goal comparing no two such leaves.
+pub(crate) fn infeasible(ir: &EssIr, command: &ResolvedCommand, goal: &Predicate) -> bool {
+    goal_bounds(ir, command, goal, Distinction::PLAIN).is_some_and(|bounds| bounds.infeasible())
+}
+
+/// The bounds `goal` places on the `Integer` leaves of `command`'s input and on their declared
+/// ranges ([`relative::Bounds`]); `None` where it compares no two of them.
+fn goal_bounds(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    goal: &Predicate,
+    distinction: Distinction,
+) -> Option<relative::Bounds> {
+    let mut builder = Builder::new(
+        ir,
+        distinction,
+        list_reads(&[goal]),
+        positional_reads(&[goal]),
+    );
+    builder.input(command, &BTreeMap::new()).ok()?;
+    relative::Bounds::of(
+        goal,
+        &|path| {
+            matches!(
+                builder.leaves.get(path),
+                Some((Leaf::Number { integral: true }, _))
+            )
+        },
+        &|path| builder.invariants.get(path).cloned().unwrap_or_default(),
+    )
 }
 
 /// Which goals [`Directed`] solves for.
@@ -720,6 +774,14 @@ fn search_with(
     // (beyond10x/ess#546): filling it claims a value no branch, invariant or later step asked
     // for, and an implementation that acts on it answers a scenario that never mentioned it.
     for path in unread_optionals(ir, command, &builder, &expanded, &constrained) {
+        presence_omits.entry(path).or_insert(Choice::Omit);
+    }
+    // A guard that says what an absent value compares as, `coalesce(is_error, true) == false`, is
+    // decided where the value is absent, so a member read only that way is sent absent first in
+    // the same way, wherever a candidate does not set it: each branch that does not need it
+    // present is witnessed on its absence (beyond10x/ess#620). Only commands with such a guard
+    // get it, so every other suite keeps its bytes.
+    for path in coalesced_absences(&expanded, &builder.optionals) {
         presence_omits.entry(path).or_insert(Choice::Omit);
     }
 
@@ -824,6 +886,22 @@ fn search_with(
         inputs.retain(|input| !refuting.contains(input));
         refuting.extend(inputs);
         inputs = refuting;
+        inputs.truncate(MAX_CANDIDATES);
+    }
+    // And each such member alone left out, every other leaf at its base, is tried before any
+    // other candidate: the branch that one absence selects is sent it, even where the candidates
+    // before it fill every other member (beyond10x/ess#620).
+    let mut absent = Vec::new();
+    for path in coalesced_absences(&expanded, &builder.optionals) {
+        let input = builder.input(command, &BTreeMap::from([(path, Choice::Omit)]))?;
+        if !absent.contains(&input) {
+            absent.push(input);
+        }
+    }
+    if !absent.is_empty() {
+        inputs.retain(|input| !absent.contains(input));
+        absent.extend(inputs);
+        inputs = absent;
         inputs.truncate(MAX_CANDIDATES);
     }
     // A `distinct` guard is decided by lists that hold two or more elements ([`decisive_first`]).
@@ -2397,7 +2475,7 @@ fn ordered_at(guards: &[&Predicate], path: &FactPath) -> bool {
                 op.needs_ordering()
                     && [left, right]
                         .into_iter()
-                        .any(|operand| matches!(operand, Operand::Fact(read) if read == path))
+                        .any(|operand| reads_at(operand, path))
             }
             Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
                 walk(&quantified.body, path)
@@ -2406,6 +2484,65 @@ fn ordered_at(guards: &[&Predicate], path: &FactPath) -> bool {
         }
     }
     guards.iter().any(|guard| walk(guard, path))
+}
+
+/// Whether `operand` reads the fact at `path` as it is where present: the fact itself, or
+/// `coalesce(<path>, <literal>)` (beyond10x/ess#620), whose literals and orderings are the
+/// fact's own wherever it is present.
+fn reads_at(operand: &Operand, path: &FactPath) -> bool {
+    match operand {
+        Operand::Fact(read) => read == path,
+        Operand::Derived(derived) => derived.coalesced().is_some_and(|(read, _)| read == path),
+        Operand::Literal(_) | Operand::Offset(_) => false,
+    }
+}
+
+/// The `Optional` members a guard reads only through `coalesce(…)` (beyond10x/ess#620), each by
+/// the outermost optional prefix of what it reads, as [`omissions`] names them. Absent, such a
+/// member decides the guard as the call's other argument does, so the absent input is a witness
+/// like any other; a member any comparison also reads directly is left out, because there its
+/// absence is `Unknown`.
+fn coalesced_absences(guards: &[&Predicate], optionals: &BTreeSet<FactPath>) -> Vec<FactPath> {
+    fn walk(predicate: &Predicate, coalesced: &mut Vec<FactPath>, direct: &mut Vec<FactPath>) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, coalesced, direct);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, coalesced, direct),
+            Predicate::Defined(_) => {}
+            Predicate::Compare { left, right, .. } => {
+                for operand in [left, right] {
+                    match operand {
+                        Operand::Derived(derived) if derived.reads_absence() => {
+                            coalesced.push(derived.parent().clone());
+                        }
+                        other => direct.extend(other.fact_path().cloned()),
+                    }
+                }
+            }
+            other => direct.extend(other.fact_paths().into_iter().cloned()),
+        }
+    }
+    let (mut coalesced, mut direct) = (Vec::new(), Vec::new());
+    for guard in guards {
+        walk(guard, &mut coalesced, &mut direct);
+    }
+    let member = |path: &FactPath| {
+        let segments = path.segments();
+        (1..=segments.len())
+            .rev()
+            .map(|end| FactPath::from_segments(&segments[..end]))
+            .find(|prefix| optionals.contains(prefix))
+    };
+    let direct: BTreeSet<FactPath> = direct.iter().filter_map(member).collect();
+    let found: BTreeSet<FactPath> = coalesced
+        .iter()
+        .filter_map(member)
+        .filter(|path| !direct.contains(path))
+        .collect();
+    found.into_iter().collect()
 }
 
 /// The walk behind [`literals_at`].
@@ -2421,7 +2558,7 @@ fn collect_literals(predicate: &Predicate, path: &FactPath, found: &mut Vec<Fact
             left, op: _, right, ..
         } => {
             for (operand, other) in [(left, right), (right, left)] {
-                if matches!(operand, Operand::Fact(read) if read == path) {
+                if reads_at(operand, path) {
                     if let Operand::Literal(value) = other {
                         found.push(value.clone());
                     }
@@ -4255,6 +4392,7 @@ fn input_guard(outcome: &ess_compiler::ir::ResolvedOutcome) -> Option<&Predicate
         | ResolvedCondition::SubjectState { predicate, .. }
         | ResolvedCondition::StateChange { predicate, .. } => predicate.as_ref(),
         ResolvedCondition::SubjectPredicate { input, .. }
+        | ResolvedCondition::ExternalSubject { input, .. }
         | ResolvedCondition::Related { input, .. } => input.as_ref(),
         _ => None,
     }

@@ -1,4 +1,4 @@
-#	models=322	lines=456
+#	models=324	lines=458
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -132,6 +132,7 @@ crates/verify/ess-conformance/tests/fixtures/claim-search/pick-revision-gt.yaml	
 crates/verify/ess-conformance/tests/fixtures/claim-search/related.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-0.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-1.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/coalesce-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/current-time-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/declared-behaviour.yaml	components=0
@@ -167,6 +168,7 @@ crates/verify/ess-conformance/tests/fixtures/explore.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/expression-arithmetic-and-time.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/expression-roots.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-subject.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/held-state-input-refusal.yaml	components=1
@@ -224,14 +226,14 @@ crates/verify/ess-conformance/tests/fixtures/related-copied-view-parameter.yaml	
 crates/verify/ess-conformance/tests/fixtures/related-guard-captured-struct.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-guard-copied-value.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml	components=1
-crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml	run-service	REFUSED	62523c0cea8c2c53e4df0b863b91ad0917927d791ccfbbd7411b36e2069ed114:1098
+crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml	run-service	REFUSED	9f6cff851b812ef95fdc68c59aa6b9544975365ea1cd34c2db4629967fd60a7a:1542
 crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml	components=1
-crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml	release-service	REFUSED	3052283119d83fe4ff54920d04524eefaf3760d28a1ba7d87f845f8463030de1:561
+crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml	release-service	REFUSED	3bd8d0f48acca624a5fa1c21ee7839ab555df37780523afcc8a8e17f7b7afa7d:783
 crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-guard-release.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-guard-sign-in.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml	components=1
-crates/verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml	task-service	REFUSED	91818f08cd9944820c6db75dc65f53656cdf5d010a6c399654d52405a8bb5828:551
+crates/verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml	task-service	REFUSED	f0e97f607d07688b5be4736c0bbf888e5cc49af68a0d5e9ec309f673299a2088:773
 crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-rows-quantifier.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-values-chained.yaml	components=0
@@ -262,7 +264,7 @@ crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	components
 crates/verify/ess-conformance/tests/fixtures/two-rows-one-branch.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/two-sided-pick.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	components=1
-crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	directory-service	REFUSED	b5d5a4905a4d3b17db9d0adfe1d75c5c52b6df167f36f0ca7f1e4de30c5edfa0:1108
+crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	directory-service	REFUSED	188e3d67c725b2e9ee91b6c4b80b45bd369ce6214155132d7a35ff1158d5861e:1330
 crates/verify/ess-conformance/tests/fixtures/unique-within-scope.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/view-absent-row.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/view-paging.yaml	components=0
@@ -444,7 +446,7 @@ system-dir:models/toolchain	infra	toolchain.infra.Observation	create	refused, co
 system-dir:models/toolchain	infra	toolchain.infra.Observation	toolchain.infra.ImportObservation	refused, imported, wrong-state
 system-dir:models/toolchain	release-automation	REFUSED	fca88a6cb61e25f86e28e8a69b4bf8ee5aadc05cb16ff6e4a728fb0ef5f0e657:375
 system-dir:models/toolchain	specify	toolchain.specify.Declaration	definition=f008c7ec58b6b8996de589cd7e5ce17e0cc8ba0610e93e9ac4e1f24d786ff2aa:1384
-system-dir:models/toolchain	specify	toolchain.specify.Model	definition=83ee69f5d4c1cade98097e606c57213ec78ecc74e717a3016f2587f69474085f:7102
+system-dir:models/toolchain	specify	toolchain.specify.Model	definition=85043f64937c0d5f40d7e24d95257716662adc33bb431c0581accd5bcebf4653:7120
 system-dir:models/toolchain	specify	toolchain.specify.Model	create	refused, selected
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.CompileModel	refused, compiled, wrong-state
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.ResolveModel	refused, resolved, wrong-state

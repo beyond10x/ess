@@ -169,7 +169,7 @@ enum ReleaseCommand {
         /// and every `FORMAT_HISTORY` row must also record its release.
         version: Option<String>,
     },
-    /// Print one release's changelog section as GitHub release notes.
+    /// Print one release's GitHub release notes, rendered from its changelog section.
     Notes {
         /// Version whose notes should be rendered.
         version: String,
@@ -254,7 +254,9 @@ fn run(cli: Cli) -> Result<String, String> {
                     "release {version} does not match workspace version {workspace_version}"
                 ));
             }
-            release_notes(&changelog, &version)
+            let titles =
+                whats_changed::titles(&root, &version).map_err(|error| format!("{error:#}"))?;
+            render_release_notes(&changelog, &version, &titles)
         }
         Command::Release {
             command: ReleaseCommand::Status,
@@ -367,6 +369,106 @@ fn release_notes(changelog: &str, version: &str) -> Result<String, String> {
         return Err(format!("release heading for {version} has no notes"));
     }
     Ok(format!("{body}\n"))
+}
+
+/// The most lines a list of the GitHub release notes holds; the rest is counted in a last line.
+const NOTES_LIST_LIMIT: usize = 8;
+
+/// `cargo xtask release notes VERSION`: the GitHub release body `release.yml` publishes.
+///
+/// The changelog section is the record and stays whole there; the release page is a summary of
+/// it. Its first line is the title of each `changes/` fragment of the release, its second the
+/// number of entries under each heading; then the entries that start with `**Breaking`, then the
+/// others in changelog order, each list at most [`NOTES_LIST_LIMIT`] lines, and a link to the
+/// section. An entry is its whole bullet, continuation lines joined; a line of the section that is
+/// no bullet (the language count line) is not an entry.
+fn render_release_notes(
+    changelog: &str,
+    version: &str,
+    titles: &[String],
+) -> Result<String, String> {
+    let body = release_notes(changelog, version)?;
+    let heading = changelog
+        .lines()
+        .find(|line| line.starts_with(&format!("## [{version}] ")))
+        .and_then(|line| line.strip_prefix("## "))
+        .unwrap_or_default();
+    let mut counts: Vec<(String, usize, usize)> = Vec::new();
+    let mut breaking: Vec<String> = Vec::new();
+    let mut other: Vec<String> = Vec::new();
+    let mut current: Option<(String, bool)> = None;
+    let mut finish = |entry: Option<(String, bool)>| {
+        if let Some((text, is_breaking)) = entry {
+            if is_breaking {
+                breaking.push(text);
+            } else {
+                other.push(text);
+            }
+        }
+    };
+    for line in body.lines() {
+        if let Some(name) = line.strip_prefix("### ") {
+            finish(current.take());
+            counts.push((name.trim().to_lowercase(), 0, 0));
+        } else if let Some(text) = line.strip_prefix("- ") {
+            finish(current.take());
+            let is_breaking = text.starts_with("**Breaking");
+            if counts.is_empty() {
+                counts.push(("changes".to_owned(), 0, 0));
+            }
+            if let Some((_, entries, breaking_entries)) = counts.last_mut() {
+                *entries += 1;
+                *breaking_entries += usize::from(is_breaking);
+            }
+            current = Some((text.trim().to_owned(), is_breaking));
+        } else if line.starts_with(char::is_whitespace) && !line.trim().is_empty() {
+            if let Some((text, _)) = current.as_mut() {
+                text.push(' ');
+                text.push_str(line.trim());
+            }
+        } else {
+            finish(current.take());
+        }
+    }
+    finish(current.take());
+    let tally = counts
+        .iter()
+        .filter(|(_, entries, _)| *entries > 0)
+        .map(|(name, entries, breaking_entries)| match breaking_entries {
+            0 => format!("{entries} {name}"),
+            _ => format!("{entries} {name} ({breaking_entries} breaking)"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut out = String::new();
+    if !titles.is_empty() {
+        let _ = writeln!(out, "{}.", titles.join("; ").trim_end_matches('.'));
+    }
+    let _ = writeln!(out, "{tally}.");
+    for (name, entries) in [("Breaking", &breaking), ("Changed", &other)] {
+        if entries.is_empty() {
+            continue;
+        }
+        let _ = write!(out, "\n**{name}**\n\n");
+        let shown = if entries.len() > NOTES_LIST_LIMIT {
+            NOTES_LIST_LIMIT - 1
+        } else {
+            entries.len()
+        };
+        for entry in &entries[..shown] {
+            let _ = writeln!(out, "- {entry}");
+        }
+        if shown < entries.len() {
+            let _ = writeln!(out, "- {} more in the changelog.", entries.len() - shown);
+        }
+    }
+    let _ = write!(
+        out,
+        "\nEvery change: [CHANGELOG.md § {version}]\
+         (https://github.com/beyond10x/ess/blob/{version}/CHANGELOG.md#{})\n",
+        whats_changed::anchor(heading)
+    );
+    Ok(out)
 }
 
 /// Pushed tags that will never have a release, and why.
@@ -1316,6 +1418,53 @@ mod tests {
         assert_eq!(
             release_notes(changelog, "0.1.0"),
             Ok("- First.\n".to_owned())
+        );
+    }
+
+    #[test]
+    fn release_notes_summarize_lead_with_breaking_and_cap_each_list() {
+        let fixed = (1..=8).fold(String::new(), |mut s, n| {
+            let _ = writeln!(s, "- Fix {n} (#{n}).");
+            s
+        });
+        let changelog = format!(
+            "# Changelog\n\n## [Unreleased]\n\n## [0.2.0] — 2026-10-21\n\n### Added\n\n\
+             - A new key; set `format: ess/2` to use it (#10).\n\n### Changed\n\n\
+             - **Breaking:** suites are `s/2`; update runners (#11).\n\
+             - A refusal says why; specs unchanged.\n\n### Fixed\n\n{fixed}\n\
+             Language: 0 general, 0 one-to-one, 1 part (general share 0%; cumulative 22%).\n\n\
+             ## [0.1.0] — 2026-09-01\n\n- Old.\n"
+        );
+        let titles = ["A key and a format".to_owned()];
+        let notes = render_release_notes(&changelog, "0.2.0", &titles).expect("renders");
+        assert_eq!(
+            notes,
+            "A key and a format.\n\
+             1 added, 2 changed (1 breaking), 8 fixed.\n\n\
+             **Breaking**\n\n\
+             - **Breaking:** suites are `s/2`; update runners (#11).\n\n\
+             **Changed**\n\n\
+             - A new key; set `format: ess/2` to use it (#10).\n\
+             - A refusal says why; specs unchanged.\n\
+             - Fix 1 (#1).\n- Fix 2 (#2).\n- Fix 3 (#3).\n- Fix 4 (#4).\n- Fix 5 (#5).\n\
+             - 3 more in the changelog.\n\n\
+             Every change: [CHANGELOG.md § 0.2.0]\
+             (https://github.com/beyond10x/ess/blob/0.2.0/CHANGELOG.md#020--2026-10-21)\n"
+        );
+    }
+
+    #[test]
+    fn release_notes_read_an_older_section_of_wrapped_bullets_without_headings() {
+        let changelog = "## [0.1.0] — 2026-09-01\n\n- First, wrapped\n  over two lines.\n\
+                         - **Breaking for a caller**: second.\n";
+        assert_eq!(
+            render_release_notes(changelog, "0.1.0", &[]),
+            Ok("2 changes (1 breaking).\n\n\
+                **Breaking**\n\n- **Breaking for a caller**: second.\n\n\
+                **Changed**\n\n- First, wrapped over two lines.\n\n\
+                Every change: [CHANGELOG.md § 0.1.0]\
+                (https://github.com/beyond10x/ess/blob/0.1.0/CHANGELOG.md#010--2026-09-01)\n"
+                .to_owned())
         );
     }
 

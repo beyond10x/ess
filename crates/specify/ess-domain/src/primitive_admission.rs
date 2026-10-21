@@ -375,7 +375,8 @@ pub fn predicates(
             }
             // The stored-field predicate is the same grammar, so a string operator under
             // `when_subject:` needs the format that admits it as much as one under `when:`.
-            if let crate::command::OutcomeCondition::SubjectPredicate { predicate, .. } =
+            if let crate::command::OutcomeCondition::SubjectPredicate { predicate, .. }
+            | crate::command::OutcomeCondition::ExternalSubject { predicate, .. } =
                 &outcome.condition
             {
                 found.push((

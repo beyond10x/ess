@@ -565,9 +565,10 @@ pub(crate) fn admit(suite: &crate::ConformanceSuite) -> Result<(), crate::Admiss
                     "disclosure identity requires suite/34 or /35",
                 ));
             }
-            cell.validate(scenario).map_err(|reason| {
-                crate::AdmissionError::new("InvalidOneTimeResponse", "$suite", reason)
-            })?;
+            cell.validate(scenario, suite.provenance.suite_version.major())
+                .map_err(|reason| {
+                    crate::AdmissionError::new("InvalidOneTimeResponse", "$suite", reason)
+                })?;
         }
         if let Some(trace) = &scenario.one_time_response {
             if suite.provenance.suite_version.major() < ORDINARY {

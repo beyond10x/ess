@@ -207,6 +207,8 @@ pub enum ConditionShape {
     ExternalWhen,
     /// `external:`.
     External,
+    /// `external:` narrowed by `when_subject: {predicate: …}` (ess/29).
+    ExternalSubject,
     /// `wrong_state:`.
     WrongState,
     /// `unknown_instance:`.
@@ -241,6 +243,7 @@ impl From<&OutcomeCondition> for ConditionShape {
             OutcomeCondition::Otherwise => Self::Otherwise,
             OutcomeCondition::ExternalWhen { .. } => Self::ExternalWhen,
             OutcomeCondition::External { .. } => Self::External,
+            OutcomeCondition::ExternalSubject { .. } => Self::ExternalSubject,
             OutcomeCondition::WrongState => Self::WrongState,
             OutcomeCondition::UnknownInstance => Self::UnknownInstance,
             OutcomeCondition::InputAbsent => Self::InputAbsent,
@@ -520,10 +523,13 @@ pub fn place(branch: &BranchShape, command: &Composition) -> Place {
                 at(Phase::Existence, Rank::Trail)
             }
         }
+        // An external branch narrowed to the records a subject guard selects reads the held row
+        // (ess/29), so it answers among the branches that row selects, in declaration order.
         ConditionShape::SubjectState
         | ConditionShape::StateChange
         | ConditionShape::SubjectField
-        | ConditionShape::SubjectPredicate => at(Phase::HeldState, Rank::Declared),
+        | ConditionShape::SubjectPredicate
+        | ConditionShape::ExternalSubject => at(Phase::HeldState, Rank::Declared),
         ConditionShape::WrongState => at(Phase::HeldState, Rank::Trail),
         ConditionShape::Related { absent: false, .. } | ConditionShape::RelatedSet => {
             if branch.error && command.orders_present_related_refusals() {

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T00:20:52Z",
+  "actor": "human:timo",
+  "artifact": "story:a-suite-fixes-the-targets-clock",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-conformance --locked --test current_time_guard: 21 passed; 0 failed; --test now_stored_rows_runtimes: 4 passed; 0 failed",
+    "reference": "crates/verify/ess-conformance/tests/current_time_guard.rs"
+  }
+}

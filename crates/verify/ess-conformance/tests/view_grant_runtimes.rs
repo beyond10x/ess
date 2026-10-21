@@ -8,6 +8,11 @@
 //! serving every read. Every scenario's verdict is the reference's in Go and in TypeScript, the
 //! actor each read is sent as is the one the reference runner sent, and only the denied read fails
 //! the target that serves it.
+//!
+//! The same holds for the one-time read cells of suite/56 (beyond10x/ess#614), which read each
+//! cell's view as the actor the cell names: the suite of `one-time-caller/with-view.yaml` passes
+//! the interpreter, and a target showing the issued value to `Viewer` alone fails exactly
+//! `Viewer`'s read cell, in Go and in TypeScript as in Rust.
 
 mod support_go;
 
@@ -348,6 +353,214 @@ fn typescript_gives_the_reference_verdicts_on_read_grants_for_an_honest_and_a_fa
         RefusesGrantedReader(Interpreted::for_model(ir())),
     );
     assert_refused_reader_verdicts(&refusing);
+}
+
+// ---- one-time read cells (beyond10x/ess#614) -------------------------------------------------
+
+const WITH_VIEW: &str = include_str!("fixtures/one-time-caller/with-view.yaml");
+const VIEWER_READ: &str =
+    "keys.api.IssueKey/disclosure/issued/secret/read/keys.api.Keys/as/actor/keys.api.Viewer";
+
+fn with_view() -> EssIr {
+    let raw = RawSpecFile::parse(WITH_VIEW).unwrap_or_else(|error| panic!("{error}"));
+    let spec = Specification::assemble([(Source::new("with-view.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+    compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"))
+}
+
+/// The suite/56 suite of `with-view.yaml`, whose read cells read as the actor they name.
+fn reader_cells() -> ConformanceSuite {
+    let suite = ess_conformance::synthesize(&with_view()).suite;
+    assert_eq!(
+        suite.provenance.suite_version.to_string(),
+        "ess-conformance/56"
+    );
+    assert!(
+        suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string() == VIEWER_READ),
+        "the suite holds `{VIEWER_READ}`"
+    );
+    suite
+}
+
+/// The interpreter, showing the latest issued `secret` in the `issued_by` column of every row it
+/// answers to a read sent as `keys.api.Viewer`.
+struct LeaksToViewer {
+    inner: Interpreted,
+    secret: std::cell::RefCell<Option<ess_primitives::node::Node>>,
+}
+
+impl LeaksToViewer {
+    fn new() -> Self {
+        Self {
+            inner: Interpreted::for_model(with_view()),
+            secret: std::cell::RefCell::new(None),
+        }
+    }
+}
+
+impl ConformanceTarget for LeaksToViewer {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        Ok(ImplementationIdentity::new("leaks-to-viewer", "1"))
+    }
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        *self.secret.borrow_mut() = None;
+        self.inner.begin_scenario(scenario)
+    }
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.end_scenario(scenario)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        let result = self.inner.execute_command(request)?;
+        if let Some(secret) = result
+            .response
+            .as_ref()
+            .and_then(|response| response.get("secret"))
+        {
+            *self.secret.borrow_mut() = Some(secret.clone());
+        }
+        Ok(result)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        self.inner.query_view(request)
+    }
+    fn query_view_as(
+        &self,
+        request: SemanticViewRequest,
+        reader: &ess_conformance::scenario::ActorRef,
+    ) -> Result<SemanticViewResult, TargetError> {
+        let mut result = self.inner.query_view_as(request, reader)?;
+        if reader.to_string() == "keys.api.Viewer" {
+            if let Some(secret) = &*self.secret.borrow() {
+                for row in &mut result.rows {
+                    row.insert("issued_by".to_owned(), secret.clone());
+                }
+            }
+        }
+        Ok(result)
+    }
+    fn query_view_anonymous(
+        &self,
+        request: SemanticViewRequest,
+    ) -> Result<SemanticViewResult, TargetError> {
+        self.inner.query_view_anonymous(request)
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.inner.observe_events(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        request: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.inner.configure_external_outcome(request)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.inner.redeliver_event(request)
+    }
+}
+
+#[test]
+fn go_gives_the_reference_verdicts_on_one_time_read_cells_read_as_their_actor() {
+    let suite = reader_cells();
+    let honest = support_go::assert_parity(
+        "one-time-reader-honest",
+        &suite,
+        Interpreted::for_model(with_view()),
+    );
+    assert_eq!(not_passed(&honest), Vec::<&str>::new(), "{honest:?}");
+    let leaking = support_go::assert_parity("one-time-reader-leaks", &suite, LeaksToViewer::new());
+    assert_eq!(not_passed(&leaking), [VIEWER_READ], "{leaking:?}");
+}
+
+#[test]
+fn typescript_gives_the_reference_verdicts_on_one_time_read_cells_read_as_their_actor() {
+    let suite = reader_cells();
+    let honest = typescript_parity(
+        "one-time-reader-honest",
+        &suite,
+        Interpreted::for_model(with_view()),
+    );
+    assert_eq!(not_passed(&honest), Vec::<&str>::new(), "{honest:?}");
+    let leaking = typescript_parity("one-time-reader-leaks", &suite, LeaksToViewer::new());
+    assert_eq!(not_passed(&leaking), [VIEWER_READ], "{leaking:?}");
+}
+
+/// The suite/56 document of [`reader_cells`] with every `read_as` taken out of `Admin`'s read
+/// cell. `Admin` issued the value, so below suite/56 the cell would be what it always was; at
+/// suite/56 it reads as no actor and no longer as the actor it names.
+fn issuer_read_as_no_actor() -> serde_json::Value {
+    let mut document: serde_json::Value =
+        serde_json::from_str(&reader_cells().to_canonical_json().unwrap()).unwrap();
+    document["scenarios"][ADMIN_READ]["steps"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|step| step["step"] != "read_as");
+    document
+}
+
+const ADMIN_READ: &str =
+    "keys.api.IssueKey/disclosure/issued/secret/read/keys.api.Keys/as/actor/keys.api.Admin";
+const NO_OBLIGATION: &str = "disclosure identity has no matching follow-up obligation";
+
+#[test]
+fn every_reader_refuses_a_suite_56_read_cell_not_read_as_its_actor() {
+    let document = issuer_read_as_no_actor();
+    let refused = AdmittedSuite::from_json(&document.to_string()).expect_err("Rust admits it");
+    assert!(refused.to_string().contains(NO_OBLIGATION), "{refused}");
+
+    let suite = reader_cells();
+    let directory = support_go::package(
+        "one-time-reader-refused",
+        &suite,
+        &[support_go::TRANSCRIPT_TARGET],
+    );
+    let transcript = directory.join("transcript.json");
+    std::fs::write(&transcript, "{}").unwrap();
+    support_go::rewrite_suite(&directory, |written| *written = document.clone());
+    let go = support_go::go_test(
+        &directory,
+        "TestTranscriptReplay",
+        &[
+            ("ESS_TRANSCRIPT", transcript.to_str().unwrap()),
+            (
+                "ESS_TRANSCRIPT_DIVERGENCE",
+                directory.join("divergence.txt").to_str().unwrap(),
+            ),
+        ],
+    );
+    assert!(
+        !go.success && go.outcomes.is_empty(),
+        "Go admits it\n{}",
+        go.log
+    );
+    assert!(go.log.contains(NO_OBLIGATION), "{}", go.log);
+
+    let package = typescript_package("one-time-reader-refused", &suite);
+    let suite_file = package.join("suite.json");
+    std::fs::write(&suite_file, document.to_string()).unwrap();
+    let transcript = package.join("transcript.json");
+    std::fs::write(&transcript, "{}").unwrap();
+    let output = Command::new("node")
+        .arg(package.join("transcript.mjs"))
+        .arg(&suite_file)
+        .arg(&transcript)
+        .arg(package.join("divergence.txt"))
+        .env("ESS_REPORT_FORMAT", "2")
+        .env("ESS_REPORT_OUT", package.join("report.json"))
+        .output()
+        .expect("node runs");
+    let log = String::from_utf8_lossy(&output.stderr).into_owned();
+    let _ = std::fs::remove_dir_all(package.parent().unwrap());
+    assert_eq!(output.status.code(), Some(2), "TypeScript admits it\n{log}");
+    assert!(log.contains("invalid one-time response authority"), "{log}");
 }
 
 // ---- the browser -----------------------------------------------------------------------------

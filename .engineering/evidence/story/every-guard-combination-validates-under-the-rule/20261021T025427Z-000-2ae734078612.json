@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T02:54:27Z",
+  "actor": "human:timo",
+  "artifact": "story:every-guard-combination-validates-under-the-rule",
+  "kind": "story",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-domain --locked --test related_guard: 33 passed; --test subject_fact_lifecycle_mix: 3 passed; --test subject_state: 8 passed; --test held_state_order: 15 passed; -p ess-conformance --test precedence_plan_answers: 8 passed; --test mutation_arms: 14 passed; -p ess-entity-runtime --test selection_precedence: 7 passed; 0 failed in each",
+    "reference": "crates/specify/ess-domain/tests/related_guard.rs"
+  }
+}

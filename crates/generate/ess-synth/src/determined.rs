@@ -266,7 +266,12 @@ fn outcome(
                 supported(ir, &Env::Input(command), predicate)?;
             }
         }
-        ResolvedCondition::SubjectPredicate { predicate, input } => {
+        // ess/29: an external branch narrowed by a subject guard reads the row as the predicate
+        // form does, then asks the context.
+        ResolvedCondition::SubjectPredicate { predicate, input }
+        | ResolvedCondition::ExternalSubject {
+            predicate, input, ..
+        } => {
             let entity = selection_entity.ok_or("a subject guard with no subject")?;
             supported(ir, &Env::Subject(command, entity), predicate)?;
             if let Some(input) = input {
@@ -736,6 +741,7 @@ pub(crate) fn subject_guarded(command: &ResolvedCommand) -> bool {
             outcome.condition,
             ResolvedCondition::SubjectField { .. }
                 | ResolvedCondition::SubjectPredicate { .. }
+                | ResolvedCondition::ExternalSubject { .. }
                 | ResolvedCondition::SubjectState { .. }
                 | ResolvedCondition::StateChange { .. }
         )
@@ -1117,9 +1123,27 @@ pub(crate) fn resolve_derived(
             "`{derived}`, a byte length the generated view query does not compare"
         ));
     }
-    // The generated behaviours compute no function of a fact yet (ess/27, beyond10x/ess#584): the
-    // command stays owed, named by the expression, rather than decided otherwise than the shared
-    // evaluator decides it.
+    // `coalesce(<fact>, <literal>)` (beyond10x/ess#620) is the fact where present and the literal
+    // where absent, compared as the fact is: the behaviour reads the fact and puts the literal in
+    // for an absent one. A literal of another kind than the fact's stays
+    // owed, as does every other function of a fact (ess/27, beyond10x/ess#584): the command is
+    // named by the expression rather than decided otherwise than the shared evaluator decides it.
+    if let Some((parent, default)) = derived.coalesced() {
+        let resolved = resolve(ir, env, parent)?;
+        let leaf = leaf_primitive(ir, &resolved);
+        let fits = match (&resolved.kind, &default) {
+            (Kind::Bool, FactValue::Bool(_))
+            | (Kind::Number(Primitive::Decimal), FactValue::Number(_)) => true,
+            (Kind::Number(Primitive::Integer), FactValue::Number(number)) => {
+                number.as_i64().is_some()
+            }
+            (Kind::Text, FactValue::Text(_)) => leaf == Some(Primitive::String),
+            _ => false,
+        };
+        if fits {
+            return Ok(resolved);
+        }
+    }
     let parent = match derived {
         Derived::Utf8Bytes(parent) => parent,
         Derived::Call(expr) => {
@@ -1396,9 +1420,10 @@ pub(crate) fn reads_clock(command: &ResolvedCommand) -> bool {
             ResolvedCondition::SubjectState { predicate, .. }
             | ResolvedCondition::StateChange { predicate, .. }
             | ResolvedCondition::SubjectField { predicate, .. } => (None, predicate.as_ref()),
-            ResolvedCondition::SubjectPredicate { predicate, input } => {
-                (Some(predicate), input.as_ref())
-            }
+            ResolvedCondition::SubjectPredicate { predicate, input }
+            | ResolvedCondition::ExternalSubject {
+                predicate, input, ..
+            } => (Some(predicate), input.as_ref()),
             ResolvedCondition::Related { test, input, .. } => (
                 match test {
                     ResolvedRelatedTest::Holds { predicate } => Some(predicate),
@@ -1650,7 +1675,9 @@ fn related_composition(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Stri
         !outcome.before_row
             && matches!(
                 outcome.condition,
-                ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+                ResolvedCondition::External { .. }
+                    | ResolvedCondition::ExternalWhen { .. }
+                    | ResolvedCondition::ExternalSubject { .. }
             )
     }) {
         return Err("`external:` beside `when_related:` in one command".to_owned());

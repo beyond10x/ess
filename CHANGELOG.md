@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+## [0.67.0] — 2026-10-21
+
+### Added
+
+- G4: `external:` may carry `when_subject:` to apply only to the rows it selects; set `format: ess/29` to use it (#554).
+- G1 grid O: a guard may write `coalesce(x, d) == v` for an absent `Optional`; set `format: ess/29` to use it (#620).
+
+### Changed
+
+- One-time read cells name the reader, in new suites `ess-conformance/56`/`57`; older suites keep their bytes (#614).
+- From `format: ess/29` a branch declared below one a later step answers is refused; reorder such branches (#554).
+- Entity Runtime's `RelatedGuardUnsupported` refusal says why no bound row copy stands in; specs unchanged (#554).
+
+### Fixed
+
+- A guard's `coalesce(x, d)` reads `d` where `x` is absent, not `Unknown`; specs unchanged, regenerate suites (#620).
+- A ranked head scoped by another head's value ranks above the rows its scope placed; specs unchanged (#618).
+- A ranked head over owned rows scoped by another head's owner is synthesized under that owner; specs unchanged (#621).
+- A connective child ordering two `Integer` inputs (`a <= b`) is witnessed, not refused; specs unchanged (#622).
+- An authored scenario isolating a connective's child withdraws that child's `ESS-SYNTH-022`; specs unchanged (#619).
+- Synthesizing a command that reads many row-set selectors takes seconds, not hours; specs unchanged (#624).
+
+Language: 0 general, 0 one-to-one, 2 part (general share 0%; cumulative 19%).
+
 ## [0.66.0] — 2026-10-20
 
 ### Changed

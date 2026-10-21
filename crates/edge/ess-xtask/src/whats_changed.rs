@@ -147,6 +147,15 @@ fn read_all(root: &Path) -> Result<Vec<Fragment>> {
     Ok(fragments)
 }
 
+/// The title of every fragment of `version`, in file-name order: the release notes' first line.
+pub fn titles(root: &Path, version: &str) -> Result<Vec<String>> {
+    Ok(read_all(root)?
+        .into_iter()
+        .filter(|fragment| fragment.source.version == version)
+        .map(|fragment| fragment.title.trim().to_owned())
+        .collect())
+}
+
 /// The minors at or after [`FEED_FLOOR`] that carry no fragment.
 ///
 /// A release with nothing to say is possible — a patch that repaired the release gate is the
@@ -239,8 +248,9 @@ fn render(fragments: &[Fragment]) -> String {
     out
 }
 
-/// A GitHub Markdown heading anchor: lowercase, non-alphanumerics to hyphens.
-fn anchor(title: &str) -> String {
+/// A GitHub Markdown heading anchor: lowercase, whitespace and hyphens to hyphens, other
+/// non-alphanumerics dropped (`[0.66.0] — 2026-10-20` is `0660--2026-10-20` on GitHub).
+pub fn anchor(title: &str) -> String {
     let mut out = String::new();
     for character in title.chars() {
         if character.is_alphanumeric() {

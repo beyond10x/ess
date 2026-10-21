@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.67.0](#a-guard-says-what-an-absent-value-compares-as-and-an-external-branch-can-be-narrowed-to-some-rows) | A guard says what an absent value compares as, and an external branch can be narrowed to some rows | capability | notable |
 | [0.66.0](#a-generated-go-or-typescript-runner-shows-an-unsupported-scenario-as-skipped-and-the-run-still-fails) | A generated Go or TypeScript runner shows an unsupported scenario as skipped, and the run still fails | capability | notable |
 | [0.65.0](#synthesis-arranges-the-rows-binding-row-set-and-one-time-disclosure-scenarios-read) | Synthesis arranges the rows binding, row-set and one-time disclosure scenarios read | capability | notable |
 | [0.64.0](#a-view-and-a-guard-read-the-row-a-reference-names) | A view and a guard read the row a reference names | capability | notable |
@@ -75,6 +76,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.67.0 — 2026-10-21
+
+### A guard says what an absent value compares as, and an external branch can be narrowed to some rows
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.67.0)
+
+Format `ess/29` lets a guard write `coalesce(x, d)` on the left of a comparison, so a guard over an `Optional` decides every record, and lets `external:` carry `when_subject:`. A one-time read cell names its reader (suite `ess-conformance/56`). Synthesis witnesses more ranked heads and connective children, and many row-set selectors take seconds.
 
 ## 0.66.0 — 2026-10-20
 

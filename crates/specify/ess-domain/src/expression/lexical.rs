@@ -650,6 +650,7 @@ pub fn input_guard(condition: &OutcomeCondition) -> Option<&Predicate> {
         | OutcomeCondition::SubjectState { predicate, .. }
         | OutcomeCondition::StateChange { predicate, .. } => predicate.as_ref(),
         OutcomeCondition::SubjectPredicate { input, .. }
+        | OutcomeCondition::ExternalSubject { input, .. }
         | OutcomeCondition::Related { input, .. }
         | OutcomeCondition::RelatedSet { input, .. } => input.as_ref(),
         _ => None,
@@ -666,6 +667,7 @@ fn input_guard_mut(condition: &mut OutcomeCondition) -> Option<&mut Predicate> {
         | OutcomeCondition::SubjectState { predicate, .. }
         | OutcomeCondition::StateChange { predicate, .. } => predicate.as_mut(),
         OutcomeCondition::SubjectPredicate { input, .. }
+        | OutcomeCondition::ExternalSubject { input, .. }
         | OutcomeCondition::Related { input, .. }
         | OutcomeCondition::RelatedSet { input, .. } => input.as_mut(),
         _ => None,
@@ -703,7 +705,8 @@ pub(crate) fn slot<'a>(
             command,
             outcome: name,
         } => match &mut outcome(commands, command, name)?.condition {
-            OutcomeCondition::SubjectPredicate { predicate, .. } => Some(predicate),
+            OutcomeCondition::SubjectPredicate { predicate, .. }
+            | OutcomeCondition::ExternalSubject { predicate, .. } => Some(predicate),
             _ => None,
         },
         Site::Related {
@@ -893,7 +896,8 @@ pub(crate) fn resolutions(
                 command,
                 outcome: name,
             } => outcome(command, name).and_then(|(command, outcome)| {
-                let OutcomeCondition::SubjectPredicate { predicate, .. } = &outcome.condition
+                let (OutcomeCondition::SubjectPredicate { predicate, .. }
+                | OutcomeCondition::ExternalSubject { predicate, .. }) = &outcome.condition
                 else {
                     return None;
                 };
@@ -1167,7 +1171,8 @@ pub(crate) fn identity_orderings(
                 );
             }
             match &outcome.condition {
-                OutcomeCondition::SubjectPredicate { predicate, .. } => {
+                OutcomeCondition::SubjectPredicate { predicate, .. }
+                | OutcomeCondition::ExternalSubject { predicate, .. } => {
                     let entity = command
                         .selection_subject(outcome)
                         .and_then(|subject| spec.entities().get(&subject.entity))

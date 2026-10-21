@@ -1194,6 +1194,17 @@ fn written_condition(condition: &ResolvedCondition) -> String {
             format!("external: {cause}; eligible: {predicate}")
         }
         ResolvedCondition::External { cause } => format!("external: {cause}"),
+        // ess/29: the rows the cause applies to are part of what the branch answers.
+        ResolvedCondition::ExternalSubject {
+            cause,
+            predicate,
+            input,
+        } => format!(
+            "external: {cause}; when the subject satisfies {predicate}{}",
+            input
+                .as_ref()
+                .map_or(String::new(), |guard| format!("; eligible: {guard}")),
+        ),
         ResolvedCondition::WrongState => "wrong-state".to_owned(),
         ResolvedCondition::UnknownInstance => "unknown-instance".to_owned(),
         ResolvedCondition::InputAbsent => "input-absent".to_owned(),

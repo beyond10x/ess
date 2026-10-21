@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-21T03:46:21Z",
+  "actor": "human:timo",
+  "artifact": "story:row-queries-navigate-a-reference",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "https://github.com/beyond10x/ess/releases/tag/0.64.0 (PR 606 merged into main at d2ea2f5a7, released 0.64.0)"
+  }
+}

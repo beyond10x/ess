@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T00:20:52Z",
+  "actor": "human:timo",
+  "artifact": "story:expression-roots-a-branch-establishes-are-readable",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-conformance --locked --test expression_roots: 3 passed; 0 failed; cargo test -p ess-domain --locked --test expression_roots: 13 passed; 0 failed",
+    "reference": "crates/verify/ess-conformance/tests/expression_roots.rs"
+  }
+}

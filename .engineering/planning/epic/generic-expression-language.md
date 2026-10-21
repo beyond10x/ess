@@ -18,7 +18,7 @@ refs:
 relations:
 - serves: vision:O2
 - informed_by: epic:language-consistency-after-adoption
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -38,6 +38,8 @@ Binding design: `docs/design/generic-language-features.md` (being drafted), feat
 |---|---|
 | `story:expression-roots-a-branch-establishes-are-readable` | https://github.com/beyond10x/ess/issues/555, https://github.com/beyond10x/ess/issues/556 |
 | `story:expression-arithmetic-and-time` | https://github.com/beyond10x/ess/issues/560, https://github.com/beyond10x/ess/issues/567 |
+| `story:a-suite-fixes-the-targets-clock` | https://github.com/beyond10x/ess/issues/586 |
+| `story:a-guard-says-what-an-absent-value-compares-as` | https://github.com/beyond10x/ess/issues/620 |
 
 Visibility issue: https://github.com/beyond10x/ess/issues/560.
 
