@@ -76,6 +76,11 @@ const COUNTS: [usize; 4] = [1, 2, 0, 3];
 /// (ess/27, beyond10x/ess#543): three, so the head is the middle one inserted, then two.
 const HEAD_COUNTS: [usize; 2] = [3, 2];
 
+/// How many arrangements one branch's search tries before the branch is refused
+/// ([`ROWS_SEARCH_CUT`], beyond10x/ess#624). The combinations of counts grow fourfold with every
+/// selector a command reads; no repository model's branch tries more than 33.
+const ARRANGEMENTS: usize = 4096;
+
 /// The key a selected row's value is settled under in the arrangement's fields: not a field name
 /// — it holds spaces — so nothing reading fields by name finds it.
 pub(super) fn key(selection: &ResolvedRowSelection, field: &str) -> String {
@@ -191,6 +196,11 @@ const UNFOLLOWED: &str = "a step of the scenario changes rows of the selector's 
 pub(super) const ROWS_UNFOLLOWED: &str = "has no arrangement whose rows synthesis can follow: a \
      set effect, a binding or a direct setup changes rows of the selector's entity while the \
      scenario is arranged";
+
+/// Why a row-set branch was refused after [`ARRANGEMENTS`] arrangements of its selectors' counts
+/// none of which took it (beyond10x/ess#624).
+pub(super) const ROWS_SEARCH_CUT: &str = "has more arrangements of its selectors' row counts than \
+     synthesis tries for one branch, and none of those tried takes this branch";
 
 fn gap(path: String, reason: &'static str) -> RefusalCause {
     RefusalCause::NoWitness(WitnessGap {
@@ -2173,6 +2183,9 @@ struct Plan<'p> {
     crowded: std::cell::Cell<bool>,
 }
 
+/// What one attempt of [`Plan::arrange`] arranges: the steps, the rows and the witness gaps.
+type Attempt = (Vec<ScenarioStep>, Vec<Arrangement>, Vec<RefusalCause>);
+
 /// The selections of a branch and, beside each, the owner row arranged under it (beyond10x/ess#553).
 type Selections<'p> = (
     &'p [&'p ResolvedRowSelection],
@@ -2248,8 +2261,11 @@ impl<'p> Plan<'p> {
     }
 
     /// The steps after `before` that arrange `counts[i]` rows of selector `i`, each selector's
-    /// after the one before it, the `forall` `violate` names refuted; and the rows arranged. `None`
-    /// where some selector's rows cannot be arranged.
+    /// after the one before it, the `forall` `violate` names refuted; and the rows arranged. Where
+    /// some selector's rows cannot be arranged, the index of the first such selector: what it and
+    /// the selectors before it arrange reads only their own counts and a `violate` naming one of
+    /// them, so every attempt agreeing with this one up to that selector fails there too
+    /// (beyond10x/ess#624).
     fn arrange(
         &self,
         ir: &EssIr,
@@ -2258,7 +2274,7 @@ impl<'p> Plan<'p> {
         actors: &BTreeMap<QualifiedName, ActorRef>,
         before: &[ScenarioStep],
         supplied: &BTreeMap<String, ScenarioValue>,
-    ) -> Option<(Vec<ScenarioStep>, Vec<Arrangement>, Vec<RefusalCause>)> {
+    ) -> Result<Attempt, usize> {
         let mut taken = captured(before);
         let mut gaps: Vec<RefusalCause> = Vec::new();
         let mut steps = before.to_vec();
@@ -2273,11 +2289,11 @@ impl<'p> Plan<'p> {
             // beyond10x/ess#549): the selectors supplying them come first.
             let filters = self.resolved(ir, supplied, &steps);
             if reads_published(&filters[at], &selection.reads) {
-                return None;
+                return Err(at);
             }
             // A selector testing each candidate's related rows (ess/27, beyond10x/ess#551) selects
             // its candidates by the rest of its `where:`, and the related rows are arranged after.
-            let tests = related_rows::tests(&filters[at]).ok()?;
+            let tests = related_rows::tests(&filters[at]).map_err(|()| at)?;
             let own = related_rows::stripped(&filters[at]);
             let others: Vec<Predicate> = self
                 .selections
@@ -2313,7 +2329,8 @@ impl<'p> Plan<'p> {
                 actors,
                 &mut taken,
                 (&steps, self.owners[at]),
-            )?;
+            )
+            .ok_or(at)?;
             for row in &rows {
                 steps.extend(row.steps.iter().cloned());
             }
@@ -2327,7 +2344,8 @@ impl<'p> Plan<'p> {
                     &selection.entity,
                     &own,
                     &rows,
-                )?;
+                )
+                .ok_or(at)?;
                 failing.push((at, tests, own));
                 related
             };
@@ -2361,7 +2379,7 @@ impl<'p> Plan<'p> {
             );
             arranged.extend(made);
         }
-        Some((steps, arranged, gaps))
+        Ok((steps, arranged, gaps))
     }
 
     /// What arranging related rows for this branch reads (ess/27, beyond10x/ess#551).
@@ -2819,23 +2837,51 @@ pub(super) fn prepare(
             }
         }
     }
+    // Every combination of the selectors' counts is tried in the order it always was, the first
+    // selector's count varying slowest, and each with its `forall` variants in turn; the first that
+    // stands is the scenario. Only attempts that cannot stand are passed over (beyond10x/ess#624):
+    // those agreeing with a failed one up to the selector whose rows it could not arrange, and, for
+    // a branch no rows can take, every attempt after the first whose rows were decided. What is
+    // left is cut at `ARRANGEMENTS` attempts, the branch refused as having more than synthesis
+    // tries.
+    let unstandable = unstandable(ir, command, outcome);
+    let variants = plan.variants();
     let mut first_failure: Option<String> = None;
+    let mut tried = 0;
     let mut search = |heads: &[usize]| {
         let lists: Vec<&[usize]> = plan
             .heads
             .iter()
             .map(|head| if head.is_some() { heads } else { &COUNTS[..] })
             .collect();
-        for counts in count_tuples(&lists) {
-            for violate in &plan.variants() {
+        let last = lists.len() - 1;
+        let mut next = vec![0; lists.len()];
+        loop {
+            let counts: Vec<usize> = lists
+                .iter()
+                .zip(&next)
+                .map(|(list, at)| list[*at])
+                .collect();
+            // The selector up to which every attempt agreeing with these counts fails as these did.
+            let mut agreed = 0;
+            for violate in &variants {
                 if violate.is_some_and(|(at, _)| counts[at] == 0) {
                     continue;
                 }
-                let Some((steps, arranged, gaps)) =
-                    plan.arrange(ir, &counts, *violate, actors, &setup.steps, &supplied)
-                else {
-                    continue;
-                };
+                if tried == ARRANGEMENTS {
+                    return Search::Cut;
+                }
+                tried += 1;
+                TRIED.with(|count| count.set(count.get() + 1));
+                let (steps, arranged, gaps) =
+                    match plan.arrange(ir, &counts, *violate, actors, &setup.steps, &supplied) {
+                        Ok(made) => made,
+                        Err(failed) => {
+                            agreed = agreed.max(failed);
+                            continue;
+                        }
+                    };
+                agreed = last;
                 let rows = match walk(ir, &steps, true) {
                     Ok(rows) => rows,
                     Err(why) => {
@@ -2847,12 +2893,40 @@ pub(super) fn prepare(
                     first_failure.get_or_insert(why);
                     continue;
                 }
-                return Some((steps, arranged, gaps, rows));
+                return Search::Found(steps, arranged, gaps, rows);
+            }
+            if unstandable && first_failure.is_some() {
+                return Search::Exhausted;
+            }
+            // The next counts: selector `agreed`'s next, every later selector's first.
+            for later in &mut next[agreed + 1..] {
+                *later = 0;
+            }
+            let mut at = agreed;
+            loop {
+                next[at] += 1;
+                if next[at] < lists[at].len() {
+                    break;
+                }
+                next[at] = 0;
+                if at == 0 {
+                    return Search::Exhausted;
+                }
+                at -= 1;
             }
         }
-        None
     };
-    if let Some((steps, arranged, gaps, rows)) = search(&HEAD_COUNTS) {
+    let cut = || {
+        gap(
+            format!("{}: {ARRANGEMENTS} arrangements tried", at()),
+            ROWS_SEARCH_CUT,
+        )
+    };
+    let searched = search(&HEAD_COUNTS);
+    if matches!(searched, Search::Cut) {
+        return Err(cut());
+    }
+    if let Search::Found(steps, arranged, gaps, rows) = searched {
         let mut found = setup;
         found.steps = steps;
         for row in &arranged {
@@ -2873,13 +2947,17 @@ pub(super) fn prepare(
         // Rows another selector's test placed in a head's scope that no arrangement ranks the head
         // above are named as such (beyond10x/ess#618), not as a branch admitting one row.
         let crowded = plan.crowded.get();
-        if search(&[1]).is_some() {
-            let reason = if crowded {
-                ordered_head::CROWDED
-            } else {
-                ordered_head::UNOBSERVABLE
-            };
-            return Err(gap(at(), reason));
+        match search(&[1]) {
+            Search::Found(..) => {
+                let reason = if crowded {
+                    ordered_head::CROWDED
+                } else {
+                    ordered_head::UNOBSERVABLE
+                };
+                return Err(gap(at(), reason));
+            }
+            Search::Cut => return Err(cut()),
+            Search::Exhausted => {}
         }
     }
     // A selector reading a field no declared command writes is refused by that field
@@ -3166,21 +3244,62 @@ fn copied<'o>(outcome: &'o ResolvedOutcome, selection: &ResolvedRowSelection) ->
         .collect()
 }
 
-/// Every combination of row counts, one per selector, each drawn from its own list in order, the
-/// first selector's count varying slowest: for one selector, its list itself.
-fn count_tuples(lists: &[&[usize]]) -> Vec<Vec<usize>> {
-    let mut out: Vec<Vec<usize>> = vec![Vec::new()];
-    for list in lists {
-        out = out
-            .into_iter()
-            .flat_map(|prefix| {
-                list.iter().map(move |count| {
-                    let mut next = prefix.clone();
-                    next.push(*count);
-                    next
+/// What one search of [`prepare`] ends in: the first arrangement that stands, with its steps,
+/// rows, witness gaps and the rows the steps leave; none; or the cut at [`ARRANGEMENTS`].
+enum Search {
+    Found(Vec<ScenarioStep>, Vec<Arrangement>, Vec<RefusalCause>, Rows),
+    Exhausted,
+    Cut,
+}
+
+/// Whether no rows can take `outcome` (beyond10x/ess#624): it reads the one row or the head a
+/// selector selects, or its own guard needs a selected row, of an entity no declared command
+/// creates. Only a creation adds a row to those [`walk`] leaves, so [`consistent`] finds none
+/// there and fails every attempt it is asked about, whatever the counts.
+fn unstandable(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
+    // What `consistent` passes without reading a row.
+    if matches!(
+        outcome.condition,
+        ResolvedCondition::ExistingInstance
+            | ResolvedCondition::UnknownInstance
+            | ResolvedCondition::WrongState
+            | ResolvedCondition::InputAbsent
+    ) || (outcome.error.is_some() && matches!(outcome.condition, ResolvedCondition::When { .. }))
+        || !rows_decide(ir.format(), command, outcome)
+    {
+        return false;
+    }
+    let guarded = match &outcome.condition {
+        ResolvedCondition::RelatedSet {
+            selection, test, ..
+        } if test.decide(&[]) == Truth::False => Some(selection),
+        _ => None,
+    };
+    let created = |entity: &EntityHandle| {
+        ir.commands().values().any(|command| {
+            command.outcomes.iter().any(|outcome| {
+                outcome.subject.as_ref().is_some_and(|subject| {
+                    subject.entity == *entity && subject.effect == ResolvedEffect::Creates
                 })
             })
-            .collect();
-    }
-    out
+        })
+    };
+    reads(outcome)
+        .into_iter()
+        .filter_map(|read| read_selection(&read.value))
+        .chain(guarded)
+        .any(|selection| !created(&selection.entity))
+}
+
+thread_local! {
+    /// How many arrangements [`prepare`] has tried on this thread (beyond10x/ess#624).
+    static TRIED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// What `run` returns, and how many arrangements of row counts [`prepare`] tried on this thread
+/// while it ran.
+pub(super) fn counting<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    let before = TRIED.with(std::cell::Cell::get);
+    let out = run();
+    (out, TRIED.with(std::cell::Cell::get) - before)
 }

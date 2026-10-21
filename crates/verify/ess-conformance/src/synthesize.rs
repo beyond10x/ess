@@ -2374,6 +2374,14 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     synthesize_in(ir, &seeds::EMPTY)
 }
 
+/// What `run` returns, and how many arrangements of row counts the row-set strategy tried on this
+/// thread while it ran: the work its search does, which a test bounds where a wall-clock bound
+/// would depend on the machine (beyond10x/ess#624). Not part of the suite.
+#[doc(hidden)]
+pub fn row_set_arrangements_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    row_set::counting(run)
+}
+
 /// [`synthesize`], with explicitly admitted synthesis seeds (beyond10x/ess#413,
 /// `docs/design/synthesis-seeds.md`).
 ///
