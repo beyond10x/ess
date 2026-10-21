@@ -1704,6 +1704,25 @@ fn related_composition(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Stri
                 "a stored `when_related:` reference on no subject the input names".to_owned(),
             );
         }
+        // From ess/29 a stored reference the specification proves present needs no
+        // `exists: false` branch (beyond10x/ess#509); the generated read is bound by that branch,
+        // so a command without one stays an obligation, named.
+        let answered = command.outcomes.iter().any(|outcome| {
+            matches!(
+                outcome.condition,
+                ResolvedCondition::Related {
+                    test: ess_compiler::ir::ResolvedRelatedTest::Absent,
+                    ..
+                }
+            )
+        });
+        if !answered {
+            return Err(
+                "a stored `when_related:` reference with no `exists: false` branch, its row's \
+                 presence derived from the specification (ess/29)"
+                    .to_owned(),
+            );
+        }
     }
     Ok(())
 }

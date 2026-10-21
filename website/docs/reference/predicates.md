@@ -24,7 +24,7 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 |---|---|---|
 | a command outcome's `when` | the command's input fields | A branch without `when` is the default. |
 | a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch; from `ess/15` also the command's input, as `input.<field>` | `state` from `ess/18`, the held lifecycle state; not before. The input only through the `input.` prefix; see [comparing with the input](#comparing-a-stored-field-with-the-input). Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
-| a command outcome's `when_related: {via: input.<field>, predicate: …}` (`ess/18`) | the declared stored fields of the row of another entity whose identity `input.<field>` carries, read just before the command selects a branch, and the command's input as `input.<field>` | `state` from `ess/20`, the related row's held lifecycle state; not before. From `ess/22` `input.<field>` may be `Optional<…>`: checked only when present, and an absent reference selects no `when_related` branch; and `via` may be a bare stored field of the addressed subject, read as it was before the branch (see [a stored reference](#a-stored-reference)). Keyed by that entity's identity only, one hop; from `ess/22` a lookup by any other field is the row-set form below. A missing row makes the predicate unknown, so it selects only the sibling `when_related: {via: …, exists: false}` branch, which the command must declare. Any branch may carry it, a `creates:` or a refusal naming no subject included; conjunctive with `when` except on the `exists: false` branch, which answers a missing row before any other below `ess/27`, and after the input refusals, the addressed record's existence and its held state from `ess/27` (the one precedence rule); from `ess/27` beside `unknown_instance:`, `when_subject:`, `when_subject_state:`, `when_state_changes:`, `input_absent:`, `wrong_state:` in any composition and an `external:` marked `before_row: true`, below it beside none of them. See [a guard over another entity's row](#a-guard-over-another-entitys-row). |
+| a command outcome's `when_related: {via: input.<field>, predicate: …}` (`ess/18`) | the declared stored fields of the row of another entity whose identity `input.<field>` carries, read just before the command selects a branch, and the command's input as `input.<field>` | `state` from `ess/20`, the related row's held lifecycle state; not before. From `ess/22` `input.<field>` may be `Optional<…>`: checked only when present, and an absent reference selects no `when_related` branch; and `via` may be a bare stored field of the addressed subject, read as it was before the branch (see [a stored reference](#a-stored-reference)). Keyed by that entity's identity only, one hop; from `ess/22` a lookup by any other field is the row-set form below. A missing row makes the predicate unknown, so it selects only the sibling `when_related: {via: …, exists: false}` branch, which the command must declare; from `ess/29` not over a stored reference the specification keeps present (see [a stored reference](#a-stored-reference)). Any branch may carry it, a `creates:` or a refusal naming no subject included; conjunctive with `when` except on the `exists: false` branch, which answers a missing row before any other below `ess/27`, and after the input refusals, the addressed record's existence and its held state from `ess/27` (the one precedence rule); from `ess/27` beside `unknown_instance:`, `when_subject:`, `when_subject_state:`, `when_state_changes:`, `input_absent:`, `wrong_state:` in any composition and an `external:` marked `before_row: true`, below it beside none of them. See [a guard over another entity's row](#a-guard-over-another-entitys-row). |
 | a command outcome's `when_related: {entity, where, …}` (`ess/22`) | the rows of `entity` that `where` selects: each candidate row's declared fields, identity and held lifecycle state `state` bare, the command's input as `input.<field>`, the addressed subject as it was before the branch as `subject.<field>`, and `now` as the decision's one instant; `forall` reads the same over each selected row | The rows are the store just before the branch is selected; no row the outcome writes is one of them. `exists` is a Boolean, `count` one comparison (`eq`, `ne`, `lt`, `lte`, `gt`, `gte`) with a whole number, `forall` a second predicate, true of no rows. Conjunctive with `when`; never beside `via` or a `when_subject*` guard. See [a guard over the rows a selector selects](#a-guard-over-the-rows-a-selector-selects). |
 | an entity's `invariants` | the entity's own fields and its lifecycle `state` | Checked after every branch that creates or changes the entity. A required field an invariant reads must be set by every `creates:` branch, or declared `Optional<…>`; otherwise validate refuses it with `ESS-COMMAND-018`. |
 | a struct type's `invariants` | the struct's own fields | Same grammar, checked against the type. |
@@ -1429,6 +1429,34 @@ stored identity no row carries is witnessed only where the act that writes the f
 unchecked. Where every writer refuses such an identity, synthesis reports `ESS-SYNTH-003` for the
 `exists: false` branch, naming it unreachable. Generated Rust, Go, Web and clap targets keep the
 command a hand-written obligation, and their contract states this order.
+
+From `ess/29` (beyond10x/ess#509) the `exists: false` branch may be left out where the
+specification keeps the row present whenever the stored field names one. Validation derives this
+from the commands; nothing is declared. It holds when both of these are true:
+
+- every branch that creates a row of the subject's entity sets the field, and every branch that
+  writes it (on the addressed row, or on the rows `instances:` or `affects:` select) writes
+  `{cleared: true}`, the field's own value, or an input its command refuses first with
+  `when_related: {via: input.<field>, exists: false}` over the same entity;
+- no branch deletes a row of the referenced entity: no `deletes:` subject, no `instances:` with
+  `deletes:` and no `affects:` entry with `deletes:`.
+
+```text
+- name: blocked
+  when_related: {via: blocked_by, predicate: state != Done}
+  error: demo.tasks.Blocked
+- name: completed
+  moves: demo.tasks.Task.complete
+  instance: task_id
+```
+
+A specification that later gains a deleting branch or an unchecked writer gets
+`non_exhaustive_branches` on the reading command again, its hint naming each branch that breaks
+the guarantee. Below `ess/29` the branch is still required, and the hint names `ess/29` when the
+guarantee holds. Synthesis witnesses the predicate branches over a row arranged through the
+checking writer, and sends no missing row. No scenario yet reads the row again after a command
+that could remove it, so a target that deletes it is not caught. Generated Rust and Go keep such a
+command an obligation, named.
 
 ### The rows a list of references names
 

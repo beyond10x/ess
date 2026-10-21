@@ -5,6 +5,7 @@
 ### Added
 
 - `external:` may carry `when_subject:` to apply only to the rows it selects; set `format: ess/29` to use it (#554).
+- From `format: ess/29` drop `exists: false` on a stored reference every writer checks and nothing deletes (#509).
 - From `format: ess/29` a command outcome's guard (`when:`, `when_subject:`, `when_related:`) may
   call a function of one fact on the left of a compact comparison, so a guard over an `Optional`
   says what an absent value compares as and is decided for every record (G1 presence,
