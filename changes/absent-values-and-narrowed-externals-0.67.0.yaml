@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/absent-values-and-narrowed-externals-0.67.0
+repository: ess
+publishedAt: 2026-10-21T00:00:00Z
+title: A guard says what an absent value compares as, and an external branch can be narrowed to some rows
+summary: >-
+  Format `ess/29` lets a guard write `coalesce(x, d)` on the left of a comparison, so a guard over an
+  `Optional` decides every record, and lets `external:` carry `when_subject:`. A one-time read cell
+  names its reader (suite `ess-conformance/56`). Synthesis witnesses more ranked heads and connective
+  children, and many row-set selectors take seconds.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.67.0
+  version: 0.67.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

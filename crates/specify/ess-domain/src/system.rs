@@ -303,7 +303,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
     },
     FormatHistoryEntry {
         major: 29,
-        release: None,
+        release: Some("0.67.0"),
         added: &[
             "A command outcome's guard (`when:`, `when_subject:`, `when_related:`) may call a function of one fact on the left of a compact comparison, `coalesce(is_error, true) == false` or `coalesce(retries, 0) > 3`, the spelling of the structured `{compare: {left: {expr: \"…\"}, op, right}}`: a guard over an `Optional` fact says what an absent value compares as, and is decided for every record, absent ones included. Text on the left that is no function of exactly one fact is refused as `type_mismatch`, a call on the left outside a command outcome's guards as `unsupported_construct`, and below `ess/29` the spelling is refused as `unsupported_format_version` naming `ess/29`, where it was a parse refusal at every format (beyond10x/ess#620).",
             "An `external:` branch may carry `when_subject: {predicate: …}`, which narrows it to the records the predicate selects: the provider is asked, and the branch taken, only on such a record, and the one precedence rule answers it at the held-state step in declaration order among the branches the stored row selects, before `wrong_state:`. A refusal naming no subject reads the subject its siblings name. `before_row: true` beside it is refused as `conflicting_declaration`, so is the `{field, equals}` shape beside `external:`, and below `ess/29` the pair keeps its `conflicting_declaration`, its hint naming `ess/29` (`docs/design/generic-language-features.md` § G4, beyond10x/ess#554).",

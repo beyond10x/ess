@@ -2,75 +2,29 @@
 
 ## [Unreleased]
 
+## [0.67.0] — 2026-10-21
+
 ### Added
 
-- `external:` may carry `when_subject:` to apply only to the rows it selects; set `format: ess/29` to use it (#554).
-- From `format: ess/29` a command outcome's guard (`when:`, `when_subject:`, `when_related:`) may
-  call a function of one fact on the left of a compact comparison, so a guard over an `Optional`
-  says what an absent value compares as and is decided for every record (G1 presence,
-  `coalesce` in grid O, in the guard positions of grid R): `coalesce(is_error, true) == false`,
-  `coalesce(attempts, 0) < 3`. To take it up, change `format: ess/28` to `format: ess/29` and
-  give each such comparison its default: `is_error == false` becomes `coalesce(is_error, true) ==
-  false`. It is the spelling of the structured `{compare: {left: {expr: "…"}, op, right}}`, which
-  validates from `ess/27`; below `ess/29` the compact spelling is refused as
-  `unsupported_format_version` naming `ess/29` and the structured form, where it was a parse
-  refusal at every format. Text on the left that is no function of exactly one fact is refused as
-  `type_mismatch`, and a call on the left outside a command outcome's guards as
-  `unsupported_construct`. Synthesis sends each `Optional` such a guard reads only through
-  `coalesce` absent first, so the branch absence selects is witnessed on it; the interpreted model
-  decides it; the generated Rust and Go behaviours decide `coalesce(<fact>, <literal>)` over a
-  Boolean, Integer, Decimal or String and no longer keep such a command an obligation; Entity
-  Runtime still refuses the guard as `FunctionCallUnsupported` (beyond10x/ess#620).
+- G4: `external:` may carry `when_subject:` to apply only to the rows it selects; set `format: ess/29` to use it (#554).
+- G1 grid O: a guard may write `coalesce(x, d) == v` for an absent `Optional`; set `format: ess/29` to use it (#620).
 
 ### Changed
 
-- From `format: ess/29` a branch declared below one a later step answers is refused where both hold; reorder it (#554).
-- Entity Runtime's `RelatedGuardUnsupported` refusal says why a bound copy of the row cannot stand in; specs unchanged.
-- A one-time response's read cell,
-  `<command>/disclosure/<outcome>/<field>/read/<view>/as/actor/<A>`, now names the reader: the
-  value is issued by `A` where `A` may issue it, else by the first actor that may, and the view is
-  then read as `A` through a `read_as` step. An actor who may read the view but not issue the
-  value gets a cell where it used to get a refusal; a read cell is still refused where the view's
-  read grant does not name `A`. A suite holding such a cell is written at the new
-  `ess-conformance/56` (`/57` with coverage), which Rust, Go and TypeScript admit and run.
-  Regenerate a suite to get the new cells; an existing suite keeps its bytes and is read as
-  before, its read cells naming the issuer and reading as no actor (beyond10x/ess#614).
+- **Breaking:** one-time read cells name the reader; runners must read `ess-conformance/56`/`57`; specs unchanged (#614).
+- From `format: ess/29` a branch declared below one a later step answers is refused; reorder such branches (#554).
+- Entity Runtime's `RelatedGuardUnsupported` refusal says why no bound row copy stands in; specs unchanged (#554).
 
 ### Fixed
 
-- `coalesce(x, d)` in a guard — the structured `{compare: {left: {expr: "coalesce(x, d)"}, …}}`
-  `ess/27` admits — reads `d` where `x` is an absent `Optional`, as `coalesce` is defined. Before,
-  every evaluator read such a comparison as `Unknown`, so the interpreted model reported the
-  record unsupported and synthesis never sent the absence. A specification changes nothing; a
-  suite generated from such a guard gains the absent input when regenerated (beyond10x/ess#620).
-- A ranked head scoped by another head's published value, where the outer selection tests its
-  rows' related rows (`exists: {in: …}`), is ranked above the related rows that test placed in its
-  scope. Before, the head was the first of those rows, so a target taking the first row created
-  passed, and under `ties: unordered` or a narrow declared range synthesis refused the branch as
-  admitting at most one selected row. Where no creating input ranks the head above them, the gap now
-  says so; where a declared range leaves no value above the first row dealt, the rows are dealt
-  from the other end of the range. Other suites are unchanged; a specification needs no change
-  (beyond10x/ess#618).
-- A ranked head over rows another entity owns (`kind: owns`), scoped by another head's published
-  owner, is synthesized. Before, each row the head selects was created under a new owner of its
-  own rather than the owner the scope names, so the branch was refused as having no arrangement of
-  rows. The rows are now created naming that owner, with or without an `exists` test in the outer
-  selection. Other suites are unchanged; a specification needs no change (beyond10x/ess#621).
-- A connective's child that orders two `Integer` inputs against each other, such as
-  `amount <= limit` beside `limit > 0` and `amount > 0`, is witnessed: where no candidate of the
-  search is the input the child needs, one input is placed relative to the other inside the
-  declared ranges, so the `ESS-SYNTH-022` refusal naming that child is gone and the default branch
-  gets the row. A child whose orders and declared ranges leave no input at all (`limit <= 0` beside
-  `amount > 0` and `amount <= limit`) is no longer refused either. Other suites are unchanged; a
-  specification needs no change, and an authored scenario written only to cover such a child can
-  be dropped (beyond10x/ess#622).
-- An admitted authored scenario (`ess-scenario/1`) that sends an input where one child of an
-  `any`/`all` alone decides the connective, and expects the branch that input selects, now withdraws
-  the `ESS-SYNTH-022` refusal naming that child, as the refusal's help says. Before, the refusal
-  stayed in `conform synthesize`'s refusal list, its counts and the coverage inventory whatever the
-  authored scenarios sent (beyond10x/ess#619). A specification changes nothing; a suite generated
-  with such a scenario loses that refusal when regenerated.
-- Synthesizing a command that reads many row-set selectors takes seconds, not hours; specs change nothing (#624).
+- A guard's `coalesce(x, d)` reads `d` where `x` is absent, not `Unknown`; specs unchanged, regenerate suites (#620).
+- A ranked head scoped by another head's value ranks above the rows its scope placed; specs unchanged (#618).
+- A ranked head over owned rows scoped by another head's owner is synthesized under that owner; specs unchanged (#621).
+- A connective child ordering two `Integer` inputs (`a <= b`) is witnessed, not refused; specs unchanged (#622).
+- An authored scenario isolating a connective's child withdraws that child's `ESS-SYNTH-022`; specs unchanged (#619).
+- Synthesizing a command that reads many row-set selectors takes seconds, not hours; specs unchanged (#624).
+
+Language: 0 general, 0 one-to-one, 2 part (general share 0%; cumulative 19%).
 
 ## [0.66.0] — 2026-10-20
 
