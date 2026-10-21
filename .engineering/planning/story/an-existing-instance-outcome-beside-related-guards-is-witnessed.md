@@ -2,10 +2,15 @@
 format: aep.planning-md/3
 id: story:an-existing-instance-outcome-beside-related-guards-is-witnessed
 kind: story
-status: draft
+status: active
 title: An existing-instance outcome beside related guards is witnessed
 summary: 'Synthesis reaches existing_instance: true behind related catalogue guards, or names the blocking declaration'
-revision: 2
+relations:
+- serves: vision:O2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-21T22:50:14Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-21T22:50:14Z", actor: "human:timo", revision: 4}
 ---
 ## Story
 
