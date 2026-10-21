@@ -191,6 +191,14 @@ pub trait TypeEnvironment {
     fn primitive(&self, _reference: &Self::Type) -> Option<Primitive> {
         None
     }
+    /// The primitive a function call's fact is, where it is one: what `coalesce(<fact>, …)` and
+    /// the other functions read.
+    ///
+    /// [`Self::primitive`] by default. An environment that admits a call at one site only and
+    /// answers no `distinct` key there names the primitive here alone (beyond10x/ess#627).
+    fn function_primitive(&self, reference: &Self::Type) -> Option<Primitive> {
+        self.primitive(reference)
+    }
     /// Whether this environment admits `.count` on a `String`, the length in Unicode scalar values
     /// that `ess/11` introduced.
     ///
@@ -275,6 +283,18 @@ pub trait TypeEnvironment {
     /// `true` by default: the compiler's environment reads an IR validation already admitted.
     fn calls_here(&self) -> bool {
         true
+    }
+    /// Whether `field` is a field of the candidate row of a selector's `where:` — a row-set guard's
+    /// (`when_related: {entity, where, …}`), a filtered read's or an ordered head's (`{related:
+    /// {entity, where, …}}`) — where `coalesce(<field>, <literal>) <op> <literal>` selects the rows
+    /// whose value, or the default where it is absent, compares so (beyond10x/ess#627):
+    /// `Some(true)` where the format admits it, from `ess/30`; `Some(false)` below it, where the
+    /// call keeps its refusal and the hint names `ess/30`; `None` at every other site and for
+    /// every other fact.
+    ///
+    /// `None` by default: a site that admits calls ([`Self::calls_here`]) never asks.
+    fn coalesces_candidate(&self, _field: &str) -> Option<bool> {
+        None
     }
     /// Whether this environment checks an authored source whose bare words name roots (`ess/22`
     /// or later): a binder that shadows a root is then refused where a bare word would read it,
@@ -427,12 +447,19 @@ pub struct ExpressionError {
     pub boundary: Option<&'static str>,
     /// The complete diagnostic without a fabricated source span.
     pub message: String,
+    /// How to repair it, where the format that admits it is newer than the source's: kept apart
+    /// from [`Self::message`], which stays the refusal older formats print.
+    pub hint: Option<String>,
 }
 
 impl ExpressionError {
     /// Convert without changing the public diagnostic wire shape.
     pub fn validation_error(&self) -> ValidationError {
-        ValidationError::new(self.code, self.owner.clone(), self.message.clone())
+        let error = ValidationError::new(self.code, self.owner.clone(), self.message.clone());
+        match &self.hint {
+            Some(hint) => error.with_hint(hint.clone()),
+            None => error,
+        }
     }
 }
 
@@ -839,6 +866,7 @@ fn error(
         segment: segment.map(str::to_owned),
         boundary: None,
         message,
+        hint: None,
     }
 }
 
@@ -2008,6 +2036,7 @@ pub fn check_predicate<E: TypeEnvironment>(
             parameters: BTreeSet::new(),
             current_time: Vec::new(),
         },
+        coalescing: None,
     };
     checker.predicate(predicate);
     checker.checked
@@ -2018,6 +2047,9 @@ struct Checker<'a, E: TypeEnvironment> {
     owner: &'a str,
     bindings: Vec<Binding<E::Type>>,
     checked: Checked<E::Type>,
+    /// While the left of `coalesce(<field>, <literal>) <op> <literal>` is checked in a selector's
+    /// `where:`, whether the format admits it there ([`TypeEnvironment::coalesces_candidate`]).
+    coalescing: Option<bool>,
 }
 
 // Each flag is one question the environment answers of the terminal type, asked by a different
@@ -2198,8 +2230,11 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             ));
             return None;
         }
-        if !self.environment.calls_here() {
-            self.checked.errors.push(error(
+        // A selector's `where:` compares `coalesce(<field>, <literal>)` with a literal from
+        // `ess/30` (beyond10x/ess#627); below it the refusal stands, its hint naming the format.
+        let coalescing = self.coalescing.take();
+        if !self.environment.calls_here() && coalescing != Some(true) {
+            let mut refused = error(
                 self.owner,
                 ValidationCode::UnsupportedConstruct,
                 Some(parent),
@@ -2210,11 +2245,18 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                      `when_related:`); compare stored values here, or move the rule into the \
                      command's guard"
                 ),
-            ));
+            );
+            if coalescing == Some(false) {
+                refused.hint = Some(format!(
+                    "declare `format: ess/30`, where a selector's `where:` compares `{expr}` with \
+                     a literal, an absent `{parent}` reading as the default"
+                ));
+            }
+            self.checked.errors.push(refused);
             return None;
         }
         let resolved = self.read(parent, false)?;
-        let primitive = self.environment.primitive(&resolved.terminal);
+        let primitive = self.environment.function_primitive(&resolved.terminal);
         let kind = match primitive {
             Some(Primitive::Integer) => Some(Kind::Integer),
             Some(Primitive::Decimal) => Some(Kind::Decimal),
@@ -3017,7 +3059,9 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         if !self.root_fact_operand(predicate, right) {
             return;
         }
+        self.coalescing = self.coalesced_selector(left, right);
         let left_type = self.operand(left);
+        self.coalescing = None;
         let right_type = self.operand(right);
         if let (Some(left_type), Some(right_type)) = (left_type, right_type) {
             let compatible = left_type.scalar.is_some()
@@ -3072,6 +3116,24 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 }
             }
         }
+    }
+
+    /// For `coalesce(<field>, <literal>) <op> <literal>`, whether the site is a selector's `where:`
+    /// over a candidate row declaring `<field>`, and whether its format admits the comparison
+    /// there ([`TypeEnvironment::coalesces_candidate`]); `None` for every other comparison, and
+    /// where a binder of that name shadows the field.
+    fn coalesced_selector(&self, left: &Operand, right: &Operand) -> Option<bool> {
+        let (Operand::Derived(derived), Operand::Literal(_)) = (left, right) else {
+            return None;
+        };
+        let (parent, _) = derived.coalesced()?;
+        let [field] = parent.segments() else {
+            return None;
+        };
+        if self.bindings.iter().any(|binding| binding.name == *field) {
+            return None;
+        }
+        self.environment.coalesces_candidate(field)
     }
 
     /// A comparison whose left side the compact reader kept as text: a function call that is no

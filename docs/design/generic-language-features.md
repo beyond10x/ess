@@ -117,6 +117,14 @@ Rules every form follows:
   `Unknown` as false: `coalesce(is_error, true) == false`, written on the left of a compact
   comparison from `ess/29` (https://github.com/beyond10x/ess/issues/620). Synthesis sends such an
   `x` absent as one of its arms.
+- **Absence in a selector.** From `ess/30` the `where:` of a row-set guard, a filtered read and an
+  ordered head says the same of a candidate row: `coalesce(enabled, true) == true`, a field of the
+  candidate defaulted by a literal and compared with a literal, selects the rows whose `enabled`
+  is true or absent (https://github.com/beyond10x/ess/issues/627). A `forall:` body, a set
+  effect's filter and every other call in a selector keep their refusal; below `ess/30` the
+  refusal is unchanged, its hint naming `ess/30`. Synthesis arranges candidates with the field
+  absent and written; generated Rust and Go keep the command an obligation named by its selector,
+  and Entity Runtime refuses it as every row set.
 - **Time.** Elapsed seconds only. No days, months, calendars or zones; those remain the calendar
   window's (`docs/design/calendar-window-guards.md`). `== now` and `!= now` stay refused
   (`current-time-guards.md:43`).

@@ -6,6 +6,7 @@
 
 - From `format: ess/30` drop `exists: false` on a stored reference every writer checks and nothing deletes (#509).
 - `ess/30` suites re-read a kept reference's row after each branch writing either entity, so deleting it fails (#509).
+- From `format: ess/30` a selector's `where:` may write `coalesce(field, d) == v` for an absent `Optional` (#627).
 
 ### Fixed
 

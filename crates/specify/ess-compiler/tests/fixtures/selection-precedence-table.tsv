@@ -1,4 +1,4 @@
-#	models=281	commands=575
+#	models=282	commands=579
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -333,6 +333,11 @@ crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-1.yaml	demo
 crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-1.yaml	demo.jobs.Record	default: recorded
 crates/verify/ess-conformance/tests/fixtures/coalesce-guard.yaml	ir=6a435394f6c17e77b305818e2b5423de4761402e8441020aa663f61d4f2cb240:6489
 crates/verify/ess-conformance/tests/fixtures/coalesce-guard.yaml	demo.closing.Classify	accepting: budget-stop, completed, retry | default: failed
+crates/verify/ess-conformance/tests/fixtures/coalesce-selector.yaml	ir=725104c2a1409cb86e13205a4866b5afc0d2f4256ccad314660c216cfa5e71fa:22556
+crates/verify/ess-conformance/tests/fixtures/coalesce-selector.yaml	demo.picking.Finish	default: finished
+crates/verify/ess-conformance/tests/fixtures/coalesce-selector.yaml	demo.picking.Join	default: joined
+crates/verify/ess-conformance/tests/fixtures/coalesce-selector.yaml	demo.picking.Pick	present_related: empty | default: picked
+crates/verify/ess-conformance/tests/fixtures/coalesce-selector.yaml	demo.picking.Switch	default: switched
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	ir=8dd5d71711712bd413e241f86738084c0536bdf60722e70c37d703543faf7a65:19229
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	demo.cases.Complete	held_state: unavailable | default: completed
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	demo.cases.Open	default: opened

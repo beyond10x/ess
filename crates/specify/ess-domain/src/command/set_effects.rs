@@ -1819,7 +1819,7 @@ fn check_filter(
         types,
         filter,
         (at, super::published_operand::Site::Effect),
-        (false, false),
+        (false, false, false),
     );
     if format.major() < FormatVersion::V27.major() && reads_identity(entity, filter) {
         let identity = &entity.identity.name;
@@ -1963,6 +1963,10 @@ fn pins_the_subject(
 /// With `rows`, a quantifier may walk the rows of a declared entity (ess/27, beyond10x/ess#551,
 /// [`super::related_rows`]): a selector's environment. A set effect's filter admits none, and the
 /// checker refuses them there by name.
+///
+/// With `selector`, `filter` is the `where:` of a row-set guard, a filtered read or an ordered
+/// head, which compares `coalesce(<field>, <literal>)` of a candidate field with a literal from
+/// `ess/30` (beyond10x/ess#627); below it the refusal stands, its hint naming `ess/30`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn check_row_predicate(
     spec: &Specification,
@@ -1973,7 +1977,7 @@ pub(super) fn check_row_predicate(
     types: &TypeRegistry,
     filter: &Predicate,
     (at, site): (&ConstructRef, super::published_operand::Site<'_>),
-    (current_time, rows): (bool, bool),
+    (current_time, rows, selector): (bool, bool, bool),
 ) -> ValidationErrors {
     let owner = at.render();
     let published = super::published_operand::classify(spec, fields, filter, site, at);
@@ -2003,6 +2007,10 @@ pub(super) fn check_row_predicate(
         current_time,
         published: (!published.admitted.is_empty()).then_some(&published.admitted),
         rows: rows.then_some(spec),
+        selector: selector.then_some((
+            fields,
+            spec.system().format.major() >= FormatVersion::V30.major(),
+        )),
     };
     let checked = crate::expression::check_predicate(&environment, filter, &owner);
     let mut errors = published.errors;
@@ -2014,11 +2022,11 @@ pub(super) fn check_row_predicate(
         {
             continue;
         }
-        errors.push(ValidationError::at(
-            at.clone(),
-            error.code,
-            error.message.clone(),
-        ));
+        let refused = ValidationError::at(at.clone(), error.code, error.message.clone());
+        errors.push(match &error.hint {
+            Some(hint) => refused.with_hint(hint.clone()),
+            None => refused,
+        });
     }
     errors
 }
@@ -2071,6 +2079,9 @@ struct WithSubject<'a> {
     /// Where a quantifier may walk the rows of an entity, the specification declaring them: a
     /// selector's environment (ess/27, beyond10x/ess#551).
     rows: Option<&'a Specification>,
+    /// In a selector's `where:`, the candidate row's fields and whether the format admits
+    /// `coalesce(<field>, <literal>) <op> <literal>` over them (ess/30, beyond10x/ess#627).
+    selector: Option<(&'a [Field], bool)>,
 }
 
 impl WithSubject<'_> {
@@ -2109,6 +2120,20 @@ impl TypeEnvironment for WithSubject<'_> {
     /// in this release (ess/27, beyond10x/ess#584).
     fn calls_here(&self) -> bool {
         false
+    }
+    /// A selector's `where:` reads an absent candidate field as a default (ess/30,
+    /// beyond10x/ess#627); a set effect's filter and a `forall` body do not.
+    fn coalesces_candidate(&self, field: &str) -> Option<bool> {
+        let (fields, admitted) = self.selector?;
+        fields
+            .iter()
+            .any(|declared| declared.name == field)
+            .then_some(admitted)
+    }
+    /// Only the call [`Self::coalesces_candidate`] admits reaches this; a `distinct` key keeps
+    /// [`TypeEnvironment::primitive`]'s `None`.
+    fn function_primitive(&self, reference: &Read) -> Option<Primitive> {
+        Self::declared(reference).and_then(|type_ref| self.inner.primitive(type_ref))
     }
 
     fn root(&self, name: &str) -> Option<Read> {

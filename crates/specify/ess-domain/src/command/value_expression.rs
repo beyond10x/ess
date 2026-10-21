@@ -2003,6 +2003,7 @@ fn check_selection(
         &registry,
         &selection.filter,
         (at, context.published_site()),
+        true,
     );
     if !checked.is_empty() {
         errors.extend(checked);
@@ -2085,6 +2086,7 @@ fn check_head(
         &registry,
         &selection.filter,
         (at, context.published_site()),
+        true,
     );
     if !checked.is_empty() {
         errors.extend(checked);

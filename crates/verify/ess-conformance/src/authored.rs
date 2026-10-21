@@ -4258,6 +4258,7 @@ impl<'a> Compiler<'a> {
                             "`{window}` is a calendar window, which is admitted only in a command \
                              outcome's guard and never in a suite predicate such as `satisfies:`"
                         ),
+                        hint: None,
                     },
                 });
                 return None;

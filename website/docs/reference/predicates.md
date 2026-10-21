@@ -467,10 +467,12 @@ deciding the conjunction, and `is_error == false` cannot decide it where `is_err
 
 The default has the fact's type (an Integer and a Decimal mix as a Decimal), and the call reads one
 fact; anything else on the left is refused as `type_mismatch`. A call on the left outside a command
-outcome's guards is refused as `unsupported_construct`. The canonical form is the structured
-`{compare: {left: {expr: "coalesce(is_error, true)"}, op: eq, right: false}}`, which validates from
-`ess/27`; below `ess/29` the compact spelling is refused as `unsupported_format_version` naming
-`ess/29` and that form.
+outcome's guards is refused as `unsupported_construct`, except one form in a selector's `where:`
+from `ess/30` ([below](#from-ess30-what-an-absent-candidate-field-compares-as)). The canonical
+form is the structured
+`{compare: {left: {expr: "coalesce(is_error, true)"}, op: eq, right: false}}`, which validates
+from `ess/27`; below `ess/29` the compact spelling is refused as `unsupported_format_version`
+naming `ess/29` and that form.
 
 Synthesis sends each `Optional` a guard reads only through `coalesce` absent first, so the branch
 the absence selects is witnessed on it, and the present values as for the fact itself. The generated
@@ -1651,6 +1653,46 @@ tie, each failing that conjunct alone — ranked above the head on the first key
 reads a head. A target that ignores the test, tests one side, or drops a conjunct or the tie then
 answers that candidate. Where no candidate can rank above the head, the gap is named and the
 scenario stands.
+
+### From `ess/30`: what an absent candidate field compares as
+
+A selector over rows whose `Optional` field may be absent says what absence compares as the way a
+guard does ([`ess/29`](#from-ess29-what-an-absent-value-compares-as)). From `ess/30`
+(beyond10x/ess#627) the `where:` of a row-set guard, of a filtered read and of an ordered head may
+compare `coalesce(<field>, <literal>)` of a candidate's field with a literal:
+
+```text
+- name: picked
+  creates: demo.picking.Pair
+  instance: pair_id
+  sets:
+    element_key:
+      related:
+        entity: demo.picking.Member
+        where:
+          all:
+            - slot_id == input.slot_id
+            - coalesce(enabled, true) == true   # an absent `enabled` counts as true
+        order_by: [element_score desc, member_id]
+        first: element_key
+```
+
+A member whose `enabled` is absent is selected and ranked with the true ones; a false one is not.
+`enabled == true` beside `defined(enabled)` would drop the absent rows instead, and
+`enabled == true` alone leaves their membership unknown. Write the selector in block style or quote
+the comparison: inside a flow sequence, the comma between the call's arguments ends the entry.
+
+Only this form is admitted: the call reads one field of the candidate (not `input.`, `subject.` or
+a quantifier's binder), its default is a literal of the field's type, and the right side is a
+literal. Any other call, a `forall:` body and a set effect's filter keep their
+`unsupported_construct`. Below `ess/30` the refusal is unchanged, its hint naming `ess/30`; at
+`ess/27` and `ess/28` that is the structured spelling's refusal, while the compact one keeps its
+refusal naming `ess/29`.
+
+Synthesis arranges candidates with the field absent and written: a target that reads an absent
+value as false, or ignores the conjunct, answers a scenario differently. Generated Rust and Go keep
+such a command a hand-written obligation, naming its selector; Entity Runtime refuses it as
+`RowSetUnsupported`, as every row set.
 
 ## What synthesis can witness
 
