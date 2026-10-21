@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added
+
+- From `format: ess/29` a command outcome's guard (`when:`, `when_subject:`, `when_related:`) may
+  call a function of one fact on the left of a compact comparison, so a guard over an `Optional`
+  says what an absent value compares as and is decided for every record (G1 presence,
+  `coalesce` in grid O, in the guard positions of grid R): `coalesce(is_error, true) == false`,
+  `coalesce(attempts, 0) < 3`. To take it up, change `format: ess/28` to `format: ess/29` and
+  give each such comparison its default: `is_error == false` becomes `coalesce(is_error, true) ==
+  false`. It is the spelling of the structured `{compare: {left: {expr: "…"}, op, right}}`, which
+  validates from `ess/27`; below `ess/29` the compact spelling is refused as
+  `unsupported_format_version` naming `ess/29` and the structured form, where it was a parse
+  refusal at every format. Text on the left that is no function of exactly one fact is refused as
+  `type_mismatch`, and a call on the left outside a command outcome's guards as
+  `unsupported_construct`. Synthesis sends each `Optional` such a guard reads only through
+  `coalesce` absent first, so the branch absence selects is witnessed on it; the interpreted model
+  decides it; the generated Rust and Go behaviours decide `coalesce(<fact>, <literal>)` over a
+  Boolean, Integer, Decimal or String and no longer keep such a command an obligation; Entity
+  Runtime still refuses the guard as `FunctionCallUnsupported` (beyond10x/ess#620).
+
 ### Changed
 
 - A one-time response's read cell,
@@ -16,6 +35,11 @@
 
 ### Fixed
 
+- `coalesce(x, d)` in a guard — the structured `{compare: {left: {expr: "coalesce(x, d)"}, …}}`
+  `ess/27` admits — reads `d` where `x` is an absent `Optional`, as `coalesce` is defined. Before,
+  every evaluator read such a comparison as `Unknown`, so the interpreted model reported the
+  record unsupported and synthesis never sent the absence. A specification changes nothing; a
+  suite generated from such a guard gains the absent input when regenerated (beyond10x/ess#620).
 - A ranked head scoped by another head's published value, where the outer selection tests its
   rows' related rows (`exists: {in: …}`), is ranked above the related rows that test placed in its
   scope. Before, the head was the first of those rows, so a target taking the first row created

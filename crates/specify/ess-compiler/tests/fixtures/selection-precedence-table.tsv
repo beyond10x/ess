@@ -1,4 +1,4 @@
-#	models=278	commands=568
+#	models=279	commands=569
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -331,6 +331,8 @@ crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-0.yaml	demo
 crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-1.yaml	ir=d5e380ef7ccf8634f041ee28197aa5556f38adfc34d93fd7a37153fdff726e97:12303
 crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-1.yaml	demo.jobs.Close	existence: unknown-attempt | held_state: already-closed | present_related: crowded | accepting: stuck | default: closed
 crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-1.yaml	demo.jobs.Record	default: recorded
+crates/verify/ess-conformance/tests/fixtures/coalesce-guard.yaml	ir=6a435394f6c17e77b305818e2b5423de4761402e8441020aa663f61d4f2cb240:6489
+crates/verify/ess-conformance/tests/fixtures/coalesce-guard.yaml	demo.closing.Classify	accepting: budget-stop, completed, retry | default: failed
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	ir=8dd5d71711712bd413e241f86738084c0536bdf60722e70c37d703543faf7a65:19229
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	demo.cases.Complete	held_state: unavailable | default: completed
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	demo.cases.Open	default: opened

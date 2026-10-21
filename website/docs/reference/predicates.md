@@ -434,6 +434,49 @@ refusal is also witnessed on a row and input where a refusal declared after it h
 requires the first declared. The generated Rust and Go behaviours keep such a command an obligation,
 and Entity Runtime refuses the guard as `FunctionCallUnsupported`.
 
+### From `ess/29`: what an absent value compares as
+
+A comparison that reads an absent `Optional` is unknown, so a guard over records whose optional
+fields may be absent cannot decide them, while an implementation does. Say what absence compares
+as with `coalesce(<fact>, <default>)`, the fact where it is present and the default where it is
+absent. From `ess/29` (beyond10x/ess#620) a command outcome's guard may write such a call on the
+left of a comparison:
+
+```text
+- name: completed                       # an absent verdict is no success
+  when:
+    all:
+      - terminal == true
+      - coalesce(is_error, true) == false
+- name: retry                           # absent attempts are none
+  when: coalesce(attempts, 0) < 3
+```
+
+| The value of `is_error` | `is_error == false` | `coalesce(is_error, true) == false` |
+|---|---|---|
+| `false` | true | true |
+| `true` | false | false |
+| absent | unknown | false |
+
+Inside a YAML flow mapping, quote the comparison: the comma between the call's arguments would
+otherwise end the entry, as in `when_subject: {predicate: "coalesce(retries, 0) >= 3"}`.
+
+`defined(is_error)` beside the comparison does not do this: `all: [defined(is_error), is_error ==
+false]` is false where `is_error` is absent, but synthesis must also witness each child alone
+deciding the conjunction, and `is_error == false` cannot decide it where `is_error` is absent.
+
+The default has the fact's type (an Integer and a Decimal mix as a Decimal), and the call reads one
+fact; anything else on the left is refused as `type_mismatch`. A call on the left outside a command
+outcome's guards is refused as `unsupported_construct`. The canonical form is the structured
+`{compare: {left: {expr: "coalesce(is_error, true)"}, op: eq, right: false}}`, which validates from
+`ess/27`; below `ess/29` the compact spelling is refused as `unsupported_format_version` naming
+`ess/29` and that form.
+
+Synthesis sends each `Optional` a guard reads only through `coalesce` absent first, so the branch
+the absence selects is witnessed on it, and the present values as for the fact itself. The generated
+Rust and Go behaviours decide `coalesce(<fact>, <literal>)` over a Boolean, Integer, Decimal or
+String; Entity Runtime refuses the guard as `FunctionCallUnsupported`.
+
 ### Absence is not `null`
 
 An unquoted `null` on the right of `==` or `!=` is refused, with a hint that names `defined(x)` or

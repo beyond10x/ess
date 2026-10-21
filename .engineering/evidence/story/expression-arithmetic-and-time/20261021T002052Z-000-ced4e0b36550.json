@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T00:20:52Z",
+  "actor": "human:timo",
+  "artifact": "story:expression-arithmetic-and-time",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-conformance --locked --test expression_arithmetic_and_time: 2 passed; 0 failed; cargo test -p ess-domain --locked --test expression_values: 10 passed; 0 failed",
+    "reference": "crates/verify/ess-conformance/tests/expression_arithmetic_and_time.rs"
+  }
+}

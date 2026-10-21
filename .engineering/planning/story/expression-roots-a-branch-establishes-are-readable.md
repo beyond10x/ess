@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:expression-roots-a-branch-establishes-are-readable
 kind: story
-status: draft
+status: active
 title: 'A value reads what its branch established: the addressed record''s fields, and an Optional narrowed by its own guard'
 tags:
 - adopter-report
@@ -14,7 +14,10 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:generic-expression-language
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-21T00:20:53Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-21T00:20:53Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:expression-arithmetic-and-time
 kind: story
-status: draft
+status: active
 title: 'Expressions compute arithmetic and time: Timestamp difference, Decimal division, now as an operand'
 tags:
 - adopter-report
@@ -14,7 +14,10 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:generic-expression-language
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-21T00:20:54Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-21T00:20:54Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
@@ -82,3 +85,18 @@ the `from`/`to` idiom in its hint.
 The suite-set clock `now_relative_view_filter` depends on is
 `story:a-suite-fixes-the-targets-clock` (https://github.com/beyond10x/ess/issues/586), one clock
 capability for command guards, stored `Timestamp` guards and view filters.
+
+## State 2026-10-21
+
+Shipped: every acceptance test of this story passes on the 0.67.0 batch branch
+(`crates/verify/ess-conformance/tests/current_time_guard.rs`,
+`crates/verify/ess-conformance/tests/now_stored_rows_runtimes.rs`,
+`crates/verify/ess-conformance/tests/expression_arithmetic_and_time.rs`,
+`crates/specify/ess-domain/tests/expression_values.rs`). Not done: `now` in a view filter read at a
+suite-set request clock. Today it is refused naming the `from`/`to` idiom
+(`now_relative_view_filter` takes that branch). What it needs: the view-filter current-time site
+admitted from the open source format; the interpreted view read deciding the filter at the command
+clock's instant; synthesis sending the filtered field's carrier input as `now_offset` values either
+side of the bound (latency-safe margin) and, at the boundary, a `hold_now` before the read; a suite
+pair admitting `hold_now` before `query_view` in Rust, Go and TypeScript admission; generated
+queries and Entity Runtime refusing it by name.

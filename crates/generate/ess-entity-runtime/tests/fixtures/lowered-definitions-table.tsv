@@ -1,4 +1,4 @@
-#	models=322	lines=456
+#	models=323	lines=457
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -132,6 +132,7 @@ crates/verify/ess-conformance/tests/fixtures/claim-search/pick-revision-gt.yaml	
 crates/verify/ess-conformance/tests/fixtures/claim-search/related.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-0.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/claim-search/row-set-gt-1.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/coalesce-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/current-time-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/declared-behaviour.yaml	components=0
@@ -444,7 +445,7 @@ system-dir:models/toolchain	infra	toolchain.infra.Observation	create	refused, co
 system-dir:models/toolchain	infra	toolchain.infra.Observation	toolchain.infra.ImportObservation	refused, imported, wrong-state
 system-dir:models/toolchain	release-automation	REFUSED	fca88a6cb61e25f86e28e8a69b4bf8ee5aadc05cb16ff6e4a728fb0ef5f0e657:375
 system-dir:models/toolchain	specify	toolchain.specify.Declaration	definition=f008c7ec58b6b8996de589cd7e5ce17e0cc8ba0610e93e9ac4e1f24d786ff2aa:1384
-system-dir:models/toolchain	specify	toolchain.specify.Model	definition=83ee69f5d4c1cade98097e606c57213ec78ecc74e717a3016f2587f69474085f:7102
+system-dir:models/toolchain	specify	toolchain.specify.Model	definition=85043f64937c0d5f40d7e24d95257716662adc33bb431c0581accd5bcebf4653:7120
 system-dir:models/toolchain	specify	toolchain.specify.Model	create	refused, selected
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.CompileModel	refused, compiled, wrong-state
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.ResolveModel	refused, resolved, wrong-state

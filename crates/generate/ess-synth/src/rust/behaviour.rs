@@ -3183,7 +3183,14 @@ impl Guards<'_> {
             Operand::Offset(_) => unreachable!("an offset is compared by `offset`"),
             Operand::Derived(derived) => {
                 let resolved = self.resolve_derived(env, derived);
-                self.read(&resolved)
+                let read = self.read(&resolved);
+                // `coalesce(<fact>, <literal>)`: the literal where the fact is absent (#620).
+                match derived.coalesced() {
+                    Some((_, default)) => {
+                        format!("{read}.or({})", fact_literal(&default, &resolved.kind))
+                    }
+                    None => read,
+                }
             }
         }
     }
