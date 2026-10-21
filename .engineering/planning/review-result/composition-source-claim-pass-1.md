@@ -6,7 +6,7 @@ status: active
 title: Composition source and claim admission, first pass
 relations:
 - reviews: task:consumer-accounting-composition
-revision: 1
+revision: 3
 ---
 needs-revision
 
@@ -111,7 +111,7 @@ RawOutcome aggregate identities remain unchanged by this correction.
 ## Finding 4: the names variant confounds two coordinates
 
 The affected coordinates are `A238-A240`, `C25`, and `C32-C33` in both profiles. One fixture overlay
-changes `poll-status` to `poll-status-v2` and `jira:DEV-630` to `jira:DEV-901` together. The cases
+changes `poll-status` to `poll-status-v2` and `ticket:EXT-1` to `ticket:EXT-2` together. The cases
 only establish that the combined edit moves the digest and leaves the selected closure/emitted
 transport behavior unchanged. If either value stopped reaching the IR, the other change would keep
 the case green. Separate binding-name-only and ExternalRef-only overlays, or equivalent decisive

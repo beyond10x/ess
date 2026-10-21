@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-21T11:29:39Z",
+  "actor": "human:timo",
+  "artifact": "review-result:composition-source-claim-pass-2",
+  "kind": "review-result",
+  "revision": 3,
+  "change": {
+    "change": "redaction",
+    "literal_sha256": "000bc6cd4ae58f48423113cb4bb34849cfb28984e2e74130c4dcf568c6e2358c",
+    "literal_chars": 12,
+    "replacement": "ticket:EXT-2",
+    "count": 1,
+    "reason": "removes an internal ticket key from a public review record"
+  }
+}

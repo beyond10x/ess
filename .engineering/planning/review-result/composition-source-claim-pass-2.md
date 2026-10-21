@@ -6,7 +6,7 @@ status: active
 title: Composition source and claim admission, final pass
 relations:
 - reviews: task:consumer-accounting-composition
-revision: 1
+revision: 3
 ---
 approve
 
@@ -113,8 +113,8 @@ cases. None of these rows continues to cite the unrelated subject-state variant.
 ### Isolated binding and external names
 
 A238-A240 now cite the binding-only overlay, where `poll-status` becomes `poll-status-v2` while
-`jira:DEV-630` remains fixed. C25 and C32-C33 cite the external-reference-only overlay, where the
-reference becomes `jira:DEV-901` while the binding name remains fixed. The compile case asserts
+`ticket:EXT-1` remains fixed. C25 and C32-C33 cite the external-reference-only overlay, where the
+reference becomes `ticket:EXT-2` while the binding name remains fixed. The compile case asserts
 both separations directly. Each overlay also has its own emission and executed-transport lane, so
 one changed value can no longer mask omission of the other.
 
