@@ -11,7 +11,7 @@
 
 ### Changed
 
-- **Breaking:** one-time read cells name the reader; runners must read `ess-conformance/56`/`57`; specs unchanged (#614).
+- One-time read cells name the reader, in new suites `ess-conformance/56`/`57`; older suites keep their bytes (#614).
 - From `format: ess/29` a branch declared below one a later step answers is refused; reorder such branches (#554).
 - Entity Runtime's `RelatedGuardUnsupported` refusal says why no bound row copy stands in; specs unchanged (#554).
 
