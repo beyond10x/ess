@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T22:02:00Z",
+  "actor": "human:timo",
+  "artifact": "story:a-scalar-to-record-input-change-is-breaking-for-callers",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave ess-0680 2026-10-21: cargo test -p ess-diff 427 passed at f9d189fec; both-directions test 9ad6df6e8 input_shape 11 passed; shipped 0.57.0",
+    "reference": "4b4f65db9"
+  }
+}

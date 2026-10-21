@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:synthesis-covers-input-guards-beside-an-existing-instance-branch
 kind: story
-status: active
+status: implemented
 title: Synthesis witnesses an input-guarded refusal on a creator that also has an existing_instance branch
 refs:
 - provider: github
   reference: beyond10x/ess#479
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-07T11:19:49Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-07T11:19:50Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-21T22:02:01Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

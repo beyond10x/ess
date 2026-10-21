@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T22:02:01Z",
+  "actor": "human:timo",
+  "artifact": "story:synthesis-covers-input-guards-beside-an-existing-instance-branch",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave ess-0680 2026-10-22 at e44d2b75c: #479 reproducer, 6 guard forms each 0 refusals with a satisfying item_id; authored scenario counted (1 authored); cargo test -p ess-conformance --test existing_instance_input_guards 4 passed; shipped 0.57.0",
+    "reference": "7b3e7eed7"
+  }
+}

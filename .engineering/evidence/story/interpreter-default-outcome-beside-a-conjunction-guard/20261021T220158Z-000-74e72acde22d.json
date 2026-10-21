@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T22:01:58Z",
+  "actor": "human:timo",
+  "artifact": "story:interpreter-default-outcome-beside-a-conjunction-guard",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave ess-0680 2026-10-21 at e44d2b75c: #471 reproducer all/any/tier each 2 passed vs interpreted; mutate 4 killed 0 survived; cargo test -p ess-conformance --test interpreted_creation_boundary_identity 5 passed; shipped 0.57.0",
+    "reference": "e6dd58bf9"
+  }
+}

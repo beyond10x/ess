@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:interpreter-default-outcome-beside-a-conjunction-guard
 kind: story
-status: active
+status: implemented
 title: The interpreted target passes the default outcome when a sibling guard is a conjunction
 refs:
 - provider: github
   reference: beyond10x/ess#471
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-07T11:19:51Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-07T11:19:52Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-21T22:01:59Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

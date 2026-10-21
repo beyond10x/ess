@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T22:01:58Z",
+  "actor": "human:timo",
+  "artifact": "story:diff-classifies-an-added-domain-entry",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave ess-0680 2026-10-21: #469 reproducer on ess 0.60.0, added domain compatible exit 0, removed breaking exit 4, reorder no change; cargo test -p ess-diff 427 passed at f9d189fec; shipped 0.57.0",
+    "reference": "4ea3576e4"
+  }
+}

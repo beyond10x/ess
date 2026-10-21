@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:synthesis-witnesses-stay-unique-per-arranged-instance
 kind: story
-status: active
+status: implemented
 title: A witness drawn for a length guard stays unique per arranged instance
 refs:
 - provider: github
   reference: beyond10x/ess#480
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-07T11:19:50Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-07T11:19:51Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-21T22:01:59Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
