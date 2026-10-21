@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:declaration-order-agrees-with-every-step-pair
 kind: story
-status: active
+status: implemented
 title: Under format A validation refuses a declaration order that contradicts the step order, for every pair of steps
 tags:
 - adopter-report
@@ -14,10 +14,11 @@ relations:
 - serves: vision:O2
 - depends_on: story:every-guard-combination-validates-under-the-rule
 - informed_by: story:unknown-instance-and-input-guard-agree-on-order
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T03:05:34Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 - {from: "proposed", to: "active", at: "2026-10-21T03:05:34Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-10-21T22:41:23Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

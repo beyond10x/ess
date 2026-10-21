@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T22:41:22Z",
+  "actor": "human:timo",
+  "artifact": "story:declaration-order-agrees-with-every-step-pair",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave ess-0680 2026-10-22: validation_reads_selection_plan 7 passed (red 6/1 before fix); explore_guards_first 3 passed; ess-domain, ess-conformance --lib 166, ess-cli tests 0 failed; typed_diagnostics 8 passed; task test-xtask ok; clippy x3 and fmt-check exit 0",
+    "reference": "c28c8ba2f"
+  }
+}
