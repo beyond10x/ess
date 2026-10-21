@@ -1322,7 +1322,8 @@ pub enum Cause {
     /// The field is an event's or an error's, or a stored field a view row shows, and every
     /// outcome that fills it here marks it `{generated: true}`, or `{input: f, else: {generated:
     /// true}}` where the act sends no `f`. A claim of one value passes only where the
-    /// implementation happens to mint it.
+    /// implementation happens to mint it. Below `ess/30` only: from it the value is the
+    /// scenario's own claim, checked as written (beyond10x/ess#623).
     GeneratedValuePinned {
         /// Where the value is written.
         surface: Surface,
@@ -2101,7 +2102,8 @@ diagnostic_catalogue! {
              where it happens to mint that one: drop the field from the expectation, and the \
              suite still checks its presence and type, or state its relation to another value \
              with a reference, `{$observed: {event: …, field: …}}` in a view row or `capture:` \
-             on the event";
+             on the event; from `format: ess/30` an exact value there is the scenario's own \
+             claim, which the suite checks as written";
         Self::UnorderedTie { .. } => 43,
             "An act reads the head of an order declaring `ties: unordered`, and the arranged rows \
              tie on every key and rank first.",
@@ -3985,14 +3987,23 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    /// Whether an exact value on a minted field is the scenario's own claim, which the suite
+    /// checks as written: from `ess/30` (beyond10x/ess#623). Below it the value is refused.
+    fn pins_minted_values(&self) -> bool {
+        self.ir.format().major() >= ess_domain::system::FormatVersion::V30.major()
+    }
+
     /// Refuses each exact value in `written` that every one of `fills` leaves to the
-    /// implementation (beyond10x/ess#544). No fill claims nothing.
+    /// implementation (beyond10x/ess#544), below `ess/30`. No fill claims nothing.
     fn minted_claims(
         &mut self,
         surface: &Surface,
         written: &BTreeMap<String, Written>,
         fills: &[Fill<'_>],
     ) {
+        if self.pins_minted_values() {
+            return;
+        }
         for (field, value) in written {
             if !pins(value) {
                 continue;
@@ -4012,13 +4023,16 @@ impl<'a> Compiler<'a> {
     }
 
     /// Refuses each exact value a row claim of `view` writes for a stored field of `entity` that
-    /// every write of it in this scenario mints, and no `setup:` states.
+    /// every write of it in this scenario mints, and no `setup:` states, below `ess/30`.
     fn minted_row(
         &mut self,
         view: &ViewRef,
         entity: &QualifiedName,
         written: &BTreeMap<String, Written>,
     ) {
+        if self.pins_minted_values() {
+            return;
+        }
         let Some(declared) = self.ir.entities().get(entity) else {
             return;
         };

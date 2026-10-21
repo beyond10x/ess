@@ -337,6 +337,29 @@ its relation to another value with a reference: `{$observed: {event: …, field:
 or `capture:` on the event. A value a `setup:` states, or one a branch fills from the input, keeps
 its exact claim.
 
+### From `ess/30`: a minted value the scenario determines
+
+Some minted values are fixed by the scenario's own earlier steps: a revision number is the count of
+commits the scenario made, a cursor is the offset after the page it asked for, a total is the size
+of the graph it built. From `format: ess/30` an act may state such a value, and the claim is the
+scenario's own. The act is accepted, and the suite checks the value exactly, as it checks a value
+the input fills:
+
+```yaml
+    outcome: committed
+    events:
+      - event: demo.ledger.RevisionCommitted
+        payload: {revision: 2}   # the second commit this scenario made
+```
+
+An implementation that mints another value fails the scenario; one that mints the stated value
+passes. Every place listed above takes the claim alike: an event's payload, an error's fields, a
+struct member and a view row's stored field. The model interpreter mints its own counter, so on
+`--target ir`, and in the baseline `mutate --scenarios` runs, such a scenario passes only where the
+counter happens to mint the stated value; elsewhere the baseline is refused as `ESS-MUTATE-001`.
+Synthesis never pins a minted value at any format. Below `ess/30` the act is refused as
+`ESS-AUTHOR-042`, its message unchanged and its help naming `ess/30`.
+
 ## Where the observation sections went
 
 What a suite observes beyond an act's own answer is on [Observations](observations.md). Each

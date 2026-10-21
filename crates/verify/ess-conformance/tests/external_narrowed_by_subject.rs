@@ -226,3 +226,201 @@ fn the_interpreter_answers_the_narrowed_branch_only_on_a_row_it_selects() {
         "plain-mismatch"
     );
 }
+
+/// "Commit unless the head moved" (beyond10x/ess#623, Ask B): `Commit` moves a validated
+/// transaction to `Committed` (`committed`, `when_subject_state: Validated`) unless an outside
+/// check finds the head moved after validation (`stale`, which moves it to `Stale` instead). The
+/// race is declared first and narrowed to the state it starts from, so it answers at the
+/// held-state step ahead of `committed`, and only where the provider says so.
+const LEDGER: &str = "format: ess/29
+system: demo
+version: v1
+domain: demo.ledger
+summary: A transaction committed unless the head moved after it was validated.
+types:
+  - {name: demo.ledger.TransactionId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.ledger.Transaction
+    identity: {name: transaction_id, type: demo.ledger.TransactionId}
+    fields:
+      - {name: note, type: String}
+    lifecycle:
+      initial: Proposed
+      states: [Proposed, Validated, Committed, Stale]
+      terminal: [Committed, Stale]
+      transitions:
+        - {name: validate, from: [Proposed], to: Validated}
+        - {name: commit, from: [Validated], to: Committed}
+        - {name: outdate, from: [Validated], to: Stale}
+actors:
+  - name: demo.ledger.Writer
+    may: [demo.ledger.Propose, demo.ledger.Validate, demo.ledger.Commit]
+commands:
+  - name: demo.ledger.Propose
+    input:
+      - {name: note, type: String}
+    outcomes:
+      - name: proposed
+        creates: demo.ledger.Transaction
+        instance: transaction_id
+        sets: {note: input.note}
+        emits: [demo.ledger.Proposed]
+        payload:
+          demo.ledger.Proposed: {transaction_id: {generated: true}}
+  - name: demo.ledger.Validate
+    input:
+      - {name: transaction_id, type: demo.ledger.TransactionId}
+    outcomes:
+      - name: validated
+        moves: demo.ledger.Transaction.validate
+        instance: transaction_id
+        emits: [demo.ledger.Validated]
+        payload:
+          demo.ledger.Validated: {transaction_id: input.transaction_id}
+      - name: not-proposed
+        wrong_state: true
+        error: demo.ledger.NotProposed
+  - name: demo.ledger.Commit
+    input:
+      - {name: transaction_id, type: demo.ledger.TransactionId}
+    outcomes:
+      - name: stale
+        external: the head moved after the transaction was validated
+        when_subject:
+          predicate: state == Validated
+        moves: demo.ledger.Transaction.outdate
+        instance: transaction_id
+        emits: [demo.ledger.Outdated]
+        payload:
+          demo.ledger.Outdated: {transaction_id: input.transaction_id}
+      - name: committed
+        when_subject_state: Validated
+        moves: demo.ledger.Transaction.commit
+        instance: transaction_id
+        emits: [demo.ledger.Committed]
+        payload:
+          demo.ledger.Committed: {transaction_id: input.transaction_id}
+      - name: not-validated
+        wrong_state: true
+        error: demo.ledger.NotValidated
+events:
+  - name: demo.ledger.Proposed
+    fields: [{name: transaction_id, type: demo.ledger.TransactionId}]
+  - name: demo.ledger.Validated
+    fields: [{name: transaction_id, type: demo.ledger.TransactionId}]
+  - name: demo.ledger.Outdated
+    fields: [{name: transaction_id, type: demo.ledger.TransactionId}]
+  - name: demo.ledger.Committed
+    fields: [{name: transaction_id, type: demo.ledger.TransactionId}]
+errors:
+  - name: demo.ledger.NotProposed
+  - name: demo.ledger.NotValidated
+views:
+  - name: demo.ledger.Transactions
+    source: demo.ledger.Transaction
+    consistency: read_your_writes
+    fields:
+      - {name: transaction_id, type: demo.ledger.TransactionId}
+      - {name: note, type: String}
+      - {name: state, type: demo.ledger.Transaction.State}
+";
+
+/// `stale` as a plain external branch declared after `committed`, the shape a downstream adopter
+/// wrote, with every other held state refused by name: `committed` answers every validated
+/// transaction, and no other state starts `stale`'s move.
+const LEDGER_UNNARROWED: (&str, &str) = (
+    "      - name: stale
+        external: the head moved after the transaction was validated
+        when_subject:
+          predicate: state == Validated
+        moves: demo.ledger.Transaction.outdate
+        instance: transaction_id
+        emits: [demo.ledger.Outdated]
+        payload:
+          demo.ledger.Outdated: {transaction_id: input.transaction_id}
+      - name: committed
+        when_subject_state: Validated
+        moves: demo.ledger.Transaction.commit
+        instance: transaction_id
+        emits: [demo.ledger.Committed]
+        payload:
+          demo.ledger.Committed: {transaction_id: input.transaction_id}
+      - name: not-validated
+        wrong_state: true
+        error: demo.ledger.NotValidated
+",
+    "      - name: committed
+        when_subject_state: Validated
+        moves: demo.ledger.Transaction.commit
+        instance: transaction_id
+        emits: [demo.ledger.Committed]
+        payload:
+          demo.ledger.Committed: {transaction_id: input.transaction_id}
+      - name: not-validated
+        when_subject_state: [Proposed, Committed, Stale]
+        error: demo.ledger.NotValidated
+      - name: stale
+        external: the head moved after the transaction was validated
+        moves: demo.ledger.Transaction.outdate
+        instance: transaction_id
+        emits: [demo.ledger.Outdated]
+        payload:
+          demo.ledger.Outdated: {transaction_id: input.transaction_id}
+",
+);
+
+/// Every synthesis refusal, as it reads.
+fn refused(synthesis: &ess_conformance::synthesize::Synthesis) -> Vec<String> {
+    synthesis.refusals.iter().map(ToString::to_string).collect()
+}
+
+#[test]
+fn a_race_declared_before_the_held_state_branch_it_overrides_is_witnessed() {
+    let model = ir(LEDGER);
+    let synthesis = synthesize(&model);
+    assert!(synthesis.refusals.is_empty(), "{:#?}", refused(&synthesis));
+    let ids: BTreeSet<String> = synthesis
+        .suite
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .collect();
+    for id in [
+        "demo.ledger.Commit/outcome/committed",
+        "demo.ledger.Commit/outcome/stale",
+    ] {
+        assert!(ids.contains(id), "{id} is witnessed: {ids:#?}");
+    }
+    let statuses = run(&synthesis.suite, model);
+    assert!(failing(&statuses).is_empty(), "{statuses:#?}");
+}
+
+#[test]
+fn a_plain_race_after_the_held_state_branch_stays_unreachable() {
+    let (narrowed, plain) = LEDGER_UNNARROWED;
+    let text = LEDGER.replace(narrowed, plain);
+    assert_ne!(text, LEDGER);
+    let synthesis = synthesize(&ir(&text));
+    let codes = refused(&synthesis);
+    assert!(
+        codes
+            .iter()
+            .any(|text| text.starts_with("refusal[ESS-SYNTH-003]") && text.contains("`committed`")),
+        "{codes:#?}"
+    );
+    assert!(
+        codes
+            .iter()
+            .any(|text| text.starts_with("refusal[ESS-SYNTH-004]")
+                && text.contains("`demo.ledger.Commit/stale`")),
+        "{codes:#?}"
+    );
+    assert!(
+        !synthesis
+            .suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string() == "demo.ledger.Commit/outcome/stale"),
+        "{codes:#?}"
+    );
+}
