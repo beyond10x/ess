@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:generic-expression-language
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-16T10:20:20Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-16T10:20:20Z", actor: "human:timo", revision: 3}
@@ -85,3 +85,18 @@ position that reads `now`, and shared with the view request clock the design rec
 
 `crates/verify/ess-conformance/src/now_offset.rs`, `runner.rs` (`Clock`), `go/runtime.go`, the
 TypeScript runtime, synthesis of `now` witnesses, `docs/design/current-time-guards.md`.
+
+## State 2026-10-21
+
+Shipped: every acceptance test of this story passes on the 0.67.0 batch branch
+(`crates/verify/ess-conformance/tests/current_time_guard.rs`,
+`crates/verify/ess-conformance/tests/now_stored_rows_runtimes.rs`,
+`crates/verify/ess-conformance/tests/expression_arithmetic_and_time.rs`,
+`crates/specify/ess-domain/tests/expression_values.rs`). Not done: `now` in a view filter read at a
+suite-set request clock. Today it is refused naming the `from`/`to` idiom
+(`now_relative_view_filter` takes that branch). What it needs: the view-filter current-time site
+admitted from the open source format; the interpreted view read deciding the filter at the command
+clock's instant; synthesis sending the filtered field's carrier input as `now_offset` values either
+side of the bound (latency-safe margin) and, at the boundary, a `hold_now` before the read; a suite
+pair admitting `hold_now` before `query_view` in Rust, Go and TypeScript admission; generated
+queries and Entity Runtime refusing it by name.
