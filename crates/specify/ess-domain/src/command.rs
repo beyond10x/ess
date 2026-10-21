@@ -3018,10 +3018,20 @@ impl CommandSpec {
         }
 
         errors.extend(self.validate_branch_coverage(types));
-        if let Some(types) = types {
-            errors.extend(self.validate_held_state_order(types));
+        // From ess/29 one check holds every pair of steps; below it the two rules that hold one
+        // pair each apply, unchanged.
+        if let Some(types) = types.filter(|types| {
+            types
+                .format()
+                .is_some_and(|format| format.major() >= STEP_ORDER_DECLARED.major())
+        }) {
+            errors.extend(self.validate_step_order(types));
+        } else {
+            if let Some(types) = types {
+                errors.extend(self.validate_held_state_order(types));
+            }
+            errors.extend(self.validate_before_row_order(types));
         }
-        errors.extend(self.validate_before_row_order(types));
         errors.extend(outcome_shapes::validate_command(
             self,
             types.and_then(TypeRegistry::format),
@@ -3799,6 +3809,99 @@ impl CommandSpec {
         errors
     }
 
+    /// From `ess/29` ([`STEP_ORDER_DECLARED`], `story:declaration-order-agrees-with-every-step-pair`),
+    /// refuses a guarded branch declared after a branch a later step of the one precedence rule
+    /// answers, wherever one request can satisfy both, for every pair of steps 1 to 5
+    /// (`docs/design/generic-language-features.md` § G4, "What changes").
+    ///
+    /// It generalises the held-state rule ([`Self::validate_held_state_order`], beyond10x/ess#486)
+    /// and the `before_row:` rule ([`Self::validate_before_row_order`], #534), which it replaces
+    /// from `ess/29`: a consumer reading branches in one declaration-order pass then gives the
+    /// rule's answer. The branch refused is one read in declaration order within its step
+    /// ([`precedence::Rank::Declared`]); the one above it may be any branch of a later step,
+    /// a marker included (`unknown_instance:` above an input refusal). A marker below a guarded
+    /// branch is not refused: it answers its step's question, not in declaration order. Input guards
+    /// the finite prover shows disjoint never hold together; a guard it declines, and a branch with
+    /// none, counts as one that can hold with any other. What the stored row selects is not read:
+    /// two branches the row alone tells apart are refused as overlapping.
+    fn validate_step_order(&self, types: &TypeRegistry) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let Some(format) = types.format() else {
+            return errors;
+        };
+        let environment = crate::expression::DomainEnvironment::new(types, &self.input);
+        let together = |first: Option<&Predicate>, second: Option<&Predicate>| {
+            let (Some(first), Some(second)) = (first, second) else {
+                return true;
+            };
+            finite::analyze(&environment, &[first, second]).is_none_or(|cases| {
+                cases
+                    .iter()
+                    .any(|case| case.selected.contains(&0) && case.selected.contains(&1))
+            })
+        };
+        let composition = self.composition(Some(types));
+        let stepped = |phase: precedence::Phase| {
+            matches!(
+                phase,
+                precedence::Phase::InputRefusal
+                    | precedence::Phase::Existence
+                    | precedence::Phase::HeldState
+                    | precedence::Phase::PresentRelated
+                    | precedence::Phase::Accepting
+            )
+        };
+        let placed: Vec<(&Outcome, precedence::Place)> = self
+            .outcomes
+            .iter()
+            .map(|outcome| {
+                (
+                    outcome,
+                    precedence::place(&precedence::BranchShape::of(outcome), &composition),
+                )
+            })
+            .collect();
+        for (index, (outcome, place)) in placed.iter().enumerate() {
+            if place.rank != precedence::Rank::Declared || !stepped(place.phase) {
+                continue;
+            }
+            let Some((earlier, read)) = placed[..index].iter().find(|(earlier, read)| {
+                stepped(read.phase)
+                    && read.phase.position() > place.phase.position()
+                    && together(earlier.condition.predicate(), outcome.condition.predicate())
+            }) else {
+                continue;
+            };
+            let step = |phase: precedence::Phase| {
+                phase
+                    .step_in(format)
+                    .map_or_else(|| phase.to_string(), |step| step.to_string())
+            };
+            errors.push(
+                ValidationError::at(
+                    self.site().key("outcomes").named(outcome.name.as_str()),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`{}` answers at step {} of the precedence order and `{}`, declared above \
+                         it, at step {}; where both hold, the declaration order and the \
+                         precedence order disagree",
+                        outcome.name,
+                        step(place.phase),
+                        earlier.name,
+                        step(read.phase)
+                    ),
+                )
+                .with_hint(format!(
+                    "declare `{}` before `{}`: step {} answers first in either order",
+                    outcome.name,
+                    earlier.name,
+                    step(place.phase)
+                )),
+            );
+        }
+        errors
+    }
+
     /// Checks for one default or a complete finite partition, and at least one input-testable branch.
     fn validate_branch_coverage(&self, types: Option<&TypeRegistry>) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
@@ -4421,6 +4524,12 @@ fn before_row_format(
         .with_hint("declare `format: ess/25`, or drop `before_row:`")
     })
 }
+
+/// The first source format whose validation holds the declaration order of every pair of steps of
+/// the one precedence rule to the step order (`story:declaration-order-agrees-with-every-step-pair`,
+/// `CommandSpec::validate_step_order`). Below it the held-state rule (beyond10x/ess#486) and the
+/// `before_row:` rule (#534) hold one pair each, unchanged.
+pub const STEP_ORDER_DECLARED: crate::system::FormatVersion = crate::system::FormatVersion::V29;
 
 /// The format gate of an external branch narrowed by a subject guard (`external:` beside
 /// `when_subject: {predicate: …}`, ess/29, `story:external-branch-narrowed-by-subject-guard`).

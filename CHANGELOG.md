@@ -24,6 +24,7 @@
 
 ### Changed
 
+- From `format: ess/29` a branch declared below one a later step answers is refused where both hold; reorder it (#554).
 - Entity Runtime's `RelatedGuardUnsupported` refusal says why a bound copy of the row cannot stand in; specs unchanged.
 - A one-time response's read cell,
   `<command>/disclosure/<outcome>/<field>/read/<view>/as/actor/<A>`, now names the reader: the

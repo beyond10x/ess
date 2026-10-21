@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T03:05:34Z",
+  "actor": "human:timo",
+  "artifact": "story:declaration-order-agrees-with-every-step-pair",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-domain --locked --test held_state_order: 21 passed; 0 failed; -p ess-compiler --test selection_precedence_table: 1 passed (every repository model still validates); -p ess-compiler --test typed_diagnostics: 8 passed",
+    "reference": "crates/specify/ess-domain/tests/held_state_order.rs"
+  }
+}

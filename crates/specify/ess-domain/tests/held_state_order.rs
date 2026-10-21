@@ -571,3 +571,276 @@ fn format_a_admits_before_row_beside_when_related() {
         "{refusals:#?}"
     );
 }
+
+// ---- ess/29: the declaration order agrees with every pair of steps -------------------------
+
+/// `Release` at `format`, declaring `branches` in the order given. Each branch answers at its own
+/// step of the one precedence rule: an input refusal (1), `unknown_instance:` (2), a held-state
+/// refusal (3), a related row's `exists: false` and predicate refusal (4), an accepting move (5),
+/// then `wrong_state:` and the default.
+fn steps_model(format: &str, branches: &[&str]) -> String {
+    format!(
+        "format: {format}
+system: demo
+version: v1
+domain: demo.order
+types:
+  - {{name: demo.order.SeatId, kind: newtype, of: Uuid}}
+  - {{name: demo.order.TierId, kind: newtype, of: Uuid}}
+entities:
+  - name: demo.order.Tier
+    identity: {{name: tier_id, type: demo.order.TierId}}
+    fields:
+      - {{name: open, type: Boolean}}
+    lifecycle: {{initial: Live, states: [Live], terminal: [Live], transitions: []}}
+  - name: demo.order.Seat
+    identity: {{name: seat_id, type: demo.order.SeatId}}
+    fields:
+      - {{name: vip, type: Boolean}}
+    lifecycle:
+      initial: Held
+      states: [Held, Released]
+      terminal: [Released]
+      transitions:
+        - {{name: release, from: [Held], to: Released}}
+actors:
+  - name: demo.order.Clerk
+    may: [demo.order.MakeTier, demo.order.MakeSeat, demo.order.Release]
+commands:
+  - name: demo.order.MakeTier
+    input:
+      - {{name: open, type: Boolean}}
+    outcomes:
+      - name: made
+        creates: demo.order.Tier
+        instance: tier_id
+        sets: {{open: input.open}}
+        emits: [demo.order.TierMade]
+        payload:
+          demo.order.TierMade: {{tier_id: {{generated: true}}}}
+  - name: demo.order.MakeSeat
+    input:
+      - {{name: vip, type: Boolean}}
+    outcomes:
+      - name: made
+        creates: demo.order.Seat
+        instance: seat_id
+        sets: {{vip: input.vip}}
+        emits: [demo.order.SeatMade]
+        payload:
+          demo.order.SeatMade: {{seat_id: {{generated: true}}}}
+  - name: demo.order.Release
+    input:
+      - {{name: seat_id, type: demo.order.SeatId}}
+      - {{name: tier_id, type: demo.order.TierId}}
+      - {{name: amount, type: Integer}}
+      - {{name: rush, type: Boolean}}
+    outcomes:
+{}      - name: other
+        error: demo.order.Other
+events:
+  - name: demo.order.TierMade
+    fields: [{{name: tier_id, type: demo.order.TierId}}]
+  - name: demo.order.SeatMade
+    fields: [{{name: seat_id, type: demo.order.SeatId}}]
+  - name: demo.order.Released
+    fields: [{{name: seat_id, type: demo.order.SeatId}}]
+errors:
+  - name: demo.order.TooMuch
+  - name: demo.order.NoSeat
+  - name: demo.order.Vip
+  - name: demo.order.NoTier
+  - name: demo.order.Closed
+  - name: demo.order.NotHeld
+  - name: demo.order.Other
+",
+        branches.concat()
+    )
+}
+
+const TOO_MUCH: &str = "      - name: too-much
+        when: amount > 100
+        error: demo.order.TooMuch
+";
+const UNKNOWN: &str = "      - name: no-seat
+        unknown_instance: true
+        error: demo.order.NoSeat
+";
+const VIP: &str = "      - name: vip
+        when_subject: {predicate: vip == true}
+        error: demo.order.Vip
+";
+const NO_TIER: &str = "      - name: no-tier
+        when_related: {via: input.tier_id, exists: false}
+        error: demo.order.NoTier
+";
+const CLOSED: &str = "      - name: closed
+        when_related: {via: input.tier_id, predicate: open == false}
+        error: demo.order.Closed
+";
+const RELEASED: &str = "      - name: released
+        when: amount > 0
+        moves: demo.order.Seat.release
+        instance: seat_id
+        emits: [demo.order.Released]
+        payload:
+          demo.order.Released: {seat_id: input.seat_id}
+";
+const NOT_HELD: &str = "      - name: not-held
+        wrong_state: true
+        error: demo.order.NotHeld
+";
+
+/// Every branch in step order.
+const IN_STEP_ORDER: [&str; 7] = [TOO_MUCH, UNKNOWN, VIP, NO_TIER, CLOSED, RELEASED, NOT_HELD];
+
+/// Every guarded branch in step order, the markers declared last.
+const MARKERS_LAST: [&str; 7] = [TOO_MUCH, VIP, NO_TIER, CLOSED, RELEASED, NOT_HELD, UNKNOWN];
+
+/// [`MARKERS_LAST`] with `moved` declared right before `anchor`: every branch above `anchor` is still
+/// in step order, so `anchor` names `moved` first.
+fn moved_before(moved: &str, anchor: &str) -> Vec<&'static str> {
+    let mut order: Vec<&'static str> = MARKERS_LAST
+        .iter()
+        .copied()
+        .filter(|branch| *branch != moved)
+        .collect();
+    let at = order
+        .iter()
+        .position(|branch| *branch == anchor)
+        .expect("the anchor is a branch");
+    let moved = MARKERS_LAST
+        .iter()
+        .copied()
+        .find(|branch| *branch == moved)
+        .expect("the moved branch is a branch");
+    order.insert(at, moved);
+    order
+}
+
+/// [`MARKERS_LAST`] with `moved` declared right after `anchor`: the one pair out of step order.
+fn moved_after(moved: &str, anchor: &str) -> Vec<&'static str> {
+    let mut order: Vec<&'static str> = MARKERS_LAST
+        .iter()
+        .copied()
+        .filter(|branch| *branch != moved)
+        .collect();
+    let at = order
+        .iter()
+        .position(|branch| *branch == anchor)
+        .expect("the anchor is a branch");
+    let moved = IN_STEP_ORDER
+        .iter()
+        .copied()
+        .find(|branch| *branch == moved)
+        .expect("the moved branch is a branch");
+    order.insert(at + 1, moved);
+    order
+}
+
+/// The step-order refusals of `body`, one line each.
+fn step_refusals(body: &str) -> Vec<String> {
+    spec(body).map_or_else(
+        |errors| {
+            errors
+                .lines()
+                .filter(|line| {
+                    line.contains("the declaration order and the precedence order disagree")
+                })
+                .map(str::to_owned)
+                .collect()
+        },
+        |_| Vec::new(),
+    )
+}
+
+/// The branch name a constant declares.
+fn name_of(branch: &str) -> &str {
+    branch
+        .lines()
+        .next()
+        .and_then(|line| line.trim().strip_prefix("- name: "))
+        .expect("a branch opens with its name")
+}
+
+#[test]
+fn format_29_admits_the_step_order_and_markers_declared_last() {
+    spec(&steps_model("ess/29", &IN_STEP_ORDER)).unwrap_or_else(|errors| panic!("{errors}"));
+    // A marker below a guarded branch answers its step's question, not in declaration order.
+    spec(&steps_model("ess/29", &MARKERS_LAST)).unwrap_or_else(|errors| panic!("{errors}"));
+}
+
+#[test]
+fn format_29_refuses_every_step_pair_declared_out_of_order() {
+    // A marker above an earlier step's branch: `format_29_refuses_an_input_refusal_declared_after_
+    // unknown_instance`.
+    for (later, earlier, steps) in [
+        (VIP, TOO_MUCH, ("1", "3")),
+        (CLOSED, TOO_MUCH, ("1", "4")),
+        (RELEASED, TOO_MUCH, ("1", "5")),
+        (CLOSED, VIP, ("3", "4")),
+        (RELEASED, VIP, ("3", "5")),
+        (RELEASED, CLOSED, ("4", "5")),
+    ] {
+        let body = steps_model("ess/29", &moved_before(later, earlier));
+        let refusals = step_refusals(&body);
+        let (earlier, later) = (name_of(earlier), name_of(later));
+        assert!(
+            refusals.iter().any(|refusal| refusal.contains(&format!(
+                "`{earlier}` answers at step {} of the precedence order and `{later}`, declared \
+                 above it, at step {}",
+                steps.0, steps.1
+            )) && refusal
+                .contains(&format!("declare `{earlier}` before `{later}`"))),
+            "{earlier} after {later}: {refusals:#?}"
+        );
+    }
+}
+
+#[test]
+fn format_29_refuses_an_input_refusal_declared_after_unknown_instance() {
+    let refusals = step_refusals(&steps_model(
+        "ess/29",
+        &[UNKNOWN, TOO_MUCH, VIP, NO_TIER, CLOSED, RELEASED, NOT_HELD],
+    ));
+    assert_eq!(refusals.len(), 1, "{refusals:#?}");
+    assert!(
+        refusals[0].contains("`too-much` answers at step 1"),
+        "{refusals:#?}"
+    );
+}
+
+#[test]
+fn format_29_admits_out_of_order_declarations_the_prover_shows_disjoint() {
+    // The finite prover decides Booleans and enums; a guard over an Integer it declines counts as
+    // overlapping.
+    let released = RELEASED.replace("when: amount > 0", "when: rush == false");
+    let rushed = TOO_MUCH.replace("when: amount > 100", "when: rush == true");
+    let body = steps_model("ess/29", &[released.as_str(), rushed.as_str(), NOT_HELD]);
+    spec(&body).unwrap_or_else(|errors| panic!("{errors}"));
+    let overlapping = RELEASED.replace("when: amount > 0", "when: rush == true");
+    let refusals = step_refusals(&steps_model(
+        "ess/29",
+        &[overlapping.as_str(), rushed.as_str(), NOT_HELD],
+    ));
+    assert_eq!(refusals.len(), 1, "{refusals:#?}");
+}
+
+#[test]
+fn below_format_29_only_the_held_state_and_before_row_rules_apply() {
+    // An input refusal below a held-state branch: no rule below ess/29.
+    let body = steps_model("ess/28", &moved_after(TOO_MUCH, VIP));
+    spec(&body).unwrap_or_else(|errors| panic!("{errors}"));
+    // A held-state branch below an accepting one keeps the #486 message.
+    let body = steps_model("ess/28", &moved_after(VIP, RELEASED));
+    let errors = refusal(&body);
+    assert!(errors.contains(NEEDLE), "{errors}");
+    assert!(step_refusals(&body)
+        .iter()
+        .all(|line| line.contains(NEEDLE)));
+}
+
+#[test]
+fn the_guard_pair_corpus_validates_at_format_29() {
+    pairs_at("ess/29").unwrap_or_else(|errors| panic!("{errors}"));
+}

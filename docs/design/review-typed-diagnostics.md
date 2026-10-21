@@ -269,7 +269,9 @@ to 62 with the 2026-10-19 downstream report (finding 16): a literal a command wr
 whose entity invariant it breaks is refused with `ValidationError::at`. No string-located site was
 added. It rose to 63 with `ess/29`: `narrowed_external_format`, the format gate of an `external:`
 branch narrowed by `when_subject:`, at the branch's `command <name>.outcomes.<outcome>.when_subject`
-site. No string-located site was added.
+site. No string-located site was added. It rose to 64 with `validate_step_order`, the `ess/29` rule
+holding every pair of steps to declaration order, refused at the branch's own
+`command <name>.outcomes.<outcome>` site. No string-located site was added.
 
 `types.rs` rose from 16 to 17 string-located sites, and its `types` head from 8 to 9 literals, with
 beyond10x/ess#426 and #448: a YAML boolean written as an enum variant is refused at
@@ -327,7 +329,7 @@ census does not walk, as it does not walk `view/absent.rs`.
 accessor.rs 1 0
 actor.rs 3 4
 binding.rs 36 0
-command.rs 13 63
+command.rs 13 64
 component.rs 15 9
 domain.rs 5 0
 entity.rs 17 5

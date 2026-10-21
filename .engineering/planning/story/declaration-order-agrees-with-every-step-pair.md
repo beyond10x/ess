@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:declaration-order-agrees-with-every-step-pair
 kind: story
-status: draft
+status: active
 title: Under format A validation refuses a declaration order that contradicts the step order, for every pair of steps
 tags:
 - adopter-report
@@ -14,7 +14,10 @@ relations:
 - serves: vision:O2
 - depends_on: story:every-guard-combination-validates-under-the-rule
 - informed_by: story:unknown-instance-and-input-guard-agree-on-order
-revision: 2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-21T03:05:34Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-21T03:05:34Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
@@ -104,3 +107,29 @@ The answer order is the documented rule (input refusals step 2, accepting `when:
 unreachable. Under format A this order is refused as `conflicting_declaration`
 (`docs/design/generic-language-features.md:447`). Idiom today: narrow the refusal,
 `when: {all: ["priority > 0", "priority != 7"]}` (`idiom.yaml` beside it: 3 scenarios, 0 refusals).
+
+## State 2026-10-21
+
+Shipped on the 0.67.0 batch branch behind `ess/29` (`ess/27`, format A, shipped in 0.63.0 and is
+frozen, so a new refusal there would invalidate valid documents): `CommandSpec::validate_step_order`
+replaces the held-state and `before_row:` order rules from `ess/29`; below it both apply unchanged.
+
+Decided while implementing: the branch refused is one read in declaration order within its step
+(`Rank::Declared`); the branch above it may be any branch of a later step, a marker included, so
+`unknown_instance:` above an input refusal is refused while a marker declared last stays valid.
+Overlap reads input guards only, through the finite prover; a stored-row guard is not read, and an
+Integer comparison the prover declines counts as overlapping. Step 2 holds only markers, so the
+pairs whose earlier step is 2 cannot be refused at their lower branch: seven of the ten pairs are.
+
+Evidence: `crates/specify/ess-domain/tests/held_state_order.rs`
+(`format_29_refuses_every_step_pair_declared_out_of_order`,
+`format_29_refuses_an_input_refusal_declared_after_unknown_instance`,
+`format_29_admits_out_of_order_declarations_the_prover_shows_disjoint`,
+`below_format_29_only_the_held_state_and_before_row_rules_apply`,
+`format_29_admits_the_step_order_and_markers_declared_last`,
+`the_guard_pair_corpus_validates_at_format_29`).
+
+Not done: `validation_reads_selection_plan.rs`
+`the_declaration_order_check_follows_the_plan_under_with_phase_order` and the Go explorer test
+`explore_guards_first.rs` `on_a_validating_format_a_command_one_declaration_order_pass_gives_the_
+plans_answer`.
