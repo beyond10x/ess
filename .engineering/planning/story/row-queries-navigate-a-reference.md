@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:row-queries-navigate-a-reference
 kind: story
-status: active
+status: implemented
 title: 'A declared reference is navigated as a value: a related row''s fields and state in values, guards, view fields and filters'
 tags:
 - adopter-report
@@ -14,10 +14,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:generic-row-queries
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-20T09:13:36Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-20T09:13:36Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-21T03:46:21Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
