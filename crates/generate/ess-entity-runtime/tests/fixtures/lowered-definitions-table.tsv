@@ -1,4 +1,4 @@
-#	models=324	lines=458
+#	models=325	lines=459
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -145,6 +145,7 @@ crates/verify/ess-conformance/tests/fixtures/emit-swap-served.yaml	items-service
 crates/verify/ess-conformance/tests/fixtures/emit-swap.yaml	components=2
 crates/verify/ess-conformance/tests/fixtures/emit-swap.yaml	alpha	REFUSED	c0adebcbe55aa778240e7ba7b86abc31bafb48e4d04dbb67f35e3934f9475996:672
 crates/verify/ess-conformance/tests/fixtures/emit-swap.yaml	beta	REFUSED	99c247fd0fac9ab1068d03a0e8ba55aa8f9e43222cf8f2d4db2b632b79662da9:333
+crates/verify/ess-conformance/tests/fixtures/enforced-reference.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/error-payload-sources.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/event-multiplicity.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-adv-order.yaml	components=0
@@ -446,7 +447,7 @@ system-dir:models/toolchain	infra	toolchain.infra.Observation	create	refused, co
 system-dir:models/toolchain	infra	toolchain.infra.Observation	toolchain.infra.ImportObservation	refused, imported, wrong-state
 system-dir:models/toolchain	release-automation	REFUSED	fca88a6cb61e25f86e28e8a69b4bf8ee5aadc05cb16ff6e4a728fb0ef5f0e657:375
 system-dir:models/toolchain	specify	toolchain.specify.Declaration	definition=f008c7ec58b6b8996de589cd7e5ce17e0cc8ba0610e93e9ac4e1f24d786ff2aa:1384
-system-dir:models/toolchain	specify	toolchain.specify.Model	definition=85043f64937c0d5f40d7e24d95257716662adc33bb431c0581accd5bcebf4653:7120
+system-dir:models/toolchain	specify	toolchain.specify.Model	definition=894ba71bf4ab234918d55e87139b45f9745ebd6afda74e4812fe70026c6cdf69:7138
 system-dir:models/toolchain	specify	toolchain.specify.Model	create	refused, selected
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.CompileModel	refused, compiled, wrong-state
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.ResolveModel	refused, resolved, wrong-state

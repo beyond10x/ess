@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 
 use crate::actor::ActorSpec;
-use crate::command::{CommandSpec, ErrorSpec, EventSpec};
+use crate::command::{reference_integrity, CommandSpec, ErrorSpec, EventSpec};
 use crate::domain::{DomainSpec, MemberKind};
 use crate::entity::{EntityCatalogue, EntitySpec};
 use crate::name::{Naming, QualifiedName, Version};
@@ -516,8 +516,9 @@ impl Specification {
         let error_names: BTreeSet<QualifiedName> =
             Refused::with(&self.errors.keys().cloned().collect(), &refused.errors);
         for command in self.commands.values() {
-            if let Err(command_errors) = command.validate(&registry, &event_names, &error_names) {
-                errors.extend(command_errors);
+            if let Err(found) = command.validate(&registry, &event_names, &error_names) {
+                // From ess/30 a reference whose row cannot be missing needs no `exists: false`.
+                errors.extend(reference_integrity::lift(self, command, found));
             }
         }
         errors.extend(crate::command::subject_state::validate(self, &registry));

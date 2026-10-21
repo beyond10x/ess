@@ -52,7 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29,
+    27, 28, 29, 30,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -312,6 +312,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
             "A guarded branch declared after a branch a later step of the one precedence rule answers is refused as `conflicting_declaration` wherever one request can satisfy both, for every pair of steps 1 to 5, naming both branches, their steps and the order to declare them in; input guards the finite prover shows disjoint may come in either order, and a marker (`unknown_instance:`, `wrong_state:`, an `exists: false`) declared below a guarded branch is not refused. It replaces the held-state rule (beyond10x/ess#486) and the `before_row:` order rule (beyond10x/ess#534), which hold one pair each and keep holding below `ess/29` (`docs/design/generic-language-features.md` § G4).",
         ],
     },
+    FormatHistoryEntry {
+        major: 30,
+        release: None,
+        added: &[
+            "A command reading the row a stored reference names needs no `exists: false` branch where the specification keeps that row present: every branch writing the field writes nothing, its own value or an input its command refuses first with `exists: false` over the same entity, every branch creating the subject sets it, and no branch deletes a row of the referenced entity. A deleting branch or an unchecked writer keeps the branch required as `non_exhaustive_branches`, its hint naming each; below `ess/30` the branch stays required, its hint naming `ess/30`. Generated Rust and Go keep such a command an obligation, named (`docs/design/generic-language-features.md` § G2, beyond10x/ess#509).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -436,6 +444,10 @@ impl FormatVersion {
     /// (beyond10x/ess#620); an `external:` branch narrowed to the records a subject guard selects
     /// (`docs/design/generic-language-features.md` § G4, beyond10x/ess#554).
     pub const V29: Self = Self(29);
+    /// Enforced references (`docs/design/generic-language-features.md` § G2): a command
+    /// reading the row a stored reference names needs no `exists: false` branch where the
+    /// specification keeps that row present (beyond10x/ess#509).
+    pub const V30: Self = Self(30);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

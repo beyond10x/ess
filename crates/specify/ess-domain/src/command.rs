@@ -216,6 +216,7 @@ pub mod ordered_head;
 pub(crate) mod outcome_shapes;
 pub mod precedence;
 pub mod published_operand;
+pub(crate) mod reference_integrity;
 pub mod related_guard;
 pub mod related_list;
 pub use related_guard::RelatedTest;

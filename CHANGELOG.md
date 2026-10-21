@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- From `format: ess/30` drop `exists: false` on a stored reference every writer checks and nothing deletes (#509).
+
 ### Fixed
 
 - A generated Go package passes `go vet` from Go language 1.26; regenerate the package (#629).

@@ -287,6 +287,48 @@ are not mutated at all (`conf/mutate.rs:268-270`). The interpreter evaluates row
 implement row sets today (`synth/determined.rs:210-217, 519-525`); G2 either implements them or
 keeps that refusal by name per construct.
 
+### Enforced references (`ess/30`, decided 2026-10-21)
+
+beyond10x/ess#509 (two adopters, `story:enforced-reference-needs-no-missing-target-branch`): a
+command reading the row a stored reference names must declare `when_related: {via: <field>,
+exists: false}` (`ESS-COMMAND-005`, `dom/command/related_guard.rs`), while synthesis, given that
+branch, reports it unreachable (`ESS-SYNTH-003`, `conf/synthesize/related_guard/stored.rs`)
+because every writer of the field refuses an identity no row carries. The adopter can satisfy
+validation or synthesis, not both.
+
+**Decision: the integrity is derived, not authored.** Validation accepts the proof the
+specification already holds, with no new key. From `ess/30` the branch may be left out where
+(1) every branch that creates a row of the subject's entity sets the field, and every branch that
+writes it (`sets:` on the addressed row, on `instances:` rows or in an `affects:` entry) writes
+`{cleared: true}`, the field's own value, or an input its command refuses first with an unguarded
+`exists: false` over the same entity; and (2) no branch deletes a row of the referenced entity
+(`deletes:`, `instances:` with `deletes:`, `affects:` with `deletes:`; a binding runs a command, so
+the command is named). Where either fails, the refusal stands and its hint names each branch that
+defeats the proof; below `ess/30` it stands with a hint naming `ess/30` where the proof holds
+(`dom/command/reference_integrity.rs`).
+
+Why derived over an authored integrity key (`integrity: enforced` on the relation):
+
+- **Least surprising.** Both adopters asked for this proof ("validation could accept the same
+  proof instead of a new authored key", the second report on beyond10x/ess#509), and it makes
+  validation agree with the unreachability synthesis already reports. A key would make the author
+  restate what the commands already say, and would still need the same deletion and writer check
+  to be honest.
+- **Reversible.** No source key, no schema change and no IR change: a model that does not leave the
+  branch out keeps its IR bytes and suite. Adding a key later, to name the guarantee or to pin it
+  against a future deleting command, extends this rule; removing a key once published would break
+  every document that wrote it.
+- **The cost, accepted.** The guarantee is non-local: a deleting command added elsewhere refuses the
+  reading command. The refusal names the deleting branch, so the cause is one hop away.
+
+Not in this cut, and owed by the story: conformance does not read the referenced row again after a
+command that could remove it, so a target that deletes it passes the suite
+(`conf/tests/enforced_reference.rs`, `a_target_that_deletes_the_referenced_row_fails`, ignored and
+red). Generated Rust and Go keep such a command an obligation, named
+(`synth/determined.rs`, `related_composition`): the generated related read is bound by the
+`exists: false` branch. Synthesis's own unreachability proof reads writers only, not deletions,
+so beside a deleting command it still reports a present `exists: false` branch unreachable.
+
 ## G3. Aggregates over expressions
 
 Today a measure is one of six functions over one top-level field (`dom/view.rs:309-322, 361-372`),

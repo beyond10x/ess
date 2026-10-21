@@ -1,4 +1,4 @@
-#	models=280	commands=571
+#	models=281	commands=575
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -365,6 +365,11 @@ crates/verify/ess-conformance/tests/fixtures/emit-swap-served.yaml	demo.items.Pu
 crates/verify/ess-conformance/tests/fixtures/emit-swap.yaml	ir=5cbb63b5b9775ba6e7d463b1993b8a73a8b57afb1e0206721f1c54565636a2ef:7527
 crates/verify/ess-conformance/tests/fixtures/emit-swap.yaml	swaps.order.Cancel	default: cancelled
 crates/verify/ess-conformance/tests/fixtures/emit-swap.yaml	swaps.order.Place	default: placed
+crates/verify/ess-conformance/tests/fixtures/enforced-reference.yaml	ir=488a3620a8640f3e15eb02c5f6a1c28dee37fbe3e961aab907a342da356ada14:18850
+crates/verify/ess-conformance/tests/fixtures/enforced-reference.yaml	integrity.board.AddNode	default: added
+crates/verify/ess-conformance/tests/fixtures/enforced-reference.yaml	integrity.board.AddPort	present_related: no-node | default: added
+crates/verify/ess-conformance/tests/fixtures/enforced-reference.yaml	integrity.board.Rename	present_related: node-sealed | default: renamed
+crates/verify/ess-conformance/tests/fixtures/enforced-reference.yaml	integrity.board.Seal	held_state: wrong-state | default: sealed
 crates/verify/ess-conformance/tests/fixtures/error-payload-sources.yaml	ir=4015f3244356f73fd4c848940efe5311a0ea4da6aa535d1a19082c1de7e0d35e:13624
 crates/verify/ess-conformance/tests/fixtures/error-payload-sources.yaml	demo.order.CloseOrder	existence: no-such-order | held_state: already-closed | default: closed
 crates/verify/ess-conformance/tests/fixtures/error-payload-sources.yaml	demo.order.PlaceOrder	input_refusal: too-many | default: placed
