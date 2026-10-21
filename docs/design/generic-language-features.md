@@ -440,6 +440,20 @@ authority"), its hint naming `ess/29`.
   `P`, then ask the context. Entity Runtime lowers it to `P` over the loaded row, the input guard
   and the host's external evidence, all required.
 
+### Entity Runtime and `when_related:` (decided 2026-10-21)
+
+Every guard pair the rule admits lowers to Entity Runtime or is refused by name (answer 10). A
+command with a `when_related:` branch stays refused as `RelatedGuardUnsupported`, at every format,
+and the refusal says why. entity-core decides an operation on its arguments and the one row its
+request names, and has no lookup of another row by design (`entity-core/src/definition.rs`, "no
+lookup"). The one lowering ESS could make on its own, the host reading the other row and binding a
+copy as arguments as it binds external evidence, is not taken: that copy is read apart from the
+decision that commits, so a guard such as `exists: false` could hold on a row another operation has
+already removed, which no ESS target answers. It would also add binding targets and requirements to
+the public binding plan, which is a contract change for every host. It lowers when entity-core can
+read another entity's row inside the decision (the catalogue's `Needs::EntityCore`); a row set
+(`RowSetUnsupported`) waits for the same capability.
+
 What stays: the phase plan as the one executable definition, derived on demand and never serialised
 (`selection-plan.md:174-181`); the one test seam `with_phase_order` (`selection-plan.md:183-191`);
 the pinned table (`selection-plan.md:199-209`); every answer on every model below the G4 format.

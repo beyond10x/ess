@@ -24,6 +24,7 @@
 
 ### Changed
 
+- Entity Runtime's `RelatedGuardUnsupported` refusal says why a bound copy of the row cannot stand in; specs unchanged.
 - A one-time response's read cell,
   `<command>/disclosure/<outcome>/<field>/read/<view>/as/actor/<A>`, now names the reader: the
   value is issued by `A` where `A` may issue it, else by the first actor that may, and the view is

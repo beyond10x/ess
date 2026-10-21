@@ -1708,7 +1708,8 @@ impl Projector<'_> {
                     format!("{}.{}.when_related", command.name, outcome.name.as_str()),
                     "a branch guarded by a row of another entity (ess/18, `when_related:`) has no \
                      Entity Runtime definition; an entity-core operation reads its arguments and \
-                     the one row its request names",
+                     the one row its request names, and a copy of the other row bound as an \
+                     argument would be decided apart from the operation that commits on it",
                 );
                 refused = true;
             }
