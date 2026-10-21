@@ -70,6 +70,7 @@
   stayed in `conform synthesize`'s refusal list, its counts and the coverage inventory whatever the
   authored scenarios sent (beyond10x/ess#619). A specification changes nothing; a suite generated
   with such a scenario loses that refusal when regenerated.
+- Synthesizing a command that reads many row-set selectors takes seconds, not hours; specs change nothing (#624).
 
 ## [0.66.0] — 2026-10-20
 
