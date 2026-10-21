@@ -4,7 +4,7 @@ id: story:unreadable-git-tests-report-a-privileged-skip
 kind: story
 status: draft
 title: Unreadable-.git tests report a skip on a privileged runner instead of passing
-revision: 2
+revision: 3
 ---
 # Story: unreadable-git-tests-report-a-privileged-skip
 
@@ -25,8 +25,10 @@ Review 2026-10-21, finding 3. `crates/edge/ess-cli/src/git_checkout.rs` (test
 
 ## Acceptance
 
-- On a runner where the directory stays readable, each test is reported as ignored or skipped with
-  the reason, not as passed.
+- On a runner where the directory stays readable and `CI` is unset, each test prints
+  `skipped: a privileged runner reads through mode 0o000` to stderr.
+- On such a runner with `CI` set, each test fails, so a privileged CI runner cannot report it
+  as passed.
 - On an unprivileged runner each test still asserts the refusal.
 
 ## Out of Scope

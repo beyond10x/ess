@@ -149,6 +149,13 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
         if !privileged {
             assert!(found.is_err(), "{found:?}");
+        } else {
+            // CI runs unprivileged, so there this test must have checked something.
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "a privileged runner reads through mode 0o000, so this test checks nothing"
+            );
+            eprintln!("skipped: a privileged runner reads through mode 0o000");
         }
     }
 }

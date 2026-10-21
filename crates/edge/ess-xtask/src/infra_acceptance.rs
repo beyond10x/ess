@@ -2668,6 +2668,13 @@ mod tests {
                 refused.is_err(),
                 "an unreadable marker cannot prove absence"
             );
+        } else {
+            // CI runs unprivileged, so there this test must have checked something.
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "a privileged runner reads through mode 0o000, so this test checks nothing"
+            );
+            eprintln!("skipped: a privileged runner reads through mode 0o000");
         }
     }
 

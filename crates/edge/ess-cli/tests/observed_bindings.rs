@@ -379,6 +379,13 @@ fn live_output_below_an_unreadable_git_directory_is_refused_before_collection() 
     if !privileged {
         assert!(!detail.contains("kubectl"), "{detail}");
         assert!(detail.contains("placement"), "{detail}");
+    } else {
+        // CI runs unprivileged, so there this test must have checked something.
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "a privileged runner reads through mode 0o000, so this test checks nothing"
+        );
+        eprintln!("skipped: a privileged runner reads through mode 0o000");
     }
 }
 

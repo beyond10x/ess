@@ -29,13 +29,10 @@ case "$COMPONENT_SERVICE" in
     exit 2
     ;;
 esac
-case "$COMPONENT_VERSION" in
-  *.*.*) ;;
-  *)
-    printf 'invalid component version: %s\n' "$COMPONENT_VERSION" >&2
-    exit 2
-    ;;
-esac
+if ! [[ "$COMPONENT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+  printf 'invalid component version: %s\n' "$COMPONENT_VERSION" >&2
+  exit 2
+fi
 case "$BUILD_IMAGE" in
   true | false) ;;
   *)
@@ -97,7 +94,12 @@ image_platform_digest="$(
     end
   ' <<<"$image_raw"
 )"
-if [ -z "$image_platform_digest" ]; then
+if jq -e 'has("manifests")' <<<"$image_raw" >/dev/null; then
+  if [ -z "$image_platform_digest" ]; then
+    printf 'image index %s has no linux/amd64 manifest\n' "$image_tag" >&2
+    exit 1
+  fi
+else
   image_platform_digest="$image_digest"
 fi
 
