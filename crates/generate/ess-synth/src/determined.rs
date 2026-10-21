@@ -266,7 +266,12 @@ fn outcome(
                 supported(ir, &Env::Input(command), predicate)?;
             }
         }
-        ResolvedCondition::SubjectPredicate { predicate, input } => {
+        // ess/29: an external branch narrowed by a subject guard reads the row as the predicate
+        // form does, then asks the context.
+        ResolvedCondition::SubjectPredicate { predicate, input }
+        | ResolvedCondition::ExternalSubject {
+            predicate, input, ..
+        } => {
             let entity = selection_entity.ok_or("a subject guard with no subject")?;
             supported(ir, &Env::Subject(command, entity), predicate)?;
             if let Some(input) = input {
@@ -736,6 +741,7 @@ pub(crate) fn subject_guarded(command: &ResolvedCommand) -> bool {
             outcome.condition,
             ResolvedCondition::SubjectField { .. }
                 | ResolvedCondition::SubjectPredicate { .. }
+                | ResolvedCondition::ExternalSubject { .. }
                 | ResolvedCondition::SubjectState { .. }
                 | ResolvedCondition::StateChange { .. }
         )
@@ -1414,9 +1420,10 @@ pub(crate) fn reads_clock(command: &ResolvedCommand) -> bool {
             ResolvedCondition::SubjectState { predicate, .. }
             | ResolvedCondition::StateChange { predicate, .. }
             | ResolvedCondition::SubjectField { predicate, .. } => (None, predicate.as_ref()),
-            ResolvedCondition::SubjectPredicate { predicate, input } => {
-                (Some(predicate), input.as_ref())
-            }
+            ResolvedCondition::SubjectPredicate { predicate, input }
+            | ResolvedCondition::ExternalSubject {
+                predicate, input, ..
+            } => (Some(predicate), input.as_ref()),
             ResolvedCondition::Related { test, input, .. } => (
                 match test {
                     ResolvedRelatedTest::Holds { predicate } => Some(predicate),
@@ -1668,7 +1675,9 @@ fn related_composition(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Stri
         !outcome.before_row
             && matches!(
                 outcome.condition,
-                ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+                ResolvedCondition::External { .. }
+                    | ResolvedCondition::ExternalWhen { .. }
+                    | ResolvedCondition::ExternalSubject { .. }
             )
     }) {
         return Err("`external:` beside `when_related:` in one command".to_owned());

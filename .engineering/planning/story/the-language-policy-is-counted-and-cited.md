@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-language-policy-is-counted-and-cited
 kind: story
-status: draft
+status: active
 title: 'The language policy: a counted general share, the fit-review idiom condition and the grids page'
 tags:
 - policy
@@ -12,7 +12,10 @@ refs:
 relations:
 - decomposes: epic:generic-guard-precedence
 - serves: vision:O2
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-21T02:54:29Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-21T02:54:30Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
@@ -89,3 +92,9 @@ line names the failing test written first.
 
 No dependency: runs in parallel with every other story of the wave, from the start. It shares no
 file with them except `CHANGELOG.md`, which it reads and does not edit.
+
+## State 2026-10-21
+
+Shipped before 0.63.0 was cut: `cargo xtask docs` holds the count line, the fit-review skill states
+the idiom condition, and `docs/design/language-grids.md` is the grids page. Every acceptance test
+named above passes on the 0.67.0 batch branch (`task test-xtask`, 19 test binaries, 0 failed).

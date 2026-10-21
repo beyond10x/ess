@@ -678,6 +678,7 @@ fn unarranged(
                     outcome.condition,
                     ess_compiler::ir::ResolvedCondition::External { .. }
                         | ess_compiler::ir::ResolvedCondition::ExternalWhen { .. }
+                        | ess_compiler::ir::ResolvedCondition::ExternalSubject { .. }
                 )
                 && !arranged.contains(outcome.name.as_str())
         })

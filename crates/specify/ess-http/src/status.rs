@@ -65,9 +65,13 @@ pub fn status(outcome: &ResolvedOutcome) -> &'static str {
     match (&outcome.condition, outcome.error.is_some()) {
         // First: who sent it decided the refusal, whatever else the guard reads.
         (_, true) if outcome.decided_by_caller => FORBIDDEN,
-        (ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }, true) => {
-            UPSTREAM
-        }
+        // An external refusal narrowed to some records (ess/29) is still decided upstream.
+        (
+            ResolvedCondition::External { .. }
+            | ResolvedCondition::ExternalWhen { .. }
+            | ResolvedCondition::ExternalSubject { .. },
+            true,
+        ) => UPSTREAM,
         // All three are decided by the state the subject is resting in rather than by the
         // request, so a refusal from one of them is a conflict with that state and not a bad
         // request: `StateChange` is `SubjectState` with the states derived from the move.

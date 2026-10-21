@@ -107,6 +107,27 @@ fn issue_211_a_command_guarded_by_a_related_row_is_refused_by_name() {
     );
 }
 
+/// The refusal says why the host cannot stand in (`epic:generic-guard-precedence`, the Entity
+/// Runtime half of #554): entity-core has no lookup of another row, and a copy of that row bound
+/// as an argument, as external evidence is, would be decided apart from the operation that commits
+/// on it, so the guard could hold on a row that is already gone.
+#[test]
+fn a_related_guard_refusal_says_why_no_bound_copy_of_the_row_stands_in() {
+    let diagnostics = refused(&contract(&[NO_OWNER]));
+    let related = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == LoweringCode::RelatedGuardUnsupported)
+        .unwrap_or_else(|| panic!("{diagnostics:#?}"));
+    assert!(
+        related.message.contains("bound as an argument")
+            && related
+                .message
+                .contains("decided apart from the operation that commits on it"),
+        "{}",
+        related.message
+    );
+}
+
 #[test]
 fn issue_211_the_same_command_without_the_guard_is_not_refused_for_it() {
     let diagnostics = refused(&contract(&[]));

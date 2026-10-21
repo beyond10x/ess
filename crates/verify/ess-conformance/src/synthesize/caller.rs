@@ -781,7 +781,10 @@ fn written(
                     *predicate = write_predicate(predicate, &on_input);
                 }
             }
-            ResolvedCondition::SubjectPredicate { predicate, input } => {
+            ResolvedCondition::SubjectPredicate { predicate, input }
+            | ResolvedCondition::ExternalSubject {
+                predicate, input, ..
+            } => {
                 *predicate = write_predicate(predicate, &on_stored);
                 if let Some(input) = input {
                     *input = write_predicate(input, &on_input);

@@ -825,7 +825,10 @@ fn model_literals(ir: &EssIr) -> BTreeSet<String> {
                         texts(predicate, &mut out);
                     }
                 }
-                ResolvedCondition::SubjectPredicate { predicate, input } => {
+                ResolvedCondition::SubjectPredicate { predicate, input }
+                | ResolvedCondition::ExternalSubject {
+                    predicate, input, ..
+                } => {
                     texts(predicate, &mut out);
                     if let Some(input) = input {
                         texts(input, &mut out);

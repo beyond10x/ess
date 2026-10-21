@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T02:54:26Z",
+  "actor": "human:timo",
+  "artifact": "story:the-precedence-rule-places-every-branch",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-domain --locked --test precedence_classification: 19 passed; --test format_history: 4 passed; -p ess-compiler --test precedence_plan: 13 passed; --test selection_precedence_table: 1 passed; -p ess-conformance --test precedence_plan_answers: 8 passed; --test selection_precedence: 5 passed; -p ess-entity-runtime --test selection_precedence: 7 passed; 0 failed in each",
+    "reference": "crates/specify/ess-domain/tests/precedence_classification.rs"
+  }
+}

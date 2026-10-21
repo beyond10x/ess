@@ -196,6 +196,7 @@ fn shape(condition: &ResolvedCondition) -> ConditionShape {
         ResolvedCondition::Otherwise => ConditionShape::Otherwise,
         ResolvedCondition::ExternalWhen { .. } => ConditionShape::ExternalWhen,
         ResolvedCondition::External { .. } => ConditionShape::External,
+        ResolvedCondition::ExternalSubject { .. } => ConditionShape::ExternalSubject,
         ResolvedCondition::WrongState => ConditionShape::WrongState,
         ResolvedCondition::UnknownInstance => ConditionShape::UnknownInstance,
         ResolvedCondition::InputAbsent => ConditionShape::InputAbsent,

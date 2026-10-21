@@ -459,7 +459,9 @@ impl ConformanceTarget for Interpreted {
             .is_some_and(|outcome| {
                 matches!(
                     outcome.condition,
-                    ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+                    ResolvedCondition::External { .. }
+                        | ResolvedCondition::ExternalWhen { .. }
+                        | ResolvedCondition::ExternalSubject { .. }
                 )
             });
         if !external {

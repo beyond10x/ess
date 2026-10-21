@@ -35,10 +35,12 @@ pub fn uses(command: &CommandSpec) -> bool {
 
 /// Whether any branch of this command uses the ess/9 predicate form.
 pub fn uses_predicate(command: &CommandSpec) -> bool {
-    command
-        .outcomes
-        .iter()
-        .any(|outcome| matches!(outcome.condition, OutcomeCondition::SubjectPredicate { .. }))
+    command.outcomes.iter().any(|outcome| {
+        matches!(
+            outcome.condition,
+            OutcomeCondition::SubjectPredicate { .. } | OutcomeCondition::ExternalSubject { .. }
+        )
+    })
 }
 
 /// The existing subject a subject-fact command reads: the one its subject-bearing branches name.
@@ -81,6 +83,7 @@ pub fn error_subject<'a>(command: &'a CommandSpec, outcome: &'a Outcome) -> Opti
             | OutcomeCondition::StateChange { .. }
             | OutcomeCondition::SubjectField { .. }
             | OutcomeCondition::SubjectPredicate { .. }
+            | OutcomeCondition::ExternalSubject { .. }
     ) || reads_subject_through_reference(outcome);
     reads_row.then(|| common_subject(command)).flatten()
 }
@@ -131,8 +134,11 @@ pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
     }
     if common_subject(command).is_none() {
         for outcome in command.outcomes.iter().filter(|outcome| {
-            matches!(outcome.condition, OutcomeCondition::SubjectPredicate { .. })
-                && outcome.subject.is_none()
+            matches!(
+                outcome.condition,
+                OutcomeCondition::SubjectPredicate { .. }
+                    | OutcomeCondition::ExternalSubject { .. }
+            ) && outcome.subject.is_none()
         }) {
             errors.push(
                 ValidationError::at(
@@ -208,7 +214,8 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                         ));
                     }
                 }
-                OutcomeCondition::SubjectPredicate { predicate, .. } => {
+                OutcomeCondition::SubjectPredicate { predicate, .. }
+                | OutcomeCondition::ExternalSubject { predicate, .. } => {
                     errors.extend(check(command, entity, types, predicate, &site));
                     if reads_state(predicate) && admits_state(types) {
                         errors.extend(state_moves(outcome, entity, predicate, &site));
@@ -561,6 +568,7 @@ fn validate_partition(
                 && !matches!(
                     outcome.condition,
                     OutcomeCondition::External { .. }
+                        | OutcomeCondition::ExternalSubject { .. }
                         | OutcomeCondition::ExternalWhen { .. }
                         | OutcomeCondition::WrongState
                         | OutcomeCondition::UnknownInstance

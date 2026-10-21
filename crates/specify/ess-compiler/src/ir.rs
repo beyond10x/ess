@@ -708,6 +708,24 @@ pub enum ResolvedCondition {
         /// What decides it, in one phrase.
         cause: String,
     },
+    /// An externally decided outcome narrowed to the records a predicate over the addressed
+    /// subject's stored fields selects, and the optional input guard (`external:` beside
+    /// `when_subject: {predicate: …}`, ess/29, `story:external-branch-narrowed-by-subject-guard`).
+    ///
+    /// Answered at the held-state step of the one precedence rule, in declaration order among the
+    /// branches the stored row selects; on a row its predicate does not select the provider is not
+    /// asked and the branch is not taken. A refusal naming no subject reads the one its siblings
+    /// name ([`ResolvedCommand::selection_subject`]). A new variant, so no model below `ess/29`
+    /// changes its bytes.
+    ExternalSubject {
+        /// What decides it, in one phrase.
+        cause: String,
+        /// The records the cause applies to, read immediately before selection.
+        predicate: Predicate,
+        /// The ordinary input guard, when declared.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        input: Option<Predicate>,
+    },
     /// Taken when the subject is resting in a state none of this command's moves start from.
     ///
     /// Carries nothing, like its mirror, and *which* states those are is not a lookup a consumer has
@@ -2186,6 +2204,7 @@ impl ResolvedCommand {
                 (matches!(
                     outcome.condition,
                     ResolvedCondition::SubjectPredicate { .. }
+                        | ResolvedCondition::ExternalSubject { .. }
                 ) || (matches!(outcome.condition, ResolvedCondition::SubjectState { .. })
                     && outcome.error.is_some()))
                 .then(|| {

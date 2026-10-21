@@ -2445,6 +2445,17 @@ fn condition_description(condition: &ResolvedCondition) -> String {
         ResolvedCondition::ExternalWhen { cause, predicate } => {
             format!("Eligible when {predicate}; externally decided: {cause}.")
         }
+        ResolvedCondition::ExternalSubject {
+            cause,
+            predicate,
+            input,
+        } => format!(
+            "Eligible when the existing subject's stored fields satisfy `{predicate}`{}; \
+             externally decided: {cause}.",
+            input.as_ref().map_or(String::new(), |guard| format!(
+                " and `{guard}` holds of the input"
+            )),
+        ),
         ResolvedCondition::External { cause } => {
             format!("Decided outside the request: {cause}.")
         }

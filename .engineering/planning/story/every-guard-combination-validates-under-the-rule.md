@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:every-guard-combination-validates-under-the-rule
 kind: story
-status: draft
+status: active
 title: Under format A every guard combination refused for want of an order validates
 tags:
 - adopter-report
@@ -17,7 +17,10 @@ relations:
 - depends_on: story:the-precedence-rule-places-every-branch
 - informed_by: story:one-command-combines-identity-and-row-set-related-guards
 - informed_by: story:feature-request-282
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-21T02:54:27Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-21T02:54:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
@@ -123,3 +126,12 @@ After `story:the-precedence-rule-places-every-branch` (format A and the rule's p
 fixture, and before `story:unknown-instance-beside-preserving-and-update-selection`, which shares
 `crates/specify/ess-domain/src/command/subject_fact.rs`. Parallel with
 `story:the-language-policy-is-counted-and-cited`.
+
+## State 2026-10-21
+
+Shipped in 0.63.0 under `ess/27`. Every acceptance test named above passes on the 0.67.0 batch
+branch. The pair this story left to ESS-COMMAND-004 for an external branch, `external:` beside
+`when_subject:`, is admitted from `ess/29` by `story:external-branch-narrowed-by-subject-guard`.
+Entity Runtime refuses each `when_related:` command of the guard-pair corpus by name
+(`guard_pair_corpus_lowers_or_refuses_each_command_by_name`); why no lowering is taken is recorded
+in `docs/design/generic-language-features.md` § G4 "Entity Runtime and `when_related:`".

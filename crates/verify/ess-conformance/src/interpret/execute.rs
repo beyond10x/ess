@@ -956,6 +956,7 @@ fn held_rows<'a>(
                     | ResolvedCondition::StateChange { .. }
                     | ResolvedCondition::SubjectField { .. }
                     | ResolvedCondition::SubjectPredicate { .. }
+                    | ResolvedCondition::ExternalSubject { .. }
             )
         {
             continue;
@@ -1013,6 +1014,7 @@ fn present_related_refusal(outcome: &ResolvedOutcome) -> bool {
         | ResolvedCondition::Otherwise
         | ResolvedCondition::ExternalWhen { .. }
         | ResolvedCondition::External { .. }
+        | ResolvedCondition::ExternalSubject { .. }
         | ResolvedCondition::WrongState
         | ResolvedCondition::UnknownInstance
         | ResolvedCondition::InputAbsent
@@ -1209,7 +1211,9 @@ fn select_phases<'s>(
     let is_external = |outcome: &ResolvedOutcome| {
         matches!(
             outcome.condition,
-            ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+            ResolvedCondition::External { .. }
+                | ResolvedCondition::ExternalWhen { .. }
+                | ResolvedCondition::ExternalSubject { .. }
         )
     };
     let forced = match externals {
@@ -1231,6 +1235,39 @@ fn select_phases<'s>(
     // or its provider. This decides only what a guard evaluates to; the plan decides when it is
     // read.
     let read = |outcome: &ResolvedOutcome| -> Result<Read, Undetermined> {
+        // ess/29: an external branch narrowed to the rows its subject guard selects. Its provider
+        // is consulted only where the held row satisfies the guard and the input guard holds; a
+        // withheld provider takes nothing, so the row is not read for it.
+        if let ResolvedCondition::ExternalSubject { .. } = &outcome.condition {
+            let asked = match externals {
+                Externals::Withheld => false,
+                Externals::Forced(_) => forced.is_some_and(|forced| forced.name == outcome.name),
+                Externals::Open => true,
+            };
+            if !asked {
+                return Ok(Read::Passes);
+            }
+            let selected = held_subjects
+                .get(&outcome.name)
+                .map(|held| {
+                    held.selects(
+                        &outcome.condition,
+                        facts,
+                        caller,
+                        branch(spec, outcome),
+                        context.now,
+                    )
+                })
+                .transpose();
+            return Ok(match selected {
+                Err(why) => Read::Deferred(why),
+                Ok(Some(Some(true))) => match externals {
+                    Externals::Open => Read::Possible,
+                    Externals::Withheld | Externals::Forced(_) => Read::Takes,
+                },
+                Ok(_) => Read::Passes,
+            });
+        }
         let held = match row_set_takes(outcome) {
             Some(takes) => takes.map(Some),
             None => held_subjects
@@ -1272,9 +1309,11 @@ fn select_phases<'s>(
                     }
                 }
             }
-            // A guard over a row nobody holds here, or a marker: nothing to read.
+            // A guard over a row nobody holds here, or a marker: nothing to read. A narrowed
+            // external branch was read above.
             ResolvedCondition::SubjectField { .. }
             | ResolvedCondition::SubjectPredicate { .. }
+            | ResolvedCondition::ExternalSubject { .. }
             | ResolvedCondition::Related { .. }
             | ResolvedCondition::RelatedSet { .. }
             | ResolvedCondition::SubjectState { .. }

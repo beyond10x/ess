@@ -105,6 +105,14 @@ fn every_condition() -> Vec<(OutcomeCondition, bool)> {
             },
             true,
         ),
+        (
+            OutcomeCondition::ExternalSubject {
+                cause: "the provider refuses".into(),
+                predicate: predicate("weight > 20"),
+                input: None,
+            },
+            true,
+        ),
         (OutcomeCondition::WrongState, true),
         (OutcomeCondition::UnknownInstance, true),
         (OutcomeCondition::InputAbsent, true),
@@ -119,6 +127,7 @@ fn expected(condition: &OutcomeCondition) -> (Phase, Rank) {
         OutcomeCondition::When(_) => (Phase::InputRefusal, Rank::Declared),
         OutcomeCondition::SubjectField { .. }
         | OutcomeCondition::SubjectPredicate { .. }
+        | OutcomeCondition::ExternalSubject { .. }
         | OutcomeCondition::SubjectState { .. }
         | OutcomeCondition::StateChange { .. } => (Phase::HeldState, Rank::Declared),
         OutcomeCondition::Related { .. } => (Phase::RelatedRow, Rank::Declared),
@@ -141,7 +150,7 @@ fn alone(branch: BranchShape) -> Composition {
 #[test]
 fn one_branch_of_every_condition_is_placed() {
     let conditions = every_condition();
-    assert_eq!(conditions.len(), 14, "one of every variant");
+    assert_eq!(conditions.len(), 15, "one of every variant");
     for (condition, refuses) in conditions {
         let branch = BranchShape::of(&outcome("branch", condition.clone(), refuses));
         let placed = place(&branch, &alone(branch));
@@ -1087,7 +1096,8 @@ fn place_before_the_rule(
         ConditionShape::SubjectState
         | ConditionShape::StateChange
         | ConditionShape::SubjectField
-        | ConditionShape::SubjectPredicate => at(Phase::HeldState, Rank::Declared),
+        | ConditionShape::SubjectPredicate
+        | ConditionShape::ExternalSubject => at(Phase::HeldState, Rank::Declared),
         ConditionShape::WrongState => at(Phase::HeldState, Rank::Trail),
         ConditionShape::Related { absent: false, .. } | ConditionShape::RelatedSet => {
             if branch.error && orders {

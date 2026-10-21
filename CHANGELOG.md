@@ -4,6 +4,7 @@
 
 ### Added
 
+- `external:` may carry `when_subject:` to apply only to the rows it selects; set `format: ess/29` to use it (#554).
 - From `format: ess/29` a command outcome's guard (`when:`, `when_subject:`, `when_related:`) may
   call a function of one fact on the left of a compact comparison, so a guard over an `Optional`
   says what an absent value compares as and is decided for every record (G1 presence,
@@ -23,6 +24,8 @@
 
 ### Changed
 
+- From `format: ess/29` a branch declared below one a later step answers is refused where both hold; reorder it (#554).
+- Entity Runtime's `RelatedGuardUnsupported` refusal says why a bound copy of the row cannot stand in; specs unchanged.
 - A one-time response's read cell,
   `<command>/disclosure/<outcome>/<field>/read/<view>/as/actor/<A>`, now names the reader: the
   value is issued by `A` where `A` may issue it, else by the first actor that may, and the view is

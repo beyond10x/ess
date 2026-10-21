@@ -58,7 +58,9 @@ pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bo
         && outcome.replays.is_none()
         && !matches!(
             outcome.condition,
-            ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+            ResolvedCondition::External { .. }
+                | ResolvedCondition::ExternalWhen { .. }
+                | ResolvedCondition::ExternalSubject { .. }
         )
 }
 

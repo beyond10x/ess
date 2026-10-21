@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:unknown-instance-beside-preserving-and-update-selection
 kind: story
-status: draft
+status: active
 title: 'Under format A unknown_instance: answers beside preserving branches and every when_subject: update selection'
 tags:
 - adopter-report
@@ -21,7 +21,10 @@ relations:
 - informed_by: story:read-only-command-answers-an-unknown-instance
 - informed_by: story:create-or-update-selects-update-branches-by-stored-fields
 - informed_by: story:refusal-above-held-state-branch-validates
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-21T02:54:28Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-10-21T02:54:29Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
@@ -107,3 +110,9 @@ After `story:the-precedence-rule-places-every-branch` (format A) and
 `crates/specify/ess-domain/src/command/subject_fact.rs`). Parallel with
 `story:declaration-order-agrees-with-every-step-pair` (no shared file) and with
 `story:the-language-policy-is-counted-and-cited`.
+
+## State 2026-10-21
+
+Shipped in 0.63.0 under `ess/27` (beyond10x/ess#535 create-or-preserve, the `when_subject:`
+generalisation, the #534 models). Every acceptance test named above passes on the 0.67.0 batch
+branch.

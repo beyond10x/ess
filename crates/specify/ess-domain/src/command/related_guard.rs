@@ -706,9 +706,9 @@ fn via_is_optional(spec: &Specification, command: &CommandSpec, via: &RelatedVia
 /// share a command with.
 fn other_authority(condition: &OutcomeCondition) -> Option<&'static str> {
     match condition {
-        OutcomeCondition::SubjectField { .. } | OutcomeCondition::SubjectPredicate { .. } => {
-            Some("a `when_subject` guard")
-        }
+        OutcomeCondition::SubjectField { .. }
+        | OutcomeCondition::SubjectPredicate { .. }
+        | OutcomeCondition::ExternalSubject { .. } => Some("a `when_subject` guard"),
         OutcomeCondition::SubjectState { .. } => Some("a `when_subject_state` guard"),
         OutcomeCondition::StateChange { .. } => Some("a `when_state_changes` guard"),
         OutcomeCondition::UnknownInstance => Some("an `unknown_instance` branch"),

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T02:54:29Z",
+  "actor": "human:timo",
+  "artifact": "story:the-language-policy-is-counted-and-cited",
+  "kind": "story",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task test-xtask (cargo test --package ess-xtask --locked): 19 test binaries, 0 failed",
+    "reference": "crates/edge/ess-xtask/src/docs.rs"
+  }
+}

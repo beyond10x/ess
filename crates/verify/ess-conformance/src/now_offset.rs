@@ -409,7 +409,8 @@ fn row_reads(command: &ResolvedCommand) -> Vec<(&EntityHandle, &Predicate)> {
     let mut read: Vec<(&EntityHandle, &Predicate)> = Vec::new();
     for outcome in &command.outcomes {
         match &outcome.condition {
-            ResolvedCondition::SubjectPredicate { predicate, .. } => {
+            ResolvedCondition::SubjectPredicate { predicate, .. }
+            | ResolvedCondition::ExternalSubject { predicate, .. } => {
                 if let Some(subject) = command.selection_subject(outcome) {
                     read.push((&subject.entity, predicate));
                 }
@@ -496,6 +497,7 @@ pub(crate) fn stored_predicates<'ir>(
                 .iter()
                 .filter_map(move |outcome| match &outcome.condition {
                     ResolvedCondition::SubjectPredicate { predicate, .. }
+                    | ResolvedCondition::ExternalSubject { predicate, .. }
                         if command
                             .selection_subject(outcome)
                             .is_some_and(|subject| subject.entity == entity) =>
@@ -583,7 +585,8 @@ pub(crate) fn clocked_window(
 ) -> Option<ess_primitives::window::CalendarWindow> {
     command.outcomes.iter().find_map(|outcome| {
         let stored: Vec<&Predicate> = match &outcome.condition {
-            ResolvedCondition::SubjectPredicate { predicate, .. } => vec![predicate],
+            ResolvedCondition::SubjectPredicate { predicate, .. }
+            | ResolvedCondition::ExternalSubject { predicate, .. } => vec![predicate],
             // From ess/28 every row an `all:` branch lists.
             condition @ ResolvedCondition::Related { .. } => condition
                 .related_predicates()
@@ -619,6 +622,7 @@ fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
         | ResolvedCondition::StateChange { predicate, .. }
         | ResolvedCondition::SubjectField { predicate, .. } => predicate.as_ref(),
         ResolvedCondition::SubjectPredicate { input, .. }
+        | ResolvedCondition::ExternalSubject { input, .. }
         | ResolvedCondition::Related { input, .. }
         | ResolvedCondition::RelatedSet { input, .. } => input.as_ref(),
         ResolvedCondition::Otherwise

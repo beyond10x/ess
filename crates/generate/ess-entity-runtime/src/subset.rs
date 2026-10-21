@@ -575,7 +575,10 @@ pub const CONSTRUCTS: &[Construct] = &[
     refused(
         RELATED_GUARD,
         LoweringCode::RelatedGuardUnsupported,
-        Needs::EntityCore("a read of another entity's row"),
+        Needs::EntityCore(
+            "a read of another entity's row inside the operation's decision; a copy the host \
+             binds as an argument is decided apart from the operation that commits on it",
+        ),
         &["tests/related_guard.rs::issue_211_a_command_guarded_by_a_related_row_is_refused_by_name"],
     ),
     refused(

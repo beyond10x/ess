@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T02:37:43Z",
+  "actor": "human:timo",
+  "artifact": "story:external-branch-narrowed-by-subject-guard",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-domain --locked --test external_narrowed_by_subject: 9 passed; 0 failed; cargo test -p ess-conformance --locked --test external_narrowed_by_subject: 4 passed; 0 failed; cargo test -p ess-synth --locked --test external_narrowed_served: 2 passed; 0 failed; cargo test -p ess-entity-runtime --locked --test external_narrowed: 1 passed; 0 failed",
+    "reference": "crates/verify/ess-conformance/tests/external_narrowed_by_subject.rs"
+  }
+}

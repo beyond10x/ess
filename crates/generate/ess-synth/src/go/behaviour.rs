@@ -545,7 +545,9 @@ fn external_names(
                 && command.outcomes.iter().any(|outcome| {
                     matches!(
                         outcome.condition,
-                        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+                        ResolvedCondition::External { .. }
+                            | ResolvedCondition::ExternalWhen { .. }
+                            | ResolvedCondition::ExternalSubject { .. }
                     )
                 })
         })
@@ -2075,6 +2077,23 @@ impl<'a> Writer<'a> {
                     let truth = self.subject_guard(outcome, entity);
                     self.decided(&truth, |writer| writer.take(outcome, Held::Selected));
                 }
+                // ess/29: an external branch narrowed to the rows its subject guard selects. The
+                // context is asked only for a row the guard selects, in declaration order.
+                ResolvedCondition::ExternalSubject { .. } => {
+                    let entity = entity.expect("the held-state phase read the addressed row");
+                    self.lines.push(&format!(
+                        "// `{}`: an external branch on a row its subject guard selects, where \
+                         the context takes it.",
+                        outcome.name
+                    ));
+                    let truth = self.subject_guard(outcome, entity);
+                    self.decided(&truth, |writer| {
+                        let ask = writer.external(outcome);
+                        writer.lines.open(&format!("if {ask} {{"));
+                        writer.take(outcome, Held::Selected);
+                        writer.lines.close("}");
+                    });
+                }
                 _ => unreachable!(
                     "the plan holds only held-state branches, `wrong_state:` and an unguarded \
                      refusal at step 4, not `{}`",
@@ -2323,6 +2342,7 @@ impl<'a> Writer<'a> {
             outcome.condition,
             ResolvedCondition::SubjectField { .. }
                 | ResolvedCondition::SubjectPredicate { .. }
+                | ResolvedCondition::ExternalSubject { .. }
                 | ResolvedCondition::SubjectState { .. }
                 | ResolvedCondition::StateChange { .. }
         )
@@ -2826,7 +2846,10 @@ impl<'a> Writer<'a> {
                     predicate.as_ref(),
                 )
             }
-            ResolvedCondition::SubjectPredicate { predicate, input } => {
+            ResolvedCondition::SubjectPredicate { predicate, input }
+            | ResolvedCondition::ExternalSubject {
+                predicate, input, ..
+            } => {
                 let held = self.locals.held.clone();
                 (
                     self.predicate(&Env::Subject(command, entity), predicate, &held),

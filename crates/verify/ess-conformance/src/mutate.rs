@@ -1306,7 +1306,11 @@ fn assembled_guard(
     use ess_domain::command::{OutcomeCondition, RelatedTest};
     match (key, condition) {
         (GuardKey::When, _) => ess_domain::expression::lexical::input_guard(condition),
-        (GuardKey::WhenSubject, OutcomeCondition::SubjectPredicate { predicate, .. })
+        (
+            GuardKey::WhenSubject,
+            OutcomeCondition::SubjectPredicate { predicate, .. }
+            | OutcomeCondition::ExternalSubject { predicate, .. },
+        )
         | (
             GuardKey::WhenRelated,
             OutcomeCondition::Related {
