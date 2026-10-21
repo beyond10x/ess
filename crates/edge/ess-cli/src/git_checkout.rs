@@ -147,15 +147,15 @@ mod tests {
         let found = enclosing_checkout(&root.join("below"));
         fs::set_permissions(&marker, fs::Permissions::from_mode(0o755)).unwrap();
         fs::remove_dir_all(&root).unwrap();
-        if !privileged {
-            assert!(found.is_err(), "{found:?}");
-        } else {
+        if privileged {
             // CI runs unprivileged, so there this test must have checked something.
             assert!(
                 std::env::var_os("CI").is_none(),
                 "a privileged runner reads through mode 0o000, so this test checks nothing"
             );
             eprintln!("skipped: a privileged runner reads through mode 0o000");
+        } else {
+            assert!(found.is_err(), "{found:?}");
         }
     }
 }

@@ -376,16 +376,16 @@ fn live_output_below_an_unreadable_git_directory_is_refused_before_collection() 
     let privileged = std::fs::read_dir(&marker).is_ok();
     let detail = live_placement_detail(&fixture);
     std::fs::set_permissions(&marker, std::fs::Permissions::from_mode(0o755)).unwrap();
-    if !privileged {
-        assert!(!detail.contains("kubectl"), "{detail}");
-        assert!(detail.contains("placement"), "{detail}");
-    } else {
+    if privileged {
         // CI runs unprivileged, so there this test must have checked something.
         assert!(
             std::env::var_os("CI").is_none(),
             "a privileged runner reads through mode 0o000, so this test checks nothing"
         );
         eprintln!("skipped: a privileged runner reads through mode 0o000");
+    } else {
+        assert!(!detail.contains("kubectl"), "{detail}");
+        assert!(detail.contains("placement"), "{detail}");
     }
 }
 

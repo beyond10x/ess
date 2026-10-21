@@ -2663,18 +2663,18 @@ mod tests {
         let refused = scratch_outside_checkouts(&root.join("work"));
         // The guard gives the unreadable directory its bits back before removing it.
         drop(scratch);
-        if !privileged {
-            assert!(
-                refused.is_err(),
-                "an unreadable marker cannot prove absence"
-            );
-        } else {
+        if privileged {
             // CI runs unprivileged, so there this test must have checked something.
             assert!(
                 std::env::var_os("CI").is_none(),
                 "a privileged runner reads through mode 0o000, so this test checks nothing"
             );
             eprintln!("skipped: a privileged runner reads through mode 0o000");
+        } else {
+            assert!(
+                refused.is_err(),
+                "an unreadable marker cannot prove absence"
+            );
         }
     }
 
