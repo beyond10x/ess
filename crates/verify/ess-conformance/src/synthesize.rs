@@ -1295,6 +1295,7 @@ impl RefusalCause {
             Self::NoWitness(gap) if ordered_head::unarranged(gap.reason) => {
                 ordered_head::HEAD_REPAIR
             }
+            Self::NoWitness(gap) if gap.type_ref == RESPONSE_GAP => RESPONSE_REPAIR,
             Self::NoWitness(_) => {
                 "give the field a type that has a finite value, or drop it from the command's input"
             }
@@ -1410,6 +1411,15 @@ impl RefusalCause {
 const CHILD_REPAIR: &str = "cover the child with an authored scenario (ess-scenario/1) that sends \
      an input where it alone decides the connective, or write the guard so that such an input \
      exists";
+
+/// The type a [`WitnessGap`] names when a command's response, not its input, has no observation.
+pub(crate) const RESPONSE_GAP: &str = "command response";
+
+/// The repair for a response field no runner can check (beyond10x/ess#499): the input field's
+/// "drop it from the command's input" names the wrong side of the command.
+const RESPONSE_REPAIR: &str = "no runner checks what the line above names on a returned value; \
+     give the response field a type without it, or state that rule where the returned value \
+     comes from, on the entity or the input";
 
 /// The repair for an absent reference no arrangement leaves absent (ess/22, beyond10x/ess#285).
 const ABSENCE_REPAIR: &str = "fill the reference from an Optional input that the branch, or the \
@@ -3623,7 +3633,7 @@ fn exercise_run_in(
                     id,
                     RefusalCause::NoWitness(WitnessGap {
                         path: format!("{}.response: {reason}", command.name),
-                        type_ref: "command response".into(),
+                        type_ref: RESPONSE_GAP.into(),
                         reason: "typed direct response observation cannot execute this contract",
                     }),
                 ));
@@ -3642,7 +3652,7 @@ fn exercise_run_in(
                 id,
                 RefusalCause::NoWitness(WitnessGap {
                     path: format!("{}.response: {reason}", command.name),
-                    type_ref: "command response".into(),
+                    type_ref: RESPONSE_GAP.into(),
                     reason: "typed response observation cannot execute this contract",
                 }),
             ));
