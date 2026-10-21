@@ -200,6 +200,71 @@ fn a_shape_is_read_through_optional_newtypes_unions_and_enums() {
     }
 }
 
+/// Two input types of each shape, so every ordered pair of distinct types is one input type change.
+const SHAPED: [(&str, &str); 8] = [
+    ("String", "scalar"),
+    ("Integer", "scalar"),
+    ("catalog.items.Note", "record"),
+    ("catalog.items.Tagged", "record"),
+    ("List<String>", "list"),
+    ("List<catalog.items.Note>", "list"),
+    ("Map<String, String>", "map"),
+    ("Map<String, Integer>", "map"),
+];
+
+/// The JSON container a shape is written as: a record and a map are both objects.
+fn container(shape: &str) -> &str {
+    match shape {
+        "record" | "map" => "object",
+        other => other,
+    }
+}
+
+#[test]
+fn every_move_between_wire_forms_is_breaking_for_callers_in_both_directions() {
+    // The whole class, both directions of every pair: scalar ↔ record, list, map; record ↔ list;
+    // list ↔ map are breaking for callers and record their shapes; record ↔ map, both objects,
+    // and a move within one shape keep the catch-all answer, format and bytes.
+    for (from, from_shape) in SHAPED {
+        for (to, to_shape) in SHAPED {
+            if from == to {
+                continue;
+            }
+            let delta = classified(&catalog(from), &catalog(to)).unwrap();
+            let json = delta.to_canonical_json();
+            let shapes = written(&delta, NOTE)["compatibility"]
+                .get("shapes")
+                .cloned();
+            if container(from_shape) == container(to_shape) {
+                assert_eq!(answers(&delta, NOTE), [U, U, C], "{from} → {to}\n{json}");
+                assert_eq!(shapes, None, "{from} → {to}\n{json}");
+                assert_eq!(
+                    delta.format.to_string(),
+                    "ess-diff/14",
+                    "{from} → {to}\n{json}"
+                );
+            } else {
+                assert_eq!(answers(&delta, NOTE), [B, U, C], "{from} → {to}\n{json}");
+                assert_eq!(
+                    shapes,
+                    Some(serde_json::json!({"before": from_shape, "after": to_shape})),
+                    "{from} → {to}\n{json}"
+                );
+                assert_eq!(
+                    delta.format.to_string(),
+                    "ess-diff/16",
+                    "{from} → {to}\n{json}"
+                );
+                assert_eq!(
+                    failing(&delta, FailOn::Breaking),
+                    [NOTE.to_owned()],
+                    "--fail-on breaking fails on the field by name: {from} → {to}\n{json}"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn a_change_between_two_types_of_one_wire_form_keeps_its_verdict_and_format() {
     for (from, to) in [
