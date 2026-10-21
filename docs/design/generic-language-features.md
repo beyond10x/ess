@@ -155,6 +155,11 @@ existing mapping form stays valid and lowers to the same expression:
 | `{count: changed}`, `{changed: f}` | `count(changed)`, `changed.f` |
 | `{response: …}`, `{generated: true}`, `{cleared: true}` | unchanged: these name what the implementation supplies or removes, not a computation |
 
+A `{generated: true}` value stays the implementation's in the model, and synthesis asserts only its
+presence and type. From `ess/30` an authored scenario may state one its own earlier steps
+determine (a revision counting its commits), and the suite checks it exactly; below `ess/30` that
+act is refused as `ESS-AUTHOR-042` (beyond10x/ess#623, `authored-generated-values.md`).
+
 ### Where an expression may appear
 
 Every position in grid R below. The evaluation instant and the facts present are the position's,
@@ -498,6 +503,13 @@ authority"), its hint naming `ess/29`.
   decides false, where that sibling must still answer. Generated Rust and Go read the row, then
   `P`, then ask the context. Entity Runtime lowers it to `P` over the loaded row, the input guard
   and the host's external evidence, all required.
+- **A race that overrides a held-state branch** (beyond10x/ess#623, Ask B). "Commit unless the
+  head moved" needs no new key: the race is declared first, `external:` beside
+  `when_subject: {predicate: state == Validated}`, above `committed` (`when_subject_state:
+  Validated`). Both are step 3, so the race answers where the provider takes it and `committed`
+  answers otherwise; synthesis witnesses both with no `ESS-SYNTH-003`/`004`. A plain `external:`
+  declared below `committed` stays unreachable, since step 3 answers every validated row first
+  (`tests/external_narrowed_by_subject.rs`).
 
 ### Entity Runtime and `when_related:` (decided 2026-10-21)
 

@@ -1218,6 +1218,32 @@ the predicate does not select, where that branch must still answer. The generate
 behaviours ask the provider only after the guard holds, and Entity Runtime lowers the branch to the
 guard and the host's external evidence.
 
+The same form says "commit unless the head moved", an outside race that overrides a held-state
+branch. Declare the race first, narrowed to the state its move starts from:
+
+```text
+- name: stale
+  external: the head moved after the transaction was validated
+  when_subject:
+    predicate: state == Validated
+  moves: demo.ledger.Transaction.outdate
+  instance: transaction_id
+- name: committed
+  when_subject_state: Validated
+  moves: demo.ledger.Transaction.commit
+  instance: transaction_id
+- name: not-validated
+  wrong_state: true
+  error: demo.ledger.NotValidated
+```
+
+Both branches answer at the held-state step, so on a validated transaction a forced `stale`
+answers before `committed`, and `committed` answers wherever the provider does not take `stale`.
+Synthesis witnesses `Commit/stale` and `Commit/committed` with no `ESS-SYNTH-003` or `004`. A plain
+`external:` declared after `committed` is never reached: the held-state step answers every
+validated transaction with `committed`, and no other state starts `stale`'s move
+(beyond10x/ess#623).
+
 ## A guard over another entity's row
 
 From `ess/18`, a branch may be guarded by one row of another entity: the row whose identity an input
