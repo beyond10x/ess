@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: story:synthesis-reaches-a-creator-beside-existing-instance-and-related-guards
 kind: story
-status: draft
+status: archived
 title: Synthesis reaches a creating branch behind an existing_instance refusal and related guards
 relations:
 - serves: vision:O2
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-22T03:02:05Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 
@@ -60,3 +62,11 @@ None.
 ## Open Questions
 
 None.
+
+## Decisions
+
+- 2026-10-22: archived as a duplicate of
+  `story:an-existing-instance-outcome-beside-related-guards-is-witnessed`, implemented at
+  b42d9bcfe (merged 47ac058ee). That story's `via` scenario is this report's shape: an
+  `existing_instance: true` refusal ahead of `when_related` refusals over the same input
+  reference, refused with ESS-SYNTH-004 "which no input reaches" on the base and witnessed after.
