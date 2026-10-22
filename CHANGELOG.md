@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.69.0] — 2026-10-22
+
 ### Fixed
 
 - A binding scenario whose trigger row's creator guards the target row's stored fields acts on the row the arrangement made selectable; it acted on a second row and failed. A binding writing to the row named in the trigger's input acts on the row the trigger's own guard arranged.

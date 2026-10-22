@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.69.0 — 2026-10-22
+
+### A binding scenario acts on the row its setup arranged, and one it cannot set up is refused by name
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.69.0)
+
+Binding scenarios that failed against a correct implementation now pass: the trigger acts on the row the setup arranged, a refusal-policy scenario is set up through a publisher that does not refuse the missing row, and an unbounded `retry` binding is no longer unsupported. Where no such setup exists, the scenario is refused as ESS-SYNTH-010.
+
 ## 0.68.0 — 2026-10-22
 
 ### A reference every writer checks needs no missing-row branch, and a view filter can compare with now
