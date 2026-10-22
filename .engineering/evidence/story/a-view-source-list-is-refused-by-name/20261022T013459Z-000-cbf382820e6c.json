@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-22T01:34:59Z",
+  "actor": "human:timo",
+  "artifact": "story:a-view-source-list-is-refused-by-name",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "L4b gate: ess-domain 1699, ess-cli 1172, test-xtask 414, interpreted_set_effects 19, set_effects 24, set_effects_go 2, typed_diagnostics 8 passed, 0 failed; clippy, schema, projection-check, fmt-check exit 0",
+    "reference": "082e59982"
+  }
+}

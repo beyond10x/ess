@@ -25,7 +25,7 @@ scope:
   path: crates/specify/ess-domain/src/view.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/related.rs
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:07:59Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:07:59Z", actor: "human:timo", revision: 3}
@@ -81,6 +81,8 @@ whose hint names `ess/30`.
   outside the cut (lines 247-252) and stays deferred in
   `story:a-guard-compares-fields-of-two-named-rows`.
 - Aggregate, paged and `absent:` views keep refusing navigation by name (line 252).
+
+- Taken by the coordinator, 2026-10-22: out of 0.68.0. A chain of hops changes the persisted IR (`ResolvedViewReference { via: String }` in `ess-compiler/src/ir.rs`, `ess-domain/src/view/navigation.rs:55-64`, `command/related_guard.rs:98,111`) and reaches `ess-diff` and the TypeScript runtime; the design does not say whether that is a new `ess-ir` version. A design page settles the IR shape before this story is dispatched. The one-hop cut (ab2cd8454) was 111 files, +5052/-312.
 
 ## Acceptance
 

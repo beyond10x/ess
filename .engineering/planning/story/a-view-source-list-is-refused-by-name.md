@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-source-list-is-refused-by-name
 kind: story
-status: active
+status: implemented
 title: 'A view source: list is refused by name, pointing to navigation, instead of a serde error'
 tags:
 - adopter-report
@@ -16,10 +16,11 @@ relations:
 scope:
 - confidence: inferred
   path: crates/specify/ess-domain/src/view.rs
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:08:00Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:08:00Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-22T01:35:00Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

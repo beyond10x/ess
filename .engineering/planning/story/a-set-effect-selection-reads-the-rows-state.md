@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-set-effect-selection-reads-the-rows-state
 kind: story
-status: active
+status: implemented
 title: 'An affects: or instances: where reads the candidate row''s lifecycle state'
 tags:
 - adopter-report
@@ -21,10 +21,11 @@ scope:
   path: crates/verify/ess-conformance/src/interpret
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:07:58Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:07:59Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-22T01:34:59Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
