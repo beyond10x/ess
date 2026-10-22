@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-race-above-a-held-state-branch-is-witnessed
 kind: story
-status: active
+status: implemented
 title: 'A race declared above a held-state branch is witnessed with compensates: true, and a plain external below it is reported unreachable'
 tags:
 - adopter-report
@@ -20,10 +20,11 @@ scope:
   path: crates/specify/ess-domain/src/command
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:08:00Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:08:01Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-22T02:41:44Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

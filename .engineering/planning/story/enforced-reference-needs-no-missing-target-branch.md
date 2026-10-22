@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:enforced-reference-needs-no-missing-target-branch
 kind: story
-status: active
+status: implemented
 title: A reference whose target cannot be missing needs no missing-target branch
 tags:
 - feature-request
@@ -12,10 +12,11 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T06:52:55Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-21T06:52:56Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-10-22T02:41:45Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

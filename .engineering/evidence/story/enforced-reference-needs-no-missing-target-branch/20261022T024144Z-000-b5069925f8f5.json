@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-22T02:41:44Z",
+  "actor": "human:timo",
+  "artifact": "story:enforced-reference-needs-no-missing-target-branch",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "L4a gate: ess-domain ok, ess-conformance --lib + 20 tests 301, ess-synth 719, ess-cli 1172, test-xtask 414, typed_diagnostics 8 passed, 0 failed; clippy, fmt-check exit 0",
+    "reference": "1208c0baf"
+  }
+}
