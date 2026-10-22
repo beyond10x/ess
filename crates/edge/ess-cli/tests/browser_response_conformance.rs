@@ -2107,6 +2107,9 @@ const JOBS: &str =
 fn installation_clock_shared_with_the_runner_decides_now_guards_in_both_routes() {
     const REFUSAL: &str = "demo.jobs.ScheduleJob/outcome/start-in-past";
     const SCHEDULED: &str = "demo.jobs.ScheduleJob/outcome/scheduled";
+    // The scenario on the guard's boundary holds the clock (beyond10x/ess#586); this target has no
+    // `hold_now`, so it stays `unsupported` in every mode without failing the run.
+    const HELD: &str = "demo.jobs.ScheduleJob/outcome/scheduled/held/starts_at/-60";
     let _lease = BUILD_LEASE.lock().unwrap();
     for route in ["4", "5"] {
         let root = generated_bundle("aligned-clock", route, &[JOBS]);
@@ -2120,8 +2123,12 @@ fn installation_clock_shared_with_the_runner_decides_now_guards_in_both_routes()
             &root,
             "JobsInstallation",
             natives,
-            &[REFUSAL, SCHEDULED],
-            &[&[], &[(REFUSAL, "failed")], &[(SCHEDULED, "failed")]],
+            &[REFUSAL, SCHEDULED, HELD],
+            &[
+                &[(HELD, "unsupported")],
+                &[(REFUSAL, "failed"), (HELD, "unsupported")],
+                &[(SCHEDULED, "failed"), (HELD, "unsupported")],
+            ],
         );
     }
 }

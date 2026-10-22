@@ -183,6 +183,18 @@ const BASE: &str = include_str!("fixtures/adversary-244b-base-digests.tsv");
 /// `when_related` predicates and accounts for every `sets` entry, so each model below that carries
 /// one gains mutants. IR, suite and refusals are unchanged; `now-stored-rows` keeps its 0.54.0
 /// suite.
+///
+/// Up to 0.67.0, first recorded at the 0.68.0 release bar: moves this probe was not run against.
+/// `model-types` refuses with a text already pinned in 0.58.0; synthesis holds the clock on each
+/// `now` boundary (0.62.0, beyond10x/ess#586, `8a0ca3016`), so `current-time-guard`,
+/// `now-stored-rows` (superseding its 0.60.0 entry) and `occurrence-clock-offers` gain a held
+/// scenario; in 0.63.0 committed suites state suite-wide rules once (beyond10x/ess#572) and the
+/// ess/27 suite majors move, so the other suites shrink, a recursive value-invariant refusal names
+/// what it lacks (`adversary_expression`), and the scrub `34db9a1d4` renames a name the
+/// `outcome-groups` assembly refusal quotes. Each suite and refusal digest equals the one
+/// `synthesis-suite-bytes-table.tsv` pinned at 0.67.0; `conditional-measures-generated`, which
+/// that table excludes, is ess/22 and outside every 0.68.0 synthesis change. IR and mutants are
+/// unchanged.
 const INTENDED: &[(&str, &str)] = &[
     (
         "crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml",
@@ -191,10 +203,6 @@ const INTENDED: &[(&str, &str)] = &[
     (
         "crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml@ess22",
         "ir=8f73acbe936097824f8e:9715 suite=d10530fe00b5eb7bfc37:32088 refusals=e3b0c44298fc1c149afb:0 mutants=9b0ca26989288b2d82cb:1856",
-    ),
-    (
-        "crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml",
-        "ir=fad93168fa11c42db418:30720 suite=37ae4b7217b154be6972:109803 refusals=b0abbc30c3882c8c5037:423 mutants=bc6271e9f57ec341f933:3988",
     ),
     (
         "crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml",
@@ -327,6 +335,130 @@ const INTENDED: &[(&str, &str)] = &[
     (
         "crates/verify/ess-conformance/tests/fixtures/when-subject-fallback-refusal.yaml@ess22",
         "ir=f59eafbb12aebf53ff70:11025 suite=f7ba7d533df0abd1de62:29867 refusals=2a80cca606aa08bb095f:1009 mutants=b20a6db7d368a06c594e:575",
+    ),
+    (
+        "crates/generate/ess-gen/tests/fixtures/model-types.yaml",
+        "ir=91f0042ec0ca486d8095:4855 suite=01c5b843e68efa1d3e0a:363 refusals=bd8344ba32d2d00918b3:359 mutants=e3b0c44298fc1c149afb:0",
+    ),
+    (
+        "crates/generate/ess-gen/tests/fixtures/model-types.yaml@ess22",
+        "ir=91f0042ec0ca486d8095:4855 suite=01c5b843e68efa1d3e0a:363 refusals=bd8344ba32d2d00918b3:359 mutants=e3b0c44298fc1c149afb:0",
+    ),
+    (
+        "crates/generate/ess-synth/tests/fixtures/bounded-accessor.yaml",
+        "ir=56aa0e7b552a4b29064d:24246 suite=5e31ae628a820681794e:7176 refusals=e35b67499ded0851e93c:837 mutants=b4876b800d0cb60ea19c:221",
+    ),
+    (
+        "crates/generate/ess-synth/tests/fixtures/conditional-measures-generated.yaml",
+        "ir=d35e9f1aea844db65444:20928 suite=fda0d69e641a88ad0183:21999 refusals=b3c848d48cfb9f249ead:518 mutants=c826069de550b57df70e:1061",
+    ),
+    (
+        "crates/generate/ess-synth/tests/fixtures/generated-views.yaml",
+        "ir=d684139b5be5288707c0:29577 suite=d51cd175899fabc318ca:58807 refusals=bfb251ea7183b9cfb016:399 mutants=8eea32c81ed7d126b3d2:996",
+    ),
+    (
+        "crates/generate/ess-synth/tests/fixtures/generated-views.yaml@ess22",
+        "ir=d684139b5be5288707c0:29577 suite=d51cd175899fabc318ca:58807 refusals=bfb251ea7183b9cfb016:399 mutants=8eea32c81ed7d126b3d2:996",
+    ),
+    (
+        "crates/specify/ess-compiler/tests/fixtures/adversary_expression.yaml",
+        "ir=a4b8c0d2ebcb25499bd0:9586 suite=4569c561f09159c1bf4c:1288 refusals=e469261ed098131f7390:7620 mutants=4a0563e816ec3b664346:373",
+    ),
+    (
+        "crates/specify/ess-compiler/tests/fixtures/adversary_expression.yaml@ess22",
+        "ir=a4b8c0d2ebcb25499bd0:9586 suite=4569c561f09159c1bf4c:1288 refusals=e469261ed098131f7390:7620 mutants=4a0563e816ec3b664346:373",
+    ),
+    (
+        "crates/specify/ess-domain/tests/fixtures/outcome-groups/system.yaml",
+        "ASSEMBLE e81263926bcf9e3938ac:451",
+    ),
+    (
+        "crates/specify/ess-domain/tests/fixtures/outcome-groups/system.yaml@ess22",
+        "ASSEMBLE e81263926bcf9e3938ac:451",
+    ),
+    (
+        "crates/specify/ess-domain/tests/fixtures/outcome-groups-twin/system.yaml",
+        "ASSEMBLE e81263926bcf9e3938ac:451",
+    ),
+    (
+        "crates/specify/ess-domain/tests/fixtures/outcome-groups-twin/system.yaml@ess22",
+        "ASSEMBLE e81263926bcf9e3938ac:451",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/adversary-explore-preconditions.yaml",
+        "ir=7450b532629f518662ed:9168 suite=18d4a7deb220bf07e8bc:11304 refusals=e3b0c44298fc1c149afb:0 mutants=84c25dad3f30a55122e8:421",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/adversary-explore-preconditions.yaml@ess22",
+        "ir=7450b532629f518662ed:9168 suite=18d4a7deb220bf07e8bc:11304 refusals=e3b0c44298fc1c149afb:0 mutants=84c25dad3f30a55122e8:421",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/aggregate-group-selection.yaml",
+        "ir=dde087b272d309d3fd18:28813 suite=4c5e94e707b5da248c17:142947 refusals=e3b0c44298fc1c149afb:0 mutants=1e14eff476478e9ca097:425",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/aggregate-group-selection.yaml@ess22",
+        "ir=dde087b272d309d3fd18:28813 suite=4c5e94e707b5da248c17:142947 refusals=e3b0c44298fc1c149afb:0 mutants=1e14eff476478e9ca097:425",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/aggregate-optional-fields.yaml",
+        "ir=b5c5844d95d664bb1f49:17481 suite=0b8961c5dae080a0863a:33980 refusals=e3b0c44298fc1c149afb:0 mutants=227583c6431f7c06dfd9:95",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/aggregate-optional-fields.yaml@ess22",
+        "ir=b5c5844d95d664bb1f49:17481 suite=0b8961c5dae080a0863a:33980 refusals=e3b0c44298fc1c149afb:0 mutants=227583c6431f7c06dfd9:95",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/binding-condition-selected.yaml",
+        "ir=7b361612162d72a2fbd4:19496 suite=9281dc6aae632abc1d51:43631 refusals=0755454e3fe41dad0214:276 mutants=2e782cbc905c8eafa2b8:376",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml",
+        "ir=55b03bf14a61335ee1dc:14509 suite=e7999fe6cf6055b96d1e:36626 refusals=0755454e3fe41dad0214:276 mutants=2e782cbc905c8eafa2b8:376",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/current-time-guard.yaml",
+        "ir=a7cacc358c4e2d309a51:6366 suite=0fc77cd2ffc7e77dbdc2:6906 refusals=e3b0c44298fc1c149afb:0 mutants=d9db1f7715d7c6ac4e8a:343",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/current-time-guard.yaml@ess22",
+        "ir=a7cacc358c4e2d309a51:6366 suite=0fc77cd2ffc7e77dbdc2:6906 refusals=e3b0c44298fc1c149afb:0 mutants=d9db1f7715d7c6ac4e8a:343",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml",
+        "ir=fad93168fa11c42db418:30720 suite=7548062c85b64cffd671:140160 refusals=b0abbc30c3882c8c5037:423 mutants=bc6271e9f57ec341f933:3988",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml",
+        "ir=100a4d422734bdd51af9:14053 suite=2381a42504a5cc0ab314:28272 refusals=4fd558db28f2b7a105b0:2473 mutants=fad5957bb2e5091b3d81:1764",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml@ess22",
+        "ir=100a4d422734bdd51af9:14053 suite=2381a42504a5cc0ab314:28272 refusals=4fd558db28f2b7a105b0:2473 mutants=fad5957bb2e5091b3d81:1764",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml",
+        "ir=e1adf075661567026afe:1197 suite=cc8b28aa35b5d547f10a:10318 refusals=e3b0c44298fc1c149afb:0 mutants=e3b0c44298fc1c149afb:0",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml@ess22",
+        "ir=e1adf075661567026afe:1197 suite=cc8b28aa35b5d547f10a:10318 refusals=e3b0c44298fc1c149afb:0 mutants=e3b0c44298fc1c149afb:0",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/related-values-chained.yaml",
+        "ir=ab75682e9e4308374158:20260 suite=a35d1b135cca44237fc3:28283 refusals=e3b0c44298fc1c149afb:0 mutants=090c711ebd31d81488c5:334",
+    ),
+    (
+        "crates/verify/ess-conformance/tests/fixtures/structured-instances.yaml",
+        "ir=60a062a30bd57660f15c:13631 suite=05dd44d9c5aac092e3fb:5833 refusals=e3b0c44298fc1c149afb:0 mutants=0d05a6f55f3ef7ad4466:242",
+    ),
+    (
+        "docs/design/one-time-response-values.example.yaml",
+        "ir=e1adf075661567026afe:1197 suite=cc8b28aa35b5d547f10a:10318 refusals=e3b0c44298fc1c149afb:0 mutants=e3b0c44298fc1c149afb:0",
+    ),
+    (
+        "docs/design/one-time-response-values.example.yaml@ess22",
+        "ir=e1adf075661567026afe:1197 suite=cc8b28aa35b5d547f10a:10318 refusals=e3b0c44298fc1c149afb:0 mutants=e3b0c44298fc1c149afb:0",
     ),
 ];
 
