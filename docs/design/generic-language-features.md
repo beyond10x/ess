@@ -346,10 +346,16 @@ where they join the reads of any declared invariants. The id says what holds of 
 the branch, and reusing it gives the suite no identity an older reader refuses, so the suite major
 stays put. A specification that leaves no branch out keeps its suite bytes.
 
-Not in this cut, and owed by the story: generated Rust and Go keep such a command an obligation, named
-(`synth/determined.rs`, `related_composition`): the generated related read is bound by the
-`exists: false` branch. Synthesis's own unreachability proof reads writers only, not deletions,
-so beside a deleting command it still reports a present `exists: false` branch unreachable.
+Generated Rust and Go read the row such a command names with no answer for a missing one, before
+the first branch that reads it (`synth/determined.rs`, `kept_reference`; `stored_read` in each
+target's `behaviour.rs`), and a target that never reads it fails the related refusal's scenario
+(`synth/tests/enforced_reference_served.rs`). Synthesis's unreachability proof reads deletions as
+well as writers (`conf/synthesize/related_guard/stored.rs`, `unreachable`): with no deleting
+branch a present `exists: false` branch stays `ESS-SYNTH-003`, naming the writers; beside one, its
+witness creates a referenced row, links the subject to it, and deletes the row through the
+deleting command before the branch (`conf/tests/enforced_reference.rs`). Only a branch deleting
+its own subject drives that witness; where the row is deleted only through `instances:` or
+`affects:`, the arrangement is still refused by name.
 
 ## G3. Aggregates over expressions
 
@@ -507,9 +513,13 @@ authority"), its hint naming `ess/29`.
   head moved" needs no new key: the race is declared first, `external:` beside
   `when_subject: {predicate: state == Validated}`, above `committed` (`when_subject_state:
   Validated`). Both are step 3, so the race answers where the provider takes it and `committed`
-  answers otherwise; synthesis witnesses both with no `ESS-SYNTH-003`/`004`. A plain `external:`
-  declared below `committed` stays unreachable, since step 3 answers every validated row first
-  (`tests/external_narrowed_by_subject.rs`).
+  answers otherwise; synthesis witnesses both with no `ESS-SYNTH-003`/`004`. From `ess/30` the
+  race may declare `compensates: true`: the flag changes what its refusal does to the row, not
+  what it reads or where it answers, so it still answers at step 3, and its witness reads the row
+  back in the compensating state. A plain `external:` declared below `committed` stays
+  unreachable, since step 3 answers every validated row first; synthesis refuses it as
+  `ESS-SYNTH-003`, naming `committed` and the narrowed race as the repair
+  (`tests/external_narrowed_by_subject.rs`, `tests/external_beside_held_guard.rs`).
 
 ### Entity Runtime and `when_related:` (decided 2026-10-21)
 

@@ -201,6 +201,131 @@ fn the_field_equals_form_beside_external_stays_refused_naming_the_predicate_form
     );
 }
 
+/// "Commit unless the head moved" with a race that compensates (beyond10x/ess#623, Ask B): the
+/// outside check finds the head moved after validation, and `stale` outdates the transaction
+/// before it reports `Stale`. Declared above `committed`, both answer at the held-state step.
+const RACE: &str = "format: ess/30
+system: demo
+version: v1
+domain: demo.ledger
+summary: A transaction committed unless the head moved after it was validated.
+types:
+  - {name: demo.ledger.TransactionId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.ledger.Transaction
+    identity: {name: transaction_id, type: demo.ledger.TransactionId}
+    fields:
+      - {name: note, type: String}
+    lifecycle:
+      initial: Proposed
+      states: [Proposed, Validated, Committed, Stale]
+      terminal: [Committed, Stale]
+      transitions:
+        - {name: validate, from: [Proposed], to: Validated}
+        - {name: commit, from: [Validated], to: Committed}
+        - {name: outdate, from: [Validated], to: Stale}
+actors:
+  - name: demo.ledger.Writer
+    may: [demo.ledger.Propose, demo.ledger.Validate, demo.ledger.Commit]
+commands:
+  - name: demo.ledger.Propose
+    input:
+      - {name: note, type: String}
+    outcomes:
+      - name: proposed
+        creates: demo.ledger.Transaction
+        instance: transaction_id
+        sets: {note: input.note}
+        emits: [demo.ledger.Proposed]
+        payload:
+          demo.ledger.Proposed: {transaction_id: {generated: true}}
+  - name: demo.ledger.Validate
+    input:
+      - {name: transaction_id, type: demo.ledger.TransactionId}
+    outcomes:
+      - name: validated
+        moves: demo.ledger.Transaction.validate
+        instance: transaction_id
+        emits: [demo.ledger.Validated]
+        payload:
+          demo.ledger.Validated: {transaction_id: input.transaction_id}
+      - name: not-proposed
+        wrong_state: true
+        error: demo.ledger.NotProposed
+  - name: demo.ledger.Commit
+    input:
+      - {name: transaction_id, type: demo.ledger.TransactionId}
+    outcomes:
+      - name: stale
+        external: the head moved after the transaction was validated
+        when_subject:
+          predicate: state == Validated
+        error: demo.ledger.Stale
+        compensates: true
+        moves: demo.ledger.Transaction.outdate
+        instance: transaction_id
+      - name: committed
+        when_subject_state: Validated
+        moves: demo.ledger.Transaction.commit
+        instance: transaction_id
+        emits: [demo.ledger.Committed]
+        payload:
+          demo.ledger.Committed: {transaction_id: input.transaction_id}
+      - name: not-validated
+        wrong_state: true
+        error: demo.ledger.NotValidated
+events:
+  - name: demo.ledger.Proposed
+    fields: [{name: transaction_id, type: demo.ledger.TransactionId}]
+  - name: demo.ledger.Validated
+    fields: [{name: transaction_id, type: demo.ledger.TransactionId}]
+  - name: demo.ledger.Committed
+    fields: [{name: transaction_id, type: demo.ledger.TransactionId}]
+errors:
+  - name: demo.ledger.Stale
+  - name: demo.ledger.NotProposed
+  - name: demo.ledger.NotValidated
+";
+
+#[test]
+fn a_narrowed_race_may_compensate() {
+    let spec = spec(RACE).unwrap_or_else(|errors| panic!("{errors}"));
+    let command = &spec.commands()[&"demo.ledger.Commit".parse().unwrap()];
+    let race = &command.outcomes[0];
+    assert_eq!(race.name.as_str(), "stale");
+    assert!(race.compensates);
+    assert!(
+        matches!(race.condition, OutcomeCondition::ExternalSubject { .. }),
+        "{:?}",
+        race.condition
+    );
+}
+
+#[test]
+fn below_ess_30_a_compensating_narrowed_race_names_ess_30() {
+    let errors = refused(&RACE.replacen("format: ess/30", "format: ess/29", 1));
+    assert!(
+        errors.contains("refusal_mutated_state")
+            && errors.contains("compensates")
+            && errors.contains("ess/30"),
+        "{errors}"
+    );
+}
+
+#[test]
+fn a_compensating_held_state_refusal_stays_refused_at_ess_30() {
+    // Without `external:` the stored row alone decides the refusal: the marker stays refused.
+    let errors = refused(&RACE.replacen(
+        "        external: the head moved after the transaction was validated\n",
+        "",
+        1,
+    ));
+    assert!(
+        errors.contains("refusal_mutated_state") && errors.contains("compensates"),
+        "{errors}"
+    );
+}
+
 #[test]
 fn a_narrowing_predicate_is_checked_against_the_entity() {
     let errors = refused(&narrowed(

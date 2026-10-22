@@ -1303,6 +1303,14 @@ impl RefusalCause {
                 "the guard reads something no input can supply; correct the path or the type it \
                  walks into"
             }
+            // A race a held-state branch answers first (beyond10x/ess#623): no candidate and no
+            // fixture reaches it.
+            Self::GuardUnsatisfiable { predicate, .. } if predicate.contains(ANSWERED_FIRST) => {
+                "a branch the held state selects answers before an external one whatever their \
+                 declaration order; narrow the race by `when_subject:` and declare it above that \
+                 branch, as the line above names, and the two answer at the held-state step in \
+                 declaration order"
+            }
             Self::GuardUnsatisfiable { .. } => {
                 "write the branch's condition over values a candidate can carry, or supply a \
                  fixture for it"
@@ -4344,6 +4352,9 @@ fn unclaimed_external(
         || lifecycle.states.iter().cloned().collect(),
         |transition| transition.from.iter().cloned().collect(),
     );
+    if let Some(unreachable) = answered_first(ir.format(), command, outcome, subject, &states) {
+        return Err(unreachable);
+    }
     let states = if outcome.before_row {
         held_state_selected_first(command, states)
     } else {
@@ -4414,6 +4425,84 @@ fn unclaimed_external(
             named_guards(&siblings)
         ),
         tried,
+    })
+}
+
+/// The phrase a refusal of a race no row reaches carries, and its hint's marker: a branch the held
+/// state selects answers before any external one, whatever their declaration order.
+const ANSWERED_FIRST: &str = "before any external cause is asked";
+
+/// The refusal of a plain `external:` race every start of which a held-state branch answers first
+/// (`docs/design/generic-language-features.md` § G4, lines 506-512; beyond10x/ess#623, Ask B). On
+/// each state in `starts` (the states the race's move starts from, every state where it moves
+/// nothing) a sibling selected by that state with no input guard answers before the race
+/// ([`held_state_refuted`] is `None`), so no row and no input reach it, and a scenario filed under
+/// it could only witness another branch. Named are those siblings and the repair: the race narrowed
+/// by `when_subject:` to the rows it is taken from and declared above the first of them, which
+/// answers at the held-state step in declaration order (`ess/29`; `ess/30` where it compensates).
+/// `None` for any other branch, and wherever some start leaves an input to search for.
+fn answered_first(
+    format: ess_domain::system::FormatVersion,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    subject: &ResolvedSubject,
+    starts: &[StateName],
+) -> Option<RefusalCause> {
+    if !matches!(outcome.condition, ResolvedCondition::External { .. })
+        || outcome.before_row
+        || starts.is_empty()
+        || starts
+            .iter()
+            .any(|state| held_state_refuted(format, command, outcome, state).is_some())
+    {
+        return None;
+    }
+    let mut answering: Vec<&ResolvedOutcome> = Vec::new();
+    for state in starts {
+        for branch in held_state_before(format, command, outcome, state) {
+            if !answering.iter().any(|known| known.name == branch.name) {
+                answering.push(branch);
+            }
+        }
+    }
+    answering.sort_by_key(|branch| {
+        command
+            .outcomes
+            .iter()
+            .position(|declared| declared.name == branch.name)
+    });
+    let first = answering.first()?;
+    let name = &outcome.name;
+    let resting = starts
+        .iter()
+        .map(|state| format!("`{state}`"))
+        .collect::<Vec<_>>()
+        .join(" or ");
+    let narrowed = match starts {
+        [one] => format!("`when_subject: {{predicate: state == {one}}}`"),
+        _ => format!("a `when_subject:` predicate selecting {resting}"),
+    };
+    let needed = if outcome.compensates {
+        ess_domain::system::FormatVersion::V30
+    } else {
+        ess_domain::system::FormatVersion::V29
+    };
+    let from = if format.major() < needed.major() {
+        format!(", from `{needed}`")
+    } else {
+        String::new()
+    };
+    Some(RefusalCause::GuardUnsatisfiable {
+        predicate: format!(
+            "`{name}` is taken from a `{}` resting in {resting}, and {} answer{} every such row \
+             by its held state {ANSWERED_FIRST}: no row and no input reach `{name}`; to race \
+             `{}`, declare `{name}` above it with {narrowed}{from}",
+            subject.entity.name(),
+            named_guards(&answering),
+            if answering.len() == 1 { "s" } else { "" },
+            first.name,
+        ),
+        tried: starts.len(),
     })
 }
 

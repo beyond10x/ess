@@ -1695,3 +1695,272 @@ fn issue_534_models_answer_alike_at_format_a() {
         );
     }
 }
+
+// ---- a plain race below a held-state branch (beyond10x/ess#623, Ask B) --------------------------
+
+/// "Commit unless the head moved" as a downstream adopter first wrote it: `committed`
+/// (`when_subject_state: Validated`) and, declared below it, a plain `external:` race `stale` whose
+/// move starts only from `Validated`. The held state answers every validated transaction first
+/// (step 3 of `docs/design/generic-language-features.md` § G4), and no other state starts the
+/// race's move, so no row and no input reach `stale`. `COMMIT_OUTCOMES` takes the branches below
+/// `committed`, in declaration order.
+const PLAIN_RACE: &str = r"format: FORMAT
+system: demo
+version: v1
+domain: demo.ledger
+summary: A transaction committed, or outdated when the head moved after it was validated.
+types:
+  - {name: demo.ledger.TransactionId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.ledger.Transaction
+    identity: {name: transaction_id, type: demo.ledger.TransactionId}
+    fields:
+      - {name: note, type: String}
+    lifecycle:
+      initial: Proposed
+      states: [Proposed, Validated, Committed, Stale]
+      terminal: [Committed, Stale]
+      transitions:
+        - {name: validate, from: [Proposed], to: Validated}
+        - {name: commit, from: [Validated], to: Committed}
+        - {name: outdate, from: [Validated], to: Stale}
+actors:
+  - name: demo.ledger.Writer
+    may: [demo.ledger.Propose, demo.ledger.Validate, demo.ledger.Commit]
+commands:
+  - name: demo.ledger.Propose
+    input:
+      - {name: note, type: String}
+    outcomes:
+      - name: proposed
+        creates: demo.ledger.Transaction
+        instance: transaction_id
+        sets: {note: input.note}
+        emits: [demo.ledger.Proposed]
+        payload:
+          demo.ledger.Proposed: {transaction_id: {generated: true}}
+  - name: demo.ledger.Validate
+    input:
+      - {name: transaction_id, type: demo.ledger.TransactionId}
+    outcomes:
+      - name: validated
+        moves: demo.ledger.Transaction.validate
+        instance: transaction_id
+        emits: [demo.ledger.Validated]
+        payload:
+          demo.ledger.Validated: {transaction_id: input.transaction_id}
+      - name: not-proposed
+        wrong_state: true
+        error: demo.ledger.NotProposed
+  - name: demo.ledger.Commit
+    input:
+      - {name: transaction_id, type: demo.ledger.TransactionId}
+    outcomes:
+      - name: committed
+        when_subject_state: Validated
+        moves: demo.ledger.Transaction.commit
+        instance: transaction_id
+        emits: [demo.ledger.Committed]
+        payload:
+          demo.ledger.Committed: {transaction_id: input.transaction_id}
+COMMIT_OUTCOMES
+events:
+  - name: demo.ledger.Proposed
+    fields: [{name: transaction_id, type: demo.ledger.TransactionId}]
+  - name: demo.ledger.Validated
+    fields: [{name: transaction_id, type: demo.ledger.TransactionId}]
+  - name: demo.ledger.Committed
+    fields: [{name: transaction_id, type: demo.ledger.TransactionId}]
+EVENTS
+errors:
+  - name: demo.ledger.NotProposed
+  - name: demo.ledger.NotValidated
+ERRORS
+views:
+  - name: demo.ledger.Transactions
+    source: demo.ledger.Transaction
+    consistency: read_your_writes
+    fields:
+      - {name: transaction_id, type: demo.ledger.TransactionId}
+      - {name: note, type: String}
+      - {name: state, type: demo.ledger.Transaction.State}
+";
+
+/// The race accepting: it moves the transaction to `Stale` and says so.
+const ACCEPTING_RACE: &str = "      - name: stale
+        external: the head moved after the transaction was validated
+        moves: demo.ledger.Transaction.outdate
+        instance: transaction_id
+        emits: [demo.ledger.Outdated]
+        payload:
+          demo.ledger.Outdated: {transaction_id: input.transaction_id}";
+
+/// The race refusing and compensating: it moves the transaction to `Stale` and emits nothing
+/// (`docs/design/refusal-with-effect.md`), the shape the downstream report declared.
+const COMPENSATING_RACE: &str = "      - name: stale
+        external: the head moved after the transaction was validated
+        error: demo.ledger.Stale
+        compensates: true
+        moves: demo.ledger.Transaction.outdate
+        instance: transaction_id";
+
+/// Every held state but `Validated`, refused by name.
+const NAMED_REFUSAL: &str = "      - name: not-validated
+        when_subject_state: [Proposed, Committed, Stale]
+        error: demo.ledger.NotValidated";
+
+/// The refusal every other request gets, declared last.
+const DEFAULT_REFUSAL: &str = "      - name: not-validated
+        error: demo.ledger.NotValidated";
+
+/// [`PLAIN_RACE`] at `format`, with `below` declared under `committed` in that order.
+fn plain_race(format: &str, below: &[&str]) -> String {
+    let compensating = below.contains(&COMPENSATING_RACE);
+    PLAIN_RACE
+        .replace("FORMAT", format)
+        .replace("COMMIT_OUTCOMES", &below.join("\n"))
+        .replace(
+            "EVENTS\n",
+            if compensating {
+                ""
+            } else {
+                "  - name: demo.ledger.Outdated\n    \
+                 fields: [{name: transaction_id, type: demo.ledger.TransactionId}]\n"
+            },
+        )
+        .replace(
+            "ERRORS\n",
+            if compensating {
+                "  - name: demo.ledger.Stale\n"
+            } else {
+                ""
+            },
+        )
+}
+
+/// For every send of `Commit` the provider of `stale` is forced for in `scenario`, the outcome the
+/// scenario then requires.
+fn answers_to_forced_race(scenario: &ConformanceScenario) -> Vec<String> {
+    sends(scenario, "demo.ledger.Commit")
+        .into_iter()
+        .filter(|(at, _)| forced_before(scenario, *at, "demo.ledger.Commit", "stale"))
+        .filter_map(|(at, _)| {
+            scenario.steps[at + 1..].iter().find_map(|step| match step {
+                ScenarioStep::ExpectOutcome { outcome } => Some(outcome.outcome.to_string()),
+                _ => None,
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn a_plain_external_below_a_held_state_branch_is_reported_unreachable() {
+    let mut wrong = Vec::new();
+    // Every format the race can be written at: accepting from `ess/20`, compensating from
+    // `ess/22`; the other held states refused by name or by the refusal declared last.
+    for (format, below) in [
+        ("ess/20", vec![NAMED_REFUSAL, ACCEPTING_RACE]),
+        ("ess/30", vec![NAMED_REFUSAL, ACCEPTING_RACE]),
+        ("ess/30", vec![ACCEPTING_RACE, DEFAULT_REFUSAL]),
+        ("ess/22", vec![NAMED_REFUSAL, COMPENSATING_RACE]),
+        ("ess/30", vec![COMPENSATING_RACE, DEFAULT_REFUSAL]),
+    ] {
+        let text = plain_race(format, &below);
+        let shape = format!(
+            "{format} with {}",
+            if below.contains(&COMPENSATING_RACE) {
+                "a compensating race"
+            } else {
+                "an accepting race"
+            }
+        );
+        let result = synthesis(&text);
+        // No scenario filed under `stale` requires another answer where it forces the race.
+        for (id, found) in &result.suite.scenarios {
+            let id = id.to_string();
+            if !id.contains("demo.ledger.Commit/stale") && !id.ends_with("Commit/outcome/stale") {
+                continue;
+            }
+            let answers = answers_to_forced_race(found);
+            if answers.is_empty() || answers.iter().any(|answer| answer != "stale") {
+                wrong.push(format!(
+                    "{shape}: {id} is filed under `stale` and requires {answers:?}"
+                ));
+            }
+        }
+        let named: Vec<String> = result
+            .refusals
+            .iter()
+            .filter(|refusal| {
+                refusal
+                    .scenario
+                    .as_ref()
+                    .is_some_and(|it| it.to_string() == "demo.ledger.Commit/outcome/stale")
+            })
+            .map(ToString::to_string)
+            .collect();
+        if !named.iter().any(|text| {
+            text.starts_with("refusal[ESS-SYNTH-003]")
+                && text.contains("`committed`")
+                && text.contains("when_subject: {predicate: state == Validated}")
+        }) {
+            wrong.push(format!(
+                "{shape}: `stale` is not refused as unreachable naming `committed` and the \
+                 narrowed race declared above it: {named:#?}"
+            ));
+        }
+        let failed = not_passed(&run(&text, &result.suite));
+        if !failed.is_empty() {
+            wrong.push(format!("{shape}: {failed:#?}"));
+        }
+    }
+    assert_eq!(wrong, Vec::<String>::new());
+}
+
+/// The class's edge: a race that moves nothing can start from any row, so where `committed` does
+/// not answer (a committed transaction asked again) the provider decides, and the witness there is
+/// a real one.
+#[test]
+fn a_plain_external_refusal_moving_nothing_stays_witnessed_on_the_rows_it_reaches() {
+    let text = plain_race(
+        "ess/30",
+        &[
+            "      - name: stale
+        external: the head moved after the transaction was validated
+        error: demo.ledger.Stale",
+            DEFAULT_REFUSAL,
+        ],
+    )
+    .replace(
+        "  - name: demo.ledger.Outdated\n    fields: [{name: transaction_id, type: demo.ledger.TransactionId}]\n",
+        "",
+    )
+    .replace("        - {name: outdate, from: [Validated], to: Stale}\n", "")
+    .replace(
+        "states: [Proposed, Validated, Committed, Stale]",
+        "states: [Proposed, Validated, Committed]",
+    )
+    .replace("terminal: [Committed, Stale]", "terminal: [Committed]")
+    .replace(
+        "  - name: demo.ledger.NotValidated\n",
+        "  - name: demo.ledger.NotValidated\n  - name: demo.ledger.Stale\n",
+    );
+    let result = synthesis(&text);
+    let unreachable: Vec<String> = result
+        .refusals
+        .iter()
+        .map(ToString::to_string)
+        .filter(|text| text.contains("`stale`"))
+        .collect();
+    assert_eq!(unreachable, Vec::<String>::new());
+    let witness = result
+        .suite
+        .scenarios
+        .iter()
+        .find_map(|(id, found)| {
+            (id.to_string() == "demo.ledger.Commit/outcome/stale").then_some(found)
+        })
+        .expect("a witness of `stale`");
+    assert_eq!(answers_to_forced_race(witness), vec!["stale".to_owned()]);
+    assert_eq!(not_passed(&run(&text, &result.suite)), Vec::<String>::new());
+}

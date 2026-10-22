@@ -252,3 +252,132 @@ fn declared_invariants_and_the_node_read_share_one_scenario() {
         .collect();
     assert!(failed.is_empty(), "{failed:#?}");
 }
+
+// ---- synthesis reads the proof validation reads (beyond10x/ess#509, owed item 2) ------------
+
+/// `BOARD` with `Rename` answering a missing node, `no-node`.
+fn answering_missing() -> String {
+    let text = BOARD.replacen(
+        "      - name: node-sealed\n",
+        "      - name: no-node\n        when_related: {via: node_id, exists: false}\n        \
+         error: integrity.board.NodeNotFound\n      - name: node-sealed\n",
+        1,
+    );
+    assert_ne!(text, BOARD);
+    text
+}
+
+/// [`answering_missing`] with a command that removes a node: a port's node can then be missing,
+/// though `AddPort` checks it when the port is added.
+fn removing() -> String {
+    let text = answering_missing()
+        .replacen(
+            "integrity.board.Rename]",
+            "integrity.board.Rename, integrity.board.RemoveNode]",
+            1,
+        )
+        .replacen(
+            "events:\n",
+            "events:\n  - name: integrity.board.NodeRemoved\n    fields: [{name: node_id, type: \
+             integrity.board.NodeId}]\n",
+            1,
+        )
+        .replacen(
+            "views:\n",
+            "  - name: integrity.board.RemoveNode\n    input:\n      - {name: node_id, type: \
+             integrity.board.NodeId}\n    outcomes:\n      - name: removed\n        deletes: \
+             integrity.board.Node\n        instance: node_id\n        emits: \
+             [integrity.board.NodeRemoved]\n        payload: {integrity.board.NodeRemoved: \
+             {node_id: input.node_id}}\nviews:\n",
+            1,
+        );
+    assert_eq!(text.matches("RemoveNode").count(), 2, "{text}");
+    text
+}
+
+const NO_NODE: &str = "integrity.board.Rename/outcome/no-node";
+
+/// The refusals of `model`'s synthesis filed under `id`.
+fn refusals_of(model: &EssIr, id: &str) -> Vec<String> {
+    ess_conformance::synthesize::synthesize(model)
+        .refusals
+        .iter()
+        .map(ToString::to_string)
+        .filter(|refusal| refusal.contains(id))
+        .collect()
+}
+
+/// Every scenario of `suite` run against the interpreted `target`, with its status.
+fn statuses(suite: &ConformanceSuite, target: EssIr) -> Vec<(String, Status)> {
+    let admitted = AdmittedSuite::from_suite(suite).expect("the suite is admitted");
+    Runner::for_suite(admitted.suite())
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(target),
+        )
+        .into_report()
+        .scenarios
+        .into_iter()
+        .map(|result| (result.scenario.to_string(), result.status))
+        .collect()
+}
+
+#[test]
+fn without_a_deleting_command_a_missing_node_answer_stays_unreachable() {
+    let refused = refusals_of(&ir(&answering_missing()), NO_NODE);
+    assert!(
+        refused
+            .iter()
+            .any(|refusal| refusal.starts_with("refusal[ESS-SYNTH-003]")
+                && refusal.contains(
+                    "unreachable: every act writing `node_id` (`integrity.board.AddPort/added`)"
+                )),
+        "{refused:#?}"
+    );
+}
+
+#[test]
+fn beside_a_deleting_command_a_missing_node_answer_is_witnessed_by_removing_the_node() {
+    let model = ir(&removing());
+    let refused = refusals_of(&model, NO_NODE);
+    assert!(refused.is_empty(), "{refused:#?}");
+    let synthesis = ess_conformance::synthesize::synthesize(&model);
+    let sent = sent(&synthesis.suite, NO_NODE);
+    let at = |command: &str| {
+        sent.iter()
+            .position(|sent| sent == command)
+            .unwrap_or_else(|| panic!("{NO_NODE} sends {command}: {sent:?}"))
+    };
+    assert!(
+        at("integrity.board.AddPort") < at("integrity.board.RemoveNode"),
+        "the node is removed after the port names it: {sent:?}"
+    );
+    assert_eq!(
+        sent.last().map(String::as_str),
+        Some("integrity.board.Rename")
+    );
+    let passing = statuses(&synthesis.suite, model.clone());
+    assert!(
+        passing
+            .iter()
+            .any(|(id, status)| id == NO_NODE && *status == Status::Passed),
+        "{passing:#?}"
+    );
+    // A target renaming a port whose node is gone, as though the node were there.
+    let renaming = model.with_commands_rewritten(|command| {
+        let mut command = command.clone();
+        if command.name.to_string() == "integrity.board.Rename" {
+            command
+                .outcomes
+                .retain(|outcome| outcome.name.as_str() != "no-node");
+        }
+        command
+    });
+    let failing = statuses(&synthesis.suite, renaming);
+    assert!(
+        failing
+            .iter()
+            .any(|(id, status)| id == NO_NODE && *status != Status::Passed),
+        "{failing:#?}"
+    );
+}
