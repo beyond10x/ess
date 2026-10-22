@@ -98,7 +98,7 @@ tasks:
       - cargo nextest archive --locked {{.FEATURE_OFF_PACKAGES}} {{if eq .FEATURE_OFF "number-semantics"}}-E '{{.FEATURE_OFF_NUMBER_SEMANTICS}}'{{end}} --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst
 
   test-browser-product:
-    desc: Run the browser-product Firefox tests a CI test shard cannot hold; run before tagging a release.
+    desc: Run the browser-product Firefox tests a CI test shard cannot hold; run before tagging a release. About 19 min with the first wasm host build (1120 s at debuginfo 0, 2026-10-22, 0.69.0).
     cmds:
       - cargo test --locked -p ess-cli --test browser_response_conformance --test browser_product_adversary -- --include-ignored --test-threads=1
 

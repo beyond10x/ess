@@ -186,7 +186,7 @@ stories and ends in one release.
 
 `task test-browser-product` and `task test-slow-probes` run in no CI lane (those Firefox tests and
 slow probes are ignored in the CI test shards); run them locally when a change touches what they
-cover. To reproduce the whole gate locally, mind that `task test` alone builds about 45 GiB into
+cover. `test-browser-product` builds its wasm host once into one shared target and took 1120 s for 30 tests on 2026-10-22 at debuginfo 0 (about 6.8 h before, when each test built its own host on one core). To reproduce the whole gate locally, mind that `task test` alone builds about 45 GiB into
 the tree's `target/` (44.8 GiB measured on 2026-10-07 at 0.56.0), so start it only with that much
 free disk beyond what other work on the machine needs, and watch free space during the step rather
 than only between steps.
