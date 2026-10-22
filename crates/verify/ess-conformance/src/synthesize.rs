@@ -8874,6 +8874,14 @@ fn arrange_matching(
                     None,
                 ));
             }
+            // The filter orders a field against `now` (ess/30, beyond10x/ess#560), and holds the
+            // subject's row: a target ignoring the filter, or deciding it at another instant than
+            // the read, returns the subject as well. A further row the filter refuses at every
+            // instant the read may take is arranged and asserted `Excludes`.
+            None if *admits_subject && identified && reads_clock(view) => wanted.push((
+                Box::new(move |row: &Arrangement| held(row) == Ok(false)),
+                None,
+            )),
             None if !identified
                 || *admits_subject
                 || plain_row_shown(ir, beside.entity, view, beside.actors, params) =>
@@ -8929,6 +8937,13 @@ fn arrange_matching(
         }
     }
     matching
+}
+
+/// Whether a view's filter orders a field against `now` (ess/30, beyond10x/ess#560).
+fn reads_clock(view: &ResolvedView) -> bool {
+    view.filter
+        .as_ref()
+        .is_some_and(|filter| !crate::now_offset::now_compared(filter).is_empty())
 }
 
 /// Whether a view's filter reads the row field `field`.
@@ -12308,16 +12323,48 @@ fn row_truth_with(
     //
     // The identity too, where the scenario settled it as a literal struct: a filter reading one of
     // its members (`ref.tenant`) is decided by the member it was sent (beyond10x/ess#428).
+    //
+    // A filter ordering a field against `now` (ess/30, beyond10x/ess#560) reads the row at the
+    // instant of the read. The instant it orders is held only as the `now_offset` its creator was
+    // sent, read at the reference synthesis decides at, as a stored row's guard reads it
+    // (`subject_fact::evaluate_row`); a literal one would be decided at the reference and not at a
+    // run, so it is left unbound. One a `now_offset` cannot carry — inside a structure, or an
+    // element a quantifier binds — is named.
+    let clock_read = crate::now_offset::now_compared(filter);
+    let uncarried: Vec<FactPath> = clock_read
+        .iter()
+        .filter(|(_, whole)| !whole)
+        .map(|(path, _)| path.clone())
+        .collect();
+    if !uncarried.is_empty() {
+        return Err(uncarried);
+    }
+    let clock_roots: BTreeSet<&str> = clock_read
+        .iter()
+        .map(|(path, _)| path.namespace())
+        .collect();
     let declared = &ir.entity(&view.source).observable_fields();
     for (name, determined) in settled {
-        if let (Ok(path), ScenarioValue::Literal { value }) =
-            (FactPath::new(name), &determined.value)
-        {
+        let value = match &determined.value {
+            ScenarioValue::NowOffset { seconds } if !clock_read.is_empty() => {
+                crate::now_offset::reference()
+                    .plus_seconds(*seconds)
+                    .map(|instant| Node::Text(instant.to_rfc3339()))
+            }
+            ScenarioValue::Literal { value }
+                if clock_roots.contains(name.as_str()) && *value != Node::Null =>
+            {
+                None
+            }
+            ScenarioValue::Literal { value } => Some(value.clone()),
+            _ => None,
+        };
+        if let (Ok(path), Some(value)) = (FactPath::new(name), value) {
             let one = BTreeMap::from([(name.clone(), value.clone())]);
             match crate::input::bind(ir, declared, &one, crate::input::Completeness::Partial) {
                 Ok(bound) => facts.extend(bound),
                 Err(_) => {
-                    if let Some(fact) = fact_value(value) {
+                    if let Some(fact) = fact_value(&value) {
                         facts.set(path, fact);
                     }
                 }
@@ -12364,7 +12411,12 @@ fn row_truth_with(
         facts.set(path.clone(), value.clone());
     }
 
-    match filter.evaluate(&facts) {
+    let truth = if clock_read.is_empty() {
+        filter.evaluate(&facts)
+    } else {
+        clocked_truth(filter, &facts)?
+    };
+    match truth {
         Truth::True => Ok(true),
         Truth::False => Ok(false),
         Truth::Unknown => Err(filter
@@ -12373,6 +12425,61 @@ fn row_truth_with(
             .filter(|path| facts.fact(path).is_none())
             .cloned()
             .collect()),
+    }
+}
+
+/// How long after the write that put a row there a view read may come, in seconds, for a filter
+/// ordering the row against `now` to be decided (ess/30, beyond10x/ess#560): an hour.
+const READ_SPAN_SECONDS: i64 = 3600;
+
+/// `filter`, which orders a field against `now`, decided over `facts` at the synthesis reference,
+/// or the paths of the first ordering that a read in the span after the write decides otherwise.
+///
+/// A run sends the row's instant relative to the moment of sending, and the read comes after it:
+/// less than a second before it where a target's clock trails the second the instant was rounded
+/// up to, and up to [`READ_SPAN_SECONDS`] after. Values and bounds are whole seconds and each
+/// ordering is monotone in the instant of the read, so one read inside the second before and one
+/// at the end of the span answer for every read between: a row a second inside the bound is read
+/// as shown at the first and not at the second, and is left to the boundary rather than claimed.
+fn clocked_truth(filter: &Predicate, facts: &dyn FactSource) -> Result<Truth, Vec<FactPath>> {
+    use ess_primitives::predicate::WithNow;
+    let reference = crate::now_offset::reference();
+    let span = [
+        reference
+            .epoch_seconds()
+            .checked_mul(1000)
+            .and_then(|millis| Rfc3339Instant::from_epoch_millis(millis - 500)),
+        reference.plus_seconds(READ_SPAN_SECONDS),
+    ];
+    let mut leaves = Vec::new();
+    clock_leaves(filter, &mut leaves);
+    for leaf in leaves {
+        let [first, last] = span.map(|at| at.map(|at| leaf.evaluate(&WithNow::new(facts, at))));
+        if first.is_none() || first != last {
+            return Err(leaf.fact_paths().into_iter().cloned().collect());
+        }
+    }
+    Ok(filter.evaluate(&WithNow::new(facts, reference)))
+}
+
+/// Every comparison of `predicate` with the current-time operand.
+fn clock_leaves<'p>(predicate: &'p Predicate, found: &mut Vec<&'p Predicate>) {
+    match predicate {
+        Predicate::All(children) | Predicate::Any(children) => {
+            for child in children {
+                clock_leaves(child, found);
+            }
+        }
+        Predicate::Not(inner) => clock_leaves(inner, found),
+        Predicate::Compare { left, right, .. }
+            if [left, right].into_iter().any(|operand| {
+                matches!(operand, Operand::Literal(FactValue::Text(text))
+                    if ess_primitives::time::CurrentTime::parse(text).is_some())
+            }) =>
+        {
+            found.push(predicate);
+        }
+        _ => {}
     }
 }
 

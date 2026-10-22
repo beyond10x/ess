@@ -1394,16 +1394,23 @@ pub(crate) fn current_time(operand: &Operand, op: CompareOp) -> Option<CurrentTi
 
 /// Whether a guard reads the current time anywhere in it.
 fn predicate_reads_clock(predicate: &Predicate) -> bool {
+    clock_reading(predicate).is_some()
+}
+
+/// The first comparison in `predicate` that orders a fact against the current time, if any.
+pub(crate) fn clock_reading(predicate: &Predicate) -> Option<&Predicate> {
     match predicate {
         Predicate::All(children) | Predicate::Any(children) => {
-            children.iter().any(predicate_reads_clock)
+            children.iter().find_map(clock_reading)
         }
-        Predicate::Not(child) => predicate_reads_clock(child),
+        Predicate::Not(child) => clock_reading(child),
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
-            predicate_reads_clock(&quantified.body)
+            clock_reading(&quantified.body)
         }
-        Predicate::Compare { op, right, .. } => current_time(right, *op).is_some(),
-        _ => false,
+        Predicate::Compare { op, right, .. } => {
+            current_time(right, *op).is_some().then_some(predicate)
+        }
+        _ => None,
     }
 }
 

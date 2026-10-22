@@ -1,0 +1,45 @@
+format: ess/30
+system: demo
+version: v1
+domain: demo.ledger
+types:
+  - {name: demo.ledger.IncidentId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.ledger.Incident
+    identity: {name: incident_id, type: demo.ledger.IncidentId}
+    fields:
+      - {name: started_at, type: Timestamp}
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+      transitions: []
+events:
+  - name: demo.ledger.IncidentRecorded
+    fields:
+      - {name: incident_id, type: demo.ledger.IncidentId}
+actors:
+  - name: demo.ledger.Clerk
+    may: [demo.ledger.RecordIncident]
+commands:
+  - name: demo.ledger.RecordIncident
+    input:
+      - {name: started_at, type: Timestamp}
+    outcomes:
+      - name: recorded
+        creates: demo.ledger.Incident
+        instance: incident_id
+        emits: [demo.ledger.IncidentRecorded]
+        payload:
+          demo.ledger.IncidentRecorded:
+            incident_id: {generated: true}
+        sets:
+          started_at: input.started_at
+views:
+  - name: demo.ledger.RecentIncidents
+    source: demo.ledger.Incident
+    consistency: read_your_writes
+    filter: "started_at >= now - 720h"
+    fields:
+      - {name: incident_id, type: demo.ledger.IncidentId}
+      - {name: started_at, type: Timestamp}

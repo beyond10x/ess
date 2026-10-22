@@ -548,8 +548,9 @@ enum CurrentTimeSite {
     /// A command outcome's `when_subject:` or `when_related:` predicate over a stored row, from
     /// `ess/22`.
     Stored,
-    /// A view's filter: refused, and the refusal names the `from`/`to` parameter idiom, because a
-    /// view read has no clock a suite fixes (`docs/design/generic-language-features.md`, grid R).
+    /// A view's filter, from `ess/30`: `now` is the instant of the view read, which a run fixes as
+    /// the instant of the step reading the view (beyond10x/ess#560). Below `ess/30` the refusal
+    /// names the `from`/`to` parameter idiom (`docs/design/generic-language-features.md`, grid R).
     ViewFilter,
 }
 
@@ -613,8 +614,8 @@ impl<'a> DomainEnvironment<'a> {
         self.current_time = CurrentTimeSite::Stored;
         self
     }
-    /// Mark the environment a view's filter is checked in, so a refusal of `now` there names the
-    /// `from`/`to` parameter idiom.
+    /// Mark the environment a view's filter is checked in: `now` is admitted there from `ess/30`,
+    /// and below it a refusal of `now` names the `from`/`to` parameter idiom.
     #[must_use]
     pub fn in_view_filter(mut self) -> Self {
         self.current_time = CurrentTimeSite::ViewFilter;
@@ -693,9 +694,10 @@ impl TypeEnvironment for DomainEnvironment<'_> {
         };
         CurrentTimeAdmission {
             site: match self.current_time {
-                CurrentTimeSite::None | CurrentTimeSite::ViewFilter => false,
+                CurrentTimeSite::None => false,
                 CurrentTimeSite::Input => true,
                 CurrentTimeSite::Stored => at(crate::system::FormatVersion::V22),
+                CurrentTimeSite::ViewFilter => at(crate::system::FormatVersion::V30),
             },
             format: at(crate::system::FormatVersion::V16),
         }
@@ -2713,8 +2715,8 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 ),
                 "write `format: ess/16` on the source that declares the system".to_owned(),
             ),
-            // A view filter: no suite sets a clock for a read, so the bound is the caller's
-            // parameters, which keep it in the specification and checked.
+            // A view filter below ess/30: no suite sets a clock for a read there, so the bound is
+            // the caller's parameters, which keep it in the specification and checked.
             (
                 ordering,
                 parsed,
@@ -2728,14 +2730,15 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     "`{expression}` compares the Timestamp `{path}` with the current time, \
                      `{text}`, which is admitted only in a command outcome's `when:` over its \
                      input and, from ess/22, in its `when_subject:` and `when_related:` \
-                     predicates; in a view filter a read has no clock a suite can fix, so no \
-                     scenario could check the rows either side of the bound"
+                     predicates; below ess/30 a view filter's read has no clock a suite can \
+                     fix, so no scenario could check the rows either side of the bound"
                 ),
                 format!(
                     "declare the bounds as view parameters and filter on them, such as \
                      `params: [{{name: from, type: Timestamp}}, {{name: to, type: Timestamp}}]` \
-                     with `{path} >= param.from` and `{path} < param.to`; the caller sends the \
-                     window it means"
+                     with `{path} >= param.from` and `{path} < param.to`, so the caller sends the \
+                     window it means; or write `format: ess/30`, from which a view filter reads \
+                     `now` at the instant of the read"
                 ),
             ),
             // A site that refuses the operand names where it is admitted, whatever else is wrong

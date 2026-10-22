@@ -177,7 +177,9 @@ impl Orderings {
             if writes.is_empty() {
                 continue;
             }
-            for predicate in stored_predicates(ir, &subject.entity) {
+            for predicate in
+                stored_predicates(ir, &subject.entity).chain(view_filters(ir, &subject.entity))
+            {
                 let mut over_row = Self::default();
                 over_row.walk(predicate, &mut Vec::new());
                 for (path, bounds) in over_row.bounds {
@@ -226,6 +228,7 @@ impl Orderings {
                     continue;
                 }
                 let windows: Vec<Bound> = stored_predicates(ir, &subject.entity)
+                    .chain(view_filters(ir, &subject.entity))
                     .flat_map(Predicate::windows)
                     .filter(|window| {
                         window
@@ -459,6 +462,20 @@ fn window_bounds(window: &ess_primitives::window::CalendarWindow) -> Vec<Bound> 
             ordered: true,
         })
         .collect()
+}
+
+/// The filter of every view over `entity` (ess/30, beyond10x/ess#560): a filter ordering a field
+/// against `now` reads the row at the instant of the view read, so the row's instant is arranged
+/// through its creator's input as a stored row's predicate's is.
+fn view_filters<'ir>(
+    ir: &'ir EssIr,
+    entity: &EntityHandle,
+) -> impl Iterator<Item = &'ir Predicate> + 'ir {
+    let entity = entity.clone();
+    ir.views()
+        .values()
+        .filter(move |view| view.source == entity)
+        .filter_map(|view| view.filter.as_ref())
 }
 
 /// Every predicate over a stored row of `entity` a command decides by: each `when_subject:`
