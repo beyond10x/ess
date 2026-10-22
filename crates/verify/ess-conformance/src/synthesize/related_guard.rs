@@ -1463,7 +1463,61 @@ pub(super) fn drive(
         actors,
         distinction,
         (bound, known),
-        input,
+        (input, &BTreeMap::new()),
+        arranging,
+    )
+    .map(|(invocation, _)| invocation)
+}
+
+/// [`drive`] with `input` chosen and the related row steered toward the values it holds: the
+/// fields other than the one the guard reads are the arrangement's decision, as a struct identity
+/// is (beyond10x/ess#521), so a guard comparing the row with one of them — `revision !=
+/// input.revision` — is searched to the side `driver`'s branch needs on the value the run sends.
+///
+/// The existence family's creation sent for one identity: the input it sends is fixed before the
+/// related row is arranged, and the plain search arranges a row of its own distinction, which a
+/// compared field of the chosen input need not match. Refused where [`drive_sharing`] is, and
+/// for a stored reference, a command reading several rows and an entity `arranging` names: those
+/// are [`drive`]'s own, and this is only a second try after it.
+// One argument per thing an arranging run is told, as [`drive`] takes them.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn drive_toward(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    (bound, known): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        &[super::ScenarioStep],
+    ),
+    input: &BTreeMap<String, Node>,
+    arranging: &[&EntityHandle],
+) -> Result<super::Invocation, RefusalCause> {
+    if stored::field(driver.command).is_some() || several(driver.command) {
+        return Err(unarranged());
+    }
+    let (via, entity) = read(driver.command).ok_or_else(unarranged)?;
+    let field = via.field();
+    let names_subject = driver.outcome.subject.as_ref().is_some_and(|subject| {
+        matches!(&subject.instance, ResolvedInstance::Supplied { field: named } if named.name == field)
+    });
+    if names_subject
+        || bound.contains_key(field)
+        || is_absent(driver.outcome)
+        || arranging.contains(&entity)
+    {
+        return Err(unarranged());
+    }
+    let mut fixed = input.clone();
+    fixed.remove(field);
+    searched(
+        ir,
+        driver,
+        None,
+        actors,
+        distinction,
+        (bound, known),
+        (Some(input), &fixed),
         arranging,
     )
     .map(|(invocation, _)| invocation)
@@ -1623,13 +1677,14 @@ pub(super) fn drive_sharing(
         actors,
         distinction,
         (bound, known),
-        Some(input),
+        (Some(input), &BTreeMap::new()),
         arranging,
     )
 }
 
 /// The tail of [`drive`]: the related row searched for and arranged, the run sent naming it, and
-/// that row with its steps moved into the run's.
+/// that row with its steps moved into the run's. `fixed` steers the row as [`with_row`] takes it:
+/// empty but for [`drive_toward`].
 // One argument per thing an arranging run is told, as [`drive`] takes them.
 #[allow(clippy::too_many_arguments)]
 fn searched(
@@ -1642,7 +1697,7 @@ fn searched(
         &BTreeMap<String, crate::scenario::InstanceName>,
         &[super::ScenarioStep],
     ),
-    input: Option<&BTreeMap<String, Node>>,
+    (input, fixed): (Option<&BTreeMap<String, Node>>, &BTreeMap<String, Node>),
     arranging: &[&EntityHandle],
 ) -> Result<(super::Invocation, Arrangement), RefusalCause> {
     let (via, entity) = read(driver.command).ok_or_else(unarranged)?;
@@ -1658,7 +1713,7 @@ fn searched(
         input,
         None,
         None,
-        (&pins, known, &BTreeMap::new()),
+        (&pins, known, fixed),
     )?;
     let owners = subject_fact::bind_pinned(
         ir,
