@@ -9,7 +9,7 @@ refs:
   reference: beyond10x/ess#493
 relations:
 - serves: vision:O2
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-11T11:03:11Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-11T11:03:11Z", actor: "human:timo", revision: 6}
@@ -350,3 +350,11 @@ a refinement may change what a variable under a fixed path reads (only method, p
 routes are refused); an open route may stay open in a refinement; paths are compared as text, so a
 renamed variable is refused; the toolchain model's `BindingPath` invariant adds one synthesis
 refusal (ESS-SYNTH-013). https://github.com/beyond10x/ess/issues/493 stays open for stage 2.
+
+## Further report
+
+Source: a2a wave 3 (an adopter's server implementation, 2026-10-22). A feature request, not a defect.
+
+- Need: the adopter wants to hold its hand-written HTTP server to the suite over the wire. On 0.68.0 `ess verify conform run --target` takes `billing`, `oracle-fixture` and `interpreted` only, so no live-HTTP target exists. This is stage 3 of this story ("an HTTP conformance target", `docs/design/http-presentation-binding.md:57`, `:590`, `:715-720`), designed and not built.
+- The second half of the request, a Rust target for `ess verify conform synthesize` (0.68.0 offers `ir`, `go`, `typescript`), is answered by design: the command's help says a Rust implementation runs the `ir` suite with the `ess-conformance` runner. No separate story is filed; the gap is documentation for an adopter whose target is an HTTP server rather than a Rust trait.
+- Count: the adopter's whole suite (168 scenarios) is the scope a live-HTTP target would run.
