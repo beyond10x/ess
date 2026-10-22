@@ -15,7 +15,7 @@ relations:
 - blocks: story:an-event-channel-may-be-bound-to-server-sent-events
 - blocks: story:a-response-stream-follows-one-row-until-a-terminal-state
 - blocks: story:an-authored-scenario-claims-a-binding-error-code
-revision: 1
+revision: 2
 ---
 Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance.
 
@@ -77,3 +77,28 @@ Union `oneof` mapping depends on `story:a-union-may-be-encoded-as-an-object-keye
 None yet. Acceptance is the operator's move of this record to `accepted`, after the two design
 pages are reviewed. Until then `story:ess-projects-a-protobuf-idl-with-http-annotations` and
 `story:a-command-binds-to-json-rpc-and-grpc-beside-http` stay in draft and are not implemented.
+
+## Amendment 1 (proposed, 2026-10-22): a bound on response streams
+
+Adopter repro (beyond10x/a2a, tracker row 37, ESS 0.67.0): A2A `SendStreamingMessage` and
+`SubscribeToTask` keep a stream open that follows one task. The adopter caps the number of streams
+following a task and answers a request over the cap with an error, all by hand (a2a `router.rs:514-518`).
+The specification cannot state the cap or the error, so no suite checks either.
+
+ESS has no response-stream construct yet: `story:a-response-stream-follows-one-row-until-a-terminal-state`
+is blocked on this record, and `docs/design/rpc-bindings.md` § 6 leaves open whether a streamed answer
+is binding-only or an `ess/N` construct. A bound belongs to the same decision.
+
+| | what it is | cost |
+|---|---|---|
+| A | **The bound is part of the stream construct.** Wherever the streamed answer is declared (`ess/N` or binding, per § 6), it may declare `max_followers: <n>` and an error to answer a request over it. | One key and one error reference on the stream declaration; synthesis opens `n` streams on one row and expects the declared error on the next, with no effect. |
+| B | **The bound is deployment configuration.** A runtime setting (as `--max-subscribers` is in the adopter's server), outside the specification. | Nothing in the specification; the cap and its error stay unchecked. |
+
+Recommendation: A, decided together with § 6, so the bound and its over-bound error sit wherever the
+stream is declared. `story:a-response-stream-follows-one-row-until-a-terminal-state` gains two
+acceptance lines when this record is accepted: a stream declaration may carry a bound, and the request
+over the bound is answered with the declared error and changes nothing.
+
+Effect: no change beyond what § 6 decides for the stream itself; the bound adds one key, one error
+reference and one synthesized scenario per bounded stream. Without a bound every artifact keeps its
+bytes.
