@@ -37,6 +37,24 @@ fn read_from_payload() -> String {
     )
 }
 
+/// The model as an author who left `present: true` off the stored mint writes it.
+fn absent_mint() -> String {
+    edit(
+        MODEL,
+        "          connect_seq: {generated: true, present: true}\n",
+        "          connect_seq: {generated: true}\n",
+    )
+}
+
+/// `model` with its invariant replaced by one bridging always breaks and that reads no field.
+fn other_invariant(model: &str) -> String {
+    edit(
+        model,
+        "      - any: [{not: \"state == Bridged\"}, \"defined(connect_seq)\"]\n",
+        "      - \"state != Bridged\"\n",
+    )
+}
+
 fn ir(text: &str) -> EssIr {
     let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}"));
     let spec = Specification::assemble([(Source::new("routing.yaml"), raw)])
@@ -83,6 +101,49 @@ fn the_interpreter_keeps_a_present_mint_present_through_the_invariant() {
     let statuses = run(&synthesis.suite, &Interpreted::for_model(model));
     assert!(statuses.contains_key(BRIDGED), "{statuses:#?}");
     assert!(failing(&statuses).is_empty(), "{statuses:#?}");
+}
+
+/// With `{generated: true}` alone the interpreter leaves the minted field absent and the bridge
+/// breaks the invariant: the refusal says the model is wrong and names the repair,
+/// `{generated: true, present: true}`, in a `help:` line.
+#[test]
+fn a_broken_invariant_over_an_absent_mint_names_present_true() {
+    let model = ir(&absent_mint());
+    let statuses = run(&synthesize(&model).suite, &Interpreted::for_model(model));
+    let bridged = statuses.get(BRIDGED).expect("the bridge has its scenario");
+    assert!(
+        bridged.contains("violating its invariant"),
+        "the bridge breaks the invariant: {bridged}"
+    );
+    let Some((_, help)) = bridged.split_once("help:") else {
+        panic!("the refusal carries a help line: {bridged}");
+    };
+    assert!(
+        help.contains("`connect_seq`")
+            && help.contains("`demo.routing.SelectAgent/selected`")
+            && help.contains("{generated: true, present: true}"),
+        "the help names the field, the outcome and `present: true`: {bridged}"
+    );
+}
+
+/// An invariant broken without reading an `Optional` field minted by `{generated: true}` gets no
+/// such line: neither where the mint is absent but the invariant reads no field, nor where the mint
+/// is present.
+#[test]
+fn a_broken_invariant_over_no_absent_mint_names_no_present_true() {
+    for text in [other_invariant(&absent_mint()), other_invariant(MODEL)] {
+        let model = ir(&text);
+        let statuses = run(&synthesize(&model).suite, &Interpreted::for_model(model));
+        let bridged = statuses.get(BRIDGED).expect("the bridge has its scenario");
+        assert!(
+            bridged.contains("violating its invariant"),
+            "the bridge breaks the invariant: {bridged}"
+        );
+        assert!(
+            !bridged.contains("help:") && !bridged.contains("present: true"),
+            "no `present: true` line for an invariant that reads no absent mint: {bridged}"
+        );
+    }
 }
 
 /// A target whose rows carry another `connect_seq` than the one it published, or none.
