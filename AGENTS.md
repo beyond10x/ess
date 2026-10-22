@@ -264,7 +264,7 @@ Public CI has read-only GitHub permissions and never creates or edits a Release.
 four archives under `dist/`, `dist/SHA256SUMS` and `notes.md`. From a trusted operator environment,
 the coordinator reads the successful run and its exact head commit, resolves the annotated tag to
 that same commit, and downloads only that exact artifact through
-`b10x-gates gh --repo . --repository beyond10x/ess -- ...`. Before publication, verify that the
+`b10x-gates gh --repo . --repository beyond10x/ess -- ...`. The wrapper runs `gh` in the `--repo` directory and refuses an argument holding a home-directory path, so run it from an empty download directory outside every checkout with `--repo .` and relative paths; pointed at a checkout, `run download -D <dir>` writes the release files into that checkout. Before publication, verify that the
 artifact contains exactly the four target archives, checksums and notes, run
 `sha256sum --check SHA256SUMS`, and smoke-run the Linux x86_64 archive's `ess --version` against the
 tag. Through the same bot-authenticated wrapper, create or reconcile a draft Release on that exact
