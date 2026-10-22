@@ -3576,6 +3576,18 @@ pub(super) fn toward_moves(
     entity: &EntityHandle,
     creator: &Driver<'_>,
 ) -> Vec<BTreeMap<String, Node>> {
+    let read = move_guards(ir, entity);
+    if read.is_empty() {
+        return Vec::new();
+    }
+    hinted(ir, entity, creator, &read, Distinction::PLAIN)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
+
+/// The stored-field guards of every command moving a row of `entity`, each once, in driver order.
+fn move_guards(ir: &EssIr, entity: &EntityHandle) -> Vec<Predicate> {
     let all = ir.drivers();
     let mut read: Vec<Predicate> = Vec::new();
     for driver in all.get(entity).map_or(&[][..], Vec::as_slice) {
@@ -3588,13 +3600,32 @@ pub(super) fn toward_moves(
             }
         }
     }
-    if read.is_empty() {
-        return Vec::new();
+    read
+}
+
+/// The stored-field guards of every command moving a row of `entity`, each once, in driver order,
+/// with the states a move it guards may start in.
+fn guarded_moves(
+    ir: &EssIr,
+    entity: &EntityHandle,
+) -> Vec<(Predicate, BTreeSet<super::StateName>)> {
+    let all = ir.drivers();
+    let mut read: Vec<(Predicate, BTreeSet<super::StateName>)> = Vec::new();
+    for driver in all.get(entity).map_or(&[][..], Vec::as_slice) {
+        let Some(transition) = driver.effect.transition() else {
+            continue;
+        };
+        if !uses(driver.command) {
+            continue;
+        }
+        for hint in hints(driver.command) {
+            match read.iter_mut().find(|(held, _)| *held == hint) {
+                Some((_, from)) => from.extend(transition.from.iter().cloned()),
+                None => read.push((hint, transition.from.clone())),
+            }
+        }
     }
-    hinted(ir, entity, creator, &read, Distinction::PLAIN)
-        .ok()
-        .flatten()
-        .unwrap_or_default()
+    read
 }
 
 /// The candidate inputs for one arranging branch, varied toward the stored-field goal.
@@ -4123,6 +4154,13 @@ struct Profile {
     /// more elements there: a decisive row and a vacuous one decide every hint alike and differ
     /// only here (`docs/design/expression-family-source22.md`, `distinct`).
     decisive: Vec<bool>,
+    /// How the row decides each stored-field guard of a move it can take from its own state
+    /// ([`guarded_moves`]): rows the creating branch leaves toward those guards decide every hint
+    /// alike and differ only here, and one of them may be the only row the next move is taken on
+    /// (story seeded-state-reaches-related-rows). Only the next moves: keyed on every move's
+    /// guard, rows the search merged before count apart and a chain of guarded moves exhausts
+    /// the budget.
+    moves: Vec<Decided>,
 }
 
 /// One three-valued answer, ordered so a search node can be keyed on it.
@@ -4146,7 +4184,7 @@ fn profile(
     entity: &EntityHandle,
     arrangement: &Arrangement,
     hints: &[Predicate],
-    follow: &Follow,
+    (follow, moves): (&Follow, &[(Predicate, BTreeSet<super::StateName>)]),
 ) -> Profile {
     let mut all = Vec::new();
     for hint in hints {
@@ -4199,6 +4237,11 @@ fn profile(
                     Some(Node::Seq(items)) if items.len() >= 2
                 )
             })
+            .collect(),
+        moves: moves
+            .iter()
+            .filter(|(_, from)| from.contains(&arrangement.state))
+            .map(|(guard, _)| code(truth(guard)))
             .collect(),
     }
 }
@@ -4266,7 +4309,7 @@ fn score(profile: &Profile) -> (usize, usize, usize) {
 }
 
 /// The rows the creating branch can leave: its plain witness first, then one per input chosen
-/// toward the hints.
+/// toward the hints, then one per input chosen toward the stored-field guards of the moves.
 fn creations(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -4328,6 +4371,22 @@ fn creations(
     // compares its elements with the input (beyond10x/ess#240).
     let mut inputs = hinted(ir, entity, creator, hints, distinction)?.unwrap_or_default();
     inputs.extend(spread(ir, entity, creator, hints, distinction));
+    // And the rows taken toward the stored-field guards of the moves on the way, so a route
+    // through a move its own guards would refuse on the plain row finds a row to take it on.
+    let moves = move_guards(ir, entity);
+    let toward = if moves.is_empty() {
+        Vec::new()
+    } else {
+        hinted(ir, entity, creator, &moves, distinction)
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+    };
+    for input in toward {
+        if !inputs.contains(&input) {
+            inputs.push(input);
+        }
+    }
     for input in inputs {
         if input_selects(ir, creator.command, creator.outcome, &input)? {
             if let Ok(arrangement) = created(
@@ -4980,6 +5039,7 @@ fn search_rows<T>(
     goal: &mut impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
 ) -> Result<(Arrangement, T), RefusalCause> {
     let follow = Follow::new(ir, entity, hints);
+    let guards = guarded_moves(ir, entity);
     // Rows beyond the followed counter bound share a node, as on the creation search.
     let mut beyond = false;
     let mut nested = false;
@@ -4989,7 +5049,7 @@ fn search_rows<T>(
         let mut fresh = Vec::new();
         for node in level {
             beyond |= follow.key(&node.settled).1;
-            if seen.insert(profile(ir, entity, &node, hints, &follow)) {
+            if seen.insert(profile(ir, entity, &node, hints, (&follow, &guards))) {
                 fresh.push(node);
             }
             if seen.len() > MAX_NODES {
@@ -5021,7 +5081,7 @@ fn search_rows<T>(
         for (index, node) in fresh.iter().enumerate() {
             match goal(node) {
                 Ok(Some(found)) => {
-                    let rank = score(&profile(ir, entity, node, hints, &follow));
+                    let rank = score(&profile(ir, entity, node, hints, (&follow, &guards)));
                     if best.as_ref().is_none_or(|(held, ..)| rank > *held) {
                         best = Some((rank, index, found));
                     }
