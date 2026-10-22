@@ -1942,9 +1942,10 @@ diagnostic_catalogue! {
              key it does not know is refused rather than ignored";
         Self::UnsupportedFormat { .. } => 2,
             "The document claims a format this build does not implement.",
-            "write `type: ess-scenario/1`, `ess-scenario/2` for entity setup, `ess-scenario/3` for \
-             fixture values, `ess-scenario/4` for direct responses, or `ess-scenario/5` for \
-             caller values";
+            "a scenario's `type:` is `ess-scenario/1`, `ess-scenario/2` for entity setup, \
+             `ess-scenario/3` for fixture values, `ess-scenario/4` for direct responses, or \
+             `ess-scenario/5` for caller values; a document in a repository-defined trace format \
+             is not a scenario input, so leave it out of `--scenarios` and `ess-inputs.yaml`";
         Self::Duplicate { .. } => 3,
             "Two files produce the same scenario id.",
             "two files name one scenario in one domain; rename one of them";
@@ -2497,9 +2498,7 @@ pub(crate) fn arrangements(
     ir: &EssIr,
     source: &Source,
 ) -> Result<Vec<(InstanceName, bool)>, String> {
-    let document: Document = map_key_newtypes(ir)
-        .scope(|| ess_yaml::from_str(&source.text))
-        .map_err(|error| error.to_string())?;
+    let document = read_document(ir, &source.text).map_err(|cause| cause.to_string())?;
     Ok(document
         .arrange
         .iter()
@@ -2521,15 +2520,7 @@ pub(crate) fn compile_one(
         }]
     };
 
-    // A fixture is declared in the specification's own type spellings, so a map keyed by one of
-    // the model's newtypes (beyond10x/ess#143) reads here exactly as it did there.
-    let document: Document = map_key_newtypes(ir)
-        .scope(|| ess_yaml::from_str(&source.text))
-        .map_err(|error| {
-            bare(Cause::Unreadable {
-                detail: error.to_string(),
-            })
-        })?;
+    let document = read_document(ir, &source.text).map_err(|cause| bare(*cause))?;
     if let Some(cause) = document_format_refusal(&document) {
         return Err(bare(cause));
     }
@@ -2611,11 +2602,81 @@ pub(crate) fn compile_one(
     Ok((id, scenario))
 }
 
-fn document_format_refusal(document: &Document) -> Option<Cause> {
-    if !matches!(
-        document.format.as_str(),
+/// Whether `format` is one of the scenario formats this module reads.
+fn is_scenario_format(format: &str) -> bool {
+    matches!(
+        format,
         FORMAT | "ess-scenario/2" | "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5"
-    ) {
+    )
+}
+
+/// A document, its `type:` looked at before any other key is admitted.
+///
+/// A document in another format is refused for its format, and one without a `type:` for the
+/// missing key, rather than for the first key `Document` does not know: an adopter's own trace
+/// format read as an ESS scenario with a misspelt `story:`. A `type:` that is not a plain string,
+/// and text that is not a mapping, are left to the full read and keep the refusal it gives.
+fn read_document(ir: &EssIr, text: &str) -> Result<Document, Box<Cause>> {
+    if let Some(format) = header_type(text) {
+        match &format {
+            Header::Untyped => {
+                return Err(Box::new(Cause::Unreadable {
+                    detail: "missing field `type`".into(),
+                }));
+            }
+            Header::Typed(ess_yaml::Value::String(found)) if !is_scenario_format(found) => {
+                return Err(Box::new(Cause::UnsupportedFormat {
+                    found: found.clone(),
+                }));
+            }
+            Header::Typed(_) => {}
+        }
+    }
+    // A fixture is declared in the specification's own type spellings, so a map keyed by one of
+    // the model's newtypes (beyond10x/ess#143) reads here exactly as it did there.
+    map_key_newtypes(ir)
+        .scope(|| ess_yaml::from_str(text))
+        .map_err(|error| {
+            Box::new(Cause::Unreadable {
+                detail: error.to_string(),
+            })
+        })
+}
+
+/// What a mapping document says in its `type:` key, read before the rest of it.
+enum Header {
+    Typed(ess_yaml::Value),
+    Untyped,
+}
+
+/// The header of a mapping document, and `None` when the text is not a mapping.
+///
+/// A document that repeats a key anywhere fails the read as a value, so its `type:` is then read
+/// alone, every other key ignored: a trace repeating `then:` is still refused for its format. Such
+/// a document without a `type:` keeps the full read's refusal.
+fn header_type(text: &str) -> Option<Header> {
+    #[derive(serde::Deserialize)]
+    struct TypeOnly {
+        #[serde(rename = "type")]
+        format: Option<ess_yaml::Value>,
+    }
+    match ess_yaml::from_str::<ess_yaml::Value>(text) {
+        Ok(ess_yaml::Value::Mapping(header)) => Some(
+            header
+                .get("type")
+                .cloned()
+                .map_or(Header::Untyped, Header::Typed),
+        ),
+        Ok(_) => None,
+        Err(_) => ess_yaml::from_str::<TypeOnly>(text)
+            .ok()
+            .and_then(|header| header.format)
+            .map(Header::Typed),
+    }
+}
+
+fn document_format_refusal(document: &Document) -> Option<Cause> {
+    if !is_scenario_format(&document.format) {
         return Some(Cause::UnsupportedFormat {
             found: document.format.clone(),
         });
