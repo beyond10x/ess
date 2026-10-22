@@ -43,6 +43,7 @@ the input or a literal:
 | a nested mapping | `payload:`, `sets:` | the target is a struct; every struct field has a source |
 | `{generated: true}` | `sets:` | always (`payload:` has admitted it since `ess/4`) |
 | `{cleared: true}` | `sets:` | the target field is `Optional<…>`; refused in `payload:`. Synthesis asserts the field is empty in the view, so a target that keeps the old value fails |
+| `[]` | `sets:` | source `ess/31`; the target field is a required `List<…>`, and it holds the empty list. A list holding anything is refused, so is `[]` in `payload:` and over an `Optional<List<…>>`, which `{cleared: true}` empties. Synthesis asserts the view row holds `[]`; generated Rust stores `Vec::new()`, generated Go an empty slice, never `nil`, and Entity Runtime an empty array |
 
 A mapping is a source when every key is one of `response`, `generated`, `cleared`, `subject`,
 `increment`, `input` and `else`; any other key makes it a nested mapping. The text

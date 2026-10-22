@@ -326,6 +326,9 @@ fn outcome(
                 if matches!(source.value, ResolvedPayloadValue::Cleared) {
                     return Err(format!("`{{cleared}}` on the error `{error}`"));
                 }
+                if matches!(source.value, ResolvedPayloadValue::EmptyList) {
+                    return Err(format!("`[]` on the error `{error}`"));
+                }
                 value(ir, command, source, entity, false)?;
             }
             let unsourced = fields.iter().filter(|field| {
@@ -411,6 +414,9 @@ fn payloads(
         for field in &payload.fields {
             if matches!(field.value, ResolvedPayloadValue::Cleared) {
                 return Err("`{cleared}` on an event payload".to_owned());
+            }
+            if matches!(field.value, ResolvedPayloadValue::EmptyList) {
+                return Err("`[]` on an event payload".to_owned());
             }
             value(ir, command, field, held, false)?;
         }
@@ -504,7 +510,9 @@ fn value(
             }
         }
         ResolvedPayloadValue::Literal { value } => literal(ir, target, value)?,
-        ResolvedPayloadValue::Generated { .. } | ResolvedPayloadValue::Cleared => {}
+        ResolvedPayloadValue::Generated { .. }
+        | ResolvedPayloadValue::Cleared
+        | ResolvedPayloadValue::EmptyList => {}
         ResolvedPayloadValue::Increment { by } => {
             if held.is_none() || !sets {
                 return Err(format!(
@@ -1902,6 +1910,7 @@ fn affects(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutcome) -> 
                     | ResolvedPayloadValue::Literal { .. }
                     | ResolvedPayloadValue::SubjectField { .. }
                     | ResolvedPayloadValue::Cleared
+                    | ResolvedPayloadValue::EmptyList
             ) {
                 return Err(format!(
                     "a `sets:` source on an `affects:` entry that a generated set effect does not \

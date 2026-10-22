@@ -52,7 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30,
+    27, 28, 29, 30, 31,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -326,6 +326,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 31,
+        release: None,
+        added: &[
+            "A `sets:` entry may store the empty list in a required `List<…>` field, `tags: []`, so a creator fills a list it has no input for and a view publishing the field reads it. Only the empty list: a list holding anything keeps its refusal, `[]` over a field that is no `List<…>` (an `Optional<List<…>>` included) is refused as `type_mismatch`, and in an event's or an error's `payload:` and inside a nested mapping it is refused as a `sets:` source only. Below `ess/31` it is refused as `unsupported_format_version` naming `ess/31`; a model without it keeps its IR bytes. The interpreted target stores the empty list, and generated Rust and Go store `Vec::new()` and an empty slice (an adopter report, 2026-10-22).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -454,6 +462,9 @@ impl FormatVersion {
     /// reading the row a stored reference names needs no `exists: false` branch where the
     /// specification keeps that row present (beyond10x/ess#509).
     pub const V30: Self = Self(30);
+    /// The empty list as a `sets:` source, `tags: []`, over a required `List<…>` field (an adopter
+    /// report, 2026-10-22).
+    pub const V31: Self = Self(31);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

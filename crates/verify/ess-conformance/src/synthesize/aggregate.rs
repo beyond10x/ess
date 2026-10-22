@@ -497,6 +497,7 @@ fn unchosen(
         ResolvedPayloadValue::InputOrGenerated { .. } => "an input with a fallback",
         ResolvedPayloadValue::Generated { .. } => "`{generated: true}`",
         ResolvedPayloadValue::Cleared => "`{cleared: true}`",
+        ResolvedPayloadValue::EmptyList => "the empty list `[]`",
         ResolvedPayloadValue::SubjectField { .. } | ResolvedPayloadValue::SubjectState { .. } => {
             "a `{subject: …}` source"
         }

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- From `format: ess/31` a `sets:` entry may store the empty list `[]` in a required `List<…>` field, so a view publishing the field can be filled; generated Rust and Go store an empty list.
+
 ### Fixed
 
 - A binding scenario whose trigger row's creator guards the target row's stored fields acts on the row the arrangement made selectable; it acted on a second row and failed. A binding writing to the row named in the trigger's input acts on the row the trigger's own guard arranged.

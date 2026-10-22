@@ -432,6 +432,7 @@ fn reads_other_rows(command: &ResolvedCommand) -> bool {
             | ResolvedPayloadValue::InputField { .. }
             | ResolvedPayloadValue::Literal { .. }
             | ResolvedPayloadValue::Cleared
+            | ResolvedPayloadValue::EmptyList
             | ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::SubjectState { .. }
             | ResolvedPayloadValue::Increment { .. }

@@ -2876,6 +2876,7 @@ impl<'a> Writer<'a> {
             }
             ResolvedPayloadValue::Generated { .. } => self.generate(target),
             ResolvedPayloadValue::Cleared => "None".to_owned(),
+            ResolvedPayloadValue::EmptyList => "Vec::new()".to_owned(),
             ResolvedPayloadValue::Increment { by } => increment(
                 self.ir,
                 self.layout,

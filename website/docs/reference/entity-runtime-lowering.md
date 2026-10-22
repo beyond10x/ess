@@ -34,6 +34,7 @@ Nothing is lowered approximately. A construct that has no exact Entity Runtime f
 | orderings over numbers and `Timestamp`s; string operators | `compare`, `before`/`after`, `starts_with` and the other entity-core string conditions |
 | `input.<field>`, a literal, `{response: …}`, `{generated: true}`, a declared conversion | an argument template, an escaped literal, or a typed bound slot the host fills |
 | `{cleared: true}` in a creation's `sets:` | the member left absent |
+| `[]` in `sets:` (ess/31) | the member written as the empty array |
 | `emits:` and `response:` | `emits` and `responds`, conditional members through `PresentArgument` |
 
 ## What is refused

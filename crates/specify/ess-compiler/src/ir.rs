@@ -1213,6 +1213,10 @@ pub enum ResolvedPayloadValue {
     /// `ess-domain` refuses it on an event payload and on a required field, so one that reaches
     /// this IR was checked.
     Cleared,
+    /// The branch stores the empty list in the field (ess/31). An entity field only, and a
+    /// `List<…>`: `ess-domain` refuses it on an event payload and on any other type, so one that
+    /// reaches this IR was checked.
+    EmptyList,
     /// A field of the addressed entity as it was immediately before this outcome (ess/14).
     SubjectField {
         /// The entity field read.
@@ -1863,6 +1867,7 @@ impl ResolvedPayloadValue {
             }
             Self::Expression { expr, .. } => format!("{{expr: \"{expr}\"}}"),
             Self::Cleared => "cleared".to_owned(),
+            Self::EmptyList => "the empty list".to_owned(),
             Self::SubjectField { field, .. } => format!("subject.{field} before the outcome"),
             Self::SubjectState { .. } => "the state the subject held before the outcome".to_owned(),
             Self::RelatedField {

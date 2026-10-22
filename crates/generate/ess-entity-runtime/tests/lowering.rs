@@ -1239,6 +1239,48 @@ fn a_creation_that_clears_an_optional_field_leaves_it_absent_without_a_host_slot
     let _ = registry(&lowered);
 }
 
+/// `lines: []` (ess/31) lowers to the empty array, written whatever the input, with no host slot.
+#[test]
+fn a_creation_storing_the_empty_list_writes_an_empty_array_without_a_host_slot() {
+    let ir = compile_changes(
+        &example("billing"),
+        &[
+            ("system.yaml", "format: ess/1\n", "format: ess/31\n"),
+            (
+                "domains/email.yaml",
+                "            recipient: input.recipient\n",
+                "            recipient: input.recipient\n            message_id: {generated: true}\n",
+            ),
+            (
+                "domains/invoice.yaml",
+                "          billing.invoice.InvoiceCreated:\n",
+                "          billing.invoice.InvoiceCreated:\n            invoice_id: {generated: true}\n",
+            ),
+            (
+                "domains/invoice.yaml",
+                "        sets:\n          account_id: input.account_id\n          total: input.amount\n",
+                "        sets:\n          account_id: input.account_id\n          total: input.amount\n          lines: []\n",
+            ),
+        ],
+    );
+    let lowered = lower_billing_changes(&ir).expect("an empty list creation field lowers");
+    let invoice = &lowered.definitions()[&name("billing.invoice.Invoice")];
+    let accepted = invoice
+        .create
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.name == "accepted")
+        .expect("accepted creation branch");
+    assert_eq!(accepted.set["lines"], json!([]));
+    assert!(!accepted.set_if_present.contains_key("lines"));
+    let binding = &lowered.bindings().commands()[&name("billing.invoice.CreateInvoice")];
+    assert!(binding.slots.values().all(|value| !matches!(
+        &value.target,
+        BoundTarget::EntityField { field, .. } if field == "lines"
+    )));
+    let _ = registry(&lowered);
+}
+
 #[test]
 fn an_operation_that_clears_a_field_is_refused_rather_than_left_to_the_host() {
     let ir = compile_replacing(

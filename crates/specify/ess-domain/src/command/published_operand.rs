@@ -423,6 +423,7 @@ fn not_a_snapshot(source: &PayloadSource, members: &[String]) -> Option<&'static
         | PayloadSource::Literal { .. }
         | PayloadSource::Scalar { .. }
         | PayloadSource::Cleared
+        | PayloadSource::EmptyList
         | PayloadSource::SubjectField { .. }
         | PayloadSource::RelatedField { .. }
         | PayloadSource::RelatedSelection { .. }

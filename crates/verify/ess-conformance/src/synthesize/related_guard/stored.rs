@@ -131,7 +131,7 @@ fn unreachable(
             let mut checked = false;
             for set in written {
                 match &set.value {
-                    ResolvedPayloadValue::Cleared => {}
+                    ResolvedPayloadValue::Cleared | ResolvedPayloadValue::EmptyList => {}
                     ResolvedPayloadValue::SubjectField { field: read, .. }
                         if own && read == field => {}
                     ResolvedPayloadValue::InputField { field: input, .. }

@@ -6008,6 +6008,7 @@ fn payload_constant_source(
             ResolvedPayloadValue::Generated { present: *present }
         }
         PayloadSource::Cleared => ResolvedPayloadValue::Cleared,
+        PayloadSource::EmptyList => ResolvedPayloadValue::EmptyList,
         PayloadSource::InputField { .. }
         | PayloadSource::ResponseField { .. }
         | PayloadSource::SubjectField { .. }

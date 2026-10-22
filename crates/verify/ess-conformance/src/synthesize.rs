@@ -8105,6 +8105,7 @@ fn determined_fields(
             ResolvedPayloadValue::ResponseField { .. }
             | ResolvedPayloadValue::Generated { .. }
             | ResolvedPayloadValue::Cleared
+            | ResolvedPayloadValue::EmptyList
             // ess/27 (#545): a `sets:` source only, refused in a payload by `ess-domain`.
             | ResolvedPayloadValue::PayloadRead { .. }
             // ess/16 (#167): the rows one scenario changed, asserted by `set_effects` alone.
@@ -9399,6 +9400,7 @@ fn expression_value_at(
         | ResolvedPayloadValue::ResponseField { .. }
         | ResolvedPayloadValue::Generated { .. }
         | ResolvedPayloadValue::Cleared
+        | ResolvedPayloadValue::EmptyList
         // ess/27 (#545): the published value, which `subject_row` claims where it is safe to.
         | ResolvedPayloadValue::PayloadRead { .. }
         // ess/16 (#168): read only through `caller::synthesize`, which writes the caller's value in.
@@ -10183,6 +10185,7 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         | ResolvedPayloadValue::ResponseField { .. }
         | ResolvedPayloadValue::Generated { .. }
         | ResolvedPayloadValue::Cleared
+        | ResolvedPayloadValue::EmptyList
         | ResolvedPayloadValue::SubjectField { .. }
         | ResolvedPayloadValue::RelatedField { .. }
         | ResolvedPayloadValue::Increment { .. }
@@ -10688,6 +10691,9 @@ fn settled(
         }
         let value = match &field.value {
             ResolvedPayloadValue::Cleared => ScenarioValue::Literal { value: Node::Null },
+            ResolvedPayloadValue::EmptyList => ScenarioValue::Literal {
+                value: Node::Seq(Vec::new()),
+            },
             ResolvedPayloadValue::Literal { value } => {
                 let Some(read) = literal_value(ir, &field.target_type, value, 0) else {
                     continue;
