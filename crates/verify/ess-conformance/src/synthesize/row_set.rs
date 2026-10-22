@@ -2143,25 +2143,136 @@ fn arrange_row(
         other if required(other) => other.clone(),
         _ => Predicate::Always,
     };
-    copied::steered(ir, entity, goal, actors, (distinction, owner.under), accept).or_else(|| {
-        [goal.clone(), relaxed, Predicate::Always]
+    let create = |steer: &Predicate, accept: &dyn Fn(&Arrangement) -> bool| {
+        if owner.under.is_none() && owner.names_held(ir, entity, steer) {
+            arrange_toward_named_owner(ir, entity, steer, actors, distinction, accept)
+        } else {
+            arrange_toward_owned(ir, entity, steer, actors, distinction, owner.under, accept)
+        }
+    };
+    copied::steered(ir, entity, goal, actors, (distinction, owner.under), accept)
+        .or_else(|| {
+            [goal.clone(), relaxed, Predicate::Always]
+                .iter()
+                .find_map(|steer| create(steer, accept))
+        })
+        .or_else(|| arrange_then_updated(ir, entity, goal, actors, distinction, &create, accept))
+}
+
+/// How [`arrange_row`] creates one row toward a steer, the row taken where `accept` takes it.
+type Create<'c> = dyn Fn(&Predicate, &dyn Fn(&Arrangement) -> bool) -> Option<Arrangement> + 'c;
+
+/// One row `accept` takes, created toward the conjuncts of `goal` no `updates:` branch writes and
+/// then sent that branch, its input steered toward the conjuncts over the fields it writes from its
+/// input (beyond10x/ess#626): a field the creating command leaves unset, or sets to one value
+/// alone, that a later command sets. Tried only where no creation alone is taken. A branch guarded
+/// by the row's stored fields, by a related row or a row set, or decided by an injected external
+/// outcome, is not used: its input is not this function's to choose.
+fn arrange_then_updated(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    goal: &Predicate,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    create: &Create<'_>,
+    accept: &dyn Fn(&Arrangement) -> bool,
+) -> Option<Arrangement> {
+    let mut conjuncts: Vec<&Predicate> = Vec::new();
+    conjoined(goal, &mut conjuncts);
+    let terminal = &ir.entity(entity).lifecycle.terminal;
+    for driver in ir.drivers_of(entity) {
+        if !matches!(driver.effect, ResolvedEffect::Updates)
+            || driver.outcome.test_strategy == ess_domain::command::TestStrategy::InjectFault
+            || subject_fact::uses(driver.command)
+            || super::related_guard::uses(driver.command)
+            || uses(driver.command)
+        {
+            continue;
+        }
+        // The fields the branch writes from its input unchanged, by the input each is written from.
+        let mapped: BTreeMap<&str, &str> = driver
+            .outcome
+            .sets
             .iter()
-            .find_map(|steer| {
-                if owner.under.is_none() && owner.names_held(ir, entity, steer) {
-                    arrange_toward_named_owner(ir, entity, steer, actors, distinction, accept)
-                } else {
-                    arrange_toward_owned(
-                        ir,
-                        entity,
-                        steer,
-                        actors,
-                        distinction,
-                        owner.under,
-                        accept,
-                    )
+            .filter(|set| set.conversion.is_none())
+            .filter_map(|set| match &set.value {
+                ResolvedPayloadValue::InputField { field, .. } => {
+                    Some((set.target.as_str(), field.as_str()))
                 }
+                _ => None,
             })
-    })
+            .collect();
+        let writes = |predicate: &Predicate| {
+            predicate
+                .fact_paths()
+                .iter()
+                .any(|path| mapped.contains_key(path.namespace()))
+        };
+        let (later, first): (Vec<&Predicate>, Vec<&Predicate>) = conjuncts
+            .iter()
+            .copied()
+            .partition(|conjunct| writes(conjunct));
+        if later.is_empty() {
+            continue;
+        }
+        let onto = |path: &FactPath| match path.segments().split_first() {
+            Some((head, tail)) => mapped.get(head.as_str()).map_or_else(
+                || path.clone(),
+                |field| {
+                    FactPath::from_segments(
+                        field
+                            .split('.')
+                            .map(str::to_owned)
+                            .chain(tail.iter().cloned()),
+                    )
+                },
+            ),
+            None => path.clone(),
+        };
+        let toward = super::map_paths(&Predicate::All(later.into_iter().cloned().collect()), &onto);
+        let mut guards = vec![&toward];
+        guards.extend(when(driver.outcome));
+        let Ok(inputs) = candidates(ir, driver.command, &guards, distinction) else {
+            continue;
+        };
+        // The row `created` leaves once the branch is sent to it with the first input `accept`
+        // takes the result of.
+        let updated = |created: &Arrangement| {
+            if terminal.contains(&created.state) {
+                return None;
+            }
+            inputs.iter().find_map(|input| {
+                if super::selects_branch(
+                    ir,
+                    driver.command,
+                    driver.outcome,
+                    Some(&created.state),
+                    input,
+                ) != Ok(true)
+                {
+                    return None;
+                }
+                let invoked = super::invoke_with(
+                    ir,
+                    &driver,
+                    Some(&created.instance),
+                    actors,
+                    &BTreeMap::new(),
+                    input,
+                );
+                let mut next = created.clone();
+                next.steps.extend(invoked.steps);
+                next.source.extend(invoked.source);
+                next.absorb(driver.outcome, invoked.settled);
+                accept(&next).then_some(next)
+            })
+        };
+        let steer = Predicate::All(first.into_iter().cloned().collect());
+        if let Some(created) = create(&steer, &|row| updated(row).is_some()) {
+            return updated(&created);
+        }
+    }
+    None
 }
 
 /// What one branch's arrangement reads per selector of its command, in the order the selectors

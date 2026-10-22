@@ -334,6 +334,12 @@ selected row:
   no such filter selects (beyond10x/ess#621). The same holds for the related rows an `exists` test
   places and for the rows ranked above the head under another selected owner. A decoy refuting
   the owner link is left out, as no owner the steps hold is steered for it.
+- **A field a later command sets.** Where no creating command alone leaves a row the goal
+  admits — the selector reads a field one creator leaves unset and another sets to one value only
+  — the row is created toward the conjuncts no `updates:` branch writes and then sent the first
+  such branch writing the rest from its input, its input steered toward them (beyond10x/ess#626).
+  A branch guarded by stored fields, a related row or a row set, or decided by an injected
+  external outcome, is not used.
 - **Distinct values.** The `first` value of the head differs from every other selected row's, from
   every decoy's and from zero, so copying any other row is visible.
 - **Checked, never assumed.** The head is computed over the rows the steps leave (`walk`), with the

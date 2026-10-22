@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T22:02:00Z",
+  "actor": "human:timo",
+  "artifact": "story:synthesis-survives-two-identity-guards-on-a-self-reference",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave ess-0680 2026-10-21 at f9d189fec: #474 reproducer 4 scenarios 0 refusals; cargo test -p ess-conformance --test related_guard_beside_self_reference 5 passed; shipped 0.57.0",
+    "reference": "02dfee96c"
+  }
+}

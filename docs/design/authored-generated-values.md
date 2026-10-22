@@ -1,6 +1,7 @@
 # An authored exact value on a generated field
 
-Status: implemented for beyond10x/ess#544 (`story:authored-exact-value-on-generated-field-is-refused`).
+Status: implemented for beyond10x/ess#544 (`story:authored-exact-value-on-generated-field-is-refused`);
+from `ess/30` the value is the scenario's own claim (beyond10x/ess#623, the last section).
 
 ## The defect
 
@@ -80,6 +81,42 @@ a view row, or `capture:` on the event.
 
 ## Compatibility
 
-No format moves. A document accepted before is accepted now unless it pins a minted value.
+Below `ess/30` no format moves: a document accepted before is accepted now unless it pins a minted
+value. From `ess/30` it is accepted as well, and its pinned value checked (the next section).
 Removing the refusal later accepts every document accepted today plus these. The coverage readers
 (Rust, Go, TypeScript, browser) admit `ESS-AUTHOR-042` as a file refusal.
+
+## From `ess/30`: the scenario's own claim (beyond10x/ess#623)
+
+A downstream adopter writes authored scenarios whose minted values the scenario's own earlier steps
+determine: a revision number is the count of commits the scenario made, a cursor is the offset
+after the page it asked for, a total is the size of the graph it built. Pinning them is how those
+scenarios check paging, grouping and counting, and the refusal above left no way to say so.
+
+From `format: ess/30` `author` no longer refuses such a value. The act compiles as an act pinning
+an input-filled value does: its step (`expect_event`, `expect_error`, `expect_view`) carries the
+literal, and the runner compares it exactly. An implementation minting another value fails the
+scenario; one minting the stated value passes. The claim is the scenario's, so nothing in the
+model changes: the field stays `{generated: true}`, and synthesis still asserts only its presence
+and type at every format.
+
+- **The gate is the specification's `format:`, not the scenario file's `type:`.** An authored file's
+  `ess-scenario/N` header versions its syntax (`setup:`, fixtures, `response:`, `actor:`), and this
+  adds no key. Authored compilation already reads the specification's format through the IR, as
+  its check of the branch an act expects does (`ESS-AUTHOR-041`), so the meaning moves with the
+  specification. A new `ess-scenario/6` would have needed a header every coverage reader (Rust,
+  Go, TypeScript, browser) learns, for no new syntax.
+- **Below `ess/30` the refusal is unchanged.** Its code, its message and the cases it covers are
+  the ones above, and its help gains one clause naming `format: ess/30`. The help is the catalogue
+  entry's repair, so the clause reads at every format.
+- **The model interpreter is not taught the claim.** It mints from its own counter
+  (`interpret::execute::Generated::Counter`), so on `--target ir`, and in the baseline
+  `mutate --scenarios` runs against it, a pinned scenario passes only where the counter mints the
+  stated value; elsewhere the baseline is refused as `ESS-MUTATE-001`. Measured on the `RELAY`
+  fixture of `tests/author_generated_value.rs`: the interpreter mints `connect_seq = 4` for the
+  first selection, and a scenario pinning 7 fails there.
+
+`tests/author_generated_value.rs` pins both sides: every refused shape is accepted at `ess/30` with
+the literal in its step, and refused at `ess/29` with the message it has at `ess/19`. A target over
+the interpreter that publishes and shows `connect_seq = 7` passes the pinned scenario, on the event
+and on the row, and one minting 8 fails it.

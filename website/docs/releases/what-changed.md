@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.68.0 — 2026-10-22
+
+### A reference every writer checks needs no missing-row branch, and a view filter can compare with now
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.68.0)
+
+Format `ess/30` drops the `exists: false` branch on a reference every writer checks and nothing deletes. A view's `filter:` may compare a `Timestamp` with `now`, a selector may write `coalesce(field, d)`, a set effect's `where:` may read `state`, a narrowed `external:` race may compensate, and a scenario may pin a generated value.
+
 ## 0.67.0 — 2026-10-21
 
 ### A guard says what an absent value compares as, and an external branch can be narrowed to some rows

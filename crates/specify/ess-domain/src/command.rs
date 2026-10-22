@@ -216,6 +216,7 @@ pub mod ordered_head;
 pub(crate) mod outcome_shapes;
 pub mod precedence;
 pub mod published_operand;
+pub(crate) mod reference_integrity;
 pub mod related_guard;
 pub mod related_list;
 pub use related_guard::RelatedTest;
@@ -375,27 +376,18 @@ fn validate_compensation(outcome: &Outcome, at: &ConstructRef) -> ValidationErro
         );
         return errors;
     };
+    // A race narrowed by `when_subject:` (ess/29) is decided by `external:` too; its format gate
+    // is `narrowed_compensation_format` (ess/30, beyond10x/ess#623).
     if !matches!(
         outcome.condition,
-        OutcomeCondition::External { .. } | OutcomeCondition::ExternalWhen { .. }
+        OutcomeCondition::External { .. }
+            | OutcomeCondition::ExternalWhen { .. }
+            | OutcomeCondition::ExternalSubject { .. }
     ) {
-        errors.push(
-            ValidationError::at(
-                at.clone(),
-                ValidationCode::RefusalMutatedState,
-                format!(
-                    "outcome `{}` reports `{error}` and declares `compensates: true`, but only a \
-                     refusal decided by `external:` may change its addressed row; a refusal the \
-                     input, a held state or a related row decides is answered before that row is \
-                     read, and changes nothing",
-                    outcome.name
-                ),
-            )
-            .with_hint(
-                "decide the branch with `external:`, or drop `compensates:` and the change it \
+        errors.push(not_external_compensation(outcome, error, at).with_hint(
+            "decide the branch with `external:`, or drop `compensates:` and the change it \
                  declares",
-            ),
-        );
+        ));
         return errors;
     }
     let others = !outcome.set_effects.affects.is_empty();
@@ -445,6 +437,25 @@ fn validate_compensation(outcome: &Outcome, at: &ConstructRef) -> ValidationErro
         );
     }
     errors
+}
+
+/// The refusal of a `compensates: true` branch no `external:` cause decides, without its hint.
+fn not_external_compensation(
+    outcome: &Outcome,
+    error: &QualifiedName,
+    at: &ConstructRef,
+) -> ValidationError {
+    ValidationError::at(
+        at.clone(),
+        ValidationCode::RefusalMutatedState,
+        format!(
+            "outcome `{}` reports `{error}` and declares `compensates: true`, but only a refusal \
+             decided by `external:` may change its addressed row; a refusal the input, a held \
+             state or a related row decides is answered before that row is read, and changes \
+             nothing",
+            outcome.name
+        ),
+    )
 }
 
 /// Checks that a wrong-state branch's answer and its `error:` say one thing rather than two.
@@ -3872,8 +3883,10 @@ impl CommandSpec {
             }) else {
                 continue;
             };
+            // The step the plan reads the phase at: its position in the phase order, numbered as
+            // the precedence order numbers that position, so an exchanged order is named as read.
             let step = |phase: precedence::Phase| {
-                phase
+                precedence::Phase::PRECEDENCE[phase.position()]
                     .step_in(format)
                     .map_or_else(|| phase.to_string(), |step| step.to_string())
             };
@@ -4569,6 +4582,29 @@ fn marker_formats(
         .into_iter()
         .chain(before_row_format(format, outcome, at))
         .chain(narrowed_external_format(format, outcome, at))
+        .chain(narrowed_compensation_format(format, outcome, at))
+}
+
+/// The format gate of a narrowed race that compensates (`external:` beside `when_subject:
+/// {predicate: …}` and `compensates: true`, ess/30, beyond10x/ess#623): the race answers at the
+/// held-state step where the predicate selects the row, and `compensates:` changes what its refusal
+/// does to that row, not where it answers. Below `ess/30` the pair keeps the refusal every
+/// compensation no `external:` cause decides gets, its hint naming `ess/30`.
+fn narrowed_compensation_format(
+    format: crate::system::FormatVersion,
+    outcome: &Outcome,
+    at: &ConstructRef,
+) -> Option<ValidationError> {
+    let error = outcome.error.as_ref()?;
+    (outcome.compensates
+        && matches!(outcome.condition, OutcomeCondition::ExternalSubject { .. })
+        && format.major() < crate::system::FormatVersion::V30.major())
+    .then(|| {
+        not_external_compensation(outcome, error, at).with_hint(
+            "declare `format: ess/30`, where a race narrowed by `when_subject:` may compensate, \
+             or drop `compensates:` and the change it declares",
+        )
+    })
 }
 
 /// Whether a payload source reads a stored row: the addressed one (`{subject: …}`, an increment),

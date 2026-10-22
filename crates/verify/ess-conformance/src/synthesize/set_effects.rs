@@ -1103,7 +1103,7 @@ fn answer(
         crate::response::Observation::of(ir, command, outcome).map_err(|reason| {
             gap(
                 format!("{}.response: {reason}", command.name),
-                "command response".into(),
+                super::RESPONSE_GAP.into(),
                 "typed response observation cannot execute this contract",
             )
         })?;

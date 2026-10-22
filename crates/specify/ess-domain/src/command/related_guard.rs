@@ -37,7 +37,9 @@
 //! `exists: false` branch carries no `when:`, and an accepting `when:` branch overlapping it is legal.
 //! The one answer before it is `existing_instance:`, because the command's own identity is checked
 //! before the related row is read. A command whose predicate branches have no `exists: false`
-//! sibling leaves a missing row unanswered, and is refused for it.
+//! sibling leaves a missing row unanswered, and is refused for it — unless, from ess/30, the row is
+//! one a stored reference names and the specification proves it present whenever the reference is
+//! (`command::reference_integrity`, beyond10x/ess#509).
 //!
 //! **Several rows (ess/22, beyond10x/ess#283).** A command may read more than one row, each named
 //! by an input `via` of its own, with one `exists: false` branch at most per row. Missing rows are
@@ -757,7 +759,7 @@ pub fn validate_shape(command: &CommandSpec, types: Option<&TypeRegistry>) -> Va
         if other {
             return errors;
         }
-        return validate_declared(command, errors, false);
+        return validate_declared(command, errors, false, false);
     };
     // Under the one rule (`ess/27`) every guard the related row shares a command with answers at
     // its own step, so no pair is refused for want of an order.
@@ -784,16 +786,18 @@ pub fn validate_shape(command: &CommandSpec, types: Option<&TypeRegistry>) -> Va
         );
         return errors;
     }
-    validate_declared(command, errors, one_rule)
+    validate_declared(command, errors, one_rule, true)
 }
 
 /// [`validate_shape`] once an `unknown_instance:` branch is admitted or absent; `one_rule` where
 /// the document reads the one precedence rule, which orders every other guard beside the related
-/// row.
+/// row; `known` where the pass knows the specification, so the missing-row answer of a stored
+/// reference can be decided ([`super::reference_integrity`]).
 fn validate_declared(
     command: &CommandSpec,
     mut errors: ValidationErrors,
     one_rule: bool,
+    known: bool,
 ) -> ValidationErrors {
     if let Some(other) = command.outcomes.iter().find_map(|outcome| {
         (!one_rule && !matches!(outcome.condition, OutcomeCondition::UnknownInstance))
@@ -839,7 +843,7 @@ fn validate_declared(
             .with_hint("give all but one of them a `when` or a `when_related`"),
         );
     }
-    errors.extend(one_related_row(command));
+    errors.extend(one_related_row(command, known));
     let reachable = command
         .outcomes
         .iter()
@@ -884,7 +888,7 @@ fn second_row(
 /// that row leaves a missing row unanswered. A second stored-field row is refused here; a second
 /// row named by the input is admitted from ess/22 (beyond10x/ess#283), which [`validate`] decides
 /// once the format is known, and an input `via` beside a stored-field one is refused there too.
-fn one_related_row(command: &CommandSpec) -> ValidationErrors {
+fn one_related_row(command: &CommandSpec, known: bool) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let vias = read_vias(command);
     let Some(first) = vias.first().copied() else {
@@ -916,19 +920,21 @@ fn one_related_row(command: &CommandSpec) -> ValidationErrors {
             command,
             group.unwrap_or(first),
             group,
-            several,
+            (several, known),
         ));
     }
     errors
 }
 
 /// One `exists: false` branch at most over the row `via` names — over every related row where
-/// `group` is `None` — and one wherever a predicate branch reads it.
+/// `group` is `None` — and one wherever a predicate branch reads it. A stored reference's missing
+/// row is left unanswered until the specification is `known`: from `ess/30` the specification may
+/// prove the row present ([`super::reference_integrity`]).
 fn missing_row_answers(
     command: &CommandSpec,
     via: &RelatedVia,
     group: Option<&RelatedVia>,
-    several: bool,
+    (several, known): (bool, bool),
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     // An `all:` branch (ess/28) reads every row it lists.
@@ -982,7 +988,8 @@ fn missing_row_answers(
             }
         )
     });
-    if holds && absent.is_empty() {
+    let deferred = !known && !several && matches!(via, RelatedVia::Subject(_));
+    if holds && absent.is_empty() && !deferred {
         let message = if several {
             format!(
                 "`{}` reads the fields of the row `{via}` names, and a missing row makes every \
@@ -990,11 +997,7 @@ fn missing_row_answers(
                 command.name
             )
         } else {
-            format!(
-                "`{}` reads the related row's fields, and a missing row makes every predicate \
-                     over it unknown: no branch answers when the row does not exist",
-                command.name
-            )
+            missing_row_message(command)
         };
         errors.push(
             ValidationError::at(
@@ -1009,6 +1012,17 @@ fn missing_row_answers(
         );
     }
     errors
+}
+
+/// The `non_exhaustive_branches` refusal of a command reading one related row with no
+/// `exists: false` branch, which [`super::reference_integrity`] lifts where the row cannot be
+/// missing.
+pub(super) fn missing_row_message(command: &CommandSpec) -> String {
+    format!(
+        "`{}` reads the related row's fields, and a missing row makes every predicate over it \
+         unknown: no branch answers when the row does not exist",
+        command.name
+    )
 }
 
 /// The refusals answered before any other of a command reading a related row, from ess/18: the

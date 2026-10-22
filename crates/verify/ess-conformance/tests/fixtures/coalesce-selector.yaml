@@ -1,0 +1,148 @@
+format: ess/30
+system: demo
+version: v1
+domain: demo.picking
+types:
+  - {name: demo.picking.MemberId, kind: newtype, of: Uuid}
+  - {name: demo.picking.PairId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.picking.Member
+    identity: {name: member_id, type: demo.picking.MemberId}
+    fields:
+      - {name: slot_id, type: String}
+      - {name: element_key, type: String}
+      - {name: element_score, type: Integer}
+      - {name: enabled, type: Optional<Boolean>}
+    lifecycle:
+      initial: Present
+      states: [Present]
+      terminal: [Present]
+      transitions: []
+  - name: demo.picking.Pair
+    identity: {name: pair_id, type: demo.picking.PairId}
+    fields:
+      - {name: slot_id, type: String}
+      - {name: element_key, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Done]
+      terminal: [Done]
+      transitions:
+        - {name: finish, from: [Open], to: Done}
+errors:
+  - {name: demo.picking.Empty, summary: No enabled element is waiting in the slot., fields: []}
+events:
+  - name: demo.picking.Joined
+    fields:
+      - {name: member_id, type: demo.picking.MemberId}
+  - name: demo.picking.Switched
+    fields:
+      - {name: member_id, type: demo.picking.MemberId}
+  - name: demo.picking.Paired
+    fields:
+      - {name: pair_id, type: demo.picking.PairId}
+      - {name: element_key, type: String}
+      - {name: member_id, type: demo.picking.MemberId}
+  - name: demo.picking.Finished
+    fields:
+      - {name: pair_id, type: demo.picking.PairId}
+views:
+  - name: demo.picking.Pairs
+    source: demo.picking.Pair
+    consistency: read_your_writes
+    fields:
+      - {name: pair_id, type: demo.picking.PairId}
+      - {name: slot_id, type: String}
+      - {name: element_key, type: String}
+commands:
+  - name: demo.picking.Join
+    input:
+      - {name: member_id, type: demo.picking.MemberId}
+      - {name: slot_id, type: String}
+      - {name: element_key, type: String}
+      - {name: element_score, type: Integer}
+      - {name: enabled, type: Optional<Boolean>}
+    outcomes:
+      - name: joined
+        creates: demo.picking.Member
+        instance: member_id
+        sets:
+          slot_id: input.slot_id
+          element_key: input.element_key
+          element_score: input.element_score
+          enabled: input.enabled
+        emits: [demo.picking.Joined]
+        payload:
+          demo.picking.Joined: {member_id: input.member_id}
+  - name: demo.picking.Switch
+    input:
+      - {name: member_id, type: demo.picking.MemberId}
+      - {name: enabled, type: Boolean}
+    outcomes:
+      - name: switched
+        updates: demo.picking.Member
+        instance: member_id
+        sets: {enabled: input.enabled}
+        emits: [demo.picking.Switched]
+        payload:
+          demo.picking.Switched: {member_id: input.member_id}
+  - name: demo.picking.Pick
+    input:
+      - {name: pair_id, type: demo.picking.PairId}
+      - {name: slot_id, type: String}
+    outcomes:
+      - name: empty
+        when_related:
+          entity: demo.picking.Member
+          where:
+            all:
+              - slot_id == input.slot_id
+              - coalesce(enabled, true) == true
+          exists: false
+        error: demo.picking.Empty
+      - name: picked
+        creates: demo.picking.Pair
+        instance: pair_id
+        sets:
+          slot_id: input.slot_id
+          element_key:
+            related:
+              entity: demo.picking.Member
+              where:
+                all:
+                  - slot_id == input.slot_id
+                  - coalesce(enabled, true) == true
+              order_by: [element_score desc, member_id]
+              first: element_key
+        emits: [demo.picking.Paired]
+        payload:
+          demo.picking.Paired:
+            pair_id: input.pair_id
+            element_key:
+              related:
+                entity: demo.picking.Member
+                where:
+                  all:
+                    - slot_id == input.slot_id
+                    - coalesce(enabled, true) == true
+                order_by: [element_score desc, member_id]
+                first: element_key
+            member_id:
+              related:
+                entity: demo.picking.Member
+                where:
+                  all:
+                    - slot_id == input.slot_id
+                    - coalesce(enabled, true) == true
+                order_by: [element_score desc, member_id]
+                first: member_id
+  - name: demo.picking.Finish
+    input:
+      - {name: pair_id, type: demo.picking.PairId}
+    outcomes:
+      - name: finished
+        moves: demo.picking.Pair.finish
+        instance: pair_id
+        emits: [demo.picking.Finished]
+        payload:
+          demo.picking.Finished: {pair_id: input.pair_id}

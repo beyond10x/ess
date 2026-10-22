@@ -1394,16 +1394,23 @@ pub(crate) fn current_time(operand: &Operand, op: CompareOp) -> Option<CurrentTi
 
 /// Whether a guard reads the current time anywhere in it.
 fn predicate_reads_clock(predicate: &Predicate) -> bool {
+    clock_reading(predicate).is_some()
+}
+
+/// The first comparison in `predicate` that orders a fact against the current time, if any.
+pub(crate) fn clock_reading(predicate: &Predicate) -> Option<&Predicate> {
     match predicate {
         Predicate::All(children) | Predicate::Any(children) => {
-            children.iter().any(predicate_reads_clock)
+            children.iter().find_map(clock_reading)
         }
-        Predicate::Not(child) => predicate_reads_clock(child),
+        Predicate::Not(child) => clock_reading(child),
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
-            predicate_reads_clock(&quantified.body)
+            clock_reading(&quantified.body)
         }
-        Predicate::Compare { op, right, .. } => current_time(right, *op).is_some(),
-        _ => false,
+        Predicate::Compare { op, right, .. } => {
+            current_time(right, *op).is_some().then_some(predicate)
+        }
+        _ => None,
     }
 }
 
@@ -1704,8 +1711,41 @@ fn related_composition(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Stri
                 "a stored `when_related:` reference on no subject the input names".to_owned(),
             );
         }
+        // From ess/30 a stored reference the specification proves present needs no
+        // `exists: false` branch (beyond10x/ess#509); the generated behaviour then reads the row
+        // with no answer for a missing one ([`kept_reference`]).
     }
     Ok(())
+}
+
+/// The first branch of `command` reading a stored reference no branch answers missing — the row's
+/// presence derived from the specification (`ess/30`, beyond10x/ess#509), which validation proves
+/// before the command reaches a target — so the generated behaviour reads the row with no
+/// `exists: false` answer, before that branch. `None` where the command reads no stored reference
+/// or answers a missing row.
+pub(crate) fn kept_reference(command: &ResolvedCommand) -> Option<&ResolvedOutcome> {
+    let stored = |outcome: &&ResolvedOutcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::Related {
+                via: ResolvedRelatedVia::Subject { .. },
+                ..
+            }
+        )
+    };
+    let answered = command.outcomes.iter().filter(stored).any(|outcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Absent,
+                ..
+            }
+        )
+    });
+    if answered {
+        return None;
+    }
+    command.outcomes.iter().find(stored)
 }
 
 // ---- a set effect pinning the row's identity (ess/27, beyond10x/ess#547) ------------------------

@@ -191,6 +191,14 @@ pub trait TypeEnvironment {
     fn primitive(&self, _reference: &Self::Type) -> Option<Primitive> {
         None
     }
+    /// The primitive a function call's fact is, where it is one: what `coalesce(<fact>, …)` and
+    /// the other functions read.
+    ///
+    /// [`Self::primitive`] by default. An environment that admits a call at one site only and
+    /// answers no `distinct` key there names the primitive here alone (beyond10x/ess#627).
+    fn function_primitive(&self, reference: &Self::Type) -> Option<Primitive> {
+        self.primitive(reference)
+    }
     /// Whether this environment admits `.count` on a `String`, the length in Unicode scalar values
     /// that `ess/11` introduced.
     ///
@@ -275,6 +283,18 @@ pub trait TypeEnvironment {
     /// `true` by default: the compiler's environment reads an IR validation already admitted.
     fn calls_here(&self) -> bool {
         true
+    }
+    /// Whether `field` is a field of the candidate row of a selector's `where:` — a row-set guard's
+    /// (`when_related: {entity, where, …}`), a filtered read's or an ordered head's (`{related:
+    /// {entity, where, …}}`) — where `coalesce(<field>, <literal>) <op> <literal>` selects the rows
+    /// whose value, or the default where it is absent, compares so (beyond10x/ess#627):
+    /// `Some(true)` where the format admits it, from `ess/30`; `Some(false)` below it, where the
+    /// call keeps its refusal and the hint names `ess/30`; `None` at every other site and for
+    /// every other fact.
+    ///
+    /// `None` by default: a site that admits calls ([`Self::calls_here`]) never asks.
+    fn coalesces_candidate(&self, _field: &str) -> Option<bool> {
+        None
     }
     /// Whether this environment checks an authored source whose bare words name roots (`ess/22`
     /// or later): a binder that shadows a root is then refused where a bare word would read it,
@@ -423,16 +443,49 @@ pub struct ExpressionError {
     pub path: Option<FactPath>,
     /// The first selector that could not be resolved.
     pub segment: Option<String>,
-    /// An aggregate boundary crossed by a forbidden selector, for existing projection refusals.
-    pub boundary: Option<&'static str>,
     /// The complete diagnostic without a fabricated source span.
     pub message: String,
+    /// The boundary and the repair, present on a minority of refusals.
+    ///
+    /// Boxed: an `ExpressionError` is returned in `Result::Err`, and both fields inline put the
+    /// error variant at 144 bytes, which `clippy::result_large_err` refuses.
+    pub detail: Option<Box<ExpressionErrorDetail>>,
+}
+
+/// The fields of an [`ExpressionError`] that most refusals leave out.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExpressionErrorDetail {
+    /// An aggregate boundary crossed by a forbidden selector, for existing projection refusals.
+    pub boundary: Option<&'static str>,
+    /// How to repair it, where the format that admits it is newer than the source's: kept apart
+    /// from [`ExpressionError::message`], which stays the refusal older formats print.
+    pub hint: Option<String>,
 }
 
 impl ExpressionError {
     /// Convert without changing the public diagnostic wire shape.
     pub fn validation_error(&self) -> ValidationError {
-        ValidationError::new(self.code, self.owner.clone(), self.message.clone())
+        let error = ValidationError::new(self.code, self.owner.clone(), self.message.clone());
+        match self.hint() {
+            Some(hint) => error.with_hint(hint.to_owned()),
+            None => error,
+        }
+    }
+
+    /// The aggregate boundary a forbidden selector crossed, if any.
+    pub fn boundary(&self) -> Option<&'static str> {
+        self.detail.as_ref().and_then(|detail| detail.boundary)
+    }
+
+    /// The repair for a form a newer format admits, if any.
+    pub fn hint(&self) -> Option<&str> {
+        self.detail
+            .as_ref()
+            .and_then(|detail| detail.hint.as_deref())
+    }
+
+    fn detail_mut(&mut self) -> &mut ExpressionErrorDetail {
+        self.detail.get_or_insert_with(Box::default)
     }
 }
 
@@ -495,8 +548,9 @@ enum CurrentTimeSite {
     /// A command outcome's `when_subject:` or `when_related:` predicate over a stored row, from
     /// `ess/22`.
     Stored,
-    /// A view's filter: refused, and the refusal names the `from`/`to` parameter idiom, because a
-    /// view read has no clock a suite fixes (`docs/design/generic-language-features.md`, grid R).
+    /// A view's filter, from `ess/30`: `now` is the instant of the view read, which a run fixes as
+    /// the instant of the step reading the view (beyond10x/ess#560). Below `ess/30` the refusal
+    /// names the `from`/`to` parameter idiom (`docs/design/generic-language-features.md`, grid R).
     ViewFilter,
 }
 
@@ -560,8 +614,8 @@ impl<'a> DomainEnvironment<'a> {
         self.current_time = CurrentTimeSite::Stored;
         self
     }
-    /// Mark the environment a view's filter is checked in, so a refusal of `now` there names the
-    /// `from`/`to` parameter idiom.
+    /// Mark the environment a view's filter is checked in: `now` is admitted there from `ess/30`,
+    /// and below it a refusal of `now` names the `from`/`to` parameter idiom.
     #[must_use]
     pub fn in_view_filter(mut self) -> Self {
         self.current_time = CurrentTimeSite::ViewFilter;
@@ -640,9 +694,10 @@ impl TypeEnvironment for DomainEnvironment<'_> {
         };
         CurrentTimeAdmission {
             site: match self.current_time {
-                CurrentTimeSite::None | CurrentTimeSite::ViewFilter => false,
+                CurrentTimeSite::None => false,
                 CurrentTimeSite::Input => true,
                 CurrentTimeSite::Stored => at(crate::system::FormatVersion::V22),
+                CurrentTimeSite::ViewFilter => at(crate::system::FormatVersion::V30),
             },
             format: at(crate::system::FormatVersion::V16),
         }
@@ -837,8 +892,8 @@ fn error(
         owner: owner.to_owned(),
         path: path.cloned(),
         segment: segment.map(str::to_owned),
-        boundary: None,
         message,
+        detail: None,
     }
 }
 
@@ -1100,7 +1155,9 @@ fn resolve<E: TypeEnvironment>(
                         format!("`{path}` cannot select `{segment}` from `{declared}` (resolved prefix type `{identity}`){context}")
                     };
                     let mut failed = error(owner, ValidationCode::UnobservableFact, Some(path), Some(segment), message);
-                    failed.boundary = boundary;
+                    if boundary.is_some() {
+                        failed.detail_mut().boundary = boundary;
+                    }
                     failed
                 })?;
                 declared = current.to_string();
@@ -2008,6 +2065,7 @@ pub fn check_predicate<E: TypeEnvironment>(
             parameters: BTreeSet::new(),
             current_time: Vec::new(),
         },
+        coalescing: None,
     };
     checker.predicate(predicate);
     checker.checked
@@ -2018,6 +2076,9 @@ struct Checker<'a, E: TypeEnvironment> {
     owner: &'a str,
     bindings: Vec<Binding<E::Type>>,
     checked: Checked<E::Type>,
+    /// While the left of `coalesce(<field>, <literal>) <op> <literal>` is checked in a selector's
+    /// `where:`, whether the format admits it there ([`TypeEnvironment::coalesces_candidate`]).
+    coalescing: Option<bool>,
 }
 
 // Each flag is one question the environment answers of the terminal type, asked by a different
@@ -2198,8 +2259,11 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             ));
             return None;
         }
-        if !self.environment.calls_here() {
-            self.checked.errors.push(error(
+        // A selector's `where:` compares `coalesce(<field>, <literal>)` with a literal from
+        // `ess/30` (beyond10x/ess#627); below it the refusal stands, its hint naming the format.
+        let coalescing = self.coalescing.take();
+        if !self.environment.calls_here() && coalescing != Some(true) {
+            let mut refused = error(
                 self.owner,
                 ValidationCode::UnsupportedConstruct,
                 Some(parent),
@@ -2210,11 +2274,18 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                      `when_related:`); compare stored values here, or move the rule into the \
                      command's guard"
                 ),
-            ));
+            );
+            if coalescing == Some(false) {
+                refused.detail_mut().hint = Some(format!(
+                    "declare `format: ess/30`, where a selector's `where:` compares `{expr}` with \
+                     a literal, an absent `{parent}` reading as the default"
+                ));
+            }
+            self.checked.errors.push(refused);
             return None;
         }
         let resolved = self.read(parent, false)?;
-        let primitive = self.environment.primitive(&resolved.terminal);
+        let primitive = self.environment.function_primitive(&resolved.terminal);
         let kind = match primitive {
             Some(Primitive::Integer) => Some(Kind::Integer),
             Some(Primitive::Decimal) => Some(Kind::Decimal),
@@ -2644,8 +2715,8 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 ),
                 "write `format: ess/16` on the source that declares the system".to_owned(),
             ),
-            // A view filter: no suite sets a clock for a read, so the bound is the caller's
-            // parameters, which keep it in the specification and checked.
+            // A view filter below ess/30: no suite sets a clock for a read there, so the bound is
+            // the caller's parameters, which keep it in the specification and checked.
             (
                 ordering,
                 parsed,
@@ -2659,14 +2730,15 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     "`{expression}` compares the Timestamp `{path}` with the current time, \
                      `{text}`, which is admitted only in a command outcome's `when:` over its \
                      input and, from ess/22, in its `when_subject:` and `when_related:` \
-                     predicates; in a view filter a read has no clock a suite can fix, so no \
-                     scenario could check the rows either side of the bound"
+                     predicates; below ess/30 a view filter's read has no clock a suite can \
+                     fix, so no scenario could check the rows either side of the bound"
                 ),
                 format!(
                     "declare the bounds as view parameters and filter on them, such as \
                      `params: [{{name: from, type: Timestamp}}, {{name: to, type: Timestamp}}]` \
-                     with `{path} >= param.from` and `{path} < param.to`; the caller sends the \
-                     window it means"
+                     with `{path} >= param.from` and `{path} < param.to`, so the caller sends the \
+                     window it means; or write `format: ess/30`, from which a view filter reads \
+                     `now` at the instant of the read"
                 ),
             ),
             // A site that refuses the operand names where it is admitted, whatever else is wrong
@@ -3017,7 +3089,9 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         if !self.root_fact_operand(predicate, right) {
             return;
         }
+        self.coalescing = self.coalesced_selector(left, right);
         let left_type = self.operand(left);
+        self.coalescing = None;
         let right_type = self.operand(right);
         if let (Some(left_type), Some(right_type)) = (left_type, right_type) {
             let compatible = left_type.scalar.is_some()
@@ -3072,6 +3146,24 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 }
             }
         }
+    }
+
+    /// For `coalesce(<field>, <literal>) <op> <literal>`, whether the site is a selector's `where:`
+    /// over a candidate row declaring `<field>`, and whether its format admits the comparison
+    /// there ([`TypeEnvironment::coalesces_candidate`]); `None` for every other comparison, and
+    /// where a binder of that name shadows the field.
+    fn coalesced_selector(&self, left: &Operand, right: &Operand) -> Option<bool> {
+        let (Operand::Derived(derived), Operand::Literal(_)) = (left, right) else {
+            return None;
+        };
+        let (parent, _) = derived.coalesced()?;
+        let [field] = parent.segments() else {
+            return None;
+        };
+        if self.bindings.iter().any(|binding| binding.name == *field) {
+            return None;
+        }
+        self.environment.coalesces_candidate(field)
     }
 
     /// A comparison whose left side the compact reader kept as text: a function call that is no

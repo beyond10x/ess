@@ -52,7 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29,
+    27, 28, 29, 30,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -312,6 +312,20 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
             "A guarded branch declared after a branch a later step of the one precedence rule answers is refused as `conflicting_declaration` wherever one request can satisfy both, for every pair of steps 1 to 5, naming both branches, their steps and the order to declare them in; input guards the finite prover shows disjoint may come in either order, and a marker (`unknown_instance:`, `wrong_state:`, an `exists: false`) declared below a guarded branch is not refused. It replaces the held-state rule (beyond10x/ess#486) and the `before_row:` order rule (beyond10x/ess#534), which hold one pair each and keep holding below `ess/29` (`docs/design/generic-language-features.md` § G4).",
         ],
     },
+    FormatHistoryEntry {
+        major: 30,
+        release: Some("0.68.0"),
+        added: &[
+            "A command reading the row a stored reference names needs no `exists: false` branch where the specification keeps that row present: every branch writing the field writes nothing, its own value or an input its command refuses first with `exists: false` over the same entity, every branch creating the subject sets it, and no branch deletes a row of the referenced entity. A deleting branch or an unchecked writer keeps the branch required as `non_exhaustive_branches`, its hint naming each; below `ess/30` the branch stays required, its hint naming `ess/30`. Generated Rust and Go read the row such a command names with no answer for a missing one; where a branch deletes it, synthesis witnesses the `exists: false` answer by deleting the row an earlier creation linked, and where none does it reports that answer unreachable, naming the writers (`docs/design/generic-language-features.md` § G2, beyond10x/ess#509).",
+            "Where a reading command leaves that branch out, the suite reads the row each arranged reference names again after every accepting branch writing a row of the referencing or the referenced entity, through a view of the referenced entity, and requires it present, so a target that removes it fails; the reads are filed under that branch's `<entity>/invariant/after/<command>/<outcome>` scenario of the referencing entity, joining the declared invariants' reads where that scenario exists, so the suite keeps its major; a specification that leaves no branch out keeps its suite bytes (beyond10x/ess#509).",
+            "The `where:` of a row-set guard (`when_related: {entity, where, exists | count | forall}`), of a filtered read (`{related: {entity, where, field}}`) and of an ordered head (`{related: {entity, where, order_by, first}}`) may compare `coalesce(<field>, <literal>)` of a candidate row's field with a literal, `coalesce(enabled, true) == true`: an absent value compares as the default, so the selector says whether a row without the field is selected. A `forall:` body, a set effect's filter and every other call there keep their `unsupported_construct`; below `ess/30` the refusal is unchanged, its hint naming `ess/30`. Generated Rust and Go keep such a command an obligation named by its selector, and Entity Runtime refuses it as every row set (`docs/design/generic-language-features.md` § G1, beyond10x/ess#627).",
+            "An authored scenario may state an exact value for a field its outcome marks `{generated: true}`, in an event's payload, an error's fields or a view row over a stored field a branch mints: the value is the scenario's own claim, for a value its earlier steps determine (a revision counting its commits, a cursor after the page it asked for), and the suite checks it exactly, so an implementation minting another value fails the scenario. Synthesis still never pins a minted value; below `ess/30` such an act is refused as `ESS-AUTHOR-042`, its message unchanged and its help naming `ess/30` (`docs/design/authored-generated-values.md`, beyond10x/ess#623).",
+            "The `where:` of a set effect's selection, an `affects: [{entity, where, …}]` entry and `instances: {where: …}`, may read the candidate row's lifecycle state as `state`, `state == Pending`, as a row-set guard's `where:` does: the state the row holds before the outcome. A state the entity does not declare is refused as in a row-set guard; below `ess/30` `state` there keeps its `unobservable_fact`, its hint naming `ess/30`. Synthesis arranges a row in another state beside each selected row, so a target ignoring the state conjunct fails (`docs/design/generic-language-features.md` § G2, beyond10x/ess#564).",
+            "An `external:` race narrowed by `when_subject: {predicate: …}` may declare `compensates: true`: declared above a held-state branch, it answers where the predicate selects the row and the provider takes it, and its refusal moves or updates that row. Synthesis forces the provider on such a row and reads the row back in the compensating state. Below `ess/30` the pair keeps its `refusal_mutated_state`, its hint naming `ess/30` (`docs/design/generic-language-features.md` § G4, beyond10x/ess#623).",
+            "A view's `filter:` may order a `Timestamp` field against `now`, `expires_at > now`, where `now` is the instant the view is read. Synthesis writes each row at a `now_offset` instant and claims a row on a side of the bound only when it stays there from 500 ms before its write to 3600 s after it, so no suite format moves. `==` and `!=` against `now`, a window over it and `now` in a view field stay refused; below `ess/30` the ordering keeps its refusal, its hint naming the `from`/`to` parameter idiom and `ess/30`. Generated Rust and Go view queries and Entity Runtime refuse such a filter by name (`docs/design/current-time-guards.md`, beyond10x/ess#560).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -436,6 +450,10 @@ impl FormatVersion {
     /// (beyond10x/ess#620); an `external:` branch narrowed to the records a subject guard selects
     /// (`docs/design/generic-language-features.md` § G4, beyond10x/ess#554).
     pub const V29: Self = Self(29);
+    /// Enforced references (`docs/design/generic-language-features.md` § G2): a command
+    /// reading the row a stored reference names needs no `exists: false` branch where the
+    /// specification keeps that row present (beyond10x/ess#509).
+    pub const V30: Self = Self(30);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

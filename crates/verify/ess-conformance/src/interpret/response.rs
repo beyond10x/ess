@@ -135,7 +135,15 @@ pub(super) fn base(
                     return Some(value);
                 }
                 inner.type_ref = of.clone();
-                base(ir, &inner, distinction, depth + 1)?
+                let value = base(ir, &inner, distinction, depth + 1)?;
+                // The base text of the wrapped type, laid out again under this chain's rules: an
+                // upper count bound, a text match or a prefix the base breaks.
+                if let Node::Text(seed) = &value {
+                    if crate::input::validate_typed_value(ir, &field.type_ref, &value).is_err() {
+                        return text_choice(ir, &field.type_ref, seed);
+                    }
+                }
+                value
             }
             ResolvedBody::Struct { fields, .. } => {
                 let mut members = BTreeMap::new();
@@ -162,7 +170,21 @@ pub(super) fn base(
             }
             ResolvedBody::Enum { .. } => return None,
         },
-        _ => return None,
+        // One element, built by these rules, where the input witness built none its type admits.
+        ResolvedTypeRef::List { of } => {
+            inner.type_ref = *of.clone();
+            Node::Seq(vec![base(ir, &inner, distinction, depth + 1)?])
+        }
+        ResolvedTypeRef::Map { key, value } => {
+            inner.type_ref = ResolvedTypeRef::Primitive { name: *key };
+            let Node::Text(key) = base(ir, &inner, distinction, depth + 1)? else {
+                return None;
+            };
+            inner.type_ref = *value.clone();
+            let value = base(ir, &inner, distinction, depth + 1)?;
+            Node::Map(BTreeMap::from([(key, value)]))
+        }
+        ResolvedTypeRef::Primitive { .. } => return None,
     };
     crate::input::validate_typed_value(ir, &field.type_ref, &value).ok()?;
     Some(value)
@@ -220,6 +242,211 @@ fn literals(predicate: &ess_primitives::predicate::Predicate, values: &mut Vec<N
         }
         _ => {}
     }
+}
+
+/// The most texts [`text_choice`] tries for one returned value.
+const MAX_TEXT_CHOICES: usize = 512;
+
+/// The rules of a String newtype chain a returned text is built under: the effective alphabet and
+/// prefix of every layer, and the positive text-match literals and `value.count` bounds of every
+/// layer's invariants.
+#[derive(Default)]
+struct TextRules {
+    alphabets: Vec<String>,
+    prefix: String,
+    suffix: String,
+    contained: Vec<String>,
+    counts: Vec<f64>,
+}
+
+impl TextRules {
+    /// The rules of the newtype chain `type_ref` is declared through, outermost layer first, or
+    /// `None` when the chain does not end in `String`.
+    fn of(ir: &EssIr, type_ref: &ResolvedTypeRef) -> Option<Self> {
+        let mut rules = Self::default();
+        let mut current = type_ref;
+        for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+            let ResolvedTypeRef::Declared { name } = current else {
+                break;
+            };
+            let ResolvedBody::Newtype {
+                of,
+                alphabet,
+                prefix,
+                invariants,
+            } = &ir.named_type(name).body
+            else {
+                return None;
+            };
+            rules.alphabets.extend(alphabet.iter().cloned());
+            if let Some(prefix) = prefix {
+                rules.starts(prefix);
+            }
+            for invariant in invariants {
+                rules.read(&invariant.predicate, true);
+            }
+            current = of;
+        }
+        matches!(
+            current,
+            ResolvedTypeRef::Primitive {
+                name: ess_domain::types::Primitive::String
+            }
+        )
+        .then_some(rules)
+    }
+
+    /// The longest prefix kept: a later one that extends an earlier one is met only by a text
+    /// built on the longer.
+    fn starts(&mut self, literal: &str) {
+        if literal.chars().count() > self.prefix.chars().count() {
+            literal.clone_into(&mut self.prefix);
+        }
+    }
+
+    fn read(&mut self, predicate: &ess_primitives::predicate::Predicate, positive: bool) {
+        use ess_primitives::{
+            facts::{FactPath, FactValue},
+            predicate::{Operand, Predicate, TextOp, TextOperand},
+        };
+        let value = FactPath::new("value").expect("the newtype pseudo-field is a fact path");
+        let count = value.child("count");
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    self.read(child, positive);
+                }
+            }
+            Predicate::Not(inner) => self.read(inner, !positive),
+            Predicate::Trimmed(inner) => self.read(inner, positive),
+            Predicate::TextMatch {
+                path,
+                op,
+                value: TextOperand::Literal(FactValue::Text(literal)),
+            } if positive && *path == value => match op {
+                TextOp::StartsWith => self.starts(literal),
+                TextOp::EndsWith => {
+                    if literal.chars().count() > self.suffix.chars().count() {
+                        literal.clone_into(&mut self.suffix);
+                    }
+                }
+                TextOp::Contains => self.contained.push(literal.clone()),
+            },
+            Predicate::Compare { left, right, .. } => {
+                for (fact, literal) in [(left, right), (right, left)] {
+                    if let (Operand::Fact(path), Operand::Literal(FactValue::Number(number))) =
+                        (fact, literal)
+                    {
+                        if *path == count {
+                            self.counts.push(number.get());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The texts tried, in order: the prefix, the contained literals and the suffix laid around
+    /// `core` as the input witness lays a guard's literals, then each layout with the core resized
+    /// so the whole text is as long as each length either side of every `value.count` bound.
+    fn candidates(&self, seed: &str) -> Vec<String> {
+        let alphabet: Option<Vec<char>> =
+            ess_domain::types::effective_alphabet(self.alphabets.iter().map(String::as_str))
+                .map(|alphabet| alphabet.chars().collect());
+        let core: String = seed
+            .strip_prefix(self.prefix.as_str())
+            .unwrap_or(seed)
+            .chars()
+            .map(|character| match &alphabet {
+                Some(held) if !held.is_empty() && !held.contains(&character) => {
+                    held[u32::from(character) as usize % held.len()]
+                }
+                _ => character,
+            })
+            .collect();
+        let mut contained = String::new();
+        for literal in &self.contained {
+            if !self.prefix.contains(literal.as_str())
+                && !self.suffix.contains(literal.as_str())
+                && !contained.contains(literal.as_str())
+            {
+                contained.push_str(literal);
+            }
+        }
+        let (prefix, suffix) = (self.prefix.as_str(), self.suffix.as_str());
+        let layouts = |core: &str| {
+            [
+                format!("{prefix}{contained}{core}{suffix}"),
+                format!("{prefix}{core}{contained}{suffix}"),
+                format!("{prefix}{contained}{suffix}"),
+            ]
+        };
+        let mut texts: Vec<String> = Vec::new();
+        let push = |text: String, texts: &mut Vec<String>| {
+            if texts.len() < MAX_TEXT_CHOICES && !texts.contains(&text) {
+                texts.push(text);
+            }
+        };
+        for text in layouts(&core) {
+            push(text, &mut texts);
+        }
+        let fixed = prefix.chars().count() + contained.chars().count() + suffix.chars().count();
+        let fill: Vec<char> = match core.chars().next() {
+            Some(_) => core.chars().collect(),
+            None => vec![alphabet
+                .as_ref()
+                .and_then(|held| held.first().copied())
+                .unwrap_or('x')],
+        };
+        for length in self.lengths() {
+            let Some(own) = length.checked_sub(fixed) else {
+                continue;
+            };
+            let resized: String = fill.iter().copied().cycle().take(own).collect();
+            for text in layouts(&resized) {
+                push(text, &mut texts);
+            }
+        }
+        texts
+    }
+
+    /// `⌊v⌋`, `⌊v⌋ + 1` and `⌊v⌋ − 1` for each `value.count` bound `v`, negatives, repeats and
+    /// lengths above the input witness's own count limit dropped.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        reason = "a length is cast only once it lies in 0..=MAX_COUNT_WITNESS"
+    )]
+    fn lengths(&self) -> Vec<usize> {
+        let limit = crate::witness::MAX_COUNT_WITNESS as f64;
+        let mut lengths = Vec::new();
+        for value in &self.counts {
+            let floor = value.floor();
+            for candidate in [floor, floor + 1.0, floor - 1.0] {
+                if (0.0..=limit).contains(&candidate) {
+                    let length = candidate as usize;
+                    if !lengths.contains(&length) {
+                        lengths.push(length);
+                    }
+                }
+            }
+        }
+        lengths
+    }
+}
+
+/// A text for a String newtype chain whose base text its own rules refuse: the first of
+/// [`TextRules::candidates`] the complete declared type admits. A set of rules no text meets
+/// (`value.count >= 5` beside `value.count <= 2`) tries at most [`MAX_TEXT_CHOICES`] texts and
+/// ends in `None`, which the caller reports as an undetermined response.
+fn text_choice(ir: &EssIr, type_ref: &ResolvedTypeRef, seed: &str) -> Option<Node> {
+    TextRules::of(ir, type_ref)?
+        .candidates(seed)
+        .into_iter()
+        .map(Node::Text)
+        .find(|value| crate::input::validate_typed_value(ir, type_ref, value).is_ok())
 }
 
 /// Type, presence and bounded value checks depend only on the model and the actual response.

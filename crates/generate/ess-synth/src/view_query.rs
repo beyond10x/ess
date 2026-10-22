@@ -56,6 +56,15 @@ pub(crate) fn view(ir: &EssIr, view: &ResolvedView) -> Result<(), String> {
     params(ir, view)?;
     let entity = ir.entity(&view.source);
     if let Some(filter) = &view.filter {
+        // ess/30 (beyond10x/ess#560): `now` in a view filter is the instant of the read. A
+        // generated query takes its parameters and the store and reads no clock, so the query
+        // stays owed, named by the bound, rather than comparing with an instant of its own.
+        if let Some(leaf) = determined::clock_reading(filter) {
+            return Err(format!(
+                "`{leaf}`, which orders a field against the current time, the instant of the read, \
+                 that a generated view query does not read, in `filter:`"
+            ));
+        }
         determined::supported(ir, &Env::Row(entity), filter)
             .map_err(|construct| format!("{construct}, in `filter:`"))?;
     }

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-22T01:30:15Z",
+  "actor": "human:timo",
+  "artifact": "story:expression-arithmetic-and-time",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "now view filter (#560) slice: ess-domain 1695, ess-synth 719, ess-conformance 460, ess-entity-runtime 171, ess-cli 1172, test-xtask 414 passed, 0 failed; now_view_filter red 3 failed before the change. Left: held boundary scenario, generated targets reading the fixed clock, docs",
+    "reference": "6d0f10ba8"
+  }
+}

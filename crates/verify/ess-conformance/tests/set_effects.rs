@@ -2130,3 +2130,70 @@ mod issue_596 {
         );
     }
 }
+
+/// A set effect's selection reads the candidate row's held state (ess/30, beyond10x/ess#564
+/// finding 13): synthesis arranges a row in another state beside each selected one, so a target
+/// that drops the state conjunct changes it and fails.
+mod issue_564_state {
+    use super::*;
+
+    const MODEL: &str = include_str!("fixtures/affects-where-state.yaml");
+    const CANCELLED: &str = "cascade.feed.Cancel/outcome/cancelled";
+    const SWEPT: &str = "cascade.feed.Sweep/outcome/swept";
+
+    /// The fixture with `conjunct` dropped from the filter it sits in: the model of a target that
+    /// selects every row of the feed, whatever state it holds.
+    fn without(conjunct: &str) -> String {
+        let written = format!("{{all: [\"feed_id == input.feed_id\", \"{conjunct}\"]}}");
+        assert!(MODEL.contains(&written), "the fixture holds {written}");
+        MODEL.replacen(&written, "feed_id == input.feed_id", 1)
+    }
+
+    /// Whether `scenario` sends `command` before the last time it sends `under_test`: the call
+    /// over the arranged rows, after the one over the subject alone.
+    fn sent_before(scenario: &ConformanceScenario, command: &str, under_test: &str) -> bool {
+        let sends = |step: &ScenarioStep, name: &str| {
+            matches!(step, ScenarioStep::ExecuteCommand { command, .. }
+                if command.to_string() == name)
+        };
+        let decoy = scenario.steps.iter().position(|step| sends(step, command));
+        let sent = scenario
+            .steps
+            .iter()
+            .rposition(|step| sends(step, under_test));
+        matches!((decoy, sent), (Some(decoy), Some(sent)) if decoy < sent)
+    }
+
+    #[test]
+    fn affects_where_on_state_is_witnessed_with_a_decoy_in_another_state() {
+        let ir = ir_of(MODEL);
+        let synthesis = ess_conformance::synthesize::synthesize(&ir);
+        assert!(
+            synthesis.refusals.is_empty(),
+            "nothing is refused: {:#?}",
+            synthesis.refusals
+        );
+        let cancelled = scenario(&synthesis.suite, CANCELLED);
+        assert!(
+            sent_before(cancelled, "cascade.feed.Play", "cascade.feed.Cancel"),
+            "a played decoy is arranged beside the pending rows: {:#?}",
+            cancelled.steps
+        );
+        let statuses = run(
+            &synthesis.suite,
+            &ess_conformance::interpret::Interpreted::for_model(ir),
+        );
+        assert!(not_passed(&statuses).is_empty(), "{statuses:#?}");
+        for (conjunct, id) in [("state == Pending", CANCELLED), ("state == Played", SWEPT)] {
+            let dropped = run(
+                &synthesis.suite,
+                &ess_conformance::interpret::Interpreted::for_model(ir_of(&without(conjunct))),
+            );
+            assert_eq!(
+                dropped.get(id),
+                Some(&Status::Failed),
+                "a target dropping `{conjunct}` fails {id}: {dropped:#?}"
+            );
+        }
+    }
+}

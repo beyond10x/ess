@@ -1,0 +1,107 @@
+format: ess/30
+system: integrity
+version: v1
+domain: integrity.board
+summary: A port names the node it was added to; the node is checked when the port is added and no command removes a node, so renaming a port answers no missing node.
+types:
+  - {name: integrity.board.NodeId, kind: newtype, of: Uuid}
+  - {name: integrity.board.PortId, kind: newtype, of: Uuid}
+entities:
+  - name: integrity.board.Node
+    identity: {name: node_id, type: integrity.board.NodeId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Sealed]
+      terminal: [Sealed]
+      transitions:
+        - {name: seal, from: [Open], to: Sealed}
+  - name: integrity.board.Port
+    identity: {name: port_id, type: integrity.board.PortId}
+    fields:
+      - {name: node_id, type: integrity.board.NodeId}
+      - {name: name, type: String}
+    relations:
+      - {name: node, kind: references, target: integrity.board.Node, cardinality: one, via: node_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+errors:
+  - {name: integrity.board.NodeNotFound, summary: No node carries this identity., fields: []}
+  - {name: integrity.board.NodeSealed, summary: The node is sealed., fields: []}
+  - {name: integrity.board.WrongState, summary: The node is not open., fields: []}
+events:
+  - name: integrity.board.NodeAdded
+    fields: [{name: node_id, type: integrity.board.NodeId}]
+  - name: integrity.board.NodeWasSealed
+    fields: [{name: node_id, type: integrity.board.NodeId}]
+  - name: integrity.board.PortAdded
+    fields: [{name: port_id, type: integrity.board.PortId}]
+  - name: integrity.board.PortRenamed
+    fields: [{name: port_id, type: integrity.board.PortId}]
+actors:
+  - name: integrity.board.Operator
+    may: [integrity.board.AddNode, integrity.board.Seal, integrity.board.AddPort, integrity.board.Rename]
+commands:
+  - name: integrity.board.AddNode
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: added
+        creates: integrity.board.Node
+        instance: node_id
+        emits: [integrity.board.NodeAdded]
+        payload: {integrity.board.NodeAdded: {node_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: integrity.board.Seal
+    input:
+      - {name: node_id, type: integrity.board.NodeId}
+    outcomes:
+      - name: sealed
+        moves: integrity.board.Node.seal
+        instance: node_id
+        emits: [integrity.board.NodeWasSealed]
+        payload: {integrity.board.NodeWasSealed: {node_id: input.node_id}}
+      - {name: wrong-state, wrong_state: true, error: integrity.board.WrongState}
+  - name: integrity.board.AddPort
+    input:
+      - {name: node_id, type: integrity.board.NodeId}
+      - {name: name, type: String}
+    outcomes:
+      - name: no-node
+        when_related: {via: input.node_id, exists: false}
+        error: integrity.board.NodeNotFound
+      - name: added
+        creates: integrity.board.Port
+        instance: port_id
+        emits: [integrity.board.PortAdded]
+        payload: {integrity.board.PortAdded: {port_id: {generated: true}}}
+        sets: {node_id: input.node_id, name: input.name}
+  - name: integrity.board.Rename
+    input:
+      - {name: port_id, type: integrity.board.PortId}
+      - {name: name, type: String}
+    outcomes:
+      - name: node-sealed
+        when_related: {via: node_id, predicate: state == Sealed}
+        error: integrity.board.NodeSealed
+      - name: renamed
+        updates: integrity.board.Port
+        instance: port_id
+        emits: [integrity.board.PortRenamed]
+        payload: {integrity.board.PortRenamed: {port_id: input.port_id}}
+        sets: {name: input.name}
+views:
+  - name: integrity.board.Ports
+    source: integrity.board.Port
+    consistency: read_your_writes
+    fields:
+      - {name: port_id, type: integrity.board.PortId}
+      - {name: node_id, type: integrity.board.NodeId}
+      - {name: name, type: String}
+  - name: integrity.board.Nodes
+    source: integrity.board.Node
+    consistency: read_your_writes
+    fields:
+      - {name: node_id, type: integrity.board.NodeId}
+      - {name: label, type: String}
+      - {name: state, type: integrity.board.Node.State}

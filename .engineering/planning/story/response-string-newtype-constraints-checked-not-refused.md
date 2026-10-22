@@ -2,14 +2,15 @@
 format: aep.planning-md/3
 id: story:response-string-newtype-constraints-checked-not-refused
 kind: story
-status: active
+status: implemented
 title: Check String-newtype constraints on returned response values instead of refusing the outcome
 relations:
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-08T02:12:49Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-08T02:12:50Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-21T22:40:38Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 

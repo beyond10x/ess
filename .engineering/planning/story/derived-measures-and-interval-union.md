@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:derived-measures-and-interval-union
 kind: story
-status: draft
+status: active
 title: A view derives figures from measures (uptime ratio over the period) and unions intervals clipped to a period
 tags:
 - adopter-report
@@ -15,7 +15,10 @@ relations:
 - serves: vision:O2
 - decomposes: epic:generic-aggregates
 - depends_on: story:expression-arithmetic-and-time
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-21T22:08:03Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 

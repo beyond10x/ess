@@ -168,6 +168,41 @@ fn a_head_read_is_refused_with_the_row_set_limitation() {
     assert!(construct.contains("order_by"), "{construct}");
 }
 
+/// A selector reading an absent field as a default (ess/30, beyond10x/ess#627) is refused as every
+/// row set, at the guard and at the head, by name: no lowering drops the `coalesce` conjunct.
+#[test]
+fn a_coalesced_selector_is_refused_with_the_row_set_limitation() {
+    let coalesced = "where:\n            all:\n              - owner_id == input.owner_id\n              - coalesce(memo, \"none\") != \"none\"\n";
+    let guard = ROW_SET.2.replace(
+        "where: {all: [owner_id == input.owner_id, note == input.note]}\n",
+        coalesced,
+    );
+    // The head's `where:` sits four columns deeper than the guard's.
+    let head = HEAD.2.replace(
+        "where: owner_id == input.owner_id\n",
+        &coalesced.replace("\n  ", "\n      "),
+    );
+    assert!(guard.contains("coalesce(memo") && head.contains("coalesce(memo"));
+    for (change, branch) in [
+        ((ROW_SET.0, ROW_SET.1, guard.as_str()), "taken"),
+        ((HEAD.0, HEAD.1, head.as_str()), "completed"),
+    ] {
+        let diagnostics = refused(&contract_at("format: ess/30", &[change]));
+        let found = named(&diagnostics);
+        assert_eq!(found.len(), 1, "{branch}: {diagnostics:#?}");
+        assert_eq!(
+            found[0].path,
+            format!("contract.local.Run.{branch}.when_related"),
+            "{diagnostics:#?}"
+        );
+        assert!(
+            found[0].message.contains("selector"),
+            "{}",
+            found[0].message
+        );
+    }
+}
+
 #[test]
 fn the_same_command_without_a_row_set_is_not_refused_for_one() {
     let diagnostics = refused(&contract(&[]));

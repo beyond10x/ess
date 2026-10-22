@@ -42,7 +42,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{
+    ConstructKind, ConstructRef, ParseError, ValidationCode, ValidationError, ValidationErrors,
+};
 use ess_primitives::predicate::{Predicate, WrittenPredicate};
 
 use crate::name::{Naming, QualifiedName};
@@ -1926,6 +1928,78 @@ fn join<T: fmt::Display>(items: impl IntoIterator<Item = T>) -> String {
     }
 }
 
+/// What a view's `source:` names as written: one entity, or a list no view reads.
+///
+/// A view has one source and reads another entity only through a reference from its source row,
+/// never by a join, so its row count is its source's (`docs/design/generic-language-features.md`
+/// § G2). A list is read only so that it is refused by name at the view's `source` key, at every
+/// format, rather than failing the document as a parse error (beyond10x/ess#564). The published
+/// schema keeps describing one name.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(untagged)]
+pub enum WrittenSource {
+    /// One entity, the source a view has.
+    One(QualifiedName),
+    /// A list of entities, refused.
+    Several(Vec<QualifiedName>),
+}
+
+impl<'de> serde::Deserialize<'de> for WrittenSource {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        /// One name, read as [`QualifiedName`] reads it, or a list of names; any other shape fails
+        /// as it did before a list was read, `expected a string`.
+        struct Visitor;
+
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = WrittenSource;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a string")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                QualifiedName::new(value)
+                    .map(WrittenSource::One)
+                    .map_err(E::custom)
+            }
+
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut items: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut names = Vec::new();
+                while let Some(name) = items.next_element()? {
+                    names.push(name);
+                }
+                Ok(WrittenSource::Several(names))
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
+/// The refusal of a `source:` that lists entities, at the view's `source` key.
+fn several_sources(view: &QualifiedName, sources: &[QualifiedName]) -> ValidationError {
+    let listed = match sources {
+        [] => "an empty list".to_owned(),
+        [one] => format!("a list of one entity, `{one}`"),
+        _ => format!("{} sources, {}", sources.len(), join(sources)),
+    };
+    ValidationError::at(
+        ConstructRef::new(ConstructKind::View, view.to_string()).key("source"),
+        ValidationCode::UnsupportedConstruct,
+        format!(
+            "`{view}` names {listed}; a view has one source, an entity whose rows are its rows, and \
+             is never a join"
+        ),
+    )
+    .with_hint(
+        "name one entity as `source:` and read another through a reference from its row: a field \
+         `field: {related: {via, field}}`, or a filter path `<reference>.<field>`",
+    )
+}
+
 /// A view as written in a document, before validation.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1933,7 +2007,8 @@ pub struct RawViewSpec {
     /// Its stable identity.
     pub name: QualifiedName,
     /// The entity it projects.
-    pub source: QualifiedName,
+    #[schemars(with = "QualifiedName")]
+    pub source: WrittenSource,
     /// A reusable named struct describing what it exposes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shape: Option<QualifiedName>,
@@ -2092,9 +2167,18 @@ impl TryFrom<RawViewSpec> for ViewSpec {
             }
             None => None,
         };
+        // A view has one source (beyond10x/ess#564): a list is refused here and withholds the view,
+        // so nothing is checked against a source it does not have.
+        let source = match raw.source {
+            WrittenSource::One(source) => source,
+            WrittenSource::Several(sources) => {
+                grouping.push(several_sources(&raw.name, &sources));
+                return Err(grouping);
+            }
+        };
         let spec = Self {
             name: raw.name,
-            source: raw.source,
+            source,
             shape: raw.shape,
             fields,
             params: raw.params,
@@ -2138,7 +2222,7 @@ impl From<ViewSpec> for RawViewSpec {
             .collect();
         Self {
             name: view.name,
-            source: view.source,
+            source: WrittenSource::One(view.source),
             shape: view.shape,
             fields,
             params: view.params,

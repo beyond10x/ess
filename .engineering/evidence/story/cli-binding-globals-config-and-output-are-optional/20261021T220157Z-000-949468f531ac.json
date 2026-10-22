@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T22:01:57Z",
+  "actor": "human:timo",
+  "artifact": "story:cli-binding-globals-config-and-output-are-optional",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave ess-0680 2026-10-21 at f9d189fec: cargo test -p ess-cli-contract -p ess-cli-project (globals 10 passed, optional_globals 6 passed); cargo test -p ess-cli --test cli_binding 6 passed; shipped 0.57.0",
+    "reference": "ec48c277d"
+  }
+}

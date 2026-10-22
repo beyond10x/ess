@@ -36,9 +36,10 @@ const BLOG: &str = "website/blog";
 /// Not one per release: a release whose only content is a fix has nothing to write about, and a
 /// gate that fires on one becomes a gate people silence. Three is the point at which the notes
 /// have stopped being a record of the project and started being a record of one month of it — the
-/// state they were in on 2026-09-21, nineteen minors behind, which nothing noticed. It is four from
-/// 0.67.0, whose post was skipped; it returns to three in the next release that carries a post.
-const BLOG_LAG: u64 = 4;
+/// state they were in on 2026-09-21, nineteen minors behind, which nothing noticed. It is five from
+/// 0.68.0, whose post was skipped as 0.67.0's was; it returns to three in the next release that
+/// carries a post.
+const BLOG_LAG: u64 = 5;
 
 /// The pages whose version literals must name the newest release.
 ///

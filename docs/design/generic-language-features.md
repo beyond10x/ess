@@ -117,6 +117,14 @@ Rules every form follows:
   `Unknown` as false: `coalesce(is_error, true) == false`, written on the left of a compact
   comparison from `ess/29` (https://github.com/beyond10x/ess/issues/620). Synthesis sends such an
   `x` absent as one of its arms.
+- **Absence in a selector.** From `ess/30` the `where:` of a row-set guard, a filtered read and an
+  ordered head says the same of a candidate row: `coalesce(enabled, true) == true`, a field of the
+  candidate defaulted by a literal and compared with a literal, selects the rows whose `enabled`
+  is true or absent (https://github.com/beyond10x/ess/issues/627). A `forall:` body, a set
+  effect's filter and every other call in a selector keep their refusal; below `ess/30` the
+  refusal is unchanged, its hint naming `ess/30`. Synthesis arranges candidates with the field
+  absent and written; generated Rust and Go keep the command an obligation named by its selector,
+  and Entity Runtime refuses it as every row set.
 - **Time.** Elapsed seconds only. No days, months, calendars or zones; those remain the calendar
   window's (`docs/design/calendar-window-guards.md`). `== now` and `!= now` stay refused
   (`current-time-guards.md:43`).
@@ -147,6 +155,11 @@ existing mapping form stays valid and lowers to the same expression:
 | `{count: changed}`, `{changed: f}` | `count(changed)`, `changed.f` |
 | `{response: …}`, `{generated: true}`, `{cleared: true}` | unchanged: these name what the implementation supplies or removes, not a computation |
 
+A `{generated: true}` value stays the implementation's in the model, and synthesis asserts only its
+presence and type. From `ess/30` an authored scenario may state one its own earlier steps
+determine (a revision counting its commits), and the suite checks it exactly; below `ess/30` that
+act is refused as `ESS-AUTHOR-042` (beyond10x/ess#623, `authored-generated-values.md`).
+
 ### Where an expression may appear
 
 Every position in grid R below. The evaluation instant and the facts present are the position's,
@@ -175,7 +188,7 @@ a witness for an expression, and only there does the cost grow.
 | arithmetic, linear | **isolate one fact**: fix every other fact of the leaf at its ladder values, solve the remaining one exactly for the boundary, try it and one unit either side. This generalises the offset composition, which is the case of two facts and a constant | new class `arith-swap` (`+`↔`-`, `*`↔`/`), `arith-drop` (an operand dropped), and the existing outward step on the constant | exact i128 Integer and i128-scaled Decimal, already the carrier (`prim/facts.rs:46-67`); Go `math/big`, TypeScript `bigint`, as for offsets | offset witness `conf/witness.rs:3239-3360`; offset mutation `conf/mutate.rs:913-918, 941-990`; offset evaluation `prim/predicate.rs:832-840, 1950-1990`; Go `conf/go/predicate.go:1283`; TypeScript `conf/ts/predicate.ts:652-660`; generated Rust `synth/rust/behaviour.rs:655-725` |
 | arithmetic, non-linear (`fact * fact`, `fact / fact` in a guard) | ladder only; where it finds no witness, `GuardUnsatisfiable` names the leaf. Admitted, not refused: in values it costs nothing | as linear | as linear | refusal `conf/synthesize.rs:740-751` |
 | time | the one-second ladder around each boundary, `now` at the suite's fixed reference instant; `Timestamp - Timestamp` isolates one instant as linear arithmetic does | outward by one second, as for offsets | `instant_at` and `plus_elapsed` | `conf/witness.rs:4211-4277`; `conf/now_offset.rs:62-64`; `prim/predicate.rs:845-855`; `prim/time.rs:817` |
-| `now` in views | a **request clock** the suite sets on the view step; today no suite step sets a target's clock for a view, which is why a window over `now` is refused (`conf/now_offset.rs:532-555`) | outward by one second | the runner resolves the step's clock as it resolves `NowOffset` for commands (`conf/runner.rs:3219`) | a suite format pair is the cost |
+| `now` in views | shipped at `ess/30` for an ordering in a view `filter:` (beyond10x/ess#560) without a request clock: rows are written at `now_offset` instants and a row is claimed on a side of the bound only when it stays there from 500 ms before its write to 3600 s after it; a window over `now` is still refused (`conf/now_offset.rs`) | outward by one second | the interpreter reads its clock for such a filter; generated Rust and Go view queries and Entity Runtime refuse it by name | no suite format moved |
 | text functions | compositional: `trim` pads the witness with whitespace, `lower`/`upper` vary case (the fold refutations already do), `len`/`utf8_bytes` resize at the boundary and one either side | new class `text-fn-drop` (the function removed) | byte and ASCII operations | compositions `conf/witness.rs:2416`; fold refutations `conf/witness.rs:2216-2370`; `.count` `conf/witness.rs:2469-2540`; bytes `conf/witness.rs:2542-2820`; evaluation `prim/predicate.rs:327-333, 621-629` |
 | presence, `coalesce`, `if` | one witness per arm: the fact absent and present, the condition true and false, as `{input, else}` already does | arm swap | three-valued | `conf/synthesize.rs:8443-8463` |
 | collection | unchanged | unchanged (`distinct` stays out of boundary mutation, `conf/mutate.rs:106-109`) | unchanged | `dom/expression.rs:2470-2471` |
@@ -286,6 +299,63 @@ are not mutated at all (`conf/mutate.rs:268-270`). The interpreter evaluates row
 (`conf/interpret/execute/row_set.rs:66-139`; `comp/ir.rs:1455-1490`). Generated Rust and Go do not
 implement row sets today (`synth/determined.rs:210-217, 519-525`); G2 either implements them or
 keeps that refusal by name per construct.
+
+### Enforced references (`ess/30`, decided 2026-10-21)
+
+beyond10x/ess#509 (two adopters, `story:enforced-reference-needs-no-missing-target-branch`): a
+command reading the row a stored reference names must declare `when_related: {via: <field>,
+exists: false}` (`ESS-COMMAND-005`, `dom/command/related_guard.rs`), while synthesis, given that
+branch, reports it unreachable (`ESS-SYNTH-003`, `conf/synthesize/related_guard/stored.rs`)
+because every writer of the field refuses an identity no row carries. The adopter can satisfy
+validation or synthesis, not both.
+
+**Decision: the integrity is derived, not authored.** Validation accepts the proof the
+specification already holds, with no new key. From `ess/30` the branch may be left out where
+(1) every branch that creates a row of the subject's entity sets the field, and every branch that
+writes it (`sets:` on the addressed row, on `instances:` rows or in an `affects:` entry) writes
+`{cleared: true}`, the field's own value, or an input its command refuses first with an unguarded
+`exists: false` over the same entity; and (2) no branch deletes a row of the referenced entity
+(`deletes:`, `instances:` with `deletes:`, `affects:` with `deletes:`; a binding runs a command, so
+the command is named). Where either fails, the refusal stands and its hint names each branch that
+defeats the proof; below `ess/30` it stands with a hint naming `ess/30` where the proof holds
+(`dom/command/reference_integrity.rs`).
+
+Why derived over an authored integrity key (`integrity: enforced` on the relation):
+
+- **Least surprising.** Both adopters asked for this proof ("validation could accept the same
+  proof instead of a new authored key", the second report on beyond10x/ess#509), and it makes
+  validation agree with the unreachability synthesis already reports. A key would make the author
+  restate what the commands already say, and would still need the same deletion and writer check
+  to be honest.
+- **Reversible.** No source key, no schema change and no IR change: a model that does not leave the
+  branch out keeps its IR bytes and suite. Adding a key later, to name the guarantee or to pin it
+  against a future deleting command, extends this rule; removing a key once published would break
+  every document that wrote it.
+- **The cost, accepted.** The guarantee is non-local: a deleting command added elsewhere refuses the
+  reading command. The refusal names the deleting branch, so the cause is one hop away.
+
+Conformance checks the derived integrity (acceptance 3, `conf/synthesize/reference_integrity.rs`).
+After every accepting branch that writes a row of the referencing or the referenced entity, the
+suite reads the row each arranged reference names through an unfiltered view of the referenced
+entity and requires it present. A branch about a referenced row that no arranged reference names
+first points a new referencing row at it, through the creating branch that stores the reference
+from its input. A target that deletes the row fails
+(`conf/tests/enforced_reference.rs`, `a_target_that_deletes_the_referenced_row_fails`). The
+reads are filed under the referencing entity's `<entity>/invariant/after/<command>/<outcome>` id,
+where they join the reads of any declared invariants. The id says what holds of that entity after
+the branch, and reusing it gives the suite no identity an older reader refuses, so the suite major
+stays put. A specification that leaves no branch out keeps its suite bytes.
+
+Generated Rust and Go read the row such a command names with no answer for a missing one, before
+the first branch that reads it (`synth/determined.rs`, `kept_reference`; `stored_read` in each
+target's `behaviour.rs`), and a target that never reads it fails the related refusal's scenario
+(`synth/tests/enforced_reference_served.rs`). Synthesis's unreachability proof reads deletions as
+well as writers (`conf/synthesize/related_guard/stored.rs`, `unreachable`): with no deleting
+branch a present `exists: false` branch stays `ESS-SYNTH-003`, naming the writers; beside one, its
+witness creates a referenced row, links the subject to it, and deletes the row through the
+deleting command before the branch (`conf/tests/enforced_reference.rs`). Only a branch deleting
+its own subject drives that witness; where the row is deleted only through `instances:` or
+`affects:`, the arrangement is still refused by name.
 
 ## G3. Aggregates over expressions
 
@@ -439,6 +509,17 @@ authority"), its hint naming `ess/29`.
   decides false, where that sibling must still answer. Generated Rust and Go read the row, then
   `P`, then ask the context. Entity Runtime lowers it to `P` over the loaded row, the input guard
   and the host's external evidence, all required.
+- **A race that overrides a held-state branch** (beyond10x/ess#623, Ask B). "Commit unless the
+  head moved" needs no new key: the race is declared first, `external:` beside
+  `when_subject: {predicate: state == Validated}`, above `committed` (`when_subject_state:
+  Validated`). Both are step 3, so the race answers where the provider takes it and `committed`
+  answers otherwise; synthesis witnesses both with no `ESS-SYNTH-003`/`004`. From `ess/30` the
+  race may declare `compensates: true`: the flag changes what its refusal does to the row, not
+  what it reads or where it answers, so it still answers at step 3, and its witness reads the row
+  back in the compensating state. A plain `external:` declared below `committed` stays
+  unreachable, since step 3 answers every validated row first; synthesis refuses it as
+  `ESS-SYNTH-003`, naming `committed` and the narrowed race as the repair
+  (`tests/external_narrowed_by_subject.rs`, `tests/external_beside_held_guard.rs`).
 
 ### Entity Runtime and `when_related:` (decided 2026-10-21)
 

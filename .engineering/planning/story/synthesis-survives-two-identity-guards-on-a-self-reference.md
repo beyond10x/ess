@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:synthesis-survives-two-identity-guards-on-a-self-reference
 kind: story
-status: active
+status: implemented
 title: Synthesis does not overflow its stack on two identity-addressed when_related guards, one on an optional self-reference
 refs:
 - provider: github
   reference: beyond10x/ess#474
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-07T13:01:53Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-07T13:01:54Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-21T22:02:00Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-22T03:01:44Z",
+  "actor": "human:timo",
+  "artifact": "story:an-existing-instance-outcome-beside-related-guards-is-witnessed",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-conformance --test existing_instance_beside_related_guards: 0 passed 4 failed on base 2c9e3d66d, 4 passed 0 failed at b42d9bcfe; clippy -p ess-conformance exit 0; typed_diagnostics 8 passed; task test-xtask exit 0",
+    "reference": "b42d9bcfe"
+  }
+}

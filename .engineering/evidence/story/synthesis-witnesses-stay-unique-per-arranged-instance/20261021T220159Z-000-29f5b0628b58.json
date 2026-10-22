@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-21T22:01:59Z",
+  "actor": "human:timo",
+  "artifact": "story:synthesis-witnesses-stay-unique-per-arranged-instance",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave ess-0680 2026-10-21 at f9d189fec: #480 reproducer three distinct ids under both guard forms; cargo test -p ess-conformance --test arranged_identities_stay_distinct 3 passed; shipped 0.57.0",
+    "reference": "7b3e7eed7"
+  }
+}

@@ -1066,7 +1066,7 @@ pub(super) fn under_test(id: &ScenarioId) -> Option<String> {
 /// Whether a run observes all matching rows: a set effect, an aggregate view (a count or sum per
 /// group), or a view expectation that counts, ranks or positions rows. Appended after the first run, such an expectation would be
 /// read over both runs' rows and its absolute figures would be the first run's plus its own.
-fn reads_every_row(ir: &EssIr, steps: &[ScenarioStep]) -> bool {
+pub(super) fn reads_every_row(ir: &EssIr, steps: &[ScenarioStep]) -> bool {
     steps.iter().any(|step| {
         if let ScenarioStep::ExpectOutcome { outcome } = step {
             return ir.commands().values().any(|command| {

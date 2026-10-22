@@ -36,6 +36,10 @@
 //! `{changed: <field>}` and `{changed: state}` ([`PerRowEvent`], `per_row_rules`). Below ess/25,
 //! and on any other outcome, the entry is refused at its place in `emits:`.
 //!
+//! From ess/30 (beyond10x/ess#564) the `where:` of `instances:` and of an `affects:` entry may also
+//! read the candidate row's held lifecycle state as `state`, as a row-set guard's does
+//! (`check_filter`). Below ess/30 `state` there keeps its `unobservable_fact`, naming ess/30.
+//!
 //! `sets:` of either takes a literal, `input.<field>`, `{input: …, else: …}`, `{generated: true}`
 //! or `{cleared: true}`; a source that reads one row (`{subject: …}`, `{related: …}`,
 //! `{increment: …}`) or the caller is refused by name in this first cut. Below ess/22 a move inside
@@ -1797,7 +1801,12 @@ pub(super) fn count_elsewhere(at: &ConstructRef) -> ValidationError {
 /// D1), as a row-set selector reads it (`super::row_set::candidate_fields`). Below it a read of the
 /// identity is refused at `gate` as `unsupported_format_version` naming `ess/27`; the check runs
 /// over the identity either way, so that refusal comes alone rather than beside an
-/// `unobservable_fact` for the same read. `state` stays unreadable.
+/// `unobservable_fact` for the same read.
+///
+/// From `ess/30` the filter also reads the candidate row's held lifecycle state as `state`, the
+/// fields a row-set guard's `where:` reads (beyond10x/ess#564, `docs/design/generic-language-features.md`
+/// § G2): the state the row holds before the outcome. Below it `state` keeps its
+/// `unobservable_fact`, its hint naming `ess/30`.
 #[allow(clippy::too_many_arguments)]
 fn check_filter(
     spec: &Specification,
@@ -1810,16 +1819,25 @@ fn check_filter(
     gate: &ConstructRef,
     format: FormatVersion,
 ) -> ValidationErrors {
+    // From ess/30 the registry holds every lifecycle's state enum, as a row-set guard's does.
+    let (fields, lifecycles) = if format.major() >= FormatVersion::V30.major() {
+        (
+            super::row_set::candidate_fields(entity),
+            Some(spec.types_with_lifecycles(&mut ValidationErrors::new())),
+        )
+    } else {
+        (with_identity(entity), None)
+    };
     let mut errors = check_row_predicate(
         spec,
         command,
         entity,
-        &with_identity(entity),
+        &fields,
         subject,
-        types,
+        lifecycles.as_ref().unwrap_or(types),
         filter,
         (at, super::published_operand::Site::Effect),
-        (false, false),
+        (false, false, false),
     );
     if format.major() < FormatVersion::V27.major() && reads_identity(entity, filter) {
         let identity = &entity.identity.name;
@@ -1840,7 +1858,7 @@ fn check_filter(
 }
 
 /// `entity`'s stored fields and its identity: what a set effect's filter reads of a candidate row
-/// (from `ess/27`, beyond10x/ess#547).
+/// below `ess/30` (from `ess/27`, beyond10x/ess#547).
 pub(crate) fn with_identity(entity: &EntitySpec) -> Vec<Field> {
     let mut fields = entity.fields.clone();
     if !fields
@@ -1963,6 +1981,10 @@ fn pins_the_subject(
 /// With `rows`, a quantifier may walk the rows of a declared entity (ess/27, beyond10x/ess#551,
 /// [`super::related_rows`]): a selector's environment. A set effect's filter admits none, and the
 /// checker refuses them there by name.
+///
+/// With `selector`, `filter` is the `where:` of a row-set guard, a filtered read or an ordered
+/// head, which compares `coalesce(<field>, <literal>)` of a candidate field with a literal from
+/// `ess/30` (beyond10x/ess#627); below it the refusal stands, its hint naming `ess/30`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn check_row_predicate(
     spec: &Specification,
@@ -1973,7 +1995,7 @@ pub(super) fn check_row_predicate(
     types: &TypeRegistry,
     filter: &Predicate,
     (at, site): (&ConstructRef, super::published_operand::Site<'_>),
-    (current_time, rows): (bool, bool),
+    (current_time, rows, selector): (bool, bool, bool),
 ) -> ValidationErrors {
     let owner = at.render();
     let published = super::published_operand::classify(spec, fields, filter, site, at);
@@ -2003,6 +2025,10 @@ pub(super) fn check_row_predicate(
         current_time,
         published: (!published.admitted.is_empty()).then_some(&published.admitted),
         rows: rows.then_some(spec),
+        selector: selector.then_some((
+            fields,
+            spec.system().format.major() >= FormatVersion::V30.major(),
+        )),
     };
     let checked = crate::expression::check_predicate(&environment, filter, &owner);
     let mut errors = published.errors;
@@ -2014,13 +2040,34 @@ pub(super) fn check_row_predicate(
         {
             continue;
         }
-        errors.push(ValidationError::at(
-            at.clone(),
-            error.code,
-            error.message.clone(),
-        ));
+        let refused = ValidationError::at(at.clone(), error.code, error.message.clone());
+        errors.push(match error.hint() {
+            Some(hint) => refused.with_hint(hint.to_owned()),
+            None if reads_held_state_below_ess_30(spec, fields, error) => refused.with_hint(
+                "a set effect's filter reads the row's held state as `state` from ess/30; \
+                 declare `format: ess/30`",
+            ),
+            None => refused,
+        });
     }
     errors
+}
+
+/// Whether `error` refuses a read of `state`, the candidate row's held state, among `fields` that
+/// hold no field of that name, below `ess/30`: there a set effect's filter keeps its refusal, and
+/// its hint names `ess/30` (beyond10x/ess#564). A row-set guard's fields always hold `state`.
+fn reads_held_state_below_ess_30(
+    spec: &Specification,
+    fields: &[Field],
+    error: &crate::expression::ExpressionError,
+) -> bool {
+    error.code == ValidationCode::UnobservableFact
+        && spec.system().format.major() < FormatVersion::V30.major()
+        && error
+            .path
+            .as_ref()
+            .is_some_and(|path| path.namespace() == EntitySpec::STATE)
+        && !fields.iter().any(|field| field.name == EntitySpec::STATE)
 }
 
 /// A type the filter environment reads: one of the specification's, the subject row, or a step of
@@ -2071,6 +2118,9 @@ struct WithSubject<'a> {
     /// Where a quantifier may walk the rows of an entity, the specification declaring them: a
     /// selector's environment (ess/27, beyond10x/ess#551).
     rows: Option<&'a Specification>,
+    /// In a selector's `where:`, the candidate row's fields and whether the format admits
+    /// `coalesce(<field>, <literal>) <op> <literal>` over them (ess/30, beyond10x/ess#627).
+    selector: Option<(&'a [Field], bool)>,
 }
 
 impl WithSubject<'_> {
@@ -2109,6 +2159,20 @@ impl TypeEnvironment for WithSubject<'_> {
     /// in this release (ess/27, beyond10x/ess#584).
     fn calls_here(&self) -> bool {
         false
+    }
+    /// A selector's `where:` reads an absent candidate field as a default (ess/30,
+    /// beyond10x/ess#627); a set effect's filter and a `forall` body do not.
+    fn coalesces_candidate(&self, field: &str) -> Option<bool> {
+        let (fields, admitted) = self.selector?;
+        fields
+            .iter()
+            .any(|declared| declared.name == field)
+            .then_some(admitted)
+    }
+    /// Only the call [`Self::coalesces_candidate`] admits reaches this; a `distinct` key keeps
+    /// [`TypeEnvironment::primitive`]'s `None`.
+    fn function_primitive(&self, reference: &Read) -> Option<Primitive> {
+        Self::declared(reference).and_then(|type_ref| self.inner.primitive(type_ref))
     }
 
     fn root(&self, name: &str) -> Option<Read> {

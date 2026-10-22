@@ -14,7 +14,7 @@
 //! Every step used is an existing one, so a suite carrying either form keeps the format its other
 //! steps select.
 
-use ess_compiler::ir::{Driver, ResolvedPayloadValue};
+use ess_compiler::ir::{Driver, EntityHandle, ResolvedPayloadValue};
 use ess_domain::command::TestStrategy;
 use ess_domain::view::Consistency;
 
@@ -23,11 +23,12 @@ use crate::witness::{candidates, WitnessGap, MAX_CANDIDATES};
 use super::caller::{InvocationModels, InvocationPhase};
 use super::{
     clipped, created, insert, is_input_guarded_refusal, not_emitted, reach, shows, subject_fact,
-    supply, ActorRef, AssertionStyle, BTreeMap, BTreeSet, CommandRef, ConformanceScenario,
-    ConformanceSuite, Distinction, EntityRef, ErrorRef, EssIr, EssSemanticRef, Focus, InstanceNeed,
-    Node, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedCommand, ResolvedCondition,
-    ResolvedEffect, ResolvedInstance, ResolvedOutcome, ResolvedSubject, ResolvedView, Run,
-    ScenarioId, ScenarioStep, ScenarioValue, Setup, ViewRef, FRESH_WITNESSES,
+    supply, ActorRef, Arrangement, AssertionStyle, BTreeMap, BTreeSet, CommandRef,
+    ConformanceScenario, ConformanceSuite, Distinction, EntityRef, ErrorRef, EssIr, EssSemanticRef,
+    Focus, InstanceNeed, Node, OutcomeRef, QualifiedName, Refusal, RefusalCause, ResolvedCommand,
+    ResolvedCondition, ResolvedEffect, ResolvedInstance, ResolvedOutcome, ResolvedSubject,
+    ResolvedView, Run, ScenarioId, ScenarioStep, ScenarioValue, Setup, Unreachable, ViewRef,
+    FRESH_WITNESSES,
 };
 
 /// `true` for the creating half of create-or-update: a `creates:` branch marked
@@ -891,6 +892,11 @@ struct Segment {
 /// An external refusal answered before the row (`before_row: true`, ess/25, beyond10x/ess#534) is
 /// sent with its provider forced, and `None` where the stored identity takes the input outside the
 /// branch's own eligibility or into an input refusal declared before it.
+///
+/// `rows`, where given, are the related rows a row-set creation is decided on and the input
+/// [`super::row_set::prepare`] chose with them: the creation is sent that input, after those rows.
+// One argument per thing a segment is told.
+#[allow(clippy::too_many_arguments)]
 fn segment(
     models: &InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -899,6 +905,7 @@ fn segment(
     declared: &ResolvedOutcome,
     fresh: Fresh,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    rows: Option<(&Setup, &BTreeMap<String, Node>)>,
 ) -> Result<Option<Segment>, RefusalCause> {
     let ir = models.arrangement;
     let (creating, field) = creating;
@@ -914,7 +921,10 @@ fn segment(
     let subject = creating.subject.as_ref().ok_or_else(no_error)?;
     let error = declared.error.as_ref().ok_or_else(no_error)?;
     let at = fresh.distinction();
-    let mut first = creating_input(ir, creator, creating, at, actors)?;
+    let mut first = match rows {
+        Some((_, input)) => input.clone(),
+        None => creating_input(ir, creator, creating, at, actors)?,
+    };
     let identity = identity_at(ir, creator, field, fresh, &first)?;
     super::set_at(&mut first, field, Some(identity.clone()));
     let forced = declared.test_strategy == TestStrategy::InjectFault;
@@ -927,14 +937,7 @@ fn segment(
         outcome: creating,
         effect: &subject.effect,
     };
-    let mut arrangement = created(ir, &subject.entity, &driver, actors, at, &[], Some(&first))
-        .map_err(|reason| RefusalCause::InstanceRequired {
-            entity: EntityRef::from(&subject.entity),
-            need: InstanceNeed::InState {
-                state: ir.entity(&subject.entity).lifecycle.initial.clone(),
-            },
-            reason,
-        })?;
+    let mut arrangement = stored_first(ir, subject, &driver, actors, at, &first, rows)?;
     // Only the existence refusal carries recreation; an input refusal using this same helper
     // keeps its ordinary two-call precedence check.
     models.mark(InvocationPhase::Arrange, &mut arrangement.steps);
@@ -1003,6 +1006,88 @@ fn segment(
         source.extend(part.source);
     }
     Ok(Some(Segment { steps, source }))
+}
+
+/// The first call of a [`segment`]: the row created through `driver` with `first`, after the
+/// related `rows` where given, or the refusal naming the instance it needed.
+fn stored_first(
+    ir: &EssIr,
+    subject: &ResolvedSubject,
+    driver: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    at: Distinction,
+    first: &BTreeMap<String, Node>,
+    rows: Option<(&Setup, &BTreeMap<String, Node>)>,
+) -> Result<Arrangement, RefusalCause> {
+    let mut arrangement = created(ir, &subject.entity, driver, actors, at, &[], Some(first))
+        .or_else(|reason| steered(ir, &subject.entity, driver, actors, at, first, reason))
+        .map_err(|reason| RefusalCause::InstanceRequired {
+            entity: EntityRef::from(&subject.entity),
+            need: InstanceNeed::InState {
+                state: ir.entity(&subject.entity).lifecycle.initial.clone(),
+            },
+            reason,
+        })?;
+    if let Some((setup, _)) = rows {
+        let mut steps = setup.steps.clone();
+        steps.append(&mut arrangement.steps);
+        arrangement.steps = steps;
+        arrangement.source.extend(setup.source.iter().cloned());
+    }
+    Ok(arrangement)
+}
+
+/// The creation a [`segment`] sends, where [`created`] could not arrange it for the input already
+/// chosen: for a creation reading a related row through its input (ess/18), the row searched
+/// toward that input ([`super::related_guard::drive_toward`]).
+///
+/// [`created`] searches a related row of its own and sends the chosen input against it, so a guard
+/// comparing the row with another input field — `revision != input.revision` — takes the send, and
+/// the creation was refused as unreachable although its own scenario reaches it. `reason` stands
+/// where the creation is not that one, or has an owner of its own to arrange; where the steered
+/// search fails too, the refusal names the branches the send has to pass over.
+fn steered(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    driver: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    at: Distinction,
+    first: &BTreeMap<String, Node>,
+    reason: Unreachable,
+) -> Result<Arrangement, Unreachable> {
+    let command = CommandRef::new(driver.command.name.clone());
+    let creating = OutcomeRef::new(command.clone(), driver.outcome.name.clone());
+    let unreached =
+        matches!(&reason, Unreachable::Unwitnessable { outcome } if *outcome == creating);
+    if !unreached
+        || !super::related_guard::routes(driver.command, driver.outcome)
+        || ir.owner_of(entity).is_some()
+    {
+        return Err(reason);
+    }
+    let Some((_, related)) = super::related_guard::reads(driver.command) else {
+        return Err(reason);
+    };
+    super::created_by(ir, entity, driver, at, None, |bound, steps| {
+        super::related_guard::drive_toward(ir, driver, actors, at, (bound, steps), first, &[entity])
+    })
+    .map_err(|_| Unreachable::Unsteered {
+        outcome: Box::new(creating),
+        related: EntityRef::from(related),
+        guards: driver
+            .command
+            .outcomes
+            .iter()
+            .filter(|outcome| {
+                outcome.name != driver.outcome.name
+                    && matches!(
+                        outcome.condition,
+                        ResolvedCondition::Related { .. } | ResolvedCondition::RelatedSet { .. }
+                    )
+            })
+            .map(|outcome| OutcomeRef::new(command.clone(), outcome.name.clone()))
+            .collect(),
+    })
 }
 
 /// The second send of a [`segment`]: `second` with `field` set to the stored `identity`, or `None`
@@ -1176,6 +1261,7 @@ fn existing_instance(
     }
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
+    let alone = creating.len() == 1;
     for (nth, (outcome, field)) in creating.into_iter().enumerate() {
         let fresh = Fresh::Stored(nth);
         let first = creating_input(ir, command, outcome, fresh.distinction(), actors)?;
@@ -1206,11 +1292,32 @@ fn existing_instance(
             models,
             command,
             (outcome, field),
-            second,
+            second.clone(),
             declared,
             fresh,
             actors,
+            None,
         )? {
+            // A creation a row set decides, sent with no rows arranged, is withdrawn by the
+            // row-set walk; where it is the one creating path, it is sent after the rows its own
+            // scenario is decided on instead, and the scenario that already stands keeps its bytes.
+            let part = if alone
+                && super::row_set::uses(command)
+                && super::row_set::walk(ir, &part.steps, true).is_err()
+            {
+                on_rows(
+                    models,
+                    command,
+                    (outcome, field),
+                    second,
+                    declared,
+                    fresh,
+                    actors,
+                )
+                .unwrap_or(part)
+            } else {
+                part
+            };
             steps.extend(part.steps);
             source.extend(part.source);
         }
@@ -1221,6 +1328,40 @@ fn existing_instance(
         command.name, declared.name
     );
     Ok(ConformanceScenario::new(clipped(&text), steps, source))
+}
+
+/// [`segment`] for a creation a row set decides (ess/27, `when_related: {entity, where}`), sent
+/// after the rows [`super::row_set::prepare`] arranges for its own scenario and with the input it
+/// chose there, the identity made fresh. `None` where the preparation leaves a gap, addresses a
+/// row or binds an input to one — the plain segment stands, and the row-set walk refuses it as
+/// before — or where the rows still do not decide the scenario's sends.
+fn on_rows(
+    models: &InvocationModels<'_>,
+    command: &ResolvedCommand,
+    creating: (&ResolvedOutcome, &str),
+    second: BTreeMap<String, Node>,
+    declared: &ResolvedOutcome,
+    fresh: Fresh,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Option<Segment> {
+    let (setup, input, gaps) = super::row_set::prepare(models, command, creating.0, actors).ok()?;
+    if !gaps.is_empty() || setup.instance.is_some() || !setup.bound.is_empty() {
+        return None;
+    }
+    let part = segment(
+        models,
+        command,
+        creating,
+        second,
+        declared,
+        fresh,
+        actors,
+        Some((&setup, &input)),
+    )
+    .ok()??;
+    super::row_set::walk(models.arrangement, &part.steps, true)
+        .is_ok()
+        .then_some(part)
 }
 
 /// Every input-guarded refusal beside either form is answered before existence (the coordinator's
@@ -1269,6 +1410,7 @@ fn refusals_on_a_stored_row(
                 refusal,
                 Fresh::Stored(creating.len() + nth),
                 actors,
+                None,
             )
         });
         match built {
@@ -1345,6 +1487,7 @@ fn externals_on_a_stored_row(
                 external,
                 Fresh::Stored(taken + nth),
                 actors,
+                None,
             )
         });
         match built {

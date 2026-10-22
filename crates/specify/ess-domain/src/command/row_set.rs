@@ -268,6 +268,9 @@ pub fn subject_entity<'a>(
 /// command addresses one, the subject under `subject.`; `now` reads the decision's instant. At
 /// `site` a value source also reads what its outcome publishes under `payload.` (ess/27,
 /// beyond10x/ess#549), and a guard refuses that by name: nothing is published before the branch.
+/// A `selector` — the `where:` of a row-set guard, a filtered read or an ordered head, not a
+/// `forall` body — compares `coalesce(<field>, <literal>)` of a candidate field with a literal from
+/// `ess/30` (beyond10x/ess#627).
 pub(super) fn check(
     spec: &Specification,
     command: &CommandSpec,
@@ -275,6 +278,7 @@ pub(super) fn check(
     types: &TypeRegistry,
     predicate: &Predicate,
     (at, site): (&ConstructRef, super::published_operand::Site<'_>),
+    selector: bool,
 ) -> ValidationErrors {
     // The rules of a test over related rows come first: a broken one would only bury itself
     // under the type checker's reading of the same body (beyond10x/ess#551).
@@ -292,7 +296,7 @@ pub(super) fn check(
         types,
         predicate,
         (at, site),
-        (true, true),
+        (true, true, selector),
     )
 }
 
@@ -511,9 +515,10 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 types,
                 &selection.filter,
                 guard,
+                true,
             ));
             if let RowSetTest::Forall(predicate) = test {
-                errors.extend(check(spec, command, entity, types, predicate, guard));
+                errors.extend(check(spec, command, entity, types, predicate, guard, false));
             }
         }
     }

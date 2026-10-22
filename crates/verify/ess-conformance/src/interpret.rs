@@ -52,6 +52,10 @@
 //! the step being executed, which that step's `now_offset` values resolve against
 //! (<https://github.com/beyond10x/ess/issues/510>).
 //!
+//! A view read whose filter orders a field against `now` (ess/30,
+//! <https://github.com/beyond10x/ess/issues/560>) reads the same clock once, at the read, and
+//! every row is filtered at that one instant. A read of any other view does not read it.
+//!
 //! # Where the identifiers come from
 //!
 //! A created instance's identity and every value the model leaves to the implementation are minted
@@ -399,11 +403,19 @@ impl ConformanceTarget for Interpreted {
             .views()
             .get(request.view.name())
             .ok_or_else(|| TargetError::unavailable(&observation, "view is not declared"))?;
+        // The read edge (ess/30, beyond10x/ess#560): one reading, for a filter that orders a field
+        // against `now`, and none for any other view, so a read never moves a command's clock.
+        let now = view
+            .filter
+            .as_ref()
+            .filter(|filter| !crate::now_offset::now_compared(filter).is_empty())
+            .and_then(|_| self.clock.as_ref().and_then(|clock| clock.0.read()))
+            .map(DecisionInstant::instant);
         let mut scenario = self.scenario.borrow_mut();
         if view.consistency == ess_domain::view::Consistency::ReadYourWrites
             || request.consistency.token().is_some()
         {
-            return views::query(model, &scenario.store, &request);
+            return views::query(model, &scenario.store, &request, now);
         }
         scenario.projection_reads = scenario.projection_reads.saturating_add(1);
         let store = scenario
@@ -414,7 +426,7 @@ impl ConformanceTarget for Interpreted {
             .map(|(_, store)| store)
             .cloned()
             .unwrap_or_default();
-        views::query(model, &store, &request)
+        views::query(model, &store, &request, now)
     }
 
     fn observe_events(

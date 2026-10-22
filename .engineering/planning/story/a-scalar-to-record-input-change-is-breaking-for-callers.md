@@ -2,16 +2,17 @@
 format: aep.planning-md/3
 id: story:a-scalar-to-record-input-change-is-breaking-for-callers
 kind: story
-status: active
+status: implemented
 title: ess verify diff rates a scalar-to-record command input change as breaking for callers
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 - informed_by: story:an-older-command-input-is-read-on-replay-through-a-declared-upcast
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-08T04:42:05Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-08T04:42:05Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-21T22:02:00Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 

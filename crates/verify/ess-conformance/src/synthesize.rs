@@ -193,6 +193,7 @@ mod identity;
 mod ordered_head;
 mod paging;
 pub(crate) mod precedence;
+mod reference_integrity;
 mod refusal_policy;
 mod related;
 mod related_guard;
@@ -1294,12 +1295,21 @@ impl RefusalCause {
             Self::NoWitness(gap) if ordered_head::unarranged(gap.reason) => {
                 ordered_head::HEAD_REPAIR
             }
+            Self::NoWitness(gap) if gap.type_ref == RESPONSE_GAP => RESPONSE_REPAIR,
             Self::NoWitness(_) => {
                 "give the field a type that has a finite value, or drop it from the command's input"
             }
             Self::GuardUnevaluable(_) => {
                 "the guard reads something no input can supply; correct the path or the type it \
                  walks into"
+            }
+            // A race a held-state branch answers first (beyond10x/ess#623): no candidate and no
+            // fixture reaches it.
+            Self::GuardUnsatisfiable { predicate, .. } if predicate.contains(ANSWERED_FIRST) => {
+                "a branch the held state selects answers before an external one whatever their \
+                 declaration order; narrow the race by `when_subject:` and declare it above that \
+                 branch, as the line above names, and the two answer at the held-state step in \
+                 declaration order"
             }
             Self::GuardUnsatisfiable { .. } => {
                 "write the branch's condition over values a candidate can carry, or supply a \
@@ -1409,6 +1419,15 @@ impl RefusalCause {
 const CHILD_REPAIR: &str = "cover the child with an authored scenario (ess-scenario/1) that sends \
      an input where it alone decides the connective, or write the guard so that such an input \
      exists";
+
+/// The type a [`WitnessGap`] names when a command's response, not its input, has no observation.
+pub(crate) const RESPONSE_GAP: &str = "command response";
+
+/// The repair for a response field no runner can check (beyond10x/ess#499): the input field's
+/// "drop it from the command's input" names the wrong side of the command.
+const RESPONSE_REPAIR: &str = "no runner checks what the line above names on a returned value; \
+     give the response field a type without it, or state that rule where the returned value \
+     comes from, on the entity or the input";
 
 /// The repair for an absent reference no arrangement leaves absent (ess/22, beyond10x/ess#285).
 const ABSENCE_REPAIR: &str = "fill the reference from an Optional input that the branch, or the \
@@ -2253,6 +2272,19 @@ pub enum Unreachable {
         /// Why.
         why: Box<str>,
     },
+    /// The branch on the route creates the row for an input chosen before the related row it reads
+    /// (ess/18) is arranged — the existence family sending one identity twice — and no row of the
+    /// related entity the declared commands create lets that input pass over the guards beside it.
+    /// The branch itself is reached elsewhere, on an input searched with its row; naming it
+    /// unreachable would point at no fix.
+    Unsteered {
+        /// The creating branch.
+        outcome: Box<OutcomeRef>,
+        /// The entity whose row the guards read.
+        related: EntityRef,
+        /// The branches reading that row that the send would have to pass over.
+        guards: Vec<OutcomeRef>,
+    },
 }
 
 impl Unreachable {
@@ -2289,6 +2321,11 @@ impl Unreachable {
                 "let at most one binding act on a row at once, through a branch its state decides, \
                  end every chain, and declare an unfiltered view showing the row's identity and \
                  state"
+            }
+            Self::Unsteered { .. } => {
+                "let the command creating the related row set each field those guards compare \
+                 from its own input (`sets: <field>: input.<field>`), or cover the state with an \
+                 authored scenario (ess-scenario/1)"
             }
         }
     }
@@ -2333,6 +2370,30 @@ impl fmt::Display for Unreachable {
                 "the route runs through `{outcome}`, which sets off `{binding}` on the row, and \
                  where the row comes to rest cannot be named: {why}"
             ),
+            Self::Unsteered {
+                outcome,
+                related,
+                guards,
+            } => {
+                write!(
+                    f,
+                    "the route runs through `{outcome}`, sent here for an input chosen before the \
+                     row of `{related}` it reads, and no row the declared commands create lets \
+                     that input pass over "
+                )?;
+                for (nth, guard) in guards.iter().enumerate() {
+                    let gap = match nth {
+                        0 => "",
+                        _ if nth + 1 == guards.len() => " and ",
+                        _ => ", ",
+                    };
+                    write!(f, "{gap}`{guard}`")?;
+                }
+                if guards.is_empty() {
+                    f.write_str("the guards beside it")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -2615,6 +2676,9 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     notes.extend(partial);
     notes.extend(unseparated_notes);
     invariants(models, &actors, focus, &mut suite, &mut refusals);
+    // A stored reference kept present needs no `exists: false` branch (ess/30, beyond10x/ess#509);
+    // its row is read again after every branch that could remove it.
+    reference_integrity::references(models, &actors, focus, &mut suite, &mut refusals);
     if focus.is_whole() {
         bindings(ir, &actors, &mut suite, &mut refusals);
         // The fresh suite's `Empty` authority, established before the aggregate planner reads it
@@ -3619,7 +3683,7 @@ fn exercise_run_in(
                     id,
                     RefusalCause::NoWitness(WitnessGap {
                         path: format!("{}.response: {reason}", command.name),
-                        type_ref: "command response".into(),
+                        type_ref: RESPONSE_GAP.into(),
                         reason: "typed direct response observation cannot execute this contract",
                     }),
                 ));
@@ -3638,7 +3702,7 @@ fn exercise_run_in(
                 id,
                 RefusalCause::NoWitness(WitnessGap {
                     path: format!("{}.response: {reason}", command.name),
-                    type_ref: "command response".into(),
+                    type_ref: RESPONSE_GAP.into(),
                     reason: "typed response observation cannot execute this contract",
                 }),
             ));
@@ -4330,6 +4394,9 @@ fn unclaimed_external(
         || lifecycle.states.iter().cloned().collect(),
         |transition| transition.from.iter().cloned().collect(),
     );
+    if let Some(unreachable) = answered_first(ir.format(), command, outcome, subject, &states) {
+        return Err(unreachable);
+    }
     let states = if outcome.before_row {
         held_state_selected_first(command, states)
     } else {
@@ -4400,6 +4467,84 @@ fn unclaimed_external(
             named_guards(&siblings)
         ),
         tried,
+    })
+}
+
+/// The phrase a refusal of a race no row reaches carries, and its hint's marker: a branch the held
+/// state selects answers before any external one, whatever their declaration order.
+const ANSWERED_FIRST: &str = "before any external cause is asked";
+
+/// The refusal of a plain `external:` race every start of which a held-state branch answers first
+/// (`docs/design/generic-language-features.md` § G4, lines 506-512; beyond10x/ess#623, Ask B). On
+/// each state in `starts` (the states the race's move starts from, every state where it moves
+/// nothing) a sibling selected by that state with no input guard answers before the race
+/// ([`held_state_refuted`] is `None`), so no row and no input reach it, and a scenario filed under
+/// it could only witness another branch. Named are those siblings and the repair: the race narrowed
+/// by `when_subject:` to the rows it is taken from and declared above the first of them, which
+/// answers at the held-state step in declaration order (`ess/29`; `ess/30` where it compensates).
+/// `None` for any other branch, and wherever some start leaves an input to search for.
+fn answered_first(
+    format: ess_domain::system::FormatVersion,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    subject: &ResolvedSubject,
+    starts: &[StateName],
+) -> Option<RefusalCause> {
+    if !matches!(outcome.condition, ResolvedCondition::External { .. })
+        || outcome.before_row
+        || starts.is_empty()
+        || starts
+            .iter()
+            .any(|state| held_state_refuted(format, command, outcome, state).is_some())
+    {
+        return None;
+    }
+    let mut answering: Vec<&ResolvedOutcome> = Vec::new();
+    for state in starts {
+        for branch in held_state_before(format, command, outcome, state) {
+            if !answering.iter().any(|known| known.name == branch.name) {
+                answering.push(branch);
+            }
+        }
+    }
+    answering.sort_by_key(|branch| {
+        command
+            .outcomes
+            .iter()
+            .position(|declared| declared.name == branch.name)
+    });
+    let first = answering.first()?;
+    let name = &outcome.name;
+    let resting = starts
+        .iter()
+        .map(|state| format!("`{state}`"))
+        .collect::<Vec<_>>()
+        .join(" or ");
+    let narrowed = match starts {
+        [one] => format!("`when_subject: {{predicate: state == {one}}}`"),
+        _ => format!("a `when_subject:` predicate selecting {resting}"),
+    };
+    let needed = if outcome.compensates {
+        ess_domain::system::FormatVersion::V30
+    } else {
+        ess_domain::system::FormatVersion::V29
+    };
+    let from = if format.major() < needed.major() {
+        format!(", from `{needed}`")
+    } else {
+        String::new()
+    };
+    Some(RefusalCause::GuardUnsatisfiable {
+        predicate: format!(
+            "`{name}` is taken from a `{}` resting in {resting}, and {} answer{} every such row \
+             by its held state {ANSWERED_FIRST}: no row and no input reach `{name}`; to race \
+             `{}`, declare `{name}` above it with {narrowed}{from}",
+            subject.entity.name(),
+            named_guards(&answering),
+            if answering.len() == 1 { "s" } else { "" },
+            first.name,
+        ),
+        tried: starts.len(),
     })
 }
 
@@ -8860,6 +9005,14 @@ fn arrange_matching(
                     None,
                 ));
             }
+            // The filter orders a field against `now` (ess/30, beyond10x/ess#560), and holds the
+            // subject's row: a target ignoring the filter, or deciding it at another instant than
+            // the read, returns the subject as well. A further row the filter refuses at every
+            // instant the read may take is arranged and asserted `Excludes`.
+            None if *admits_subject && identified && reads_clock(view) => wanted.push((
+                Box::new(move |row: &Arrangement| held(row) == Ok(false)),
+                None,
+            )),
             None if !identified
                 || *admits_subject
                 || plain_row_shown(ir, beside.entity, view, beside.actors, params) =>
@@ -8915,6 +9068,13 @@ fn arrange_matching(
         }
     }
     matching
+}
+
+/// Whether a view's filter orders a field against `now` (ess/30, beyond10x/ess#560).
+fn reads_clock(view: &ResolvedView) -> bool {
+    view.filter
+        .as_ref()
+        .is_some_and(|filter| !crate::now_offset::now_compared(filter).is_empty())
 }
 
 /// Whether a view's filter reads the row field `field`.
@@ -12294,16 +12454,48 @@ fn row_truth_with(
     //
     // The identity too, where the scenario settled it as a literal struct: a filter reading one of
     // its members (`ref.tenant`) is decided by the member it was sent (beyond10x/ess#428).
+    //
+    // A filter ordering a field against `now` (ess/30, beyond10x/ess#560) reads the row at the
+    // instant of the read. The instant it orders is held only as the `now_offset` its creator was
+    // sent, read at the reference synthesis decides at, as a stored row's guard reads it
+    // (`subject_fact::evaluate_row`); a literal one would be decided at the reference and not at a
+    // run, so it is left unbound. One a `now_offset` cannot carry — inside a structure, or an
+    // element a quantifier binds — is named.
+    let clock_read = crate::now_offset::now_compared(filter);
+    let uncarried: Vec<FactPath> = clock_read
+        .iter()
+        .filter(|(_, whole)| !whole)
+        .map(|(path, _)| path.clone())
+        .collect();
+    if !uncarried.is_empty() {
+        return Err(uncarried);
+    }
+    let clock_roots: BTreeSet<&str> = clock_read
+        .iter()
+        .map(|(path, _)| path.namespace())
+        .collect();
     let declared = &ir.entity(&view.source).observable_fields();
     for (name, determined) in settled {
-        if let (Ok(path), ScenarioValue::Literal { value }) =
-            (FactPath::new(name), &determined.value)
-        {
+        let value = match &determined.value {
+            ScenarioValue::NowOffset { seconds } if !clock_read.is_empty() => {
+                crate::now_offset::reference()
+                    .plus_seconds(*seconds)
+                    .map(|instant| Node::Text(instant.to_rfc3339()))
+            }
+            ScenarioValue::Literal { value }
+                if clock_roots.contains(name.as_str()) && *value != Node::Null =>
+            {
+                None
+            }
+            ScenarioValue::Literal { value } => Some(value.clone()),
+            _ => None,
+        };
+        if let (Ok(path), Some(value)) = (FactPath::new(name), value) {
             let one = BTreeMap::from([(name.clone(), value.clone())]);
             match crate::input::bind(ir, declared, &one, crate::input::Completeness::Partial) {
                 Ok(bound) => facts.extend(bound),
                 Err(_) => {
-                    if let Some(fact) = fact_value(value) {
+                    if let Some(fact) = fact_value(&value) {
                         facts.set(path, fact);
                     }
                 }
@@ -12350,7 +12542,12 @@ fn row_truth_with(
         facts.set(path.clone(), value.clone());
     }
 
-    match filter.evaluate(&facts) {
+    let truth = if clock_read.is_empty() {
+        filter.evaluate(&facts)
+    } else {
+        clocked_truth(filter, &facts)?
+    };
+    match truth {
         Truth::True => Ok(true),
         Truth::False => Ok(false),
         Truth::Unknown => Err(filter
@@ -12359,6 +12556,61 @@ fn row_truth_with(
             .filter(|path| facts.fact(path).is_none())
             .cloned()
             .collect()),
+    }
+}
+
+/// How long after the write that put a row there a view read may come, in seconds, for a filter
+/// ordering the row against `now` to be decided (ess/30, beyond10x/ess#560): an hour.
+const READ_SPAN_SECONDS: i64 = 3600;
+
+/// `filter`, which orders a field against `now`, decided over `facts` at the synthesis reference,
+/// or the paths of the first ordering that a read in the span after the write decides otherwise.
+///
+/// A run sends the row's instant relative to the moment of sending, and the read comes after it:
+/// less than a second before it where a target's clock trails the second the instant was rounded
+/// up to, and up to [`READ_SPAN_SECONDS`] after. Values and bounds are whole seconds and each
+/// ordering is monotone in the instant of the read, so one read inside the second before and one
+/// at the end of the span answer for every read between: a row a second inside the bound is read
+/// as shown at the first and not at the second, and is left to the boundary rather than claimed.
+fn clocked_truth(filter: &Predicate, facts: &dyn FactSource) -> Result<Truth, Vec<FactPath>> {
+    use ess_primitives::predicate::WithNow;
+    let reference = crate::now_offset::reference();
+    let span = [
+        reference
+            .epoch_seconds()
+            .checked_mul(1000)
+            .and_then(|millis| Rfc3339Instant::from_epoch_millis(millis - 500)),
+        reference.plus_seconds(READ_SPAN_SECONDS),
+    ];
+    let mut leaves = Vec::new();
+    clock_leaves(filter, &mut leaves);
+    for leaf in leaves {
+        let [first, last] = span.map(|at| at.map(|at| leaf.evaluate(&WithNow::new(facts, at))));
+        if first.is_none() || first != last {
+            return Err(leaf.fact_paths().into_iter().cloned().collect());
+        }
+    }
+    Ok(filter.evaluate(&WithNow::new(facts, reference)))
+}
+
+/// Every comparison of `predicate` with the current-time operand.
+fn clock_leaves<'p>(predicate: &'p Predicate, found: &mut Vec<&'p Predicate>) {
+    match predicate {
+        Predicate::All(children) | Predicate::Any(children) => {
+            for child in children {
+                clock_leaves(child, found);
+            }
+        }
+        Predicate::Not(inner) => clock_leaves(inner, found),
+        Predicate::Compare { left, right, .. }
+            if [left, right].into_iter().any(|operand| {
+                matches!(operand, Operand::Literal(FactValue::Text(text))
+                    if ess_primitives::time::CurrentTime::parse(text).is_some())
+            }) =>
+        {
+            found.push(predicate);
+        }
+        _ => {}
     }
 }
 
