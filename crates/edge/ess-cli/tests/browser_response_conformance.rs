@@ -311,8 +311,12 @@ incremental = false
     fs::write(consumer.join("Cargo.toml"), manifest).unwrap();
     // The emitted module is included unchanged, not replaced by a hand-written test host.
     fs::write(consumer.join("src/lib.rs"),format!("include!({:?});\ninstall_browser_target!(browser_independent_target::{installation}<{mode}>);\n#[unsafe(no_mangle)] pub extern \"C\" fn fixture_factory_calls() -> u32 {{ browser_independent_target::factory_calls() }}\n",root.join("site/rust/browser_host.rs").to_str().unwrap())).unwrap();
-    let target = std::env::var_os("ESS_BROWSER_TARGET_DIR")
-        .map_or_else(|| root.join("compiled-host"), PathBuf::from);
+    // One target for every test, so ess-conformance and its dependencies compile once per run
+    // and each test rebuilds only its consumer crate.
+    let target = std::env::var_os("ESS_BROWSER_TARGET_DIR").map_or_else(
+        || PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("browser-host"),
+        PathBuf::from,
+    );
     if !root.join("rustc-version.stdout").exists() {
         recorded_command(Command::new("rustc").arg("-vV"), root, "rustc-version");
         recorded_command(Command::new("cargo").arg("-V"), root, "cargo-version");
@@ -337,7 +341,6 @@ incremental = false
         ])
         .arg(consumer.join("Cargo.toml"))
         .env("CARGO_TARGET_DIR", &target)
-        .env("CARGO_BUILD_JOBS", "1")
         .env("CARGO_INCREMENTAL", "0")
         .env("RUSTFLAGS", "-C link-arg=--max-memory=536870912");
     host_build_preflight(root, &target, mode);
