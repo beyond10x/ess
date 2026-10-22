@@ -39,7 +39,7 @@
 //! before the related row is read. A command whose predicate branches have no `exists: false`
 //! sibling leaves a missing row unanswered, and is refused for it — unless, from ess/30, the row is
 //! one a stored reference names and the specification proves it present whenever the reference is
-//! ([`super::reference_integrity`], beyond10x/ess#509).
+//! (`command::reference_integrity`, beyond10x/ess#509).
 //!
 //! **Several rows (ess/22, beyond10x/ess#283).** A command may read more than one row, each named
 //! by an input `via` of its own, with one `exists: false` branch at most per row. Missing rows are

@@ -1,4 +1,4 @@
-#	models=282	commands=579
+#	models=284	commands=586
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -200,6 +200,13 @@ crates/verify/ess-conformance/tests/fixtures/adversary-l3-selected-rows.yaml	adv
 crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	ir=b737ee9077b02ce4dd8d03fe056a427c41be58ca9b020313b8e54412f16ad641:9670
 crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	demo.team.FormTeam	existence: already-formed | default: formed
 crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	demo.team.NameSuccessor	existence: no-such-team | present_related: successor-is-a-team | default: named
+crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	ir=890b366c1c870d26d464af41990ebd44b6abea74f3649e8115e9b593db7e7943:20930
+crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Cancel	held_state: wrong-state | default: cancelled
+crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Drop	held_state: wrong-state | default: dropped
+crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Open	default: opened
+crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Play	held_state: wrong-state | default: played
+crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Post	default: posted
+crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Sweep	default: swept
 crates/verify/ess-conformance/tests/fixtures/aggregate-copied-group-parameter.yaml	ir=d581148ce3b8124b063000431cd6524cbb9e6d211209d875b5ff76bccdabc67f:10865
 crates/verify/ess-conformance/tests/fixtures/aggregate-copied-group-parameter.yaml	demo.work.OpenDepot	default: opened
 crates/verify/ess-conformance/tests/fixtures/aggregate-copied-group-parameter.yaml	demo.work.OpenItem	default: opened
@@ -573,6 +580,8 @@ crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml	demo.leases.Le
 crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml	demo.leases.OpenLease	default: opened
 crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml	demo.leases.RegisterMember	default: registered
 crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml	demo.leases.RenewLease	input_refusal: blank-note | existence: unknown-lease | held_state: renewed, graced, not-active | default: lapsed
+crates/verify/ess-conformance/tests/fixtures/now-view-filter.yaml	ir=f27ff705f9f51602750e1ccbb3d8e941fc2276c02205ea8ccd664b9043e049b7:5279
+crates/verify/ess-conformance/tests/fixtures/now-view-filter.yaml	demo.ledger.RecordIncident	default: recorded
 crates/verify/ess-conformance/tests/fixtures/occurrence-clock-claims.yaml	ir=538865d7e0452497e18af212f30053444bf9601cd084f6153d72957b39e6a837:6968
 crates/verify/ess-conformance/tests/fixtures/occurrence-clock-claims.yaml	demo.claims.Open	default: opened
 crates/verify/ess-conformance/tests/fixtures/occurrence-clock-claims.yaml	demo.claims.Settle	held_state: settled, replayed | default: lapsed
