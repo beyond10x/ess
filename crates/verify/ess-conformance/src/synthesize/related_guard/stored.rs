@@ -11,8 +11,10 @@
 //!   which the same request answers otherwise, and the subject's creation names it;
 //! * a missing row: the creation names an identity no row carries, beside rows of the entity that
 //!   carry others — where the act that writes the field stores an identity unchecked. Where every
-//!   writer refuses an identity no row carries before storing it, no run holds such a reference and
-//!   the branch is refused as unreachable;
+//!   writer refuses such an identity before storing it but a branch removes a row of the entity,
+//!   the creation names a row that is removed once the subject is arranged (beyond10x/ess#509).
+//!   Where neither holds — the proof validation reads from `ess/30` — no run holds such a
+//!   reference and the branch is refused as unreachable;
 //! * an absent Optional reference: the creation leaves the field out, between rows that would each
 //!   refuse the request were the subject to name them.
 //!
@@ -22,7 +24,9 @@
 
 use std::collections::BTreeMap;
 
-use ess_compiler::ir::{EntityHandle, EssIr, ResolvedCommand, ResolvedOutcome};
+use ess_compiler::ir::{
+    EntityHandle, EssIr, ResolvedCommand, ResolvedEffect, ResolvedOutcome, ResolvedPayloadValue,
+};
 use ess_domain::name::QualifiedName;
 use ess_primitives::node::Node;
 
@@ -50,8 +54,8 @@ enum Link<'a> {
     Absent,
     /// The row the scenario arranged.
     Row(&'a InstanceName),
-    /// An identity no row carries.
-    Fresh,
+    /// An identity no row of the entity carries.
+    Fresh(&'a EntityHandle),
 }
 
 /// The addressed subject the scenario arranged: the branch's own, or the one the branch acting on
@@ -86,29 +90,89 @@ fn checks(command: &ResolvedCommand, input: &str) -> bool {
     })
 }
 
-/// Why no run stores an identity no row carries in `field` of `subject`: every act writing it from
-/// its input refuses one first. `None` where some act stores it unchecked.
-fn unreachable(ir: &EssIr, subject: &EntityHandle, field: &str) -> Option<String> {
-    let all = ir.drivers();
+/// Why no run holds, in `field` of a `subject` row, an identity no `far` row carries — the proof
+/// validation reads from `ess/30` (`ess-domain`'s `command::reference_integrity`,
+/// beyond10x/ess#509): every act writing the field stores nothing, the row's own value or an input
+/// its command refuses first where no row carries it, and no branch removes a `far` row. `None`
+/// where some act stores an identity unchecked or some branch removes a `far` row: a run then
+/// holds one.
+fn unreachable(
+    ir: &EssIr,
+    subject: &EntityHandle,
+    field: &str,
+    far: &EntityHandle,
+) -> Option<String> {
     let mut writers = Vec::new();
-    for driver in all.get(subject).map_or(&[][..], Vec::as_slice) {
-        let Some(input) = super::super::related::set_from_input(driver.outcome, field) else {
-            continue;
-        };
-        if !checks(driver.command, input) {
-            return None;
+    for command in ir.commands().values() {
+        for outcome in &command.outcomes {
+            if removes(outcome, far) {
+                return None;
+            }
+            let own = outcome
+                .subject
+                .as_ref()
+                .is_some_and(|named| named.entity == *subject)
+                || outcome
+                    .instances
+                    .as_ref()
+                    .is_some_and(|named| named.entity == *subject);
+            let written = outcome
+                .sets
+                .iter()
+                .filter(|_| own)
+                .chain(
+                    outcome
+                        .affects
+                        .iter()
+                        .filter(|affect| affect.entity == *subject)
+                        .flat_map(|affect| &affect.sets),
+                )
+                .filter(|set| set.target == field);
+            let mut checked = false;
+            for set in written {
+                match &set.value {
+                    ResolvedPayloadValue::Cleared => {}
+                    ResolvedPayloadValue::SubjectField { field: read, .. }
+                        if own && read == field => {}
+                    ResolvedPayloadValue::InputField { field: input, .. }
+                        if set.conversion.is_none() && checks(command, input) =>
+                    {
+                        checked = true;
+                    }
+                    _ => return None,
+                }
+            }
+            if checked {
+                writers.push(format!("`{}/{}`", command.name, outcome.name));
+            }
         }
-        writers.push(format!("`{}/{}`", driver.command.name, driver.outcome.name));
     }
     Some(format!(
         "unreachable: every act writing `{field}` ({}) refuses an identity no row carries before \
-         storing it, so no run holds one",
+         storing it, and no branch removes a `{far}` row, so no run holds one",
         if writers.is_empty() {
             "none".to_owned()
         } else {
             writers.join(", ")
         }
     ))
+}
+
+/// Whether `outcome` removes a row of `entity`: its subject, the rows its `instances:` selection
+/// names, or an `affects:` entry deleting them.
+fn removes(outcome: &ResolvedOutcome, entity: &EntityHandle) -> bool {
+    outcome
+        .subject
+        .as_ref()
+        .is_some_and(|named| named.entity == *entity && named.effect == ResolvedEffect::Deletes)
+        || outcome
+            .instances
+            .as_ref()
+            .is_some_and(|named| named.entity == *entity && named.effect == ResolvedEffect::Deletes)
+        || outcome
+            .affects
+            .iter()
+            .any(|affect| affect.entity == *entity && affect.deletes)
 }
 
 /// The step in `steps` that created `instance`, and the command and branch it took.
@@ -188,15 +252,17 @@ fn relink(
             None
         }
         Link::Row(row) => Some(ScenarioValue::instance((*row).clone())),
-        Link::Fresh => {
+        Link::Fresh(far) => {
             if checks(command, &input) {
-                return Err(gap(&unreachable(ir, subject, field).unwrap_or_else(|| {
-                    format!(
-                        "`{}` refuses an identity no row carries before storing it, and the \
+                return Err(gap(&unreachable(ir, subject, field, far).unwrap_or_else(
+                    || {
+                        format!(
+                            "`{}` refuses an identity no row carries before storing it, and the \
                          arrangement creates the subject through it",
-                        command.name
-                    )
-                })));
+                            command.name
+                        )
+                    },
+                )));
             }
             let fresh = super::super::fresh_identity(ir, command, &input, None)?;
             Some(crate::now_offset::sent(ir, command, &input, &fresh))
@@ -306,17 +372,36 @@ pub(super) fn arranged_at(
         ));
     }
     let mut steps = Vec::new();
+    // Steps run once the subject is arranged, before the command is sent.
+    let mut after = Vec::new();
     let input = if is_absent(outcome) {
-        relink(
+        let first = block_start(OWN, distinction);
+        let fresh = relink(
             ir,
             &mut setup.steps,
             setup.instance.is_some().then_some(&mut setup.settled),
             &subject,
             field,
-            &Link::Fresh,
-        )?;
+            &Link::Fresh(entity),
+        );
+        if let Err(fresh) = fresh {
+            // Every writer refuses an identity no row carries before storing it: the subject is
+            // pointed at a row a branch removes once the subject is arranged (beyond10x/ess#509).
+            let (row, removal) = removed(ir, entity, actors, first).ok_or(fresh)?;
+            relink(
+                ir,
+                &mut setup.steps,
+                setup.instance.is_some().then_some(&mut setup.settled),
+                &subject,
+                field,
+                &Link::Row(&row.instance),
+            )?;
+            steps.extend(row.steps);
+            setup.source.extend(row.source);
+            after.extend(removal.steps);
+            setup.source.extend(removal.source);
+        }
         // Rows of the entity exist, each carrying an identity other than the one stored.
-        let first = block_start(OWN, distinction);
         if !super::super::singleton::is_singleton(ir, entity) {
             for at in [first - 1, first + 1] {
                 if let Some(decoy) = row_at(ir, entity, actors, at, &[]) {
@@ -361,8 +446,23 @@ pub(super) fn arranged_at(
     // The related rows go ahead of the subject's own arrangement, whose creation names one.
     std::mem::swap(&mut steps, &mut setup.steps);
     setup.steps.append(&mut steps);
+    setup.steps.append(&mut after);
     setup.source.insert(entity_ref(entity));
     Ok((setup, input, false))
+}
+
+/// A row of `entity` where its lifecycle starts, under the further witness `at`, and the steps of
+/// a declared deletion that remove it; `None` where no branch addressing such a row deletes it.
+fn removed(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    at: usize,
+) -> Option<(Arrangement, Arrangement)> {
+    let row = row_at(ir, entity, actors, at, &[])?;
+    let removal =
+        super::super::subject_fact::delete_existing(ir, entity, row.clone(), actors).ok()??;
+    Some((row, removal))
 }
 
 /// [`super::prepare_absent_in`] for a stored reference: the subject created with the reference left

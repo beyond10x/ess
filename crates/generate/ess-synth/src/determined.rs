@@ -1712,26 +1712,40 @@ fn related_composition(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Stri
             );
         }
         // From ess/30 a stored reference the specification proves present needs no
-        // `exists: false` branch (beyond10x/ess#509); the generated read is bound by that branch,
-        // so a command without one stays an obligation, named.
-        let answered = command.outcomes.iter().any(|outcome| {
-            matches!(
-                outcome.condition,
-                ResolvedCondition::Related {
-                    test: ess_compiler::ir::ResolvedRelatedTest::Absent,
-                    ..
-                }
-            )
-        });
-        if !answered {
-            return Err(
-                "a stored `when_related:` reference with no `exists: false` branch, its row's \
-                 presence derived from the specification (ess/30)"
-                    .to_owned(),
-            );
-        }
+        // `exists: false` branch (beyond10x/ess#509); the generated behaviour then reads the row
+        // with no answer for a missing one ([`kept_reference`]).
     }
     Ok(())
+}
+
+/// The first branch of `command` reading a stored reference no branch answers missing — the row's
+/// presence derived from the specification (`ess/30`, beyond10x/ess#509), which validation proves
+/// before the command reaches a target — so the generated behaviour reads the row with no
+/// `exists: false` answer, before that branch. `None` where the command reads no stored reference
+/// or answers a missing row.
+pub(crate) fn kept_reference(command: &ResolvedCommand) -> Option<&ResolvedOutcome> {
+    let stored = |outcome: &&ResolvedOutcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::Related {
+                via: ResolvedRelatedVia::Subject { .. },
+                ..
+            }
+        )
+    };
+    let answered = command.outcomes.iter().filter(stored).any(|outcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Absent,
+                ..
+            }
+        )
+    });
+    if answered {
+        return None;
+    }
+    command.outcomes.iter().find(stored)
 }
 
 // ---- a set effect pinning the row's identity (ess/27, beyond10x/ess#547) ------------------------

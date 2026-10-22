@@ -1514,6 +1514,7 @@ impl<'a> Writer<'a> {
     )]
     fn present_related(&mut self, out: &mut String, branches: &[&ResolvedOutcome]) {
         let command = self.command;
+        let mut kept = determined::kept_reference(command);
         let missing = branches
             .iter()
             .copied()
@@ -1559,47 +1560,21 @@ impl<'a> Writer<'a> {
                     ..
                 } => out.push_str(&self.missing_answer(outcome)),
                 ResolvedCondition::Related {
-                    via: ResolvedRelatedVia::Subject { field, type_ref },
-                    entity,
+                    via: ResolvedRelatedVia::Subject { .. },
                     test: ResolvedRelatedTest::Absent,
                     ..
-                } => {
-                    // A stored reference is read from the addressed row, as it was before the
-                    // branch, once that row's existence and held state have answered (ess/22,
-                    // beyond10x/ess#304).
-                    let subject = determined::addressed_subject(command)
-                        .expect("the plan admits a stored reference on an addressed subject");
-                    let addressed = self.ir.entity(&subject.entity);
-                    let storage = self.storage(&addressed.name);
-                    let unknown = self.unknown_arm(12);
-                    let _ = writeln!(
-                        out,
-                        "        // The addressed row, whose stored `{field}` names the related \
-                         row.\n        let Some(held) = {storage}::get(&self.ports, &input.{}) \
-                         else {{\n{unknown}        }};\n        let _ = &held;",
-                        name::value_ident(&subject.instance.field().name)
-                    );
-                    out.push_str(&self.precheck(false));
-                    let member = name::value_ident(field);
-                    let reference = if type_ref.is_optional() {
-                        format!("held.data.{member}.as_ref()")
-                    } else {
-                        format!("Some(&held.data.{member})")
-                    };
-                    out.push_str(&self.related_read(
-                        entity,
-                        &reference,
-                        &format!("subject.{field}"),
-                        outcome,
-                    ));
-                }
+                } => out.push_str(&self.stored_read(outcome)),
                 ResolvedCondition::When { .. } => {
                     out.push_str(&self.input_refusal(outcome, UNGUARDED_REFUSAL));
                 }
                 ResolvedCondition::Related {
+                    via,
                     test: ResolvedRelatedTest::Holds { .. },
                     ..
                 } => {
+                    if matches!(via, ResolvedRelatedVia::Subject { .. }) && kept.take().is_some() {
+                        out.push_str(&self.stored_read(outcome));
+                    }
                     let guard = self.related_guard(outcome);
                     let taken = self.take(outcome, Held::None);
                     let _ = writeln!(
@@ -1620,6 +1595,53 @@ impl<'a> Writer<'a> {
                 ),
             }
         }
+        // A kept reference no refusal here reads is read before the accepting branches.
+        if let Some(outcome) = kept {
+            out.push_str(&self.stored_read(outcome));
+        }
+    }
+
+    /// The addressed row's stored reference, read once that row's existence and held state have
+    /// answered (ess/22, beyond10x/ess#304). An `exists: false` branch `outcome` answers a
+    /// reference naming no row; any other branch reads a reference the specification keeps
+    /// present (`ess/30`, beyond10x/ess#509), with no answer for a missing row.
+    fn stored_read(&mut self, outcome: &ResolvedOutcome) -> String {
+        let command = self.command;
+        let ResolvedCondition::Related {
+            via: ResolvedRelatedVia::Subject { field, type_ref },
+            entity,
+            test,
+            ..
+        } = &outcome.condition
+        else {
+            unreachable!("a stored reference's branch")
+        };
+        let subject = determined::addressed_subject(command)
+            .expect("the plan admits a stored reference on an addressed subject");
+        let addressed = self.ir.entity(&subject.entity);
+        let storage = self.storage(&addressed.name);
+        let unknown = self.unknown_arm(12);
+        let mut out = format!(
+            "        // The addressed row, whose stored `{field}` names the related row.\n        \
+             let Some(held) = {storage}::get(&self.ports, &input.{}) else {{\n{unknown}        \
+             }};\n        let _ = &held;\n",
+            name::value_ident(&subject.instance.field().name)
+        );
+        out.push_str(&self.precheck(false));
+        let member = name::value_ident(field);
+        let reference = if type_ref.is_optional() {
+            format!("held.data.{member}.as_ref()")
+        } else {
+            format!("Some(&held.data.{member})")
+        };
+        let named = format!("subject.{field}");
+        if matches!(test, ResolvedRelatedTest::Absent) {
+            out.push_str(&self.related_read(entity, &reference, &named, outcome));
+        } else {
+            out.push_str(&self.related_fetch(entity, &reference, &named));
+            out.push_str("        let _ = &related;\n");
+        }
+        out
     }
 
     /// Step 6: one accepting or external branch, in declaration order.
