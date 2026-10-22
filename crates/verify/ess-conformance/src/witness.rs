@@ -5351,7 +5351,8 @@ impl<'ir> Builder<'ir> {
     }
 
     /// One value of `List<of>` at `path`: `[]`, unless a guard reads into it (rule 3) or a branch
-    /// copies it (beyond10x/ess#196), where it holds one element.
+    /// copies it (beyond10x/ess#196), where it holds one element. An input's example (ess/31) is
+    /// the value wherever no guard reads into the list.
     fn list(
         &mut self,
         of: &ResolvedTypeRef,
@@ -5361,6 +5362,11 @@ impl<'ir> Builder<'ir> {
         record: bool,
     ) -> Result<Node, WitnessGap> {
         if !record || !self.expand.contains(path) {
+            // A list input's example (ess/31) is sent as written, at the plain instance only, as a
+            // scalar's is; a copy of it holds every element it names.
+            if let Some(example) = self.examples.get(path) {
+                return Ok(example.clone());
+            }
             // A copied list holds one element, so a target that drops it, or anything inside it,
             // fails the copy's assertion; a guard's list keeps the ladders below.
             if record && self.is_copied(path) {

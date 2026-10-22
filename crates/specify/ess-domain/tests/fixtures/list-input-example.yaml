@@ -1,0 +1,46 @@
+format: ess/31
+system: demo
+version: v1
+domain: demo.server
+types:
+  - name: demo.server.ConnectionType
+    kind: enum
+    variants: [long-polling, websocket]
+  - name: demo.server.Tag
+    kind: newtype
+    of: String
+    invariants: [value != ""]
+  - name: demo.server.Node
+    kind: struct
+    fields:
+      - {name: label, type: String}
+      - {name: weight, type: Integer}
+entities:
+  - name: demo.server.Client
+    identity: {name: client_id, type: Uuid}
+    fields: []
+    lifecycle:
+      initial: Connected
+      states: [Connected]
+      terminal: [Connected]
+      transitions: []
+events:
+  - name: demo.server.HandshakeAccepted
+    fields:
+      - {name: client_id, type: Uuid}
+commands:
+  - name: demo.server.Handshake
+    input:
+      - {name: supported_connection_types, type: "List<demo.server.ConnectionType>", example: [websocket]}
+      - {name: tags, type: "List<demo.server.Tag>"}
+      - {name: nodes, type: "List<demo.server.Node>"}
+      - {name: hints, type: "Optional<List<String>>"}
+      - {name: codes, type: "Map<String, String>"}
+    outcomes:
+      - name: accepted
+        creates: demo.server.Client
+        instance: client_id
+        emits: [demo.server.HandshakeAccepted]
+        payload:
+          demo.server.HandshakeAccepted:
+            client_id: {generated: true}

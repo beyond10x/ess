@@ -52,7 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30,
+    27, 28, 29, 30, 31,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -326,6 +326,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 31,
+        release: None,
+        added: &[
+            "An input whose type is a `List<…>`, through any newtype or `Optional`, may carry an `example:`, a list each of whose elements is a value of the element type, held as a precondition's literal is: a scalar as a scalar input's example, a struct naming its required members, a list or a map of them. An element its type refuses is refused as `type_mismatch` naming its position, one breaking an invariant of its type as `conflicting_declaration`, as a scalar example is, and a struct element missing a required member as `missing_declaration`; `null` and a `Map<…>` example stay refused. Synthesis sends the example at the plain instance wherever no guard reads into the list, as it sends a scalar input's; a list without one is sent as before. Below `ess/31` a list example keeps its `type_mismatch`, its hint naming `ess/31`; a model without one keeps its IR bytes (an adopter report, 2026-10-22).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -454,6 +462,8 @@ impl FormatVersion {
     /// reading the row a stored reference names needs no `exists: false` branch where the
     /// specification keeps that row present (beyond10x/ess#509).
     pub const V30: Self = Self(30);
+    /// An `example:` on an input of `List` type (an adopter report, 2026-10-22).
+    pub const V31: Self = Self(31);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";
