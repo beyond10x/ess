@@ -14,7 +14,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:generic-expression-language
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T00:20:54Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 - {from: "proposed", to: "active", at: "2026-10-21T00:20:54Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
@@ -100,3 +100,44 @@ clock's instant; synthesis sending the filtered field's carrier input as `now_of
 side of the bound (latency-safe margin) and, at the boundary, a `hold_now` before the read; a suite
 pair admitting `hold_now` before `query_view` in Rust, Go and TypeScript admission; generated
 queries and Entity Runtime refusing it by name.
+
+## Adopter report, recheck batch (2026-10-22)
+
+### Need
+
+Reported by an adopter on 2026-10-22 (recheck batch item 16, the second team's L9, relayed by the orchestrator; adopter names
+kept out). The system stores and receives times as epoch milliseconds in an `Integer` field (the wire contract fixes that
+representation), and refuses a request whose time is in the past. `now` is ordered only against a `Timestamp`, so the guard
+cannot be stated over the field the system actually has.
+
+Needed: an epoch-milliseconds (or epoch-seconds) `Integer` may be ordered against `now` with an offset, through a declared
+representation (an epoch-time newtype or an explicit conversion), in a command `when:` and a `when_subject:` predicate; or a
+recorded idiom (store a `Timestamp` beside the wire `Integer`) that keeps the check in the specification.
+
+Appended here because it is a case of beyond10x/ess#560 (one typed expression language) and of this story's `now`-as-operand
+outcome. That outcome names `Timestamp` and `Duration` beside `now` and no
+conversion from an `Integer` epoch value; the fit review decides whether the conversion belongs here.
+
+### Reproduction
+
+Brand-free fixture, `format: ess/29`, domain `demo.server`: entity `Token {token_id, expires_ms: Integer, expires_at:
+Timestamp}`, `IssueToken` creating it, `UseToken(token_id, sent_ms: Integer, sent_at: Timestamp)` with an `expired` refusal
+first, `unknown_instance`, and a `used` update. `ess specify validate --path spec.yaml`, identical output on 0.68.0 and 0.67.0:
+
+| `expired` guard | result |
+|---|---|
+| `when: sent_at < now - 60s` (control) | valid; interpreted conformance 6/6 passed, both versions, byte-identical suites |
+| `when_subject: {predicate: expires_at < now}` (control) | valid; 5/5 passed, both versions |
+| `when: sent_ms < now - 60s` | ESS-COMMAND-002 `type_mismatch`: "operator `<` does not admit `Integer` (Number) and `Text literal `now - 60s`` (Text)" |
+| `when_subject: {predicate: expires_ms < now}` | ESS-COMMAND-002 `type_mismatch`: "operator `<` does not admit `Integer` (Number) and `Text literal `now`` (Text)" |
+
+Same refusal with `format: ess/30` on 0.68.0. Against an `Integer`, `now` is read as a text literal, not the clock.
+
+### Where it lives
+
+- `crates/specify/ess-domain/src/expression.rs:2404`: the `type_mismatch` message, raised when the operand types do not admit
+  the operator.
+
+### Regression status
+
+Not a 0.68.0 regression: identical refusals on 0.67.0 and 0.68.0. Gap. Does not block 0.68.0.

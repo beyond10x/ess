@@ -6,6 +6,7 @@ status: active
 title: Under format A every guard combination refused for want of an order validates
 tags:
 - adopter-report
+- ess-0.70.0-first
 refs:
 - provider: github
   reference: beyond10x/ess#282
@@ -17,7 +18,7 @@ relations:
 - depends_on: story:the-precedence-rule-places-every-branch
 - informed_by: story:one-command-combines-identity-and-row-set-related-guards
 - informed_by: story:feature-request-282
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T02:54:27Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
 - {from: "proposed", to: "active", at: "2026-10-21T02:54:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}

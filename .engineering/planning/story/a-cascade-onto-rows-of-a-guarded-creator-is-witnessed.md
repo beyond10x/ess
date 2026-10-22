@@ -18,7 +18,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/related_record_effects.rs
-revision: 5
+revision: 6
 ---
 ## Outcome
 
@@ -99,3 +99,24 @@ One unit, today.
 Finding 8, second cause in the same function: an `affects:` filter over a field the creator writes with `{related: {via, field}}` is not steered through the source row, because `arrange_toward_bound` maps a filter only through `sets: field: input.field` (`synthesize.rs` doc comment above `arrange_toward_bound`). Reproduction: `.engineering/repro/related-copy-read-later/system.yaml` (`CloseGroup/closed`, `ESS-SYNTH-001` with the same arrival-state message on all three binaries) against `control-input-key.yaml` (the same filter with the key taken as a creator input: witnessed). Reuse `synthesize/row_set/copied.rs::steered`, which the integration branch added for row-set guards over a copy (https://github.com/beyond10x/ess/issues/601). Test: a `{related:}`-copied key case in `tests/related_record_effects.rs`.
 
 The `help:` line printed under this refusal ("give the field a type that has a finite value, or drop it from the command's input", `synthesize.rs:1210`, the `NoWitness` fallback) does not apply to a set-effect cause; give set-effect causes their own help.
+
+## Further report
+
+Source: public repository beyond10x/inference, main 8e72194, `ess/` (reported on 0.60.0 to 0.67.0; reproduced on 0.68.0 and on the 0.69.0 integration build, commit 52bd110dd, which still prints `ess 0.68.0`). `ess verify conform synthesize --path ess` refuses five moving `affects:` outcomes with ESS-SYNTH-001: `inference.duplex.CloseSpeechSession/closed` (duplex.yaml:1132), `FailSpeechSession/failed` (duplex.yaml:1166), `inference.graph.CancelRun/cancelled` (graph.yaml:1854), `inference.stream.CancelGeneration/cancelled` (stream.yaml:711), `SupersedeGeneration/superseded` (stream.yaml:681).
+
+```
+refused: refusal[ESS-SYNTH-001]: outcome inference.stream.CancelGeneration/cancelled has no scenario `inference.stream.CancelGeneration/outcome/cancelled`
+  no witness: `cancelled.affects[0]` is `inference.stream.OutputSegment`, which is moved by its entry only from the state the move arrives in, as far as the arranging commands reach, and the entry writes no field, so a target that skips the move reads the same
+```
+
+The duplex pair prints "has no three rows the filter selects that the arranging commands can produce" instead (`crates/verify/ess-conformance/src/synthesize/set_effects.rs:800`, `NO_MATCHING`); the arrival-state message is `:1498`; both are reached from `Selection::row_meeting` (`:655`).
+
+What it narrows, verified by probes on the 0.69.0 build: the `exists: false` sibling of this story's own reproduction no longer blocks (`affects-creator-related-guard/system.yaml` synthesizes 7 scenarios, 0 refusals, on 0.68.0 and 0.69.0). `when-only.yaml` and `related-copy-read-later/system.yaml` still refuse. The guard that blocks here is a `when_related` state predicate on the creator, over the related row the filter keys on (`EmitTextDelta/stale-generation: state != Active`, `ReceiveSessionEvent/session-not-open: state != Open`). Dropping only that sibling clears the two stream refusals and the two duplex refusals; keeping `exists: false` beside it does not matter.
+
+`CancelRun/cancelled` needs more. With both state predicates dropped it still refuses `affects[0]` (Generation, created by `StartGeneration`, which reads two related rows, run and node). With `unknown-node` dropped as well, it refuses `affects[1]` (OutputSegment, whose `run_id` is written `{related: {via: input.generation_id, field: run_id}}`). That is this story's second cause, and probably also `story:a-command-with-two-related-selectors-arranges-both` (inferred).
+
+Not the cause of `story:seeded-state-reaches-related-rows` (an `unsatisfied` ESS-SYNTH-003 with an `Unwitnessable` cascade) or of `story:an-existence-outcome-passes-a-related-list-membership-guard` (ESS-SYNTH-004 from the existence family's steered search): different function, different message.
+
+Workaround in the source: authored scenarios under `ess/scenarios/` execute all five.
+
+Added acceptance: a creator whose creating branch sits below a `when_related` state-predicate sibling over the filter's key (`state != Active`) gets its moving `affects:` scenario, and the inference CancelGeneration, SupersedeGeneration, CloseSpeechSession and FailSpeechSession outcomes synthesize and pass on `--target interpreted`.

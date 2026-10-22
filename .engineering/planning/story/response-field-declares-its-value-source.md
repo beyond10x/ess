@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -39,3 +39,12 @@ returned equal to the request's `state` (RFC 6749 §4.1.2) and `iss` equal to th
 The requester proposes `{name: state, type: Optional<State>, value: input.state}`; that syntax is
 evidence of the need, not the design. Decide it together with the `{response: <field>}` form of the
 converse story so the two directions read as one construct.
+
+## a2a wave 1
+
+Relayed by the orchestrator on 2026-10-22 from the adopter session specifying A2A in
+beyond10x/a2a (ESS 0.67.0, a2a main 3a18050):
+
+- **M7** (a2a wave-1 gaps list, line 41): the found branch of a get command cannot bind its
+  response body to the matched row. That is this story's stored-field value source, applied to
+  every field of the response (the whole row), not one field.
