@@ -15,10 +15,13 @@ fn unsupported() -> TargetError {
     )
 }
 
+/// `now` is the instant of the read, from the target's clock (ess/30, beyond10x/ess#560): a filter
+/// ordering a field against `now` reads it, and is Unknown, so unsupported, without one.
 pub(super) fn query(
     ir: &EssIr,
     store: &Store,
     request: &SemanticViewRequest,
+    now: Option<Rfc3339Instant>,
 ) -> Result<SemanticViewResult, TargetError> {
     let view = ir
         .views()
@@ -53,7 +56,7 @@ pub(super) fn query(
         )
         .map_err(|_| unsupported())?,
     );
-    let mut rows = project(ir, view, select(ir, view, store, &parameters)?)?;
+    let mut rows = project(ir, view, select(ir, view, store, &parameters, now)?)?;
     // `absent:` (ess/25, beyond10x/ess#533): the filter is the identity comparison alone, so no
     // row selected is no stored row carrying the requested identity, and the read answers the
     // declared default row.
@@ -135,6 +138,7 @@ fn select(
     view: &ResolvedView,
     store: &Store,
     parameters: &crate::input::TypedFacts<'_>,
+    now: Option<Rfc3339Instant>,
 ) -> Result<Vec<(ViewRow, std::collections::BTreeSet<String>)>, TargetError> {
     let entity = ir.entity(&view.source);
     let declared = entity.observable_fields();
@@ -197,6 +201,7 @@ fn select(
                 row: &row,
                 parameters,
                 navigated: &navigated,
+                now,
             };
             if let Some(filter) = &view.filter {
                 match filter.evaluate(&facts) {
@@ -534,6 +539,8 @@ struct ViewFacts<'a> {
     /// The rows the view's references name, by reference (ess/28, beyond10x/ess#564); a reference
     /// that names none is not here.
     navigated: &'a BTreeMap<String, crate::input::TypedFacts<'a>>,
+    /// The instant of the read, which a filter's `now` names (ess/30, beyond10x/ess#560).
+    now: Option<Rfc3339Instant>,
 }
 impl ViewFacts<'_> {
     /// Where `path` is read: the parameters, the row a reference names (`None` where it names
@@ -582,5 +589,8 @@ impl ess_primitives::facts::FactSource for ViewFacts<'_> {
     fn orders_text_by_bytes(&self, path: &ess_primitives::facts::FactPath) -> bool {
         self.source(path)
             .is_some_and(|(source, path)| source.orders_text_by_bytes(&path))
+    }
+    fn now(&self) -> Option<Rfc3339Instant> {
+        self.now
     }
 }

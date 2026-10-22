@@ -6,8 +6,8 @@
 //! `/` an `Optional<Decimal>` that a required field takes only through `coalesce(…)`. A position
 //! reads its own roots: a command outcome `input.` and, over an existing subject, `subject.`; a
 //! view field the source row's fields. Below `ess/27` the mapping keeps the nested-mapping reading
-//! it had, and a refusal of that reading names `ess/27`. `now` stays refused in a view filter,
-//! naming the `from`/`to` parameter idiom.
+//! it had, and a refusal of that reading names `ess/27`. Below `ess/30` `now` stays refused in a
+//! view filter, naming the `from`/`to` parameter idiom; from `ess/30` a view filter reads it.
 
 fn spec(body: &str) -> Result<ess_domain::Specification, String> {
     let raw = ess_domain::spec::RawSpecFile::parse(body).map_err(|e| e.to_string())?;
@@ -235,21 +235,40 @@ fn a_computed_view_field_reads_its_source_row_and_is_typed() {
     );
 }
 
-/// `story:expression-arithmetic-and-time`, `now_relative_view_filter`: a view read has no clock a
-/// suite sets, so `now` in a view filter stays refused, and the refusal names the idiom that keeps
-/// the bound in the specification: `from`/`to` parameters the caller sends.
+/// `story:expression-arithmetic-and-time`, `now_relative_view_filter`: below `ess/30` a view read
+/// has no clock a suite sets, so `now` in a view filter stays refused, and the refusal names the
+/// idiom that keeps the bound in the specification: `from`/`to` parameters the caller sends.
 #[test]
 fn now_relative_view_filter() {
-    let body = model(
-        "ess/27",
-        "",
-        DURATION,
-        "",
+    for format in ["ess/27", "ess/29"] {
+        let body = model(
+            format,
+            "",
+            DURATION,
+            "",
+            "    filter: \"started_at >= now - 720h\"\n",
+        );
+        let errors = refused(&body);
+        assert!(
+            errors.contains("view filter")
+                && errors.contains("param.from")
+                && errors.contains("to"),
+            "{format}: {errors}"
+        );
+    }
+}
+
+/// `story:expression-arithmetic-and-time`, `now_relative_view_filter`: from `ess/30` a view filter
+/// reads `now`, the instant of the view read, as a lower or an upper bound on a `Timestamp` field.
+#[test]
+fn now_relative_view_filter_is_admitted_from_ess_30() {
+    for filter in [
         "    filter: \"started_at >= now - 720h\"\n",
-    );
-    let errors = refused(&body);
-    assert!(
-        errors.contains("view filter") && errors.contains("param.from") && errors.contains("to"),
-        "{errors}"
-    );
+        "    filter: {all: [\"started_at >= now - 720h\", \"ended_at < now\"]}\n",
+    ] {
+        let body = model("ess/30", "", DURATION, "", filter);
+        if let Err(errors) = spec(&body) {
+            panic!("{filter}: {errors}");
+        }
+    }
 }
