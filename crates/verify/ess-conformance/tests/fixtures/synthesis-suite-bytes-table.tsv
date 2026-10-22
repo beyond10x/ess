@@ -1,4 +1,4 @@
-#	models=329	lines=329
+#	models=330	lines=330
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	suite=5 db653ea9c5544e50d35f3887c8cd190d016a22708dc4e8f91f4ce9ee59fb5b89:10165	refusals=1 b5dc5cd911698c55cbc7589e1099559889acd211abdd2bc7b1e29b43d04925b5:276	notes=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap/system.yaml	ASSEMBLE
