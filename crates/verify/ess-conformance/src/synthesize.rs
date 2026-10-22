@@ -1266,6 +1266,18 @@ impl RefusalCause {
                  setup the arrangement sets off, whose effect on them synthesis does not follow; \
                  cover the branch with an authored scenario (ess-scenario/1)"
             }
+            // A set effect's own causes (an adopter's report, row 14): the input type is not what
+            // is missing.
+            Self::NoWitness(gap) if gap.reason == set_effects::ARRIVES_ONLY => {
+                "let a command leave the rows in a `from` state of the move other than the one it \
+                 arrives in, or let the entry write a field (`sets:`) a view publishes, so a \
+                 target that skips the move reads differently"
+            }
+            Self::NoWitness(gap) if gap.reason == set_effects::UNDRIVEN => {
+                "the creating branch named is not taken when sent with the rows the scenario holds, \
+                 in the states it holds them; narrow the guard that answers before it there, or \
+                 cover the branch with an authored scenario (ess-scenario/1)"
+            }
             Self::NoWitness(gap) if set_effects::UNARRANGED.contains(&gap.reason) => {
                 "let a command that creates the entity write each field the filter reads from an \
                  input or from a caller attribute (`{caller: <attribute>}`) rather than from a \
@@ -11698,7 +11710,33 @@ fn arrange_toward_named_owner(
         actors,
         distinction,
         (None, true),
-        &BTreeMap::new(),
+        (&BTreeMap::new(), &BTreeMap::new()),
+        accept,
+    )
+}
+
+/// [`arrange_toward_bound`], where `held` gives the state each captured instance rests in while
+/// the row is created: a creator refusing a related row in some state is then sent naming a
+/// captured row whose state refutes that refusal ([`related_guard::present_in`]).
+#[allow(clippy::too_many_arguments)]
+fn arrange_toward_held(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    filter: &Predicate,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    fields: &BTreeMap<String, InstanceName>,
+    held: &BTreeMap<InstanceName, StateName>,
+    accept: &dyn Fn(&Arrangement) -> bool,
+) -> Option<Arrangement> {
+    arrange_toward_with(
+        ir,
+        entity,
+        filter,
+        actors,
+        distinction,
+        (None, false),
+        (fields, held),
         accept,
     )
 }
@@ -11724,13 +11762,17 @@ fn arrange_toward_bound(
         actors,
         distinction,
         (owner, false),
-        fields,
+        (fields, &BTreeMap::new()),
         accept,
     )
 }
 
 /// [`arrange_toward_bound`], and where `named` is set, the owner left to the input the steering
-/// chose ([`arrange_toward_named_owner`]).
+/// chose ([`arrange_toward_named_owner`]); `held` as [`arrange_toward_held`] reads it.
+///
+/// A creating branch below input-guarded siblings is tried, where no candidate for its own guards
+/// is selected, with candidates refuting theirs too (an adopter's report, row 14): a default branch
+/// below `when: urgent == true` needs `urgent` false, which no ladder over the filter alone tries.
 #[allow(clippy::too_many_arguments)]
 fn arrange_toward_with(
     ir: &EssIr,
@@ -11739,7 +11781,10 @@ fn arrange_toward_with(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
     (owner, named): (Option<&InstanceName>, bool),
-    fields: &BTreeMap<String, InstanceName>,
+    (fields, resting): (
+        &BTreeMap<String, InstanceName>,
+        &BTreeMap<InstanceName, StateName>,
+    ),
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
     let all = ir.drivers();
@@ -11766,7 +11811,7 @@ fn arrange_toward_with(
         if let Some(field) = published {
             mapped.entry(identity.name.as_str()).or_insert(field);
         }
-        let Some(bound) = creator_bindings(creator, &mapped, fields) else {
+        let Some(bound) = creator_bindings(ir, creator, &mapped, (fields, resting)) else {
             continue;
         };
         let onto = |path: &FactPath| match path.segments().split_first() {
@@ -11784,9 +11829,7 @@ fn arrange_toward_with(
             None => path.clone(),
         };
         let toward = map_paths(filter, &onto);
-        let mut guards = vec![&toward];
-        guards.extend(when(creator.outcome));
-        let Ok(inputs) = candidates(ir, creator.command, &guards, distinction) else {
+        let Some(inputs) = creator_candidates(ir, creator, &toward, distinction) else {
             continue;
         };
         for input in inputs {
@@ -11894,12 +11937,42 @@ fn published_identity_input(outcome: &ResolvedOutcome) -> Option<&str> {
         })
 }
 
+/// The inputs [`arrange_toward_with`] tries for `creator`, steered `toward` the filter: those
+/// satisfying its own input guard, then, where siblings carry input guards, those refuting theirs
+/// too (an adopter's report, row 14). `None` where the first list has no witness.
+fn creator_candidates(
+    ir: &EssIr,
+    creator: &Driver<'_>,
+    toward: &Predicate,
+    distinction: Distinction,
+) -> Option<Vec<BTreeMap<String, Node>>> {
+    let mut guards = vec![toward];
+    guards.extend(when(creator.outcome));
+    let mut inputs = candidates(ir, creator.command, &guards, distinction).ok()?;
+    let siblings: Vec<&Predicate> = creator
+        .command
+        .outcomes
+        .iter()
+        .filter(|other| other.name != creator.outcome.name)
+        .filter_map(when)
+        .collect();
+    if !siblings.is_empty() {
+        guards.extend(siblings);
+        inputs.extend(candidates(ir, creator.command, &guards, distinction).unwrap_or_default());
+    }
+    Some(inputs)
+}
+
 /// Map the requested fields onto creator inputs only where the capture does not invalidate a
 /// guard proved from literal inputs. Symbolic guard solving is outside this arrangement seam.
 fn creator_bindings(
+    ir: &EssIr,
     creator: &Driver<'_>,
     mapped: &BTreeMap<&str, &str>,
-    fields: &BTreeMap<String, InstanceName>,
+    (fields, held): (
+        &BTreeMap<String, InstanceName>,
+        &BTreeMap<InstanceName, StateName>,
+    ),
 ) -> Option<BTreeMap<String, InstanceName>> {
     let bound = fields
         .iter()
@@ -11915,7 +11988,7 @@ fn creator_bindings(
         })?;
     if !bound.is_empty()
         && ((related_guard::routes(creator.command, creator.outcome)
-            && !related_guard::present_in(creator.command, &bound))
+            && !related_guard::present_in(ir, creator.command, &bound, held))
             || creator
                 .command
                 .outcomes
