@@ -855,11 +855,14 @@ when_related: {via: input.member_id, predicate: banned_until > now + 30s}
 
 One command decision reads one instant: its input guard and every row it reads are decided with
 it, over the rows as they were before the outcome. Below `ess/22` such a stored ordering is refused
-as `unsupported_format_version`, naming `ess/22`. Anywhere else — an invariant, a view filter, a
-selection, a set-effect filter — the operand is refused, because none of those is read while a
-request is handled. A view over the last N minutes, or over a range named in a zone, takes the two
-instants its caller resolved as `Timestamp` parameters instead, `filter: [started_at >= param.from,
-started_at < param.to]` (beyond10x/ess#439). `==` and `!=` against `now` are refused too: an
+as `unsupported_format_version`, naming `ess/22`. From `format: ess/30` a view's `filter:` may
+order a `Timestamp` field against `now` too, `filter: [expires_at > now]`, and `now` is the instant
+the view is read; below `ess/30` it is refused, naming the `from`/`to` parameter idiom below
+(beyond10x/ess#560). Generated Rust and Go view queries and Entity Runtime do not read a clock yet
+and refuse such a filter by name. Anywhere else — an invariant, a selection, a set-effect filter — the operand is
+refused, because none of those is read while a request is handled. A view over a range named in a
+zone takes the two instants its caller resolved as `Timestamp` parameters instead,
+`filter: [started_at >= param.from, started_at < param.to]` (beyond10x/ess#439). `==` and `!=` against `now` are refused too: an
 instant is ordered against the current time, never equated with it. Below `ess/16` the guard is
 refused as `unsupported_format_version`. Over a `String`, `now` is still the text `now`.
 

@@ -195,9 +195,14 @@ same instant and the same verdict.
 suite without one keeps its format and bytes. A suite synthesized from a model with a now-guard the
 held rule witnesses carries one, so its format moves.
 
-**Not yet.** `now` in a view filter or field: `ess-domain` refuses the operand there, and the view
-request clock of `generic-language-features.md` (G1, wave 3) is this same instant set on a
-`query_view` step once the source admits it.
+**View filters (ess/30, beyond10x/ess#560).** From `format: ess/30` a view's `filter:` may order a
+`Timestamp` field against `now`, the instant of the view read. No suite format moves: synthesis
+sends each row's instant as a `now_offset` relative to the run's clock, and claims a row on a side
+of the bound only when that row reads the same from 500 ms before its write to 3600 s after it, so
+the verdict does not depend on how long the run takes between the write and the read. The
+interpreter reads its clock only for such a filter. Generated Rust and Go view queries and Entity
+Runtime refuse the filter by name; reading the suite's fixed clock there is still owed. `now` in a
+view field stays refused.
 
 ## Formats
 
