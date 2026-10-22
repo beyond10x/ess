@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-22T21:27:19Z",
+  "actor": "human:timo",
+  "artifact": "story:a-cascade-onto-rows-of-a-guarded-creator-is-witnessed",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "related_record_effects 12 passed, related_record_effects_adversary 9 passed (blocker fixed via second_state), no byte pin moved; merged a9b09a64fc on integrate/ess-batch-0690"
+  }
+}
