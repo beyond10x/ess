@@ -1098,3 +1098,128 @@ mod issue_596 {
         assert_eq!(store, before, "a refused run moves no row");
     }
 }
+
+/// A set effect's selection reads the candidate row's held state (ess/30, beyond10x/ess#564
+/// finding 13): `where: {all: ["feed_id == input.feed_id", "state == Pending"]}`.
+mod issue_564_state {
+    use super::*;
+
+    const FEED: &str = include_str!("fixtures/affects-where-state.yaml");
+
+    fn id(n: u8) -> Node {
+        text(&format!("00000000-0000-4000-8000-0000000000{n:02}"))
+    }
+
+    fn created(
+        ir: &EssIr,
+        store: &mut Store,
+        (command, event, field): (&str, &str, &str),
+        at: Node,
+        input: &BTreeMap<String, Node>,
+    ) {
+        let mut steps = execute_generating(
+            ir,
+            store,
+            &format!("cascade.feed.{command}").parse().unwrap(),
+            input,
+            &Externals::Withheld,
+            &Generated::Given(BTreeMap::from([(
+                GeneratedSlot::new(format!("cascade.feed.{event}").parse().unwrap(), field),
+                at,
+            )])),
+        )
+        .unwrap_or_else(|error| panic!("{command}: {error:?}"));
+        *store = steps.remove(0).next;
+    }
+
+    fn called(
+        ir: &EssIr,
+        store: &mut Store,
+        command: &str,
+        input: &BTreeMap<String, Node>,
+    ) -> Step {
+        let mut steps = execute(
+            ir,
+            store,
+            &format!("cascade.feed.{command}").parse().unwrap(),
+            input,
+            &Externals::Withheld,
+        )
+        .unwrap_or_else(|error| panic!("{command}: {error:?}"));
+        assert_eq!(steps.len(), 1);
+        let step = steps.remove(0);
+        *store = step.next.clone();
+        step
+    }
+
+    fn item(store: &Store, n: u8) -> String {
+        let (_, _, row) = store
+            .instances()
+            .find(|(entity, identity, _)| {
+                entity.to_string() == "cascade.feed.Item" && **identity == id(n)
+            })
+            .unwrap_or_else(|| panic!("item {n} is held"));
+        row.state.to_string()
+    }
+
+    /// Feeds 1 and 2; items 11 (pending) and 12 (played) of feed 1, item 21 (pending) of feed 2.
+    fn arranged(ir: &EssIr) -> Store {
+        let mut store = Store::default();
+        for feed in [1, 2] {
+            created(
+                ir,
+                &mut store,
+                ("Open", "FeedOpened", "feed_id"),
+                id(feed),
+                &values([("label", text("f"))]),
+            );
+        }
+        for (n, feed) in [(11, 1), (12, 1), (21, 2)] {
+            created(
+                ir,
+                &mut store,
+                ("Post", "ItemPosted", "item_id"),
+                id(n),
+                &values([("feed_id", id(feed))]),
+            );
+        }
+        called(ir, &mut store, "Play", &values([("item_id", id(12))]));
+        store
+    }
+
+    #[test]
+    fn affects_where_on_state_moves_only_rows_in_that_state() {
+        let ir = model(FEED);
+        let mut store = arranged(&ir);
+        assert_eq!(
+            (item(&store, 11), item(&store, 12)),
+            ("Pending".to_owned(), "Played".to_owned())
+        );
+        let cancelled = called(&ir, &mut store, "Cancel", &values([("feed_id", id(1))]));
+        assert_eq!(
+            cancelled
+                .outcome
+                .map(|outcome| outcome.to_string())
+                .as_deref(),
+            Some("cascade.feed.Cancel/cancelled")
+        );
+        assert_eq!(
+            item(&store, 11),
+            "Discarded",
+            "the pending item is discarded"
+        );
+        assert_eq!(item(&store, 12), "Played", "the played item stays played");
+        assert_eq!(
+            item(&store, 21),
+            "Pending",
+            "another feed's item is untouched"
+        );
+
+        // `instances: {where}` reads the held state too: a sweep discards the played item only.
+        let mut store = arranged(&ir);
+        let swept = called(&ir, &mut store, "Sweep", &values([("feed_id", id(1))]));
+        assert_eq!(swept.events[0].payload["swept"], Node::Number(1_i64.into()));
+        assert_eq!(item(&store, 11), "Pending");
+        assert_eq!(item(&store, 12), "Discarded");
+    }
+}

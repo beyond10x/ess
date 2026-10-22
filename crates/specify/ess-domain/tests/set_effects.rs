@@ -1375,3 +1375,111 @@ mod issue_596 {
         assert!(refusal.message.contains("where:"), "{refusal}");
     }
 }
+
+/// A set effect's selection reads the candidate row's lifecycle state (ess/30, beyond10x/ess#564
+/// finding 13, `docs/design/generic-language-features.md` § G2): `state` is a candidate field of
+/// every `rows(E where p)`, as in a row-set guard; below ess/30 the refusal stands, naming ess/30.
+mod issue_564_state {
+    use super::*;
+
+    const REPRO: &str =
+        include_str!("../../../../.engineering/repro/affects-filter-state/system.yaml");
+    const SWEEP: &str =
+        include_str!("../../../verify/ess-conformance/tests/fixtures/affects-where-state.yaml");
+    const CANCELLED: &str = "command.cascade.feed.Cancel.outcomes.cancelled.affects[0].where";
+    const SWEPT: &str = "command.cascade.feed.Sweep.outcomes.swept.instances";
+
+    fn outcome<'a>(
+        spec: &'a Specification,
+        command: &str,
+        name: &str,
+    ) -> &'a ess_domain::command::Outcome {
+        spec.commands()
+            .get(&command.parse().unwrap())
+            .unwrap_or_else(|| panic!("{command} is declared"))
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.name.as_str() == name)
+            .unwrap_or_else(|| panic!("{command} declares {name}"))
+    }
+
+    fn refused_at(
+        errors: &ValidationErrors,
+        code: ValidationCode,
+        at: &str,
+    ) -> ess_primitives::error::ValidationError {
+        errors
+            .as_slice()
+            .iter()
+            .find(|error| error.code == code && error.location.ends_with(at))
+            .unwrap_or_else(|| panic!("expected {code:?} at `{at}`, got:\n{errors}"))
+            .clone()
+    }
+
+    #[test]
+    fn from_ess_30_an_affects_where_reads_the_rows_state() {
+        let spec = admitted(&REPRO.replacen("format: ess/25", "format: ess/30", 1));
+        let cancelled = outcome(&spec, "cascade.feed.Cancel", "cancelled");
+        let [affect] = cancelled.set_effects.affects.as_slice() else {
+            panic!("one entry: {:#?}", cancelled.set_effects.affects)
+        };
+        let filter = affect
+            .filter
+            .as_ref()
+            .expect("a `where:` entry")
+            .to_string();
+        assert!(filter.contains("state == Pending"), "{filter}");
+        assert_eq!(affect.moves.as_deref(), Some("discard"));
+        let spec = admitted(SWEEP);
+        let cancelled = outcome(&spec, "cascade.feed.Cancel", "cancelled");
+        assert_eq!(cancelled.set_effects.affects.len(), 1);
+    }
+
+    #[test]
+    fn from_ess_30_an_instances_where_reads_the_rows_state() {
+        let spec = admitted(SWEEP);
+        let swept = outcome(&spec, "cascade.feed.Sweep", "swept");
+        let set = swept
+            .set_effects
+            .instances
+            .as_ref()
+            .expect("`instances:` is kept");
+        assert_eq!(set.effect.transition(), Some("discard"));
+        assert!(
+            set.filter.to_string().contains("state == Played"),
+            "{}",
+            set.filter
+        );
+        // A state the entity does not declare is refused as in a row-set guard.
+        let errors = refused(&SWEEP.replacen("\"state == Played\"", "\"state == Lost\"", 1));
+        assert!(
+            errors
+                .as_slice()
+                .iter()
+                .any(|error| error.location.ends_with(SWEPT) && error.to_string().contains("Lost")),
+            "an undeclared state is refused at the filter: {errors}"
+        );
+    }
+
+    #[test]
+    fn below_ess_30_state_in_a_set_effect_where_names_ess_30() {
+        let below = SWEEP.replacen("format: ess/30", "format: ess/29", 1);
+        let errors = refused(&below);
+        for at in [CANCELLED, SWEPT] {
+            let refusal = refused_at(&errors, ValidationCode::UnobservableFact, at);
+            assert!(refusal.message.contains("`state`"), "{refusal}");
+            let hint = refusal.hint.as_deref().unwrap_or_default();
+            assert!(hint.contains("ess/30"), "the hint names ess/30: {refusal}");
+        }
+        let errors = refused(REPRO);
+        let refusal = refused_at(&errors, ValidationCode::UnobservableFact, CANCELLED);
+        assert!(
+            refusal
+                .hint
+                .as_deref()
+                .unwrap_or_default()
+                .contains("ess/30"),
+            "{refusal}"
+        );
+    }
+}

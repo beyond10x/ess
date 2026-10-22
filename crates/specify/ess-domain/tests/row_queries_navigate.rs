@@ -174,3 +174,48 @@ fn navigation_beside_an_aggregate_paging_absent_or_an_order_is_refused_by_name()
         "{errors}"
     );
 }
+
+/// A view over two entities, the shape beyond10x/ess#564 wrote.
+const TWO_SOURCES: &str = "  - name: relstate.desk.TicketDesks
+    source: [relstate.desk.Ticket, relstate.desk.Desk]
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: relstate.desk.TicketId}
+      - {name: label, type: String}
+";
+
+#[test]
+fn a_view_source_list_is_refused_by_name_at_every_format() {
+    for format in ["ess/16", "ess/27", "ess/28", "ess/29", "ess/30"] {
+        let document =
+            with_view(TWO_SOURCES).replacen("format: ess/28", &format!("format: {format}"), 1);
+        let errors = refused(&document);
+        assert!(
+            errors.contains(
+                "[unsupported_construct] view.relstate.desk.TicketDesks.source: \
+                 `relstate.desk.TicketDesks` names 2 sources"
+            ) && errors.contains("a view has one source"),
+            "{format}: {errors}"
+        );
+        assert!(
+            errors.contains("{related: {via, field}}"),
+            "{format}: the hint names navigation: {errors}"
+        );
+        assert!(
+            !errors.contains("invalid type: sequence"),
+            "{format}: no parse error: {errors}"
+        );
+    }
+}
+
+#[test]
+fn a_view_source_string_is_unchanged() {
+    spec(DESK).unwrap_or_else(|errors| panic!("{errors}"));
+    let raw = ess_domain::spec::RawSpecFile::parse(DESK).expect("the fixture parses");
+    let written = serde_json::to_value(&raw.views[0]).expect("the view serializes");
+    assert_eq!(
+        written["source"],
+        serde_json::json!("relstate.desk.Ticket"),
+        "a one-entity source is written back as the string it was"
+    );
+}

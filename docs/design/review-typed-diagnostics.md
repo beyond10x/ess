@@ -324,6 +324,10 @@ below `ess/27`, `expr:` in an aggregate view, and the expression's own refusal, 
 head literal below. The rest of that construct's refusals are in `view/navigation.rs`, which this
 census does not walk, as it does not walk `view/absent.rs`.
 
+`view.rs` gains its first typed site with beyond10x/ess#564: a `source:` written as a list is
+refused as `unsupported_construct` at `view.<name>.source`, at every format, from one
+`ConstructRef`, so it adds no head literal below.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
@@ -344,7 +348,7 @@ system_issued.rs 0 3
 topology.rs 10 0
 types.rs 23 1
 undeclared_fields.rs 0 4
-view.rs 35 0
+view.rs 35 1
 wire.rs 2 0
 ```
 <!-- inventory:end -->
