@@ -1,0 +1,133 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.graph
+summary: A run starts only on a graph that was checked, and checking refuses an edge to an undeclared node.
+types:
+  - {name: demo.graph.GraphId, kind: newtype, of: Uuid}
+  - {name: demo.graph.RunId, kind: newtype, of: Uuid}
+  - name: demo.graph.Node
+    kind: struct
+    fields:
+      - {name: id, type: Integer}
+  - name: demo.graph.Edge
+    kind: struct
+    fields:
+      - {name: from_node, type: Integer}
+      - {name: to_node, type: Integer}
+entities:
+  - name: demo.graph.Graph
+    identity: {name: graph_id, type: demo.graph.GraphId}
+    fields:
+      - {name: nodes, type: List<demo.graph.Node>}
+      - {name: edges, type: List<demo.graph.Edge>}
+    lifecycle:
+      initial: Loaded
+      states: [Loaded, Checked]
+      terminal: [Checked]
+      transitions:
+        - {name: check, from: [Loaded], to: Checked}
+  - name: demo.graph.Run
+    identity: {name: run_id, type: demo.graph.RunId}
+    fields:
+      - {name: graph_id, type: demo.graph.GraphId}
+    lifecycle: {initial: Started, states: [Started], terminal: [Started]}
+errors:
+  - {name: demo.graph.NoGraph, summary: No graph carries the identity., fields: []}
+  - {name: demo.graph.NegativeNode, summary: A node id is negative., fields: []}
+  - {name: demo.graph.UnknownNode, summary: An edge names a node the graph does not declare., fields: []}
+  - {name: demo.graph.NotLoaded, summary: The graph was checked already., fields: []}
+  - {name: demo.graph.NotChecked, summary: The graph was not checked., fields: []}
+events:
+  - name: demo.graph.GraphLoaded
+    fields:
+      - {name: graph_id, type: demo.graph.GraphId}
+  - name: demo.graph.GraphChecked
+    fields:
+      - {name: graph_id, type: demo.graph.GraphId}
+  - name: demo.graph.RunStarted
+    fields:
+      - {name: run_id, type: demo.graph.RunId}
+actors:
+  - name: demo.graph.Operator
+    may: [demo.graph.Load, demo.graph.Check, demo.graph.Start]
+commands:
+  - name: demo.graph.Load
+    input:
+      - {name: graph_id, type: demo.graph.GraphId}
+      - {name: nodes, type: List<demo.graph.Node>}
+      - {name: edges, type: List<demo.graph.Edge>}
+    outcomes:
+      - name: negative-node
+        when: {exists: {in: nodes, as: n, that: n.id < 0}}
+        error: demo.graph.NegativeNode
+        payload:
+          demo.graph.NegativeNode: {}
+      - name: loaded
+        creates: demo.graph.Graph
+        instance: graph_id
+        sets:
+          nodes: input.nodes
+          edges: input.edges
+        emits: [demo.graph.GraphLoaded]
+        payload:
+          demo.graph.GraphLoaded: {graph_id: input.graph_id}
+  - name: demo.graph.Check
+    input:
+      - {name: graph_id, type: demo.graph.GraphId}
+    outcomes:
+      - name: no-graph
+        unknown_instance: true
+        error: demo.graph.NoGraph
+        payload:
+          demo.graph.NoGraph: {}
+      - name: unknown-node
+        when_subject:
+          predicate:
+            exists:
+              in: edges
+              as: e
+              that:
+                any:
+                  - not: {exists: {in: nodes, as: n, that: n.id == e.from_node}}
+                  - not: {exists: {in: nodes, as: n, that: n.id == e.to_node}}
+        error: demo.graph.UnknownNode
+        payload:
+          demo.graph.UnknownNode: {}
+      - name: not-loaded
+        wrong_state: true
+        error: demo.graph.NotLoaded
+        payload:
+          demo.graph.NotLoaded: {}
+      - name: checked
+        moves: demo.graph.Graph.check
+        instance: graph_id
+        emits: [demo.graph.GraphChecked]
+        payload:
+          demo.graph.GraphChecked: {graph_id: input.graph_id}
+  - name: demo.graph.Start
+    input:
+      - {name: graph_id, type: demo.graph.GraphId}
+    outcomes:
+      - name: no-graph
+        when_related:
+          via: input.graph_id
+          exists: false
+        error: demo.graph.NoGraph
+        payload:
+          demo.graph.NoGraph: {}
+      - name: not-checked
+        when_related:
+          via: input.graph_id
+          predicate: state != Checked
+        error: demo.graph.NotChecked
+        payload:
+          demo.graph.NotChecked: {}
+      - name: started
+        creates: demo.graph.Run
+        instance: run_id
+        sets:
+          graph_id: input.graph_id
+        emits: [demo.graph.RunStarted]
+        payload:
+          demo.graph.RunStarted: {run_id: {generated: true}}

@@ -74,7 +74,7 @@ crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml	suite=7bd8
 crates/verify/ess-conformance/tests/fixtures/binding-condition-selected.yaml	suite=9281dc6aae632abc1d51:43631 refusals=0755454e3fe41dad0214:276 claimable=
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	suite=e7999fe6cf6055b96d1e:36626 refusals=0755454e3fe41dad0214:276 claimable=
 crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	suite=1361d6cc82688779dbdc:2180 refusals=4d66337d8f495b389830:238 claimable=
-crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	suite=2ca274fdcc17de416099:85893 refusals=09c14040c98fb6a4846f:3986 claimable=
+crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	suite=2ca274fdcc17de416099:85893 refusals=94b449d8a3cfa742ff27:3986 claimable=
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	suite=494c4e35fd70ef15f1a2:49912 refusals=224955cc29ce6cde01bf:2025 claimable=
 crates/verify/ess-conformance/tests/fixtures/caller-struct-identity.yaml	suite=7f462a5df198a35ee155:7325 refusals=d97dc643ae68f287b097:448 claimable=
 crates/verify/ess-conformance/tests/fixtures/captured-identities.yaml	suite=cf122e97922535f43e94:17432 refusals=2224aa4ae23d5583c0f0:495 claimable=
