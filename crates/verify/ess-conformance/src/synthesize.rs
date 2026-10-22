@@ -2264,6 +2264,19 @@ pub enum Unreachable {
         /// Why.
         why: Box<str>,
     },
+    /// The branch on the route creates the row for an input chosen before the related row it reads
+    /// (ess/18) is arranged — the existence family sending one identity twice — and no row of the
+    /// related entity the declared commands create lets that input pass over the guards beside it.
+    /// The branch itself is reached elsewhere, on an input searched with its row; naming it
+    /// unreachable would point at no fix.
+    Unsteered {
+        /// The creating branch.
+        outcome: Box<OutcomeRef>,
+        /// The entity whose row the guards read.
+        related: EntityRef,
+        /// The branches reading that row that the send would have to pass over.
+        guards: Vec<OutcomeRef>,
+    },
 }
 
 impl Unreachable {
@@ -2300,6 +2313,11 @@ impl Unreachable {
                 "let at most one binding act on a row at once, through a branch its state decides, \
                  end every chain, and declare an unfiltered view showing the row's identity and \
                  state"
+            }
+            Self::Unsteered { .. } => {
+                "let the command creating the related row set each field those guards compare \
+                 from its own input (`sets: <field>: input.<field>`), or cover the state with an \
+                 authored scenario (ess-scenario/1)"
             }
         }
     }
@@ -2344,6 +2362,30 @@ impl fmt::Display for Unreachable {
                 "the route runs through `{outcome}`, which sets off `{binding}` on the row, and \
                  where the row comes to rest cannot be named: {why}"
             ),
+            Self::Unsteered {
+                outcome,
+                related,
+                guards,
+            } => {
+                write!(
+                    f,
+                    "the route runs through `{outcome}`, sent here for an input chosen before the \
+                     row of `{related}` it reads, and no row the declared commands create lets \
+                     that input pass over "
+                )?;
+                for (nth, guard) in guards.iter().enumerate() {
+                    let gap = match nth {
+                        0 => "",
+                        _ if nth + 1 == guards.len() => " and ",
+                        _ => ", ",
+                    };
+                    write!(f, "{gap}`{guard}`")?;
+                }
+                if guards.is_empty() {
+                    f.write_str("the guards beside it")?;
+                }
+                Ok(())
+            }
         }
     }
 }
