@@ -421,29 +421,57 @@ pub(super) fn reads(command: &ResolvedCommand) -> Option<(&str, &EntityHandle)> 
 /// is selected as it would be without the guard: a creator sent with a captured row in that input
 /// is decided by the rest of its input alone (a downstream adopter's report of 2026-10-20, an
 /// `affects:` row whose creating command refuses a missing related row).
+///
+/// A branch testing the row's stored fields (`predicate:`, no input guard beside it) is passed
+/// over the same way where `held` gives the state the arrangement holds the captured row in and
+/// that state alone refutes the predicate: the creating command of rows a cascade moves, refusing
+/// a related row in another state (an adopter's report, row 14).
 pub(super) fn present_in(
+    ir: &EssIr,
     command: &ResolvedCommand,
     bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    held: &BTreeMap<crate::scenario::InstanceName, super::StateName>,
 ) -> bool {
     if several(command) || stored::field(command).is_some() {
         return false;
     }
-    let Some((via, _)) = reads(command) else {
+    let Some((via, entity)) = reads(command) else {
         return false;
     };
-    bound.contains_key(via)
-        && command
-            .outcomes
-            .iter()
-            .all(|outcome| match &outcome.condition {
-                ResolvedCondition::Related {
-                    test: ResolvedRelatedTest::Absent,
-                    input: None,
-                    ..
-                } => outcome.error.is_some(),
-                ResolvedCondition::Related { .. } => false,
-                _ => true,
-            })
+    let Some(instance) = bound.get(via) else {
+        return false;
+    };
+    let refuted = |predicate: &Predicate| {
+        held.get(instance).is_some_and(|state| {
+            subject_fact::row_truth_with(
+                ir,
+                entity,
+                &BTreeMap::new(),
+                &BTreeSet::new(),
+                Some(state),
+                predicate,
+                None,
+            ) == Truth::False
+        })
+    };
+    command
+        .outcomes
+        .iter()
+        .all(|outcome| match &outcome.condition {
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Absent,
+                input: None,
+                ..
+            } => outcome.error.is_some(),
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { predicate },
+                input: None,
+                also,
+                ..
+            } if also.is_empty() => refuted(predicate),
+            ResolvedCondition::Related { .. } => false,
+            _ => true,
+        })
 }
 
 /// The input field the command's related guards read and the entity whose row it names.

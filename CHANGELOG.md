@@ -10,6 +10,7 @@
 - A refusal-policy scenario for a missing related row is refused as ESS-SYNTH-010, naming the trigger, only when every command publishing the event refuses that missing row itself; it was synthesized and failed. Where one publisher does not, the scenario is set up through that publisher.
 - The outcome scenario of a command whose event an unbounded `retry` binding answers names the row that binding needs, so the retry ends; the interpreter answered it unsupported. This covers a per-refusal policy with an unbounded `retry` and a row identity stored on the trigger's subject.
 - A binding scenario whose trigger reads the stored fields of the row it names, where that row's state cannot be followed (another binding acts on it during the arrangement), is refused as ESS-SYNTH-010; it was sent naming a fresh row the trigger refused, and failed. A trigger that updates the related row and refuses an unknown one (`unknown_instance:`) counts as refusing the missing row for a refusal-policy scenario, as an `exists: false` branch does.
+- A moving `affects:` entry gets its scenario when the rows it moves are created by a branch below a `when:` refusal, or below a `when_related:` refusal of a state the related row is not held in; both were refused as ESS-SYNTH-001. Where no row the filter selects can be created at all, the refusal names the creating branch instead of the state the move arrives in, and each set-effect cause prints its own `help:` line instead of the one about finite input types.
 
 ## [0.68.0] — 2026-10-22
 

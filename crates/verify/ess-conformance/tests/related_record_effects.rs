@@ -685,3 +685,280 @@ fn issue_229_a_move_seen_only_in_its_arrival_state_and_writing_nothing_is_refuse
         "no scenario a skipping target passes"
     );
 }
+
+// ---- a cascade onto rows whose creator is guarded (an adopter's report, row 14) ----------------
+
+/// Cancelling a feed discards its pending items. `Post` creates the items, and the refusals the
+/// cases below put above its creating branch decide whether an item can be posted to the feed the
+/// cancellation names.
+const FEED: &str = r"format: ess/25
+system: cascade
+version: v1
+domain: cascade.feed
+types:
+  - {name: cascade.feed.FeedId, kind: newtype, of: Uuid}
+  - {name: cascade.feed.ItemId, kind: newtype, of: Uuid}
+entities:
+  - name: cascade.feed.Feed
+    identity: {name: feed_id, type: cascade.feed.FeedId}
+    fields: [{name: label, type: String}]
+    lifecycle:
+      initial: Open
+      states: [Open, Cancelled]
+      terminal: [Cancelled]
+      transitions: [{name: cancel, from: [Open], to: Cancelled}]
+  - name: cascade.feed.Item
+    identity: {name: item_id, type: cascade.feed.ItemId}
+    fields: [{name: feed_id, type: cascade.feed.FeedId}]
+    relations:
+      - {name: feed, kind: references, target: cascade.feed.Feed, cardinality: one, via: feed_id}
+    lifecycle:
+      initial: Pending
+      states: [Pending, Discarded]
+      terminal: [Discarded]
+      transitions: [{name: discard, from: [Pending], to: Discarded}]
+errors:
+  - {name: cascade.feed.FeedNotFound, fields: []}
+  - {name: cascade.feed.WrongState, fields: []}
+  - {name: cascade.feed.Blank, fields: []}
+events:
+  - name: cascade.feed.FeedOpened
+    fields: [{name: feed_id, type: cascade.feed.FeedId}]
+  - name: cascade.feed.ItemPosted
+    fields: [{name: item_id, type: cascade.feed.ItemId}]
+  - name: cascade.feed.FeedCancelled
+    fields: [{name: feed_id, type: cascade.feed.FeedId}]
+actors:
+  - name: cascade.feed.Operator
+    may: [cascade.feed.Open, cascade.feed.Post, cascade.feed.Cancel]
+commands:
+  - name: cascade.feed.Open
+    input: [{name: label, type: String}]
+    outcomes:
+      - name: opened
+        creates: cascade.feed.Feed
+        instance: feed_id
+        emits: [cascade.feed.FeedOpened]
+        payload: {cascade.feed.FeedOpened: {feed_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: cascade.feed.Post
+    input:
+      - {name: feed_id, type: cascade.feed.FeedId}
+      - {name: urgent, type: Boolean}
+    outcomes:
+      - name: posted
+        creates: cascade.feed.Item
+        instance: item_id
+        emits: [cascade.feed.ItemPosted]
+        payload: {cascade.feed.ItemPosted: {item_id: {generated: true}}}
+        sets: {feed_id: input.feed_id}
+  - name: cascade.feed.Cancel
+    input: [{name: feed_id, type: cascade.feed.FeedId}]
+    outcomes:
+      - name: cancelled
+        moves: cascade.feed.Feed.cancel
+        instance: feed_id
+        emits: [cascade.feed.FeedCancelled]
+        payload: {cascade.feed.FeedCancelled: {feed_id: input.feed_id}}
+        affects:
+          - entity: cascade.feed.Item
+            where: feed_id == input.feed_id
+            moves: cascade.feed.Item.discard
+      - {name: wrong-state, wrong_state: true, error: cascade.feed.WrongState}
+views:
+  - name: cascade.feed.Items
+    source: cascade.feed.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: cascade.feed.ItemId}
+      - {name: feed_id, type: cascade.feed.FeedId}
+      - {name: state, type: cascade.feed.Item.State}
+  - name: cascade.feed.Feeds
+    source: cascade.feed.Feed
+    consistency: read_your_writes
+    fields:
+      - {name: feed_id, type: cascade.feed.FeedId}
+      - {name: state, type: cascade.feed.Feed.State}
+";
+
+const CANCELLED: &str = "cascade.feed.Cancel/outcome/cancelled";
+
+/// An unknown feed refused before `posted`.
+const UNKNOWN_FEED: &str = "      - name: unknown-feed
+        when_related: {via: input.feed_id, exists: false}
+        error: cascade.feed.FeedNotFound
+";
+
+/// An input refusal before `posted`, reading nothing of the feed.
+const BLANK: &str = "      - {name: blank, when: urgent == true, error: cascade.feed.Blank}
+";
+
+/// A feed that is not open refused before `posted`: the state the cancellation needs it in.
+const STALE_FEED: &str = "      - name: stale-feed
+        when_related: {via: input.feed_id, predicate: state != Open}
+        error: cascade.feed.WrongState
+";
+
+/// An open feed refused before `posted`: items are posted only to a cancelled feed, so no item of
+/// the feed a cancellation names can be posted while it is still open.
+const OPEN_FEED: &str = "      - name: open-feed
+        when_related: {via: input.feed_id, predicate: state == Open}
+        error: cascade.feed.WrongState
+";
+
+/// [`FEED`] with `refusals` declared above `Post`'s creating branch.
+fn feed(refusals: &[&str]) -> String {
+    let at = "      - name: posted\n";
+    assert!(FEED.contains(at));
+    FEED.replacen(at, &format!("{}{at}", refusals.concat()), 1)
+}
+
+/// `model` with the cancellation's `affects:` entry left out: a target that skips the move. A
+/// command no scenario of `model` sends takes the transition instead, so the model stays admitted.
+fn skipping(model: &str) -> String {
+    let entry = "        affects:
+          - entity: cascade.feed.Item
+            where: feed_id == input.feed_id
+            moves: cascade.feed.Item.discard
+";
+    let may = "cascade.feed.Cancel]\n";
+    let views = "views:\n";
+    assert!(model.contains(entry) && model.contains(may) && model.contains(views));
+    model
+        .replacen(entry, "", 1)
+        .replacen(may, "cascade.feed.Cancel, cascade.feed.Discard]\n", 1)
+        .replacen(
+            views,
+            "  - name: cascade.feed.Discard
+    input: [{name: item_id, type: cascade.feed.ItemId}]
+    outcomes:
+      - name: discarded
+        moves: cascade.feed.Item.discard
+        instance: item_id
+        emits: [cascade.feed.ItemPosted]
+        payload: {cascade.feed.ItemPosted: {item_id: input.item_id}}
+      - {name: not-pending, wrong_state: true, error: cascade.feed.WrongState}
+views:
+",
+            1,
+        )
+}
+
+fn causes(synthesis: &ess_conformance::synthesize::Synthesis) -> Vec<String> {
+    synthesis
+        .refusals
+        .iter()
+        .map(|refusal| format!("{refusal}: {}", refusal.cause))
+        .collect()
+}
+
+/// `model` synthesizes with no refusal, and its cancellation's scenario passes the interpreter and
+/// fails one that skips the move.
+fn cascade_witnessed(model: &str) {
+    let ir = ir_of(model);
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    assert_eq!(causes(&synthesis), Vec::<String>::new(), "{model}");
+    let cancelled = scenario(&synthesis.suite, CANCELLED);
+    assert!(
+        sends(cancelled, "cascade.feed.Post") >= 3,
+        "{:#?}",
+        cancelled.steps
+    );
+    let statuses = run(
+        &synthesis.suite,
+        &ess_conformance::interpret::Interpreted::for_model(ir),
+    );
+    assert_eq!(not_passed(&statuses), Vec::<&str>::new(), "{statuses:#?}");
+    let skipped = run(
+        &synthesis.suite,
+        &ess_conformance::interpret::Interpreted::for_model(ir_of(&skipping(model))),
+    );
+    assert_eq!(
+        skipped.get(CANCELLED),
+        Some(&Status::Failed),
+        "{skipped:#?}"
+    );
+}
+
+#[test]
+fn a_cascade_onto_rows_of_a_guarded_creator_is_witnessed() {
+    cascade_witnessed(&feed(&[]));
+    cascade_witnessed(&feed(&[UNKNOWN_FEED]));
+    cascade_witnessed(&feed(&[BLANK]));
+    cascade_witnessed(&feed(&[UNKNOWN_FEED, BLANK]));
+}
+
+#[test]
+fn a_cascade_onto_rows_of_a_creator_refusing_a_related_state_is_witnessed() {
+    // A predicate over the related row is admitted only beside its missing-row branch.
+    cascade_witnessed(&feed(&[UNKNOWN_FEED, STALE_FEED]));
+    cascade_witnessed(&feed(&[STALE_FEED, UNKNOWN_FEED]));
+    cascade_witnessed(&feed(&[UNKNOWN_FEED, STALE_FEED, BLANK]));
+}
+
+/// The refusal of the cancellation, where no item of its feed can be posted.
+fn undriven() -> ess_conformance::synthesize::Refusal {
+    let synthesis = synthesis_of(&feed(&[UNKNOWN_FEED, OPEN_FEED]));
+    assert!(
+        !synthesis
+            .suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string() == CANCELLED),
+        "no scenario a skipping target passes"
+    );
+    let found = synthesis
+        .refusals
+        .iter()
+        .find(|refusal| refusal.to_string().contains("Cancel/outcome/cancelled"))
+        .cloned();
+    found.unwrap_or_else(|| panic!("{:#?}", causes(&synthesis)))
+}
+
+#[test]
+fn a_cascade_refusal_names_the_creator_it_could_not_drive() {
+    let refusal = undriven();
+    let cause = refusal.cause.to_string();
+    assert!(
+        cause.contains("cascade.feed.Post/posted") && cause.contains("cancelled.affects[0]"),
+        "{cause}"
+    );
+    assert!(!cause.contains("arrives in"), "{cause}");
+}
+
+#[test]
+fn a_cascade_set_effect_refusal_carries_its_own_help() {
+    let fallback = "give the field a type that has a finite value";
+    let help = undriven().hint();
+    assert!(!help.contains(fallback) && help.contains("creat"), "{help}");
+    // A move seen only in the state it arrives in, writing nothing.
+    let model = moves_only()
+        .replacen(
+            "        - {name: end, from: [Live], to: Ended}\n",
+            "        - {name: touch, from: [Live], to: Live}\n",
+            1,
+        )
+        .replacen(
+            "      states: [Live, Ended, Expired]\n",
+            "      states: [Live, Expired]\n",
+            1,
+        )
+        .replacen(
+            "      terminal: [Ended, Expired]\n",
+            "      terminal: [Expired]\n",
+            1,
+        )
+        .replacen(
+            "            moves: demo.users.Session.end\n",
+            "            moves: demo.users.Session.touch\n",
+            1,
+        );
+    let synthesis = synthesis_of(&model);
+    let refusal = synthesis
+        .refusals
+        .iter()
+        .find(|refusal| refusal.to_string().contains("DeactivateUser"))
+        .unwrap_or_else(|| panic!("{:#?}", causes(&synthesis)));
+    let help = refusal.hint();
+    assert!(!help.contains(fallback) && help.contains("move"), "{help}");
+}
