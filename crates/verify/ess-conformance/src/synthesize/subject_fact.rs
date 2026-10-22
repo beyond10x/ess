@@ -1098,6 +1098,24 @@ pub(super) fn grounded_on_input(
         .iter()
         .filter(|leaf| reads_input(ir, entity, leaf))
         .filter_map(|leaf| {
+            // A quantifier over a stored collection comparing its elements with the input —
+            // `exists entry in entries: entry.action == input.action` — keeps its collection and
+            // binder, its body's input side replaced by the value held there: the row is steered
+            // toward a collection holding an element that matches the input already chosen.
+            if let Predicate::Exists(quantified) | Predicate::Forall(quantified) = leaf {
+                quantified.over.fact()?;
+                let body = held_in_body(&quantified.body, &held)?;
+                let quantified = Box::new(ess_primitives::predicate::Quantified {
+                    over: quantified.over.clone(),
+                    bind: quantified.bind.clone(),
+                    body,
+                });
+                return Some(if matches!(leaf, Predicate::Exists(_)) {
+                    Predicate::Exists(quantified)
+                } else {
+                    Predicate::Forall(quantified)
+                });
+            }
             let Predicate::Compare {
                 left,
                 op,
@@ -1125,6 +1143,56 @@ pub(super) fn grounded_on_input(
             })
         })
         .collect()
+}
+
+/// A quantifier's body for [`grounded_on_input`]: each comparison's input side replaced by the
+/// value `held` gives it, and every fact and literal kept. `None` where the body reads an input
+/// field nothing holds, compares a computed operand, or reads the input in a leaf other than a
+/// comparison.
+fn held_in_body(
+    body: &Predicate,
+    held: &dyn Fn(&FactPath) -> Option<Operand>,
+) -> Option<Predicate> {
+    let reads = |predicate: &Predicate| {
+        predicate
+            .fact_paths()
+            .iter()
+            .any(|path| input_path(path).is_some())
+    };
+    match body {
+        Predicate::All(children) => children
+            .iter()
+            .map(|child| held_in_body(child, held))
+            .collect::<Option<Vec<_>>>()
+            .map(Predicate::All),
+        Predicate::Any(children) => children
+            .iter()
+            .map(|child| held_in_body(child, held))
+            .collect::<Option<Vec<_>>>()
+            .map(Predicate::Any),
+        Predicate::Not(inner) => {
+            held_in_body(inner, held).map(|inner| Predicate::Not(Box::new(inner)))
+        }
+        Predicate::Compare {
+            left,
+            op,
+            right,
+            kind,
+        } => {
+            let side = |operand: &Operand| match operand {
+                Operand::Fact(path) if input_path(path).is_some() => held(path),
+                Operand::Fact(_) | Operand::Literal(_) => Some(operand.clone()),
+                _ => None,
+            };
+            Some(Predicate::Compare {
+                left: side(left)?,
+                op: *op,
+                right: side(right)?,
+                kind: *kind,
+            })
+        }
+        other => (!reads(other)).then(|| other.clone()),
+    }
 }
 
 /// What [`grounded`] leaves out and a quantifier over the command's input grounds: its body's
@@ -4420,7 +4488,7 @@ fn through_copies(
 /// The block the related rows a creation copies a field from are arranged at ([`copied_creations`]):
 /// past every block [`super::related_guard`] and [`super::related`] number, so its rows name no row
 /// either arranges.
-const COPIED: usize = 27_720 * 13;
+pub(super) const COPIED: usize = 27_720 * 13;
 
 /// The rows a creating branch leaves where its `sets:` copies a field the hints read from a related
 /// row its input names (`{related: {via: input.f, field: g}}`, beyond10x/ess#307): that row is

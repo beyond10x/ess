@@ -25,7 +25,7 @@ use crate::witness::Distinction;
 
 /// The distinctions the rows a list names are created at: apart from every block the one-row
 /// strategy uses ([`super::related_guard`]), so no row is another arrangement's.
-const ROWS: usize = 27_720 * 25;
+pub(super) const ROWS: usize = 27_720 * 25;
 
 /// The list input `command`'s related guard reads, and the entity whose rows its elements name.
 pub(super) fn reads(command: &ResolvedCommand) -> Option<(&str, &EntityHandle)> {

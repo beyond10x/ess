@@ -1,4 +1,4 @@
-#	models=284	commands=586
+#	models=288	commands=600
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -265,6 +265,12 @@ crates/verify/ess-conformance/tests/fixtures/arrangement-two-creators.yaml	shop.
 crates/verify/ess-conformance/tests/fixtures/authored-caller.yaml	ir=6c7c6c3f3f69c99b8c8548b97c580daa4e7bd058114aff69df762b0b4f042f2e:10604
 crates/verify/ess-conformance/tests/fixtures/authored-caller.yaml	ledger.notes.OpenAccount	default: opened
 crates/verify/ess-conformance/tests/fixtures/authored-caller.yaml	ledger.notes.OpenNote	default: opened
+crates/verify/ess-conformance/tests/fixtures/beside-row-once.yaml	ir=7b2ff917136a35fe976500caad601333fe05772a5ba2bbab8960eceecd6870d6:24991
+crates/verify/ess-conformance/tests/fixtures/beside-row-once.yaml	demo.yard.AddMachine	present_related: no-site | default: added
+crates/verify/ess-conformance/tests/fixtures/beside-row-once.yaml	demo.yard.FreezeSite	held_state: already-frozen | default: frozen
+crates/verify/ess-conformance/tests/fixtures/beside-row-once.yaml	demo.yard.OpenSite	default: opened
+crates/verify/ess-conformance/tests/fixtures/beside-row-once.yaml	demo.yard.StartMachine	held_state: running | present_related: frozen | default: started
+crates/verify/ess-conformance/tests/fixtures/beside-row-once.yaml	demo.yard.TagMachine	present_related: no-machine, no-site, frozen, elsewhere, not-alpha | default: tagged
 crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml	ir=89aef022ceb3ea9752913f3c943d6aa0d09ed227514849f64490c2bf3bda3d91:18163
 crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml	jobs.job.Create	default: created
 crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml	jobs.job.Kick	default: kicked
@@ -387,6 +393,9 @@ crates/verify/ess-conformance/tests/fixtures/error-payload-sources.yaml	demo.ord
 crates/verify/ess-conformance/tests/fixtures/error-payload-sources.yaml	demo.order.PlaceOrder	input_refusal: too-many | default: placed
 crates/verify/ess-conformance/tests/fixtures/event-multiplicity.yaml	ir=e15ad0106ea9cfc5474ae349f8f2ae76dd6ca4f5512121959155db1f89c2bb3c:4479
 crates/verify/ess-conformance/tests/fixtures/event-multiplicity.yaml	demo.batch.Rewrap	default: rewrapped
+crates/verify/ess-conformance/tests/fixtures/existence-list-membership.yaml	ir=2862866dc801a6b1449a7b327ca4051442723c80417dad160029eaabf55f8928:22123
+crates/verify/ess-conformance/tests/fixtures/existence-list-membership.yaml	demo.pick.Project	existence: catalogue-exists | default: projected
+crates/verify/ess-conformance/tests/fixtures/existence-list-membership.yaml	demo.pick.Select	existence: selection-exists | present_related: catalogue-unknown, not-listed, revision-mismatch | default: selected
 crates/verify/ess-conformance/tests/fixtures/explore-adv-order.yaml	ir=3abef0b48a95b80ead64c60f0906d604d2ded1922f7364166340aa4f322c7e97:10837
 crates/verify/ess-conformance/tests/fixtures/explore-adv-order.yaml	exploreadv.desk.Close	held_state: wrong-state | accepting: bounced | default: closed
 crates/verify/ess-conformance/tests/fixtures/explore-adv-order.yaml	exploreadv.desk.Open	default: opened
@@ -485,6 +494,11 @@ crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	demo.jo
 crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	demo.jobs.Close	existence: unknown-attempt | held_state: already-closed | present_related: crowded | default: closed
 crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	demo.jobs.Record	default: recorded
 crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	demo.jobs.Retry	present_related: ambiguous | accepting: started | default: retried
+crates/verify/ess-conformance/tests/fixtures/fleet-sites.yaml	ir=107db11ac84ceeb5dd182f05b095d0e415663530b43756080ab14ce9e3d19c35:17257
+crates/verify/ess-conformance/tests/fixtures/fleet-sites.yaml	demo.fleet.AddMachine	present_related: no-site, frozen | default: added
+crates/verify/ess-conformance/tests/fixtures/fleet-sites.yaml	demo.fleet.FreezeSite	held_state: already-frozen | default: frozen
+crates/verify/ess-conformance/tests/fixtures/fleet-sites.yaml	demo.fleet.OpenSite	default: opened
+crates/verify/ess-conformance/tests/fixtures/fleet-sites.yaml	demo.fleet.StartMachine	held_state: wrong-state | present_related: frozen | default: started
 crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	ir=8a5e4a3ff72b5286ecf3f95aecdfbf0e81a229e9d3dcb49cc75f999421738521:52106
 crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	demo.pairs.AbsentBesideRelated	input_absent: no-input | present_related: unknown-tier, closed | default: changed
 crates/verify/ess-conformance/tests/fixtures/guard-pair-corpus.yaml	demo.pairs.BeforeRowBesideRelated	input_refusal: bad-secret | existence: unknown-seat | present_related: unknown-tier, closed | default: changed
@@ -779,6 +793,10 @@ crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	ir=78c8c58
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	queueing.entry.AddWorker	default: added
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	queueing.entry.Assign	held_state: wrong-state | accepting: dialler-refused | default: assigned
 crates/verify/ess-conformance/tests/fixtures/system-issued-queue.yaml	queueing.entry.Enqueue	default: enqueued
+crates/verify/ess-conformance/tests/fixtures/two-related-selectors.yaml	ir=d3d3f32082b2b471847deca786e723e094da5ee0ca25b0c1e54f223d1597be0f:15832
+crates/verify/ess-conformance/tests/fixtures/two-related-selectors.yaml	demo.seats.AddMember	default: added
+crates/verify/ess-conformance/tests/fixtures/two-related-selectors.yaml	demo.seats.AddSeat	default: added
+crates/verify/ess-conformance/tests/fixtures/two-related-selectors.yaml	demo.seats.Assign	present_related: no-member, no-seat | default: assigned
 crates/verify/ess-conformance/tests/fixtures/two-rows-one-branch.yaml	ir=2c4e615ef9639cd067ec9af4b3b610cb02b815727058ed3057e6bc8ada354ca5:15428
 crates/verify/ess-conformance/tests/fixtures/two-rows-one-branch.yaml	wiring.board.AddPort	default: added
 crates/verify/ess-conformance/tests/fixtures/two-rows-one-branch.yaml	wiring.board.Connect	present_related: no-source, no-sink, both-inbound, both-outbound | default: connected

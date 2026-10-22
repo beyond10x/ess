@@ -1,0 +1,107 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.seats
+summary: An assignment needs a member of its group and a seat in its workspace, each read through its own selector.
+types:
+  - {name: demo.seats.MemberId, kind: newtype, of: Uuid}
+  - {name: demo.seats.SeatId, kind: newtype, of: Uuid}
+  - {name: demo.seats.AssignmentId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.seats.Member
+    identity: {name: member_id, type: demo.seats.MemberId}
+    fields:
+      - {name: group_key, type: String}
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+  - name: demo.seats.Seat
+    identity: {name: seat_id, type: demo.seats.SeatId}
+    fields:
+      - {name: workspace, type: String}
+    lifecycle:
+      initial: Free
+      states: [Free]
+      terminal: [Free]
+  - name: demo.seats.Assignment
+    identity: {name: assignment_id, type: demo.seats.AssignmentId}
+    fields:
+      - {name: group_key, type: String}
+      - {name: workspace, type: String}
+    lifecycle:
+      initial: Made
+      states: [Made]
+      terminal: [Made]
+errors:
+  - {name: demo.seats.NoMember, summary: No member of the group exists., fields: []}
+  - {name: demo.seats.NoSeat, summary: No seat of the workspace exists., fields: []}
+events:
+  - name: demo.seats.MemberAdded
+    fields: [{name: member_id, type: demo.seats.MemberId}]
+  - name: demo.seats.SeatAdded
+    fields: [{name: seat_id, type: demo.seats.SeatId}]
+  - name: demo.seats.Assigned
+    fields: [{name: assignment_id, type: demo.seats.AssignmentId}]
+views:
+  - name: demo.seats.Assignments
+    source: demo.seats.Assignment
+    consistency: read_your_writes
+    fields:
+      - {name: assignment_id, type: demo.seats.AssignmentId}
+      - {name: group_key, type: String}
+      - {name: workspace, type: String}
+commands:
+  - name: demo.seats.AddMember
+    input:
+      - {name: member_id, type: demo.seats.MemberId}
+      - {name: group_key, type: String}
+    outcomes:
+      - name: added
+        creates: demo.seats.Member
+        instance: member_id
+        sets:
+          group_key: input.group_key
+        emits: [demo.seats.MemberAdded]
+        payload:
+          demo.seats.MemberAdded: {member_id: input.member_id}
+  - name: demo.seats.AddSeat
+    input:
+      - {name: seat_id, type: demo.seats.SeatId}
+      - {name: workspace, type: String}
+    outcomes:
+      - name: added
+        creates: demo.seats.Seat
+        instance: seat_id
+        sets:
+          workspace: input.workspace
+        emits: [demo.seats.SeatAdded]
+        payload:
+          demo.seats.SeatAdded: {seat_id: input.seat_id}
+  - name: demo.seats.Assign
+    input:
+      - {name: assignment_id, type: demo.seats.AssignmentId}
+      - {name: group_key, type: String}
+      - {name: workspace, type: String}
+    outcomes:
+      - name: no-member
+        when_related:
+          entity: demo.seats.Member
+          where: group_key == input.group_key
+          exists: false
+        error: demo.seats.NoMember
+      - name: no-seat
+        when_related:
+          entity: demo.seats.Seat
+          where: workspace == input.workspace
+          exists: false
+        error: demo.seats.NoSeat
+      - name: assigned
+        creates: demo.seats.Assignment
+        instance: assignment_id
+        sets:
+          group_key: input.group_key
+          workspace: input.workspace
+        emits: [demo.seats.Assigned]
+        payload:
+          demo.seats.Assigned: {assignment_id: input.assignment_id}
