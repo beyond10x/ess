@@ -7,7 +7,7 @@ title: A view declares its answer for an identity no row carries
 relations:
 - depends_on: story:create-or-update-selects-update-branches-by-stored-fields
 - depends_on: story:http-binding-response-body-and-status-per-outcome
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -93,3 +93,13 @@ Each line names the failing test written first.
 - adversary: yes (new answer across interpreter, synthesis and generated readers).
 - shared surfaces: `view.rs` with no other wave m story; `ess-openapi` with ess-http/1 stage 2
   (wave k), which lands first.
+
+## a2a wave 1
+
+Relayed by the orchestrator on 2026-10-22 from the adopter session specifying A2A in
+beyond10x/a2a (ESS 0.67.0, a2a main 3a18050):
+
+- **J5** (a2a wave-1 gaps list, line 26): errors on a view. A view read by identity (the protocol's
+  get-task) must answer a declared error (task not found) for an identity no row carries; this
+  story's `absent: {error: <Error>}` is that need. The error's JSON-RPC code is bound by
+  `story:a-command-binds-to-json-rpc-and-grpc-beside-http`.
