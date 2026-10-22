@@ -144,7 +144,9 @@ fn invariant_over_state_catches_a_forgotten_set() {
         Err(Undetermined::BrokenInvariant {
             instance,
             invariant,
+            help,
         }) => {
+            assert_eq!(help, None, "no outcome mints a field this invariant reads");
             assert!(
                 instance.contains("desk.tickets.Ticket"),
                 "the broken instance is the ticket: {instance}"
