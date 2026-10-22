@@ -1501,7 +1501,8 @@ crate::authored::diagnostic_catalogue! {
                 | BindingGap::UnchangedUnobservable { .. }
                 | BindingGap::EffectUnsettled { .. }
                 | BindingGap::ConditionUnarranged { .. }
-                | BindingGap::ChangedRowUnarranged { .. },
+                | BindingGap::ChangedRowUnarranged { .. }
+                | BindingGap::RelatedRowNeededByTrigger { .. },
             ..
         } => 10,
             "A binding clause has nothing a scenario could observe.",
@@ -2022,6 +2023,16 @@ pub enum BindingGap {
         /// The entity whose rows it changes.
         entity: EntityRef,
     },
+    /// The selected refusal answers a missing related row, and every command that publishes the
+    /// binding's event refuses that same missing row itself: each publishes only while the row
+    /// exists, so no trigger leaves it absent when the binding is delivered, and the honest system never
+    /// reaches the refusal (a downstream adopter's report of 2026-10-22).
+    RelatedRowNeededByTrigger {
+        /// The refusal the policy selects.
+        refusal: OutcomeRef,
+        /// The first publisher's command, which refuses the missing row before it publishes.
+        trigger: CommandRef,
+    },
 }
 
 impl BindingGap {
@@ -2102,6 +2113,11 @@ impl BindingGap {
                 "let the trigger copy every input the filter reads from an input of its own, and \
                  a command that creates the entity write each field the filter reads from an \
                  input; or cover the binding with an authored scenario (ess-scenario/1)"
+            }
+            Self::RelatedRowNeededByTrigger { .. } => {
+                "add a command that publishes the event without first refusing the missing row, \
+                 declare the refusal `external:` so a scenario can force it, or cover its policy \
+                 with an authored scenario (ess-scenario/1)"
             }
         }
     }
@@ -2201,6 +2217,13 @@ impl fmt::Display for BindingGap {
                 f,
                 "invokes `{outcome}`, which publishes an event once per `{entity}` it changes, and \
                  no row its filter selects can be arranged before the trigger"
+            ),
+            Self::RelatedRowNeededByTrigger { refusal, trigger } => write!(
+                f,
+                "selects its failure policy per refusal, and the refusal `{refusal}` answers a \
+                 missing related row, and every publisher of its event, `{trigger}` first, refuses \
+                 that missing row itself before it publishes, so the absent-row case cannot be \
+                 arranged"
             ),
         }
     }
@@ -3510,6 +3533,7 @@ fn exercise_as(
     };
     if witness == Witness::Full {
         force_beside_unnarrowed(models.arrangement, command, outcome, &mut run);
+        binding_effects::arrange_retried(models.arrangement, outcome, actors, &mut run);
     }
 
     exercise_run_in(models, command, outcome, actors, id, refusals, run)

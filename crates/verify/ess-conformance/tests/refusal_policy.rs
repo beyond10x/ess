@@ -1125,3 +1125,125 @@ fn go_refuses_a_refusal_scenario_below_suite_36_before_any_target_is_reached() {
     assert!(go.outcomes.is_empty() && !go.success, "{}", go.log);
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+// ---- a missing related row the trigger itself refuses -------------------------------------------
+
+/// A refusal-selected policy over a `when_related: {exists: false}` refusal, where the only command
+/// publishing the event refuses the same missing row first (a downstream adopter's report of
+/// 2026-10-22): no trigger names a row that is absent when the binding is delivered.
+const TRIGGER_NEEDS_ROW: &str = r"
+format: ess/27
+system: demo
+version: v1
+domain: demo.access
+types:
+  - {name: demo.access.RoleId, kind: newtype, of: Uuid}
+  - {name: demo.access.GrantId, kind: newtype, of: Uuid}
+  - {name: demo.access.Title, kind: newtype, of: String}
+entities:
+  - name: demo.access.Role
+    identity: {name: role_id, type: demo.access.RoleId}
+    fields:
+      - {name: title, type: demo.access.Title}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.access.Grant
+    identity: {name: grant_id, type: demo.access.GrantId}
+    fields:
+      - {name: role_id, type: demo.access.RoleId}
+    lifecycle: {initial: Held, states: [Held], terminal: [Held]}
+events:
+  - name: demo.access.RoleDefined
+    fields:
+      - {name: role_id, type: demo.access.RoleId}
+  - name: demo.access.RoleAssigned
+    fields:
+      - {name: role_id, type: demo.access.RoleId}
+  - name: demo.access.Granted
+    fields:
+      - {name: grant_id, type: demo.access.GrantId}
+errors:
+  - {name: demo.access.NoRole, fields: []}
+actors:
+  - name: demo.access.Clerk
+    may: [demo.access.DefineRole, demo.access.AssignRole, demo.access.GrantForRole]
+commands:
+  - name: demo.access.DefineRole
+    input:
+      - {name: title, type: demo.access.Title}
+    outcomes:
+      - name: defined
+        creates: demo.access.Role
+        instance: role_id
+        emits: [demo.access.RoleDefined]
+        payload:
+          demo.access.RoleDefined: {role_id: {generated: true}}
+        sets: {title: input.title}
+  - name: demo.access.AssignRole
+    input:
+      - {name: role_id, type: demo.access.RoleId}
+    outcomes:
+      - {name: role-not-found, when_related: {via: input.role_id, exists: false}, error: demo.access.NoRole}
+      - name: assigned
+        emits: [demo.access.RoleAssigned]
+        payload:
+          demo.access.RoleAssigned: {role_id: input.role_id}
+  - name: demo.access.GrantForRole
+    input:
+      - {name: role_id, type: demo.access.RoleId}
+    outcomes:
+      - {name: role-missing, when_related: {via: input.role_id, exists: false}, error: demo.access.NoRole}
+      - name: granted
+        creates: demo.access.Grant
+        instance: grant_id
+        emits: [demo.access.Granted]
+        payload:
+          demo.access.Granted: {grant_id: {generated: true}}
+        sets: {role_id: input.role_id}
+views:
+  - name: demo.access.Grants
+    source: demo.access.Grant
+    consistency: read_your_writes
+    fields:
+      - {name: grant_id, type: demo.access.GrantId}
+      - {name: role_id, type: demo.access.RoleId}
+bindings:
+  - id: grant-on-assigned
+    when: {event: demo.access.RoleAssigned}
+    invoke: {command: demo.access.GrantForRole}
+    mapping: {role_id: event.role_id}
+    delivery: at_least_once
+    on_failure: {drop: [role-missing], retry: {except: [role-missing]}}
+";
+
+#[test]
+fn a_refusal_policy_scenario_is_not_set_up_through_a_trigger_that_needs_the_row() {
+    let id = "grant-on-assigned/binding/refusal/role-missing";
+    let ir = ir_of(TRIGGER_NEEDS_ROW);
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    let refused: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .filter(|refusal| {
+            refusal
+                .scenario
+                .as_ref()
+                .is_some_and(|scenario| scenario.to_string() == id)
+        })
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(refused.len(), 1, "{:#?}", synthesis.refusals);
+    assert!(
+        refused[0].contains("ESS-SYNTH-010")
+            && refused[0].contains("demo.access.AssignRole")
+            && refused[0].contains("refuses that missing row itself"),
+        "{refused:#?}"
+    );
+    assert!(!synthesis
+        .suite
+        .scenarios
+        .keys()
+        .any(|key| key.to_string() == id));
+    let statuses = run(&synthesis.suite, &Interpreted::for_model(ir));
+    assert!(!statuses.is_empty());
+    assert_eq!(not_passed(&statuses), Vec::<&str>::new());
+}

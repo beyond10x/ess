@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A binding scenario whose trigger row's creator guards the target row's stored fields acts on the row the arrangement made selectable; it acted on a second row and failed. A binding writing to the row named in the trigger's input acts on the row the trigger's own guard arranged.
+- A refusal-policy scenario for a missing related row is refused as ESS-SYNTH-010, naming the trigger, only when every command publishing the event refuses that missing row itself; it was synthesized and failed. Where one publisher does not, the scenario is set up through that publisher.
+- The outcome scenario of a command whose event an unbounded `retry` binding answers names the row that binding needs, so the retry ends; the interpreter answered it unsupported. This covers a per-refusal policy with an unbounded `retry` and a row identity stored on the trigger's subject.
+- A binding scenario whose trigger reads the stored fields of the row it names, where that row's state cannot be followed (another binding acts on it during the arrangement), is refused as ESS-SYNTH-010; it was sent naming a fresh row the trigger refused, and failed. A trigger that updates the related row and refuses an unknown one (`unknown_instance:`) counts as refusing the missing row for a refusal-policy scenario, as an `exists: false` branch does.
+
 ## [0.68.0] — 2026-10-22
 
 ### Added

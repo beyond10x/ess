@@ -11,6 +11,8 @@
 //! | [`ROW_SET`] | a row-set guard in a model with a binding that never writes the guarded entity: the rows, as without the binding |
 //! | [`AFFECTS`] | `affects:` rows whose creating command has a `when_related` refusal: the subject the filter ties them to, named in the creation |
 //! | [`SUBJECT_FIELD`] | a binding target named by a `{subject: <field>}` payload value: the target row first, then the trigger's row naming it |
+//! | [`SUBJECT_FIELD_GUARDED`] | the same, where the trigger row's creator guards the related row's stored fields: the row the trigger's arrangement made selectable is the target |
+//! | [`UNBOUNDED_RETRY`] | the outcome scenario of a command whose event an unbounded `retry` binding answers, guarded by nothing: the row the bound command needs, so the retry ends |
 //!
 //! Every scenario is also run against the interpreter: a scenario synthesized for a construct and
 //! failed by the reference implementation is no better than a refusal.
@@ -512,6 +514,304 @@ bindings:
     delivery: at_least_once
     on_failure: retry
 ";
+const SUBJECT_FIELD_GUARDED: &str = r"
+format: ess/27
+system: demo
+version: v1
+domain: demo.device
+types:
+  - {name: demo.device.DeviceId, kind: newtype, of: Uuid}
+  - {name: demo.device.TokenId, kind: newtype, of: Uuid}
+  - {name: demo.device.Label, kind: newtype, of: String}
+  - {name: demo.device.Mode, kind: enum, variants: [managed, open]}
+entities:
+  - name: demo.device.Device
+    identity: {name: device_id, type: demo.device.DeviceId}
+    fields:
+      - {name: label, type: demo.device.Label}
+      - {name: mode, type: demo.device.Mode}
+      - {name: paired, type: Boolean}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.device.Token
+    identity: {name: token_id, type: demo.device.TokenId}
+    fields:
+      - {name: device_id, type: demo.device.DeviceId}
+    lifecycle:
+      initial: Issued
+      states: [Issued, Redeemed]
+      terminal: [Redeemed]
+      transitions:
+        - {name: redeem, from: [Issued], to: Redeemed}
+events:
+  - name: demo.device.DeviceRegistered
+    fields:
+      - {name: device_id, type: demo.device.DeviceId}
+  - name: demo.device.DeviceOpened
+    fields:
+      - {name: device_id, type: demo.device.DeviceId}
+  - name: demo.device.TokenIssued
+    fields:
+      - {name: token_id, type: demo.device.TokenId}
+  - name: demo.device.TokenRedeemed
+    fields:
+      - {name: token_id, type: demo.device.TokenId}
+      - {name: device_id, type: demo.device.DeviceId}
+  - name: demo.device.DevicePaired
+    fields:
+      - {name: device_id, type: demo.device.DeviceId}
+errors:
+  - {name: demo.device.AlreadyRedeemed, fields: []}
+  - {name: demo.device.NoDevice, fields: []}
+  - {name: demo.device.Managed, fields: []}
+actors:
+  - name: demo.device.Clerk
+    may: [demo.device.RegisterDevice, demo.device.OpenDevice, demo.device.IssueToken, demo.device.RedeemToken, demo.device.PairDevice]
+commands:
+  - name: demo.device.RegisterDevice
+    input:
+      - {name: label, type: demo.device.Label}
+    outcomes:
+      - name: registered
+        creates: demo.device.Device
+        instance: device_id
+        emits: [demo.device.DeviceRegistered]
+        payload:
+          demo.device.DeviceRegistered: {device_id: {generated: true}}
+        sets: {label: input.label, mode: managed, paired: false}
+  - name: demo.device.OpenDevice
+    input:
+      - {name: device_id, type: demo.device.DeviceId}
+    outcomes:
+      - name: opened
+        updates: demo.device.Device
+        instance: device_id
+        emits: [demo.device.DeviceOpened]
+        payload:
+          demo.device.DeviceOpened: {device_id: input.device_id}
+        sets: {mode: open}
+      - {name: no-device, unknown_instance: true, error: demo.device.NoDevice}
+  - name: demo.device.IssueToken
+    input:
+      - {name: device_id, type: demo.device.DeviceId}
+    outcomes:
+      - {name: unknown-device, when_related: {via: input.device_id, exists: false}, error: demo.device.NoDevice}
+      - {name: managed, when_related: {via: input.device_id, predicate: mode == managed}, error: demo.device.Managed}
+      - name: issued
+        creates: demo.device.Token
+        instance: token_id
+        emits: [demo.device.TokenIssued]
+        payload:
+          demo.device.TokenIssued: {token_id: {generated: true}}
+        sets: {device_id: input.device_id}
+  - name: demo.device.RedeemToken
+    input:
+      - {name: token_id, type: demo.device.TokenId}
+    outcomes:
+      - name: redeemed
+        moves: demo.device.Token.redeem
+        instance: token_id
+        emits: [demo.device.TokenRedeemed]
+        payload:
+          demo.device.TokenRedeemed: {token_id: input.token_id, device_id: {subject: device_id}}
+      - {name: already-redeemed, wrong_state: true, error: demo.device.AlreadyRedeemed}
+  - name: demo.device.PairDevice
+    input:
+      - {name: device_id, type: demo.device.DeviceId}
+    outcomes:
+      - name: paired
+        updates: demo.device.Device
+        instance: device_id
+        emits: [demo.device.DevicePaired]
+        payload:
+          demo.device.DevicePaired: {device_id: input.device_id}
+        sets: {paired: true}
+      - {name: no-device, unknown_instance: true, error: demo.device.NoDevice}
+views:
+  - name: demo.device.Devices
+    source: demo.device.Device
+    consistency: read_your_writes
+    fields:
+      - {name: device_id, type: demo.device.DeviceId}
+      - {name: mode, type: demo.device.Mode}
+      - {name: paired, type: Boolean}
+  - name: demo.device.Tokens
+    source: demo.device.Token
+    consistency: read_your_writes
+    fields:
+      - {name: token_id, type: demo.device.TokenId}
+      - {name: device_id, type: demo.device.DeviceId}
+      - {name: state, type: demo.device.Token.State}
+bindings:
+  - id: pair-on-redeemed
+    when: {event: demo.device.TokenRedeemed}
+    invoke: {command: demo.device.PairDevice}
+    mapping: {device_id: event.device_id}
+    delivery: at_least_once
+    on_failure: retry
+";
+
+const UNBOUNDED_RETRY: &str = r"
+format: ess/27
+system: demo
+version: v1
+domain: demo.catalog
+types:
+  - {name: demo.catalog.SectionId, kind: newtype, of: Uuid}
+  - {name: demo.catalog.ListingId, kind: newtype, of: Uuid}
+  - {name: demo.catalog.Title, kind: newtype, of: String}
+entities:
+  - name: demo.catalog.Section
+    identity: {name: section_id, type: demo.catalog.SectionId}
+    fields:
+      - {name: title, type: demo.catalog.Title}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.catalog.Listing
+    identity: {name: listing_id, type: demo.catalog.ListingId}
+    fields:
+      - {name: section_id, type: demo.catalog.SectionId}
+    lifecycle: {initial: Held, states: [Held], terminal: [Held]}
+events:
+  - name: demo.catalog.SectionDefined
+    fields:
+      - {name: section_id, type: demo.catalog.SectionId}
+  - name: demo.catalog.SectionAnnounced
+    fields:
+      - {name: section_id, type: demo.catalog.SectionId}
+  - name: demo.catalog.Listed
+    fields:
+      - {name: listing_id, type: demo.catalog.ListingId}
+errors:
+  - {name: demo.catalog.NoSection, fields: []}
+actors:
+  - name: demo.catalog.Clerk
+    may: [demo.catalog.DefineSection, demo.catalog.AnnounceSection, demo.catalog.ListForSection]
+commands:
+  - name: demo.catalog.DefineSection
+    input:
+      - {name: title, type: demo.catalog.Title}
+    outcomes:
+      - name: defined
+        creates: demo.catalog.Section
+        instance: section_id
+        emits: [demo.catalog.SectionDefined]
+        payload:
+          demo.catalog.SectionDefined: {section_id: {generated: true}}
+        sets: {title: input.title}
+  - name: demo.catalog.AnnounceSection
+    input:
+      - {name: section_id, type: demo.catalog.SectionId}
+    outcomes:
+      - name: announced
+        emits: [demo.catalog.SectionAnnounced]
+        payload:
+          demo.catalog.SectionAnnounced: {section_id: input.section_id}
+  - name: demo.catalog.ListForSection
+    input:
+      - {name: section_id, type: demo.catalog.SectionId}
+    outcomes:
+      - {name: section-missing, when_related: {via: input.section_id, exists: false}, error: demo.catalog.NoSection}
+      - name: listed
+        creates: demo.catalog.Listing
+        instance: listing_id
+        emits: [demo.catalog.Listed]
+        payload:
+          demo.catalog.Listed: {listing_id: {generated: true}}
+        sets: {section_id: input.section_id}
+views:
+  - name: demo.catalog.Listings
+    source: demo.catalog.Listing
+    consistency: read_your_writes
+    fields:
+      - {name: listing_id, type: demo.catalog.ListingId}
+      - {name: section_id, type: demo.catalog.SectionId}
+bindings:
+  - id: list-on-announced
+    when: {event: demo.catalog.SectionAnnounced}
+    invoke: {command: demo.catalog.ListForSection}
+    mapping: {section_id: event.section_id}
+    delivery: at_least_once
+    on_failure: retry
+";
+
+/// [`UNBOUNDED_RETRY`] with the bound command updating the section it names rather than creating a
+/// listing beside it, refusing an unknown one.
+const UNBOUNDED_RETRY_UPDATES: &str = r"
+format: ess/27
+system: demo
+version: v1
+domain: demo.catalog
+types:
+  - {name: demo.catalog.SectionId, kind: newtype, of: Uuid}
+  - {name: demo.catalog.Title, kind: newtype, of: String}
+entities:
+  - name: demo.catalog.Section
+    identity: {name: section_id, type: demo.catalog.SectionId}
+    fields:
+      - {name: title, type: demo.catalog.Title}
+      - {name: listed, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: demo.catalog.SectionDefined
+    fields:
+      - {name: section_id, type: demo.catalog.SectionId}
+  - name: demo.catalog.SectionAnnounced
+    fields:
+      - {name: section_id, type: demo.catalog.SectionId}
+  - name: demo.catalog.Listed
+    fields:
+      - {name: section_id, type: demo.catalog.SectionId}
+errors:
+  - {name: demo.catalog.NoSection, fields: []}
+actors:
+  - name: demo.catalog.Clerk
+    may: [demo.catalog.DefineSection, demo.catalog.AnnounceSection, demo.catalog.ListForSection]
+commands:
+  - name: demo.catalog.DefineSection
+    input:
+      - {name: title, type: demo.catalog.Title}
+    outcomes:
+      - name: defined
+        creates: demo.catalog.Section
+        instance: section_id
+        emits: [demo.catalog.SectionDefined]
+        payload:
+          demo.catalog.SectionDefined: {section_id: {generated: true}}
+        sets: {title: input.title, listed: false}
+  - name: demo.catalog.AnnounceSection
+    input:
+      - {name: section_id, type: demo.catalog.SectionId}
+    outcomes:
+      - name: announced
+        emits: [demo.catalog.SectionAnnounced]
+        payload:
+          demo.catalog.SectionAnnounced: {section_id: input.section_id}
+  - name: demo.catalog.ListForSection
+    input:
+      - {name: section_id, type: demo.catalog.SectionId}
+    outcomes:
+      - name: listed
+        updates: demo.catalog.Section
+        instance: section_id
+        emits: [demo.catalog.Listed]
+        payload:
+          demo.catalog.Listed: {section_id: input.section_id}
+        sets: {listed: true}
+      - {name: section-missing, unknown_instance: true, error: demo.catalog.NoSection}
+views:
+  - name: demo.catalog.Sections
+    source: demo.catalog.Section
+    consistency: read_your_writes
+    fields:
+      - {name: section_id, type: demo.catalog.SectionId}
+      - {name: listed, type: Boolean}
+bindings:
+  - id: list-on-announced
+    when: {event: demo.catalog.SectionAnnounced}
+    invoke: {command: demo.catalog.ListForSection}
+    mapping: {section_id: event.section_id}
+    delivery: at_least_once
+    on_failure: retry
+";
 
 fn model(text: &str) -> EssIr {
     let raw =
@@ -784,4 +1084,153 @@ fn a_dropped_binding_fails_the_subject_field_flow() {
         statuses.get("pair-on-redeemed/binding/flow"),
         Some(&Status::Passed)
     );
+}
+
+// ---- 6. the same, where the trigger row's creator reads the target's stored fields --------------
+
+/// The device the token is issued for, as the scenario's steps name it.
+fn issued_for(steps: &[Value]) -> Value {
+    steps[position(steps, "demo.device.IssueToken")]["input"]["device_id"].clone()
+}
+
+#[test]
+fn a_binding_trigger_acts_on_the_row_its_setup_arranged() {
+    // `IssueToken` refuses a managed device, so the token's arrangement opens the device it issues
+    // the token for. The binding pairs that device: it is the one the trigger's row stores.
+    let ids = [
+        "pair-on-redeemed/binding/flow",
+        "pair-on-redeemed/binding/mapping",
+        "pair-on-redeemed/binding/delivery",
+    ];
+    let (synthesis, _) = witnessed(SUBJECT_FIELD_GUARDED, &ids);
+    for id in ids {
+        let steps = steps_of(&synthesis, id);
+        let issued = issued_for(&steps);
+        let opened = &steps[position(&steps, "demo.device.OpenDevice")]["input"]["device_id"];
+        assert_eq!(&issued, opened, "{id}: the token names the opened device");
+        assert_eq!(
+            steps
+                .iter()
+                .filter(|step| step["command"] == "demo.device.RegisterDevice")
+                .count(),
+            1,
+            "{id}: no second device is arranged beside it: {steps:#?}"
+        );
+    }
+}
+
+#[test]
+fn a_dropped_binding_fails_the_guarded_subject_field_flow() {
+    let synthesis = synthesize(&model(SUBJECT_FIELD_GUARDED));
+    let without = rewrite(
+        SUBJECT_FIELD_GUARDED,
+        "  - id: pair-on-redeemed
+    when: {event: demo.device.TokenRedeemed}
+    invoke: {command: demo.device.PairDevice}
+    mapping: {device_id: event.device_id}
+    delivery: at_least_once
+    on_failure: retry
+",
+        "",
+    )
+    .replacen("bindings:\n", "", 1);
+    let statuses = run(&synthesis, model(&without));
+    assert_ne!(
+        statuses.get("pair-on-redeemed/binding/flow"),
+        Some(&Status::Passed)
+    );
+}
+
+/// [`SUBJECT_FIELD_GUARDED`] plus a binding on `DeviceOpened` into a command acting on the device:
+/// the token's arrangement sets that binding off on the device it opens, so the state the
+/// arrangement leaves the device in is not followed.
+fn subject_field_guarded_sibling() -> String {
+    let text = rewrite(
+        SUBJECT_FIELD_GUARDED,
+        "      - {name: paired, type: Boolean}\n    lifecycle: {initial: Active",
+        "      - {name: paired, type: Boolean}\n      - {name: audited, type: Boolean}\n    \
+         lifecycle: {initial: Active",
+    );
+    let text = rewrite(
+        &text,
+        "mode: managed, paired: false}",
+        "mode: managed, paired: false, audited: false}",
+    );
+    let text = rewrite(
+        &text,
+        "      - {name: device_id, type: demo.device.DeviceId}\nerrors:",
+        "      - {name: device_id, type: demo.device.DeviceId}\n  - name: demo.device.DeviceAudited\n    \
+         fields:\n      - {name: device_id, type: demo.device.DeviceId}\nerrors:",
+    );
+    let text = rewrite(
+        &text,
+        "demo.device.PairDevice]",
+        "demo.device.PairDevice, demo.device.AuditDevice]",
+    );
+    let text = rewrite(
+        &text,
+        "views:\n",
+        "  - name: demo.device.AuditDevice
+    input:
+      - {name: device_id, type: demo.device.DeviceId}
+    outcomes:
+      - name: audited
+        updates: demo.device.Device
+        instance: device_id
+        emits: [demo.device.DeviceAudited]
+        payload:
+          demo.device.DeviceAudited: {device_id: input.device_id}
+        sets: {audited: true}
+      - {name: no-device, unknown_instance: true, error: demo.device.NoDevice}
+views:
+",
+    );
+    format!(
+        "{text}  - id: audit-on-opened
+    when: {{event: demo.device.DeviceOpened}}
+    invoke: {{command: demo.device.AuditDevice}}
+    mapping: {{device_id: event.device_id}}
+    delivery: at_least_once
+    on_failure: drop
+"
+    )
+}
+
+#[test]
+fn a_subject_field_target_is_not_a_fresh_row_when_a_sibling_binding_acts_on_the_arranged_one() {
+    // `IssueToken` reads the device's mode, so only the device the token's arrangement opened is
+    // one it issues for; that arrangement sets off `audit-on-opened` on the device, whose delivery
+    // synthesis does not follow. The flow is refused by name, never sent with the token issued
+    // for a fresh (managed) device the trigger refuses.
+    let ir = model(&subject_field_guarded_sibling());
+    let synthesis = synthesize(&ir);
+    let refused = refused_as(&synthesis, "pair-on-redeemed/binding/flow");
+    assert!(
+        refused
+            .iter()
+            .any(|refusal| refusal.contains("cannot be followed")),
+        "the flow is refused by name: {refused:?}"
+    );
+    assert_eq!(not_passed(&run(&synthesis, ir)), Vec::<String>::new());
+}
+
+// ---- 7. the outcome scenario of a command an unbounded retry binding answers ------------------
+
+#[test]
+fn an_unbounded_retry_binding_leaves_no_trigger_scenario_unsupported() {
+    // `AnnounceSection` reads no row, but the binding it sets off retries until `ListForSection`
+    // finds the section: the trigger's outcome scenario names a defined one, or no run ends.
+    for text in [UNBOUNDED_RETRY, UNBOUNDED_RETRY_UPDATES] {
+        let id = "demo.catalog.AnnounceSection/outcome/announced";
+        let (synthesis, _) = witnessed(text, &[id]);
+        let steps = steps_of(&synthesis, id);
+        assert!(
+            position(&steps, "demo.catalog.DefineSection")
+                < position(&steps, "demo.catalog.AnnounceSection"),
+            "{id}: a section exists before the trigger: {steps:#?}"
+        );
+        let announced =
+            &steps[position(&steps, "demo.catalog.AnnounceSection")]["input"]["section_id"];
+        assert_eq!(announced["kind"], "instance", "{id}: {steps:#?}");
+    }
 }
