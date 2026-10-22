@@ -457,6 +457,12 @@ fn check(
             ValidationCode::TypeMismatch,
             "`{cleared: true}` clears a whole entity field, not a field inside a nested mapping",
         )),
+        PayloadSource::EmptyList if depth > 0 => errors.push(ValidationError::at(
+            at.clone(),
+            ValidationCode::TypeMismatch,
+            "`[]` stores the empty list in a whole entity field, not in a field inside a nested \
+             mapping",
+        )),
         PayloadSource::SubjectField { field } => check_subject(context, at, target, field, errors),
         PayloadSource::RelatedField { .. } | PayloadSource::RelatedSelection { .. } => {
             check_related(context, at, target, source, errors);
@@ -568,6 +574,7 @@ fn check(
         | PayloadSource::InputField { .. }
         | PayloadSource::ResponseField { .. }
         | PayloadSource::Cleared
+        | PayloadSource::EmptyList
         | PayloadSource::Generated { present: false } => {}
     }
 }

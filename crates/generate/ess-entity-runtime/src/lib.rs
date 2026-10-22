@@ -2384,6 +2384,7 @@ impl Projector<'_> {
                         }
                         ResolvedPayloadValue::Literal { .. }
                         | ResolvedPayloadValue::Cleared
+                        | ResolvedPayloadValue::EmptyList
                         | ResolvedPayloadValue::SubjectField { .. }
                         | ResolvedPayloadValue::SubjectState { .. }
                         | ResolvedPayloadValue::Increment { .. }
@@ -3143,6 +3144,11 @@ impl Projector<'_> {
         match &mapping.value {
             ResolvedPayloadValue::Cleared => Some(ProducedValue {
                 kind: ProducedValueKind::Absent,
+                slot: None,
+            }),
+            // ess/31: a `List<…>` member written as the empty array.
+            ResolvedPayloadValue::EmptyList => Some(ProducedValue {
+                kind: ProducedValueKind::Always(Value::Array(Vec::new())),
                 slot: None,
             }),
             // Admitted on a set outcome only, which `refuse_set_effects` refused before this.

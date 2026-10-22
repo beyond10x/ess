@@ -252,6 +252,7 @@ fn set_source(set: &ess_compiler::ir::ResolvedPayloadField) -> Option<String> {
         ess_compiler::ir::ResolvedPayloadValue::Literal { .. }
         | ess_compiler::ir::ResolvedPayloadValue::ResponseField { .. }
         | ess_compiler::ir::ResolvedPayloadValue::Cleared
+        | ess_compiler::ir::ResolvedPayloadValue::EmptyList
         | ess_compiler::ir::ResolvedPayloadValue::Generated { .. }
         // The browser player replays inputs only; an ess/14 source reads state it does not keep.
         | ess_compiler::ir::ResolvedPayloadValue::SubjectField { .. }

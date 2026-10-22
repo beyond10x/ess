@@ -3718,6 +3718,8 @@ impl<'a> Writer<'a> {
             }
             ResolvedPayloadValue::Generated { .. } => self.generate(target),
             ResolvedPayloadValue::Cleared => "nil".to_owned(),
+            // ess/31: an empty slice, never nil, which encodes as `null` rather than `[]`.
+            ResolvedPayloadValue::EmptyList => format!("{}{{}}", self.emit.go_type(target)),
             ResolvedPayloadValue::Increment { by } => self.increment(
                 target,
                 previous

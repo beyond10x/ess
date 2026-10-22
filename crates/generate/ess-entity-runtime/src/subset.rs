@@ -132,6 +132,7 @@ pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -
         | Source::InputField { .. }
         | Source::Literal { .. }
         | Source::Cleared
+        | Source::EmptyList
         | Source::CallerAttribute { .. }
         | Source::ChangedField { .. }
         | Source::ChangedState { .. }
@@ -295,6 +296,11 @@ pub const CONSTRUCTS: &[Construct] = &[
         "`{cleared: true}` in a creation's `sets:`",
         "the member left absent",
         &["tests/lowering.rs::a_creation_that_clears_an_optional_field_leaves_it_absent_without_a_host_slot"],
+    ),
+    lowered(
+        "`[]` in `sets:` (ess/31)",
+        "the member written as the empty array",
+        &["tests/lowering.rs::a_creation_storing_the_empty_list_writes_an_empty_array_without_a_host_slot"],
     ),
     lowered(
         "`emits:` and `response:`",

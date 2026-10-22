@@ -1620,6 +1620,11 @@ fn sets_sentence(outcome: &ess_compiler::ir::ResolvedOutcome) -> Vec<Inline> {
                     ResolvedPayloadValue::Cleared => {
                         vec![Inline::code(field.target.clone()), Inline::text(" cleared")]
                     }
+                    ResolvedPayloadValue::EmptyList => vec![
+                        Inline::code(field.target.clone()),
+                        Inline::text(" set to the empty list "),
+                        Inline::code("[]"),
+                    ],
                     value => vec![
                         Inline::code(field.target.clone()),
                         Inline::text(" from "),

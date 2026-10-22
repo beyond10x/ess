@@ -592,6 +592,11 @@
       "type": "object",
       "additionalProperties": false
     },
+    "EmptyListLiteral": {
+      "description": "The empty list, `[]`: from `ess/31` a `sets:` entry stores it in a `List<…>` field.",
+      "type": "array",
+      "maxItems": 0
+    },
     "EnumVariant": {
       "description": "An enum variant: a bare name, or a mapping that also declares its wire spelling.",
       "anyOf": [
@@ -3230,6 +3235,14 @@
         },
         {
           "$ref": "#/definitions/RawNestedSources"
+        },
+        {
+          "description": "A list of texts, read as the `via:` of `{related: …}` (ess/22, beyond10x/ess#285), and when empty as the empty list a `sets:` entry stores (ess/31); refused anywhere else. The schema gives the chain under `via:` and admits only the empty list here.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/EmptyListLiteral"
+            }
+          ]
         },
         {
           "description": "`{related: {entity, where, field}}` (ess/22, beyond10x/ess#299).",

@@ -2664,6 +2664,8 @@ fn value_at(
         ResolvedPayloadValue::Literal { value } => {
             literal(ir, &field.target_type, value).map(|value| Some(Value::Known(value)))
         }
+        // ess/31: a `List<…>` field holding no element, present rather than absent.
+        ResolvedPayloadValue::EmptyList => Ok(Some(Value::Known(Node::Seq(Vec::new())))),
         // A present mint (ess/27, beyond10x/ess#545): a value of the required type, never absent.
         ResolvedPayloadValue::Generated { present } => {
             mint(ir, minted_type(&field.target_type, *present), work)

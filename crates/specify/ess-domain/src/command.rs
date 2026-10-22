@@ -1185,6 +1185,15 @@ pub enum PayloadSource {
     /// because a required field cannot hold nothing and a specification that says it can is wrong
     /// rather than surprising.
     Cleared,
+    /// The branch stores the empty list in this field: `tags: []` (ess/31).
+    ///
+    /// A `sets:` source only, over a field whose type is `List<…>`. A required list a view
+    /// publishes otherwise had no writer a creating command could name: a list literal was refused,
+    /// so an adopter's row was created without the field and the view could not be filled. Only
+    /// the empty list, because it names no element whose type would need checking; a list holding
+    /// anything keeps its refusal. `Optional<List<…>>` is refused too: it holds nothing with
+    /// `{cleared: true}`, and an empty list beside that would be a second spelling of "no tags".
+    EmptyList,
     /// A field of the addressed entity as it was immediately before this outcome:
     /// `{subject: note}` (ess/14, beyond10x/ess#133).
     ///
@@ -1346,6 +1355,7 @@ impl fmt::Display for PayloadSource {
             Self::Generated { present: true } => f.write_str("implementation-generated, present"),
             Self::PayloadRead { event, field } => write!(f, "the published `{event}.{field}`"),
             Self::Cleared => f.write_str("cleared"),
+            Self::EmptyList => f.write_str("the empty list `[]`"),
             Self::SubjectField { field } => write!(f, "subject field `{field}`"),
             Self::RelatedField {
                 via,
@@ -1444,6 +1454,7 @@ impl PayloadSource {
             | Self::Literal { .. }
             | Self::Scalar { .. }
             | Self::Cleared
+            | Self::EmptyList
             // ess/27: below it the shape is read back as the nested mapping it was.
             | Self::Expression { .. } => false,
         }
@@ -1505,9 +1516,10 @@ enum RawPayloadSource {
     /// `{missing: input.<list>}` (ess/28, beyond10x/ess#558).
     Missing(related_list::RawMissingSource),
     Nested(RawNestedSources),
-    /// A list of texts, read only as the `via:` of `{related: …}` (ess/22, beyond10x/ess#285) and
-    /// refused anywhere else; the schema gives it there and nowhere else.
-    #[schemars(skip)]
+    /// A list of texts, read as the `via:` of `{related: …}` (ess/22, beyond10x/ess#285), and when
+    /// empty as the empty list a `sets:` entry stores (ess/31); refused anywhere else. The schema
+    /// gives the chain under `via:` and admits only the empty list here.
+    #[schemars(with = "EmptyListLiteral")]
     Texts(Vec<String>),
     /// `{related: {entity, where, field}}` (ess/22, beyond10x/ess#299).
     Selection(RawRelatedSelection),
@@ -1943,6 +1955,28 @@ impl serde::Serialize for RawNestedSources {
     }
 }
 
+/// The schema of the empty list a `sets:` entry stores (ess/31): an array with no items.
+struct EmptyListLiteral;
+
+impl schemars::JsonSchema for EmptyListLiteral {
+    fn schema_name() -> String {
+        "EmptyListLiteral".to_owned()
+    }
+
+    fn json_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        let mut schema = schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::Array.into()),
+            ..Default::default()
+        };
+        schema.array().max_items = Some(0);
+        schema.metadata().description = Some(
+            "The empty list, `[]`: from `ess/31` a `sets:` entry stores it in a `List<…>` field."
+                .to_owned(),
+        );
+        schema.into()
+    }
+}
+
 impl schemars::JsonSchema for RawNestedSources {
     fn schema_name() -> String {
         "RawNestedSources".to_owned()
@@ -2028,6 +2062,8 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
                      `via: <field>`",
                 ),
             },
+            // ess/31: the format and the target's type are checked where the target is known.
+            RawPayloadSource::Texts(texts) if texts.is_empty() => Ok(Self::EmptyList),
             RawPayloadSource::Texts(_) => Err(
                 "a list is read only as the `via:` of `{related: {via: [<field>, <field>], field: \
                  <field>}}`",
@@ -2246,6 +2282,7 @@ impl From<&PayloadSource> for RawPayloadSource {
                 Self::Expr(expression_value::RawExprSource::of(expr))
             }
             PayloadSource::Cleared => explicit(&|e| e.cleared = Some(true)),
+            PayloadSource::EmptyList => Self::Texts(Vec::new()),
             PayloadSource::SubjectField { field } => explicit(&|e| e.subject = Some(field.clone())),
             PayloadSource::RelatedField {
                 via,
@@ -4447,6 +4484,26 @@ fn check_payload_entry(
                 ),
             );
         }
+        PayloadSource::EmptyList => {
+            // An entity source only (ess/31): it exists so a creator can fill a required list a
+            // view publishes. An event field is typed by the event and filled from what the
+            // command read; a constant empty list there is a list-typed literal, which a payload
+            // has never had.
+            errors.push(
+                ValidationError::at(
+                    at.clone(),
+                    ValidationCode::TypeMismatch,
+                    format!(
+                        "`{target}` is filled `[]`, the empty list, which only a `sets:` entry \
+                         stores in an entity's `List<…>` field"
+                    ),
+                )
+                .with_hint(
+                    "fill the event field from an input, a response or the subject; `[]` belongs \
+                     on a `sets:` entry",
+                ),
+            );
+        }
     }
     errors
 }
@@ -4629,6 +4686,7 @@ fn reads_row(source: &PayloadSource) -> bool {
         | PayloadSource::Literal { .. }
         | PayloadSource::Scalar { .. }
         | PayloadSource::Cleared
+        | PayloadSource::EmptyList
         | PayloadSource::PayloadRead { .. }
         | PayloadSource::CallerAttribute { .. }
         | PayloadSource::MissingElement { .. }
@@ -4891,6 +4949,16 @@ pub fn validate_sets(
                     errors.extend(check_cleared_target(at, &entity.name, target, held));
                     continue;
                 }
+                if matches!(source, PayloadSource::EmptyList) {
+                    errors.extend(check_empty_list_target(
+                        at,
+                        &entity.name,
+                        target,
+                        held,
+                        types.format(),
+                    ));
+                    continue;
+                }
                 // The same rule a payload literal is held to, against the entity's field instead of
                 // the event's. It used to say it was checked "where a payload literal is", and it
                 // was not: `literal_representation` was reachable from the payload path alone, so a
@@ -5110,12 +5178,28 @@ fn validate_literal_invariants(
             for (entity, sets, at, arrives) in literal_rows(command, outcome, entities) {
                 let mut written: Vec<(&str, &TypeRef, Node, &str)> = Vec::new();
                 for (target, source) in sets {
+                    let Some(held) = entity.field(target) else {
+                        continue;
+                    };
+                    // `[]` is a constant the branch writes as much as a literal is, and it decides
+                    // `count` and every quantifier over the list it empties.
+                    if matches!(source, PayloadSource::EmptyList) {
+                        if matches!(
+                            types.newtype_layers(&held.type_ref).terminal,
+                            TypeRef::List(_)
+                        ) {
+                            written.push((
+                                target.as_str(),
+                                &held.type_ref,
+                                Node::Seq(Vec::new()),
+                                "[]",
+                            ));
+                        }
+                        continue;
+                    }
                     let (PayloadSource::Literal { value } | PayloadSource::Scalar { value, .. }) =
                         source
                     else {
-                        continue;
-                    };
-                    let Some(held) = entity.field(target) else {
                         continue;
                     };
                     if layered_literal(held, value, types).is_some() {
@@ -5370,6 +5454,53 @@ fn check_cleared_target(
             "make it `Optional<{}>`, or set a value instead",
             held.type_ref
         )),
+    )
+}
+
+/// `[]` against the field it fills (ess/31).
+///
+/// Like `{cleared: true}`, a rule about the TARGET: the empty list names no element, so there is
+/// no value to type, and what is left is whether the field is a list. Below `ess/31` the source
+/// does not exist, and the refusal names the format that has it.
+fn check_empty_list_target(
+    at: String,
+    entity: &QualifiedName,
+    target: &str,
+    held: &Field,
+    format: Option<crate::system::FormatVersion>,
+) -> ValidationErrors {
+    if format.is_some_and(|format| format.major() < crate::system::FormatVersion::V31.major()) {
+        return ValidationErrors::from(
+            ValidationError::new(
+                ValidationCode::UnsupportedFormatVersion,
+                at,
+                format!(
+                    "`{target}: []` stores the empty list, which requires specification format \
+                     ess/31"
+                ),
+            )
+            .with_hint("declare `format: ess/31`"),
+        );
+    }
+    if matches!(held.type_ref, TypeRef::List(_)) {
+        return ValidationErrors::new();
+    }
+    ValidationErrors::from(
+        ValidationError::new(
+            ValidationCode::TypeMismatch,
+            at,
+            format!(
+                "`{entity}.{target}` holds `{}`, and `[]` is the empty list, a value only of a \
+                 `List<…>` field",
+                held.type_ref
+            ),
+        )
+        .with_hint(if held.type_ref.is_optional() {
+            "an optional field holds nothing with `{cleared: true}`; make it a required \
+             `List<…>` to store the empty list"
+        } else {
+            "set a value of the field's type instead"
+        }),
     )
 }
 
