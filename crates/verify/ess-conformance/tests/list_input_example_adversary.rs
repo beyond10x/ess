@@ -168,9 +168,8 @@ fn adv_a_counted_list_newtype_with_an_example_is_not_refused_by_synthesis() {
 }
 
 fn refused_with(text: &str, code: ValidationCode, site: &str, says: &str) {
-    let errors = match assemble(text) {
-        Ok(_) => panic!("must refuse:\n{text}"),
-        Err(errors) => errors,
+    let Err(errors) = assemble(text) else {
+        panic!("must refuse:\n{text}");
     };
     assert!(
         errors.as_slice().iter().any(|error| error.code == code
@@ -214,7 +213,7 @@ fn adv_every_handshake_sends_a_nonempty_connection_list() {
         "demo.server.Handshake",
         "supported_connection_types",
     );
-    assert!(!all.is_empty());
+    assert_ne!(all.len(), 0);
     let empty: Vec<_> = all
         .iter()
         .filter(|(_, value)| {
@@ -342,9 +341,8 @@ fn adv_a_struct_element_breaking_its_invariant_is_refused() {
         "      - {name: hints, type: \"Optional<List<String>>\", example: [x]}",
         "      - {name: hints, type: \"Optional<List<String>>\", example: [x]}\n      - {name: nodes, type: \"List<demo.server.Node>\", example: [{label: a, weight: 0}]}",
     );
-    let errors = match assemble(&text) {
-        Ok(_) => panic!("must refuse a struct element with weight 0"),
-        Err(errors) => errors,
+    let Err(errors) = assemble(&text) else {
+        panic!("must refuse a struct element with weight 0");
     };
     assert!(
         errors
@@ -385,9 +383,8 @@ fn adv_an_optional_list_example_below_ess_31_names_ess_31() {
         "format: ess/31",
         "format: ess/30",
     );
-    let errors = match assemble(&text) {
-        Ok(_) => panic!("must refuse below ess/31"),
-        Err(errors) => errors,
+    let Err(errors) = assemble(&text) else {
+        panic!("must refuse below ess/31");
     };
     let error = errors
         .as_slice()
