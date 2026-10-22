@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/kept-references-and-now-in-views-0.68.0
+repository: ess
+publishedAt: 2026-10-22T00:00:00Z
+title: A reference every writer checks needs no missing-row branch, and a view filter can compare with now
+summary: >-
+  Format `ess/30` drops the `exists: false` branch on a reference every writer checks and nothing
+  deletes. A view's `filter:` may compare a `Timestamp` with `now`, a selector may write
+  `coalesce(field, d)`, a set effect's `where:` may read `state`, a narrowed `external:` race may
+  compensate, and a scenario may pin a generated value.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.68.0
+  version: 0.68.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.68.0](#a-reference-every-writer-checks-needs-no-missing-row-branch-and-a-view-filter-can-compare-with-now) | A reference every writer checks needs no missing-row branch, and a view filter can compare with now | capability | notable |
 | [0.67.0](#a-guard-says-what-an-absent-value-compares-as-and-an-external-branch-can-be-narrowed-to-some-rows) | A guard says what an absent value compares as, and an external branch can be narrowed to some rows | capability | notable |
 | [0.66.0](#a-generated-go-or-typescript-runner-shows-an-unsupported-scenario-as-skipped-and-the-run-still-fails) | A generated Go or TypeScript runner shows an unsupported scenario as skipped, and the run still fails | capability | notable |
 | [0.65.0](#synthesis-arranges-the-rows-binding-row-set-and-one-time-disclosure-scenarios-read) | Synthesis arranges the rows binding, row-set and one-time disclosure scenarios read | capability | notable |
@@ -76,6 +77,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.68.0 — 2026-10-22
+
+### A reference every writer checks needs no missing-row branch, and a view filter can compare with now
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.68.0)
+
+Format `ess/30` drops the `exists: false` branch on a reference every writer checks and nothing deletes. A view's `filter:` may compare a `Timestamp` with `now`, a selector may write `coalesce(field, d)`, a set effect's `where:` may read `state`, a narrowed `external:` race may compensate, and a scenario may pin a generated value.
 
 ## 0.67.0 — 2026-10-21
 

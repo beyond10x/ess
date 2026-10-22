@@ -2,17 +2,32 @@
 
 ## [Unreleased]
 
+## [0.68.0] — 2026-10-22
+
 ### Added
 
 - From `format: ess/30` drop `exists: false` on a stored reference every writer checks and nothing deletes (#509).
 - `ess/30` suites re-read a kept reference's row after each branch writing either entity, so deleting it fails (#509).
-- From `format: ess/30` a selector's `where:` may write `coalesce(field, d) == v` for an absent `Optional` (#627).
+- G1 grid O: from `format: ess/30` a selector's `where:` may write `coalesce(field, d) == v` for an absent `Optional` (#627).
 - From `format: ess/30` an authored scenario may pin a `{generated: true}` value, which the suite checks exactly (#623).
+- G4: from `format: ess/30` an `external:` race narrowed by `when_subject:` may declare `compensates: true` (#623).
+- G1 grid R: from `format: ess/30` a view's `filter:` may order a `Timestamp` field against `now`, the instant of the read; generated Rust and Go view queries refuse it by name (#560).
+- G2 grid R: from `format: ess/30` the `where:` of `instances:` and of an `affects:` entry may read the row's lifecycle `state` (#564).
+- Generated Rust and Go serve a command whose kept stored reference has no `exists: false` branch (#509).
+- The model interpreter answers a response field typed by a constrained string newtype; ESS-SYNTH-001 names a response field it cannot witness.
+
+### Changed
+
+- A view whose `source:` is a list is refused as `unsupported_construct` at `view.<name>.source`, naming navigation; it was a parse error (#564).
+- The ESS-SYNTH-003 refusal of a plain `external:` race below a held-state branch now names the narrowed race as its fix (#623).
 
 ### Fixed
 
+- Synthesis witnesses an `existing_instance:` outcome whose creator sits behind `when_related:` guards; where it cannot, ESS-SYNTH-004 names the guarding branches.
 - A generated Go package passes `go vet` from Go language 1.26; regenerate the package (#629).
 - A ranked head filtering on a field a later command sets is arranged through that command; specs unchanged (#626).
+
+Language: 0 general, 1 one-to-one, 4 part (general share 0%; cumulative 18%).
 
 ## [0.67.0] — 2026-10-21
 
