@@ -203,7 +203,8 @@ Every character of a value is one of the alphabet's, compared exactly, with no n
 folding. Synthesis builds the input's witness from those characters, and a guard such as
 `keys.count > 64` from texts of 65 and 64 characters. An `example:` on a command input is the value
 the first witness starts from. It is not a constraint, it has to be a value of the input's type, and
-only a scalar input takes one. The published JSON Schema, OpenAPI and AsyncAPI assert the alphabet
+only a scalar input takes one, or from `ess/31` a list input, whose example is a list of element
+values, `example: [websocket]`, sent as written wherever no guard reads into the list. The published JSON Schema, OpenAPI and AsyncAPI assert the alphabet
 as an anchored `pattern` beside the `x-ess-alphabet` annotation, so a schema validator refuses a
 value outside it: `0123456789abcdef` is `^[0-9a-f]*$`, and every character other than an ASCII
 letter or digit is written as a four-digit `\u` escape. An alphabet holding a character outside the

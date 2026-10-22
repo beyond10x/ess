@@ -5973,7 +5973,10 @@ impl CommandSpec {
             let Some(field) = self.input_field(name) else {
                 continue;
             };
-            if let Err((code, message, hint)) = example_admitted(types, &field.type_ref, example) {
+            if let Err((code, message, hint)) =
+                list_example_admitted(types, &field.type_ref, example)
+                    .unwrap_or_else(|| example_admitted(types, &field.type_ref, example))
+            {
                 errors.push(
                     ValidationError::at(
                         self.site().key("input").named(name.clone()).key("example"),
@@ -5990,6 +5993,41 @@ impl CommandSpec {
 
 /// Why an example is not admitted: its class, the message, and the repair.
 type ExampleRefusal = (ValidationCode, String, &'static str);
+
+/// An `example:` on an input of `List` type, through any newtype or `Optional` (ess/31), or `None`
+/// where the input is no list or the example is `null`, which [`example_admitted`] answers.
+///
+/// From `ess/31` the example is a list each of whose elements is a value of the element type,
+/// held as a precondition's literal is, so a list of structs names each element's members; below
+/// it the refusal [`example_admitted`] gives keeps its message, its hint naming `ess/31`.
+fn list_example_admitted(
+    types: &TypeRegistry,
+    declared: &TypeRef,
+    example: &Node,
+) -> Option<Result<(), ExampleRefusal>> {
+    const LIST: &str = "a list example is a list each of whose elements is a value of the \
+                        element type";
+    const BELOW: &str = "an example sits on a scalar input below ess/31; declare `format: \
+                         ess/31` to give a list input one";
+    if matches!(example, Node::Null)
+        || !matches!(types.newtype_layers(declared).terminal, TypeRef::List(_))
+    {
+        return None;
+    }
+    if types
+        .format()
+        .is_some_and(|format| format.major() < crate::system::FormatVersion::V31.major())
+    {
+        return Some(
+            example_admitted(types, declared, example)
+                .map_err(|(code, message, _)| (code, message, BELOW)),
+        );
+    }
+    Some(
+        precondition_literal_admitted(types, declared, example)
+            .map_err(|(code, message, _)| (code, message, LIST)),
+    )
+}
 
 /// Whether `example` is a value `declared` accepts, answered as validation reports it.
 fn example_admitted(

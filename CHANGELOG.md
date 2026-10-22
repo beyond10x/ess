@@ -7,6 +7,7 @@
 ### Added
 
 - From `format: ess/31` a `sets:` entry may store the empty list `[]` in a required `List<…>` field, so a view publishing the field can be filled; generated Rust and Go store an empty list.
+- From `format: ess/31` an input of `List` type may carry an `example:`, a list of element values (structs included), which synthesis sends at the plain instance where no guard reads into the list; below `ess/31` it keeps its `type_mismatch`, its hint naming `ess/31`.
 
 ### Fixed
 
@@ -16,7 +17,7 @@
 - A binding scenario whose trigger reads the stored fields of the row it names, where that row's state cannot be followed (another binding acts on it during the arrangement), is refused as ESS-SYNTH-010; it was sent naming a fresh row the trigger refused, and failed. A trigger that updates the related row and refuses an unknown one (`unknown_instance:`) counts as refusing the missing row for a refusal-policy scenario, as an `exists: false` branch does.
 - A moving `affects:` entry gets its scenario when the rows it moves are created by a branch below a `when:` refusal, or below a `when_related:` refusal of a state the related row is not held in; both were refused as ESS-SYNTH-001. Where no row the filter selects can be created at all, the refusal names the creating branch instead of the state the move arrives in, and each set-effect cause prints its own `help:` line instead of the one about finite input types.
 
-Language: 0 general, 1 one-to-one, 0 part (general share 0%; cumulative 18%).
+Language: 0 general, 2 one-to-one, 0 part (general share 0%; cumulative 17%).
 
 ## [0.68.0] — 2026-10-22
 

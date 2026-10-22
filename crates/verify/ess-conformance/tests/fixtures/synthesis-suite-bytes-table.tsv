@@ -1,4 +1,4 @@
-#	models=328	lines=328
+#	models=329	lines=329
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	suite=5 db653ea9c5544e50d35f3887c8cd190d016a22708dc4e8f91f4ce9ee59fb5b89:10165	refusals=1 b5dc5cd911698c55cbc7589e1099559889acd211abdd2bc7b1e29b43d04925b5:276	notes=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap/system.yaml	ASSEMBLE
@@ -58,6 +58,7 @@ crates/specify/ess-composition/tests/fixtures/owner-consumer/owner/system.yaml	A
 crates/specify/ess-composition/tests/fixtures/two-components/system.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/binding-selection.yaml	suite=1 1361d6cc82688779dbdc762eba12872dd5ddfbacd2b0be50568a60494934a919:2180	refusals=1 4d66337d8f495b3898304d70aa768493c456ed6afe2dcbc8b080ad37c9d712d4:238	notes=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/specify/ess-domain/tests/fixtures/lending/system.yaml	ASSEMBLE
+crates/specify/ess-domain/tests/fixtures/list-input-example.yaml	suite=1 b128e0d4ca8e3072339bbd26b8285ef6b4a00d02be6de7f34fe24147b7d4da87:2335	refusals=1 c8e63ccb7b0583b87e59fce66dc37b23d9d246a03fa474ce85e968bf3fdd9c57:354	notes=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/specify/ess-domain/tests/fixtures/outcome-groups/system.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/outcome-groups-twin/system.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/periodic.yaml	suite=5 15a17f755c76ca3b4c88d83ad06f9b52003cc8ac5ffe43ced1cb9d51a70874fa:8935	refusals=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0	notes=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
