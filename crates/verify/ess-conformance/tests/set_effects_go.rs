@@ -58,6 +58,34 @@ fn go_gives_the_reference_verdict_for_every_set_effect_mode() {
     }
 }
 
+/// A set effect's selection reading the candidate row's held state (ess/30, beyond10x/ess#564
+/// finding 13): the Go runtime gives the reference verdicts to the interpreter and to the model
+/// of a target that drops the state conjunct, which fails the cancelling scenario.
+#[test]
+fn generated_go_affects_where_reads_the_rows_state() {
+    const FEED: &str = include_str!("fixtures/affects-where-state.yaml");
+    const CANCELLED: &str = "cascade.feed.Cancel/outcome/cancelled";
+    const PENDING: &str = "{all: [\"feed_id == input.feed_id\", \"state == Pending\"]}";
+    let synthesis = ess_conformance::synthesize::synthesize(&ir_of(FEED));
+    assert!(synthesis.refusals.is_empty(), "{:#?}", synthesis.refusals);
+    let suite = synthesis.suite;
+    let verdicts = support_go::assert_parity(
+        "affects-state-correct",
+        &suite,
+        ess_conformance::interpret::Interpreted::for_model(ir_of(FEED)),
+    );
+    assert!(verdicts.contains_key(CANCELLED), "{verdicts:?}");
+    assert!(support_go::not_passed(&verdicts).is_empty(), "{verdicts:?}");
+    assert!(FEED.contains(PENDING), "the fixture holds {PENDING}");
+    let dropped = FEED.replacen(PENDING, "feed_id == input.feed_id", 1);
+    let verdicts = support_go::assert_parity(
+        "affects-state-dropped",
+        &suite,
+        ess_conformance::interpret::Interpreted::for_model(ir_of(&dropped)),
+    );
+    assert_eq!(verdicts[CANCELLED], "failed", "{verdicts:?}");
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Mode {
     Correct,

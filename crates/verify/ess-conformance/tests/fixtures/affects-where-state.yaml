@@ -1,0 +1,125 @@
+format: ess/30
+system: cascade
+version: v1
+domain: cascade.feed
+summary: Cancelling a feed discards its pending items and leaves played ones; a sweep discards its played items; one item is dropped by name.
+types:
+  - {name: cascade.feed.FeedId, kind: newtype, of: Uuid}
+  - {name: cascade.feed.ItemId, kind: newtype, of: Uuid}
+entities:
+  - name: cascade.feed.Feed
+    identity: {name: feed_id, type: cascade.feed.FeedId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Cancelled]
+      terminal: [Cancelled]
+      transitions:
+        - {name: cancel, from: [Open], to: Cancelled}
+  - name: cascade.feed.Item
+    identity: {name: item_id, type: cascade.feed.ItemId}
+    fields:
+      - {name: feed_id, type: cascade.feed.FeedId}
+    lifecycle:
+      initial: Pending
+      states: [Pending, Played, Discarded]
+      terminal: [Discarded]
+      transitions:
+        - {name: play, from: [Pending], to: Played}
+        - {name: discard, from: [Pending, Played], to: Discarded}
+errors:
+  - {name: cascade.feed.WrongState, summary: The feed is not open., fields: []}
+events:
+  - name: cascade.feed.FeedOpened
+    fields: [{name: feed_id, type: cascade.feed.FeedId}]
+  - name: cascade.feed.ItemPosted
+    fields: [{name: item_id, type: cascade.feed.ItemId}]
+  - name: cascade.feed.FeedCancelled
+    fields: [{name: feed_id, type: cascade.feed.FeedId}]
+  - name: cascade.feed.FeedSwept
+    fields:
+      - {name: feed_id, type: cascade.feed.FeedId}
+      - {name: swept, type: Integer}
+actors:
+  - name: cascade.feed.Operator
+    may: [cascade.feed.Open, cascade.feed.Post, cascade.feed.Play, cascade.feed.Drop, cascade.feed.Cancel, cascade.feed.Sweep]
+commands:
+  - name: cascade.feed.Open
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: cascade.feed.Feed
+        instance: feed_id
+        emits: [cascade.feed.FeedOpened]
+        payload: {cascade.feed.FeedOpened: {feed_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: cascade.feed.Post
+    input:
+      - {name: feed_id, type: cascade.feed.FeedId}
+    outcomes:
+      - name: posted
+        creates: cascade.feed.Item
+        instance: item_id
+        emits: [cascade.feed.ItemPosted]
+        payload: {cascade.feed.ItemPosted: {item_id: {generated: true}}}
+        sets: {feed_id: input.feed_id}
+  - name: cascade.feed.Play
+    input:
+      - {name: item_id, type: cascade.feed.ItemId}
+    outcomes:
+      - name: played
+        moves: cascade.feed.Item.play
+        instance: item_id
+        emits: [cascade.feed.ItemPosted]
+        payload: {cascade.feed.ItemPosted: {item_id: input.item_id}}
+      - {name: wrong-state, wrong_state: true, error: cascade.feed.WrongState}
+  - name: cascade.feed.Drop
+    input:
+      - {name: item_id, type: cascade.feed.ItemId}
+    outcomes:
+      - name: dropped
+        moves: cascade.feed.Item.discard
+        instance: item_id
+        emits: [cascade.feed.ItemPosted]
+        payload: {cascade.feed.ItemPosted: {item_id: input.item_id}}
+      - {name: wrong-state, wrong_state: true, error: cascade.feed.WrongState}
+  - name: cascade.feed.Cancel
+    input:
+      - {name: feed_id, type: cascade.feed.FeedId}
+    outcomes:
+      - name: cancelled
+        moves: cascade.feed.Feed.cancel
+        instance: feed_id
+        emits: [cascade.feed.FeedCancelled]
+        payload: {cascade.feed.FeedCancelled: {feed_id: input.feed_id}}
+        affects:
+          - entity: cascade.feed.Item
+            where: {all: ["feed_id == input.feed_id", "state == Pending"]}
+            moves: cascade.feed.Item.discard
+      - {name: wrong-state, wrong_state: true, error: cascade.feed.WrongState}
+  - name: cascade.feed.Sweep
+    input:
+      - {name: feed_id, type: cascade.feed.FeedId}
+    outcomes:
+      - name: swept
+        moves: cascade.feed.Item.discard
+        instances: {where: {all: ["feed_id == input.feed_id", "state == Played"]}}
+        emits: [cascade.feed.FeedSwept]
+        payload:
+          cascade.feed.FeedSwept: {feed_id: input.feed_id, swept: {count: changed}}
+views:
+  - name: cascade.feed.Items
+    source: cascade.feed.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: cascade.feed.ItemId}
+      - {name: feed_id, type: cascade.feed.FeedId}
+      - {name: state, type: cascade.feed.Item.State}
+  - name: cascade.feed.Feeds
+    source: cascade.feed.Feed
+    consistency: read_your_writes
+    fields:
+      - {name: feed_id, type: cascade.feed.FeedId}
+      - {name: state, type: cascade.feed.Feed.State}
