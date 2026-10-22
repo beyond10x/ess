@@ -1,0 +1,144 @@
+format: ess/30
+system: demo
+version: v1
+domain: demo.pick
+summary: A selection names one action a projected catalogue lists, at the catalogue's revision, and is made once.
+types:
+  - {name: demo.pick.CatalogueId, kind: newtype, of: Uuid}
+  - {name: demo.pick.SelectionId, kind: newtype, of: Uuid}
+  - name: demo.pick.Entry
+    kind: struct
+    fields:
+      - {name: action, type: String}
+entities:
+  - name: demo.pick.Catalogue
+    identity: {name: catalogue_id, type: demo.pick.CatalogueId}
+    fields:
+      - {name: revision, type: Integer}
+      - {name: entries, type: List<demo.pick.Entry>}
+    lifecycle:
+      initial: Projected
+      states: [Projected]
+      terminal: [Projected]
+  - name: demo.pick.Selection
+    identity: {name: selection_id, type: demo.pick.SelectionId}
+    fields:
+      - {name: catalogue_id, type: demo.pick.CatalogueId}
+      - {name: action, type: String}
+      - {name: revision, type: Integer}
+    relations:
+      - {name: catalogue, kind: references, target: demo.pick.Catalogue, cardinality: one, via: catalogue_id}
+    lifecycle:
+      initial: Selected
+      states: [Selected]
+      terminal: [Selected]
+errors:
+  - name: demo.pick.CatalogueExists
+    summary: A catalogue already carries that identity.
+    fields: [{name: catalogue_id, type: demo.pick.CatalogueId}]
+  - name: demo.pick.CatalogueNotFound
+    summary: No catalogue carries that identity.
+    fields: [{name: catalogue_id, type: demo.pick.CatalogueId}]
+  - name: demo.pick.ActionNotListed
+    summary: The catalogue does not list the action.
+    fields: [{name: action, type: String}]
+  - name: demo.pick.RevisionMismatch
+    summary: The catalogue is at another revision.
+    fields: [{name: catalogue_id, type: demo.pick.CatalogueId}]
+  - name: demo.pick.SelectionExists
+    summary: A selection already carries that identity.
+    fields: [{name: selection_id, type: demo.pick.SelectionId}]
+events:
+  - name: demo.pick.CatalogueProjected
+    fields: [{name: catalogue_id, type: demo.pick.CatalogueId}]
+  - name: demo.pick.ActionSelected
+    fields:
+      - {name: selection_id, type: demo.pick.SelectionId}
+      - {name: action, type: String}
+actors:
+  - name: demo.pick.Operator
+    may: [demo.pick.Project, demo.pick.Select]
+commands:
+  - name: demo.pick.Project
+    input:
+      - {name: catalogue_id, type: demo.pick.CatalogueId}
+      - {name: revision, type: Integer}
+      - {name: entries, type: List<demo.pick.Entry>}
+    outcomes:
+      - name: catalogue-exists
+        existing_instance: true
+        error: demo.pick.CatalogueExists
+        payload:
+          demo.pick.CatalogueExists: {catalogue_id: input.catalogue_id}
+      - name: projected
+        creates: demo.pick.Catalogue
+        instance: catalogue_id
+        sets:
+          revision: input.revision
+          entries: input.entries
+        emits: [demo.pick.CatalogueProjected]
+        payload:
+          demo.pick.CatalogueProjected: {catalogue_id: input.catalogue_id}
+  - name: demo.pick.Select
+    input:
+      - {name: selection_id, type: demo.pick.SelectionId}
+      - {name: catalogue_id, type: demo.pick.CatalogueId}
+      - {name: action, type: String}
+      - {name: revision, type: Integer}
+    outcomes:
+      - name: selection-exists
+        existing_instance: true
+        error: demo.pick.SelectionExists
+        payload:
+          demo.pick.SelectionExists: {selection_id: input.selection_id}
+      - name: catalogue-unknown
+        when_related: {via: input.catalogue_id, exists: false}
+        error: demo.pick.CatalogueNotFound
+        payload:
+          demo.pick.CatalogueNotFound: {catalogue_id: input.catalogue_id}
+      - name: not-listed
+        when_related:
+          via: input.catalogue_id
+          predicate:
+            not:
+              exists:
+                in: entries
+                as: entry
+                that: entry.action == input.action
+        error: demo.pick.ActionNotListed
+        payload:
+          demo.pick.ActionNotListed: {action: input.action}
+      - name: revision-mismatch
+        when_related:
+          via: input.catalogue_id
+          predicate: revision != input.revision
+        error: demo.pick.RevisionMismatch
+        payload:
+          demo.pick.RevisionMismatch: {catalogue_id: input.catalogue_id}
+      - name: selected
+        creates: demo.pick.Selection
+        instance: selection_id
+        sets:
+          catalogue_id: input.catalogue_id
+          action: input.action
+          revision: input.revision
+        emits: [demo.pick.ActionSelected]
+        payload:
+          demo.pick.ActionSelected:
+            selection_id: input.selection_id
+            action: input.action
+views:
+  - name: demo.pick.Catalogues
+    source: demo.pick.Catalogue
+    consistency: read_your_writes
+    fields:
+      - {name: catalogue_id, type: demo.pick.CatalogueId}
+      - {name: revision, type: Integer}
+  - name: demo.pick.Selections
+    source: demo.pick.Selection
+    consistency: read_your_writes
+    fields:
+      - {name: selection_id, type: demo.pick.SelectionId}
+      - {name: catalogue_id, type: demo.pick.CatalogueId}
+      - {name: action, type: String}
+      - {name: revision, type: Integer}

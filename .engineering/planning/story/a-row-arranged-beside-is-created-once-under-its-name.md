@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-row-arranged-beside-is-created-once-under-its-name
 kind: story
-status: draft
+status: active
 title: A row arranged beside several focus rows is created once under its instance name
 summary: With guards on two related inputs, the beside row is re-created under one instance name per focus row and the send names the last copy, so an earlier cross-field branch answers; 2 of 18 downstream scenarios fail on 0.68.0 and the 0.69.0 build.
 tags:
@@ -10,7 +10,11 @@ tags:
 - ess-0.70.0
 relations:
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+- serves: vision:O2
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-22T23:40:00Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
+- {from: "proposed", to: "active", at: "2026-10-22T23:40:00Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
 ---
 ## Need
 

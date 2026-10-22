@@ -2605,6 +2605,13 @@ fn arranged_at(
             &setup.bound,
         );
         let fixed = subject_identity(ir, outcome, &setup);
+        // The rows beside are held while the row is searched for: one filed under a row beside —
+        // a machine added to the site the send names — is created by a run decided on that row as
+        // it was arranged, and never arranges a second row under its name.
+        let _beside: Vec<subject_fact::Holding> = others
+            .iter()
+            .map(|other| subject_fact::holding(ir, other.entity, &other.row))
+            .collect();
         let (mut row, first, input) = with_row(
             ir,
             command,
@@ -3566,6 +3573,45 @@ fn with_row(
         &BTreeMap<String, Node>,
     ),
 ) -> Result<(Arrangement, usize, BTreeMap<String, Node>), RefusalCause> {
+    with_row_where(
+        ir,
+        command,
+        outcome,
+        entity,
+        actors,
+        (base, distinction, arranging),
+        (chosen, goal, around),
+        (pins, known, fixed),
+        &|_| true,
+    )
+}
+
+/// [`with_row`], offering the branch only the rows `admits` takes: a row it refuses is passed over
+/// and the search goes on along it, and on to the next creator.
+#[allow(
+    clippy::type_complexity,
+    reason = "the arguments of `with_row`, grouped as it reads them"
+)]
+#[allow(clippy::too_many_arguments)]
+fn with_row_where(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (base, distinction, arranging): (usize, Distinction, &[&EntityHandle]),
+    (chosen, goal, around): (
+        Option<&BTreeMap<String, Node>>,
+        Option<&Goal>,
+        Option<Around<'_>>,
+    ),
+    (pins, known, fixed): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        &[super::ScenarioStep],
+        &BTreeMap<String, Node>,
+    ),
+    admits: &dyn Fn(&Arrangement) -> bool,
+) -> Result<(Arrangement, usize, BTreeMap<String, Node>), RefusalCause> {
     let mut guards: Vec<&Predicate> = command.outcomes.iter().filter_map(input_guard).collect();
     // An external branch's own guard, so an input it admits is among the candidates
     // (beyond10x/ess#464).
@@ -3599,11 +3645,14 @@ fn with_row(
                 && trues.iter().all(|child| truth(child) == Truth::True)
         })
     };
-    // The first input tried on a row that selects `outcome` there — and, `strict`, witnesses every
-    // quantifier over a stored collection element by element.
+    // On a row `admits` takes, the first input tried that selects `outcome` there — and, `strict`,
+    // witnesses every quantifier over a stored collection element by element.
     let selecting = |node: &Arrangement,
                      strict: bool|
      -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
+        if !admits(node) {
+            return Ok(None);
+        }
         let inputs = if let Some(chosen) = chosen {
             vec![chosen.clone()]
         } else {

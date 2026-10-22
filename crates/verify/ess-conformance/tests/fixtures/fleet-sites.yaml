@@ -1,0 +1,113 @@
+format: ess/30
+system: demo
+version: v1
+domain: demo.fleet
+summary: Machines are added to open sites and started while their site is not frozen.
+types:
+  - {name: demo.fleet.SiteId, kind: newtype, of: Uuid}
+  - {name: demo.fleet.MachineId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.fleet.Site
+    identity: {name: site_id, type: demo.fleet.SiteId}
+    fields: []
+    lifecycle:
+      initial: Open
+      states: [Open, Frozen]
+      terminal: [Frozen]
+      transitions:
+        - {name: freeze, from: [Open], to: Frozen}
+  - name: demo.fleet.Machine
+    identity: {name: machine_id, type: demo.fleet.MachineId}
+    fields:
+      - {name: site_id, type: demo.fleet.SiteId}
+    relations:
+      - {name: site, kind: references, target: demo.fleet.Site, cardinality: one, via: site_id}
+    lifecycle:
+      initial: Idle
+      states: [Idle, Running]
+      terminal: [Running]
+      transitions:
+        - {name: start, from: [Idle], to: Running}
+errors:
+  - {name: demo.fleet.NoSuchSite, summary: No site carries that identity., fields: []}
+  - {name: demo.fleet.SiteFrozen, summary: The site is frozen., fields: []}
+  - {name: demo.fleet.MachineStateConflict, summary: The machine cannot move from its held state., fields: []}
+events:
+  - name: demo.fleet.SiteOpened
+    fields: [{name: site_id, type: demo.fleet.SiteId}]
+  - name: demo.fleet.SiteFrozenEvent
+    fields: [{name: site_id, type: demo.fleet.SiteId}]
+  - name: demo.fleet.MachineAdded
+    fields: [{name: machine_id, type: demo.fleet.MachineId}]
+  - name: demo.fleet.MachineStarted
+    fields: [{name: machine_id, type: demo.fleet.MachineId}]
+actors:
+  - name: demo.fleet.Operator
+    may:
+      - demo.fleet.OpenSite
+      - demo.fleet.FreezeSite
+      - demo.fleet.AddMachine
+      - demo.fleet.StartMachine
+commands:
+  - name: demo.fleet.OpenSite
+    input: []
+    outcomes:
+      - name: opened
+        creates: demo.fleet.Site
+        instance: site_id
+        emits: [demo.fleet.SiteOpened]
+        payload: {demo.fleet.SiteOpened: {site_id: {generated: true}}}
+  - name: demo.fleet.FreezeSite
+    input:
+      - {name: site_id, type: demo.fleet.SiteId}
+    outcomes:
+      - {name: already-frozen, wrong_state: true, error: demo.fleet.SiteFrozen}
+      - name: frozen
+        moves: demo.fleet.Site.freeze
+        instance: site_id
+        emits: [demo.fleet.SiteFrozenEvent]
+        payload: {demo.fleet.SiteFrozenEvent: {site_id: input.site_id}}
+  - name: demo.fleet.AddMachine
+    input:
+      - {name: site_id, type: demo.fleet.SiteId}
+    outcomes:
+      - name: no-site
+        when_related: {via: input.site_id, exists: false}
+        error: demo.fleet.NoSuchSite
+      - name: frozen
+        when_related: {via: input.site_id, predicate: state == Frozen}
+        error: demo.fleet.SiteFrozen
+      - name: added
+        creates: demo.fleet.Machine
+        instance: machine_id
+        sets:
+          site_id: input.site_id
+        emits: [demo.fleet.MachineAdded]
+        payload: {demo.fleet.MachineAdded: {machine_id: {generated: true}}}
+  - name: demo.fleet.StartMachine
+    input:
+      - {name: machine_id, type: demo.fleet.MachineId}
+    outcomes:
+      - {name: wrong-state, wrong_state: true, error: demo.fleet.MachineStateConflict}
+      - name: frozen
+        when_related: {via: site_id, predicate: state == Frozen}
+        error: demo.fleet.SiteFrozen
+      - name: started
+        moves: demo.fleet.Machine.start
+        instance: machine_id
+        emits: [demo.fleet.MachineStarted]
+        payload: {demo.fleet.MachineStarted: {machine_id: input.machine_id}}
+views:
+  - name: demo.fleet.Sites
+    source: demo.fleet.Site
+    consistency: read_your_writes
+    fields:
+      - {name: site_id, type: demo.fleet.SiteId}
+      - {name: state, type: demo.fleet.Site.State}
+  - name: demo.fleet.Machines
+    source: demo.fleet.Machine
+    consistency: read_your_writes
+    fields:
+      - {name: machine_id, type: demo.fleet.MachineId}
+      - {name: site_id, type: demo.fleet.SiteId}
+      - {name: state, type: demo.fleet.Machine.State}
