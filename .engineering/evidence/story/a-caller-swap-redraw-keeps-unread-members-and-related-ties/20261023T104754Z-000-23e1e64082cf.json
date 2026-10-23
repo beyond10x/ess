@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T10:47:54Z",
+  "actor": "human:timo",
+  "artifact": "story:a-caller-swap-redraw-keeps-unread-members-and-related-ties",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit d077d7640 on integrate/ess-batch-0690 5d5e96e15: red first, new binary 0 passed 4 failed (cover None; versions [1, 524545]); green: new binary 4 passed; repros base 6/6, control 7/7, n25 10/10, cut variant 7/7; caller_fresh_identity (#580) 11 and 13 other caller binaries green; authored_outcome_guards 22, adversary_search_pass2 11, witness_directed_search 10, related_owner_shared 6, lib 168; table tests green with no existing row changed; clippy -D warnings, task fmt-check, task test-xtask (418 passed) exit 0; 10 ess-cli conform-synthesize binaries green. Not run locally: grant and disclosure binaries (their path passes no scenario id, unchanged), full task check; left to the pull request Gate."
+  }
+}
