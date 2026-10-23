@@ -9,14 +9,12 @@
 //! `errors` answers the one error outcome `422`.
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::process::Command;
 
 use ess_synth::{synthesize_bound, OutputLayout, Synthesis, Target};
 use serde_json::{json, Value};
 
 use super::super::shared::{self, Answer};
-use super::adversary_k6_pass1::ir_of;
+use super::adversary_k6_pass1::{ir_of, rust_run_with};
 
 /// `(anchor, replacement)` in the shared model, each anchor found exactly once.
 const MODEL_EDITS: &[(&str, &str)] = &[
@@ -415,47 +413,12 @@ fn go_run(synthesis: &Synthesis) -> BTreeMap<String, Answer> {
 }
 
 fn rust_run(synthesis: &Synthesis) -> BTreeMap<String, Answer> {
-    let root = scratch("rust");
-    shared::write(synthesis, &root.join("shop"));
-    let harness = root.join("harness");
-    std::fs::create_dir_all(harness.join("src")).expect("mkdir");
-    let dependencies = ["shop-server", "shop-system", "shop-service", "shop-types"]
+    let owned = requests();
+    let borrowed: Vec<[&str; 7]> = owned
         .iter()
-        .fold(String::new(), |mut out, name| {
-            let _ = writeln!(out, "{name} = {{ path = \"../shop/crates/{name}\" }}");
-            out
-        });
-    std::fs::write(
-        harness.join("Cargo.toml"),
-        format!(
-            "[package]\nname = \"u9dadv-rust-harness\"\nversion = \"0.0.0\"\n\
-             edition = \"2021\"\n\n[dependencies]\n{dependencies}\n[workspace]\n"
-        ),
-    )
-    .expect("write");
-    std::fs::write(harness.join("src/main.rs"), rust_harness()).expect("write");
-    let file = root.join("requests.tsv");
-    write_requests(&file);
-    let target = root.join("target");
-    let ran = Command::new(std::env::var_os("CARGO").expect("Cargo supplies its executable"))
-        .args(["run", "--offline", "--quiet", "--target-dir"])
-        .arg(&target)
-        .arg("--")
-        .arg(&file)
-        .current_dir(&harness)
-        .env_remove("CARGO_TARGET_DIR")
-        .env_remove("CARGO_ENCODED_RUSTFLAGS")
-        .env("CARGO_INCREMENTAL", "0")
-        .output()
-        .expect("cargo runs");
-    assert!(
-        ran.status.success(),
-        "the Rust harness builds and runs:\n{}",
-        String::from_utf8_lossy(&ran.stderr)
-    );
-    let _ = std::fs::remove_dir_all(&root);
-    let stdout = String::from_utf8_lossy(&ran.stdout).into_owned();
-    shared::parsed(stdout.lines())
+        .map(|line| std::array::from_fn(|index| line[index].as_str()))
+        .collect();
+    rust_run_with("u9dadv", synthesis, &borrowed, &rust_harness())
 }
 
 fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
