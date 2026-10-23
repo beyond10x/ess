@@ -359,3 +359,233 @@ mod through_writers {
         }
     }
 }
+
+/// A subject guard over a field a creator sets to a literal finds that creator: `Dispatch`
+/// selects the row by `all: [mode == Key, route == D]`, and only `Connect/by-key`, which writes
+/// `mode: Key` as a literal and `route` from its input, leaves such a row. The creator is steered
+/// on its input `route`, the literal half decided by the value it writes. Reported by an adopter
+/// with three creating outcomes behind three earlier refusals.
+mod literal_set_subject {
+    use super::{refusals, scenario, sent, synthesis, Synthesis};
+    use ess_conformance::{interpret::Interpreted, report::Status, AdmittedSuite, Runner};
+
+    const CONN: &str = include_str!("fixtures/arrangement-literal-set-subject.yaml");
+
+    /// The second shape: two routes, the branches over `Relay` and `Builtin`.
+    fn relay() -> String {
+        CONN.replace("variants: [A, B, C, D]", "variants: [Builtin, Relay]")
+            .replace("- name: key-to-d", "- name: key-to-relay")
+            .replace("route == D]", "route == Relay]")
+            .replace("- name: key-to-b", "- name: key-to-builtin")
+            .replace("route == B]", "route == Builtin]")
+    }
+
+    /// The refusals naming a `Dispatch` scenario.
+    fn dispatch_refusals(result: &Synthesis) -> Vec<String> {
+        refusals(result)
+            .into_iter()
+            .filter(|refusal| refusal.contains("demo.conn.Dispatch/"))
+            .collect()
+    }
+
+    #[test]
+    fn every_dispatch_branch_over_a_literal_set_field_is_arranged() {
+        for (shape, text, branches) in [
+            (
+                "four routes",
+                CONN.to_owned(),
+                ["key-to-d", "key-to-b", "routed"],
+            ),
+            (
+                "relay",
+                relay(),
+                ["key-to-relay", "key-to-builtin", "routed"],
+            ),
+        ] {
+            let result = synthesis(&text);
+            assert_eq!(dispatch_refusals(&result), Vec::<String>::new(), "{shape}");
+            for branch in branches {
+                let id = format!("demo.conn.Dispatch/outcome/{branch}");
+                let arranged = sent(scenario(&result.suite, &id));
+                assert_eq!(
+                    arranged.last().map(String::as_str),
+                    Some("Dispatch"),
+                    "{shape} {id}"
+                );
+                assert!(
+                    arranged.iter().any(|sent| sent == "Connect"),
+                    "{shape} {id}: {arranged:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_arranged_dispatch_suite_passes_on_the_interpreted_target() {
+        for text in [CONN.to_owned(), relay()] {
+            let raw = ess_domain::spec::RawSpecFile::parse(&text).unwrap();
+            let spec = ess_domain::spec::Specification::assemble([(
+                ess_domain::system::Source::new("model.yaml"),
+                raw,
+            )])
+            .unwrap();
+            let ir = ess_compiler::resolve::compile(&spec, &ess_compiler::source::SourceMap::new())
+                .unwrap();
+            let suite = ess_conformance::synthesize::synthesize(&ir).suite;
+            let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+            let report = Runner::for_suite(&suite)
+                .run_admitted(&admitted, &Interpreted::for_model(ir))
+                .into_report();
+            assert_ne!(report.scenarios.len(), 0);
+            for scenario in report.scenarios {
+                assert_eq!(
+                    scenario.status,
+                    Status::Passed,
+                    "{}: {:?}",
+                    scenario.scenario,
+                    scenario.checks
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_literal_every_creator_contradicts_keeps_the_branch_refused() {
+        // `Closed` is a mode no creator writes, so no row any of them leaves selects the branch.
+        let text = CONN
+            .replace("variants: [Key, Token, Open]", "variants: [Key, Token, Open, Closed]")
+            .replace(
+                "      - name: routed\n",
+                "      - name: closed-to-d\n        when_subject:\n          predicate:\n            \
+                 all: [mode == Closed, route == D]\n        error: demo.conn.Refused\n      - name: \
+                 routed\n",
+            );
+        let result = synthesis(&text);
+        let refused = dispatch_refusals(&result);
+        assert_eq!(refused.len(), 1, "{refused:#?}");
+        assert!(
+            refused[0].starts_with("ESS-SYNTH-003 demo.conn.Dispatch/outcome/closed-to-d: "),
+            "{refused:#?}"
+        );
+        for branch in ["key-to-d", "key-to-b", "routed"] {
+            scenario(
+                &result.suite,
+                &format!("demo.conn.Dispatch/outcome/{branch}"),
+            );
+        }
+    }
+
+    /// Every scenario `text` synthesizes, run on the interpreted target, that does not pass.
+    fn interpreted_failures(text: &str) -> Vec<String> {
+        let raw = ess_domain::spec::RawSpecFile::parse(text).unwrap();
+        let spec = ess_domain::spec::Specification::assemble([(
+            ess_domain::system::Source::new("model.yaml"),
+            raw,
+        )])
+        .unwrap();
+        let ir =
+            ess_compiler::resolve::compile(&spec, &ess_compiler::source::SourceMap::new()).unwrap();
+        let suite = ess_conformance::synthesize::synthesize(&ir).suite;
+        let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+        let report = Runner::for_suite(&suite)
+            .run_admitted(&admitted, &Interpreted::for_model(ir))
+            .into_report();
+        assert_ne!(report.scenarios.len(), 0);
+        report
+            .scenarios
+            .into_iter()
+            .filter(|scenario| scenario.status != Status::Passed)
+            .map(|scenario| format!("{}: {:?}", scenario.scenario, scenario.checks))
+            .collect()
+    }
+
+    /// No creator writes `mode: Key` (`by-key` writes `Token`); a later `Promote` move does. The
+    /// creators' literal contradicts `mode == Key`, which drops out of the steering rather than
+    /// refuting the whole hint, so `Connect` is still steered to `route: D` and `Promote` moves
+    /// the row onto the branch.
+    #[test]
+    fn a_literal_a_later_move_writes_is_reached_through_the_move() {
+        let text = CONN
+            .replacen(
+                "      states: [Admitted]\n      terminal: [Admitted]\n      transitions: []",
+                "      states: [Admitted, Promoted]\n      terminal: [Promoted]\n      \
+                 transitions:\n        - {name: promote, from: [Admitted], to: Promoted}",
+                1,
+            )
+            .replacen("mode: Key}", "mode: Token}", 1)
+            .replacen(
+                "may: [demo.conn.Connect, demo.conn.Dispatch]",
+                "may: [demo.conn.Connect, demo.conn.Dispatch, demo.conn.Promote]",
+                1,
+            )
+            .replacen(
+                "events:\n",
+                "  - name: demo.conn.Promote\n    input:\n      - {name: conn_id, type: \
+                 demo.conn.ConnId}\n    outcomes:\n      - name: promoted\n        moves: \
+                 demo.conn.Conn.promote\n        instance: conn_id\n        sets: {mode: Key}\n        \
+                 emits: [demo.conn.Admitted]\n        payload:\n          demo.conn.Admitted: \
+                 {conn_id: input.conn_id}\n      - name: wrong-state\n        wrong_state: true\n        \
+                 error: demo.conn.Refused\nevents:\n",
+                1,
+            );
+        assert!(text.contains("demo.conn.Conn.promote"));
+        let result = synthesis(&text);
+        assert_eq!(dispatch_refusals(&result), Vec::<String>::new());
+        let arranged = sent(scenario(
+            &result.suite,
+            "demo.conn.Dispatch/outcome/key-to-d",
+        ));
+        assert_eq!(
+            arranged
+                .iter()
+                .rev()
+                .take(2)
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["Dispatch", "Promote"],
+            "{arranged:?}"
+        );
+        assert_eq!(interpreted_failures(&text), Vec::<String>::new());
+    }
+
+    /// A disjunct the creator's literal refutes drops out of its `any:` and leaves the other to
+    /// steer: on `by-key`'s row `mode == Token` is false, so `route == D` is what the input must
+    /// reach. Taking the refuted disjunct as satisfied would take the whole `any:` as satisfied
+    /// and steer nothing, and the walk alone never meets `route: D` on a `by-key` input.
+    #[test]
+    fn a_disjunct_the_literal_refutes_leaves_the_other_to_steer() {
+        let text = CONN.replacen(
+            "all: [mode == Key, route == D]",
+            "all: [mode == Key, {any: [mode == Token, route == D]}]",
+            1,
+        );
+        assert_ne!(text, CONN);
+        let result = synthesis(&text);
+        assert_eq!(dispatch_refusals(&result), Vec::<String>::new());
+        let arranged = sent(scenario(
+            &result.suite,
+            "demo.conn.Dispatch/outcome/key-to-d",
+        ));
+        assert_eq!(arranged.last().map(String::as_str), Some("Dispatch"));
+        assert!(
+            arranged.iter().any(|sent| sent == "Connect"),
+            "{arranged:?}"
+        );
+        assert_eq!(interpreted_failures(&text), Vec::<String>::new());
+    }
+
+    /// `not` over a literal leaf is decided like the leaf: `{not: mode == Token}` and
+    /// `mode != Token` steer the same creator.
+    #[test]
+    fn a_negated_literal_leaf_is_decided_like_the_leaf() {
+        let text = CONN.replacen(
+            "all: [mode == Key, route == D]",
+            "all: [{not: mode == Token}, {not: mode == Open}, route == D]",
+            1,
+        );
+        assert_ne!(text, CONN);
+        let result = synthesis(&text);
+        assert_eq!(dispatch_refusals(&result), Vec::<String>::new());
+        assert_eq!(interpreted_failures(&text), Vec::<String>::new());
+    }
+}

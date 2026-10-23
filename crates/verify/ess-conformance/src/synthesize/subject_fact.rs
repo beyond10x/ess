@@ -3711,10 +3711,21 @@ fn hinted(
 ) -> Result<Option<Vec<BTreeMap<String, Node>>>, RefusalCause> {
     let mapping = mapped(driver.outcome);
     // A comparison with the command's input (ess/15) is decided by the input the branch under
-    // test sends, not by the row an arranging branch leaves, so it steers nothing here.
+    // test sends, not by the row an arranging branch leaves, so it steers nothing here. A leaf
+    // over fields the branch sets to a literal is decided by that literal, not by any input, so
+    // it steers nothing either (`on_literals`).
+    let fixed = literal_sets(ir, driver.outcome);
     let hints: Vec<Predicate> = hints
         .iter()
-        .map(|hint| without_input(ir, entity, hint))
+        .map(|hint| {
+            on_literals(
+                ir,
+                entity,
+                &fixed,
+                &without_input(ir, entity, hint),
+                &Predicate::Always,
+            )
+        })
         .collect();
     let translated: Vec<Predicate> = hints
         .iter()
@@ -3749,9 +3760,209 @@ fn hinted(
         .filter_map(|branch| input_guard(&branch.condition))
         .collect();
     guards.extend(translated.iter());
-    candidates(ir, driver.command, &guards, at)
-        .map(Some)
-        .map_err(RefusalCause::NoWitness)
+    let mut inputs =
+        candidates(ir, driver.command, &guards, at).map_err(RefusalCause::NoWitness)?;
+    steer(ir, driver, &translated, at, &mut inputs);
+    Ok(Some(inputs))
+}
+
+/// The inputs `inputs` lacks for a hint none of them reaches on a row `driver` creates: an input of
+/// `inputs` that selects the branch, with the paths the hint reads set as a candidate for that hint
+/// alone sets them. The bounded walk over every guard varies the leaves from the base, so a
+/// creating branch whose own guard needs several of them moved — behind earlier refusals over
+/// Booleans — never meets the hint's literal on the same candidate. The selecting inputs are tried
+/// in order and the first that still selects with the hint's values written in is kept: the first
+/// may hold a value an earlier refusal reads beside them (`cred: Header` where `route: D` with it
+/// is refused).
+fn steer(
+    ir: &EssIr,
+    driver: &Driver<'_>,
+    translated: &[Predicate],
+    at: Distinction,
+    inputs: &mut Vec<BTreeMap<String, Node>>,
+) {
+    let selects = |input: &BTreeMap<String, Node>| {
+        input_selects(ir, driver.command, driver.outcome, input).unwrap_or(false)
+    };
+    let holds = |input: &BTreeMap<String, Node>, hint: &Predicate| {
+        flatten(ir, driver.command, input)
+            .is_ok_and(|facts| decides(&facts, &[hint], true).unwrap_or(false))
+    };
+    let bases: Vec<BTreeMap<String, Node>> = inputs
+        .iter()
+        .filter(|input| selects(input))
+        .cloned()
+        .collect();
+    for hint in translated {
+        if inputs
+            .iter()
+            .any(|input| holds(input, hint) && selects(input))
+        {
+            continue;
+        }
+        let Ok(steered) = candidates(ir, driver.command, &[hint], at) else {
+            continue;
+        };
+        let read = hint.fact_paths();
+        for base in &bases {
+            let before = inputs.len();
+            for candidate in &steered {
+                let mut input = base.clone();
+                for path in &read {
+                    copy_path(candidate, &mut input, path);
+                }
+                if !inputs.contains(&input) && holds(&input, hint) && selects(&input) {
+                    inputs.push(input);
+                }
+            }
+            if inputs.len() > before {
+                break;
+            }
+        }
+    }
+}
+
+/// `to` with the value `from` holds at `path`, and nothing else of `from`: a field inside a struct
+/// input is written into the struct `to` already sends, so the struct's other fields keep the
+/// values the base chose (an earlier refusal over them stays refuted). Where `to` has no mapping
+/// on the way, or `from` no value at the path, the whole top-level field is copied instead.
+fn copy_path(from: &BTreeMap<String, Node>, to: &mut BTreeMap<String, Node>, path: &FactPath) {
+    let segments = path.segments();
+    let Some((first, rest)) = segments.split_first() else {
+        return;
+    };
+    let mut value = from.get(first);
+    for segment in rest {
+        value = match value {
+            Some(Node::Map(fields)) => fields.get(segment),
+            _ => None,
+        };
+    }
+    let whole = |to: &mut BTreeMap<String, Node>| {
+        if let Some(value) = from.get(first) {
+            to.insert(first.clone(), value.clone());
+        }
+    };
+    let Some(value) = value else {
+        whole(to);
+        return;
+    };
+    let Some((last, between)) = rest.split_last() else {
+        to.insert(first.clone(), value.clone());
+        return;
+    };
+    let mut slot = to.get_mut(first);
+    for segment in between {
+        slot = match slot {
+            Some(Node::Map(fields)) => fields.get_mut(segment),
+            _ => None,
+        };
+    }
+    match slot {
+        Some(Node::Map(fields)) => {
+            fields.insert(last.clone(), value.clone());
+        }
+        _ => whole(to),
+    }
+}
+
+/// The stored fields `outcome`'s `sets:` fills with a literal, and the value each holds, where the
+/// literal reads as the field's type. A conversion is left out, as [`mapped`] leaves it out.
+fn literal_sets(ir: &EssIr, outcome: &ResolvedOutcome) -> BTreeMap<String, Node> {
+    outcome
+        .sets
+        .iter()
+        .filter(|set| set.conversion.is_none())
+        .filter_map(|set| match &set.value {
+            ResolvedPayloadValue::Literal { value } => {
+                super::literal_value(ir, &set.target_type, value, 0)
+                    .map(|node| (set.target.clone(), node))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// `predicate` with what the creator's literals decide taken out of the steering, as the hint
+/// handed to `steer` and the witness walk: a leaf, or a `not` of one, that reads only stored
+/// fields `fixed` holds becomes `Always` where those values satisfy it, since every row the
+/// creator leaves holds it. Where they refute it, it becomes `neutral`, its connective's identity
+/// (`Always` in an `all:` and at the top, where hints are conjoined; `Never` in an `any:`), so it
+/// drops out and the rest of the hint still steers the input: a later update may store another
+/// value in that field (a move writing the literal the branch reads), and a row that update starts
+/// from is still reached. Whether the arranged row selects the branch is decided by the
+/// arrangement search, which reads the row each step leaves, so a literal nothing writes still
+/// refuses the branch. A `not` over a connective is kept as written.
+fn on_literals(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    fixed: &BTreeMap<String, Node>,
+    predicate: &Predicate,
+    neutral: &Predicate,
+) -> Predicate {
+    match predicate {
+        Predicate::All(children) => Predicate::All(
+            children
+                .iter()
+                .map(|child| on_literals(ir, entity, fixed, child, &Predicate::Always))
+                .collect(),
+        ),
+        Predicate::Any(children) => Predicate::Any(
+            children
+                .iter()
+                .map(|child| on_literals(ir, entity, fixed, child, &Predicate::Never))
+                .collect(),
+        ),
+        Predicate::Always | Predicate::Never => predicate.clone(),
+        other => match literal_truth(ir, entity, fixed, other) {
+            Truth::True => Predicate::Always,
+            Truth::False => neutral.clone(),
+            Truth::Unknown => other.clone(),
+        },
+    }
+}
+
+/// The truth of a leaf, or of a `not` of one, on the stored values `fixed` holds, where it reads
+/// only those fields; `Unknown` otherwise.
+fn literal_truth(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    fixed: &BTreeMap<String, Node>,
+    predicate: &Predicate,
+) -> Truth {
+    match predicate {
+        Predicate::Not(inner) => match literal_truth(ir, entity, fixed, inner) {
+            Truth::True => Truth::False,
+            Truth::False => Truth::True,
+            Truth::Unknown => Truth::Unknown,
+        },
+        Predicate::All(_) | Predicate::Any(_) | Predicate::Always | Predicate::Never => {
+            Truth::Unknown
+        }
+        leaf => {
+            let paths = leaf.fact_paths();
+            if paths.is_empty()
+                || !paths
+                    .iter()
+                    .all(|path| input_path(path).is_none() && fixed.contains_key(path.namespace()))
+            {
+                return Truth::Unknown;
+            }
+            let fields: Vec<_> = ir
+                .entity(entity)
+                .fields
+                .iter()
+                .filter(|field| fixed.contains_key(&field.name))
+                .cloned()
+                .collect();
+            let Ok(store) =
+                crate::input::bind(ir, &fields, fixed, crate::input::Completeness::Partial)
+            else {
+                return Truth::Unknown;
+            };
+            leaf.evaluate(&crate::input::TypedFacts::new(ir, &fields, store))
+        }
+    }
 }
 
 /// Every leaf of a predicate: the comparisons, tests and quantifiers its connectives join.
