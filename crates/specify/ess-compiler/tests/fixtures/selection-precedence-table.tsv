@@ -1,4 +1,4 @@
-#	models=300	commands=633
+#	models=301	commands=639
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -858,6 +858,13 @@ crates/verify/ess-conformance/tests/fixtures/typed-text-operands.yaml	directory.
 crates/verify/ess-conformance/tests/fixtures/unique-within-scope.yaml	ir=a5045537f91f71ddd32df679f1ce792ec226e079909b138b31dcbe2cf9e34c24:13135
 crates/verify/ess-conformance/tests/fixtures/unique-within-scope.yaml	demo.binding.BindIdentity	related_row: already-bound | present_related: claims-taken | default: bound
 crates/verify/ess-conformance/tests/fixtures/unique-within-scope.yaml	demo.binding.ImportIdentity	existence: already-imported | default: imported
+crates/verify/ess-conformance/tests/fixtures/updating-commands-keep-scenarios.yaml	ir=2fe63296436cb312cf9cd7334ca7df41ffbfc151b637e4b80b383d23f80f8d2a:25236
+crates/verify/ess-conformance/tests/fixtures/updating-commands-keep-scenarios.yaml	demo.agents.CreateAgent	default: accepted
+crates/verify/ess-conformance/tests/fixtures/updating-commands-keep-scenarios.yaml	demo.agents.MintEmbedToken	default: minted
+crates/verify/ess-conformance/tests/fixtures/updating-commands-keep-scenarios.yaml	demo.agents.RaiseQuota	existence: missing | default: raised
+crates/verify/ess-conformance/tests/fixtures/updating-commands-keep-scenarios.yaml	demo.agents.RevokeEmbedToken	default: revoked
+crates/verify/ess-conformance/tests/fixtures/updating-commands-keep-scenarios.yaml	demo.agents.SetQuota	default: set
+crates/verify/ess-conformance/tests/fixtures/updating-commands-keep-scenarios.yaml	demo.agents.UpdateAgent	default: updated
 crates/verify/ess-conformance/tests/fixtures/view-absent-row.yaml	ir=caea2760b3d7c3e5ddbd5e850e01784c0ea4b9ba4eca9d10f10556db912bb69e:14744
 crates/verify/ess-conformance/tests/fixtures/view-absent-row.yaml	demo.status.Drop	default: dropped
 crates/verify/ess-conformance/tests/fixtures/view-absent-row.yaml	demo.status.Pause	held_state: not-set | default: paused
