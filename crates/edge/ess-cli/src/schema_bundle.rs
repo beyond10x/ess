@@ -138,6 +138,54 @@ pub struct TypeOptions {
     /// Repeatable.
     #[arg(long, value_name = "TYPE[.FIELD]")]
     rust_raw_json: Vec<String>,
+    /// Rust only: add a derive to the generated types, one of `Eq`, `Hash`, `PartialOrd`, `Ord`
+    /// and `Default`. `DERIVE` adds it to every type, `TYPE=DERIVE` to that type (by its qualified
+    /// model or component name) and the anonymous types it holds. A derive a type cannot satisfy
+    /// is refused, naming the type and the member that blocks it. Repeatable.
+    #[arg(long, value_name = "[TYPE=]DERIVE")]
+    rust_derive: Vec<String>,
+    /// Rust only: decode an explicit `null` in an optional field as the missing member. Encoding
+    /// still omits an absent member; types-report.json records the fold at each field.
+    #[arg(long)]
+    rust_fold_null: bool,
+    /// Rust only: decode an open object with declared fields without keeping the members it does
+    /// not declare, so it has no `ess_extra` field. types-report.json records each such object
+    /// as an obligation the consumer accepted.
+    #[arg(long)]
+    rust_drop_unknown_members: bool,
+}
+
+impl TypeOptions {
+    fn rust_options(&self) -> Result<schema_contract::realize::RustOptions> {
+        let mut options = schema_contract::realize::RustOptions {
+            fold_null: self.rust_fold_null,
+            drop_unknown_members: self.rust_drop_unknown_members,
+            ..Default::default()
+        };
+        for spelled in &self.rust_derive {
+            let (owner, derive) = match spelled.rsplit_once('=') {
+                Some((owner, derive)) => (Some(owner), derive),
+                None => (None, spelled.as_str()),
+            };
+            let derive = derive
+                .parse::<schema_contract::realize::RustDerive>()
+                .map_err(anyhow::Error::msg)
+                .with_context(|| format!("--rust-derive {spelled}"))?;
+            match owner {
+                Some(owner) => {
+                    options
+                        .type_derives
+                        .entry(owner.to_owned())
+                        .or_default()
+                        .insert(derive);
+                }
+                None => {
+                    options.derives.insert(derive);
+                }
+            }
+        }
+        Ok(options)
+    }
 }
 
 pub fn types(args: &TypesArgs) -> Result<ExitCode> {
@@ -176,6 +224,20 @@ pub fn type_files(
     if !args.rust_raw_json.is_empty() && !matches!(args.target, TypesTarget::Rust) {
         bail!("--rust-raw-json is only supported for the Rust target");
     }
+    if !matches!(args.target, TypesTarget::Rust) {
+        for (given, flag) in [
+            (!args.rust_derive.is_empty(), "--rust-derive"),
+            (args.rust_fold_null, "--rust-fold-null"),
+            (
+                args.rust_drop_unknown_members,
+                "--rust-drop-unknown-members",
+            ),
+        ] {
+            if given {
+                bail!("{flag} is only supported for the Rust target");
+            }
+        }
+    }
     let (declaration_path, realization) = match args.target {
         TypesTarget::Typescript => {
             if args.package.is_some() || args.module.is_some() {
@@ -191,13 +253,14 @@ pub fn type_files(
                 .package
                 .as_deref()
                 .context("the Rust target requires --package")?;
+            let options = args.rust_options()?;
             let realization = if args.rust_raw_json.is_empty() {
-                plan.rust(package)?
+                plan.rust_with(package, &options)?
             } else {
                 plan.clone()
                     .with_raw_json(&args.rust_raw_json)
                     .context("--rust-raw-json")?
-                    .rust(package)?
+                    .rust_with(package, &options)?
             };
             ("types.rs", realization)
         }
