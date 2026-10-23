@@ -3478,8 +3478,13 @@ export class ScenarioRun {
   holdUnsupported = false;
   /** The first observation the target could not expose, the reason a report/2 scenario that ran on past it is skipped with. */
   unsupportedReason: string | undefined = undefined;
-  /** The token the last command returned, for a read_your_writes query. */
+  /**
+   * The token the last command that ran returned, for a read_your_writes query; `written` names
+   * that command. A send refused as not granted ran nothing and leaves both as they were, so the
+   * read after the refusal is made at the earlier token.
+   */
   consistency = '';
+  written = '';
   /** A read-your-writes query suppressed because the preceding command returned no token. */
   unreadableView = '';
   unreadableCommand = '';
@@ -3979,7 +3984,10 @@ export class ScenarioRun {
         return this.fail(index, `response observation: ${errorText(error)}`);
       }
     }
-    this.consistency = normalized.consistency;
+    if (!normalized.notGranted) {
+      this.consistency = normalized.consistency;
+      this.written = step.command;
+    }
     this.last = normalized;
     this.lastCommand = step.command;
     this.lastInput = withoutInput ? undefined : input;
@@ -4143,6 +4151,7 @@ export class ScenarioRun {
     }
     const normalized = normalizeResult(answer.result);
     this.consistency = normalized.consistency;
+    this.written = step.command;
     this.last = normalized;
     this.lastCommand = step.command;
     this.lastInput = input;
@@ -4617,12 +4626,12 @@ export class ScenarioRun {
     }
     const expected = this.readRefusalExpected;
     this.readRefusalExpected = false;
-    if (this.lastCommand !== '' && this.consistency === '') {
+    if (this.written !== '' && this.consistency === '') {
       if (expected) this.readAnswer = { view: step.view, unread: true, refused: false, actor: '' };
       // Current is weaker than the read-your-writes claim. Keep the cause for expect_view, and
       // discard any earlier query so it cannot satisfy the assertion after this command.
       this.unreadableView = step.view;
-      this.unreadableCommand = this.lastCommand;
+      this.unreadableCommand = this.written;
       this.queried = '';
       this.lastView = [];
       this.lastTotal = undefined;
@@ -4679,6 +4688,19 @@ export class ScenarioRun {
   }
 
   snapshotSubject(index: number, step: Step): boolean {
+    // The comparison's read was not made because a command after the snapshot returned no token:
+    // the target's contradiction, named as expect_view names it, not a gap in the suite. A capture
+    // with no read before it stays the suite error below.
+    const comparison =
+      step.step === 'expect_subject_unchanged' || step.step === 'expect_complete_subject_unchanged';
+    if (comparison && this.unreadableView === step.view) {
+      return this.fail(
+        index,
+        `ESS-CF-VIEW: \`${this.unreadableCommand}\` returned no consistency token, so ` +
+          `\`${step.view}\` was not read; asking at Current would answer a weaker question than ` +
+          'read-your-writes',
+      );
+    }
     if (this.queried === '') {
       this.recordStatus(statusError);
       this.failures.push(

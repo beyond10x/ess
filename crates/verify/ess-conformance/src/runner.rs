@@ -64,7 +64,7 @@ use ess_domain::view::{Direction, Ranking};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
-use ess_primitives::consistency::QueryConsistency;
+use ess_primitives::consistency::{ConsistencyToken, QueryConsistency};
 use ess_primitives::facts::{FactPath, FactStore, FactValue};
 use ess_primitives::ids::CorrelationId;
 use ess_primitives::node::Node;
@@ -682,9 +682,7 @@ impl<C: Clock> Runner<C> {
             ScenarioStep::SnapshotSubject { view, subject } => {
                 snapshot_subject(view, Some(subject), None, run)
             }
-            ScenarioStep::ExpectSubjectUnchanged { view } => {
-                snapshot_subject(view, None, None, run)
-            }
+            ScenarioStep::ExpectSubjectUnchanged { view } => compare_subject(view, None, run),
             ScenarioStep::ExpectSubjectAbsent { .. }
             | ScenarioStep::SnapshotView { .. }
             | ScenarioStep::ExpectViewUnchanged { .. } => outcome_shape_step(step, run),
@@ -814,13 +812,7 @@ impl<C: Clock> Runner<C> {
         // claim demands the token the last command returned, and an eventual one may not, because
         // demanding it would make the target block until the projection caught up — which is the
         // lag the retry is there to observe.
-        let last = run.last_command.as_ref().map(|executed| {
-            (
-                executed.command.clone(),
-                executed.result.consistency.clone(),
-            )
-        });
-        let consistency = match last {
+        let consistency = match run.written.clone() {
             _ if retry => QueryConsistency::Current,
             // Nothing has been written in this scenario, so there is no write to read no older than.
             None => QueryConsistency::Current,
@@ -1032,6 +1024,9 @@ impl<C: Clock> Runner<C> {
     /// **not** issued, and [`expect_view`] records what actually happened — see there for why that
     /// is `failed` rather than `unsupported`. The target owns satisfying `AtLeast(T)`; a target that
     /// will not say what `T` is has not left it anything to satisfy.
+    ///
+    /// A send refused as not granted is not a write: it ran nothing and returned no token, and the
+    /// read after it is made at the token of the last command that ran ([`Run::written`]).
     fn query_view<T: ConformanceTarget>(
         &mut self,
         view: &ViewRef,
@@ -1043,16 +1038,17 @@ impl<C: Clock> Runner<C> {
             return Flow::Stop;
         };
         let expected = std::mem::take(&mut run.read_refusal_expected);
-        let consistency = match run.last_command.as_ref() {
+        let consistency = match run.written.as_ref() {
             // Nothing has been written in this scenario, so there is no write to read no older
             // than. Synthesis never produces this, and a suite that does means it.
             None => QueryConsistency::Current,
-            Some(executed) => {
-                let Some(token) = executed.result.consistency.clone() else {
+            Some((command, token)) => {
+                let Some(token) = token.clone() else {
+                    let command = command.clone();
                     if expected {
                         run.read_answer = Some((view.clone(), ReadAnswer::Unread));
                     }
-                    run.unreadable = Some((view.clone(), executed.command.clone()));
+                    run.unreadable = Some((view.clone(), command));
                     run.last_view = None;
                     return Flow::Continue;
                 };
@@ -1427,7 +1423,7 @@ fn execute_command<T: ConformanceTarget>(
                 }
             }
             run.remember(&result.direct_events);
-            run.last_command = Some(Executed {
+            run.executed(Executed {
                 command: command.to_string(),
                 actor: actor.cloned(),
                 input: resolved,
@@ -1438,7 +1434,7 @@ fn execute_command<T: ConformanceTarget>(
         }
         // The command's answer, not the target's failure (beyond10x/ess#265).
         Err(TargetError::NotGranted { actor: named }) => {
-            run.last_command = Some(Executed {
+            run.executed(Executed {
                 command: command.to_string(),
                 actor: actor.cloned(),
                 input: resolved,
@@ -1489,7 +1485,7 @@ fn execute_command_without_input<T: ConformanceTarget>(
                 }
             }
             run.remember(&result.direct_events);
-            run.last_command = Some(Executed {
+            run.executed(Executed {
                 command: command.to_string(),
                 actor: actor.cloned(),
                 input: BTreeMap::new(),
@@ -1499,7 +1495,7 @@ fn execute_command_without_input<T: ConformanceTarget>(
             Flow::Continue
         }
         Err(TargetError::NotGranted { actor: named }) => {
-            run.last_command = Some(Executed {
+            run.executed(Executed {
                 command: command.to_string(),
                 actor: actor.cloned(),
                 input: BTreeMap::new(),
@@ -2738,43 +2734,51 @@ fn redeliver_event<T: ConformanceTarget>(event: &EventRef, run: &mut Run, target
     }
 }
 
+/// Records the failed check when the last read of `view` was not made because the command that ran
+/// before it returned no token, and says whether it did.
+///
+/// §14's demand could not be made, and the read was therefore not made at all. `failed` rather
+/// than `unsupported`, and the distinction is the finding rather than a formality: `unsupported`
+/// is for an observation the **target** cannot expose, and a target that cannot expose
+/// consistency at all says so by refusing `query_view` — which still lands as `unsupported`.
+/// Answering a command with no token is a different thing. The specification declares this view
+/// `read_your_writes`, which is a claim about the implementation, and §9 gives a command result a
+/// token so that claim can be held to something. A result without one has declined the guarantee
+/// it declared, which is the implementation contradicting the specification. The comparison
+/// against a subject snapshot reads the same way: the read it needed was not made, and the command
+/// that owed the token is named, not the suite.
+fn unread_for_want_of_a_token(view: &ViewRef, run: &mut Run) -> bool {
+    let Some(command) = run
+        .unreadable
+        .as_ref()
+        .filter(|(named, _)| named == view)
+        .map(|(_, command)| command.clone())
+    else {
+        return false;
+    };
+    run.record(CheckResult::failed(
+        format!("view {view}"),
+        Diagnostic::new(CheckCode::View, run.id.clone())
+            .declared_by(view.clone())
+            .expected(format!(
+                "`{command}` names the write `{view}` is then read no older than, which is what \
+                 `read_your_writes` promises a caller (§14)"
+            ))
+            .observed(format!(
+                "`{command}` returned no consistency token, so the read was not made: asking at \
+                 `Current` instead would answer a weaker question and report it as this one"
+            )),
+    ));
+    true
+}
+
 /// Requires something of the view last read (§14).
 ///
 /// An expectation that names a different view from the query before it is a **suite** defect, and it
 /// is refused rather than silently asserted against whatever happened to be in hand — which would be
 /// a mis-assertion nobody could see in a passing run.
 fn expect_view(view: &ViewRef, expectation: &ViewExpectation, run: &mut Run) -> Flow {
-    // §14's demand could not be made, and the read was therefore not made at all. `failed` rather
-    // than `unsupported`, and the distinction is the finding rather than a formality: `unsupported`
-    // is for an observation the **target** cannot expose, and a target that cannot expose
-    // consistency at all says so by refusing `query_view` — which still lands as `unsupported`, on
-    // the path below. Answering a command with no token is a different thing. The specification
-    // declares this view `read_your_writes`, which is a claim about the implementation, and §9 gives
-    // a command result a token so that claim can be held to something. A result without one has
-    // declined the guarantee it declared, which is the implementation contradicting the
-    // specification.
-    if run
-        .unreadable
-        .as_ref()
-        .is_some_and(|(named, _)| named == view)
-    {
-        let command = run
-            .unreadable
-            .as_ref()
-            .map_or_else(String::new, |(_, command)| command.clone());
-        run.record(CheckResult::failed(
-            format!("view {view}"),
-            Diagnostic::new(CheckCode::View, run.id.clone())
-                .declared_by(view.clone())
-                .expected(format!(
-                    "`{command}` names the write `{view}` is then read no older than, which is what \
-                     `read_your_writes` promises a caller (§14)"
-                ))
-                .observed(format!(
-                    "`{command}` returned no consistency token, so the read was not made: asking at \
-                     `Current` instead would answer a weaker question and report it as this one"
-                )),
-        ));
+    if unread_for_want_of_a_token(view, run) {
         return Flow::Continue;
     }
     if let Some(unsupported) = unexecuted_observation(view, expectation, run) {
@@ -2830,7 +2834,23 @@ fn compare_complete_subject(view: &ViewRef, run: &mut Run) -> Flow {
         .get(view)
         .cloned()
         .expect("admitted complete pair");
-    snapshot_subject(view, None, Some(&shape), run)
+    compare_subject(view, Some(&shape), run)
+}
+
+/// Compares the row read now with the subject snapshot taken earlier.
+///
+/// When that read was not made because a command after the snapshot returned no token, the
+/// comparison fails naming that command: the target's missing token, not a gap in the suite. A
+/// capture with no read before it stays a suite error in [`snapshot_subject`].
+fn compare_subject(
+    view: &ViewRef,
+    shape: Option<&crate::subject::SubjectShape>,
+    run: &mut Run,
+) -> Flow {
+    if unread_for_want_of_a_token(view, run) {
+        return Flow::Stop;
+    }
+    snapshot_subject(view, None, shape, run)
 }
 
 /// A snapshot is an observation of one real row, including values synthesis cannot predict.
@@ -3176,6 +3196,10 @@ struct Run {
     id: ScenarioId,
     context: ScenarioContext,
     last_command: Option<Executed>,
+    /// The command that last ran, and the consistency token it returned: the write a
+    /// `read_your_writes` read is no older than. A send refused as not granted ran nothing, so it
+    /// leaves this as it was, and the read after the refusal is made at the earlier token.
+    written: Option<(String, Option<ConsistencyToken>)>,
     /// The input the most recent `AwaitOutcome` answer carried (beyond10x/ess#542): what a
     /// `{kind: awaited}` value reads.
     awaited: Option<BTreeMap<String, Node>>,
@@ -3231,6 +3255,7 @@ impl Run {
             id,
             context,
             last_command: None,
+            written: None,
             awaited: None,
             last_view: None,
             unreadable: None,
@@ -3310,6 +3335,18 @@ impl Run {
         };
         self.record(check);
         self.disclosure_stopped = true;
+    }
+
+    /// Records the command a step sent and what it answered; one that ran is also the write later
+    /// `read_your_writes` reads are no older than.
+    fn executed(&mut self, executed: Executed) {
+        if executed.not_granted.is_none() {
+            self.written = Some((
+                executed.command.clone(),
+                executed.result.consistency.clone(),
+            ));
+        }
+        self.last_command = Some(executed);
     }
 
     /// Remembers occurrences observed away from a command, without recording one twice.

@@ -2201,8 +2201,11 @@ type run struct {
 	lastActor   string
 	retained    map[string]retainedCommandResult
 	replayMode  bool
-	// consistency is the token the last command returned, for a read_your_writes query.
+	// consistency is the token the last command that ran returned, for a read_your_writes query;
+	// written names that command. A send refused as not granted ran nothing and leaves both as they
+	// were, so the read after the refusal is made at the earlier token.
 	consistency string
+	written     string
 	// unreadableView is the read-your-writes query suppressed because the preceding command returned
 	// no token; unreadableCommand names the command that owed it.
 	unreadableView    string
@@ -2953,7 +2956,7 @@ func (r *run) queryView(index int, step Step) bool {
 	}
 	expected := r.readRefusalExpected
 	r.readRefusalExpected = false
-	if r.lastCommand != "" && r.consistency == "" {
+	if r.written != "" && r.consistency == "" {
 		if expected {
 			r.readAnswer = &readAnswer{view: step.View, unread: true}
 		}
@@ -2961,7 +2964,7 @@ func (r *run) queryView(index int, step Step) bool {
 		// was made so expect_view can report the implementation contradiction rather than reusing an
 		// earlier query.
 		r.unreadableView = step.View
-		r.unreadableCommand = r.lastCommand
+		r.unreadableCommand = r.written
 		r.queried = ""
 		r.lastView = ViewResult{}
 		return true
@@ -3007,6 +3010,17 @@ func (r *run) queryView(index int, step Step) bool {
 
 // Snapshots own a deep copy: targets may reuse or mutate row maps between queries.
 func (r *run) snapshotSubject(index int, step Step) bool {
+	// The comparison's read was not made because a command after the snapshot returned no token:
+	// the target's contradiction, named as expect_view names it, not a gap in the suite. A capture
+	// with no read before it stays the suite error below.
+	if step.Step == "expect_subject_unchanged" && r.unreadableView == step.View {
+		return r.fail(
+			index,
+			"ESS-CF-VIEW: `%s` returned no consistency token, so `%s` was not read; asking at Current would answer a weaker question than read-your-writes",
+			r.unreadableCommand,
+			step.View,
+		)
+	}
 	if r.queried == "" {
 		r.recordStatus(statusError)
 		r.t.Errorf("step %d: ESS-CF-SUITE: no consistent view query preceded the subject snapshot", index)
@@ -9444,7 +9458,10 @@ func (r *run) took(index int, command string, result CommandResult) bool {
 			return r.fail(index, "response observation: %v", err)
 		}
 	}
-	r.consistency = result.Consistency
+	if !result.NotGranted {
+		r.consistency = result.Consistency
+		r.written = command
+	}
 	r.last = result
 	r.lastCommand = command
 	// Cleared, not accumulated. Every `expect_no_event` in a scenario is a claim about *this*

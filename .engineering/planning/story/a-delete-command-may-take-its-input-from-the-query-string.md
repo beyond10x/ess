@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-delete-command-may-take-its-input-from-the-query-string
 kind: story
-status: draft
+status: active
 title: A command on delete may encode its input as query parameters
 summary: ESS-HTTP-020 admits request encoding query on get only; A2A 11.5 lets DELETE take query parameters (a2a wave 2, H4, 2026-10-22).
 tags:
@@ -13,7 +13,10 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 - informed_by: story:a-command-binds-to-a-protocol-or-deployment-http-route
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T04:42:46Z", actor: "human:timo", revision: 5, correlation: "ess-0690"}
+- {from: "proposed", to: "active", at: "2026-10-23T04:42:46Z", actor: "human:timo", revision: 6, correlation: "ess-0690"}
 ---
 ## Need
 
