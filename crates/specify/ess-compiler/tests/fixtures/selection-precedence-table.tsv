@@ -1,4 +1,4 @@
-#	models=294	commands=615
+#	models=297	commands=620
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -30,6 +30,9 @@ crates/generate/ess-entity-runtime/tests/fixtures/contract/system.yaml	ASSEMBLE
 crates/generate/ess-entity-runtime/tests/fixtures/held-state-after-disjoint-accepting.yaml	ir=a6284c23792559df2983605b19dbf42486a9385e8a773635c3ddb0e72e8f42aa:13284
 crates/generate/ess-entity-runtime/tests/fixtures/held-state-after-disjoint-accepting.yaml	demo.ticket.Close	input_refusal: invalid-note | held_state: first-close, not-open | accepting: rushed | default: closed
 crates/generate/ess-entity-runtime/tests/fixtures/held-state-after-disjoint-accepting.yaml	demo.ticket.File	default: filed
+crates/generate/ess-gen/tests/fixtures/command-view-roots.yaml	ir=cda1b1a8c526e34fb661d062fafa2c815ffb61c13f42b969a44f4bcaa9b4a722:9323
+crates/generate/ess-gen/tests/fixtures/command-view-roots.yaml	demo.notes.Create	default: created
+crates/generate/ess-gen/tests/fixtures/command-view-roots.yaml	demo.notes.Pin	default: pinned
 crates/generate/ess-gen/tests/fixtures/model-types.yaml	ir=91f0042ec0ca486d80956e85ed6a896e6811c6240ec1b1062b209b752ea1fa57:4855
 crates/generate/ess-synth/tests/fixtures/binding-selection.yaml	ir=e40145284e7b85a5f309ab433ddc336fd87a70ca4c1259c4e752244be7993b77:19800
 crates/generate/ess-synth/tests/fixtures/binding-selection.yaml	selection.core.Receive	default: received
@@ -173,6 +176,10 @@ crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.TouchItem	defa
 crates/specify/ess-http/tests/fixtures/orders.yaml	ir=fddd48b56d6cbdc488eac31670526927c5688b1b586aaf658f263858597eef1e:13993
 crates/specify/ess-http/tests/fixtures/orders.yaml	catalog.orders.NoteOrder	default: noted
 crates/specify/ess-http/tests/fixtures/orders.yaml	catalog.orders.PlaceOrder	input_refusal: out-of-stock, too-many | accepting: placed | default: mislabelled
+crates/specify/ess-http/tests/fixtures/tasks.yaml	ir=834cec5502320fda7ef23ec2123b15a833d4e705d472266e328954943e575e38:10567
+crates/specify/ess-http/tests/fixtures/tasks.yaml	catalog.tasks.LabelTask	input_refusal: mislabelled | default: labelled
+crates/specify/ess-http/tests/fixtures/tasks.yaml	catalog.tasks.NoteTask	default: noted
+crates/specify/ess-http/tests/fixtures/tasks.yaml	catalog.tasks.SendTask	input_refusal: too-large | accepting: unsupported | default: sent
 crates/specify/ess-service-contract/tests/fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-control-fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-fixtures/system.yaml	ASSEMBLE
@@ -723,6 +730,7 @@ crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml
 crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	demo.seats.ChangeTier	existence: unknown-seat | present_related: unknown-tier, tier-closed | default: changed
 crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	demo.seats.DefineTier	default: defined
 crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	demo.seats.Issue	default: issued
+crates/verify/ess-conformance/tests/fixtures/related-owner/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/related-refusal-shadowed.yaml	ir=33d106da01775532abef5fa4e651e1631ac948a9ffa9d63050ad662c6367570f:21108
 crates/verify/ess-conformance/tests/fixtures/related-refusal-shadowed.yaml	parcels.locker.CloseLocker	existence: no-such-locker | default: closed
 crates/verify/ess-conformance/tests/fixtures/related-refusal-shadowed.yaml	parcels.locker.DropParcel	related_row: no-locker | accepting: staff-closed, locker-closed, locker-shut, locker-full, at-depot | default: dropped
