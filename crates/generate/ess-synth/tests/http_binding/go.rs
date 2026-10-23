@@ -1723,3 +1723,9 @@ mod adopter_wire_reports {
 
 #[path = "adversary_u9c_pass1.rs"]
 mod adversary_u9c_pass1;
+
+#[path = "bare_field_and_errors.rs"]
+mod bare_field_and_errors;
+
+#[path = "adversary_u9d_pass1.rs"]
+mod adversary_u9d_pass1;

@@ -28,7 +28,9 @@
 //! a route is built from — the domain's wire name and the construct's — are both declared, and the
 //! `commands`/`views` segment between them is what stops a path from reading as a resource.
 
-use ess_compiler::ir::{CommandHandle, EssIr, ResolvedComponent, ResolvedCondition, ViewHandle};
+use ess_compiler::ir::{
+    CommandHandle, EssIr, ResolvedComponent, ResolvedCondition, ResolvedOutcome, ViewHandle,
+};
 use ess_domain::component::Reach;
 
 // The status of each declared outcome lives in `ess-http`, which checks a binding against it
@@ -775,10 +777,19 @@ pub fn request(route: &Route<'_>) -> ess_http::Request {
         .unwrap_or_default()
 }
 
-/// The answer a bound route lists for `outcome`, if it lists one; an outcome it does not list
-/// keeps [`outcome_status`] and the envelope.
-pub fn listed<'a>(route: &Route<'a>, outcome: &str) -> Option<&'a ess_http::Outcome> {
+/// The answer a bound route declares for `outcome`: the one it lists under `outcomes`, else its
+/// `errors` when the outcome reports an error. An outcome with neither keeps [`outcome_status`]
+/// and the envelope.
+pub fn listed<'a>(route: &Route<'a>, outcome: &ResolvedOutcome) -> Option<&'a ess_http::Outcome> {
     route
         .declared
-        .and_then(|declared| declared.outcomes.get(outcome))
+        .and_then(|declared| declared.answer(outcome.name.as_str(), outcome.error.is_some()))
+}
+
+/// Whether a bound route declares the answer of any of its command's outcomes, under `outcomes`
+/// or `errors`; an unbound route declares none.
+pub fn declares_answers(route: &Route<'_>) -> bool {
+    route
+        .declared
+        .is_some_and(ess_http::Route::declares_answers)
 }

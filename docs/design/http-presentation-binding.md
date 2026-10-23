@@ -318,6 +318,7 @@ malformed under `refuse`.
 |---|---|---|
 | `envelope` (default) | any outcome | today's body: `outcome`, `error`, `payload`, `published`, `response` (`openapi.rs:57-70`) |
 | `response` | a `returns: true` outcome without `error` | the command's declared response object, bare |
+| `response.<field>` | a `returns: true` outcome without `error`, naming a response field that is not `Optional` | that field's value alone, bare: a JSON string, number, boolean, list or object, and `null` only from a `Json` field that holds it |
 | `{<member>: error}` | an outcome with `error` | an object whose `<member>` is the error's wire name (`naming.wire`, falling back to the local name, `crates/specify/ess-domain/src/name.rs:240-242`), beside the error's own fields under their wire names, unchanged (decided for stage 2, answer 9) |
 | `{<member>: {literal: <text>}}` | a standard refusal (below) | an object with one fixed member |
 | `none` | any outcome | no body; required with `204` and every redirect |
@@ -351,6 +352,16 @@ says, and stage 3 counts what it costs.
   reporting one error do not. Two redirects whose always-written names are equal, or where each
   always-written name of one is one the other may write, are otherwise refused. Otherwise a reader,
   and the stage-3 target, cannot say which branch was taken.
+
+A command route may also carry `errors:`, one answer (`status`, `body`, `headers`, `redirect`, the
+keys of a listed outcome) for every outcome with `error` it does not list under `outcomes:`. It
+means exactly what listing that answer under each such outcome would mean, so an `external:`
+refusal leaves its derived `502` and a `when:` refusal its derived `422` the same way. A listed
+outcome wins over `errors`. Every check of a listed outcome runs once per outcome `errors` covers
+and is reported at `routes[i].errors`, saying which outcome it was checked for; `errors` is
+further refused with a status outside `300..=599`, with a `response` or `response.<field>` body, on
+a view, and on a route whose command has no unlisted error outcome (`ESS-HTTP-022`). An adopter
+asked for both forms (`story:an-outcome-may-answer-a-response-field-bare-and-errors-share-a-default-status`).
 
 ### Response headers
 
@@ -413,9 +424,9 @@ keeps today's answer.
 |---|---|---|
 | `ESS-HTTP-020` | an encoding outside the set; `form` or `json` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` with `json`, or an `unknown` value outside `refuse` and `ignore` | `routes[i].request.encoding` or `routes[i].request.unknown` |
 | `ESS-HTTP-021` | a `form` or `query` field whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
-| `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view | `routes[i].outcomes.<name>` |
+| `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view; `errors:` on a view, or on a route whose command has no outcome with `error` that `outcomes:` leaves unlisted | `routes[i].outcomes.<name>` or `routes[i].errors` |
 | `ESS-HTTP-023` | a status outside `100..=599`, in a class the outcome may not use, or a `3xx` other than `301`, `302`, `303`, `307` and `308` | the outcome, the status, the class |
-| `ESS-HTTP-024` | a body form not admitted for the outcome or operation: `response` on an outcome without `returns: true` or with `error`; `{…: error}` without `error`; `{…: {literal: …}}` on an outcome; a body other than `none` on `204` or beside a `redirect`; `single` or `rows` on a command, or an outcome form on a view; `single` on a paged view; a `<member>` that is empty or equals the wire name of one of the error's fields | the outcome (or `routes[i].body`) and the form |
+| `ESS-HTTP-024` | a body form not admitted for the outcome or operation: `response` or `response.<field>` on an outcome without `returns: true` or with `error`, and so under `errors`; `response.<field>` naming no response field or an `Optional` one, or a source other than `response.<field>` as a body; `{…: error}` without `error`; `{…: {literal: …}}` on an outcome; a body other than `none` on `204` or beside a `redirect`; `single` or `rows` on a command, or an outcome form on a view; `single` on a paged view; a `<member>` that is empty or equals the wire name of one of the error's fields | the outcome (or `routes[i].body`) and the form |
 | `ESS-HTTP-025` | two outcomes on one status that the bodies cannot tell apart, an unlisted outcome counted at its derived status with `envelope`, unless both declare a `redirect` and one always writes (its source not `Optional`) a parameter name the other never writes, or both write one parameter name from `error.wire` with distinct error wire names; a `refusals:` override on a route the binding names, on the status of an outcome of its command, with a body that does not tell the two apart (answer 24) | both outcomes and the status (for an override, `refusals.<key>`, the route and the outcomes) |
 | `ESS-HTTP-026` | a header name that is not a token, a header the server (`Connection`), the encoding (`Content-Type`, `Content-Encoding`, `Content-Length`, `Transfer-Encoding`) or `redirect` (`Location`) owns, a literal that is not a field value, `error.wire` whose wire name is not a field value, a header declared twice ignoring case, a source that names no field or names a non-scalar, a source the outcome cannot supply (`response.` without `returns: true`, `error.` without `error`), `error.wire` on an outcome whose error declares a field named `wire`, or any `source` in a `refusals:` header | the header and the source |
 | `ESS-HTTP-027` | a challenge whose scheme or param name is not a token, a param declared twice, a literal param or a param reading `error.wire` whose text no quoted string carries, a challenge under any header but `WWW-Authenticate`, or a declared `401` (outcome or refusal) without a `WWW-Authenticate` challenge | the header, the param |
@@ -468,7 +479,8 @@ same bytes.
 | `routes[].request.unknown` | `refuse`, `ignore` | `refuse`, omitted; `request` itself is omitted when both are defaults | k1 |
 | `routes[].outcomes.<outcome>` | an object per listed outcome of the command, keyed by its local name | absent: the outcome keeps `outcome_status` and `envelope` | k2 |
 | `routes[].outcomes.<outcome>.status` | an integer; **required** in a listed outcome | always written | k2 |
-| `routes[].outcomes.<outcome>.body` | `envelope`, `response`, `none`, `{<member>: error}` | `envelope`, omitted | k2 |
+| `routes[].outcomes.<outcome>.body` | `envelope`, `response`, `response.<field>`, `none`, `{<member>: error}` | `envelope`, omitted | k2; `response.<field>` 0.69.0 |
+| `routes[].errors` | one answer with the keys of a listed outcome, for every outcome with `error` the route does not list | absent, omitted | 0.69.0 |
 | `routes[].body` (view route) | `rows`, `single` | `rows`, omitted | k2 |
 | `routes[].empty.status` (view route) | an integer, `4xx`; **required** with `single`, and the only key of `empty` | written with `single` | k2 |
 | `refusals.<key>` | `malformed`, `not_granted`, `unfinished` | absent: today's answer | k2 |
@@ -522,7 +534,8 @@ match: the literal path itself, or a one-segment template such as `/{name}`, by 
 
 A refining document restates each stage-2 key of every route of the refined binding exactly: one it
 adds, changes or drops on such a route is `ESS-HTTP-012`, naming the key, the refined value and the
-new one. Its top-level `refusals:` equals the refined binding's, both absent or both the same. A
+new one. A route's `errors` is compared as one value, at `routes[i].errors`. Its top-level
+`refusals:` equals the refined binding's, both absent or both the same. A
 route the refining document adds may carry any stage-2 key. The comparison is over the compiled
 values, so writing a default explicitly is not a change.
 
@@ -542,8 +555,8 @@ servers already follow (`crates/generate/ess-synth/src/rust/http.rs:824-868`):
    twice, an unknown key under `refuse`, a missing required field, a value its type refuses):
    `refusals.malformed`, else today's `400`. A path variable's value wins over a body or query key
    for the same field, and that key counts as unknown.
-7. The command runs and takes an outcome: the route's `outcomes.<outcome>` if listed, else
-   `outcome_status` and `envelope`. A view answers `rows`, or `single` with the row or `empty`.
+7. The command runs and takes an outcome: the route's `outcomes.<outcome>` if listed, else its
+   `errors` for an outcome with `error`, else `outcome_status` and `envelope`. A view answers `rows`, or `single` with the row or `empty`.
 8. The realization is unfinished: `refusals.unfinished`, else today's `501`.
 
 `refusals:` applies to the routes the binding names and to no derived route, and never replaces a
@@ -586,8 +599,10 @@ single` and no identity selection and no `empty` earns both `ESS-HTTP-030` and `
 `requestBody` content is `application/x-www-form-urlencoded` for `form`, with the flat field
 schema; `query` has no `requestBody`, and each unmapped field is an `in: query` parameter, a `List`
 with `style: form`, `explode: true` and `required: false`, its absent key the empty list. Each
-declared status is one response: the bare response schema, the error object (`<member>` a `const` of the wire name beside the error's fields), or no
-content; headers as response `headers`, a challenge as a `string` header, and a redirect's
+declared status is one response: the bare response schema, the one field's schema as
+`{command}.{outcome}.Response` for `response.<field>`, the error object (`<member>` a `const` of
+the wire name beside the error's fields), or no content; an outcome `errors` answers is described
+as if listed with that answer; headers as response `headers`, a challenge as a `string` header, and a redirect's
 `Location`. Every response of a bound operation carries `x-ess-outcomes`, the outcomes it answers in
 the order the command declares them. A view route with `single` answers the row schema at `200` and
 no content at its `empty` status. A `refusals:` override replaces the standard refusal's response on
