@@ -210,6 +210,12 @@ export function isNil(value: Node): boolean {
   return value === null || value === undefined;
 }
 
+/**
+ * The expected value of a field that relays an awaited input the answer left out: carried absent or
+ * null, never with a value. Compared by identity.
+ */
+export const UNISSUED: Node = Object.freeze({});
+
 // ---- errors ---------------------------------------------------------------------------------------
 
 const UNSUPPORTED = Symbol.for('ess.conformance.unsupported');
@@ -3772,7 +3778,7 @@ export class ScenarioRun {
       case 'resolve_fixtures':
         return this.fail(index, 'fixture resolution must precede scenario activity');
       case 'expect_event_values': {
-        const payload = this.resolveAll(index, step.payload as Record<string, Value>);
+        const payload = this.resolveRelayed(index, step.payload as Record<string, Value>);
         return payload !== null && this.expectEventValues(index, { ...step, payload });
       }
       case 'expect_direct_response':
@@ -4460,7 +4466,7 @@ export class ScenarioRun {
       return Object.fromEntries(
         Object.entries((claim.payload ?? {}) as Record<string, Value>).map(([field, written]) => [
           field,
-          this.resolve(written),
+          this.leftOut(written) ? UNISSUED : this.resolve(written),
         ]),
       );
     } catch {
@@ -4885,7 +4891,7 @@ export class ScenarioRun {
     switch (expectation.expect) {
       case 'contains':
       case 'excludes': {
-        const want = this.resolveAll(index, expectation.fields);
+        const want = this.resolveRow(index, expectation.fields);
         if (want === null) {
           return [false, 'a value the expectation names is not bound', true];
         }
@@ -5099,7 +5105,7 @@ export class ScenarioRun {
         if (expectation.position === undefined) {
           return [false, 'the suite names no position, which is a generator defect', true];
         }
-        const want = this.resolveAll(index, expectation.fields);
+        const want = this.resolveRow(index, expectation.fields);
         if (want === null) {
           return [false, 'a value the expectation names is not bound', true];
         }
@@ -5173,6 +5179,8 @@ export class ScenarioRun {
       }
       if (present) {
         want[field] = node;
+      } else if (this.leftOut(written)) {
+        want[field] = UNISSUED;
       } else {
         absent.push(field);
       }
@@ -5213,6 +5221,8 @@ export class ScenarioRun {
       }
       if (present) {
         want[field] = node;
+      } else if (this.leftOut(written)) {
+        want[field] = UNISSUED;
       } else {
         absent.push(field);
       }
@@ -5549,6 +5559,7 @@ export class ScenarioRun {
       for (const [field, value] of Object.entries(step.input ?? {})) {
         const [node, present] = this.resolveAccessorExpected(value);
         if (present) wanted[field] = node;
+        else if (this.leftOut(value)) wanted[field] = UNISSUED;
         else absent.push(field);
       }
     } catch (error) {
@@ -5794,6 +5805,58 @@ export class ScenarioRun {
     }
   }
 
+  /**
+   * Whether `value` reads an input the most recent await's answer left out, by omitting it or by
+   * spelling it null. Only an input declared `Optional` can be left out, since the await step holds
+   * the answer to its declared shape: there is nothing issued to compare, and the expectation holds
+   * the input absent or null instead (an absent `Optional` input written by `sets:` clears the
+   * field), as in the Rust runner.
+   */
+  leftOut(value: Value): boolean {
+    return (
+      value.kind === 'awaited' &&
+      this.awaited !== undefined &&
+      isNil(this.awaited[value.field as string])
+    );
+  }
+
+  /** `values` less each one that reads an awaited input the answer left out. */
+  withoutLeftOut(values: { [field: string]: Value }): { [field: string]: Value } {
+    return Object.fromEntries(Object.entries(values).filter(([, value]) => !this.leftOut(value)));
+  }
+
+  /**
+   * resolveAll for the values an event must carry: a field relaying an awaited input the answer
+   * left out expects UNISSUED, absent or null.
+   */
+  resolveRelayed(
+    index: number,
+    values: { [field: string]: Value } | undefined,
+  ): { [field: string]: Node } | null {
+    const resolved = this.resolveAll(index, this.withoutLeftOut(values ?? {}));
+    if (resolved === null) return null;
+    for (const [field, value] of Object.entries(values ?? {})) {
+      if (this.leftOut(value)) resolved[field] = UNISSUED;
+    }
+    return resolved;
+  }
+
+  /**
+   * resolveAll for the fields of an expected view row: a field `sets:` writes from an awaited
+   * input the answer left out holds nothing.
+   */
+  resolveRow(
+    index: number,
+    values: { [field: string]: Value } | undefined,
+  ): { [field: string]: Node } | null {
+    const resolved = this.resolveAll(index, this.withoutLeftOut(values ?? {}));
+    if (resolved === null) return null;
+    for (const [field, value] of Object.entries(values ?? {})) {
+      if (this.leftOut(value)) resolved[field] = null;
+    }
+    return resolved;
+  }
+
   /** resolveAll resolves every value a step carries against what this run has bound. */
   resolveAll(
     index: number,
@@ -5879,6 +5942,7 @@ export class ScenarioRun {
 
   /** resolveAccessorExpected answers a value and whether the accessor found one at all. */
   resolveAccessorExpected(value: Value): [Node, boolean] {
+    if (this.leftOut(value)) return [null, false];
     if (value.kind === 'observed_selection') {
       if (value.selection === undefined) {
         throw new Error('missing selection observation');
@@ -5967,6 +6031,10 @@ function fieldsMatch(
 ): boolean {
   for (const field of Object.keys(want)) {
     const [value, reach] = lookup(row, field);
+    if (want[field] === UNISSUED) {
+      if (reach === 'value' && !isNil(value)) return false;
+      continue;
+    }
     if (reach !== 'value') {
       if (field.includes('.') && isNil(want[field])) {
         continue;
@@ -6251,6 +6319,9 @@ function quoteGo(value: string): string {
 export function render(value: Node): string {
   if (isNil(value)) {
     return 'null';
+  }
+  if (value === UNISSUED) {
+    return 'absent or null';
   }
   if (typeof value === 'string') {
     return quoteGo(value);
