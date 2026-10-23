@@ -6,7 +6,7 @@ status: active
 title: Downstream-reported synthesis, binding and grant gaps are closed
 relations:
 - serves: vision:O2
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:18Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-30T13:04:29Z", actor: "human:timo", revision: 3}
@@ -238,3 +238,9 @@ The operator: "make sure ess knows that we expect all of those fixed efficiently
 - ADR-bound units leave the batch pull request (#633) unless their ADR is accepted before the release bar: G-U3, G-U5, G-U9, G-U22, G-U28, and the keep-versus-clear half of N31 (#678). The wire half of N31 (an input that may be absent or null, projected not-required and nullable) is built with N30 (#677) as G-U30.
 
 - 2026-10-23: two downstream blockers move into this wave: story:guard-tests-list-membership (G-U34) and story:an-existence-outcome-passes-a-related-list-membership-guard (G-U35, formerly planned for 0.70.0). Neither needs an ADR: the first extends the guard predicate grammar with a design page first, the second is a synthesis search fix.
+
+- 2026-10-23: three adopter asks (ESS 0.68.0, verified by the reporter) are filed as stories after 0.69.0 ships and do not hold the 0.69.0 batch. Orchestrator: "file them in your store after ESS 0.69.0 ships, do not hold ess#633 for them."
+  1. OpenAPI import of a 58-operation document exits 0 with 144 unmapped items and drops every value keyword (109 `minimum`, every `pattern`, `format` and `maxLength`). Ask: map value keywords to newtype `invariants:` and `alphabet:`, map discriminators to tagged enums, and refuse a keyword the import cannot map instead of dropping it. Mapping integer bounds back to invariants is the inverse of the implemented `story:feature-request-394` and needs no ADR. Refusing instead of dropping, and the candidate shape of the import, wait on the proposed `architecture-decision-record:ess-evolution-08-reviewable-source-candidates`.
+  2. `ess verify conform run --target` has no live HTTP target. Ask: a target that drives a running service through its `ess-http/1` binding. Waits on the proposed `architecture-decision-record:ess-evolution-09-independent-conformance`.
+  3. Unmapped items exist only as YAML comments. Ask: a typed `unmapped:` declaration in the IR, so a waived difference can point at one. Waits on `ess-evolution-08` and needs a new format version.
+  Repro fixtures with neutral names come from the reporter on request.

@@ -7,11 +7,11 @@ title: An existence outcome is synthesized beside a related list-membership guar
 summary: A downstream specification's existing_instance outcome is refused with ESS-SYNTH-004 because the steered search finds no related row whose list holds the input chosen first; reproduced on 0.68.0 and the 0.69.0 build.
 tags:
 - adopter-report
-- ess-0.70.0
+- ess-0.69.0
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-22T23:39:59Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-22T23:39:59Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}

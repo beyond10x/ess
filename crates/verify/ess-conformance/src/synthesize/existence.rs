@@ -1074,20 +1074,26 @@ fn steered(
     .map_err(|_| Unreachable::Unsteered {
         outcome: Box::new(creating),
         related: EntityRef::from(related),
-        guards: driver
-            .command
-            .outcomes
-            .iter()
-            .filter(|outcome| {
-                outcome.name != driver.outcome.name
-                    && matches!(
-                        outcome.condition,
-                        ResolvedCondition::Related { .. } | ResolvedCondition::RelatedSet { .. }
-                    )
-            })
-            .map(|outcome| OutcomeRef::new(command.clone(), outcome.name.clone()))
-            .collect(),
+        guards: related_beside(driver.command, driver.outcome),
     })
+}
+
+/// The branches of `command` other than `creating` that read a related row: what a send of
+/// `creating` has to pass over.
+fn related_beside(command: &ResolvedCommand, creating: &ResolvedOutcome) -> Vec<OutcomeRef> {
+    let named = CommandRef::new(command.name.clone());
+    command
+        .outcomes
+        .iter()
+        .filter(|outcome| {
+            outcome.name != creating.name
+                && matches!(
+                    outcome.condition,
+                    ResolvedCondition::Related { .. } | ResolvedCondition::RelatedSet { .. }
+                )
+        })
+        .map(|outcome| OutcomeRef::new(named.clone(), outcome.name.clone()))
+        .collect()
 }
 
 /// The second send of a [`segment`]: `second` with `field` set to the stored `identity`, or `None`
@@ -1213,6 +1219,10 @@ fn recreation(
 /// The input a creating branch is sent with: the one that reaches it, or — for a command reading a
 /// related row (ess/18), which only an arrangement of that row reaches — a plain one, which the
 /// creation then sends with the related row arranged for it.
+///
+/// Where no related row and input reach the creating branch, the refusal is the instance the
+/// existence scenario needs, naming the related guards the send cannot pass over — a membership
+/// guard over a list no creator sets from its input — rather than the search that gave up.
 fn creating_input(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -1230,6 +1240,31 @@ fn creating_input(
             None,
         )
         .map(|(_, input)| input)
+        .map_err(|cause| {
+            match (
+                &cause,
+                &outcome.subject,
+                super::related_guard::reads(command),
+            ) {
+                (RefusalCause::GuardUnsatisfiable { .. }, Some(subject), Some((_, related))) => {
+                    RefusalCause::InstanceRequired {
+                        entity: EntityRef::from(&subject.entity),
+                        need: InstanceNeed::InState {
+                            state: ir.entity(&subject.entity).lifecycle.initial.clone(),
+                        },
+                        reason: Unreachable::RelatedUnmet {
+                            outcome: Box::new(OutcomeRef::new(
+                                CommandRef::new(command.name.clone()),
+                                outcome.name.clone(),
+                            )),
+                            related: EntityRef::from(related),
+                            guards: related_beside(command, outcome),
+                        },
+                    }
+                }
+                _ => cause,
+            }
+        })
     } else {
         reach(ir, command, outcome, distinction)
     }

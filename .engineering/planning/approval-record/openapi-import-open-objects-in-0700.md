@@ -10,7 +10,7 @@ refs:
   reference: beyond10x/ess#647
 relations:
 - decides: story:openapi-import-admits-open-objects-as-json
-revision: 2
+revision: 3
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-23T13:57:49Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
 ---
@@ -22,4 +22,4 @@ Operator morning queue row 33 (report rows 44 and 45), relayed by the orchestrat
 
 `story:openapi-import-admits-open-objects-as-json` is proposed for 0.70.0 and is not part of the 0.69.0 batch.
 
-Decider: timo
+Decider: operator
