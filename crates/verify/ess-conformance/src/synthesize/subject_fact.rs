@@ -1067,6 +1067,66 @@ pub(super) fn grounded(
     grounded_in(ir, entity, settled, predicates, None)
 }
 
+/// Every `defined(input.x)` the predicates over the row read, as the input guard `defined(x)`:
+/// handed to the candidate search, it offers an input leaving `x` out, which grounding never
+/// does because a presence test has no value to ground. `not defined(input.tenant)` is decided
+/// only on an input without `tenant`.
+pub(super) fn input_presence(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    predicates: &[Predicate],
+) -> Vec<Predicate> {
+    let mut found = Vec::new();
+    for predicate in predicates {
+        leaves(predicate, &mut found);
+    }
+    let mut presence: Vec<Predicate> = Vec::new();
+    for leaf in found {
+        if let Predicate::Defined(path) = &leaf {
+            if reads_input(ir, entity, &leaf) {
+                if let Some(path) = input_path(path) {
+                    let guard = Predicate::Defined(path);
+                    if !presence.contains(&guard) {
+                        presence.push(guard);
+                    }
+                }
+            }
+        }
+    }
+    presence
+}
+
+/// `defined(f)` for every stored field `f` of the row a comparison with the input reads:
+/// handed to the row search as hints, they steer a creator toward a row holding `f`, which the
+/// comparison itself never does because its input side names nothing of the creator's
+/// ([`without_input`]). `tenant != input.tenant` is decided only on a row holding a tenant.
+pub(super) fn compared_presence(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    predicates: &[Predicate],
+) -> Vec<Predicate> {
+    let mut found = Vec::new();
+    for predicate in predicates {
+        leaves(predicate, &mut found);
+    }
+    let mut presence: Vec<Predicate> = Vec::new();
+    for leaf in found {
+        if !matches!(leaf, Predicate::Compare { .. }) || !reads_input(ir, entity, &leaf) {
+            continue;
+        }
+        for path in leaf.fact_paths() {
+            if input_path(path).is_some() {
+                continue;
+            }
+            let guard = Predicate::Defined(path.clone());
+            if !presence.contains(&guard) {
+                presence.push(guard);
+            }
+        }
+    }
+    presence
+}
+
 /// [`grounded`] the other way round: every comparison between the row and an input field `fixed`
 /// already holds, the input side replaced by the value held there and the stored side left the
 /// field it reads. Handed to the stored-row search as hints, its literals are the values the row
@@ -7044,6 +7104,10 @@ pub(super) enum Further {
     /// One side of a counter limit whose nearest value a run holds lies past [`COUNTER_REACH`]:
     /// refused under the scenario with this cause, never searched.
     Past(String),
+    /// A row isolating one child of a related guard that no row and input meets under
+    /// three-valued comparison, because a predicate it holds reads a path it leaves absent:
+    /// neither searched nor refused, and kept so every later row keeps its distinction.
+    Unknowable,
 }
 
 /// The comparison that holds exactly where `op` does not.

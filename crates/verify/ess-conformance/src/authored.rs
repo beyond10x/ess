@@ -1735,10 +1735,13 @@ fn value_at(value: &Written, path: &str) -> String {
 /// command guarded by a related row `existing_instance:` and an `exists: false` over a row the
 /// input names come before every input refusal, so nothing claims them; an `exists: false` over a
 /// stored reference comes after the input refusals, which claim it where their guard holds, as the
-/// model interpreter answers. Whatever else a branch reads — the held state, a stored or related
-/// row, a provider — is not decided, and a `when:` the literals leave undecided claims nothing.
+/// model interpreter answers. A related row's values are not decided, but a `when_related:`
+/// predicate branch the plan answers after another over the same row, whose guard implies that
+/// one's, is never taken whatever the row holds ([`related_shadow`]). Whatever else a branch
+/// reads — the held state, a stored or related row, a provider — is not decided, and a `when:` the
+/// literals leave undecided claims nothing.
 fn not_taken(
-    format: ess_domain::system::FormatVersion,
+    ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     decided: &impl Fn(&Predicate) -> Option<bool>,
@@ -1748,6 +1751,7 @@ fn not_taken(
 
     // The accepting `when:` branches the precedence plan answers before this one: the claimers of
     // beyond10x/ess#217. Which branches they answer before is the plan's.
+    let format = ir.format();
     let earlier_accepting = crate::synthesize::precedence::answers_before(format, command, outcome)
         .into_iter()
         .filter(|other| {
@@ -1766,6 +1770,9 @@ fn not_taken(
             ));
         }
     }
+    if let Some(reason) = related_shadow(ir, command, outcome, decided) {
+        return Some(reason);
+    }
     let own = when(outcome)?;
     (decided(own) == Some(false)).then(|| {
         format!(
@@ -1773,6 +1780,239 @@ fn not_taken(
             outcome.name
         )
     })
+}
+
+/// Why a `when_related:` predicate branch is never taken because a branch the precedence plan
+/// answers before it reads the same related row with a guard its own implies (adopter report,
+/// row 27): wherever the row selects `outcome`, it selects that earlier branch too, and of two
+/// branches over one related row the first the order reads answers
+/// (`docs/design/cross-record-and-stored-field-guards.md#the-precedence-order`). The earlier
+/// branch's own input guard must hold for this input — `decided` says so, or `outcome`'s input
+/// guard implies it — and every further row it requires (`all:`) must be one `outcome` requires
+/// too. Implication is read from the guards' shape and from comparisons of one field against
+/// literals ([`implies`]); a guard it cannot show implied is left to the run, as before.
+fn related_shadow(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    decided: &impl Fn(&Predicate) -> Option<bool>,
+) -> Option<String> {
+    use ess_compiler::ir::{ResolvedCondition, ResolvedRelatedTest};
+
+    let ResolvedCondition::Related {
+        via,
+        entity,
+        test: ResolvedRelatedTest::Holds { predicate: own },
+        input: own_input,
+        also: own_also,
+    } = &outcome.condition
+    else {
+        return None;
+    };
+    let row_booleans = boolean_fields(&ir.entity(entity).fields);
+    let input_booleans = boolean_fields(&command.input);
+    crate::synthesize::precedence::answers_before(ir.format(), command, outcome)
+        .into_iter()
+        .find_map(|first| {
+            let ResolvedCondition::Related {
+                via: first_via,
+                entity: first_entity,
+                test: ResolvedRelatedTest::Holds { predicate },
+                input,
+                also,
+            } = &first.condition
+            else {
+                return None;
+            };
+            let same_row = first_via == via && first_entity == entity;
+            let input_holds = input.as_ref().is_none_or(|guard| {
+                decided(guard) == Some(true)
+                    || own_input.as_ref().is_some_and(|own| implies(&input_booleans, own, guard))
+            });
+            (same_row
+                && implies(&row_booleans, own, predicate)
+                && also.iter().all(|row| own_also.contains(row))
+                && input_holds)
+                .then(|| {
+                    let beside = input
+                        .as_ref()
+                        .map(|guard| format!(" beside {guard}"))
+                        .unwrap_or_default();
+                    format!(
+                        "`{}` (`{via}`: {predicate}{beside}) reads the same related row with a \
+                         guard `{}`'s ({own}) implies, and the precedence order answers it first \
+                         (docs/design/cross-record-and-stored-field-guards.md#the-precedence-order), \
+                         so `{}` is not taken",
+                        first.name, outcome.name, outcome.name
+                    )
+                })
+        })
+}
+
+/// The top-level fields of `fields` whose type is `Boolean` and not `Optional`: those whose
+/// comparison against `true` with `!=` holds exactly where the one against `false` with `==` does.
+fn boolean_fields(fields: &[ess_compiler::ir::ResolvedField]) -> BTreeSet<&str> {
+    use ess_compiler::ir::ResolvedTypeRef;
+    fields
+        .iter()
+        .filter(|field| {
+            matches!(
+                field.type_ref,
+                ResolvedTypeRef::Primitive {
+                    name: ess_domain::types::Primitive::Boolean,
+                }
+            )
+        })
+        .map(|field| field.name.as_str())
+        .collect()
+}
+
+/// Whether `premise` implies `conclusion` wherever it holds: equal guards, a conjunction one of
+/// whose conjuncts implies it, a disjunction each of whose disjuncts does, a conclusion every
+/// conjunct of which, or some disjunct of which, the premise implies, or two comparisons of one
+/// field against literals ([`compare_implies`]). `booleans` names the fields that are `Boolean` and
+/// not `Optional` ([`boolean_fields`]). Sound under three-valued reading, and incomplete: `false`
+/// means not shown.
+fn implies(booleans: &BTreeSet<&str>, premise: &Predicate, conclusion: &Predicate) -> bool {
+    if premise == conclusion
+        || matches!(conclusion, Predicate::Always)
+        || matches!(premise, Predicate::Never)
+        || compare_implies(booleans, premise, conclusion)
+    {
+        return true;
+    }
+    if let Predicate::All(children) = conclusion {
+        return children
+            .iter()
+            .all(|child| implies(booleans, premise, child));
+    }
+    if let Predicate::Any(children) = conclusion {
+        if children
+            .iter()
+            .any(|child| implies(booleans, premise, child))
+        {
+            return true;
+        }
+    }
+    match premise {
+        Predicate::All(children) => children
+            .iter()
+            .any(|child| implies(booleans, child, conclusion)),
+        Predicate::Any(children) => {
+            !children.is_empty()
+                && children
+                    .iter()
+                    .all(|child| implies(booleans, child, conclusion))
+        }
+        _ => false,
+    }
+}
+
+/// A comparison of one fact path against one literal, by value, read with the fact on the left.
+fn field_literal(
+    predicate: &Predicate,
+) -> Option<(
+    &ess_primitives::facts::FactPath,
+    ess_primitives::predicate::CompareOp,
+    &ess_primitives::facts::FactValue,
+)> {
+    use ess_primitives::predicate::{CompareKind, CompareOp, Operand};
+    let Predicate::Compare {
+        left,
+        op,
+        right,
+        kind: CompareKind::Value,
+    } = predicate
+    else {
+        return None;
+    };
+    match (left, right) {
+        (Operand::Fact(path), Operand::Literal(value)) => Some((path, *op, value)),
+        (Operand::Literal(value), Operand::Fact(path)) => Some((
+            path,
+            match op {
+                CompareOp::Lt => CompareOp::Gt,
+                CompareOp::Le => CompareOp::Ge,
+                CompareOp::Gt => CompareOp::Lt,
+                CompareOp::Ge => CompareOp::Le,
+                CompareOp::Eq => CompareOp::Eq,
+                CompareOp::Ne => CompareOp::Ne,
+            },
+            value,
+        )),
+        _ => None,
+    }
+}
+
+/// Whether one comparison of a field against a literal implies another of the same field, read
+/// over the values the premise admits (adversary pass on row 27: `free_slots < 1` implies
+/// `free_slots < 5`, and `accepting != true` implies `accepting == false`).
+///
+/// Three-valued soundness: a comparison holds only where its field holds a value (an absent one
+/// leaves it `Unknown`), so where the premise holds the field is present whatever its declared
+/// optionality. Ordering is read only between two numbers: a premise `<`, `<=`, `>`, `>=` or `==`
+/// against a number admits only numbers, and a premise `!=` admits values of any kind, so it
+/// implies only another `!=` against the same literal (equal guards, above). The one exception is a
+/// field `booleans` names, a `Boolean` that is not `Optional`, whose every value is `true` or
+/// `false`: there `!= b` is `== !b`.
+fn compare_implies(booleans: &BTreeSet<&str>, premise: &Predicate, conclusion: &Predicate) -> bool {
+    use ess_primitives::facts::FactValue;
+    use ess_primitives::predicate::CompareOp;
+    use std::cmp::Ordering;
+
+    let (Some((path, op, premise_value)), Some((conclusion_path, conclusion_op, value))) =
+        (field_literal(premise), field_literal(conclusion))
+    else {
+        return false;
+    };
+    if path != conclusion_path {
+        return false;
+    }
+    let boolean = matches!(path.segments(), [name] if booleans.contains(name.as_str()));
+    let (op, premise_value) = match (op, premise_value) {
+        (CompareOp::Ne, FactValue::Bool(held)) if boolean => {
+            (CompareOp::Eq, FactValue::Bool(!held))
+        }
+        (op, premise_value) => (op, premise_value.clone()),
+    };
+    if op == CompareOp::Eq {
+        // The field holds exactly `premise_value`. Read between two numbers or two Booleans only:
+        // two texts may name one instant in two spellings, which `==` reads as equal.
+        return match (&premise_value, value) {
+            (FactValue::Number(held), FactValue::Number(bound)) => {
+                let order = held.cmp(bound);
+                match conclusion_op {
+                    CompareOp::Eq => order == Ordering::Equal,
+                    CompareOp::Ne => order != Ordering::Equal,
+                    CompareOp::Lt => order == Ordering::Less,
+                    CompareOp::Le => order != Ordering::Greater,
+                    CompareOp::Gt => order == Ordering::Greater,
+                    CompareOp::Ge => order != Ordering::Less,
+                }
+            }
+            (FactValue::Bool(held), FactValue::Bool(bound)) => match conclusion_op {
+                CompareOp::Eq => held == bound,
+                CompareOp::Ne => held != bound,
+                _ => false,
+            },
+            _ => false,
+        };
+    }
+    let (FactValue::Number(bound), FactValue::Number(other)) = (&premise_value, value) else {
+        return false;
+    };
+    let order = bound.cmp(other);
+    match (op, conclusion_op) {
+        // x < bound, or x <= bound: every x is below `other` (or at most it).
+        (CompareOp::Lt, CompareOp::Lt | CompareOp::Le | CompareOp::Ne)
+        | (CompareOp::Le, CompareOp::Le) => order != Ordering::Greater,
+        (CompareOp::Le, CompareOp::Lt | CompareOp::Ne) => order == Ordering::Less,
+        // x > bound, or x >= bound: every x is above `other` (or at least it).
+        (CompareOp::Gt, CompareOp::Gt | CompareOp::Ge | CompareOp::Ne)
+        | (CompareOp::Ge, CompareOp::Ge) => order != Ordering::Less,
+        (CompareOp::Ge, CompareOp::Gt | CompareOp::Ne) => order == Ordering::Greater,
+        _ => false,
+    }
 }
 
 /// Whether `guard` holds of `facts` at every moment a target may handle the act, where that is one
@@ -3230,7 +3470,7 @@ impl<'a> Compiler<'a> {
         };
         let mut reasons = Vec::new();
         for outcome in candidates {
-            match not_taken(self.ir.format(), command, outcome, &decided) {
+            match not_taken(self.ir, command, outcome, &decided) {
                 Some(reason) => reasons.push(reason),
                 None => return,
             }

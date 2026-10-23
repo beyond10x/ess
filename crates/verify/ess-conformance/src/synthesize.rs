@@ -3419,7 +3419,9 @@ fn absent_references(
 /// every row it could without holding it — `open_cards == 4` where nothing raises the counter past
 /// 3 — is a row no run of the model holds, and adds none; one the search went past its bound for, or
 /// stopped short of for another cause, is refused; so is one whose nearest value a run holds lies
-/// past the search's reach ([`subject_fact::Further::Past`]), without a search.
+/// past the search's reach ([`subject_fact::Further::Past`]), without a search. A boundary no row
+/// and input meets under three-valued comparison ([`subject_fact::Further::Unknowable`]) adds
+/// nothing and is not searched.
 fn related_boundaries(
     models: &caller::InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -3441,6 +3443,9 @@ fn related_boundaries(
         .expect("the outcome is the command's");
     let goals = related_guard::boundary_goals(ir, command, outcome);
     for (goal, ((refuted, held), kind)) in goals.iter().enumerate() {
+        if *kind == subject_fact::Further::Unknowable {
+            continue;
+        }
         if let subject_fact::Further::Past(why) = kind {
             refusals.push(Refusal::about(
                 id,
@@ -5612,6 +5617,81 @@ fn prepare_in(
 ) -> Result<Setup, RefusalCause> {
     let setup = prepare_subject(ir, outcome, actors, held, distinction)?;
     related::arrange(ir, outcome, actors, distinction, setup)
+}
+
+/// [`prepare_in`] for a branch updating, preserving or removing an existing subject, the subject
+/// searched for until every predicate of `steer` holds on it, its creators steered toward them
+/// ([`subject_fact::search_within`]); refused where the plain arrangement would be, or where no
+/// row the search reaches holds them.
+fn prepare_steered(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    steer: &[Predicate],
+) -> Result<Setup, RefusalCause> {
+    let Some(subject) = &outcome.subject else {
+        return Ok(Setup::none());
+    };
+    let (ResolvedEffect::Updates | ResolvedEffect::Preserves | ResolvedEffect::Deletes) =
+        &subject.effect
+    else {
+        return prepare_in(ir, outcome, actors, None, distinction);
+    };
+    let initial = &ir.entity(&subject.entity).lifecycle.initial;
+    let arrangement = steered_row(ir, &subject.entity, initial, actors, distinction, steer)?;
+    let after = match &subject.effect {
+        ResolvedEffect::Deletes => None,
+        _ => Some(initial.clone()),
+    };
+    let setup = Setup {
+        steps: arrangement.steps,
+        instance: Some(arrangement.instance),
+        bound: BTreeMap::new(),
+        source: arrangement.source,
+        after,
+        before: Some(arrangement.state),
+        settled: arrangement.settled,
+        unobserved: arrangement.unobserved,
+    };
+    related::arrange(ir, outcome, actors, distinction, setup)
+}
+
+/// A row of `entity` resting in `state` on which every predicate of `steer` holds, its creators
+/// steered toward them ([`subject_fact::search_within`]).
+fn steered_row(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    state: &StateName,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    steer: &[Predicate],
+) -> Result<Arrangement, RefusalCause> {
+    let (arrangement, ()) = subject_fact::search_within(
+        ir,
+        entity,
+        actors,
+        steer,
+        distinction,
+        "subject",
+        &[],
+        |node| {
+            Ok((node.state == *state
+                && steer.iter().all(|predicate| {
+                    subject_fact::row_truth_with(
+                        ir,
+                        entity,
+                        &node.settled,
+                        &node.unwritten,
+                        Some(&node.state),
+                        predicate,
+                        None,
+                    ) == Truth::True
+                }))
+            .then_some(()))
+        },
+    )?;
+    Ok(arrangement)
 }
 
 /// [`prepare`], with the existing subject arranged under `distinction`: a further witness for every
@@ -11803,14 +11883,20 @@ fn arrange_toward_named_owner(
         actors,
         distinction,
         (None, true),
-        (&BTreeMap::new(), &BTreeMap::new()),
+        (
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &related_guard::HeldRows::new(),
+        ),
         accept,
     )
 }
 
 /// [`arrange_toward_bound`], where `held` gives the state each captured instance rests in while
 /// the row is created: a creator refusing a related row in some state is then sent naming a
-/// captured row whose state refutes that refusal ([`related_guard::present_in`]).
+/// captured row whose state refutes that refusal ([`related_guard::present_in`]). Where `rows` holds a
+/// captured row's settled values, a refusal that also reads the input is decided on them per input
+/// ([`related_guard::present_for`]).
 #[allow(clippy::too_many_arguments)]
 fn arrange_toward_held(
     ir: &EssIr,
@@ -11819,7 +11905,7 @@ fn arrange_toward_held(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
     fields: &BTreeMap<String, InstanceName>,
-    held: &BTreeMap<InstanceName, StateName>,
+    (held, rows): (&BTreeMap<InstanceName, StateName>, &related_guard::HeldRows),
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
     arrange_toward_with(
@@ -11829,7 +11915,7 @@ fn arrange_toward_held(
         actors,
         distinction,
         (None, false),
-        (fields, held),
+        (fields, held, rows),
         accept,
     )
 }
@@ -11855,7 +11941,7 @@ fn arrange_toward_bound(
         actors,
         distinction,
         (owner, false),
-        (fields, &BTreeMap::new()),
+        (fields, &BTreeMap::new(), &related_guard::HeldRows::new()),
         accept,
     )
 }
@@ -11866,7 +11952,7 @@ fn arrange_toward_bound(
 /// A creating branch below input-guarded siblings is tried, where no candidate for its own guards
 /// is selected, with candidates refuting theirs too (an adopter's report, row 14): a default branch
 /// below `when: urgent == true` needs `urgent` false, which no ladder over the filter alone tries.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn arrange_toward_with(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -11874,9 +11960,10 @@ fn arrange_toward_with(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
     (owner, named): (Option<&InstanceName>, bool),
-    (fields, resting): (
+    (fields, resting, rows): (
         &BTreeMap<String, InstanceName>,
         &BTreeMap<InstanceName, StateName>,
+        &related_guard::HeldRows,
     ),
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
@@ -11884,10 +11971,19 @@ fn arrange_toward_with(
     let drivers: &[Driver<'_>] = all.get(entity).map_or(&[], Vec::as_slice);
     let states = &ir.entity(entity).lifecycle.states;
     let identity = &ir.entity(entity).identity;
-    for creator in drivers
-        .iter()
-        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
-    {
+    // A second pass, only where the first arranged nothing, sends the creators whose refusal of
+    // the captured row also reads their input, steered by that row's settled values (row 29).
+    let passes: &[bool] = if rows.is_empty() {
+        &[false]
+    } else {
+        &[false, true]
+    };
+    for (per_input, creator) in passes.iter().flat_map(|per_input| {
+        drivers
+            .iter()
+            .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+            .map(move |creator| (*per_input, creator))
+    }) {
         let mut mapped: BTreeMap<&str, &str> = creator
             .outcome
             .sets
@@ -11904,8 +12000,22 @@ fn arrange_toward_with(
         if let Some(field) = published {
             mapped.entry(identity.name.as_str()).or_insert(field);
         }
-        let Some(bound) = creator_bindings(ir, creator, &mapped, (fields, resting)) else {
+        let checked = creator_bindings(ir, creator, &mapped, (fields, resting), false);
+        let bound = if per_input {
+            if checked.is_some() {
+                continue;
+            }
+            creator_bindings(ir, creator, &mapped, (fields, resting), true)
+        } else {
+            checked
+        };
+        let Some(bound) = bound else {
             continue;
+        };
+        let steering = if per_input {
+            related_guard::steering_for(ir, creator.command, &bound, rows)
+        } else {
+            Vec::new()
         };
         let onto = |path: &FactPath| match path.segments().split_first() {
             Some((head, tail)) => mapped.get(head.as_str()).map_or_else(
@@ -11922,11 +12032,20 @@ fn arrange_toward_with(
             None => path.clone(),
         };
         let toward = map_paths(filter, &onto);
-        let Some(inputs) = creator_candidates(ir, creator, &toward, distinction) else {
+        let Some(inputs) = creator_candidates(ir, creator, &toward, &steering, distinction) else {
             continue;
         };
         for input in inputs {
-            if selects_branch(ir, creator.command, creator.outcome, None, &input) != Ok(true) {
+            if selects_branch(ir, creator.command, creator.outcome, None, &input) != Ok(true)
+                || (per_input
+                    && !related_guard::present_for(
+                        ir,
+                        creator.command,
+                        &bound,
+                        (resting, rows),
+                        &input,
+                    ))
+            {
                 continue;
             }
             let owner =
@@ -12032,14 +12151,17 @@ fn published_identity_input(outcome: &ResolvedOutcome) -> Option<&str> {
 
 /// The inputs [`arrange_toward_with`] tries for `creator`, steered `toward` the filter: those
 /// satisfying its own input guard, then, where siblings carry input guards, those refuting theirs
-/// too (an adopter's report, row 14). `None` where the first list has no witness.
+/// too (an adopter's report, row 14). `None` where the first list has no witness. `steering` joins
+/// the first list's guards: the related refusal grounded on a captured row ([`related_guard::steering_for`]).
 fn creator_candidates(
     ir: &EssIr,
     creator: &Driver<'_>,
     toward: &Predicate,
+    steering: &[Predicate],
     distinction: Distinction,
 ) -> Option<Vec<BTreeMap<String, Node>>> {
     let mut guards = vec![toward];
+    guards.extend(steering);
     guards.extend(when(creator.outcome));
     let mut inputs = candidates(ir, creator.command, &guards, distinction).ok()?;
     let siblings: Vec<&Predicate> = creator
@@ -12058,6 +12180,8 @@ fn creator_candidates(
 
 /// Map the requested fields onto creator inputs only where the capture does not invalidate a
 /// guard proved from literal inputs. Symbolic guard solving is outside this arrangement seam.
+/// Where `deferred` is set, a related refusal no held state refutes is left to each input
+/// ([`related_guard::present_for`]).
 fn creator_bindings(
     ir: &EssIr,
     creator: &Driver<'_>,
@@ -12066,6 +12190,7 @@ fn creator_bindings(
         &BTreeMap<String, InstanceName>,
         &BTreeMap<InstanceName, StateName>,
     ),
+    deferred: bool,
 ) -> Option<BTreeMap<String, InstanceName>> {
     let bound = fields
         .iter()
@@ -12081,6 +12206,7 @@ fn creator_bindings(
         })?;
     if !bound.is_empty()
         && ((related_guard::routes(creator.command, creator.outcome)
+            && !deferred
             && !related_guard::present_in(ir, creator.command, &bound, held))
             || creator
                 .command

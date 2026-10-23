@@ -1,0 +1,105 @@
+format: ess/29
+system: depots
+version: v1
+domain: depots.box
+summary: Boxes at a site, refused on their slots and their opening; several refusals read one box row.
+types:
+  - {name: depots.box.BoxId, kind: newtype, of: Uuid}
+  - {name: depots.box.ItemCode, kind: newtype, of: String}
+entities:
+  - name: depots.box.Box
+    identity: {name: box_id, type: depots.box.BoxId}
+    fields:
+      - {name: site, type: String}
+      - {name: accepting, type: Boolean}
+      - {name: free_slots, type: Integer}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: depots.box.Item
+    identity: {name: item_code, type: depots.box.ItemCode}
+    fields:
+      - {name: box_id, type: depots.box.BoxId}
+    relations:
+      - {name: box, kind: references, target: depots.box.Box, cardinality: one, via: box_id}
+    lifecycle: {initial: Stored, states: [Stored], terminal: [Stored]}
+actors:
+  - name: depots.box.Porter
+    may: [depots.box.InstallBox, depots.box.CloseBox, depots.box.PutItem]
+errors:
+  - {name: depots.box.NoSuchBox, summary: No box carries this identity., fields: []}
+  - {name: depots.box.FewSlots, summary: The box has fewer than five free slots., fields: []}
+  - {name: depots.box.NoSlots, summary: The box has no free slot., fields: []}
+  - {name: depots.box.BoxClosed, summary: The box is closed., fields: []}
+  - {name: depots.box.BoxNotAccepting, summary: The box does not accept items., fields: []}
+  - {name: depots.box.ClosedOrDepot, summary: The box is closed or stands at the depot., fields: []}
+commands:
+  - name: depots.box.InstallBox
+    input:
+      - {name: site, type: String, example: North}
+      - {name: slots, type: Integer, example: 10}
+    outcomes:
+      - name: installed
+        creates: depots.box.Box
+        instance: box_id
+        sets: {site: input.site, accepting: true, free_slots: input.slots}
+        emits: [depots.box.BoxInstalled]
+        payload:
+          depots.box.BoxInstalled: {box_id: {generated: true}}
+  - name: depots.box.CloseBox
+    input:
+      - {name: box_id, type: depots.box.BoxId}
+    outcomes:
+      - name: closed
+        updates: depots.box.Box
+        instance: box_id
+        sets: {accepting: false}
+        emits: [depots.box.BoxShut]
+        payload:
+          depots.box.BoxShut: {box_id: input.box_id}
+      - {name: no-such-box, unknown_instance: true, error: depots.box.NoSuchBox}
+  - name: depots.box.PutItem
+    input:
+      - {name: item_code, type: depots.box.ItemCode}
+      - {name: box_id, type: depots.box.BoxId}
+    outcomes:
+      - name: no-box
+        when_related: {via: input.box_id, exists: false}
+        error: depots.box.NoSuchBox
+      - name: few-slots
+        when_related: {via: input.box_id, predicate: free_slots < 5}
+        error: depots.box.FewSlots
+      - name: no-slots
+        when_related: {via: input.box_id, predicate: free_slots < 1}
+        error: depots.box.NoSlots
+      - name: closed
+        when_related: {via: input.box_id, predicate: accepting == false}
+        error: depots.box.BoxClosed
+      - name: not-accepting
+        when_related: {via: input.box_id, predicate: accepting != true}
+        error: depots.box.BoxNotAccepting
+      - name: closed-or-depot
+        when_related: {via: input.box_id, predicate: {any: [accepting == false, site == Depot]}}
+        error: depots.box.ClosedOrDepot
+      - name: put
+        creates: depots.box.Item
+        instance: item_code
+        sets: {box_id: input.box_id}
+        emits: [depots.box.ItemPut]
+        payload:
+          depots.box.ItemPut: {item_code: input.item_code}
+events:
+  - name: depots.box.BoxInstalled
+    fields:
+      - {name: box_id, type: depots.box.BoxId}
+  - name: depots.box.BoxShut
+    fields:
+      - {name: box_id, type: depots.box.BoxId}
+  - name: depots.box.ItemPut
+    fields:
+      - {name: item_code, type: depots.box.ItemCode}
+views:
+  - name: depots.box.Items
+    source: depots.box.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_code, type: depots.box.ItemCode}
+      - {name: box_id, type: depots.box.BoxId}

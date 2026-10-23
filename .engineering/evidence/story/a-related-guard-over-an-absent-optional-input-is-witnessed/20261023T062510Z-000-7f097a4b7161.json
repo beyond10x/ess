@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T06:25:10Z",
+  "actor": "human:timo",
+  "artifact": "story:a-related-guard-over-an-absent-optional-input-is-witnessed",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit 984d3a7178 merged into integrate/ess-batch-0690: ess-conformance lib 168 passed, adversary_u14_pass1 6 passed 1 ignored (story:the-first-of-overlapping-related-refusals-is-synthesized), authored_outcome_guards 22, related_guard_absent_input 4, synthesis_suite_bytes_table 2, synthesis 65, witness_directed_search 10, authored 74, synthesis_related_guard_plan 6, synthesis_subject_fact_plan 5, synthesis_row_set_plan 4, adversary_u9b_pass1 6, adversary_u22_pass1 8, adversary_u22_pass2 4, adversary_u22_pass3 3, adversary_u9a_pass1 5, clippy -p ess-conformance exit 0, task fmt-check exit 0, task test-xtask exit 0"
+  }
+}
