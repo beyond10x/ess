@@ -62,9 +62,11 @@ row a `setup:` states, or one a branch writes from the input, `subject`, a liter
 element, holds a value the file can know, so a view claim of that field is accepted.
 
 The refusal names the surface, the field path, the value written and the outcomes that mint it.
-The repair says to drop the field from the expectation (presence and type stay checked by the
-synthesized suite), or to state the relation through a reference: `{$observed: {event, field}}` in
-a view row, or `capture:` on the event.
+The repair says to drop the field from an event's payload or an error's fields (presence and type
+stay checked there by the synthesized suite) or relate it with `capture:` on the event. A view read
+checks only what the scenario claims of a row, so for a view row the repair names `satisfies:
+defined(<field>)` on the view, or the relation through a reference, `{$observed: {event, field}}`
+(beyond10x/ess#680).
 
 ## Decisions
 
