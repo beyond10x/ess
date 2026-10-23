@@ -4407,11 +4407,35 @@ impl<'a> Resolver<'a> {
                     None
                 }
             };
-            let (Some(shape), Some(fields), Some(params), Some(domain), Some(source)) =
+            let (Some(shape), Some(mut fields), Some(params), Some(domain), Some(source)) =
                 (shape, fields, params, domain, source)
             else {
                 continue;
             };
+            // A view field written field by field carries its source field's presence (ess/31,
+            // beyond10x/ess#677), so its row schema, its suite and the interpreted row follow the
+            // stored field's policy. A `shape:` view carries its struct's own; an aggregate's group
+            // keys, a computed field and a related read are not the source field of their name.
+            if view.shape.is_none()
+                && view.aggregation.is_none()
+                && self.spec.system().format.major()
+                    >= ess_domain::system::FormatVersion::V31.major()
+            {
+                if let Some(entity) = entities.get(source.name()) {
+                    for field in &mut fields {
+                        if field.naming.presence.is_some()
+                            || !field.type_ref.is_optional()
+                            || view.computed.contains_key(&field.name)
+                            || view.related.contains_key(&field.name)
+                        {
+                            continue;
+                        }
+                        field.naming.presence = entity
+                            .field(&field.name)
+                            .and_then(|stored| stored.naming.presence);
+                    }
+                }
+            }
             let aggregation = view.aggregation.as_ref().map(|aggregation| {
                 self.aggregation(aggregation, entities.get(source.name()), &view)
             });

@@ -121,7 +121,10 @@ impl Response {
             .map(|field| {
                 let mut result =
                     Field::new(&field.name, crate::accessor::unresolve(&field.type_ref));
-                result.naming.presence = field.naming.presence;
+                result.naming.presence = field
+                    .naming
+                    .presence
+                    .and_then(ess_domain::types::Presence::constrains);
                 result
             })
             .collect();

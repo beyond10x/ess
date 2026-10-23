@@ -1189,7 +1189,11 @@ fn policy_members(
     if depth > MAX_TYPE_DEPTH {
         return;
     }
-    if let Some(presence) = field.naming.presence {
+    if let Some(presence) = field
+        .naming
+        .presence
+        .and_then(ess_domain::types::Presence::constrains)
+    {
         found.push((at.clone(), presence));
     }
     let mut current = &field.type_ref;

@@ -260,7 +260,10 @@ fn declarations(
                         .map(|field| ObservedField {
                             name: field.name.clone(),
                             type_ref: field.type_ref.to_string(),
-                            presence: field.naming.presence,
+                            presence: field
+                                .naming
+                                .presence
+                                .and_then(ess_domain::types::Presence::constrains),
                         })
                         .collect(),
                     invariants: invariants_of(invariants),
@@ -474,7 +477,10 @@ fn observed_at(
                 root: ObservedField {
                     name: field.name.clone(),
                     type_ref: field.type_ref.to_string(),
-                    presence: field.naming.presence,
+                    presence: field
+                        .naming
+                        .presence
+                        .and_then(ess_domain::types::Presence::constrains),
                 },
                 declarations: declarations(ir, &reached).map_err(Unarranged::Carried)?,
                 value: DeclaredTypeRef::new(declared.name.clone()),

@@ -8476,7 +8476,10 @@ fn mark_presence(
     shape: &mut PayloadShape,
 ) {
     let (Some(presence), false, true) = (
-        field.naming.presence,
+        field
+            .naming
+            .presence
+            .and_then(ess_domain::types::Presence::constrains),
         enclosed,
         field.type_ref.is_optional(),
     ) else {

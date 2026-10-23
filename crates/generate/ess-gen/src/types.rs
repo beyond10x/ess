@@ -690,8 +690,9 @@ pub(crate) fn field(declared: &ResolvedField) -> Node {
     node
 }
 
-/// A field declared `presence: null_when_absent`: its `Optional` projected whole, as the
-/// `anyOf [T, null]` an `Optional` outside a field already is, with the field's annotations.
+/// A field declared `presence: null_when_absent` or `omitted_or_null`: its `Optional` projected
+/// whole, as the `anyOf [T, null]` an `Optional` outside a field already is, with the field's
+/// annotations.
 fn nullable_field(declared: &ResolvedField) -> Node {
     let mut node = type_ref(&declared.type_ref).annotated(
         declared.naming.display.as_deref(),
@@ -744,12 +745,15 @@ pub(crate) fn object_annotated(
         let wire = wire_name(declared);
         // `null_when_absent` (ess/15): the key is always sent, and `null` is how an absent value
         // is spelled, so the property is required and nullable. `omitted_when_absent` is the
-        // projection an `Optional` field always had: optional, and not nullable.
+        // projection an `Optional` field always had: optional, and not nullable. `omitted_or_null`
+        // (ess/31) admits both: nullable, and not required.
         let null_when_absent = declared.naming.presence == Some(Presence::NullWhenAbsent);
+        let nullable =
+            null_when_absent || declared.naming.presence == Some(Presence::OmittedOrNull);
         if !declared.type_ref.is_optional() || null_when_absent {
             required.push(wire.to_owned());
         }
-        let mut property = if null_when_absent {
+        let mut property = if nullable {
             nullable_field(declared)
         } else {
             field(declared)
