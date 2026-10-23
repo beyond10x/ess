@@ -1,13 +1,13 @@
 schema: b10x-change/v1
 id: ess/binding-scenarios-act-on-the-arranged-row-0.69.0
 repository: ess
-publishedAt: 2026-10-22T00:00:00Z
-title: A binding scenario acts on the row its setup arranged, and one it cannot set up is refused by name
+publishedAt: 2026-10-24T00:00:00Z
+title: A stored list can be filled or appended to, an absent member may be sent as null, and ess generate types writes request and response bodies
 summary: >-
-  Binding scenarios that failed against a correct implementation now pass: the trigger acts on the
-  row the setup arranged, a refusal-policy scenario is set up through a publisher that does not
-  refuse the missing row, and an unbounded `retry` binding is no longer unsupported. Where no such
-  setup exists, the scenario is refused as ESS-SYNTH-010.
+  Format `ess/31` lets a `sets:` entry store `[]` or append an input element to a stored list, a
+  `List` input carry an `example:`, and a field's `presence:` be `omitted_or_null`. `ess generate
+  types` generates a command's input and response and a view's row. Binding scenarios act on the
+  row their setup arranged, or are refused as ESS-SYNTH-010.
 kind: capability
 impact: notable
 source:

@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-## [0.69.0] — 2026-10-22
+## [0.69.0] — 2026-10-24
 
 ### Added
 
@@ -58,7 +58,7 @@
 - The ESS-AUTHOR-042 help no longer says the suite checks the presence and type of a minted field dropped from a view row; that holds only for an event's payload and an error's fields. For a view row it names `satisfies: defined(<field>)` on the view and `{$observed: {event: …, field: …}}` (part of beyond10x/ess#680).
 - A scenario value written `.nan`, `.inf` or `-.inf` is refused as ESS-AUTHOR-015 naming the number and saying that the type has no non-finite values, because `Decimal` and `Binary64` hold finite values only, as an adopter reported (beyond10x/ess#676). It was refused as "expected Decimal, found null", and at an `Optional` field admitted as absent. The fields-and-invariants guide says that a NaN or an infinity never reaches the domain and that its refusal belongs to the decoder or the binding's `malformed` refusal.
 
-Language: 0 general, 3 one-to-one, 0 part (general share 0%; cumulative 17%).
+Language: 0 general, 4 one-to-one, 0 part (general share 0%; cumulative 17%).
 
 ## [0.68.0] — 2026-10-22
 

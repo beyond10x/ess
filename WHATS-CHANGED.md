@@ -6,7 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
-| [0.69.0](#a-binding-scenario-acts-on-the-row-its-setup-arranged-and-one-it-cannot-set-up-is-refused-by-name) | A binding scenario acts on the row its setup arranged, and one it cannot set up is refused by name | capability | notable |
+| [0.69.0](#a-stored-list-can-be-filled-or-appended-to-an-absent-member-may-be-sent-as-null-and-ess-generate-types-writes-request-and-response-bodies) | A stored list can be filled or appended to, an absent member may be sent as null, and ess generate types writes request and response bodies | capability | notable |
 | [0.68.0](#a-reference-every-writer-checks-needs-no-missing-row-branch-and-a-view-filter-can-compare-with-now) | A reference every writer checks needs no missing-row branch, and a view filter can compare with now | capability | notable |
 | [0.67.0](#a-guard-says-what-an-absent-value-compares-as-and-an-external-branch-can-be-narrowed-to-some-rows) | A guard says what an absent value compares as, and an external branch can be narrowed to some rows | capability | notable |
 | [0.66.0](#a-generated-go-or-typescript-runner-shows-an-unsupported-scenario-as-skipped-and-the-run-still-fails) | A generated Go or TypeScript runner shows an unsupported scenario as skipped, and the run still fails | capability | notable |
@@ -79,13 +79,13 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
 
-## 0.69.0 — 2026-10-22
+## 0.69.0 — 2026-10-24
 
-### A binding scenario acts on the row its setup arranged, and one it cannot set up is refused by name
+### A stored list can be filled or appended to, an absent member may be sent as null, and ess generate types writes request and response bodies
 
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.69.0)
 
-Binding scenarios that failed against a correct implementation now pass: the trigger acts on the row the setup arranged, a refusal-policy scenario is set up through a publisher that does not refuse the missing row, and an unbounded `retry` binding is no longer unsupported. Where no such setup exists, the scenario is refused as ESS-SYNTH-010.
+Format `ess/31` lets a `sets:` entry store `[]` or append an input element to a stored list, a `List` input carry an `example:`, and a field's `presence:` be `omitted_or_null`. `ess generate types` generates a command's input and response and a view's row. Binding scenarios act on the row their setup arranged, or are refused as ESS-SYNTH-010.
 
 ## 0.68.0 — 2026-10-22
 

@@ -9,13 +9,13 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
-## 0.69.0 — 2026-10-22
+## 0.69.0 — 2026-10-24
 
-### A binding scenario acts on the row its setup arranged, and one it cannot set up is refused by name
+### A stored list can be filled or appended to, an absent member may be sent as null, and ess generate types writes request and response bodies
 
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.69.0)
 
-Binding scenarios that failed against a correct implementation now pass: the trigger acts on the row the setup arranged, a refusal-policy scenario is set up through a publisher that does not refuse the missing row, and an unbounded `retry` binding is no longer unsupported. Where no such setup exists, the scenario is refused as ESS-SYNTH-010.
+Format `ess/31` lets a `sets:` entry store `[]` or append an input element to a stored list, a `List` input carry an `example:`, and a field's `presence:` be `omitted_or_null`. `ess generate types` generates a command's input and response and a view's row. Binding scenarios act on the row their setup arranged, or are refused as ESS-SYNTH-010.
 
 ## 0.68.0 — 2026-10-22
 
