@@ -384,3 +384,33 @@ fn without_its_server_feature_the_crate_uses_no_std_net_and_builds_with_warnings
     }
     drop(scratch);
 }
+
+/// The single crate's optional server dependencies take compatible ranges at the tested
+/// minimum, as the workspace layout's server crate does (beyond10x/ess#660).
+#[test]
+fn generated_single_manifest_uses_caret_ranges() {
+    let synthesis = crate_layout(&example("gatepass"));
+    let manifest = &synthesis.artifacts["Cargo.toml"].contents;
+    let mut requirements = manifest
+        .lines()
+        .filter_map(|line| {
+            let (name, value) = line.split_once(" = { version = \"")?;
+            let (requirement, rest) = value.split_once('"')?;
+            Some((name, requirement, rest.contains("optional = true")))
+        })
+        .collect::<Vec<_>>();
+    requirements.sort_unstable();
+    assert_eq!(
+        requirements,
+        [
+            ("clap", "^4.6.7", true),
+            ("time", "^0.3.45", true),
+            ("uuid", "^1.26.1", true)
+        ],
+        "{manifest}"
+    );
+    assert!(
+        !manifest.contains("\"="),
+        "an exact pin remains:\n{manifest}"
+    );
+}

@@ -1076,6 +1076,32 @@ fn generated_runtime_dependencies_respect_the_minimum_rust_version() {
         ),
     ] {
         let root = emitted_layout(&model(MODEL), Target::Rust, layout, label);
+        // The manifest takes `^` ranges at the tested minimum (beyond10x/ess#660), so the scratch
+        // crate is locked to those minimums: they are what this test holds to Rust 1.85, and a
+        // newer release in the local registry would otherwise be chosen.
+        let mut lock = vec![vec!["generate-lockfile", "--offline"]];
+        for (package, tested) in [("clap", "4.6.7"), ("uuid", "1.26.1"), ("time", "0.3.45")] {
+            lock.push(vec![
+                "update",
+                "--offline",
+                "--package",
+                package,
+                "--precise",
+                tested,
+            ]);
+        }
+        for args in lock {
+            let locked = Command::new(std::env::var_os("CARGO").unwrap())
+                .args(&args)
+                .current_dir(&root)
+                .output()
+                .unwrap();
+            assert!(
+                locked.status.success(),
+                "{args:?}: {}",
+                String::from_utf8_lossy(&locked.stderr)
+            );
+        }
         let metadata = Command::new(std::env::var_os("CARGO").unwrap())
             .args([
                 "metadata",
