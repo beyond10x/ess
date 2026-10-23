@@ -11,7 +11,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Problem
 
@@ -23,3 +23,7 @@ A `conformances:` end must name a declared type; an event or command is refused 
 - `a_command_input_conforms`: the same for a command's input and response.
 - `a_drifting_event_field_is_reported`: one field of another type is reported as drift naming the field.
 - `an_older_composition_format_refuses_the_kind`: the previous format refuses an event end by name.
+
+## Also: invariants in a type conformance (adopter report N17, ess#671)
+
+- `compose_compares_invariants`: an owner type that gains `invariants: [value != "x"]`, with the digest repinned, against a local copy without it, is reported as `type_conformance_drift` naming the invariant, and compose exits non-zero.

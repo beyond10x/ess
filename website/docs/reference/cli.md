@@ -825,15 +825,17 @@ ess generate output recover [OPTIONS] --ownership-root <OWNERSHIP_ROOT>
 Realize selected model types as standalone, accounted data libraries
 
 ```text
-ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--all-types|--all-events>
+ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--all-types|--all-events|--all-commands|--all-views>
 ```
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
-| `--root` | `<ROOT>`… | no |  | Qualified model type or event root. Repeat for a shared transitive closure |
+| `--root` | `<ROOT>`… | no |  | Qualified model type or event root, or a body: `<command>.input`, `<command>.response`, `<view>.row`. Repeat for a shared transitive closure |
 | `--all-types` |  | no |  | Explicitly select every named type in the resolved model |
 | `--all-events` |  | no |  | Explicitly select every event payload in the resolved model; combines with `--all-types` |
+| `--all-commands` |  | no |  | Explicitly select every command's input, and its response when it declares one; combines with the other `--all-*` selectors |
+| `--all-views` |  | no |  | Explicitly select every view's row; combines with the other `--all-*` selectors |
 | `--target` | `<TARGET>` | yes |  | Data library target. Unsupported language targets are not silently substituted. One of `typescript`, `rust`, `go`. |
 | `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |

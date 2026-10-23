@@ -76,6 +76,73 @@ fn model_unit_variant_round_trips_natively_and_refuses_the_malformed_shapes() {
     );
 }
 
+/// A command's input and response and a view's row selected as roots (beyond10x/ess#656): the
+/// generated library decodes the bodies the `OpenAPI` projection accepts for them, the input's
+/// being the one its published examples spell, and refuses the bodies that projection refuses.
+const HTTP_BODY_WIRE: &str = r#"
+#[cfg(test)]
+mod http_body_wire {
+    use model_types::*;
+    use serde_json::{json, Value};
+
+    fn round_trips<T: serde::de::DeserializeOwned + serde::Serialize>(body: &Value) {
+        let decoded: T = serde_json::from_value(body.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(&decoded).unwrap(), body);
+        for (key, bad) in [("extra", json!(1)), ("note_id", json!(7))] {
+            let mut refused = body.clone();
+            refused[key] = bad;
+            assert!(serde_json::from_value::<T>(refused).is_err(), "{key}");
+        }
+        let mut missing = body.clone();
+        missing.as_object_mut().unwrap().remove("note_id");
+        assert!(serde_json::from_value::<T>(missing).is_err());
+    }
+
+    #[test]
+    fn the_types_match_the_http_projection() {
+        round_trips::<DemoNotesCreateInput>(&json!({"note_id": "n-1", "title": "Buy milk", "isPinned": true}));
+        round_trips::<DemoNotesCreateResponse>(&json!({"note_id": "n-1", "titleLength": 8}));
+        round_trips::<DemoNotesNotesRow>(&json!({"note_id": "n-1", "title": "Buy milk"}));
+        round_trips::<DemoNotesSummariesRow>(&json!({"note_id": "n-1", "title": "Buy milk"}));
+    }
+}
+"#;
+
+#[test]
+fn the_types_match_the_http_projection() {
+    let text = include_str!("../../ess-gen/tests/fixtures/command-view-roots.yaml");
+    let specification = ess_domain::spec::Specification::assemble([(
+        ess_domain::system::Source::new("notes.yaml"),
+        ess_domain::spec::RawSpecFile::parse(text).unwrap(),
+    )])
+    .unwrap();
+    let ir =
+        ess_compiler::resolve::compile(&specification, &ess_compiler::source::SourceMap::new())
+            .unwrap();
+    let selected = ess_gen::schema::ModelTypes::select(
+        &ir,
+        &BTreeSet::from(
+            [
+                "demo.notes.Create.input",
+                "demo.notes.Create.response",
+                "demo.notes.Notes.row",
+                "demo.notes.Summaries.row",
+            ]
+            .map(str::to_owned),
+        ),
+    )
+    .unwrap();
+    let result = Plan::from_model(&selected)
+        .unwrap()
+        .rust("model_types")
+        .unwrap();
+    compile(
+        &result.supporting["Cargo.toml"],
+        &result.declarations,
+        HTTP_BODY_WIRE,
+    );
+}
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;

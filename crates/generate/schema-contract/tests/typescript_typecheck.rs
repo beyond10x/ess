@@ -71,6 +71,59 @@ export {bytes, complete, openWithPayload, completeWithoutPayload, closed};
     );
 }
 
+/// A command's input and response and a view's row selected as roots (beyond10x/ess#656): the
+/// bodies the `OpenAPI` projection accepts typecheck, the input's being the one its published
+/// examples spell, and the bodies it refuses do not.
+#[test]
+fn the_types_match_the_http_projection() {
+    let text = include_str!("../../ess-gen/tests/fixtures/command-view-roots.yaml");
+    let specification = ess_domain::spec::Specification::assemble([(
+        ess_domain::system::Source::new("notes.yaml"),
+        ess_domain::spec::RawSpecFile::parse(text).unwrap(),
+    )])
+    .unwrap();
+    let ir =
+        ess_compiler::resolve::compile(&specification, &ess_compiler::source::SourceMap::new())
+            .unwrap();
+    let selected = ess_gen::schema::ModelTypes::select(
+        &ir,
+        &std::collections::BTreeSet::from(
+            [
+                "demo.notes.Create.input",
+                "demo.notes.Create.response",
+                "demo.notes.Notes.row",
+                "demo.notes.Summaries.row",
+            ]
+            .map(str::to_owned),
+        ),
+    )
+    .unwrap();
+    let result = schema_contract::realize::Plan::from_model(&selected)
+        .unwrap()
+        .typescript();
+    let controls = r#"
+const input: DemoNotesCreateInput = {note_id: "n-1", title: "Buy milk", isPinned: true};
+const response: DemoNotesCreateResponse = {note_id: "n-1", titleLength: 8};
+const row: DemoNotesNotesRow = {note_id: "n-1", title: "Buy milk"};
+const shaped: DemoNotesSummariesRow = {note_id: "n-1", title: "Buy milk"};
+// @ts-expect-error: an undeclared member is refused
+const undeclared: DemoNotesCreateInput = {note_id: "n-1", title: "Buy milk", isPinned: true, extra: 1};
+// @ts-expect-error: a required member is required
+const missing: DemoNotesCreateResponse = {titleLength: 8};
+// @ts-expect-error: the declared name is not the wire name
+const unwired: DemoNotesCreateInput = {note_id: "n-1", title: "Buy milk", pinned: true};
+// @ts-expect-error: a mistyped member is refused
+const mistyped: DemoNotesNotesRow = {note_id: 7, title: "Buy milk"};
+export {input, response, row, shaped, undeclared, missing, unwired, mistyped};
+"#;
+    let output = typecheck(&[format!("{}\n{controls}", result.declarations)]);
+    assert!(
+        output.status.success(),
+        "{output:?}\n{}",
+        result.declarations
+    );
+}
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};

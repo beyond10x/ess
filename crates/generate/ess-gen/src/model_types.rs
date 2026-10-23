@@ -2,13 +2,23 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ess_compiler::ir::{ResolvedBody, ResolvedEvent, ResolvedType, ResolvedTypeRef};
-use ess_compiler::refs::{DeclaredTypeRef, EventRef};
+use ess_compiler::ir::{
+    ResolvedBody, ResolvedEvent, ResolvedField, ResolvedType, ResolvedTypeRef, TypeHandle,
+};
+use ess_compiler::refs::{CommandRef, DeclaredTypeRef, EssSemanticRef, EventRef, ViewRef};
 use ess_compiler::EssIr;
+use ess_domain::name::QualifiedName;
 use serde_json::Value;
 
-use super::types;
+use super::types::{self, Message};
 use crate::provenance::{Provenance, ProvenanceMint};
+
+/// The member a root appends to a command's name to select its input.
+const INPUT_ROOT: &str = "input";
+/// The member a root appends to a command's name to select its response.
+const RESPONSE_ROOT: &str = "response";
+/// The member a root appends to a view's name to select one of its rows.
+const ROW_ROOT: &str = "row";
 
 /// A selection or wire-identity error, before any schema properties are collapsed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -38,10 +48,16 @@ impl ModelTypes {
     /// as a struct of its fields under the event's own name and wire names, annotated
     /// `x-ess-kind: event-payload`, so a producer library holds the exact object a published event
     /// carries without the model declaring those fields twice.
+    ///
+    /// A root also names a message body the HTTP projection publishes (beyond10x/ess#656):
+    /// `<command>.input`, `<command>.response` or `<view>.row`. Its definition is the schema that
+    /// projection publishes for the body, from the same type mapping, under the root itself; a
+    /// view with a declared `shape:` answers rows of that type, so its row is a reference to it.
     pub fn select(ir: &EssIr, roots: &BTreeSet<String>) -> Result<Self, Vec<ModelTypeError>> {
         let mut errors = BTreeSet::new();
         let mut selected: BTreeMap<_, ResolvedType> = BTreeMap::new();
         let mut events = BTreeSet::new();
+        let mut bodies: BTreeMap<String, BodyRoot<'_>> = BTreeMap::new();
         if roots.is_empty() {
             errors.insert(ModelTypeError {
                 name: String::new(),
@@ -50,66 +66,49 @@ impl ModelTypes {
             });
         }
         for root in roots {
-            let declared = if let Some(declared) = ir
-                .types()
-                .values()
-                .find(|item| item.name.to_string() == *root)
-            {
-                declared.clone()
-            } else if let Some(event) = ir
-                .events()
-                .values()
-                .find(|item| item.name.to_string() == *root)
-            {
-                events.insert(event.name.clone());
-                event_payload(event)
-            } else {
+            if !select_root(ir, root, &mut selected, &mut events, &mut bodies) {
                 errors.insert(ModelTypeError {
                     name: root.clone(),
                     rule: "unknown_root",
-                    detail: "no resolved model type or event has this qualified name".to_owned(),
+                    detail: format!(
+                        "no resolved model type or event has this qualified name, and it is not \
+                         a command's `.{INPUT_ROOT}` or `.{RESPONSE_ROOT}` or a view's \
+                         `.{ROW_ROOT}`"
+                    ),
                 });
-                continue;
-            };
-            for handle in types::reachable(ir, types::body_leaves(&declared.body)) {
-                let reached = ir.named_type(handle);
-                selected.insert(reached.name.clone(), reached.clone());
             }
-            selected.insert(declared.name.clone(), declared);
         }
         for declared in selected.values() {
             if let ResolvedBody::Struct { fields, .. } = &declared.body {
-                let mut wires = BTreeMap::new();
-                for field in fields {
-                    let wire = types::wire_name(field);
-                    if let Some(previous) = wires.insert(wire, &field.name) {
-                        errors.insert(ModelTypeError {
-                            name: declared.name.to_string(),
-                            rule: "wire_field_collision",
-                            detail: format!(
-                                "fields {previous:?} and {:?} both use wire key {wire:?}",
-                                field.name
-                            ),
-                        });
-                    }
-                }
+                wire_collisions(&declared.name.to_string(), fields, &mut errors);
             }
+        }
+        for (root, body) in &bodies {
+            wire_collisions(root, body.fields, &mut errors);
         }
         if !errors.is_empty() {
             return Err(errors.into_iter().collect());
         }
         let provenance = ProvenanceMint::new(ir)
-            .of_seeds(selected.keys().map(|name| {
-                if events.contains(name) {
-                    EventRef::new(name.clone()).into()
-                } else {
-                    DeclaredTypeRef::new(name.clone()).into()
-                }
-            }))
+            .of_seeds(
+                selected
+                    .keys()
+                    .map(|name| {
+                        if events.contains(name) {
+                            EventRef::new(name.clone()).into()
+                        } else {
+                            DeclaredTypeRef::new(name.clone()).into()
+                        }
+                    })
+                    .chain(bodies.values().map(|body| body.seed.clone())),
+            )
             .provenance;
         let mut binary64 = BTreeSet::new();
         for item in selected.values() {
             body_numeric_locations(item, &mut binary64);
+        }
+        for (root, body) in &bodies {
+            fields_numeric_locations(&pointer("/$defs", root), body.fields, &mut binary64);
         }
         Ok(Self {
             binary64,
@@ -124,6 +123,11 @@ impl ModelTypes {
                     }
                     (item.name.to_string(), definition)
                 })
+                .chain(
+                    bodies
+                        .into_iter()
+                        .map(|(root, body)| (root, body.definition)),
+                )
                 .collect(),
             newtypes: selected
                 .values()
@@ -132,6 +136,27 @@ impl ModelTypes {
                 .collect(),
             provenance,
         })
+    }
+
+    /// Every command body root: each command's `<command>.input`, and its `<command>.response`
+    /// when it declares a response, as the JSON Schema projection publishes them.
+    pub fn command_roots(ir: &EssIr) -> BTreeSet<String> {
+        ir.commands()
+            .values()
+            .flat_map(|command| {
+                let response = (!command.response.is_empty())
+                    .then(|| format!("{}.{RESPONSE_ROOT}", command.name));
+                std::iter::once(format!("{}.{INPUT_ROOT}", command.name)).chain(response)
+            })
+            .collect()
+    }
+
+    /// Every view's `<view>.row` root.
+    pub fn view_roots(ir: &EssIr) -> BTreeSet<String> {
+        ir.views()
+            .values()
+            .map(|view| format!("{}.{ROW_ROOT}", view.name))
+            .collect()
     }
 
     /// Exact selected roots, distinct from their transitive closure.
@@ -175,6 +200,45 @@ impl ModelTypes {
 }
 
 /// An event's payload as a struct of its fields, under the event's name and naming.
+/// Add one root and the named types it reaches to the selection; `false` when it names nothing.
+fn select_root<'a>(
+    ir: &'a EssIr,
+    root: &str,
+    selected: &mut BTreeMap<QualifiedName, ResolvedType>,
+    events: &mut BTreeSet<QualifiedName>,
+    bodies: &mut BTreeMap<String, BodyRoot<'a>>,
+) -> bool {
+    let declared = if let Some(declared) = ir
+        .types()
+        .values()
+        .find(|item| item.name.to_string() == root)
+    {
+        declared.clone()
+    } else if let Some(event) = ir
+        .events()
+        .values()
+        .find(|item| item.name.to_string() == root)
+    {
+        events.insert(event.name.clone());
+        event_payload(event)
+    } else if let Some(body) = body_root(ir, root) {
+        for handle in types::reachable(ir, body.leaves.iter().copied()) {
+            let reached = ir.named_type(handle);
+            selected.insert(reached.name.clone(), reached.clone());
+        }
+        bodies.insert(root.to_owned(), body);
+        return true;
+    } else {
+        return false;
+    };
+    for handle in types::reachable(ir, types::body_leaves(&declared.body)) {
+        let reached = ir.named_type(handle);
+        selected.insert(reached.name.clone(), reached.clone());
+    }
+    selected.insert(declared.name.clone(), declared);
+    true
+}
+
 fn event_payload(event: &ResolvedEvent) -> ResolvedType {
     ResolvedType {
         name: event.name.clone(),
@@ -184,6 +248,90 @@ fn event_payload(event: &ResolvedEvent) -> ResolvedType {
         },
         naming: event.naming.clone(),
         reading: None,
+    }
+}
+
+/// A message body a root names rather than a declared type: a command's input or response, or a
+/// view's row (beyond10x/ess#656).
+struct BodyRoot<'a> {
+    /// The schema the HTTP projection publishes for the body.
+    definition: Value,
+    /// The fields the body carries; none for a row that is a reference to the view's shape.
+    fields: &'a [ResolvedField],
+    /// The named types the body mentions directly.
+    leaves: Vec<&'a TypeHandle>,
+    /// The construct the body belongs to, for provenance.
+    seed: EssSemanticRef,
+}
+
+/// The body `root` names as `<command>.input`, `<command>.response` or `<view>.row`, if it names
+/// one.
+fn body_root<'a>(ir: &'a EssIr, root: &str) -> Option<BodyRoot<'a>> {
+    let (owner, member) = root.rsplit_once('.')?;
+    let command = || {
+        ir.commands()
+            .values()
+            .find(|command| command.name.to_string() == owner)
+    };
+    let (message, seed): (Message<'a>, EssSemanticRef) = match member {
+        INPUT_ROOT => {
+            let command = command()?;
+            (
+                Message::of_command(command),
+                CommandRef::new(command.name.clone()).into(),
+            )
+        }
+        RESPONSE_ROOT => {
+            let command = command()?;
+            (
+                Message::of_response(command),
+                CommandRef::new(command.name.clone()).into(),
+            )
+        }
+        ROW_ROOT => {
+            let view = ir
+                .views()
+                .values()
+                .find(|view| view.name.to_string() == owner)?;
+            let seed = ViewRef::new(view.name.clone()).into();
+            if let Some(shape) = &view.shape {
+                return Some(BodyRoot {
+                    definition: serde_json::json!({
+                        "$ref": types::pointer(&ir.named_type(shape).name),
+                    }),
+                    fields: &[],
+                    leaves: vec![shape],
+                    seed,
+                });
+            }
+            (Message::of_view(view), seed)
+        }
+        _ => return None,
+    };
+    Some(BodyRoot {
+        definition: serde_json::to_value(types::message(&message))
+            .expect("typed schema nodes serialize"),
+        fields: message.fields,
+        leaves: types::field_leaves(message.fields),
+        seed,
+    })
+}
+
+/// Refuse two fields of one selected object that would share a wire key.
+fn wire_collisions(name: &str, fields: &[ResolvedField], errors: &mut BTreeSet<ModelTypeError>) {
+    let mut wires = BTreeMap::new();
+    for field in fields {
+        let wire = types::wire_name(field);
+        if let Some(previous) = wires.insert(wire, &field.name) {
+            errors.insert(ModelTypeError {
+                name: name.to_owned(),
+                rule: "wire_field_collision",
+                detail: format!(
+                    "fields {previous:?} and {:?} both use wire key {wire:?}",
+                    field.name
+                ),
+            });
+        }
     }
 }
 
@@ -207,19 +355,21 @@ fn numeric_locations(reference: &ResolvedTypeRef, at: &str, found: &mut BTreeSet
     }
 }
 
+fn fields_numeric_locations(at: &str, fields: &[ResolvedField], found: &mut BTreeSet<String>) {
+    for field in fields {
+        numeric_locations(
+            field.type_ref.required(),
+            &pointer(&format!("{at}/properties"), types::wire_name(field)),
+            found,
+        );
+    }
+}
+
 fn body_numeric_locations(item: &ess_compiler::ir::ResolvedType, found: &mut BTreeSet<String>) {
     let at = pointer("/$defs", &item.name.to_string());
     match &item.body {
         ResolvedBody::Newtype { of, .. } => numeric_locations(of, &at, found),
-        ResolvedBody::Struct { fields, .. } => {
-            for field in fields {
-                numeric_locations(
-                    field.type_ref.required(),
-                    &pointer(&format!("{at}/properties"), types::wire_name(field)),
-                    found,
-                );
-            }
-        }
+        ResolvedBody::Struct { fields, .. } => fields_numeric_locations(&at, fields, found),
         ResolvedBody::Union { tag, variants } => {
             let content = types::content_key(tag);
             for (index, (_, payload)) in variants.iter().enumerate() {

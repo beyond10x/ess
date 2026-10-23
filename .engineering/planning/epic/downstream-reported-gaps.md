@@ -6,7 +6,7 @@ status: active
 title: Downstream-reported synthesis, binding and grant gaps are closed
 relations:
 - serves: vision:O2
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:18Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-30T13:04:29Z", actor: "human:timo", revision: 3}
@@ -224,3 +224,9 @@ The operator: "make sure ess knows that we expect all of those fixed efficiently
 | G-U12 | S3 | ESS-HTTP-025 has no declared-alike exception | M | none | 9 |
 | G-U14 | S7 | grant/denied asserts an unqueried view | S | none | 9 |
 | G-U21 | N7 | field order lost in the BTreeMap plan; Box on every reference | M | none | 9 |
+
+## Approval 2026-10-23
+
+- The 31 units run in the priority order above, G-U15 (N1) first: it edits ess-gen model_types.rs and U55 edits ess-gen types.rs, so the two do not share a file.
+- G-U3, G-U5, G-U9 and G-U22 wait on their ADRs. Without a decision they leave pull request 633 and their issues stay open; the rest of the wave does not wait for them.
+- One tree builds at a time; each unit tree discards its build cache when the unit merges.
