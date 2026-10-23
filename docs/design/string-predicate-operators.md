@@ -297,8 +297,9 @@ A conjunction of comparisons that each read one field is solved whatever the fie
 however many there are, as long as each field's ladder holds a value that satisfies it. Two limits
 remain, and a guard past either is refused with `ESS-SYNTH-003`
 (`tests/adversary_search_pass2.rs`). A goal is broken down at most 64 times, and each `any` is
-tried first child first: eight disjunctions whose first children contradict another conjunct are
-refused. A field compared only with other fields writes no literal, so its alternatives are its base,
+tried first child first. A child the goal already refutes is not branched on (0.69.0), so eight
+disjunctions whose first children contradict another conjunct are witnessed; disjunctions whose
+children no conjunct decides can still exhaust the limit. A field compared only with other fields writes no literal, so its alternatives are its base,
 0 and -1: a strict chain over four such fields needs four distinct values and is refused. A group of
 fields compared with each other is searched over at most 1024 combinations.
 

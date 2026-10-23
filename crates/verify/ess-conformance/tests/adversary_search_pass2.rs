@@ -242,15 +242,14 @@ fn adversary_search_pass2_a_compared_pair_with_literals_beside_three_fields_is_w
 }
 
 /// A goal gives up after 64 breakdowns, and the search takes each disjunction's first child first.
-/// Eight disjunctions whose first children all contradict `a < 5` leave the one satisfying
-/// breakdown (every second child) at position 256, and each connective row still has 2^7 = 128
-/// breakdowns. (Seven fit: a row pins one disjunction, leaving exactly 64.) Refused today, by that
-/// limit.
+/// Eight disjunctions whose first children all contradict `a < 5` once left the one satisfying
+/// breakdown (every second child) at position 256 and were refused by that limit. Since the
+/// first-match chain work bound (0.69.0), a child the goal already refutes is never branched on,
+/// so each disjunction is settled on its second child and the guard is witnessed.
 #[test]
-fn adversary_search_pass2_eight_disjunctions_whose_first_children_contradict_are_refused() {
-    assert_refused_is_refused(
+fn adversary_search_pass2_eight_disjunctions_whose_first_children_contradict_are_witnessed() {
+    assert_refused_is_witnessed(
         "          all:\n            - a < 5\n            - any: [a > 11, b > 10]\n            - any: [a > 12, c > 10]\n            - any: [a > 13, d > 10]\n            - any: [a > 14, e > 10]\n            - any: [a > 15, f > 10]\n            - any: [a > 16, g > 10]\n            - any: [a > 17, h > 10]\n            - any: [a > 18, m > 10.5]",
-        "64 breakdowns per goal",
     );
 }
 

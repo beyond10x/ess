@@ -792,7 +792,53 @@ fn a_guard_over_the_current_time_is_decided_only_where_every_run_reads_it_alike(
 /// `at-depot` (`site == Depot`). A brand-free copy of an adopter's reproduction (row 27, 0.69.0).
 const LOCKERS: &str = include_str!("fixtures/related-refusal-shadowed.yaml");
 /// The adopter's scenario: its last act expects `locker-shut`, which `locker-closed` answers first.
-const TWO_RELATED: &str = include_str!("fixtures/related-refusal-shadowed/two-related.yaml");
+/// Held here rather than on disk, so no committed scenario draws `ESS-AUTHOR-041`
+/// (`adversary_222_pass1`).
+const TWO_RELATED: &str = r"type: ess-scenario/1
+domain: parcels.locker
+scenario: two-related
+summary: Two closed-locker refusals hold on the same locker; the model leaves the answer open, so an implementation may give either.
+
+arrange:
+  - instance: locker
+    entity: parcels.locker.Locker
+
+timeline:
+  - at: 2026-09-30T11:00:00Z
+    command: parcels.locker.InstallLocker
+    actor: parcels.locker.Courier
+    input: {site: Harbour}
+    outcome: installed
+    capture: {instance: locker, event: parcels.locker.LockerInstalled, field: locker_id}
+
+  - at: 2026-09-30T11:00:01Z
+    command: parcels.locker.DropParcel
+    actor: parcels.locker.Courier
+    input: {parcel_code: PX-80, locker_id: {$instance: locker}, recipient: Ada}
+    outcome: dropped
+
+  - at: 2026-09-30T11:00:02Z
+    command: parcels.locker.CloseLocker
+    actor: parcels.locker.Courier
+    input: {locker_id: {$instance: locker}}
+    outcome: closed
+
+  - at: 2026-09-30T11:00:03Z
+    command: parcels.locker.DropParcel
+    actor: parcels.locker.Courier
+    input: {parcel_code: PX-81, locker_id: {$instance: locker}, recipient: Ada}
+    outcome: locker-closed
+
+  - at: 2026-09-30T11:00:04Z
+    command: parcels.locker.DropParcel
+    actor: parcels.locker.Courier
+    input: {parcel_code: PX-82, locker_id: {$instance: locker}, recipient: Ada}
+    outcome: locker-shut
+
+assert:
+  - view: parcels.locker.Parcels
+    contains: {parcel_code: PX-80, recipient: Ada}
+";
 
 /// One `DropParcel` act on an installed locker, expecting `outcome`.
 fn drop_parcel(recipient: &str, outcome: &str) -> String {

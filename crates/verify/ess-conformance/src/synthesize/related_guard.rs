@@ -1129,8 +1129,10 @@ fn absent_branch(command: &ResolvedCommand) -> Option<&ResolvedOutcome> {
 ///
 /// A missing row is answered by the `exists: false` branch before any other (the #211 ruling). With
 /// the row present, a predicate it does not decide (a field the arrangement did not determine, or
-/// one it left out that the predicate compares, which the interpreter stops on as undecidable,
-/// row 29) selects nothing and is not guessed at, and a refusal the precedence plan reads before
+/// one it left out that a predicate reading the input compares, which the interpreter stops on as
+/// undecidable, row 29) selects nothing and is not guessed at. A predicate reading no input is
+/// read as a guard ([`subject_fact::guard_truth_with`]): a member of a field the row leaves out
+/// does not take it (beyond10x/ess#234). A refusal the precedence plan reads before
 /// the others selected is taken before them ([`answering_refusal`]): an input-guarded refusal
 /// before any branch it overlaps (beyond10x/ess#178), as everywhere else. `existing_instance:` is
 /// answered before either and is not asked here: the command's own identity is the existence
@@ -1173,19 +1175,25 @@ fn selects<'c>(
         if let ResolvedCondition::Related { test, .. } = &branch.condition {
             match test {
                 ResolvedRelatedTest::Absent => continue,
-                ResolvedRelatedTest::Holds { predicate } => match subject_fact::row_truth_with(
-                    ir,
-                    entity,
-                    &row.settled,
-                    &row.unwritten,
-                    Some(&row.state),
-                    predicate,
-                    Some((command, input)),
-                ) {
-                    Truth::True => {}
-                    Truth::False => continue,
-                    Truth::Unknown => return Ok(None),
-                },
+                ResolvedRelatedTest::Holds { predicate } => {
+                    match (if subject_fact::reads_input(ir, entity, predicate) {
+                        subject_fact::row_truth_with
+                    } else {
+                        subject_fact::guard_truth_with
+                    })(
+                        ir,
+                        entity,
+                        &row.settled,
+                        &row.unwritten,
+                        Some(&row.state),
+                        predicate,
+                        Some((command, input)),
+                    ) {
+                        Truth::True => {}
+                        Truth::False => continue,
+                        Truth::Unknown => return Ok(None),
+                    }
+                }
             }
         }
         if let Some(guard) = input_guard(branch) {
