@@ -2662,6 +2662,14 @@ fn value_at(
             work.operation.is_some(),
         )
         .map(Some),
+        ResolvedPayloadValue::Append { field: element, .. } => values::append(
+            ir,
+            field,
+            input.get(element),
+            work.before.as_ref(),
+            &work.target_location,
+        )
+        .map(Some),
         ResolvedPayloadValue::CallerAttribute {
             attribute,
             type_ref,

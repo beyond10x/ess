@@ -502,6 +502,7 @@ fn unchosen(
             "a `{subject: …}` source"
         }
         ResolvedPayloadValue::Increment { .. } => "an `{increment: …}` source",
+        ResolvedPayloadValue::Append { .. } => "an `{append: …}` source",
         ResolvedPayloadValue::Struct { .. } => "a nested mapping",
         ResolvedPayloadValue::ResponseField { .. } => "an external response",
         ResolvedPayloadValue::CallerAttribute { .. } => "a `{caller: …}` source",

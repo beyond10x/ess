@@ -522,6 +522,35 @@ pub(super) fn increment(
     Ok(Value::Known(value))
 }
 
+/// `{append: input.<path>}` (ess/31): the list the row held at `target_location` before the
+/// outcome, an absent `Optional` read as empty, with `element` last. A required list the row does
+/// not hold, or one whose value is unknown, determines nothing.
+pub(super) fn append(
+    ir: &EssIr,
+    field: &ResolvedPayloadField,
+    element: Option<&Node>,
+    before: Option<&Row>,
+    target_location: &[String],
+) -> Result<Value, Undetermined> {
+    let location = target_location.join(".");
+    let no_value = || Undetermined::NoValue {
+        what: format!("the exact previous `{location}` with one element appended"),
+    };
+    let element = element
+        .filter(|element| **element != Node::Null)
+        .ok_or_else(no_value)?;
+    let mut items = match value_at(before, target_location)? {
+        Some(Value::Known(Node::Seq(items))) => items,
+        Some(Value::Absent | Value::Known(Node::Null)) => Vec::new(),
+        None if field.target_type.is_optional() => Vec::new(),
+        _ => return Err(no_value()),
+    };
+    items.push(element.clone());
+    let value = Node::Seq(items);
+    input::validate_typed_value(ir, &field.target_type, &value).map_err(Undetermined::Request)?;
+    Ok(Value::Known(value))
+}
+
 /// The value at one typed target location in the immutable pre-outcome row.
 fn value_at(before: Option<&Row>, location: &[String]) -> Result<Option<Value>, Undetermined> {
     let Some((root, rest)) = location.split_first() else {

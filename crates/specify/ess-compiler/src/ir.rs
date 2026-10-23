@@ -1239,6 +1239,16 @@ pub enum ResolvedPayloadValue {
         /// The amount, as canonical text.
         by: String,
     },
+    /// The list the subject held in the target field before this outcome, absent read as empty,
+    /// with the input's element last (ess/31, `sets:`). `ess-domain` admitted it only over a
+    /// `List<T>` or `Optional<List<T>>` field of an existing subject, with an element of type `T`;
+    /// only a model using it carries it, so every other model keeps its bytes.
+    Append {
+        /// The input read: a field, or from ess/22 the declared segments of a path joined by `.`.
+        field: String,
+        /// Its resolved type, the list's element type.
+        type_ref: ResolvedTypeRef,
+    },
     /// The optional input when the caller sent it, otherwise implementation-generated (ess/14),
     /// the literal written after `else:` (ess/16), or another input (ess/22).
     ///
@@ -1951,6 +1961,9 @@ impl ResolvedPayloadValue {
                 format!("the first element of input.{field} that names no row")
             }
             Self::Increment { by } => format!("its previous value plus {by}"),
+            Self::Append { field, .. } => {
+                format!("its previous list, absent read as empty, with input.{field} last")
+            }
             Self::InputOrGenerated {
                 field,
                 otherwise: None,

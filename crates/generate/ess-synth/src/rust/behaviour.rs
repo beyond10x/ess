@@ -2877,6 +2877,24 @@ impl<'a> Writer<'a> {
             ResolvedPayloadValue::Generated { .. } => self.generate(target),
             ResolvedPayloadValue::Cleared => "None".to_owned(),
             ResolvedPayloadValue::EmptyList => "Vec::new()".to_owned(),
+            // ess/31: a copy of the previous list, an absent one read as empty, with the element
+            // pushed last.
+            ResolvedPayloadValue::Append { field: source, .. } => {
+                let previous = previous
+                    .as_deref()
+                    .expect("the plan admits `{append:}` only on a held row");
+                let element = self.input_value(source);
+                if target.is_optional() {
+                    format!(
+                        "{{ let mut items = {previous}.clone().unwrap_or_default(); \
+                         items.push({element}); Some(items) }}"
+                    )
+                } else {
+                    format!(
+                        "{{ let mut items = {previous}.clone(); items.push({element}); items }}"
+                    )
+                }
+            }
             ResolvedPayloadValue::Increment { by } => increment(
                 self.ir,
                 self.layout,
@@ -3461,7 +3479,9 @@ fn reads_state(value: &ResolvedPayloadValue) -> bool {
 /// Whether one value source reads the row as it was before the outcome.
 fn reads_subject(value: &ResolvedPayloadValue) -> bool {
     match value {
-        ResolvedPayloadValue::SubjectField { .. } | ResolvedPayloadValue::Increment { .. } => true,
+        ResolvedPayloadValue::SubjectField { .. }
+        | ResolvedPayloadValue::Increment { .. }
+        | ResolvedPayloadValue::Append { .. } => true,
         ResolvedPayloadValue::Struct { fields } => {
             fields.iter().any(|field| reads_subject(&field.value))
         }

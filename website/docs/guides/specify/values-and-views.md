@@ -44,9 +44,10 @@ the input or a literal:
 | `{generated: true}` | `sets:` | always (`payload:` has admitted it since `ess/4`) |
 | `{cleared: true}` | `sets:` | the target field is `Optional<…>`; refused in `payload:`. Synthesis asserts the field is empty in the view, so a target that keeps the old value fails |
 | `[]` | `sets:` | source `ess/31`; the target field is a required `List<…>`, and it holds the empty list. A list holding anything is refused, so is `[]` in `payload:` and over an `Optional<List<…>>`, which `{cleared: true}` empties. Synthesis asserts the view row holds `[]`; generated Rust stores `Vec::new()`, generated Go an empty slice, never `nil`, and Entity Runtime an empty array |
+| `{append: input.<field>}` | `sets:` | source `ess/31`; the outcome `moves:` or `updates:` an existing subject, the target is a `List<…>` or an `Optional<List<…>>`, and the input has the element type exactly. The row holds the list it held before, an absent one read as empty, with the input last. Any other element, a creator, a `payload:` or a nested place is refused. Synthesis asserts the whole list in the view row; generated Rust and Go copy the previous list and push the element; Entity Runtime refuses it by name |
 
 A mapping is a source when every key is one of `response`, `generated`, `cleared`, `subject`,
-`increment`, `input` and `else`; any other key makes it a nested mapping. The text
+`increment`, `input` and `else`, or, from `ess/31`, the single key `append` over a list target; any other key makes it a nested mapping. The text
 `subject.note` is refused in every format: it used to compile as the literal text
 `"subject.note"`.
 

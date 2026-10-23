@@ -1919,6 +1919,20 @@
         }
       ]
     },
+    "RawAppendSource": {
+      "description": "`{append: input.<path>}` as written.",
+      "type": "object",
+      "required": [
+        "append"
+      ],
+      "properties": {
+        "append": {
+          "description": "The input element appended last, written `input.<field>` or from `ess/22` `input.<path>`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "RawBindingSpec": {
       "description": "A binding, as a document says it.",
       "type": "object",
@@ -3230,6 +3244,14 @@
           "allOf": [
             {
               "$ref": "#/definitions/RawMissingSource"
+            }
+          ]
+        },
+        {
+          "description": "`{append: input.<path>}` (ess/31).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawAppendSource"
             }
           ]
         },

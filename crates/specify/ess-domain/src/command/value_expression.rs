@@ -481,6 +481,9 @@ fn check(
         PayloadSource::Increment { by, scalar } => {
             check_increment(context, at, place, (root, target), by, *scalar, errors);
         }
+        PayloadSource::Append { field } => {
+            check_append(context, at, (place, depth), (root, target), field, errors);
+        }
         PayloadSource::InputOrGenerated { field, otherwise } => {
             check_fallback(
                 context,
@@ -610,6 +613,7 @@ fn kind(source: &PayloadSource) -> &'static str {
         PayloadSource::ChangedCount => "`{count: changed}`",
         PayloadSource::ChangedField { .. } => "`{changed: …}`",
         PayloadSource::MissingElement { .. } => "`{missing: …}`",
+        PayloadSource::Append { .. } => super::append_list::WRITTEN,
         _ => "payload",
     }
 }
@@ -1390,6 +1394,52 @@ fn check_increment(
     }
 }
 
+/// `{append: input.<path>}` (ess/31): a `sets:` source over a whole `List<…>` field of an existing
+/// subject, whose element is an input of the list's element type.
+fn check_append(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    (place, depth): (Place, usize),
+    targets: (&Field, &Field),
+    field: &str,
+    errors: &mut ValidationErrors,
+) {
+    let (root, target) = targets;
+    if place != Place::Sets || depth > 0 {
+        errors.push(super::append_list::elsewhere(at, depth > 0));
+        return;
+    }
+    if existing_subject_field(context, at, super::append_list::WRITTEN, &root.name, errors)
+        .is_none()
+    {
+        return;
+    }
+    let Some((entity, _)) = context.subject else {
+        return;
+    };
+    let command = context.command;
+    let read = match command.read_input((context.resolved.types, context.resolved.paths), field) {
+        Ok(read) => read,
+        Err(Some(unresolved)) => {
+            errors.push(unresolved.refusal(at, command, field));
+            return;
+        }
+        Err(None) => {
+            errors.push(ValidationError::at(
+                at.clone(),
+                ValidationCode::UndeclaredReference,
+                format!(
+                    "`{field}` is not an input of `{}`, so {} has no element to append",
+                    command.name,
+                    super::append_list::WRITTEN
+                ),
+            ));
+            return;
+        }
+    };
+    super::append_list::check_element(at, (&entity.name, target), (field, &read), errors);
+}
+
 /// `{input: f, else: {generated: true}}`: an optional input, or a minted value; or
 /// `{input: f, else: <literal>}` (`ess/16`, #163): an optional input, or the literal, which is held
 /// to the rule a literal written in the target's place is.
@@ -1713,6 +1763,23 @@ fn related_mapping(
 }
 
 /// A nested mapping: every field of the struct the target resolves to, one source each.
+/// The refusal of a nested mapping over a target that is no struct, where its keys spell a source
+/// the model's format or shape does not admit, rather than the generic nested-mapping refusal.
+fn misread_mapping(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    target: &Field,
+    fields: &[super::PayloadField],
+) -> Option<ValidationError> {
+    let format = context.spec.system().format;
+    // `{related: {entity, where, first}}` with no list: a head read missing its order
+    // (ess/27, beyond10x/ess#543), where a nested mapping cannot fill the target anyway.
+    super::ordered_head::misread_mapping(at, fields)
+        .or_else(|| related_mapping(context, at, fields))
+        .or_else(|| super::minted_value::misread_mapping(format, at, target, fields))
+        .or_else(|| super::append_list::misread_mapping(format, at, target, fields))
+}
+
 fn check_struct(
     context: &Context<'_>,
     at: &ConstructRef,
@@ -1732,19 +1799,7 @@ fn check_struct(
         return;
     }
     let Some(declared) = context.resolved.types.struct_fields(&target.type_ref) else {
-        // `{related: {entity, where, first}}` with no list: a head read missing its order
-        // (ess/27, beyond10x/ess#543), where a nested mapping cannot fill the target anyway.
-        if let Some(refusal) = super::ordered_head::misread_mapping(at, fields) {
-            errors.push(refusal);
-            return;
-        }
-        if let Some(refusal) = related_mapping(context, at, fields) {
-            errors.push(refusal);
-            return;
-        }
-        if let Some(refusal) =
-            super::minted_value::misread_mapping(context.spec.system().format, at, target, fields)
-        {
+        if let Some(refusal) = misread_mapping(context, at, target, fields) {
             errors.push(refusal);
             return;
         }

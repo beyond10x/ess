@@ -8284,8 +8284,9 @@ fn determined_fields(
             | ResolvedPayloadValue::Generated { .. }
             | ResolvedPayloadValue::Cleared
             | ResolvedPayloadValue::EmptyList
-            // ess/27 (#545): a `sets:` source only, refused in a payload by `ess-domain`.
+            // ess/27 (#545) and ess/31: `sets:` sources only, refused in a payload by `ess-domain`.
             | ResolvedPayloadValue::PayloadRead { .. }
+            | ResolvedPayloadValue::Append { .. }
             // ess/16 (#167): the rows one scenario changed, asserted by `set_effects` alone.
             | ResolvedPayloadValue::ChangedCount
             // ess/25 (#531): the row one occurrence is for, asserted by `set_effects` alone.
@@ -9462,6 +9463,29 @@ fn expression_value(
     )
 }
 
+/// ess/31: the list the arrangement left the row holding, absent read as empty, with the element
+/// the scenario sent last; nothing where the row's list or the sent element is undetermined.
+fn appended_at(
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+    target_location: &[String],
+    element: &str,
+) -> Option<ScenarioValue> {
+    let mut items = match before_literal_at(before, target_location)? {
+        Node::Seq(items) => items.clone(),
+        Node::Null => Vec::new(),
+        _ => return None,
+    };
+    match supplied_at(supplied, element)? {
+        ScenarioValue::Literal { value: Node::Null } => return None,
+        ScenarioValue::Literal { value } => items.push(value),
+        _ => return None,
+    }
+    Some(ScenarioValue::Literal {
+        value: Node::Seq(items),
+    })
+}
+
 fn expression_value_at(
     ir: &EssIr,
     field: &ess_compiler::ir::ResolvedPayloadField,
@@ -9535,6 +9559,9 @@ fn expression_value_at(
             held.checked_add(by).map(|sum| ScenarioValue::Literal {
                 value: Node::Number(sum),
             })
+        }
+        ResolvedPayloadValue::Append { field: element, .. } => {
+            appended_at(supplied, before, target_location, element)
         }
         // An omitted input leaves the fallback: nothing determined for `{generated: true}`, and the
         // literal read as the target's type for `else: <literal>` (ess/16, #163), so an
@@ -10340,7 +10367,9 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         | ResolvedPayloadValue::RelatedState {
             via: ess_compiler::ir::ResolvedRelatedVia::Input { field, .. },
             ..
-        } => out.push((field, Read::Needed)),
+        }
+        // ess/31: the element appended is sent.
+        | ResolvedPayloadValue::Append { field, .. } => out.push((field, Read::Needed)),
         ResolvedPayloadValue::Struct { fields } => {
             for leaf in fields {
                 reads(leaf, out);
@@ -10903,6 +10932,7 @@ fn settled(
             ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::SubjectState { .. }
             | ResolvedPayloadValue::Increment { .. }
+            | ResolvedPayloadValue::Append { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }

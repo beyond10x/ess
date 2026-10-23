@@ -77,6 +77,7 @@ pub(crate) const TEXT_COUNT_UNTYPED: &str =
     "`.count` of a text through a quantifier element or a union payload";
 pub(crate) const SUBJECT_VALUE: &str = "`{subject: …}`";
 pub(crate) const INCREMENT: &str = "`{increment: …}`";
+pub(crate) const APPEND: &str = "`{append: …}` (ess/31)";
 pub(crate) const FALLBACK: &str = "`{input: …, else: …}`";
 pub(crate) const INPUT_PATH: &str = "a value read through an input path (`input.<path>`)";
 pub(crate) const STRUCT: &str = "a struct of sources";
@@ -118,6 +119,7 @@ pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -
     match value {
         Source::SubjectField { .. } | Source::SubjectState { .. } => SUBJECT_VALUE,
         Source::Increment { .. } => INCREMENT,
+        Source::Append { .. } => APPEND,
         Source::InputOrGenerated { .. } => FALLBACK,
         Source::InputField { field, .. } if ess_domain::command::input_path::is_path(field) => {
             INPUT_PATH
@@ -350,6 +352,12 @@ pub const CONSTRUCTS: &[Construct] = &[
         LoweringCode::ValueExpressionUnsupported,
         Needs::EntityCore("arithmetic over a stored value"),
         &["tests/lowerable_subset.rs::each_value_expression_is_refused_under_its_own_construct"],
+    ),
+    refused(
+        APPEND,
+        LoweringCode::ValueExpressionUnsupported,
+        Needs::EntityCore("a list grown from its stored value"),
+        &["tests/append_set.rs::an_append_is_refused_by_name"],
     ),
     refused(
         CLEARED,

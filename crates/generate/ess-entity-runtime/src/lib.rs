@@ -2388,6 +2388,7 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::SubjectField { .. }
                         | ResolvedPayloadValue::SubjectState { .. }
                         | ResolvedPayloadValue::Increment { .. }
+                        | ResolvedPayloadValue::Append { .. }
                         | ResolvedPayloadValue::InputOrGenerated { .. }
                         | ResolvedPayloadValue::Struct { .. }
                         | ResolvedPayloadValue::RelatedField { .. }
@@ -3197,6 +3198,7 @@ impl Projector<'_> {
             value @ (ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::SubjectState { .. }
             | ResolvedPayloadValue::Increment { .. }
+            | ResolvedPayloadValue::Append { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }

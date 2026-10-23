@@ -406,7 +406,9 @@ fn not_a_snapshot(source: &PayloadSource, members: &[String]) -> Option<&'static
         PayloadSource::ChangedField { .. } => {
             Some("a field of one changed row, known only once per changed row after its effects")
         }
-        PayloadSource::Increment { .. } => Some("a value the outcome's own change computes"),
+        PayloadSource::Increment { .. } | PayloadSource::Append { .. } => {
+            Some("a value the outcome's own change computes")
+        }
         PayloadSource::Expression { .. } => {
             Some("a value an expression computes (`{expr: …}`), which a selector does not read yet")
         }

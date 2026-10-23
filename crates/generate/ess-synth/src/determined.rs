@@ -513,6 +513,30 @@ fn value(
         ResolvedPayloadValue::Generated { .. }
         | ResolvedPayloadValue::Cleared
         | ResolvedPayloadValue::EmptyList => {}
+        // ess/31: the previous list with one input element last, on a held row's `sets:` only.
+        ResolvedPayloadValue::Append {
+            field: read,
+            type_ref,
+        } => {
+            if held.is_none() || !sets {
+                return Err(format!(
+                    "`{{append:}}` for `{}` with no previous value",
+                    field.target
+                ));
+            }
+            let ResolvedTypeRef::List { of } = target.required() else {
+                return Err(format!(
+                    "`{{append:}}` of `{}`, which is not a `List<…>`",
+                    field.target
+                ));
+            };
+            if of.as_ref() != type_ref {
+                return Err(format!(
+                    "`{{append: input.{read}}}`, an element of another type for `{}`",
+                    field.target
+                ));
+            }
+        }
         ResolvedPayloadValue::Increment { by } => {
             if held.is_none() || !sets {
                 return Err(format!(

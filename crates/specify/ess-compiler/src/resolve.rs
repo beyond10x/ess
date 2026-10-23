@@ -2771,6 +2771,18 @@ impl<'a> Resolver<'a> {
         if let PayloadSource::Expression { expr } = source {
             return self.expression_value(command, outcome, block, target, source, (expr, subject));
         }
+        if let PayloadSource::Append { field } = source {
+            // `ess-domain` admitted the element at the list's element type exactly; a read that
+            // does not resolve was refused there.
+            let read = input.and_then(|fields| self.input_read(command, fields, field))?;
+            return Some(payload_constant(
+                target,
+                ResolvedPayloadValue::Append {
+                    field: read.name.clone(),
+                    type_ref: read.type_ref,
+                },
+            ));
+        }
         if source.needs_value_expressions() {
             return self.expression_field(command, outcome, block, target, source, input, subject);
         }
@@ -6021,6 +6033,7 @@ fn payload_constant_source(
         | PayloadSource::PayloadRead { .. }
         | PayloadSource::Expression { .. }
         | PayloadSource::MissingElement { .. }
+        | PayloadSource::Append { .. }
         | PayloadSource::ChangedField { .. } => return None,
         PayloadSource::ChangedCount => ResolvedPayloadValue::ChangedCount,
         PayloadSource::Increment { by, .. } => ResolvedPayloadValue::Increment { by: by.clone() },
