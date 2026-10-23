@@ -18,6 +18,7 @@
 
 ### Changed
 
+- The `Cargo.toml` of the synthesized Rust HTTP server, in the workspace layout's server crate and as the single crate's optional `server` dependencies, takes compatible ranges at the tested minimum (`clap = "^4.6.7"`, `uuid = "^1.26.1"`, `time = "^0.3.45"`), so a consumer workspace that already locks newer patches of these crates keeps them; it pinned each with `=`. The normalization target's manifest keeps its exact pins, because its bytes belong to every existing `ess-normalization/N` format.
 - The `Cargo.toml` that `ess generate types` writes for a Rust library takes compatible ranges at the tested minimum (`serde = "^1.0.229"`, `serde_json = "^1.0.151"`, `time = "^0.3.45"`), as an adopter asked, so adding the crate to a workspace that already locks newer patches of these crates no longer downgrades them; it pinned each with `=`. The `exact-numbers` feature stays default-on, so numbers keep their exact handling; a consumer that wants binary64 numbers and no workspace-wide `serde_json/arbitrary_precision` depends on the crate with `default-features = false`.
 
 ### Fixed

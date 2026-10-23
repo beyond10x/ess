@@ -311,8 +311,9 @@ the storage interface's `List`, with exact decimal sums and means. See the
 A `reached_by: network` component gets `cmd/<component>-server/main.go` in Go and
 `crates/<system>-server/src/bin/<component>-server.rs` in the Rust workspace. The Rust single-crate
 layout puts the executable under `src/bin/` and requires `--features server`. Rust entries use
-clap derive; their runtime dependencies are pinned to clap 4.6.7, uuid 1.26.1 and time 0.3.45,
-compatible with Rust 1.85. These dependencies stay outside the reusable types and the default
+clap derive; their runtime dependencies take compatible ranges at the tested minimum
+(`clap = "^4.6.7"`, `uuid = "^1.26.1"`, `time = "^0.3.45"`), so the consumer's lock file decides
+the patch; those minimums build with Rust 1.85. These dependencies stay outside the reusable types and the default
 single-crate feature set, which also build for WebAssembly. Go entries use the standard library.
 
 Each entry accepts `--listen <addr>` (default `127.0.0.1:8080`), `--callers <mode>` (default
