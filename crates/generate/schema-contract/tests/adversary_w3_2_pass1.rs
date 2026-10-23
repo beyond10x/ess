@@ -52,7 +52,7 @@ fn adv_w3_2_enum_typed_attribute_accessor_answers_the_wire_spelling() {
         "Family's own type reads `numeric`:\n{rust}"
     );
     assert!(
-        rust.contains("Self::V1 => \"numeric\","),
+        rust.contains("Self::GreaterThan => \"numeric\","),
         "Operator::family() for `gt` answers Family's wire spelling:\n{rust}"
     );
     let typescript = plan(&names).typescript().declarations;

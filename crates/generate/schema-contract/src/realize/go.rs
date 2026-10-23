@@ -179,10 +179,11 @@ impl Emitter<'_> {
         pointer: &str,
     ) {
         writeln!(out, "type {name} string\n").expect("String write");
+        let variants = self.plan.variant_identifiers(pointer, values);
         if !values.is_empty() {
             out.push_str("const (\n");
-            for (index, value) in values.iter().enumerate() {
-                let variant = format!("{name}V{index}");
+            for (value, variant) in &variants {
+                let variant = format!("{name}{variant}");
                 self.allocate(&variant, pointer);
                 writeln!(out, "\t{variant} {name} = {}", quote(value)).expect("String write");
             }
@@ -203,7 +204,7 @@ impl Emitter<'_> {
         }
         writeln!(out, "\treturn nil, fmt.Errorf(\"value is not a declared string literal\")\n}}\n\nfunc (v *{name}) UnmarshalJSON(data []byte) error {{\n\tvar decoded string\n\tif err := essDecode(data, &decoded, false); err != nil {{\n\t\treturn err\n\t}}\n\tvalue := {name}(decoded)\n\tif _, err := value.MarshalJSON(); err != nil {{\n\t\treturn err\n\t}}\n\t*v = value\n\treturn nil\n}}").expect("String write");
         if let Some(attributes) = self.plan.attributes.get(pointer) {
-            accessors(out, name, values, attributes);
+            accessors(out, name, &variants, attributes);
         }
     }
 
@@ -514,10 +515,11 @@ pub(super) fn module_name(name: &str) -> bool {
 /// One method per typed variant attribute of the enum `name` (`ess/23`, beyond10x/ess#450),
 /// answering each variant's value: `bool`, `int64`, or the text — a `Decimal` as its decimal string
 /// — and, where a variant may leave the attribute unfilled, whether it is filled beside it.
+/// `variants` pairs each wire spelling with the variant it names.
 fn accessors(
     out: &mut String,
     name: &str,
-    values: &BTreeSet<String>,
+    variants: &[(String, String)],
     attributes: &[super::EnumAttribute],
 ) {
     for attribute in attributes {
@@ -543,7 +545,7 @@ fn accessors(
             attribute.name
         )
         .expect("String write");
-        for (index, wire) in values.iter().enumerate() {
+        for (wire, variant) in variants {
             let Some(value) = attribute.values.get(wire) else {
                 continue;
             };
@@ -556,7 +558,7 @@ fn accessors(
             } else {
                 value
             };
-            writeln!(out, "\tcase {name}V{index}:\n\t\treturn {value}").expect("String write");
+            writeln!(out, "\tcase {name}{variant}:\n\t\treturn {value}").expect("String write");
         }
         let missing = if attribute.optional {
             format!("{zero}, false")

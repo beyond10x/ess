@@ -52,8 +52,10 @@ fn digest(realization: &Realization) -> String {
         })
 }
 
-/// The digests of the model and bundle realizations generated before any option existed.
-const SHOP_DIGEST: &str = "702a25b089e9920a3911d58084b3184a9c4dea51df0e4cc808e31a826f5220b4";
+/// The digests of the model and bundle realizations generated before any option existed; the
+/// model one refrozen for beyond10x/ess#658, where `probe.shop.Colour` names its variants `Blue`
+/// and `Red` rather than `V0` and `V1`.
+const SHOP_DIGEST: &str = "0c5dfad0170a99263c77c89b0a5ef1f8d05eee6bb830bc7cbcda372a0244aee1";
 const OPEN_DIGEST: &str = "85d92b4b6ce765083606c7b9f54495d1609d5c979bad4f656a1ce01c60ce83c4";
 
 fn findings(error: &schema_contract::realize::Refused) -> Vec<(String, String, String)> {

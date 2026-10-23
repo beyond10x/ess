@@ -210,6 +210,10 @@ pub struct Plan {
     /// A model enum's typed variant attributes, by the pointer of the enum (`ess/23`,
     /// beyond10x/ess#450): each output gives the enum one accessor per attribute.
     attributes: BTreeMap<String, Vec<EnumAttribute>>,
+    /// A model enum's variant identifiers, by the pointer of the enum and then by wire spelling
+    /// (beyond10x/ess#658): each declared name in `PascalCase`, which every output names the
+    /// variant by. Empty for a bundle, whose enums declare no names.
+    variants: BTreeMap<String, BTreeMap<String, String>>,
     /// A model string's declared alphabet and text length, by the pointer of the string
     /// (beyond10x/ess#579): what the Rust decoder refuses a value outside of.
     text: BTreeMap<String, TextConstraint>,
@@ -469,6 +473,7 @@ struct Builder {
     patterns: BTreeMap<String, String>,
     constants: BTreeMap<String, i64>,
     attributes: BTreeMap<String, Vec<EnumAttribute>>,
+    variants: BTreeMap<String, BTreeMap<String, String>>,
     declared_fields: BTreeMap<String, String>,
     text: BTreeMap<String, TextConstraint>,
     /// Each `x-ess-shorthand` struct's definition pointer and the wire name it names.
@@ -654,9 +659,38 @@ impl Plan {
             declared_fields: builder.declared_fields,
             constants: builder.constants,
             attributes: builder.attributes,
+            variants: builder.variants,
             text: builder.text,
             shorthands,
         })
+    }
+
+    /// Each value of the string enum at `pointer`, in order, with the identifier its variant is
+    /// named by: the declared name of a model enum (beyond10x/ess#658), and `V<index>` where the
+    /// input declares no names, as a bundle does.
+    fn variant_identifiers(
+        &self,
+        pointer: &str,
+        values: &BTreeSet<String>,
+    ) -> Vec<(String, String)> {
+        let declared = self.variants.get(pointer);
+        values
+            .iter()
+            .enumerate()
+            .map(|(index, wire)| {
+                let identifier = declared
+                    .and_then(|declared| declared.get(wire))
+                    .cloned()
+                    .unwrap_or_else(|| format!("V{index}"));
+                (wire.clone(), identifier)
+            })
+            .collect()
+    }
+
+    /// Whether the string enum at `pointer` names its variants by declared names, which a
+    /// TypeScript output then carries as members.
+    fn names_variants(&self, pointer: &str) -> bool {
+        self.variants.contains_key(pointer)
     }
 
     /// Declare every component under the last segment of its qualified name, refusing two that
@@ -1066,6 +1100,56 @@ impl Builder {
         }
     }
 
+    /// A model enum's variant identifiers (beyond10x/ess#658): each variant's declared name, read
+    /// from `x-ess-variants` where it differs from the wire spelling, in `PascalCase`. Where one
+    /// name has no identifier, or two names have one, the whole enum records none and keeps its
+    /// positional `V<index>` variants on every output, as it generated before declared names were
+    /// read, so no model that generated stops generating.
+    fn enum_variants(&mut self, object: &Map<String, Value>, pointer: &str) {
+        if !self.model || object.get("x-ess-kind").and_then(Value::as_str) != Some("enum") {
+            return;
+        }
+        let Some(values) = object.get("enum").and_then(Value::as_array) else {
+            return;
+        };
+        let declared = match object.get("x-ess-variants") {
+            None => Map::new(),
+            Some(Value::Object(declared))
+                if declared.iter().all(|(wire, name)| {
+                    name.is_string() && values.iter().any(|value| value.as_str() == Some(wire))
+                }) =>
+            {
+                declared.clone()
+            }
+            Some(_) => {
+                self.errors.insert(finding(
+                    &path(pointer, "x-ess-variants"),
+                    "model_variants",
+                    "x-ess-variants is not the map of declared names a model writes",
+                ));
+                return;
+            }
+        };
+        let mut identifiers = BTreeMap::new();
+        let mut taken = BTreeSet::new();
+        for value in values {
+            let Some(wire) = value.as_str() else {
+                return;
+            };
+            let name = declared.get(wire).and_then(Value::as_str).unwrap_or(wire);
+            let identifier = declaration_name(name);
+            if identifier.is_empty()
+                || identifier.as_bytes()[0].is_ascii_digit()
+                || identifier == "Self"
+                || !taken.insert(identifier.clone())
+            {
+                return;
+            }
+            identifiers.insert(wire.to_owned(), identifier);
+        }
+        self.variants.insert(pointer.to_owned(), identifiers);
+    }
+
     fn classify_keywords(&mut self, object: &Map<String, Value>, pointer: &str) {
         if !object.contains_key("type") {
             for keyword in [
@@ -1084,7 +1168,7 @@ impl Builder {
             let location = path(pointer, keyword);
             match keyword.as_str() {
                 "x-ess-name" | "x-ess-kind" | "x-ess-field" | "x-ess-map-key"
-                | "x-ess-union-tag" | "x-ess-attributes" | "x-ess-shorthand"
+                | "x-ess-union-tag" | "x-ess-attributes" | "x-ess-variants" | "x-ess-shorthand"
                     if self.model =>
                 {
                     self.annotations.insert(finding(
@@ -1261,6 +1345,7 @@ impl Builder {
         }
         self.classify_keywords(object, pointer);
         self.enum_attributes(object, pointer);
+        self.enum_variants(object, pointer);
         let mut terms = Vec::new();
         if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
             match local_definition(reference) {

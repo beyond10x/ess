@@ -323,6 +323,12 @@ pub(crate) struct Node {
     /// wire spelling. An annotation, read by the types-only outputs for their accessors.
     #[serde(rename = "x-ess-attributes", skip_serializing_if = "Vec::is_empty")]
     pub(crate) attributes: Vec<serde_json::Value>,
+    /// An enum's declared variant names, keyed by wire spelling, for the variants whose name
+    /// differs from it (beyond10x/ess#658). An annotation, read by the types-only outputs to name
+    /// each variant; a variant absent here is named by its wire spelling, so an enum whose names
+    /// are its spellings keeps its bytes.
+    #[serde(rename = "x-ess-variants", skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) variant_names: BTreeMap<String, String>,
     /// The authored example of a command input, as JSON Schema's `examples`: what synthesis
     /// builds the input from, and not a constraint a validator applies.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -921,6 +927,11 @@ pub(crate) fn body(ir: &EssIr, declared: &ResolvedType) -> Node {
                 .map(|variant| variant.wire().to_owned())
                 .collect(),
             attributes: attributes(ir, variants),
+            variant_names: variants
+                .iter()
+                .filter(|variant| variant.wire() != variant.name())
+                .map(|variant| (variant.wire().to_owned(), variant.name().to_owned()))
+                .collect(),
             ..Node::default()
         },
         ResolvedBody::Union { tag, variants } => Node {

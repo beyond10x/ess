@@ -481,6 +481,7 @@ mod ess_annotations {
             ("x-ess-map-key", json!("digest.store.Sha256Hex")),
             ("x-ess-union-tag", json!("kind")),
             ("x-ess-attributes", json!({"digest": {"label": "Digest"}})),
+            ("x-ess-variants", json!({"in_review": "InReview"})),
             (
                 "x-ess-relation",
                 json!({"entity": "digest.store.Blob", "via": "blob_id"}),
