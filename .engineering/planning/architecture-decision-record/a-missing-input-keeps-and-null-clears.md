@@ -11,7 +11,7 @@ refs:
 relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance. Target: 0.70.0.
 
@@ -50,3 +50,7 @@ A. It states the effect where it happens, keeps every existing copy's meaning, a
 ## Acceptance evidence
 
 The reproduction in ess#678 as a fixture: three scenarios, `{}` keeps "old", `{"summary": null}` clears, `{"summary": "new"}` sets, each green on the interpreted target and red on a target mutated to clear on missing.
+
+## Correction (2026-10-23)
+
+The G-U30 projection in Context is not required and `anyOf [<T>, null]`, the encoding `null_when_absent` already uses, not `oneOf [null, T]`. It applies at every field position that takes `presence:`, struct fields included.

@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T12:51:25Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-rust-types-take-declared-derives",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit a06f079cd on integrate/ess-batch-0690 11d306026: red first (rust_generator_options: E0432 RustDerive/RustOptions, 11x E0599 rust_with, 12 errors); green: schema-contract 39 binaries 236 passed, rust_generator_options 6, model_ergonomics 15, ess-cli generate-types binaries 148 (model_type_events 15), task test-xtask 418; clippy -p schema-contract -p ess-cli -D warnings, task fmt-check, task ci-lint, cargo xtask cli-reference --check exit 0; no pinned digest moved. Not run locally: task check, site-build; left to the pull request Gate."
+  }
+}

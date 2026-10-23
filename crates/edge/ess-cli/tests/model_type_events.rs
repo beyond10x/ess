@@ -190,6 +190,140 @@ types:
     }
 }
 
+/// `--rust-derive`, `--rust-fold-null` and `--rust-drop-unknown-members` (beyond10x/ess#657,
+/// #667, #668) reach the Rust realizer; the library's own scenarios are in schema-contract's
+/// `rust_generator_options.rs`.
+mod rust_generator_options {
+    use super::*;
+
+    const MODEL: &str = "format: ess/22
+system: demo
+version: v1
+domain: demo.lab
+types:
+  - name: demo.lab.Tag
+    kind: newtype
+    of: String
+  - name: demo.lab.Reading
+    kind: struct
+    fields:
+      - {name: tag, type: demo.lab.Tag}
+      - {name: note, type: 'Optional<String>'}
+      - {name: ratio, type: Binary64}
+";
+
+    fn types(target: &str, options: &[&str]) -> (Fixture, Output) {
+        let fixture = Fixture::new();
+        fs::write(fixture.0.join("model/system.yaml"), MODEL).unwrap();
+        let mut args = vec!["--root", "demo.lab.Reading", "--target", target];
+        args.extend(["--package", "demo-lab", "--out", "out"]);
+        if target == "go" {
+            args.extend(["--module", "example.com/demo/lab"]);
+        }
+        args.extend(options);
+        let output = fixture.run(&args);
+        (fixture, output)
+    }
+
+    #[test]
+    fn no_option_keeps_the_bytes() {
+        let (fixture, output) = types("rust", &[]);
+        assert!(output.status.success(), "{output:?}");
+        let types = fixture.read("out/types.rs");
+        assert!(
+            types.contains("#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]\n#[serde(transparent)]\npub struct DemoLabTag"),
+            "{types}"
+        );
+        let report = fixture.read("out/types-report.json");
+        assert!(
+            report.contains("\"configuration\": {\n    \"language\": \"rust\",\n    \"package\": \"demo-lab\"\n  }"),
+            "{report}"
+        );
+    }
+
+    #[test]
+    fn a_per_type_derive_is_added_to_that_type_only() {
+        let (fixture, output) = types(
+            "rust",
+            &[
+                "--rust-derive",
+                "demo.lab.Tag=Hash",
+                "--rust-derive",
+                "demo.lab.Tag=Eq",
+            ],
+        );
+        assert!(output.status.success(), "{output:?}");
+        let types = fixture.read("out/types.rs");
+        assert!(
+            types.contains("::serde::Deserialize, ::std::cmp::Eq, ::std::hash::Hash)]\n#[serde(transparent)]\npub struct DemoLabTag"),
+            "{types}"
+        );
+        assert_eq!(types.matches("::std::hash::Hash)]").count(), 1, "{types}");
+    }
+
+    #[test]
+    fn an_unsatisfiable_derive_is_refused_by_name() {
+        let (fixture, output) = types("rust", &["--rust-derive", "Eq"]);
+        assert!(!output.status.success(), "{output:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("rust_derive_unsatisfied")
+                && stderr
+                    .contains("`DemoLabReading` cannot derive Eq: field `ratio` holds EssBinary64"),
+            "{stderr}"
+        );
+        assert!(!fixture.0.join("out").exists());
+        let (_, output) = types("rust", &["--rust-derive", "Copy"]);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success() && stderr.contains("--rust-derive Copy"),
+            "{stderr}"
+        );
+    }
+
+    #[test]
+    fn the_report_records_each_option() {
+        let (fixture, output) = types("rust", &["--rust-fold-null", "--rust-drop-unknown-members"]);
+        assert!(output.status.success(), "{output:?}");
+        let types = fixture.read("out/types.rs");
+        assert!(
+            types.contains("deserialize_with = \"ess_fold_null\""),
+            "{types}"
+        );
+        let report = fixture.read("out/types-report.json");
+        for expected in [
+            "\"fold_null\": true",
+            "\"drop_unknown_members\": true",
+            "\"rule\": \"rust_fold_null\"",
+        ] {
+            assert!(report.contains(expected), "{expected}: {report}");
+        }
+    }
+
+    #[test]
+    fn the_options_are_refused_for_a_target_other_than_rust() {
+        for target in ["typescript", "go"] {
+            for (option, flag) in [
+                (&["--rust-derive", "Eq"][..], "--rust-derive"),
+                (&["--rust-fold-null"][..], "--rust-fold-null"),
+                (
+                    &["--rust-drop-unknown-members"][..],
+                    "--rust-drop-unknown-members",
+                ),
+            ] {
+                let (_, output) = types(target, option);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                assert!(
+                    !output.status.success()
+                        && stderr
+                            .contains(&format!("{flag} is only supported for the Rust target")),
+                    "{target} {flag}: {stderr}"
+                );
+            }
+        }
+    }
+}
+
 /// A command's input and response and a view's row are roots (beyond10x/ess#656):
 /// `--root <command>.input`, `--root <command>.response`, `--root <view>.row`, and every one of
 /// them under `--all-commands` and `--all-views`.
