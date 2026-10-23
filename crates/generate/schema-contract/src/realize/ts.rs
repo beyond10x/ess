@@ -36,6 +36,7 @@ pub(super) fn emit(plan: &Plan) -> Realization {
             ));
         }
         writeln!(output, "export type {} = {rendered};\n", plan.names[name]).expect("String write");
+        members(&mut output, &plan.names[name], node, plan);
         if let Some(attributes) = plan.attributes.get(&node.pointer) {
             accessors(&mut output, &plan.names[name], attributes);
         }
@@ -202,6 +203,28 @@ fn literal(value: &Value, pointer: &str, obligations: &mut BTreeSet<Finding>) ->
         }
         _ => value.to_string(),
     }
+}
+
+/// A model enum's variants as members of a constant beside its type (beyond10x/ess#658), each
+/// named as the Rust variant and the Go constant are and holding its wire spelling, so
+/// `Status.InReview` is the value `"in_review"`. A bundle's enum declares no names and has none.
+fn members(output: &mut String, name: &str, node: &Node, plan: &Plan) {
+    if matches!(node.shape, Shape::Ref(_)) || !plan.names_variants(&node.pointer) {
+        return;
+    }
+    let Some(values) = super::native::string_values(node, plan, &mut BTreeSet::new()) else {
+        return;
+    };
+    writeln!(output, "export const {name} = {{").expect("String write");
+    for (wire, variant) in plan.variant_identifiers(&node.pointer, &values) {
+        writeln!(
+            output,
+            "  {variant}: {},",
+            serde_json::to_string(&wire).expect("JSON string")
+        )
+        .expect("String write");
+    }
+    output.push_str("} as const;\n\n");
 }
 
 /// One function per typed variant attribute of the enum `name` (`ess/23`, beyond10x/ess#450),

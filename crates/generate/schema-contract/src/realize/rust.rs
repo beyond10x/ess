@@ -342,13 +342,14 @@ impl Emitter<'_> {
                 output.push_str(&self.derive(CODECS, false));
                 self.declare(name, &node.pointer, true, Vec::new());
                 writeln!(output, "pub enum {name} {{").expect("String write");
-                for (index, value) in values.iter().enumerate() {
-                    writeln!(output, "    #[serde(rename = {value:?})]\n    V{index},")
+                let variants = self.plan.variant_identifiers(&node.pointer, &values);
+                for (value, variant) in &variants {
+                    writeln!(output, "    #[serde(rename = {value:?})]\n    {variant},")
                         .expect("String write");
                 }
                 output.push_str("}\n");
                 if let Some(attributes) = self.plan.attributes.get(&node.pointer) {
-                    accessors(&mut output, name, &values, attributes);
+                    accessors(&mut output, name, &variants, attributes);
                 }
                 self.output.insert(name.to_owned(), output);
                 return;
@@ -847,11 +848,12 @@ pub(super) fn package_name(name: &str) -> bool {
 
 /// One accessor per typed variant attribute of the enum `name` (`ess/23`, beyond10x/ess#450),
 /// answering each variant's value: `bool`, `i64`, or the text — a `Decimal` as its decimal string —
-/// and `Option` of these where a variant may leave the attribute unfilled.
+/// and `Option` of these where a variant may leave the attribute unfilled. `variants` pairs each
+/// wire spelling with the variant it names.
 fn accessors(
     output: &mut String,
     name: &str,
-    values: &BTreeSet<String>,
+    variants: &[(String, String)],
     attributes: &[super::EnumAttribute],
 ) {
     writeln!(output, "\nimpl {name} {{").expect("String write");
@@ -873,7 +875,7 @@ fn accessors(
             field_name(&attribute.name)
         )
         .expect("String write");
-        for (index, wire) in values.iter().enumerate() {
+        for (wire, variant) in variants {
             let value = attribute.values.get(wire).map(|value| match value {
                 serde_json::Value::String(text) => format!("{text:?}"),
                 other => other.to_string(),
@@ -883,7 +885,7 @@ fn accessors(
                 (None, _) => "None".to_owned(),
                 (Some(value), false) => value,
             };
-            writeln!(output, "            Self::V{index} => {value},").expect("String write");
+            writeln!(output, "            Self::{variant} => {value},").expect("String write");
         }
         output.push_str("        }\n    }\n");
     }

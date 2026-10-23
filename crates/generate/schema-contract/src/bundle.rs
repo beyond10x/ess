@@ -622,7 +622,8 @@ fn transform(
             // import record this module writes itself). Any other `x-` keyword is still refused:
             // it is a vocabulary this importer has no account of.
             | "x-ess-provenance" | "x-ess-name" | "x-ess-kind" | "x-ess-field" | "x-ess-map-key"
-            | "x-ess-union-tag" | "x-ess-attributes" | "x-ess-alphabet" | "x-ess-invariants"
+            | "x-ess-union-tag" | "x-ess-attributes" | "x-ess-variants" | "x-ess-alphabet"
+            | "x-ess-invariants"
             | "x-ess-relation" | "x-ess-reading" | "x-ess-one-time-response" | "x-ess-shorthand" => {}
             other => errors.push(diagnostic(
                 &location,
