@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T20:29:04Z",
+  "actor": "human:timo",
+  "artifact": "story:generate-types-emits-command-input-response-and-view-row-types",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "approval",
+    "source": "Session b10x-chef-orchestrator, 2026-10-23, under its grant: \"D1 kept: G-U15 ships in 0.69.0 with the bound-input gap, the fix is in 0.70.0 ... the store must not show the G-U15 story as done against an acceptance it misses.\" Acceptance narrowed accordingly."
+  }
+}

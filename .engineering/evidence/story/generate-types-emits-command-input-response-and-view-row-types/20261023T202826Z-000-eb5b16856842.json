@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T20:28:26Z",
+  "actor": "human:timo",
+  "artifact": "story:generate-types-emits-command-input-response-and-view-row-types",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "Adversary pass on G-U15 (ce0bd3b57, merged 53f7f7571) before 0.69.0, on integrate/ess-batch-0690 f1197bcd4; recorded for 0.70.0 under approval-record:ess-0690-cut-after-gu19. Acceptance gap: under an ess-http/1 route with path parameters the input type requires the path fields and refuses the published body; shipped as the CHANGELOG states, resolution in story:a-bound-command-input-decodes-the-published-request-body."
+  }
+}
