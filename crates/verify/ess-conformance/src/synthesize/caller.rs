@@ -1726,7 +1726,9 @@ fn row_fields_read(ir: &EssIr) -> BTreeMap<String, BTreeSet<String>> {
 /// selected field — the rest of the struct is the arranged value and is kept (beyond10x/ess#672,
 /// N24). The inputs a `when_related:` test reads are not among them (N25): the row they are
 /// compared with is the one the guard names by its input, which the run draws or arranges itself,
-/// so the value the first run tied to that row's stored field is still the tie.
+/// so the value the first run tied to that row's stored field is still the tie. Unless that stored
+/// field is one a row-set selector reads: a run writes it from a value drawn afresh, and the tied
+/// input is drawn with it.
 fn selected(
     command: &ResolvedCommand,
     selected: &BTreeMap<String, BTreeSet<String>>,
@@ -1763,6 +1765,23 @@ fn selected(
                 for via in std::iter::once(via).chain(also.iter().map(|row| &row.via)) {
                     if let ResolvedRelatedVia::Input { field, .. } = via {
                         whole(&mut fields, field);
+                    }
+                }
+                // A test comparing an input with a stored field a row-set selector reads is the
+                // exception to N25: a run writes that field from a value it draws afresh, so the
+                // tied input is drawn with it, under the same old value.
+                for (_, entity, predicate) in outcome.condition.related_predicates() {
+                    let Some(read) = selected.get(&entity.name().to_string()) else {
+                        continue;
+                    };
+                    let ties_selected = predicate
+                        .fact_paths()
+                        .iter()
+                        .any(|path| matches!(path.segments(), [field] if read.contains(field)));
+                    if ties_selected {
+                        for read in super::row_set::input_reads(predicate) {
+                            whole(&mut fields, read);
+                        }
                     }
                 }
             }
