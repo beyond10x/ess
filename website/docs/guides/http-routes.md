@@ -138,9 +138,12 @@ routes:
 
 The document follows those keys on the routes that use them:
 
-- `encoding: form` makes the request body `application/x-www-form-urlencoded`. `encoding: query`
-  removes the request body, and each input field the path does not carry becomes an `in: query`
-  parameter under its wire name (a `List` repeats its key, `style: form`, `explode: true`).
+- `encoding: form` makes the request body `application/x-www-form-urlencoded`. `encoding: query`,
+  on a `get` or a `delete` command, removes the request body, and each input field the path does
+  not carry becomes an `in: query` parameter under its wire name (a `List` repeats its key,
+  `style: form`, `explode: true`, and is not required: an absent key is the empty list).
+- A view's parameter the path does not carry is an `in: query` parameter under the parameter's flat
+  `wire:` when it declares one, and both generated servers read it under that name only.
 - Each declared status is its own response. `body: response` answers the command's response
   object bare, `{error: error}` an object whose `error` is the error's wire name beside the error's
   own fields, and `none` no content. An outcome the route does not list keeps its derived status

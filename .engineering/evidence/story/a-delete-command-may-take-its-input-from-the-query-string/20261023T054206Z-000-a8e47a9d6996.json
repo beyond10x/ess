@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T05:42:06Z",
+  "actor": "human:timo",
+  "artifact": "story:a-delete-command-may-take-its-input-from-the-query-string",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit 16afcc471c merged into integrate/ess-batch-0690: ess-http 117 passed, openapi_http 20, http_binding_rust 39, transport_free_entry 8, actor_grants 8, served_entry 34 (rerun; first run 33/1 on a missing .expected-model-digest read, flaky), clippy -p ess-http/ess-gen/ess-synth exit 0, task fmt-check exit 0, cargo xtask generate --check exit 0, task test-xtask exit 0"
+  }
+}
