@@ -185,6 +185,7 @@ mod bounded_retry;
 mod caller;
 mod delivery_context;
 mod disclosure;
+mod earlier_runs;
 mod established;
 mod existence;
 mod expression;
@@ -3196,6 +3197,9 @@ fn outcome_scenario_noting(
     };
     // Every further run below is this branch again (beyond10x/ess#546).
     let _under_test = crate::witness::under_test(models.arrangement, command, outcome);
+    // Every further run numbers its companions past the names the runs before it captured
+    // (beyond10x/ess#679).
+    let _runs = earlier_runs::scenario();
     let (mut steps, mut source, run) = exercise_as(
         models,
         command,
@@ -3867,6 +3871,7 @@ fn exercise_run_in(
     source.extend(run.source.iter().cloned());
     source.extend(views.source);
     record_refused(id, &run, refusals);
+    earlier_runs::record(&steps);
     Some((steps, source, run))
 }
 
@@ -8682,7 +8687,8 @@ fn view_expectations(
         }
     }
 
-    let taken = captured(run);
+    let mut taken = captured(run);
+    taken.extend(earlier_runs::captured());
     let context = Beside {
         ir,
         entity: &subject.entity,

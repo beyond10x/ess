@@ -1,0 +1,153 @@
+format: ess/30
+system: demo
+version: v1
+domain: demo.agents
+summary: An agent is created and updated, a by-id view reads it, and two more commands mint and revoke its optional embed token. A quota per plan cannot be sent a plan no row holds.
+types:
+  - {name: demo.agents.AgentId, kind: newtype, of: Uuid}
+  - {name: demo.agents.Plan, kind: enum, variants: [basic, pro]}
+  - name: demo.agents.Settings
+    kind: struct
+    fields:
+      - {name: model, type: Optional<String>}
+entities:
+  - name: demo.agents.Agent
+    identity: {name: agent_id, type: demo.agents.AgentId}
+    fields:
+      - {name: name, type: String}
+      - {name: model, type: Optional<String>}
+      - {name: embed_token, type: Optional<String>}
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+  - name: demo.agents.Quota
+    identity: {name: plan, type: demo.agents.Plan}
+    fields:
+      - {name: limit, type: Integer}
+    lifecycle:
+      initial: Kept
+      states: [Kept]
+      terminal: [Kept]
+errors:
+  - name: demo.agents.QuotaExists
+    summary: The plan already has a quota.
+    fields:
+      - {name: plan, type: demo.agents.Plan}
+events:
+  - name: demo.agents.QuotaSet
+    fields: [{name: plan, type: demo.agents.Plan}]
+  - name: demo.agents.AgentCreated
+    fields: [{name: agent_id, type: demo.agents.AgentId}]
+  - name: demo.agents.AgentUpdated
+    fields: [{name: agent_id, type: demo.agents.AgentId}]
+  - name: demo.agents.EmbedTokenMinted
+    fields: [{name: agent_id, type: demo.agents.AgentId}]
+  - name: demo.agents.EmbedTokenRevoked
+    fields: [{name: agent_id, type: demo.agents.AgentId}]
+views:
+  - name: demo.agents.Agents
+    source: demo.agents.Agent
+    consistency: read_your_writes
+    fields:
+      - {name: agent_id, type: demo.agents.AgentId}
+      - {name: name, type: String}
+      - {name: model, type: Optional<String>}
+      - {name: embed_token, type: Optional<String>}
+  - name: demo.agents.AgentById
+    source: demo.agents.Agent
+    consistency: read_your_writes
+    params:
+      - {name: agent_id, type: demo.agents.AgentId}
+    filter: agent_id == param.agent_id
+    fields:
+      - {name: agent_id, type: demo.agents.AgentId}
+      - {name: name, type: String}
+      - {name: model, type: Optional<String>}
+commands:
+  - name: demo.agents.SetQuota
+    input:
+      - {name: plan, type: demo.agents.Plan}
+      - {name: limit, type: Integer}
+    outcomes:
+      - name: set
+        creates: demo.agents.Quota
+        instance: plan
+        sets:
+          limit: input.limit
+        emits: [demo.agents.QuotaSet]
+        payload:
+          demo.agents.QuotaSet: {plan: input.plan}
+  - name: demo.agents.RaiseQuota
+    input:
+      - {name: plan, type: demo.agents.Plan}
+      - {name: limit, type: Integer}
+    outcomes:
+      - name: missing
+        unknown_instance: true
+        error: demo.agents.QuotaExists
+        payload:
+          demo.agents.QuotaExists: {plan: input.plan}
+      - name: raised
+        updates: demo.agents.Quota
+        instance: plan
+        sets:
+          limit: input.limit
+        emits: [demo.agents.QuotaSet]
+        payload:
+          demo.agents.QuotaSet: {plan: input.plan}
+  - name: demo.agents.CreateAgent
+    input:
+      - {name: agent_id, type: demo.agents.AgentId}
+      - {name: name, type: String}
+      - {name: settings, type: demo.agents.Settings}
+    outcomes:
+      - name: accepted
+        creates: demo.agents.Agent
+        instance: agent_id
+        sets:
+          name: input.name
+          model: input.settings.model
+        emits: [demo.agents.AgentCreated]
+        payload:
+          demo.agents.AgentCreated: {agent_id: input.agent_id}
+  - name: demo.agents.UpdateAgent
+    input:
+      - {name: agent_id, type: demo.agents.AgentId}
+      - {name: name, type: String}
+      - {name: settings, type: demo.agents.Settings}
+    outcomes:
+      - name: updated
+        updates: demo.agents.Agent
+        instance: agent_id
+        sets:
+          name: input.name
+          model: input.settings.model
+        emits: [demo.agents.AgentUpdated]
+        payload:
+          demo.agents.AgentUpdated: {agent_id: input.agent_id}
+  - name: demo.agents.MintEmbedToken
+    input:
+      - {name: agent_id, type: demo.agents.AgentId}
+      - {name: token, type: String}
+    outcomes:
+      - name: minted
+        updates: demo.agents.Agent
+        instance: agent_id
+        sets:
+          embed_token: input.token
+        emits: [demo.agents.EmbedTokenMinted]
+        payload:
+          demo.agents.EmbedTokenMinted: {agent_id: input.agent_id}
+  - name: demo.agents.RevokeEmbedToken
+    input:
+      - {name: agent_id, type: demo.agents.AgentId}
+    outcomes:
+      - name: revoked
+        updates: demo.agents.Agent
+        instance: agent_id
+        sets:
+          embed_token: {cleared: true}
+        emits: [demo.agents.EmbedTokenRevoked]
+        payload:
+          demo.agents.EmbedTokenRevoked: {agent_id: input.agent_id}

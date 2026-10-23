@@ -6,7 +6,7 @@ status: active
 title: Downstream-reported synthesis, binding and grant gaps are closed
 relations:
 - serves: vision:O2
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:18Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-30T13:04:29Z", actor: "human:timo", revision: 3}
@@ -244,3 +244,5 @@ The operator: "make sure ess knows that we expect all of those fixed efficiently
   2. `ess verify conform run --target` has no live HTTP target. Ask: a target that drives a running service through its `ess-http/1` binding. Waits on the proposed `architecture-decision-record:ess-evolution-09-independent-conformance`.
   3. Unmapped items exist only as YAML comments. Ask: a typed `unmapped:` declaration in the IR, so a waived difference can point at one. Waits on `ess-evolution-08` and needs a new format version.
   Repro fixtures with neutral names come from the reporter on request.
+
+- 2026-10-23: one ess tree builds at a time. Orchestrator: "G-U34 builds only after G-U32's build is done. Rule: one ess tree builds at a time ... Editing and spec work in ess-0690-gu34 may go on; cargo waits." Reason given: a five-crate gate run measured 23453 MB on 2026-10-22. From now on, a unit dispatched while another builds edits and traces only, and starts cargo when the coordinator releases it.

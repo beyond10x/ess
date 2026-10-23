@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T15:37:55Z",
+  "actor": "human:timo",
+  "artifact": "story:an-existence-outcome-passes-a-related-list-membership-guard",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "metric_observation",
+    "source": "worktree discard-cache ess-0690-gu35 after merge a835eeabe: tree 13G to 117M (du -sh); / free 24G to 36G (df -h /)"
+  }
+}

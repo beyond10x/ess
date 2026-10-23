@@ -2,16 +2,21 @@
 format: aep.planning-md/3
 id: story:an-updating-command-keeps-other-commands-scenarios
 kind: story
-status: draft
+status: active
 title: An added updating command keeps the other commands' derived scenarios
 summary: ESS-SYNTH-001 on one command never removes derived scenarios of another command on the entity
+tags:
+- ess-0.69.0
 refs:
 - provider: github
   reference: beyond10x/ess#679
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T16:17:55Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
+- {from: "proposed", to: "active", at: "2026-10-23T16:17:56Z", actor: "human:timo", revision: 4, correlation: "ess-0690"}
 ---
 
 - An entity `Agent` has a creating command `CreateAgent` and an updating command `UpdateAgent`; synthesis derives `CreateAgent/accepted` and `UpdateAgent/updated`.
