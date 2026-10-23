@@ -158,6 +158,9 @@ The JSON Schema and OpenAPI projections annotate the enum with `x-ess-attributes
 documentation lists each variant's values, and the types-only Rust, Go and TypeScript outputs give
 each enum an accessor per attribute.
 
+A value that is one of several cases, each with its own payload, is not an enum and not a struct of
+optional fields: it is a `kind: union` with a `tag:`, declared on [tagged unions](unions.md).
+
 ### Order two instants
 
 A right-hand side without a dot is a literal, so `when: ends_at > starts_at` compares `ends_at`
@@ -238,7 +241,7 @@ declare a longer prefix that starts with the inner one. Entity Runtime lowers th
 A newtype or a struct that declares `invariants:` makes a claim about every value of the type, and a
 generated suite reads it wherever a view publishes a value of the type: directly in a field, or as
 the element of a `List`, the value of a `Map`, the present value of an `Optional` or the payload of
-one `Union` variant.
+one `Union` variant ([tagged unions](unions.md)).
 
 ```yaml
 types:

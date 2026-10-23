@@ -43,6 +43,7 @@ const sidebars: SidebarsConfig = {
           items: [
             'guides/specify/layout-and-validation',
             'guides/specify/fields-and-invariants',
+            'guides/specify/unions',
             'guides/specify/guards-and-predicates',
             'guides/specify/stored-rules',
             'guides/specify/commands-and-outcomes',
