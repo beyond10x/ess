@@ -30,6 +30,8 @@ function result(recorded) {
     consistency: recorded.consistency ?? undefined,
     directEvents: recorded.direct_events ?? [],
     response: recorded.response ?? undefined,
+    notGranted: recorded.not_granted === true ? true : undefined,
+    notGrantedActor: recorded.not_granted_actor ?? undefined,
   };
 }
 

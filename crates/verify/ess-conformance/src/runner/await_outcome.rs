@@ -332,7 +332,7 @@ fn reached(
     answer_shape(command, &input, step.shape, &quoted, run);
     run.remember(&result.direct_events);
     run.awaited = Some(input.clone());
-    run.last_command = Some(Executed {
+    run.executed(Executed {
         command: command.to_string(),
         actor: None,
         input,
