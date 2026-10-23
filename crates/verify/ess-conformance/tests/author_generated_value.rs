@@ -237,11 +237,66 @@ fn the_refusal_reads_in_full() {
          the payload of `relay.desk.EntryAgentSelected` pins `connect_seq` to 7, a value \
          `relay.desk.SelectAgentForEntry/selected` marks `{generated: true}`\n  \
          help: the implementation mints a `{generated: true}` field, so an exact value passes \
-         only where it happens to mint that one: drop the field from the expectation, and the \
-         suite still checks its presence and type, or state its relation to another value with \
-         a reference, `{$observed: {event: …, field: …}}` in a view row or `capture:` on the \
-         event; from `format: ess/30` an exact value there is the scenario's own claim, which \
-         the suite checks as written"
+         only where it happens to mint that one: in an event's payload or an error's fields, \
+         drop the field from the expectation, and the suite still checks its presence and type \
+         there, or relate it to another value with `capture:` on the event; in a view row, drop \
+         it and assert `satisfies: defined(<field>)` on the view, which requires it on every row \
+         and at least one row, or state its relation to an event's value with `{$observed: \
+         {event: …, field: …}}`; from `format: ess/30` an exact value there is the scenario's \
+         own claim, which the suite checks as written"
+    );
+}
+
+/// A view read does not check a row's declared fields beyond what the scenario claims of it, so
+/// the help a pinned row value gets does not tell its author the suite checks the dropped field's
+/// presence and type there; it names `satisfies: defined(<field>)` and `$observed` instead, and
+/// both of those are accepted for the field the refusal named (beyond10x/ess#680).
+#[test]
+fn the_generated_value_hint_names_satisfies_for_a_view_row() {
+    let ir = fixture(RELAY);
+    let text = pinned(
+        &ir,
+        &document(
+            "",
+            &selected("{agent_id: a1}"),
+            "assert:\n  - view: relay.desk.Entries\n    excludes: {agent_id: a1, connect_seq: 7}\n",
+        ),
+    );
+    names(&text, &["a row of `relay.desk.Entries`", "`connect_seq`"]);
+    let help = text
+        .lines()
+        .find_map(|line| line.trim_start().strip_prefix("help: "))
+        .unwrap_or_else(|| panic!("the refusal carries a help line: {text}"));
+    let row = help
+        .split("; ")
+        .find(|clause| clause.contains("view row"))
+        .unwrap_or_else(|| panic!("the help speaks of a view row: {help}"));
+    names(
+        row,
+        &[
+            "`satisfies: defined(<field>)`",
+            "{$observed: {event: …, field: …}}",
+        ],
+    );
+    assert!(
+        !row.contains("presence and type"),
+        "the view row clause claims no presence and type check: {row}"
+    );
+    for clause in help.split("; ") {
+        if clause.contains("presence and type") {
+            assert!(
+                clause.contains("an event's payload") && !clause.contains("view row"),
+                "only the payload clause claims a presence and type check: {clause}"
+            );
+        }
+    }
+    accepted(
+        &ir,
+        &document(
+            "",
+            &selected("{agent_id: a1}"),
+            "assert:\n  - view: relay.desk.Entries\n    satisfies: defined(connect_seq)\n",
+        ),
     );
 }
 

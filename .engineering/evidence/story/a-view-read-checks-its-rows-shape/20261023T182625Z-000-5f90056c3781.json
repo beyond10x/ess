@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T18:26:25Z",
+  "actor": "human:timo",
+  "artifact": "story:a-view-read-checks-its-rows-shape",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit 54b564e31 on integrate/ess-batch-0690 fc2ede4d3, acceptance line 1 only (line 2 moved by approval-record:g-u33-row-shape-in-0700): red first (author_generated_value 19 passed 2 failed); green: author_generated_value 21, ess-conformance lib 168, authored 74, coverage_refusal_catalogue 4, typed_diagnostics 8, task test-xtask 20 binaries 0 failed; clippy -p ess-conformance -D warnings, task fmt-check exit 0; moved pins: the_refusal_reads_in_full text and the 042 diagnostics row. Not run locally: task check; left to the pull request Gate."
+  }
+}
