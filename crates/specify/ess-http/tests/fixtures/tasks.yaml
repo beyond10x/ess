@@ -1,0 +1,85 @@
+# The fixture `tests/bare_field_and_errors.rs` binds: a command whose success returns a response of
+# three fields, one of them `Optional` and one under another wire name, beside an `external:`
+# refusal and a `when:` refusal; a command whose one error carries a field wired `error`; a command
+# that reports no error; and a view.
+format: ess/22
+system: catalog
+version: v1
+domain: catalog.tasks
+types:
+  - {name: catalog.tasks.TaskId, kind: newtype, of: String}
+entities:
+  - name: catalog.tasks.Task
+    identity: {name: task_id, type: catalog.tasks.TaskId}
+    fields:
+      - {name: size, type: Integer}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+errors:
+  - name: catalog.tasks.Unsupported
+    naming: {wire: unsupported}
+  - name: catalog.tasks.TooLarge
+    naming: {wire: too_large}
+    fields:
+      - {name: limit, type: Integer}
+  # An error whose one field travels as `error`, the member a body would name the error under.
+  - name: catalog.tasks.Mislabelled
+    fields:
+      - {name: kind, type: String, naming: {wire: error}}
+commands:
+  - name: catalog.tasks.SendTask
+    input:
+      - {name: task_id, type: catalog.tasks.TaskId}
+      - {name: size, type: Integer}
+    response:
+      - {name: task_id, type: catalog.tasks.TaskId}
+      - {name: version, type: String, naming: {wire: etag}}
+      - {name: note, type: Optional<String>}
+    outcomes:
+      - name: unsupported
+        external: the upstream does not support the task
+        error: catalog.tasks.Unsupported
+      - name: too-large
+        when: size > 100
+        error: catalog.tasks.TooLarge
+      - name: sent
+        creates: catalog.tasks.Task
+        instance: task_id
+        sets: {size: input.size}
+        returns: true
+        emits: [catalog.tasks.TaskSent]
+        payload:
+          catalog.tasks.TaskSent: {task_id: input.task_id}
+  - name: catalog.tasks.LabelTask
+    input:
+      - {name: task_id, type: catalog.tasks.TaskId}
+    outcomes:
+      - name: mislabelled
+        when: task_id == ""
+        error: catalog.tasks.Mislabelled
+      - name: labelled
+        emits: [catalog.tasks.TaskSent]
+        payload:
+          catalog.tasks.TaskSent: {task_id: input.task_id}
+  - name: catalog.tasks.NoteTask
+    input:
+      - {name: task_id, type: catalog.tasks.TaskId}
+    outcomes:
+      - name: noted
+        emits: [catalog.tasks.TaskSent]
+        payload:
+          catalog.tasks.TaskSent: {task_id: input.task_id}
+events:
+  - name: catalog.tasks.TaskSent
+    fields:
+      - {name: task_id, type: catalog.tasks.TaskId}
+views:
+  - name: catalog.tasks.Tasks
+    source: catalog.tasks.Task
+    fields:
+      - {name: task_id, type: catalog.tasks.TaskId}
+components:
+  - component: tasks-service
+    reached_by: network
+    owns: {domains: [catalog.tasks]}
+    accepts: {commands: [catalog.tasks.LabelTask, catalog.tasks.NoteTask, catalog.tasks.SendTask]}
+    publishes: {events: [catalog.tasks.TaskSent]}

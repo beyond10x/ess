@@ -1258,9 +1258,7 @@ fn command(
         "body"
     });
     let (statements, members) = path_members(ir, route);
-    let declares = route
-        .declared
-        .is_some_and(|declared| !declared.outcomes.is_empty());
+    let declares = http::declares_answers(route);
     let answer = if declares {
         format!("answerBound{function}(answer{function}(outcome), value)")
     } else {
@@ -1307,9 +1305,7 @@ fn outcome_answer(
     let listed: Vec<(&ess_compiler::ir::ResolvedOutcome, &ess_http::Outcome)> = command
         .outcomes
         .iter()
-        .filter_map(|outcome| {
-            http::listed(route, outcome.name.as_str()).map(|declared| (outcome, declared))
-        })
+        .filter_map(|outcome| http::listed(route, outcome).map(|declared| (outcome, declared)))
         .collect();
     let sources: Vec<&AnswerSource> = listed
         .iter()
@@ -1323,7 +1319,7 @@ fn outcome_answer(
         .any(|source| matches!(source, AnswerSource::Response(_)))
         || listed
             .iter()
-            .any(|(_, declared)| declared.body == Body::Response);
+            .any(|(_, declared)| matches!(declared.body, Body::Response | Body::ResponseField(_)));
     let reads_payload = sources
         .iter()
         .any(|source| matches!(source, AnswerSource::Error(_)))
@@ -1382,6 +1378,18 @@ fn outcome_arm(
         }
         Body::Response => {
             format!("response{{status: {status}, contentType: mediaJSON, body: bare(reply)}}")
+        }
+        Body::ResponseField(field) => {
+            let wire = command
+                .response
+                .iter()
+                .find(|declared| declared.name == *field)
+                .map_or(field.as_str(), ess_gen::schema::wire_field_name);
+            format!(
+                "response{{status: {status}, contentType: mediaJSON, body: \
+                 bare(memberOf(reply, {}))}}",
+                go_string(wire)
+            )
         }
         Body::None => format!("response{{status: {status}}}"),
         Body::Error { member } => format!(

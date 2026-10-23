@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T06:55:52Z",
+  "actor": "human:timo",
+  "artifact": "story:an-outcome-may-answer-a-response-field-bare-and-errors-share-a-default-status",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit 3776a6165 merged onto integrate/ess-batch-0690 5cf7e8955e: cargo test -p ess-http (all targets) exit 0; ess-gen openapi_http 23, openapi 41, openapi_returns 3 passed; ess-synth http_binding_rust 47, http 9, transport_free_entry 8, actor_grants 8, served_entry 34 passed; clippy -p ess-http, ess-gen, ess-synth -D warnings exit 0; task fmt-check exit 0; generate check exit 0; task test-xtask exit 201 on no_test_builds (adversary file spawned cargo). Follow-up commit routes it through rust_run_with: task fmt-check 0, clippy -p ess-synth 0, ess-xtask no_test_builds 4 passed, ess-synth http_binding_rust 47 passed."
+  }
+}

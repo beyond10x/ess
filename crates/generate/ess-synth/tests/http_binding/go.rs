@@ -991,6 +991,16 @@ mod adversary_k6_pass1 {
         synthesis: &Synthesis,
         requests: &[[&str; 7]],
     ) -> BTreeMap<String, Answer> {
+        rust_run_with(label, synthesis, requests, shared::RUST_HARNESS)
+    }
+
+    /// The Rust server's answers to `requests`, through `main` as the harness's `src/main.rs`.
+    pub(super) fn rust_run_with(
+        label: &str,
+        synthesis: &Synthesis,
+        requests: &[[&str; 7]],
+        main: &str,
+    ) -> BTreeMap<String, Answer> {
         let root = scratch(&format!("{label}-rust"));
         shared::write(synthesis, &root.join("shop"));
         let harness = root.join("harness");
@@ -1009,7 +1019,7 @@ mod adversary_k6_pass1 {
             ),
         )
         .expect("write");
-        std::fs::write(harness.join("src/main.rs"), shared::RUST_HARNESS).expect("write");
+        std::fs::write(harness.join("src/main.rs"), main).expect("write");
         let file = root.join("requests.tsv");
         write_requests(&file, requests);
         let target = root.join("target");
@@ -1723,3 +1733,9 @@ mod adopter_wire_reports {
 
 #[path = "adversary_u9c_pass1.rs"]
 mod adversary_u9c_pass1;
+
+#[path = "bare_field_and_errors.rs"]
+mod bare_field_and_errors;
+
+#[path = "adversary_u9d_pass1.rs"]
+mod adversary_u9d_pass1;
