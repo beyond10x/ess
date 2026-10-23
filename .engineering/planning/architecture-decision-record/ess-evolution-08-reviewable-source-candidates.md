@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: architecture-decision-record:ess-evolution-08-reviewable-source-candidates
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: 08 — Source imports produce reviewable candidates
 relations:
 - decides: initiative:ess-evolution
-revision: 2
+revision: 3
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-10-23T19:36:19Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
 ## Context
 

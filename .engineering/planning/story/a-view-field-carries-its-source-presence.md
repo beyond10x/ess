@@ -2,16 +2,21 @@
 format: aep.planning-md/3
 id: story:a-view-field-carries-its-source-presence
 kind: story
-status: draft
+status: active
 title: A view field carries its source field's presence
 summary: 'A projected view field mirrors or declares presence: so a null_when_absent member is sent as null'
+tags:
+- ess-0.69.0
 refs:
 - provider: github
   reference: beyond10x/ess#677
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T19:58:22Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
+- {from: "proposed", to: "active", at: "2026-10-23T19:58:23Z", actor: "human:timo", revision: 4, correlation: "ess-0690"}
 ---
 
 - An entity field `Optional<…>` declares `presence: null_when_absent`.

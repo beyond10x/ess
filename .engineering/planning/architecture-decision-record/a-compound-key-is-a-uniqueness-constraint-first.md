@@ -2,13 +2,15 @@
 format: aep.planning-md/3
 id: architecture-decision-record:a-compound-key-is-a-uniqueness-constraint-first
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: A compound key is first a uniqueness constraint beside a one-field identity
 summary: 'Proposes unique: [fields] refused on create like a duplicate identity, with a record-typed identity later if compound joins are needed (row 21 group J).'
 relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
-revision: 1
+revision: 2
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-10-23T19:36:14Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
 Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance.
 

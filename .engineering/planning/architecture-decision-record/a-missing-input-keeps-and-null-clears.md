@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: architecture-decision-record:a-missing-input-keeps-and-null-clears
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: A missing input keeps the stored value and null clears it
 summary: 'Proposes a three-valued input under the G-U30 presence, an explicit missing: unchanged copy and a sent() guard; target 0.70.0 (ess#678)'
 refs:
@@ -11,7 +11,9 @@ refs:
 relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
-revision: 2
+revision: 3
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-10-23T19:36:15Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
 Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance. Target: 0.70.0.
 

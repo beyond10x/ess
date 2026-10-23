@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: architecture-decision-record:transport-and-idl-compile-targets
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: 'Transport and IDL compile targets beyond ess-http/1: protobuf IDL projection, JSON-RPC 2.0 and gRPC bindings'
 summary: Reverses the 2026-09-15 deferral of protobuf for the projection direction and admits ess-jsonrpc/1 and ess-grpc/1 sibling bindings; import of .proto stays deferred.
 relations:
@@ -15,7 +15,9 @@ relations:
 - blocks: story:an-event-channel-may-be-bound-to-server-sent-events
 - blocks: story:a-response-stream-follows-one-row-until-a-terminal-state
 - blocks: story:an-authored-scenario-claims-a-binding-error-code
-revision: 2
+revision: 3
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-10-23T19:36:17Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
 Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance.
 

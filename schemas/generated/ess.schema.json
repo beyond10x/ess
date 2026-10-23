@@ -1638,6 +1638,13 @@
           "enum": [
             "omitted_when_absent"
           ]
+        },
+        {
+          "description": "The key may be left out or sent as `null`, and both read as one absent value (ess/31, beyond10x/ess#678). Projected nullable and not required.",
+          "type": "string",
+          "enum": [
+            "omitted_or_null"
+          ]
         }
       ]
     },

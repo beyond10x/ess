@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: architecture-decision-record:ess-evolution-01-evolve-without-feature-loss
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: 01 — Evolve ESS without feature loss
 relations:
 - decides: initiative:ess-evolution
-revision: 2
+revision: 3
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-10-23T19:36:18Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
 ## Context
 Existing consumers depend on package identities, formats and tested behavior.

@@ -2,13 +2,15 @@
 format: aep.planning-md/3
 id: architecture-decision-record:a-binding-authenticates-the-caller-through-a-port
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: A binding authenticates the caller through a port; the model keeps authorization
 summary: 'Proposes an authentication scheme in ess-http/1 and an Authenticate port in generated servers; ess/N keeps may: and caller unchanged (row 38).'
 relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
-revision: 3
+revision: 4
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-10-23T19:36:12Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
 Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance.
 

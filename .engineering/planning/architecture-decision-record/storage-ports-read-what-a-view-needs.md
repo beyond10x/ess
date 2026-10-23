@@ -2,13 +2,15 @@
 format: aep.planning-md/3
 id: architecture-decision-record:storage-ports-read-what-a-view-needs
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: Storage ports read what a view needs, not whole rows
 summary: Proposes per-view read methods on the generated storage port, staged after view order and paging; until then the port stays row-granular and says so (row 35).
 relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
-revision: 1
+revision: 2
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-10-23T19:36:16Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
 Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance.
 

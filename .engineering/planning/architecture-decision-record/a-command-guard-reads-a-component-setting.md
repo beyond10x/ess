@@ -2,13 +2,15 @@
 format: aep.planning-md/3
 id: architecture-decision-record:a-command-guard-reads-a-component-setting
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: A command guard reads a component setting, and the suite is synthesized once per configuration
 summary: Proposes a setting.<name> guard root compared with literals and one synthesized suite per declared configuration; secret settings stay unreadable (row 43).
 relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
-revision: 1
+revision: 2
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-10-23T19:36:13Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
 Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance.
 

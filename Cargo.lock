@@ -573,6 +573,7 @@ dependencies = [
  "ess-gen",
  "ess-primitives",
  "ess-yaml",
+ "jsonschema",
  "serde",
  "serde_json",
  "sha2",

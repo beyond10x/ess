@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T19:36:16Z",
+  "actor": "human:timo",
+  "artifact": "architecture-decision-record:storage-ports-read-what-a-view-needs",
+  "kind": "architecture-decision-record",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "approval",
+    "source": "Operator, 2026-10-23, after reviewing all 15 proposed ADRs in full: \"I accept all of them\". Relayed verbatim by session b10x-chef-orchestrator."
+  }
+}

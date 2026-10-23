@@ -2,13 +2,15 @@
 format: aep.planning-md/3
 id: architecture-decision-record:an-external-branch-declares-its-provider-request
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: An external branch declares the request it sends to a provider, and an invariant may forbid what it carries
 summary: 'Proposes a typed request: on an external branch plus a never_sends: rule checked statically; ess/31 or later and a suite-format bump (row 42).'
 relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
-revision: 1
+revision: 2
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-10-23T19:36:15Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
 Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance.
 

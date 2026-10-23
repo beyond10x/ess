@@ -2,13 +2,15 @@
 format: aep.planning-md/3
 id: architecture-decision-record:a-blocking-answer-is-rendered-after-its-system-issued-steps
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: A blocking answer is rendered after the system-issued steps its command started
 summary: Proposes an outcome answer read from a view after settlement (ess/N), so synthesis checks the settled answer an adopter now rebuilds by hand (row 24).
 relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
-revision: 1
+revision: 2
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-10-23T19:36:13Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
 Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance.
 

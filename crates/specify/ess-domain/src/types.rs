@@ -534,6 +534,20 @@ pub enum Presence {
     NullWhenAbsent,
     /// The key is left out when the value is absent, and never sent as `null`.
     OmittedWhenAbsent,
+    /// The key may be left out or sent as `null`, and both read as one absent value (ess/31,
+    /// beyond10x/ess#678). Projected nullable and not required.
+    OmittedOrNull,
+}
+
+impl Presence {
+    /// The policy a conformance suite holds a member to: `None` for `omitted_or_null`, which
+    /// admits both spellings as a field without a policy does, so a suite never carries it.
+    pub fn constrains(self) -> Option<Self> {
+        match self {
+            Self::NullWhenAbsent | Self::OmittedWhenAbsent => Some(self),
+            Self::OmittedOrNull => None,
+        }
+    }
 }
 
 impl fmt::Display for Presence {
@@ -541,6 +555,7 @@ impl fmt::Display for Presence {
         f.write_str(match self {
             Self::NullWhenAbsent => "null_when_absent",
             Self::OmittedWhenAbsent => "omitted_when_absent",
+            Self::OmittedOrNull => "omitted_or_null",
         })
     }
 }

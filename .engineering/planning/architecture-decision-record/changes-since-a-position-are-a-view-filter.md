@@ -2,13 +2,15 @@
 format: aep.planning-md/3
 id: architecture-decision-record:changes-since-a-position-are-a-view-filter
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: Changes since a position are a view filter over a tracked change order
 summary: 'Proposes changes: tracked on an entity and a changed_since view filter with a published position; history of field values stays a marker (row 21 group M).'
 relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
-revision: 1
+revision: 2
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-10-23T19:36:16Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
 Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance.
 

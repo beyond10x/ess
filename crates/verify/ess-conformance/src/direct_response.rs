@@ -115,7 +115,7 @@ impl Observation {
             .map(|field| {
                 let mut result =
                     Field::new(&field.name, crate::accessor::unresolve(&field.type_ref));
-                result.naming.presence = field.naming.presence;
+                result.naming.presence = field.naming.presence.and_then(Presence::constrains);
                 result
             })
             .collect();
