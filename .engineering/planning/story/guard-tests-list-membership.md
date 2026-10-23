@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:guard-tests-list-membership
 kind: story
-status: draft
+status: active
 title: A guard tests whether a subject field is an element of a List input
 tags:
 - adopter-report
@@ -11,7 +11,10 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T17:07:13Z", actor: "human:timo", revision: 5, correlation: "ess-0690"}
+- {from: "proposed", to: "active", at: "2026-10-23T17:07:14Z", actor: "human:timo", revision: 6, correlation: "ess-0690"}
 ---
 ## Outcome
 

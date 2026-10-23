@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T17:07:15Z",
+  "actor": "human:timo",
+  "artifact": "story:guard-tests-list-membership",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit ba5ab3493 on integrate/ess-batch-0690 a835eeabe: red first (membership_spelling 1 passed 1 failed, no suggested form; subject_field_in_input_list 3 passed 3 failed, refusal side sent [] and holding side ESS-SYNTH-003); green: membership_spelling 2, subject_field_in_input_list 6, ess-conformance 92 selected binaries 720 passed, ess-primitives 233, ess-cli 155 binaries 1186 passed, task test-xtask 418, typed_diagnostics 8; clippy -p ess-primitives -p ess-conformance -p ess-cli -D warnings, task fmt-check exit 0; no pinned output moved. Acceptance line 4 (diff) moved out by approval-record:g-u34-diff-line-in-0700. Not run locally: the other 517 ess-conformance binaries, task check; left to the pull request Gate."
+  }
+}

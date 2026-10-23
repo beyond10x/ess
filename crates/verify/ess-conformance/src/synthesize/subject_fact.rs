@@ -1877,14 +1877,17 @@ fn inputs_for(
     arrangement: &Arrangement,
 ) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
     let grounded = grounded(ir, entity, &arrangement.settled, &hints(command));
+    let over_input = grounded_over_input(ir, entity, &arrangement.settled, &hints(command));
     let mut guards: Vec<&Predicate> = command
         .outcomes
         .iter()
         .filter_map(|branch| input_guard(&branch.condition))
         .collect();
     guards.extend(grounded.iter());
+    guards.extend(over_input.iter());
     let mut inputs =
         candidates(ir, command, &guards, Distinction::PLAIN).map_err(RefusalCause::NoWitness)?;
+    inputs = beside_another(ir, command, &over_input, inputs);
     // The row was arranged from plain witnesses, so a plain input may carry the very value the row
     // holds on every candidate — a text has no neighbour rule 3 could offer. A further witness
     // starts every leaf from another base value, which is the input a comparison with the row
@@ -1896,6 +1899,76 @@ fn inputs_for(
         }
     }
     Ok(inputs)
+}
+
+/// `inputs` with, first, each list an input quantifier of `over_input` ([`grounded_over_input`])
+/// ranges over holding one more element the quantifier's body refutes, ahead of the list's own:
+/// an empty list becomes `[other]` and `[held]` becomes `[other, held]`, then `inputs` as they were
+/// (story:guard-tests-list-membership). So a branch the row's value in the list selects is sent it
+/// behind another element, and one its absence selects a non-empty list, and a target that ignores
+/// the list, tests only that it is empty, or reads only its first element answers one of them
+/// wrongly. `inputs` unchanged where `over_input` is empty or no such element is found.
+fn beside_another(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    over_input: &[Predicate],
+    inputs: Vec<BTreeMap<String, Node>>,
+) -> Vec<BTreeMap<String, Node>> {
+    let refuted = |input: &BTreeMap<String, Node>, leaf: &Predicate| {
+        flatten(ir, command, input)
+            .ok()
+            .and_then(|facts| decides(&facts, &[leaf], false).ok())
+            .unwrap_or(false)
+    };
+    let mut others: Vec<(Vec<String>, Node)> = Vec::new();
+    for leaf in over_input {
+        let (Predicate::Exists(quantified) | Predicate::Forall(quantified)) = leaf else {
+            continue;
+        };
+        let Some(over) = quantified.over.fact() else {
+            continue;
+        };
+        let path = over.segments().to_vec();
+        if others.iter().any(|(written, _)| *written == path) {
+            continue;
+        }
+        let far =
+            candidates(ir, command, &[leaf], Distinction::further(SPREAD)).unwrap_or_default();
+        let other = far.iter().find_map(|input| match node_at(input, &path) {
+            Some(Node::Seq(items)) if items.len() == 1 && refuted(input, leaf) => {
+                items.first().cloned()
+            }
+            _ => None,
+        });
+        if let Some(other) = other {
+            others.push((path, other));
+        }
+    }
+    if others.is_empty() {
+        return inputs;
+    }
+    let mut out: Vec<BTreeMap<String, Node>> = Vec::new();
+    for input in &inputs {
+        let mut widened = input.clone();
+        for (path, other) in &others {
+            if let Some(Node::Seq(items)) = node_at(input, path) {
+                if !items.contains(other) {
+                    let mut items = items.clone();
+                    items.insert(0, other.clone());
+                    set_at(&mut widened, path, Node::Seq(items));
+                }
+            }
+        }
+        if !out.contains(&widened) {
+            out.push(widened);
+        }
+    }
+    for input in inputs {
+        if !out.contains(&input) {
+            out.push(input);
+        }
+    }
+    out
 }
 
 /// [`inputs_for`], and each of them once more for every link comparison ([`links`]) on a row whose

@@ -3880,14 +3880,8 @@ impl Predicate {
             });
         }
 
-        let path = FactPath::new(trimmed).map_err(|error| {
-            ParseError::predicate(
-                expression,
-                format!(
-                    "{error}; a predicate is either a comparison (`a.b == 0`) or a bare fact path"
-                ),
-            )
-        })?;
+        let path =
+            FactPath::new(trimmed).map_err(|error| not_a_predicate(expression, trimmed, &error))?;
         Ok(Self::Truthy(path))
     }
 
@@ -4257,6 +4251,45 @@ fn call_argument<'a>(expression: &'a str, function: &str) -> Option<&'a str> {
     let rest = expression.strip_prefix(function)?;
     let rest = rest.trim_start().strip_prefix('(')?;
     rest.trim_end().strip_suffix(')').map(str::trim)
+}
+
+/// The refusal of compact text `trimmed` that is neither a comparison nor a fact path, naming the
+/// quantifier a membership spelling means ([`membership_hint`]).
+fn not_a_predicate(expression: &str, trimmed: &str, error: &ParseError) -> ParseError {
+    let membership = membership_hint(trimmed).map_or_else(String::new, |hint| {
+        format!("; to test whether an element of the list equals the field, write `{hint}`")
+    });
+    ParseError::predicate(
+        expression,
+        format!(
+            "{error}; a predicate is either a comparison (`a.b == 0`) or a bare fact \
+             path{membership}"
+        ),
+    )
+}
+
+/// The quantifier `<field> in <list>` or `<field> not in <list>` means, where both sides are fact
+/// paths: `exists: {in: <list>, as: x, that: <field> == x}`, under `not:` for `not in`. The compact
+/// form has no membership operator, and the quantifier has no string form.
+fn membership_hint(text: &str) -> Option<String> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let (left, negated, right) = match words.as_slice() {
+        [left, "in", right] => (*left, false, *right),
+        [left, "not", "in", right] => (*left, true, *right),
+        _ => return None,
+    };
+    let roots = [FactPath::new(left).ok()?, FactPath::new(right).ok()?];
+    let bind = ["x", "element", "member"].into_iter().find(|bind| {
+        roots
+            .iter()
+            .all(|path| path.segments().first().map(String::as_str) != Some(*bind))
+    })?;
+    let exists = format!("exists: {{in: {right}, as: {bind}, that: {left} == {bind}}}");
+    Some(if negated {
+        format!("not: {{{exists}}}")
+    } else {
+        exists
+    })
 }
 
 /// A compact quoted operand ends at its first unescaped matching quote. Its contents remain
