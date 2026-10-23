@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T09:48:34Z",
+  "actor": "human:timo",
+  "artifact": "story:a-related-owner-is-moved-after-the-subject-is-created",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit 829d4549e on integrate/ess-batch-0690 53f7f7571: no synthesis change; the stored block offset (stored.rs:820) and the ordered split (stored.rs:622-636) from U6 fix both. related_owner_shared red on 03b69bf33 (2 passed, 4 failed), green on f5646d460 and on the unit (6 passed, 17 scenarios); reverting either fix on the unit turns its scenarios red. ess-conformance lib 168, authored_outcome_guards 22, adversary_search_pass2 11, witness_directed_search 10, synthesis_suite_bytes_table 2 passed; clippy -D warnings on ess-conformance, task fmt-check and task test-xtask exit 0. Full task check left to the pull request Gate."
+  }
+}

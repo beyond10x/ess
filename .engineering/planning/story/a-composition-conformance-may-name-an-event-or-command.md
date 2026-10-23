@@ -11,7 +11,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 2
+revision: 3
 ---
 ## Problem
 
@@ -27,3 +27,13 @@ A `conformances:` end must name a declared type; an event or command is refused 
 ## Also: invariants in a type conformance (adopter report N17, ess#671)
 
 - `compose_compares_invariants`: an owner type that gains `invariants: [value != "x"]`, with the digest repinned, against a local copy without it, is reported as `type_conformance_drift` naming the invariant, and compose exits non-zero.
+
+## Also: enum variant attributes in a type conformance (adopter report N18, ess#671)
+
+With the owner digest repinned, each change below is reported as `type_conformance_drift` naming the type, the variant and the attribute or bound, and compose exits non-zero:
+
+- `compose_compares_variant_handled_by`: a variant's `handled_by` changes on the owner.
+- `compose_compares_variant_terminal`: a variant's `terminal` changes on the owner.
+- `compose_compares_variant_message_types`: a variant's `request` or `response` type reference changes on the owner.
+- `compose_compares_invariant_bounds`: an invariant tightens from `>= 1` to `>= 2` on the owner.
+- `compose_still_refuses_structural_drift`: wire spelling, a renamed or dropped variant, a field type, a dropped field and a presence change still exit 1.

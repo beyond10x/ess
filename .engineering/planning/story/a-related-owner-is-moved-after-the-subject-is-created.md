@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-related-owner-is-moved-after-the-subject-is-created
 kind: story
-status: draft
+status: active
 title: A related owner is moved after the subject is created
 summary: 'Adopter report N16: Synthesis locks a related owner before the subject is created in it (ess#670).'
 refs:
@@ -11,7 +11,10 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T09:48:34Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-23T09:48:34Z", actor: "human:timo", revision: 3}
 ---
 ## Problem
 

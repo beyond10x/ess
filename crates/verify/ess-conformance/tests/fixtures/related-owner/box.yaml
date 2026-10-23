@@ -1,0 +1,197 @@
+domain: repro.box
+
+summary: Boxes hold items; a label goes on an item of kind a in its own box.
+
+types:
+  - {name: repro.box.BoxId, kind: newtype, of: Uuid}
+  - {name: repro.box.ItemId, kind: newtype, of: Uuid}
+  - {name: repro.box.LabelId, kind: newtype, of: Uuid}
+  - {name: repro.box.Kind, kind: enum, variants: [a, b]}
+
+entities:
+  - name: repro.box.Box
+    identity: {name: box_id, type: repro.box.BoxId}
+    fields: [{name: label, type: String}]
+    lifecycle:
+      initial: Open
+      states: [Open, Locked]
+      terminal: [Locked]
+      transitions:
+        - {name: lock, from: [Open], to: Locked}
+    relations:
+      - {name: items, kind: owns, target: repro.box.Item, cardinality: many, via: box_id}
+
+  - name: repro.box.Item
+    identity: {name: item_id, type: repro.box.ItemId}
+    fields:
+      - {name: box_id, type: repro.box.BoxId}
+      - {name: kind, type: repro.box.Kind}
+    lifecycle:
+      initial: Still
+      states: [Still, Shaken]
+      terminal: [Shaken]
+      transitions:
+        - {name: shake, from: [Still], to: Shaken}
+    relations:
+      - {name: labels, kind: owns, target: repro.box.Label, cardinality: many, via: item_id}
+
+  - name: repro.box.Label
+    identity: {name: label_id, type: repro.box.LabelId}
+    fields:
+      - {name: item_id, type: repro.box.ItemId}
+    lifecycle:
+      initial: Stuck
+      states: [Stuck]
+      terminal: [Stuck]
+
+actors:
+  - name: repro.box.User
+    may: [repro.box.OpenBox, repro.box.LockBox, repro.box.AddItem, repro.box.ShakeItem, repro.box.LabelItem]
+
+errors:
+  - {name: repro.box.BoxNotFound, fields: [{name: box_id, type: repro.box.BoxId}]}
+  - {name: repro.box.ItemNotFound, fields: [{name: item_id, type: repro.box.ItemId}]}
+  - {name: repro.box.BoxLocked, fields: [{name: box_id, type: repro.box.BoxId}]}
+  - {name: repro.box.ItemElsewhere, fields: [{name: item_id, type: repro.box.ItemId}]}
+  - {name: repro.box.ItemNotA, fields: [{name: item_id, type: repro.box.ItemId}]}
+  - {name: repro.box.ItemStateConflict, fields: [{name: state, type: repro.box.Item.State}]}
+  - {name: repro.box.BoxStateConflict, fields: [{name: state, type: repro.box.Box.State}]}
+
+events:
+  - name: repro.box.BoxOpened
+    fields: [{name: box_id, type: repro.box.BoxId}]
+  - name: repro.box.BoxWasLocked
+    fields: [{name: box_id, type: repro.box.BoxId}]
+  - name: repro.box.ItemAdded
+    fields:
+      - {name: item_id, type: repro.box.ItemId}
+      - {name: box_id, type: repro.box.BoxId}
+      - {name: kind, type: repro.box.Kind}
+  - name: repro.box.ItemShaken
+    fields: [{name: item_id, type: repro.box.ItemId}]
+  - name: repro.box.ItemLabelled
+    fields:
+      - {name: label_id, type: repro.box.LabelId}
+      - {name: item_id, type: repro.box.ItemId}
+
+commands:
+  - name: repro.box.OpenBox
+    input: []
+    outcomes:
+      - name: opened
+        creates: repro.box.Box
+        instance: box_id
+        emits: [repro.box.BoxOpened]
+        payload:
+          repro.box.BoxOpened: {box_id: {generated: true}}
+
+  - name: repro.box.LockBox
+    input: [{name: box_id, type: repro.box.BoxId}]
+    outcomes:
+      - name: locked
+        moves: repro.box.Box.lock
+        instance: box_id
+        emits: [repro.box.BoxWasLocked]
+        payload:
+          repro.box.BoxWasLocked: {box_id: input.box_id}
+      - name: wrong-state
+        wrong_state: true
+        error: repro.box.BoxStateConflict
+        payload:
+          repro.box.BoxStateConflict: {state: {subject: state}}
+
+  - name: repro.box.AddItem
+    input:
+      - {name: box_id, type: repro.box.BoxId}
+      - {name: kind, type: repro.box.Kind}
+    outcomes:
+      - name: no-box
+        when_related: {via: input.box_id, exists: false}
+        error: repro.box.BoxNotFound
+        payload:
+          repro.box.BoxNotFound: {box_id: input.box_id}
+      - name: locked
+        when_related: {via: input.box_id, predicate: state == Locked}
+        error: repro.box.BoxLocked
+        payload:
+          repro.box.BoxLocked: {box_id: input.box_id}
+      - name: added
+        creates: repro.box.Item
+        instance: item_id
+        sets: {box_id: input.box_id, kind: input.kind}
+        emits: [repro.box.ItemAdded]
+        payload:
+          repro.box.ItemAdded:
+            item_id: {generated: true}
+            box_id: input.box_id
+            kind: input.kind
+
+  - name: repro.box.ShakeItem
+    input: [{name: item_id, type: repro.box.ItemId}]
+    outcomes:
+      - name: no-box
+        when_related: {via: box_id, exists: false}
+        error: repro.box.BoxNotFound
+        payload:
+          repro.box.BoxNotFound: {box_id: {subject: box_id}}
+      - name: locked
+        when_related: {via: box_id, predicate: state == Locked}
+        error: repro.box.BoxLocked
+        payload:
+          repro.box.BoxLocked: {box_id: {subject: box_id}}
+      - name: shaken
+        moves: repro.box.Item.shake
+        instance: item_id
+        emits: [repro.box.ItemShaken]
+        payload:
+          repro.box.ItemShaken: {item_id: input.item_id}
+      - name: wrong-state
+        wrong_state: true
+        error: repro.box.ItemStateConflict
+        payload:
+          repro.box.ItemStateConflict: {state: {subject: state}}
+
+  - name: repro.box.LabelItem
+    input:
+      - {name: box_id, type: repro.box.BoxId}
+      - {name: item_id, type: repro.box.ItemId}
+    outcomes:
+      - name: no-box
+        when_related: {via: input.box_id, exists: false}
+        error: repro.box.BoxNotFound
+        payload:
+          repro.box.BoxNotFound: {box_id: input.box_id}
+      - name: no-item
+        when_related: {via: input.item_id, exists: false}
+        error: repro.box.ItemNotFound
+        payload:
+          repro.box.ItemNotFound: {item_id: input.item_id}
+      - name: elsewhere
+        when_related: {via: input.item_id, predicate: box_id != input.box_id}
+        error: repro.box.ItemElsewhere
+        payload:
+          repro.box.ItemElsewhere: {item_id: input.item_id}
+      - name: not-a
+        when_related: {via: input.item_id, predicate: kind != a}
+        error: repro.box.ItemNotA
+        payload:
+          repro.box.ItemNotA: {item_id: input.item_id}
+      - name: labelled
+        creates: repro.box.Label
+        instance: label_id
+        sets: {item_id: input.item_id}
+        emits: [repro.box.ItemLabelled]
+        payload:
+          repro.box.ItemLabelled:
+            label_id: {generated: true}
+            item_id: input.item_id
+
+views:
+  - name: repro.box.Items
+    source: repro.box.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: repro.box.ItemId}
+      - {name: box_id, type: repro.box.BoxId}
+      - {name: kind, type: repro.box.Kind}
+      - {name: state, type: repro.box.Item.State}
