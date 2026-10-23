@@ -491,6 +491,69 @@ fn a_query_command_takes_its_unmapped_inputs_as_query_parameters_and_has_no_requ
     }
 }
 
+/// A command on `delete` whose `Optional<String>` input rides in the query string (an adopter's
+/// protocol, whose `DELETE` takes query parameters).
+#[test]
+fn a_delete_command_encoded_query_takes_its_unmapped_inputs_as_query_parameters() {
+    let text = MODEL
+        .replace(
+            "  - name: catalog.items.PurgeItems\n",
+            "  - name: catalog.items.ForgetItem
+    input:
+      - {name: item_id, type: catalog.items.ItemId}
+      - {name: reason, type: Optional<String>, wire: forgetReason}
+    outcomes:
+      - name: forgotten
+        emits: [catalog.items.ItemTouched]
+        payload:
+          catalog.items.ItemTouched: {item_id: input.item_id}
+  - name: catalog.items.PurgeItems
+",
+        )
+        .replace(
+            "accepts: {commands: [catalog.items.ListItem, catalog.items.TouchItem]}",
+            "accepts: {commands: [catalog.items.ForgetItem, catalog.items.ListItem, catalog.items.TouchItem]}",
+        );
+    let ir = model_of("catalog.yaml", &text);
+    let document = bound(
+        &ir,
+        binding(
+            &ir,
+            "routes:
+  - command: catalog.items.ForgetItem
+    method: delete
+    path: /items/{item_id}
+    parameters: {item_id: input.item_id}
+    request: {encoding: query}
+",
+        ),
+    );
+    let delete = &document["paths"]["/items/{item_id}"]["delete"];
+    assert!(delete.get("requestBody").is_none(), "{delete}");
+    assert!(
+        document["components"]["schemas"]
+            .get("catalog.items.ForgetItem.Input")
+            .is_none(),
+        "a body nothing sends has no schema"
+    );
+    let parameters = delete["parameters"].as_array().expect("parameters");
+    let placed: Vec<(&str, &str, bool)> = parameters
+        .iter()
+        .map(|parameter| {
+            (
+                parameter["in"].as_str().expect("in"),
+                parameter["name"].as_str().expect("name"),
+                parameter["required"].as_bool().unwrap_or(false),
+            )
+        })
+        .collect();
+    assert_eq!(
+        placed,
+        [("path", "item_id", true), ("query", "forgetReason", false)],
+        "{parameters:?}"
+    );
+}
+
 #[test]
 fn each_declared_status_is_its_own_response_with_x_ess_outcomes() {
     let (ir, document) = orders();

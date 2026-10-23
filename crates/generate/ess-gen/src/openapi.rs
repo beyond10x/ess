@@ -208,7 +208,7 @@
 //! | binding | document |
 //! |---|---|
 //! | `request: {encoding: form}` | the request body is `application/x-www-form-urlencoded`, its schema `{command}.Input` |
-//! | `request: {encoding: query}` | no request body and no `{command}.Input`; each field the path does not carry is an `in: query` parameter under its wire name, a `List` with `style: form` and `explode: true` |
+//! | `request: {encoding: query}` | no request body and no `{command}.Input`; each field the path does not carry is an `in: query` parameter under its wire name, a `List` with `style: form` and `explode: true` and not required, its absent key the empty list |
 //! | `outcomes.<o>.status` | the outcome is answered under that status instead of the derived one |
 //! | `body: response` | the command's `{command}.Result`, bare: no `outcome`, no `published` |
 //! | `body: {<member>: error}` | `{command}.{outcome}.Response` is the error object: `<member>` a `const` of the error's wire name beside the error's fields; two on one status are told apart by a discriminator on `<member>` |
@@ -810,9 +810,10 @@ fn operation(
 /// A `query`-encoded command's input fields the path does not carry, each an `in: query`
 /// parameter under its wire name, in declaration order.
 ///
-/// A field is required unless it is `Optional`, or the command declares `input_absent:`, whose
-/// branch answers a request that carries no input at all. A `List` repeats its key once per element
-/// (`style: form`, `explode: true`), the rule a view's parameters follow.
+/// A field is required unless it is `Optional` or a `List`, or the command declares
+/// `input_absent:`, whose branch answers a request that carries no input at all. A `List` repeats
+/// its key once per element (`style: form`, `explode: true`), the rule a view's parameters follow,
+/// and an absent key is the empty list, as both generated servers read it.
 fn query_parameters(command: &ResolvedCommand, carried: &BTreeSet<&str>) -> Vec<Parameter> {
     let answers_absent = command
         .outcomes
@@ -832,7 +833,7 @@ fn query_parameters(command: &ResolvedCommand, carried: &BTreeSet<&str>) -> Vec<
                     field.name
                 )
             }),
-            required: !field.type_ref.is_optional() && !answers_absent,
+            required: !field.type_ref.is_optional() && !is_list(&field.type_ref) && !answers_absent,
             style: is_list(&field.type_ref).then_some("form"),
             explode: is_list(&field.type_ref).then_some(true),
             schema: embedded(&types::field(field)),

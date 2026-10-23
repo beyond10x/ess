@@ -142,13 +142,19 @@ mapped source is a scalar a path segment can carry: `String`, `Integer`, an enum
 newtype of one of them. It is never `Optional`, `List`, a struct or `Json`, because a path segment is
 always present and holds one value.
 
+A view parameter that stays in the query string is named there by its flat `wire:`, as a command's
+field is: the OpenAPI `in: query` parameter, the Rust and Go servers' query readers and the `rows`
+or `single` they write all use the wire name, and the model name is an unknown key. A view field
+takes its wire name the same way. `naming: {wire}` is not a view field's key and is refused as an
+unknown field.
+
 ### Which operations a binding may name
 
 - A command a component `accepts`. Every such command has an OpenAPI route today (`http.rs:392-411`).
 - A view of a domain owned by a `reached_by: network` component. A view has no route anywhere else
   (`http.rs:413`), and binding one would invent a query surface the specification did not declare.
 - A view is bound to `get` only. A command is bound to `post`, `put`, `patch` or `delete`, or to
-  `get` only when every input field is mapped to the path (stage 2 adds `request.encoding: query`).
+  `get` only when every input field is mapped to the path or the route is `request.encoding: query`.
   `head`, `options` and `trace` are refused for both in `/1`.
 
 An operation the binding does not name keeps its derived route. Collision checks run over declared
@@ -295,7 +301,7 @@ routes:
 |---|---|
 | `json` (default) | today's body, `application/json` (`openapi.rs:223-225`), less any path-mapped field |
 | `form` | `application/x-www-form-urlencoded`, UTF-8 (RFC 6749 §4.1.3, Appendix B) |
-| `query` | no body; every unmapped input field in the query string. The only encoding a `get` command may use |
+| `query` | no body; every unmapped input field in the query string. The only encoding a `get` command may use, and one a `delete` command may use |
 
 A `form` or `query` field is a scalar, an `Optional` scalar or a `List` of scalars. A `List` repeats
 its key once per element, the rule view parameters already follow (`openapi.rs:1776-1778`). A key a
@@ -405,7 +411,7 @@ keeps today's answer.
 
 | code | refused | names |
 |---|---|---|
-| `ESS-HTTP-020` | an encoding outside the set; `form` or `json` on `get`; `query` on anything but `get`; `request:` on a view; `unknown: ignore` with `json`, or an `unknown` value outside `refuse` and `ignore` | `routes[i].request.encoding` or `routes[i].request.unknown` |
+| `ESS-HTTP-020` | an encoding outside the set; `form` or `json` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` with `json`, or an `unknown` value outside `refuse` and `ignore` | `routes[i].request.encoding` or `routes[i].request.unknown` |
 | `ESS-HTTP-021` | a `form` or `query` field whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
 | `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view | `routes[i].outcomes.<name>` |
 | `ESS-HTTP-023` | a status outside `100..=599`, in a class the outcome may not use, or a `3xx` other than `301`, `302`, `303`, `307` and `308` | the outcome, the status, the class |
@@ -579,8 +585,8 @@ single` and no identity selection and no `empty` earns both `ESS-HTTP-030` and `
 
 `requestBody` content is `application/x-www-form-urlencoded` for `form`, with the flat field
 schema; `query` has no `requestBody`, and each unmapped field is an `in: query` parameter, a `List`
-with `style: form` and `explode: true`. Each declared status is one response: the bare response
-schema, the error object (`<member>` a `const` of the wire name beside the error's fields), or no
+with `style: form`, `explode: true` and `required: false`, its absent key the empty list. Each
+declared status is one response: the bare response schema, the error object (`<member>` a `const` of the wire name beside the error's fields), or no
 content; headers as response `headers`, a challenge as a `string` header, and a redirect's
 `Location`. Every response of a bound operation carries `x-ess-outcomes`, the outcomes it answers in
 the order the command declares them. A view route with `single` answers the row schema at `200` and

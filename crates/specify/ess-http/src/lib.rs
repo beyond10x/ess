@@ -167,7 +167,7 @@ pub enum Encoding {
     /// An `application/x-www-form-urlencoded` body, UTF-8.
     Form,
     /// No body: every input field the path does not map is in the query string. The only
-    /// encoding a command on `get` may use.
+    /// encoding a command on `get` may use, and one a command on `delete` may use too.
     Query,
 }
 
@@ -1910,8 +1910,8 @@ impl HttpIr {
     /// template grammar, or whose `parameters` leave a variable unmapped, map one the path does
     /// not have, or read one source from two variables; a source outside the operation's
     /// namespace; a `request` on a view, holding only defaults or writing a default out, encoded
-    /// `query` on any method but `get` or `json` or `form` on `get`, or `ignore` beside `json`;
-    /// `outcomes` on a view, or `body` or `empty` on a command; `outcomes` or `refusals` out of key
+    /// `query` on any method but `get` and `delete` or `json` or `form` on `get`, or `ignore`
+    /// beside `json`; `outcomes` on a view, or `body` or `empty` on a command; `outcomes` or `refusals` out of key
     /// order or empty; an outcome status outside `100..=599`, a `1xx` or a `3xx` other than the
     /// [`REDIRECTS`]; an outcome body that is `envelope` written out, a literal, a view's body, an
     /// error object under an empty member, or anything but `none` on `204`; a view body `rows`
@@ -2361,13 +2361,13 @@ fn request_invariants(route: &Route, request: Request, at: &str) -> Result<(), S
         ));
     }
     let admitted = match request.encoding {
-        Encoding::Query => route.method == Method::Get,
+        Encoding::Query => matches!(route.method, Method::Get | Method::Delete),
         Encoding::Json | Encoding::Form => route.method != Method::Get,
     };
     if !admitted {
         return Err(format!(
-            "`{at}.request.encoding` `{}` is not admitted on `{}`: `query` is the encoding of a \
-             command on `get`, and of no other",
+            "`{at}.request.encoding` `{}` is not admitted on `{}`: `query` is the only encoding \
+             of a command on `get`, and an encoding of one on `delete`, and of no other",
             request.encoding, route.method
         ));
     }
@@ -2503,7 +2503,7 @@ impl Refusals {
 /// | `ESS-HTTP-011` | two templates of one component and method that a request path can both match, with a literal beside a variable at the first position they differ: a literal takes no precedence |
 /// | `ESS-HTTP-013` | an operation with no HTTP surface: a command no component accepts, a view no `reached_by: network` component serves |
 /// | `ESS-HTTP-014` | a command on `get` with an input field no variable of the path maps, unless its request is encoded `query` |
-/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on any other method; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` with a `json` body; at `routes[i].request`: `request` on a view |
+/// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` with a `json` body; at `routes[i].request`: `request` on a view |
 /// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form` or `query` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried |
 /// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view |
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
@@ -3615,8 +3615,8 @@ struct Checked {
 }
 
 /// Holds a route's `request` to its rules (`ESS-HTTP-020`): no `request` on a view, an encoding of
-/// the set that the method admits when one is written (`query` on `get` only, and on `get` nothing
-/// else written), and an `unknown` of the set, `ignore` only beside `form` or `query`. An absent
+/// the set that the method admits when one is written (`query` on `get` or `delete` only, and on
+/// `get` nothing else written), and an `unknown` of the set, `ignore` only beside `form` or `query`. An absent
 /// `request` is a `json` body refusing an unknown key, which a `get` command is in stage 1.
 fn request(
     spec: &RouteSpec,
@@ -3675,10 +3675,12 @@ fn request(
                      field to the path"
                 )
             }
-            (Some(method), Encoding::Query) if method != Method::Get => format!(
-                "`query` carries the input in the query string, the encoding of a command on \
-                 `get` only; a command on `{method}` is encoded `json` or `form`"
-            ),
+            (Some(method), Encoding::Query) if !matches!(method, Method::Get | Method::Delete) => {
+                format!(
+                    "`query` carries the input in the query string, the encoding of a command on \
+                     `get` or `delete` only; a command on `{method}` is encoded `json` or `form`"
+                )
+            }
             _ => return true,
         };
         refusals.refuse("ESS-HTTP-020", format!("{path}.request.encoding"), rule);
