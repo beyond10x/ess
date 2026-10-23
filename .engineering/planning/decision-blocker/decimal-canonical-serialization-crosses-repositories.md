@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: decision-blocker:decimal-canonical-serialization-crosses-repositories
 kind: decision-blocker
-status: open
+status: cleared
 title: The Decimal half of canonical number serialization moves persisted bytes and needs a reader in another repository
 relations:
 - blocks: story:primitive-canonical-serialization
-revision: 2
+revision: 4
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-23T13:57:35Z", actor: "human:timo", revision: 4, correlation: "ess-0690"}
 ---
 ## What is blocked
 
@@ -88,3 +90,9 @@ open.
 Not covered by the refusal: a `Decimal` that arrives at run time (an implementation's reply, a
 conformance report value). It still collapses to binary64 when written, and that is what this
 blocker continues to hold.
+
+## Answer (2026-10-23)
+
+Decided by the operator, relayed by the orchestrator: "the 2026-10-07 decision stands; the run-time writer half is not built; reopening it moves persisted bytes, so a reopen is a new blocker with `Decider: timo`."
+
+The run-time writer half of Decimal canonical serialization is not built. Persisted bytes do not move. Any reopening is a new decision-blocker whose body carries `Decider: timo`.
