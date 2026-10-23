@@ -1324,6 +1324,13 @@ impl RefusalCause {
                  in the states it holds them; narrow the guard that answers before it there, or \
                  cover the branch with an authored scenario (ess-scenario/1)"
             }
+            // Rows whose creator refuses a missing related row (beyond10x/ess#682): the creator's
+            // input is not what is missing, the related row is.
+            Self::NoWitness(gap) if gap.reason == row_set::ROWS_GUARDED_CREATOR => {
+                "the command named creates the rows only beside an existing related row the input \
+                 names; let a declared command create that related row in a state the creator \
+                 accepts, or cover the branch with an authored scenario (ess-scenario/1)"
+            }
             Self::NoWitness(gap) if set_effects::UNARRANGED.contains(&gap.reason) => {
                 "let a command that creates the entity write each field the filter reads from an \
                  input or from a caller attribute (`{caller: <attribute>}`) rather than from a \
