@@ -189,3 +189,156 @@ types:
         }
     }
 }
+
+/// A command's input and response and a view's row are roots (beyond10x/ess#656):
+/// `--root <command>.input`, `--root <command>.response`, `--root <view>.row`, and every one of
+/// them under `--all-commands` and `--all-views`.
+mod command_and_view_roots {
+    use super::*;
+
+    const NOTES: &str =
+        include_str!("../../../generate/ess-gen/tests/fixtures/command-view-roots.yaml");
+
+    fn notes() -> Fixture {
+        let fixture = Fixture::new();
+        fs::write(fixture.0.join("model/system.yaml"), NOTES).unwrap();
+        fixture
+    }
+
+    fn generate(fixture: &Fixture, selection: &[&str], target: &str) -> Output {
+        let mut args = selection.to_vec();
+        args.extend(["--target", target, "--out", target]);
+        match target {
+            "rust" => args.extend(["--package", "demo-notes"]),
+            "go" => args.extend([
+                "--package",
+                "demonotes",
+                "--module",
+                "example.invalid/notes",
+            ]),
+            _ => {}
+        }
+        fixture.run(&args)
+    }
+
+    #[test]
+    fn a_command_input_is_a_root() {
+        for (target, file, declaration) in [
+            ("rust", "rust/types.rs", "pub struct DemoNotesCreateInput {"),
+            ("go", "go/types.go", "type DemoNotesCreateInput struct {"),
+            (
+                "typescript",
+                "typescript/types.ts",
+                "export type DemoNotesCreateInput = ",
+            ),
+        ] {
+            let fixture = notes();
+            let output = generate(&fixture, &["--root", "demo.notes.Create.input"], target);
+            assert!(output.status.success(), "{target}: {output:?}");
+            let types = fixture.read(file);
+            assert!(types.contains(declaration), "{target}: {types}");
+            assert!(types.contains("isPinned"), "{target}: {types}");
+        }
+    }
+
+    #[test]
+    fn a_command_response_is_a_root() {
+        let fixture = notes();
+        let output = generate(&fixture, &["--root", "demo.notes.Create.response"], "rust");
+        assert!(output.status.success(), "{output:?}");
+        let types = fixture.read("rust/types.rs");
+        assert!(
+            types.contains("pub struct DemoNotesCreateResponse {"),
+            "{types}"
+        );
+        assert!(
+            types.contains("#[serde(rename = \"titleLength\")]"),
+            "{types}"
+        );
+    }
+
+    #[test]
+    fn a_view_row_is_a_root() {
+        let fixture = notes();
+        let output = generate(
+            &fixture,
+            &[
+                "--root",
+                "demo.notes.Notes.row",
+                "--root",
+                "demo.notes.Summaries.row",
+            ],
+            "rust",
+        );
+        assert!(output.status.success(), "{output:?}");
+        let types = fixture.read("rust/types.rs");
+        assert!(types.contains("pub struct DemoNotesNotesRow {"), "{types}");
+        assert!(
+            types.contains("pub struct DemoNotesSummariesRow("),
+            "{types}"
+        );
+        assert!(types.contains("pub struct DemoNotesSummary {"), "{types}");
+    }
+
+    #[test]
+    fn all_switches_include_them() {
+        let fixture = notes();
+        let output = generate(&fixture, &["--all-commands", "--all-views"], "typescript");
+        assert!(output.status.success(), "{output:?}");
+        let report: serde_json::Value =
+            serde_json::from_str(&fixture.read("typescript/types-report.json")).unwrap();
+        let roots: Vec<&str> = report["roots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|root| root.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            roots,
+            [
+                "demo.notes.Create.input",
+                "demo.notes.Create.response",
+                "demo.notes.Notes.row",
+                "demo.notes.Pin.input",
+                "demo.notes.Summaries.row",
+            ],
+            "a command without a response has no response root"
+        );
+
+        let fixture = notes();
+        let output = generate(
+            &fixture,
+            &[
+                "--all-types",
+                "--all-events",
+                "--all-commands",
+                "--all-views",
+            ],
+            "rust",
+        );
+        assert!(output.status.success(), "{output:?}");
+        let report = fixture.read("rust/types-report.json");
+        for root in [
+            "demo.notes.NoteId",
+            "demo.notes.Created",
+            "demo.notes.Pin.input",
+            "demo.notes.Notes.row",
+        ] {
+            assert!(report.contains(&format!("\"{root}\"")), "{report}");
+        }
+
+        for selector in ["--all-commands", "--all-views"] {
+            let fixture = notes();
+            let output = generate(
+                &fixture,
+                &["--root", "demo.notes.Create.input", selector],
+                "typescript",
+            );
+            assert!(!output.status.success(), "{selector}: {output:?}");
+            assert!(
+                !fixture.0.join("typescript").exists(),
+                "{selector} wrote output"
+            );
+        }
+    }
+}

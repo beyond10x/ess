@@ -10,13 +10,18 @@ use anyhow::{bail, Result};
     clap::ArgGroup::new("selection")
         .required(true)
         .multiple(true)
-        .args(["root", "all_types", "all_events"])
+        .args(["root", "all_types", "all_events", "all_commands", "all_views"])
 ))]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each `--all-*` selector is an independent command-line switch"
+)]
 pub struct Args {
     #[command(flatten)]
     input: crate::SpecLocation,
-    /// Qualified model type or event root. Repeat for a shared transitive closure.
-    #[arg(long, conflicts_with_all = ["all_types", "all_events"])]
+    /// Qualified model type or event root, or a body: `<command>.input`, `<command>.response`,
+    /// `<view>.row`. Repeat for a shared transitive closure.
+    #[arg(long, conflicts_with_all = ["all_types", "all_events", "all_commands", "all_views"])]
     root: Vec<String>,
     /// Explicitly select every named type in the resolved model.
     #[arg(long)]
@@ -24,6 +29,13 @@ pub struct Args {
     /// Explicitly select every event payload in the resolved model; combines with `--all-types`.
     #[arg(long)]
     all_events: bool,
+    /// Explicitly select every command's input, and its response when it declares one; combines
+    /// with the other `--all-*` selectors.
+    #[arg(long)]
+    all_commands: bool,
+    /// Explicitly select every view's row; combines with the other `--all-*` selectors.
+    #[arg(long)]
+    all_views: bool,
     #[command(flatten)]
     options: crate::schema_bundle::TypeOptions,
     /// How declarations are named: the qualified model name, or its last segment.
@@ -60,10 +72,18 @@ pub fn run(args: &Args) -> Result<ExitCode> {
     let Ok((ir, _)) = crate::resolved(&args.input.path, crate::Format::Text)? else {
         return Ok(ExitCode::from(1));
     };
-    let roots = if args.all_types || args.all_events {
+    let roots = if args.all_types || args.all_events || args.all_commands || args.all_views {
         let types = ir.types().keys().filter(|_| args.all_types);
         let events = ir.events().keys().filter(|_| args.all_events);
-        types.chain(events).map(ToString::to_string).collect()
+        let mut roots: std::collections::BTreeSet<String> =
+            types.chain(events).map(ToString::to_string).collect();
+        if args.all_commands {
+            roots.extend(ess_gen::schema::ModelTypes::command_roots(&ir));
+        }
+        if args.all_views {
+            roots.extend(ess_gen::schema::ModelTypes::view_roots(&ir));
+        }
+        roots
     } else {
         args.root.iter().cloned().collect()
     };
