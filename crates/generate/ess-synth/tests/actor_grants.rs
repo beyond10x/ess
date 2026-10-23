@@ -446,6 +446,21 @@ fn main() {
         };
         println!("{label}\t{}\t{variant}", refused.status());
     }
+    let mut deep = json::Value::Array(Vec::new());
+    for _ in 0..64 {
+        deep = json::Value::Array(vec![deep]);
+    }
+    let deep = json::Value::Object(vec![("id".to_owned(), deep)]);
+    for (label, caller) in [("deep ungranted", Some(&watcher)), ("deep granted", Some(&operator))] {
+        let refused = surface::handle(&mut system, caller, "ops.core.Note", deep.clone())
+            .expect_err("each case is refused");
+        let variant = match &refused {
+            Refused::NotGranted(Some(actor)) => format!("not-granted {actor}"),
+            Refused::Input(detail) => format!("input {detail}"),
+            other => format!("{other:?}"),
+        };
+        println!("{label}\t{}\t{variant}", refused.status());
+    }
 }
 "#;
 
@@ -654,7 +669,10 @@ fn the_rust_entry_point_refuses_the_same_callers_as_a_value() {
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         "absent\t403\tnot-granted none\nungranted\t403\tnot-granted ops.core.Watcher\n\
-         granted\t501\tunmet\n"
+         granted\t501\tunmet\n\
+         deep ungranted\t403\tnot-granted ops.core.Watcher\n\
+         deep granted\t400\tinput the input is not JSON: expected a document nested less than \
+         64 deep\n"
     );
 }
 

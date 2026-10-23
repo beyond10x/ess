@@ -938,7 +938,9 @@ fn outcome_answer(
          Err(detail) => refusal_unfinished(&detail, true),\n    }}\n}}\n\n/// Each listed outcome \
          of `{}`, answered as declared; `None` for an outcome the binding does not \
          list.\nfn declared_{ident}(envelope: &str, {}: &json::Value) -> \
-         Result<Option<http::Response>, String> {{\n    let read = entry::read(envelope);\n",
+         Result<Option<http::Response>, String> {{\n    let read = \
+         entry::read(envelope).map_err(|error| {{\n        format!(\"its answer is not JSON \
+         this surface reads back: {{error}}\")\n    }})?;\n",
         command.name,
         command.name,
         if reads_input { "input" } else { "_input" },
