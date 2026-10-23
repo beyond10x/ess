@@ -8,6 +8,7 @@
 
 - From `format: ess/31` a `sets:` entry may store the empty list `[]` in a required `List<…>` field, so a view publishing the field can be filled; generated Rust and Go store an empty list.
 - From `format: ess/31` an input of `List` type may carry an `example:`, a list of element values (structs included), which synthesis sends at the plain instance where no guard reads into the list; below `ess/31` it keeps its `type_mismatch`, its hint naming `ess/31`.
+- The specify guide has a page for tagged unions (`guides/specify/unions.md`): a `kind: union` declaration with `tag:`, `variants:` and a unit variant that `ess specify validate` accepts, why a union is always tagged, the wire shape of each variant rendered from the JSON Schema `ess generate --kind schema` writes for it, and when to choose a union over a struct of optional fields.
 
 ### Fixed
 
