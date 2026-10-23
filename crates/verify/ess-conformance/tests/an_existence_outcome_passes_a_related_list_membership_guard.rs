@@ -34,7 +34,17 @@ fn refusals(result: &Synthesis) -> Vec<String> {
     result
         .refusals
         .iter()
-        .map(|refusal| format!("{}: {}", refusal.cause.code(), refusal.cause))
+        .map(|refusal| {
+            format!(
+                "{} {}: {}",
+                refusal
+                    .scenario
+                    .as_ref()
+                    .map_or_else(|| refusal.subject.to_string(), ToString::to_string),
+                refusal.cause.code(),
+                refusal.cause
+            )
+        })
         .collect()
 }
 
@@ -111,5 +121,54 @@ fn an_existence_outcome_passes_a_related_list_membership_guard() {
     assert!(
         passed.values().all(|status| *status == Status::Passed),
         "{passed:#?}"
+    );
+}
+
+/// The same specification with the catalogue's creator storing an empty list instead of its
+/// input's: no row the declared commands create lists any action, so the existence scenario is
+/// refused, and the refusal names the list-membership guard the first send cannot pass.
+#[test]
+fn an_existence_outcome_names_the_membership_guard_no_creator_can_pass() {
+    let text = MODEL
+        .replacen("format: ess/30", "format: ess/31", 1)
+        .replacen(
+            "      - {name: entries, type: List<demo.pick.Entry>}\n    outcomes:",
+            "    outcomes:",
+            1,
+        )
+        .replacen("entries: input.entries", "entries: []", 1);
+    assert!(
+        text.contains("format: ess/31")
+            && text.contains("entries: []")
+            && !text.contains("input.entries"),
+        "{text}"
+    );
+    let model = ir(&text);
+    let result = ess_conformance::synthesize::synthesize(&model);
+    assert!(
+        !result
+            .suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string() == EXISTS),
+        "no catalogue lists an action, so {EXISTS} has no witness"
+    );
+    let refused: Vec<String> = result
+        .refusals
+        .iter()
+        .filter(|refusal| {
+            refusal
+                .scenario
+                .as_ref()
+                .is_some_and(|id| id.to_string() == EXISTS)
+        })
+        .map(|refusal| format!("{}: {}", refusal.cause.code(), refusal.cause))
+        .collect();
+    assert_eq!(refused.len(), 1, "{:#?}", refusals(&result));
+    assert!(
+        refused[0].starts_with("ESS-SYNTH-004: ")
+            && refused[0].contains("`demo.pick.Select/not-listed`"),
+        "the refusal names the guard the input cannot pass: {}",
+        refused[0]
     );
 }

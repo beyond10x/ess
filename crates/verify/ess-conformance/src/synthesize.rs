@@ -2380,6 +2380,34 @@ pub enum Unreachable {
         /// The branches reading that row that the send would have to pass over.
         guards: Vec<OutcomeRef>,
     },
+    /// The branch on the route creates the row and reads a related row (ess/18), and no row of
+    /// the related entity the declared commands create, with any input searched beside it, lets
+    /// the send pass over the guards beside it — a list-membership guard over a list no creator
+    /// sets from its input. Named so the refusal points at those guards rather than at the search.
+    RelatedUnmet {
+        /// The creating branch.
+        outcome: Box<OutcomeRef>,
+        /// The entity whose row the guards read.
+        related: EntityRef,
+        /// The branches reading that row that the send would have to pass over.
+        guards: Vec<OutcomeRef>,
+    },
+}
+
+/// `guards` as a list in prose, or "the guards beside it" where there are none.
+fn write_guards(f: &mut fmt::Formatter<'_>, guards: &[OutcomeRef]) -> fmt::Result {
+    for (nth, guard) in guards.iter().enumerate() {
+        let gap = match nth {
+            0 => "",
+            _ if nth + 1 == guards.len() => " and ",
+            _ => ", ",
+        };
+        write!(f, "{gap}`{guard}`")?;
+    }
+    if guards.is_empty() {
+        f.write_str("the guards beside it")?;
+    }
+    Ok(())
 }
 
 impl Unreachable {
@@ -2417,7 +2445,7 @@ impl Unreachable {
                  end every chain, and declare an unfiltered view showing the row's identity and \
                  state"
             }
-            Self::Unsteered { .. } => {
+            Self::Unsteered { .. } | Self::RelatedUnmet { .. } => {
                 "let the command creating the related row set each field those guards compare \
                  from its own input (`sets: <field>: input.<field>`), or cover the state with an \
                  authored scenario (ess-scenario/1)"
@@ -2476,18 +2504,19 @@ impl fmt::Display for Unreachable {
                      row of `{related}` it reads, and no row the declared commands create lets \
                      that input pass over "
                 )?;
-                for (nth, guard) in guards.iter().enumerate() {
-                    let gap = match nth {
-                        0 => "",
-                        _ if nth + 1 == guards.len() => " and ",
-                        _ => ", ",
-                    };
-                    write!(f, "{gap}`{guard}`")?;
-                }
-                if guards.is_empty() {
-                    f.write_str("the guards beside it")?;
-                }
-                Ok(())
+                write_guards(f, guards)
+            }
+            Self::RelatedUnmet {
+                outcome,
+                related,
+                guards,
+            } => {
+                write!(
+                    f,
+                    "the route runs through `{outcome}`, and no row of `{related}` the declared \
+                     commands create, with any input searched beside it, lets that send pass over "
+                )?;
+                write_guards(f, guards)
             }
         }
     }
