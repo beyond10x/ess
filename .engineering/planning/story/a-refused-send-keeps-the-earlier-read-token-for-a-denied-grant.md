@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-refused-send-keeps-the-earlier-read-token-for-a-denied-grant
 kind: story
-status: draft
+status: active
 title: A denied-grant snapshot reads its view at the token before the refused send
 summary: A refused send drops the consistency token, so a read_your_writes denied-grant snapshot errors (adopter item 2, beyond10x/a2a); defect, 0.69.0.
 tags:
@@ -21,7 +21,10 @@ scope:
   path: crates/verify/ess-conformance/src/target.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/grant_denied.rs
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T04:08:30Z", actor: "human:timo", revision: 9, correlation: "ess-0690"}
+- {from: "proposed", to: "active", at: "2026-10-23T04:08:30Z", actor: "human:timo", revision: 10, correlation: "ess-0690"}
 ---
 ## Need
 

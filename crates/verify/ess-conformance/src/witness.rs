@@ -281,7 +281,20 @@ pub fn candidates(
     guards: &[&Predicate],
     distinction: Distinction,
 ) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
-    search(ir, command, guards, distinction, false).map(|(inputs, _)| inputs)
+    search(ir, command, guards, distinction, false).map(|(inputs, _, _)| inputs)
+}
+
+/// How many goals the guard-directed search behind [`candidates`] for `guards` gave up at its
+/// bound of [`MAX_DIRECTED_STEPS`] steps rather than finding no input for; with `between`, behind
+/// [`candidates_between`]. `0` where it gave up none, or where the search could not run.
+pub(crate) fn cut_short(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guards: &[&Predicate],
+    distinction: Distinction,
+    between: bool,
+) -> usize {
+    search(ir, command, guards, distinction, between).map_or(0, |(_, _, cut)| cut)
 }
 
 /// [`candidates`] with each `Decimal` leaf also tried between every two adjacent literals the
@@ -305,7 +318,7 @@ pub fn candidates_between(
     distinction: Distinction,
 ) -> Result<Option<Vec<BTreeMap<String, Node>>>, WitnessGap> {
     search(ir, command, guards, distinction, true)
-        .map(|(inputs, between)| between.then_some(inputs))
+        .map(|(inputs, between, _)| between.then_some(inputs))
 }
 
 /// Whether the candidates for `guards` try a value in every region the guards' literals divide each
@@ -624,8 +637,9 @@ fn search(
     })
 }
 
-/// What one [`search`] answers: the candidates, and whether midpoints were added.
-pub(crate) type Searched = Result<(Vec<BTreeMap<String, Node>>, bool), WitnessGap>;
+/// What one [`search`] answers: the candidates, whether midpoints were added, and how many goals
+/// the guard-directed search gave up at [`MAX_DIRECTED_STEPS`].
+pub(crate) type Searched = Result<(Vec<BTreeMap<String, Node>>, bool, usize), WitnessGap>;
 
 /// [`search`], run.
 fn search_uncached(
@@ -656,7 +670,8 @@ pub(crate) fn solving(
     goal: &Predicate,
     distinction: Distinction,
 ) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
-    let (mut inputs, _) = search_with(ir, command, &[goal], distinction, false, Goals::Satisfied)?;
+    let (mut inputs, _, _) =
+        search_with(ir, command, &[goal], distinction, false, Goals::Satisfied)?;
     let satisfied = |input: &BTreeMap<String, Node>| {
         crate::input::flatten(ir, command, input)
             .is_ok_and(|facts| matches!(facts.decide(goal), Decision::Satisfied))
@@ -732,6 +747,8 @@ fn search_with(
     goals: Goals,
 ) -> Searched {
     let mut added = false;
+    // How many goals the guard-directed search gave up at its step bound ([`MAX_DIRECTED_STEPS`]).
+    let mut cut = 0;
     // A quantifier's body reads its element through a binder. Rebound onto the element a one-
     // element list carries — `t == vip` over `tags` becomes `tags.0 == vip` — it is an ordinary
     // guard over an ordinary leaf, and rule 3 finds its literal like any other.
@@ -791,6 +808,7 @@ fn search_with(
             return Ok((
                 within_invariants(&mut builder, command, &constrained, inputs)?,
                 false,
+                0,
             ));
         }
     }
@@ -911,13 +929,16 @@ fn search_with(
     // a branch it witnessed is sent the input it was always sent; only a caller that found nothing
     // in it reaches the guard-directed candidates after it.
     if product(&ladders) > MAX_CANDIDATES {
-        let solved = Directed::new(&mut builder, command, guards, &ladders, goals).solve()?;
+        let (solved, gave_up) =
+            Directed::new(&mut builder, command, guards, &ladders, goals).solve()?;
+        cut = gave_up;
         extend_paired(&mut builder, command, &solved, &presence_omits, &mut inputs)?;
     }
     let inputs = admitted_inputs(ir, command, inputs);
     Ok((
         within_invariants(&mut builder, command, &constrained, inputs)?,
         added,
+        cut,
     ))
 }
 
@@ -1771,6 +1792,21 @@ fn paired(
 
 /// What a candidate puts in place of the base witness, by path.
 type Overrides = BTreeMap<FactPath, Choice>;
+/// A sub-predicate [`Directed`] still has to decide, and the truth wanted of it.
+type Pending<'a> = (&'a Predicate, bool);
+
+/// What one branch of [`Directed`]'s search came to.
+enum Found {
+    /// The overrides meeting every wanted truth.
+    Solved(Overrides),
+    /// No assignment under this branch; the next one may have one.
+    Failed,
+    /// The part of the goal at this depth of `later` has no assignment, whatever was chosen
+    /// since it was split off; nothing chosen after the split is tried again.
+    Dead(usize),
+}
+/// Atoms' indexes and the truth wanted of each.
+type Truths = Vec<(usize, bool)>;
 
 /// Appends each of `solved` as [`paired`] spells it, skipping inputs already in `inputs`, at most
 /// [`MAX_CANDIDATES`] of them.
@@ -1826,9 +1862,22 @@ struct Directed<'a, 'ir> {
     reads: Vec<Option<usize>>,
     /// Each atom's decision at a group's combination (`None`: undecided), filled on demand.
     truths: BTreeMap<(usize, usize), Vec<Option<bool>>>,
+    /// Whether some combination of a group decides these of its atoms as wanted, filled on demand.
+    feasible: BTreeMap<(Option<usize>, Truths), bool>,
+    /// Whether an atom has one truth beside these truths of its group ([`Self::determined`]),
+    /// filled on demand.
+    determined: BTreeMap<(usize, Truths), bool>,
+    /// The steps the goal being solved may still take ([`MAX_DIRECTED_STEPS`]).
+    steps: usize,
     /// Which goals are solved for.
     wanted: Goals,
 }
+
+/// How many steps the guard-directed search takes for one goal before giving it up: one per truth
+/// value a goal is broken down to. Refuting a conjunction is a choice of which conjunct is false,
+/// so a goal refuting many guards branches once per guard; this bounds the work, pruned branches
+/// included, as [`MAX_CANDIDATES`] bounds the candidates.
+pub const MAX_DIRECTED_STEPS: usize = MAX_CANDIDATES * MAX_ENUMERATED_PER_CANDIDATE;
 
 impl<'a, 'ir> Directed<'a, 'ir> {
     fn new(
@@ -1912,25 +1961,35 @@ impl<'a, 'ir> Directed<'a, 'ir> {
             groups,
             reads,
             truths: BTreeMap::new(),
+            feasible: BTreeMap::new(),
+            determined: BTreeMap::new(),
+            steps: MAX_DIRECTED_STEPS,
             wanted,
         }
     }
 
-    /// The solved override sets, distinct, at most [`MAX_CANDIDATES`] of them.
-    fn solve(mut self) -> Result<Vec<Overrides>, WitnessGap> {
+    /// The solved override sets, distinct, at most [`MAX_CANDIDATES`] of them, and how many goals
+    /// were given up at [`MAX_DIRECTED_STEPS`] rather than found to have no solution.
+    fn solve(mut self) -> Result<(Vec<Overrides>, usize), WitnessGap> {
         let mut solved: Vec<Overrides> = Vec::new();
+        let mut cut = 0;
         for goal in self.goals() {
             if solved.len() >= MAX_CANDIDATES {
                 break;
             }
             let mut budget = MAX_CANDIDATES;
-            if let Some(overrides) = self.search(goal, &mut BTreeMap::new(), &mut budget)? {
+            self.steps = MAX_DIRECTED_STEPS;
+            let found = self.search(goal, Vec::new(), &mut BTreeMap::new(), &mut budget)?;
+            if self.steps == 0 {
+                cut += 1;
+            }
+            if let Found::Solved(overrides) = found {
                 if !solved.contains(&overrides) {
                     solved.push(overrides);
                 }
             }
         }
-        Ok(solved)
+        Ok((solved, cut))
     }
 
     fn goals(&self) -> Vec<Vec<(&'a Predicate, bool)>> {
@@ -1980,57 +2039,486 @@ impl<'a, 'ir> Directed<'a, 'ir> {
         goals
     }
 
-    /// The first override set meeting every wanted truth in `pending` and `wanted`.
+    /// The first override set meeting every wanted truth in `pending`, in each part of `later`
+    /// and in `wanted`.
+    ///
+    /// `later` holds the parts of a goal split off by [`Self::branch`], which read no group
+    /// `pending` reads; each is searched once `pending` is met.
     fn search(
         &mut self,
-        mut pending: Vec<(&'a Predicate, bool)>,
+        mut pending: Vec<Pending<'a>>,
+        later: Vec<Vec<Pending<'a>>>,
         wanted: &mut BTreeMap<usize, bool>,
         budget: &mut usize,
-    ) -> Result<Option<Overrides>, WitnessGap> {
-        if *budget == 0 {
-            return Ok(None);
+    ) -> Result<Found, WitnessGap> {
+        if *budget == 0 || self.steps == 0 {
+            return Ok(Found::Failed);
+        }
+        self.steps -= 1;
+        STEPS.with(|steps| steps.set(steps.get().saturating_add(1)));
+        let mut assigned = Vec::new();
+        let found = match self.settle(&mut pending, wanted, &mut assigned) {
+            Ok(true) => self.branch(pending, later, wanted, budget),
+            Ok(false) => Ok(Found::Failed),
+            Err(gap) => Err(gap),
+        };
+        for at in assigned {
+            wanted.remove(&at);
+        }
+        found
+    }
+
+    /// The last pending connective tried one child at a time, or, with nothing pending, the next
+    /// part of `later` searched, or, with nothing left at all, the assignment checked.
+    /// [`Self::settle`] has left only connectives that branch.
+    ///
+    /// Where the pending connectives fall into parts that read no group in common, each part is
+    /// searched on its own: the one holding the last connective first, the others after it, in
+    /// `later`. No choice in one part changes whether another can be met, so a part with no
+    /// solution fails the goal at once ([`Found::Dead`]) instead of being searched again under
+    /// every choice made before it. Each part is still searched in the order it always was, so
+    /// the assignment found is the one found before, only reached without that repetition.
+    ///
+    /// Where they make one part only through a group no goal has decided, each way that group can
+    /// decide the atoms of it they read is searched in turn ([`Self::cases`]), and within a case
+    /// they fall apart again. That reorders the search, so the assignment found there may be
+    /// another one meeting the same goal.
+    fn branch(
+        &mut self,
+        mut pending: Vec<Pending<'a>>,
+        mut later: Vec<Vec<Pending<'a>>>,
+        wanted: &mut BTreeMap<usize, bool>,
+        budget: &mut usize,
+    ) -> Result<Found, WitnessGap> {
+        if pending.is_empty() {
+            if let Some(next) = later.pop() {
+                let level = later.len();
+                return Ok(match self.search(next, later, wanted, budget)? {
+                    Found::Failed => Found::Dead(level),
+                    found => found,
+                });
+            }
+            *budget -= 1;
+            return Ok(match self.check(wanted)? {
+                Some(overrides) => Found::Solved(overrides),
+                None => Found::Failed,
+            });
+        }
+        let mut parts = self.parts(&pending, wanted, None)?;
+        if parts.len() > 1 {
+            let base = later.len();
+            let first = parts.pop().unwrap_or_default();
+            later.extend(parts);
+            return Ok(match self.search(first, later, wanted, budget)? {
+                Found::Dead(level) if level >= base => Found::Failed,
+                found => found,
+            });
+        }
+        if let Some(cases) = self.cases(&pending, wanted)? {
+            for case in cases {
+                let mut added = Vec::new();
+                for (at, value) in case {
+                    if wanted.insert(at, value).is_none() {
+                        added.push(at);
+                    }
+                }
+                let found = self.search(pending.clone(), later.clone(), wanted, budget);
+                for at in added {
+                    wanted.remove(&at);
+                }
+                match found? {
+                    Found::Failed => {}
+                    found => return Ok(found),
+                }
+            }
+            return Ok(Found::Failed);
         }
         let Some((predicate, value)) = pending.pop() else {
-            *budget -= 1;
-            return self.check(wanted);
+            return Ok(Found::Failed);
         };
-        match predicate {
-            Predicate::All(children) | Predicate::Any(children)
-                if matches!(predicate, Predicate::All(_)) == value =>
-            {
-                pending.extend(children.iter().map(|child| (child, value)));
-                self.search(pending, wanted, budget)
+        let (Predicate::All(children) | Predicate::Any(children)) = predicate else {
+            return Ok(Found::Failed);
+        };
+        for child in children {
+            let mut next = pending.clone();
+            next.push((child, value));
+            match self.search(next, later.clone(), wanted, budget)? {
+                Found::Failed => {}
+                found => return Ok(found),
             }
-            Predicate::All(children) | Predicate::Any(children) => {
-                for child in children {
-                    let mut next = pending.clone();
-                    next.push((child, value));
-                    if let Some(found) = self.search(next, wanted, budget)? {
-                        return Ok(Some(found));
+        }
+        Ok(Found::Failed)
+    }
+
+    /// `pending` split into parts no two of which read a group in common, each in its order in
+    /// `pending`, the part holding the last connective last and the rest by their last connective.
+    ///
+    /// An atom `wanted` already decides ([`Self::determined`]) joins nothing: a part meets it or
+    /// contradicts it whatever another part chooses, and meeting it narrows its group to nothing
+    /// it was not narrowed to already. So one input every guard reads — `k == true` in each, or
+    /// `k > 0` in each beside a target wanting `k > 5` — joins them only until a goal decides it,
+    /// and the guards it joined are searched apart again from there.
+    ///
+    /// With `without`, that group's atoms join nothing either: the parts [`Self::cases`] would
+    /// leave once each case has decided them.
+    fn parts(
+        &mut self,
+        pending: &[Pending<'a>],
+        wanted: &BTreeMap<usize, bool>,
+        without: Option<usize>,
+    ) -> Result<Vec<Vec<Pending<'a>>>, WitnessGap> {
+        let mut reads: Vec<BTreeSet<usize>> = Vec::with_capacity(pending.len());
+        for (predicate, _) in pending {
+            let mut read = BTreeSet::new();
+            for atom in guard_atoms(predicate) {
+                match self.atoms.iter().position(|known| *known == atom) {
+                    None => {
+                        read.insert(usize::MAX);
+                    }
+                    Some(at) if without.is_some() && self.reads[at] == without => {}
+                    Some(at) if self.determined(at, wanted)? => {}
+                    Some(at) => {
+                        read.insert(self.reads[at].unwrap_or(usize::MAX - 1));
                     }
                 }
-                Ok(None)
             }
-            Predicate::Not(inner) => {
-                pending.push((inner, !value));
-                self.search(pending, wanted, budget)
-            }
-            atom => {
-                let Some(at) = self.atoms.iter().position(|known| *known == atom) else {
-                    return Ok(None);
-                };
-                match wanted.get(&at) {
-                    Some(held) if *held != value => Ok(None),
-                    Some(_) => self.search(pending, wanted, budget),
-                    None => {
-                        wanted.insert(at, value);
-                        let found = self.search(pending, wanted, budget);
-                        wanted.remove(&at);
-                        found
+            reads.push(read);
+        }
+        let mut label: Vec<usize> = (0..pending.len()).collect();
+        for at in 0..pending.len() {
+            for other in 0..at {
+                if label[at] != label[other] && !reads[at].is_disjoint(&reads[other]) {
+                    let (from, to) = (label[at].max(label[other]), label[at].min(label[other]));
+                    for held in &mut label {
+                        if *held == from {
+                            *held = to;
+                        }
                     }
                 }
             }
         }
+        // Each part with the position of its last connective, which orders the parts.
+        let mut parts: Vec<(usize, usize, Vec<Pending<'a>>)> = Vec::new();
+        for (at, item) in pending.iter().enumerate() {
+            if let Some(part) = parts.iter_mut().find(|(known, _, _)| *known == label[at]) {
+                part.1 = at;
+                part.2.push(*item);
+            } else {
+                parts.push((label[at], at, vec![*item]));
+            }
+        }
+        parts.sort_by_key(|(_, last, _)| *last);
+        Ok(parts.into_iter().map(|(_, _, items)| items).collect())
+    }
+
+    /// Where `pending` is one part only through a group no goal has decided, the ways that group
+    /// can decide the atoms of it `pending` reads, each a case [`Self::branch`] searches with
+    /// those truths wanted; `None` where no group does that.
+    ///
+    /// A guard reading one input every other guard reads — `m == true or not (m == true)` beside
+    /// each — joins them into one part whether or not a goal ever needs `m`, and refuting the
+    /// last of them would otherwise be searched again under every way of refuting each before it.
+    /// Fixing `m` per case leaves parts [`Self::parts`] searches apart.
+    ///
+    /// The group is the one most connectives read, the lowest first among equals, among those
+    /// whose cases split `pending`. The cases are the distinct truths of its atoms at its
+    /// combinations meeting `wanted`, base first, so every assignment `check` admits falls in
+    /// exactly one of them. A group with a combination leaving one of those atoms undecided, or
+    /// with more than [`MAX_ENUMERATED_PER_CANDIDATE`] cases, is not split on.
+    fn cases(
+        &mut self,
+        pending: &[Pending<'a>],
+        wanted: &BTreeMap<usize, bool>,
+    ) -> Result<Option<Vec<Truths>>, WitnessGap> {
+        if pending.len() < 2 {
+            return Ok(None);
+        }
+        // Per group: how many connectives read an undecided atom of it, and those atoms.
+        let mut readers: BTreeMap<usize, (usize, BTreeSet<usize>)> = BTreeMap::new();
+        for (predicate, _) in pending {
+            let mut counted = BTreeSet::new();
+            for atom in guard_atoms(predicate) {
+                let Some(at) = self.atoms.iter().position(|known| *known == atom) else {
+                    continue;
+                };
+                let Some(group) = self.reads[at] else {
+                    continue;
+                };
+                if self.determined(at, wanted)? {
+                    continue;
+                }
+                let entry = readers.entry(group).or_default();
+                entry.1.insert(at);
+                if counted.insert(group) {
+                    entry.0 += 1;
+                }
+            }
+        }
+        let mut shared: Vec<(usize, usize)> = readers
+            .iter()
+            .filter(|(_, (count, _))| *count > 1)
+            .map(|(group, (count, _))| (*group, *count))
+            .collect();
+        shared.sort_by_key(|(group, count)| (std::cmp::Reverse(*count), *group));
+        for (group, _) in shared {
+            if self.parts(pending, wanted, Some(group))?.len() < 2 {
+                continue;
+            }
+            let atoms: Vec<usize> = readers[&group].1.iter().copied().collect();
+            let key: Truths = wanted
+                .iter()
+                .filter(|(known, _)| self.reads[**known] == Some(group))
+                .map(|(known, value)| (*known, *value))
+                .collect();
+            let combinations = product(&self.groups[group])
+                .min(MAX_CANDIDATES.saturating_mul(MAX_ENUMERATED_PER_CANDIDATE));
+            let mut cases: Vec<Truths> = Vec::new();
+            let mut whole = true;
+            for combination in 0..combinations {
+                let truths = self.truths(Some(group), combination)?;
+                if !key
+                    .iter()
+                    .all(|(known, value)| truths[*known] == Some(*value))
+                {
+                    continue;
+                }
+                let Some(case) = atoms
+                    .iter()
+                    .map(|at| truths[*at].map(|value| (*at, value)))
+                    .collect::<Option<Truths>>()
+                else {
+                    whole = false;
+                    break;
+                };
+                if !cases.contains(&case) {
+                    cases.push(case);
+                }
+            }
+            if whole && cases.len() > 1 && cases.len() <= MAX_ENUMERATED_PER_CANDIDATE {
+                return Ok(Some(cases));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Whether atom `at` has one truth beside `wanted`: wanted itself, or decided alike by every
+    /// combination of its group that meets what `wanted` asks of that group, of which there is at
+    /// least one. Undecided at one of them counts as another truth, so wanting the atom's truth
+    /// later never narrows the combinations its group may take.
+    fn determined(
+        &mut self,
+        at: usize,
+        wanted: &BTreeMap<usize, bool>,
+    ) -> Result<bool, WitnessGap> {
+        if wanted.contains_key(&at) {
+            return Ok(true);
+        }
+        let group = self.reads[at];
+        let key: Truths = wanted
+            .iter()
+            .filter(|(known, _)| self.reads[**known] == group)
+            .map(|(known, value)| (*known, *value))
+            .collect();
+        if let Some(known) = self.determined.get(&(at, key.clone())) {
+            return Ok(*known);
+        }
+        let combinations = group.map_or(1, |group| {
+            product(&self.groups[group])
+                .min(MAX_CANDIDATES.saturating_mul(MAX_ENUMERATED_PER_CANDIDATE))
+        });
+        let mut seen: Option<Option<bool>> = None;
+        let mut alike = true;
+        for combination in 0..combinations {
+            let truths = self.truths(group, combination)?;
+            if !key
+                .iter()
+                .all(|(known, value)| truths[*known] == Some(*value))
+            {
+                continue;
+            }
+            match seen {
+                None => seen = Some(truths[at]),
+                Some(held) if held == truths[at] => {}
+                Some(_) => {
+                    alike = false;
+                    break;
+                }
+            }
+        }
+        let decided = alike && matches!(seen, Some(Some(_)));
+        self.determined.insert((at, key), decided);
+        Ok(decided)
+    }
+
+    /// Everything pending that does not branch, decided where it stands: a connective that
+    /// requires every child is replaced by its children, a negation by its inner predicate, and an
+    /// atom's truth is added to `wanted` (its index to `assigned`) and taken off `pending`.
+    /// `false` where a truth contradicts one already wanted, or where no combination of the
+    /// atom's group gives it beside the truths already wanted of that group.
+    ///
+    /// The connectives that branch keep their order, so the assignments are tried in the order
+    /// they always were and the first one that `check` admits is the one found before. What
+    /// changes is when a contradiction is seen: an atom deep in `pending` — the target guard's,
+    /// which [`Self::goals`] lists first — is decided before any branch, rather than after every
+    /// branch above it has been tried both ways.
+    ///
+    /// Then each connective that branches is looked ahead into: one none of whose children can
+    /// still hold is `false` now, and one with a single child that can, an atom, is replaced by
+    /// it. A child that cannot hold beside `wanted` cannot hold beside more, so neither removes an
+    /// assignment `check` would admit or changes the order of the rest.
+    fn settle(
+        &mut self,
+        pending: &mut Vec<(&'a Predicate, bool)>,
+        wanted: &mut BTreeMap<usize, bool>,
+        assigned: &mut Vec<usize>,
+    ) -> Result<bool, WitnessGap> {
+        loop {
+            if !self.settle_once(pending, wanted, assigned)? {
+                return Ok(false);
+            }
+            let mut forced = false;
+            for item in pending.iter_mut() {
+                let (predicate, value) = *item;
+                let (Predicate::All(children) | Predicate::Any(children)) = predicate else {
+                    continue;
+                };
+                let mut met = None;
+                for child in children {
+                    if self.entailed(child, value, wanted)? {
+                        met = Some(child);
+                        break;
+                    }
+                }
+                if let Some(child) = met {
+                    *item = (child, value);
+                    forced = true;
+                    continue;
+                }
+                let mut viable = Vec::new();
+                for child in children {
+                    if self.may_hold(child, value, wanted)? {
+                        viable.push(child);
+                    }
+                }
+                match viable.as_slice() {
+                    [] => return Ok(false),
+                    [only] if self.literal(only, value).is_some() => {
+                        *item = (*only, value);
+                        forced = true;
+                    }
+                    _ => {}
+                }
+            }
+            if !forced {
+                return Ok(true);
+            }
+        }
+    }
+
+    /// `predicate` under its negations, where that is an atom: the atom's index and the truth
+    /// wanted of it.
+    fn literal(&self, mut predicate: &Predicate, mut value: bool) -> Option<(usize, bool)> {
+        while let Predicate::Not(inner) = predicate {
+            predicate = inner;
+            value = !value;
+        }
+        if matches!(predicate, Predicate::All(_) | Predicate::Any(_)) {
+            return None;
+        }
+        let index = self.atoms.iter().position(|known| *known == predicate)?;
+        Some((index, value))
+    }
+
+    /// `false` only where `predicate` decided as `value` is an atom's truth that contradicts
+    /// `wanted` or that no combination of its group gives beside it; a connective may hold.
+    fn may_hold(
+        &mut self,
+        predicate: &Predicate,
+        value: bool,
+        wanted: &mut BTreeMap<usize, bool>,
+    ) -> Result<bool, WitnessGap> {
+        let mut inner = predicate;
+        while let Predicate::Not(next) = inner {
+            inner = next;
+        }
+        if matches!(inner, Predicate::All(_) | Predicate::Any(_)) {
+            return Ok(true);
+        }
+        let Some((index, value)) = self.literal(predicate, value) else {
+            return Ok(false);
+        };
+        if let Some(held) = wanted.get(&index) {
+            return Ok(*held == value);
+        }
+        wanted.insert(index, value);
+        let met = self.meets(self.reads[index], wanted);
+        wanted.remove(&index);
+        met
+    }
+
+    /// Whether `predicate`, an atom under its negations, already decides as `value` beside
+    /// `wanted`: that truth is wanted, or its group can give it there and cannot give the other.
+    /// A connective one such child decides needs nothing more, so [`Self::settle`] replaces it by
+    /// that child rather than branching on children that would only add truths to meet.
+    fn entailed(
+        &mut self,
+        predicate: &Predicate,
+        value: bool,
+        wanted: &mut BTreeMap<usize, bool>,
+    ) -> Result<bool, WitnessGap> {
+        let Some((index, value)) = self.literal(predicate, value) else {
+            return Ok(false);
+        };
+        if let Some(held) = wanted.get(&index) {
+            return Ok(*held == value);
+        }
+        let group = self.reads[index];
+        wanted.insert(index, !value);
+        let other = self.meets(group, wanted);
+        wanted.insert(index, value);
+        let this = self.meets(group, wanted);
+        wanted.remove(&index);
+        Ok(!other? && this?)
+    }
+
+    /// One pass of [`Self::settle`] over `pending`, without looking ahead.
+    fn settle_once(
+        &mut self,
+        pending: &mut Vec<(&'a Predicate, bool)>,
+        wanted: &mut BTreeMap<usize, bool>,
+        assigned: &mut Vec<usize>,
+    ) -> Result<bool, WitnessGap> {
+        let mut at = 0;
+        while at < pending.len() {
+            let (predicate, value) = pending[at];
+            match predicate {
+                Predicate::All(children) | Predicate::Any(children)
+                    if matches!(predicate, Predicate::All(_)) == value =>
+                {
+                    pending.splice(at..=at, children.iter().map(|child| (child, value)));
+                }
+                Predicate::All(_) | Predicate::Any(_) => at += 1,
+                Predicate::Not(inner) => pending[at] = (inner, !value),
+                atom => {
+                    pending.remove(at);
+                    let Some(index) = self.atoms.iter().position(|known| *known == atom) else {
+                        return Ok(false);
+                    };
+                    match wanted.get(&index) {
+                        Some(held) if *held != value => return Ok(false),
+                        Some(_) => {}
+                        None => {
+                            wanted.insert(index, value);
+                            assigned.push(index);
+                            if !self.meets(self.reads[index], wanted)? {
+                                return Ok(false);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(true)
     }
 
     /// Each group searched, base first, for the first combination that decides its atoms as
@@ -2042,23 +2530,7 @@ impl<'a, 'ir> Directed<'a, 'ir> {
             groups.insert(self.reads[*at]);
         }
         for group in groups {
-            let combinations = group.map_or(1, |group| {
-                product(&self.groups[group])
-                    .min(MAX_CANDIDATES.saturating_mul(MAX_ENUMERATED_PER_CANDIDATE))
-            });
-            let mut met = None;
-            for combination in 0..combinations {
-                let truths = self.truths(group, combination)?;
-                if wanted
-                    .iter()
-                    .filter(|(at, _)| self.reads[**at] == group)
-                    .all(|(at, value)| truths[*at] == Some(*value))
-                {
-                    met = Some(combination);
-                    break;
-                }
-            }
-            let Some(combination) = met else {
+            let Some(combination) = self.first_meeting(group, wanted)? else {
                 return Ok(None);
             };
             if let Some(group) = group {
@@ -2066,6 +2538,49 @@ impl<'a, 'ir> Directed<'a, 'ir> {
             }
         }
         Ok(Some(overrides))
+    }
+
+    /// The first combination of `group`, base first, that decides its atoms as `wanted` says.
+    fn first_meeting(
+        &mut self,
+        group: Option<usize>,
+        wanted: &BTreeMap<usize, bool>,
+    ) -> Result<Option<usize>, WitnessGap> {
+        let combinations = group.map_or(1, |group| {
+            product(&self.groups[group])
+                .min(MAX_CANDIDATES.saturating_mul(MAX_ENUMERATED_PER_CANDIDATE))
+        });
+        for combination in 0..combinations {
+            let truths = self.truths(group, combination)?;
+            if wanted
+                .iter()
+                .filter(|(at, _)| self.reads[**at] == group)
+                .all(|(at, value)| truths[*at] == Some(*value))
+            {
+                return Ok(Some(combination));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Whether some combination of `group` decides its atoms as `wanted` says: [`Self::check`]
+    /// for that group alone, remembered.
+    fn meets(
+        &mut self,
+        group: Option<usize>,
+        wanted: &BTreeMap<usize, bool>,
+    ) -> Result<bool, WitnessGap> {
+        let key: Truths = wanted
+            .iter()
+            .filter(|(at, _)| self.reads[**at] == group)
+            .map(|(at, value)| (*at, *value))
+            .collect();
+        if let Some(known) = self.feasible.get(&(group, key.clone())) {
+            return Ok(*known);
+        }
+        let met = self.first_meeting(group, wanted)?.is_some();
+        self.feasible.insert((group, key), met);
+        Ok(met)
     }
 
     /// The overrides at `combination` of `group`, first path fastest, `0` the base.
@@ -2111,6 +2626,23 @@ impl<'a, 'ir> Directed<'a, 'ir> {
         self.truths.insert(key, truths.clone());
         Ok(truths)
     }
+}
+
+thread_local! {
+    /// The steps [`Directed`] has taken on this thread ([`directed_steps`]).
+    static STEPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// `run`'s result, and how many steps the guard-directed search took on this thread while it ran:
+/// one per truth value it broke a goal down to, pruned or not.
+///
+/// A count rather than a clock, so a test can hold synthesis to a work bound that a loaded host
+/// cannot trip.
+pub fn directed_steps<T>(run: impl FnOnce() -> T) -> (T, usize) {
+    let before = STEPS.with(std::cell::Cell::get);
+    let out = run();
+    let after = STEPS.with(std::cell::Cell::get);
+    (out, after.saturating_sub(before))
 }
 
 /// The atoms of a guard: everything under its connectives.

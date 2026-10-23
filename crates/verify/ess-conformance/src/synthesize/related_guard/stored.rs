@@ -72,6 +72,7 @@ fn unpointed(field: &str, why: &str) -> RefusalCause {
     RefusalCause::GuardUnsatisfiable {
         predicate: format!("the stored `{field}` of the addressed subject: {why}"),
         tried: 0,
+        cut: 0,
     }
 }
 
@@ -925,6 +926,7 @@ fn on_held(
                 driver.outcome.name
             ),
             tried,
+            cut: 0,
         })?;
     Ok(advanced(ir, driver, arrangement.clone(), actors, &input))
 }

@@ -579,6 +579,7 @@ pub(super) fn input_for(
             .collect::<Vec<_>>()
             .join(", "),
         tried,
+        cut: 0,
     })
 }
 
