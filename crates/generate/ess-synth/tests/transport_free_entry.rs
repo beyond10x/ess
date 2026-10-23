@@ -338,3 +338,583 @@ const EXPECTED: &str = concat!(
      `desk.tickets.Titles` — see PLAN.md\",\"committed\":false}\n",
     "unknown `desk.tickets.Nowhere` is not a command or view this surface declares\n",
 );
+
+// ---- reading back the server's own answer -------------------------------------------------------
+//
+// An adopter's command carried an `Optional<Json>` field nested as deep as intake admits. The server
+// accepted it, rendered its outcome — which holds that value a few levels deeper inside the
+// envelope — and read the rendering back with the reader guarding intake, so `handle` panicked.
+// The read-back now has its own, deeper limit; `handle` holds a value its caller built to what
+// intake would have read; and a read-back that still fails is a refusal, not a panic.
+
+/// One served command whose `Json` field its event payload carries back out. The `busy` outcome is
+/// external, so the command stays an obligation the harness satisfies.
+const DEPTH_MODEL: &str = "format: ess/15
+system: desk
+version: v1
+domain: desk.notes
+events:
+  - name: desk.notes.Noted
+    fields:
+      - {name: id, type: String}
+      - {name: metadata, type: Optional<Json>}
+commands:
+  - name: desk.notes.Note
+    input:
+      - {name: id, type: String}
+      - {name: metadata, type: Optional<Json>}
+    outcomes:
+      - name: noted
+        emits: [desk.notes.Noted]
+        payload:
+          desk.notes.Noted: {id: input.id, metadata: input.metadata}
+      - name: busy
+        external: the desk is not answering
+        error: desk.notes.Busy
+errors:
+  - name: desk.notes.Busy
+components:
+  - component: desk-service
+    owns: {domains: [desk.notes]}
+    accepts: {commands: [desk.notes.Note]}
+    publishes: {events: [desk.notes.Noted]}
+    reached_by: network
+";
+
+/// The harness, as `<mode> <argument> [<method> <path>]`:
+///
+/// - `request <deepest>` drives the deepest value intake admits through `dispatch` and `handle`,
+///   and one level deeper through both;
+/// - `read <depth>` reads a document that deep with the read-back reader;
+/// - `write <depth>` clones, writes and drops an input that deep, as the server does before it
+///   answers;
+/// - `handle <depth>` sends that input through `handle`;
+/// - `number <spelling>` sends a hand-built number through `handle`;
+/// - `built <spelling>` has the realization build the number into its answer, then calls `handle`.
+///
+/// All but `request` run on a thread with a fixed stack, so the depth at which recursion would
+/// overflow is the same from run to run.
+const DEPTH_HARNESS: &str = r#"use desk_server::desk_service as surface;
+use desk_server::{http, json};
+use desk_types::notes as t;
+use desk_types::notes::obligations as o;
+use desk_types::obligation::UnmetObligation;
+
+/// A realization that echoes the input's metadata, or answers `built` in its place.
+struct Desk {
+    built: Option<json::Value>,
+}
+
+impl o::NoteBehavior for Desk {
+    fn note(&mut self, input: t::Note) -> Result<t::NoteOutcome, UnmetObligation> {
+        Ok(t::NoteOutcome::Noted {
+            noted: t::Noted {
+                id: input.id,
+                metadata: self.built.clone().or(input.metadata),
+            },
+        })
+    }
+}
+
+const STACK: usize = 512 * 1024;
+
+macro_rules! system {
+    ($built:expr) => {
+        desk_system::System::new(desk_service::DeskService::new(Desk { built: $built }))
+    };
+}
+
+/// `levels` arrays, each holding the next: the innermost one sits `levels` deep in the value.
+fn nested(levels: usize) -> json::Value {
+    let mut value = json::Value::Array(Vec::new());
+    for _ in 1..levels {
+        value = json::Value::Array(vec![value]);
+    }
+    value
+}
+
+fn input(metadata: json::Value) -> json::Value {
+    json::Value::Object(vec![
+        ("id".to_owned(), json::Value::Text("n1".to_owned())),
+        ("metadata".to_owned(), metadata),
+    ])
+}
+
+fn outcome(answered: Result<json::Value, desk_server::entry::Refused>) -> String {
+    match answered {
+        Ok(value) => format!("{:?}", value.member("outcome")),
+        Err(refused) => format!("{refused:?}"),
+    }
+}
+
+fn request(deepest: usize, method: &str, path: &str) {
+    let mut system = system!(None);
+    let request = |body: &str| http::Request {
+        method: method.to_owned(),
+        path: path.to_owned(),
+        query: String::new(),
+        headers: Vec::new(),
+        body: body.as_bytes().to_vec(),
+    };
+    // The field opens at level one of the body, so its innermost array sits at level `deepest`:
+    // the deepest value intake admits. One more array is the first it refuses.
+    let text = |levels: usize| {
+        format!(
+            "{{\"id\":\"n1\",\"metadata\":{}{}}}",
+            "[".repeat(levels),
+            "]".repeat(levels)
+        )
+    };
+
+    let answered = surface::dispatch(&mut system, &request(&text(deepest + 1)));
+    println!("dispatch one deeper {} {}", answered.status, answered.body);
+    let answered = surface::dispatch(&mut system, &request(&text(deepest)));
+    println!("dispatch deepest {} {}", answered.status, answered.body);
+
+    let value = json::parse(&text(deepest)).expect("intake admits the deepest field");
+    let handled = surface::handle(&mut system, "desk.notes.Note", value.clone())
+        .expect("a declared outcome");
+    let published = match handled.member("published") {
+        Some(json::Value::Array(items)) => items,
+        other => panic!("`published` is an array, found {other:?}"),
+    };
+    let payload = published[0].member("payload").expect("the event's payload");
+    assert_eq!(payload.member("metadata"), value.member("metadata"));
+    println!(
+        "handle deepest {:?} metadata unchanged",
+        handled.member("outcome").expect("an outcome")
+    );
+    let deeper = input(nested(deepest + 1));
+    println!(
+        "handle one deeper {}",
+        outcome(surface::handle(&mut system, "desk.notes.Note", deeper))
+    );
+}
+
+fn main() {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    let mode = arguments[0].clone();
+    let argument = arguments[1].clone();
+    if mode == "request" {
+        request(argument.parse().unwrap(), &arguments[2], &arguments[3]);
+        return;
+    }
+    let worker = std::thread::Builder::new()
+        .stack_size(STACK)
+        .spawn(move || match mode.as_str() {
+            "read" => {
+                let depth: usize = argument.parse().unwrap();
+                let text = format!("{}{}", "[".repeat(depth), "]".repeat(depth));
+                println!("read {depth} {}", json::parse_written(&text).is_ok());
+            }
+            "write" => {
+                let depth: usize = argument.parse().unwrap();
+                let value = input(nested(depth));
+                let copy = value.clone();
+                let mut out = String::new();
+                json::push_value(&mut out, &copy);
+                drop(copy);
+                drop(value);
+                println!("write {depth} {} bytes", out.len());
+            }
+            "handle" => {
+                let depth: usize = argument.parse().unwrap();
+                let answered =
+                    surface::handle(&mut system!(None), "desk.notes.Note", input(nested(depth)));
+                println!("handle {depth} {}", outcome(answered));
+            }
+            "number" => {
+                let number = json::Value::Number(argument.clone());
+                let answered = surface::handle(&mut system!(None), "desk.notes.Note", input(number));
+                println!("number {argument:?} {}", outcome(answered));
+            }
+            "built" => {
+                let built = Some(json::Value::Number(argument.clone()));
+                let answered =
+                    surface::handle(&mut system!(built), "desk.notes.Note", input(json::Value::Null));
+                println!("built {argument:?} {}", outcome(answered));
+            }
+            other => panic!("unknown mode {other}"),
+        })
+        .unwrap();
+    if worker.join().is_err() {
+        std::process::exit(101);
+    }
+}
+"#;
+
+/// The deepest level the generated reader admits at intake: the outermost value is level zero.
+const DEEPEST: usize = 64;
+
+/// The harness, built once for every case below.
+fn depth_harness() -> &'static Path {
+    static BUILT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    BUILT.get_or_init(|| {
+        let synthesis = synthesize_for(&ir(DEPTH_MODEL), Target::Rust).expect("synthesizes");
+        let root = scratch("read-back");
+        write(&synthesis, &root.join("generated"));
+        let harness = root.join("harness");
+        std::fs::create_dir_all(harness.join("src")).unwrap();
+        std::fs::write(
+            harness.join("Cargo.toml"),
+            "[package]\nname = \"depth-harness\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n\
+             [dependencies]\ndesk-server = { path = \"../generated/crates/desk-server\" }\n\
+             desk-system = { path = \"../generated/crates/desk-system\" }\n\
+             desk-service = { path = \"../generated/crates/desk-service\" }\n\
+             desk-types = { path = \"../generated/crates/desk-types\" }\n\n[workspace]\n",
+        )
+        .unwrap();
+        std::fs::write(harness.join("src/main.rs"), DEPTH_HARNESS).unwrap();
+        let target = root.join("target");
+        let arguments: Vec<String> = [
+            "build",
+            "--offline",
+            "--quiet",
+            "--target-dir",
+            target.to_str().unwrap(),
+        ]
+        .iter()
+        .map(|argument| (*argument).to_owned())
+        .collect();
+        assert!(
+            cargo(&harness, &arguments).status.success(),
+            "the harness builds"
+        );
+        target.join("debug").join("depth-harness")
+    })
+}
+
+/// The harness's exit (`exit N` or `signal N`) and what it printed, with any panic line.
+fn drive(arguments: &[&str]) -> (String, String) {
+    let output = Command::new(depth_harness())
+        .args(arguments)
+        .output()
+        .expect("the harness runs");
+    let status = if let Some(code) = output.status.code() {
+        format!("exit {code}")
+    } else {
+        use std::os::unix::process::ExitStatusExt;
+        format!("signal {}", output.status.signal().unwrap_or(0))
+    };
+    let said = String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .filter(|line| line.contains("panicked") || line.contains("overflow"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    (
+        status,
+        format!("{}{said}", String::from_utf8_lossy(&output.stdout)),
+    )
+}
+
+#[test]
+fn a_json_field_as_deep_as_intake_admits_is_answered_by_dispatch_and_handle() {
+    let ir = ir(DEPTH_MODEL);
+    let component = ir.components().values().next().expect("a component");
+    let route = http::routes(&ir, component)
+        .into_iter()
+        .find(|route| matches!(route.serves, Served::Command(_)))
+        .expect("the command is served");
+    let (status, stdout) = drive(&[
+        "request",
+        &DEEPEST.to_string(),
+        route.method.as_str(),
+        &route.path,
+    ]);
+    assert_eq!(status, "exit 0", "{stdout}");
+
+    let deepest = format!("{}{}", "[".repeat(DEEPEST), "]".repeat(DEEPEST));
+    // The refused field's innermost `[` is the one past the limit: the body's 22-byte prefix,
+    // then 64 brackets the reader admitted. `handle` refuses the same value with the same words.
+    let expected = format!(
+        "dispatch one deeper 400 {{\"refused\":\"the body is not JSON: at byte 86: expected a \
+         document nested less than 64 deep\"}}\n\
+         dispatch deepest 202 {{\"outcome\":\"noted\",\"published\":[{{\"event\":\
+         \"desk.notes.Noted\",\"payload\":{{\"id\":\"n1\",\"metadata\":{deepest}}}}}]}}\n\
+         handle deepest Text(\"noted\") metadata unchanged\n\
+         handle one deeper Input(\"the input is not JSON: expected a document nested less than \
+         64 deep\")\n"
+    );
+    assert_eq!(stdout, expected);
+}
+
+/// Every depth the writer writes reads back: the reader alone on the harness's fixed stack, and
+/// through `handle` an answer the model nests deeper than intake would admit — a reply tree with
+/// no `Json` in it, two levels of JSON per reply. `handle` refuses an input past intake's depth
+/// before anything is read back, so only an answer nested by the model itself reaches past it.
+/// Any limit on the read-back, `DEPTH` or a multiple of it, fails a row here.
+#[test]
+fn the_read_back_is_no_shallower_than_the_writer() {
+    let mut table = Vec::new();
+    let mut broken = Vec::new();
+    for depth in [64usize, 65, 67, 128, 129, 256, 1024, 4096] {
+        let depth_text = depth.to_string();
+        let (written, _) = drive(&["write", &depth_text]);
+        let (read, said) = drive(&["read", &depth_text]);
+        table.push(format!(
+            "depth {depth}: write {written}, read {read} {said}"
+        ));
+        if written == "exit 0" && said != format!("read {depth} true\n") {
+            broken.push(format!("read {depth}"));
+        }
+    }
+    for replies in [1usize, 16, 32, 33, 64, 128, 256] {
+        let said = adversary_pass2_drive(replies, 0);
+        table.push(format!("{replies} replies: {said}"));
+        if said != "dispatch 202\nhandle Some(Text(\"noted\"))\n" {
+            broken.push(format!("{replies} replies"));
+        }
+    }
+    assert!(
+        broken.is_empty(),
+        "the server writes these and cannot read its own answer back: {broken:?}\n{}",
+        table.join("\n")
+    );
+}
+
+#[test]
+fn handle_never_panics_on_its_own_answer() {
+    let mut table = Vec::new();
+    let mut broken = Vec::new();
+    for mode in ["number", "built"] {
+        for spelling in ["1", "NaN", "", "1.", "01"] {
+            let (status, said) = drive(&[mode, spelling]);
+            table.push(format!("{mode} {spelling:?}: {status} {said}"));
+            if status != "exit 0" {
+                broken.push(format!("{mode} {spelling:?}"));
+            }
+        }
+    }
+    assert!(
+        broken.is_empty(),
+        "`handle` panicked reading back its own answer for a `Json` number: {broken:?}\n{}",
+        table.join("\n")
+    );
+    // A number the caller built is refused before the command runs, as intake refuses it; one the
+    // realization built is refused after, and says the command took effect.
+    let (_, said) = drive(&["number", "NaN"]);
+    assert_eq!(
+        said,
+        "number \"NaN\" Input(\"the input is not JSON: expected a number, found `NaN`\")\n"
+    );
+    let (_, said) = drive(&["built", "NaN"]);
+    assert!(
+        said.starts_with(
+            "built \"NaN\" Undelivered(\"delivering what the command published: its answer is \
+             not JSON this surface reads back: "
+        ),
+        "{said}"
+    );
+}
+
+#[test]
+fn only_entry_read_calls_the_unlimited_reader() {
+    let synthesis = synthesize_for(&ir(DEPTH_MODEL), Target::Rust).expect("synthesizes");
+    let mut callers = Vec::new();
+    for (relative, artifact) in &synthesis.artifacts {
+        for (index, line) in artifact.contents.lines().enumerate() {
+            if line.contains("parse_written(")
+                && !line.contains("pub fn parse_written")
+                && !line.trim_start().starts_with("//")
+            {
+                callers.push(format!("{}:{}: {}", relative, index + 1, line.trim()));
+            }
+        }
+    }
+    assert_eq!(callers.len(), 1, "{callers:#?}");
+    assert!(callers[0].contains("src/entry.rs"), "{callers:#?}");
+}
+
+// ---- adversary pass 2: an answer the model nests deeper than intake ----------------------------
+//
+// A struct that holds a list of itself is admitted (a list is a base case for inhabitation), and
+// every level of it is two levels of JSON, so the model's own nesting around a `Json` field has
+// no bound. A read-back limit of `DEPTH` again on top refused such answers; the read-back now has
+// none.
+
+/// A threaded note: the event carries a `Reply` tree, a struct holding a list of itself, and the
+/// realization hangs the caller's `Json` value off its innermost reply.
+const ADVERSARY_PASS2_MODEL: &str = "format: ess/15
+system: desk
+version: v1
+domain: desk.notes
+types:
+  - name: desk.notes.Reply
+    kind: struct
+    fields:
+      - {name: metadata, type: Optional<Json>}
+      - {name: replies, type: 'List<desk.notes.Reply>'}
+events:
+  - name: desk.notes.Noted
+    fields:
+      - {name: id, type: String}
+      - {name: thread, type: Optional<desk.notes.Reply>}
+commands:
+  - name: desk.notes.Note
+    input:
+      - {name: id, type: String}
+      - {name: metadata, type: Optional<Json>}
+    outcomes:
+      - name: noted
+        emits: [desk.notes.Noted]
+        payload:
+          desk.notes.Noted: {id: input.id, thread: {generated: true}}
+      - name: busy
+        external: the desk is not answering
+        error: desk.notes.Busy
+errors:
+  - name: desk.notes.Busy
+components:
+  - component: desk-service
+    owns: {domains: [desk.notes]}
+    accepts: {commands: [desk.notes.Note]}
+    publishes: {events: [desk.notes.Noted]}
+    reached_by: network
+";
+
+/// `<replies> <json levels> <method> <path>`: the realization answers a thread `replies` deep with
+/// the input's metadata on its innermost reply; the input's metadata is `json levels` nested arrays
+/// (none: `null`). The same input goes through `dispatch` and `handle`.
+const ADVERSARY_PASS2_HARNESS: &str = r#"use desk_server::desk_service as surface;
+use desk_server::{http, json};
+use desk_types::notes as t;
+use desk_types::notes::obligations as o;
+use desk_types::obligation::UnmetObligation;
+
+struct Desk {
+    replies: usize,
+}
+
+impl o::NoteBehavior for Desk {
+    fn note(&mut self, input: t::Note) -> Result<t::NoteOutcome, UnmetObligation> {
+        let mut reply = t::Reply { metadata: input.metadata, replies: Vec::new() };
+        for _ in 1..self.replies {
+            reply = t::Reply { metadata: None, replies: vec![reply] };
+        }
+        Ok(t::NoteOutcome::Noted {
+            noted: t::Noted { id: input.id, thread: Some(reply) },
+        })
+    }
+}
+
+fn main() {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    let replies: usize = arguments[0].parse().unwrap();
+    let levels: usize = arguments[1].parse().unwrap();
+    let metadata = if levels == 0 {
+        "null".to_owned()
+    } else {
+        format!("{}{}", "[".repeat(levels), "]".repeat(levels))
+    };
+    let text = format!("{{\"id\":\"n1\",\"metadata\":{metadata}}}");
+    let mut system = desk_system::System::new(desk_service::DeskService::new(Desk { replies }));
+    let request = http::Request {
+        method: arguments[2].clone(),
+        path: arguments[3].clone(),
+        query: String::new(),
+        headers: Vec::new(),
+        body: text.as_bytes().to_vec(),
+    };
+    let answered = surface::dispatch(&mut system, &request);
+    println!("dispatch {}", answered.status);
+    let value = json::parse(&text).expect("intake admits the input");
+    match surface::handle(&mut system, "desk.notes.Note", value) {
+        Ok(value) => println!("handle {:?}", value.member("outcome")),
+        Err(refused) => println!("handle {refused:?}"),
+    }
+}
+"#;
+
+fn adversary_pass2_harness() -> &'static Path {
+    static BUILT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    BUILT.get_or_init(|| {
+        let synthesis =
+            synthesize_for(&ir(ADVERSARY_PASS2_MODEL), Target::Rust).expect("synthesizes");
+        let root = scratch("adversary-pass2");
+        write(&synthesis, &root.join("generated"));
+        let harness = root.join("harness");
+        std::fs::create_dir_all(harness.join("src")).unwrap();
+        std::fs::write(
+            harness.join("Cargo.toml"),
+            "[package]\nname = \"adversary-pass2\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n\
+             [dependencies]\ndesk-server = { path = \"../generated/crates/desk-server\" }\n\
+             desk-system = { path = \"../generated/crates/desk-system\" }\n\
+             desk-service = { path = \"../generated/crates/desk-service\" }\n\
+             desk-types = { path = \"../generated/crates/desk-types\" }\n\n[workspace]\n",
+        )
+        .unwrap();
+        std::fs::write(harness.join("src/main.rs"), ADVERSARY_PASS2_HARNESS).unwrap();
+        let target = root.join("target");
+        let arguments: Vec<String> = [
+            "build",
+            "--offline",
+            "--quiet",
+            "--target-dir",
+            target.to_str().unwrap(),
+        ]
+        .iter()
+        .map(|argument| (*argument).to_owned())
+        .collect();
+        let built = cargo(&harness, &arguments);
+        assert!(
+            built.status.success(),
+            "the harness builds: {}",
+            String::from_utf8_lossy(&built.stderr)
+        );
+        target.join("debug").join("adversary-pass2")
+    })
+}
+
+fn adversary_pass2_drive(replies: usize, levels: usize) -> String {
+    let ir = ir(ADVERSARY_PASS2_MODEL);
+    let component = ir.components().values().next().expect("a component");
+    let route = http::routes(&ir, component)
+        .into_iter()
+        .find(|route| matches!(route.serves, Served::Command(_)))
+        .expect("the command is served");
+    let output = Command::new(adversary_pass2_harness())
+        .args([
+            replies.to_string(),
+            levels.to_string(),
+            route.method.as_str().to_owned(),
+            route.path.clone(),
+        ])
+        .output()
+        .expect("the harness runs");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+/// Acceptance 1 and 3: the deepest `Json` value intake admits, carried in a declared 32-reply
+/// thread (the input is at level 64; the answer holds it at level 130). `dispatch` answers it;
+/// `handle` must answer the same declared outcome, not refuse to read back what it wrote.
+#[test]
+fn adversary_pass2_an_admitted_json_value_inside_a_declared_tree_is_answered_by_handle() {
+    assert_eq!(
+        adversary_pass2_drive(32, 64),
+        "dispatch 202\nhandle Some(Text(\"noted\"))\n"
+    );
+}
+
+/// The control for the case above: the same thread with `null` metadata is answered by both.
+#[test]
+fn adversary_pass2_the_same_tree_without_the_admitted_value_is_answered_by_handle() {
+    assert_eq!(
+        adversary_pass2_drive(32, 0),
+        "dispatch 202\nhandle Some(Text(\"noted\"))\n"
+    );
+}
+
+/// No `Json` at all: a declared 70-reply thread the generated encoder writes. `handle`'s own
+/// documentation names only a `Json` value the realization built as unreadable.
+#[test]
+fn adversary_pass2_a_declared_tree_with_no_json_is_answered_by_handle() {
+    assert_eq!(
+        adversary_pass2_drive(70, 0),
+        "dispatch 202\nhandle Some(Text(\"noted\"))\n"
+    );
+}

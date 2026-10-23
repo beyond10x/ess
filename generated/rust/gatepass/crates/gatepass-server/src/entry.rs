@@ -71,8 +71,15 @@ impl std::error::Error for Refused {}
 
 /// A rendered outcome, read back as the value it renders.
 ///
-/// The body is written by this crate's own encoders, so it is JSON by construction; reading it
-/// back, rather than building the value a second way, keeps one rendering of every outcome.
-pub(crate) fn read(body: &str) -> crate::json::Value {
-    crate::json::parse(body).expect("this crate's encoders write JSON its reader reads")
+/// The body is written by this crate's own encoders; reading it back, rather than building the
+/// value a second way, keeps one rendering of every outcome. It is read with
+/// [`crate::json::parse_written`], which has no depth limit: a `Json` value intake admitted sits
+/// deeper in the answer than it arrived.
+///
+/// # Errors
+///
+/// The reader's refusal when the answer is not JSON, which only a `Json` value the realization
+/// built can make it: a number spelled the way JSON does not spell one.
+pub(crate) fn read(body: &str) -> Result<crate::json::Value, crate::json::ParseError> {
+    crate::json::parse_written(body)
 }
