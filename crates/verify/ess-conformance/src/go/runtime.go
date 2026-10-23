@@ -2812,6 +2812,12 @@ func payloadCarries(payload, want map[string]Node) string {
 	sort.Strings(fields)
 	for _, field := range fields {
 		actual, ok := carriedAt(payload, field)
+		if _, relayed := want[field].(unissued); relayed {
+			if ok && actual != nil {
+				return fmt.Sprintf("`%s` = %s, and the awaited answer left the input it relays out", field, render(actual))
+			}
+			continue
+		}
 		if !ok {
 			return fmt.Sprintf("`%s` was not carried", field)
 		}
@@ -3144,7 +3150,7 @@ func (r *run) decide(index int, step Step) (bool, string, bool) {
 	case "page":
 		return r.pageOf(step)
 	case "contains", "excludes":
-		want, ok := r.resolveAll(index, expectation.Fields)
+		want, ok := r.resolveRow(index, expectation.Fields)
 		if !ok {
 			return false, "a value the expectation names is not bound", true
 		}
@@ -3222,7 +3228,7 @@ func (r *run) decide(index int, step Step) (bool, string, bool) {
 		if expectation.Position == nil {
 			return false, "the suite names no position, which is a generator defect", true
 		}
-		want, ok := r.resolveAll(index, expectation.Fields)
+		want, ok := r.resolveRow(index, expectation.Fields)
 		if !ok {
 			return false, "a value the expectation names is not bound", true
 		}
@@ -3309,6 +3315,8 @@ func (r *run) invocationWanted(index int, step Step) (map[string]Node, []string,
 		}
 		if present {
 			want[field] = node
+		} else if r.leftOut(value) {
+			want[field] = unissued{}
 		} else {
 			absent = append(absent, field)
 		}
@@ -3641,6 +3649,64 @@ func (r *run) resolveAll(index int, values map[string]Value) (map[string]Node, b
 	return resolved, true
 }
 
+// leftOut reports whether value reads an input the most recent await's answer left out, by
+// omitting it or by spelling it null. Only an input declared Optional can be left out, since the
+// await step holds the answer to its declared shape: there is nothing issued to compare, and the
+// expectation holds the input absent or null instead (an absent Optional input written by `sets:`
+// clears the field), as in the Rust runner.
+func (r *run) leftOut(value Value) bool {
+	if value.Kind != "awaited" || r.awaited == nil {
+		return false
+	}
+	issued, carried := r.awaited[value.Field]
+	return !carried || issued == nil
+}
+
+// unissued is the expected value of a field that relays an awaited input the answer left out: the
+// field is carried absent or null, never with a value.
+type unissued struct{}
+
+// withoutLeftOut is values less each one that reads an awaited input the answer left out.
+func (r *run) withoutLeftOut(values map[string]Value) map[string]Value {
+	kept := make(map[string]Value, len(values))
+	for field, value := range values {
+		if !r.leftOut(value) {
+			kept[field] = value
+		}
+	}
+	return kept
+}
+
+// resolveRelayed is resolveAll for the values an event or invocation must carry: a field relaying
+// an awaited input the answer left out expects unissued, absent or null.
+func (r *run) resolveRelayed(index int, values map[string]Value) (map[string]Node, bool) {
+	resolved, ok := r.resolveAll(index, r.withoutLeftOut(values))
+	if !ok {
+		return nil, false
+	}
+	for field, value := range values {
+		if r.leftOut(value) {
+			resolved[field] = unissued{}
+		}
+	}
+	return resolved, true
+}
+
+// resolveRow is resolveAll for the fields of an expected view row: a field `sets:` writes from an
+// awaited input the answer left out holds nothing.
+func (r *run) resolveRow(index int, values map[string]Value) (map[string]Node, bool) {
+	resolved, ok := r.resolveAll(index, r.withoutLeftOut(values))
+	if !ok {
+		return nil, false
+	}
+	for field, value := range values {
+		if r.leftOut(value) {
+			resolved[field] = nil
+		}
+	}
+	return resolved, true
+}
+
 func (r *run) resolve(value Value) (Node, error) {
 	switch value.Kind {
 	case "list":
@@ -3732,6 +3798,12 @@ func rowMatches(row map[string]Node, want map[string]Node) bool {
 func fieldsMatch(row map[string]Node, want map[string]Node, same func(Node, Node) bool) bool {
 	for field, expected := range want {
 		actual, ok := carriedAt(row, field)
+		if _, relayed := expected.(unissued); relayed {
+			if ok && actual != nil {
+				return false
+			}
+			continue
+		}
 		if !ok {
 			// A leaf path finds nothing where the leaf, or a struct above it, was not written or
 			// is null: that is the leaf holding nothing, which is what a `null` asks about
@@ -4010,6 +4082,8 @@ func render(value Node) string {
 	switch value := value.(type) {
 	case nil:
 		return "null"
+	case unissued:
+		return "absent or null"
 	case string:
 		return strconv.Quote(value)
 	case float64:
@@ -7172,6 +7246,9 @@ func (a accessorObservation) evaluate(payload map[string]Node) (Node, bool, erro
 	return nil, false, fmt.Errorf("accessor operation budget exceeded")
 }
 func (r *run) resolveAccessorExpected(value Value) (Node, bool, error) {
+	if r.leftOut(value) {
+		return nil, false, nil
+	}
 	if value.Kind == "observed_selection" {
 		if value.Selection == nil {
 			return nil, false, fmt.Errorf("missing selection observation")

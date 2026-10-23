@@ -701,7 +701,7 @@ impl<C: Clock> Runner<C> {
                 event,
                 payload,
                 shape,
-            } => expect_event(event, payload, shape, run),
+            } => expect_event(event, &EventValues::literal(payload), shape, run),
             ScenarioStep::ExpectNoEvent { event } => expect_no_event(event, run),
             ScenarioStep::CaptureInstance {
                 instance,
@@ -919,10 +919,15 @@ impl<C: Clock> Runner<C> {
     ) -> Flow {
         let mut wanted = BTreeMap::new();
         let mut absent = BTreeSet::new();
+        // Relaying an awaited input the answer left out: nothing to carry, so absent or null.
+        let mut unissued = BTreeSet::new();
         for (field, value) in input {
             match run.resolve_expected(value) {
                 Ok(crate::accessor::Expected::Present(node)) => {
                     wanted.insert(field.clone(), node);
+                }
+                Ok(crate::accessor::Expected::Absent) if run.left_out(value) => {
+                    unissued.insert(field.clone());
                 }
                 Ok(crate::accessor::Expected::Absent) => {
                     absent.insert(field.clone());
@@ -957,6 +962,7 @@ impl<C: Clock> Runner<C> {
                         && absent
                             .iter()
                             .all(|field| !invocation.input.contains_key(field))
+                        && absent_or_null(&invocation.input, &unissued)
                 });
                 if found {
                     run.record(CheckResult::passed(CheckCode::Invocation, about));
@@ -966,6 +972,10 @@ impl<C: Clock> Runner<C> {
                         .declared_by(command.clone());
                     for field in &absent {
                         diagnostic = diagnostic.expected(format!("{command}.{field} is absent"));
+                    }
+                    for field in &unissued {
+                        diagnostic =
+                            diagnostic.expected(format!("{command}.{field} is absent or null"));
                     }
                     for (field, value) in &wanted {
                         diagnostic =
@@ -1141,7 +1151,14 @@ impl<C: Clock> Runner<C> {
                 // crossing a component boundary changes when a consequence is observable, not what
                 // it carries.
                 let executing = run.last_command.as_ref().map(Executed::quoted);
-                expect_payload(event, &carried, &BTreeMap::new(), shape, executing, run);
+                expect_payload(
+                    event,
+                    &carried,
+                    &EventValues::default(),
+                    shape,
+                    executing,
+                    run,
+                );
                 return Flow::Continue;
             }
             if deadline.has_passed(self.clock.now()) {
@@ -2014,11 +2031,7 @@ fn expect_event_values(
     shape: &PayloadShape,
     run: &mut Run,
 ) -> Flow {
-    let resolved: Result<BTreeMap<_, _>, _> = payload
-        .iter()
-        .map(|(field, value)| run.resolve(value).map(|value| (field.clone(), value)))
-        .collect();
-    match resolved {
+    match run.resolve_payload(payload) {
         Ok(values) => expect_event(event, &values, shape, run),
         Err(reason) => {
             run.record(CheckResult::errored(
@@ -2035,7 +2048,7 @@ fn expect_event_values(
 /// Requires that the last command published an event it declares it emits (§13).
 fn expect_event(
     event: &EventRef,
-    payload: &BTreeMap<String, Node>,
+    payload: &EventValues,
     shape: &PayloadShape,
     run: &mut Run,
 ) -> Flow {
@@ -2083,7 +2096,7 @@ fn expect_event(
 /// many the act claims. The order claims are written in decides none of it.
 fn expect_counted_event(
     event: &EventRef,
-    payload: &BTreeMap<String, Node>,
+    payload: &EventValues,
     shape: &PayloadShape,
     run: &mut Run,
 ) -> Flow {
@@ -2112,18 +2125,14 @@ fn expect_counted_event(
                     event: claimed,
                     payload,
                     shape,
-                } if claimed == event => Some(Ok((payload.clone(), shape))),
+                } if claimed == event => Some(Ok((EventValues::literal(payload), shape))),
                 ScenarioStep::ExpectEventValues {
                     event: claimed,
                     payload,
                     shape,
-                } if claimed == event => Some(
-                    payload
-                        .iter()
-                        .map(|(field, value)| run.resolve(value).map(|node| (field.clone(), node)))
-                        .collect::<Result<BTreeMap<_, _>, _>>()
-                        .map(|values| (values, shape)),
-                ),
+                } if claimed == event => {
+                    Some(run.resolve_payload(payload).map(|values| (values, shape)))
+                }
                 _ => None,
             })
             .map(|claim| {
@@ -2170,16 +2179,36 @@ fn expect_counted_event(
     Flow::Continue
 }
 
+/// What an event claim requires of the fields it names.
+#[derive(Debug, Clone, Default)]
+struct EventValues {
+    /// Each field and the value it carries.
+    values: BTreeMap<String, Node>,
+    /// Each field relaying an awaited input the answer left out, carried absent or null.
+    unissued: BTreeSet<String>,
+}
+
+impl EventValues {
+    /// A claim whose values the suite wrote out.
+    fn literal(values: &BTreeMap<String, Node>) -> Self {
+        Self {
+            values: values.clone(),
+            unissued: BTreeSet::new(),
+        }
+    }
+}
+
 /// Whether an occurrence carries every value a claim names and every leaf of its shape: what
 /// [`expect_payload`] would pass, without recording anything.
-fn carries(
-    carried: &BTreeMap<String, Node>,
-    values: &BTreeMap<String, Node>,
-    shape: &PayloadShape,
-) -> bool {
+fn carries(carried: &BTreeMap<String, Node>, values: &EventValues, shape: &PayloadShape) -> bool {
     values
+        .values
         .iter()
         .all(|(field, expected)| carried_at(carried, field) == Some(expected))
+        && values
+            .unissued
+            .iter()
+            .all(|field| carried_at(carried, field).is_none_or(|node| *node == Node::Null))
         && shape
             .leaves()
             .iter()
@@ -2209,12 +2238,12 @@ fn carries(
 fn expect_payload(
     event: &EventRef,
     carried: &BTreeMap<String, Node>,
-    values: &BTreeMap<String, Node>,
+    values: &EventValues,
     shape: &PayloadShape,
     executing: Option<String>,
     run: &mut Run,
 ) {
-    if shape.is_empty() && values.is_empty() {
+    if shape.is_empty() && values.values.is_empty() && values.unissued.is_empty() {
         return;
     }
     let about = format!("payload of {event}");
@@ -2227,7 +2256,7 @@ fn expect_payload(
     // an event with three fields of the wrong type is three repairs, and reporting one makes the
     // other two look like consequences of it.
     let mut wrong = Vec::new();
-    for (field, expected) in values {
+    for (field, expected) in &values.values {
         if carried_at(carried, field) == Some(expected) {
             continue;
         }
@@ -2236,6 +2265,16 @@ fn expect_payload(
             Some(observed) => format!("{field} = {}", quote(observed)),
             None => format!("{field} was not carried"),
         });
+    }
+    // The system issued its command without the input this field relays, so the event has
+    // nothing to carry there.
+    for field in &values.unissued {
+        if let Some(observed) = carried_at(carried, field).filter(|node| **node != Node::Null) {
+            diagnostic = diagnostic.expected(format!(
+                "{event}.{field} absent or null: the awaited answer left the input it relays out"
+            ));
+            wrong.push(format!("{field} = {}", quote(observed)));
+        }
     }
     for (path, leaf) in shape.leaves() {
         let reached = reach_into(carried, path);
@@ -3353,7 +3392,41 @@ impl Run {
         }
     }
 
+    /// Whether `value` reads an input the most recent await's answer left out, by omitting it or
+    /// by spelling it `null`. Only an input declared `Optional` can be left out, since the await
+    /// step holds the answer to its declared shape: there is nothing issued to compare, and the
+    /// expectation holds the input absent or null instead (an absent `Optional` input written by
+    /// `sets:` clears the field).
+    fn left_out(&self, value: &ScenarioValue) -> bool {
+        matches!(
+            (value, &self.awaited),
+            (ScenarioValue::Awaited { field }, Some(input))
+                if input.get(field).is_none_or(|node| *node == Node::Null)
+        )
+    }
+
+    /// Each value of an event expectation resolved, and apart from them the fields that relay an
+    /// awaited input the answer left out ([`Self::left_out`]): the occurrence carries those absent
+    /// or null.
+    fn resolve_payload(
+        &self,
+        payload: &BTreeMap<String, ScenarioValue>,
+    ) -> Result<EventValues, String> {
+        let mut values = EventValues::default();
+        for (field, value) in payload {
+            if self.left_out(value) {
+                values.unissued.insert(field.clone());
+            } else {
+                values.values.insert(field.clone(), self.resolve(value)?);
+            }
+        }
+        Ok(values)
+    }
+
     fn resolve_expected(&self, value: &ScenarioValue) -> Result<crate::accessor::Expected, String> {
+        if self.left_out(value) {
+            return Ok(crate::accessor::Expected::Absent);
+        }
         if let ScenarioValue::ObservedSelection { event, selection } = value {
             let observed = self
                 .seen
@@ -3397,6 +3470,14 @@ impl Run {
 /// [`carries`] compares an immediate event. A view row is compared by [`row_matches`].
 fn matches(payload: &BTreeMap<String, Node>, wanted: &BTreeMap<String, Node>) -> bool {
     fields_match(payload, wanted, |carried, wanted| carried == wanted)
+}
+
+/// Whether `input` carries each of `fields` absent or `null`: what relaying an awaited input the
+/// answer left out may carry.
+fn absent_or_null(input: &BTreeMap<String, Node>, fields: &BTreeSet<String>) -> bool {
+    fields
+        .iter()
+        .all(|field| input.get(field).is_none_or(|node| *node == Node::Null))
 }
 
 /// [`matches`] for a view row, whose struct members compare by [`same_value`].
@@ -3870,6 +3951,10 @@ impl Required {
             fields
                 .iter()
                 .map(|(field, value)| {
+                    // A row field `sets:` writes from an input the system left out holds nothing.
+                    if run.left_out(value) {
+                        return Ok((field.clone(), Node::Null));
+                    }
                     run.resolve(value)
                         .map(|node| (field.clone(), node))
                         .map_err(|reason| format!("`{field}`: {reason}"))

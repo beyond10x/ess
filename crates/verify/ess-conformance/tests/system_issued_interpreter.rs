@@ -651,3 +651,660 @@ fn a_driven_command_is_not_awaited() {
          {error:?}"
     );
 }
+
+// ---- an Optional input the system may leave out ---------------------------------------------
+
+const FINISH: &str = "jobs.job.Finish";
+const FINISHED: &str = "jobs.job.Finished";
+const ARCHIVE: &str = "jobs.job.Archive";
+const MOVED: &str = "jobs.job.Finish/outcome/moved";
+
+/// A job a caller opens and an agent of the system finishes, with or without a note: `Finish`
+/// copies its `Optional` input into the row by `sets:`, and the system may leave it out.
+fn job_model() -> String {
+    "format: ess/27
+system: jobs
+version: v1
+domain: jobs.job
+types:
+  - {name: jobs.job.JobId, kind: newtype, of: Uuid}
+  - name: jobs.job.Note
+    kind: struct
+    fields:
+      - {name: text, type: String}
+entities:
+  - name: jobs.job.Job
+    identity: {name: job_id, type: jobs.job.JobId}
+    fields:
+      - {name: note, type: Optional<jobs.job.Note>}
+    lifecycle:
+      initial: Open
+      states: [Open, Done]
+      terminal: [Done]
+      transitions:
+        - {name: finish, from: [Open], to: Done}
+errors:
+  - {name: jobs.job.JobStateConflict, summary: The job is not open., fields: []}
+events:
+  - name: jobs.job.Opened
+    fields:
+      - {name: job_id, type: jobs.job.JobId}
+  - name: jobs.job.Finished
+    fields:
+      - {name: job_id, type: jobs.job.JobId}
+actors:
+  - name: jobs.job.Caller
+    may: [jobs.job.Open]
+  - name: jobs.job.Agent
+    system: true
+    may: [jobs.job.Finish]
+views:
+  - name: jobs.job.Jobs
+    source: jobs.job.Job
+    consistency: read_your_writes
+    fields:
+      - {name: job_id, type: jobs.job.JobId}
+      - {name: note, type: Optional<jobs.job.Note>}
+      - {name: state, type: jobs.job.Job.State}
+components:
+  - component: job-service
+    owns: {domains: [jobs.job]}
+    accepts:
+      commands: [jobs.job.Open, jobs.job.Finish]
+    publishes:
+      events: [jobs.job.Opened, jobs.job.Finished]
+    reached_by: network
+commands:
+  - name: jobs.job.Open
+    input: []
+    outcomes:
+      - name: opened
+        creates: jobs.job.Job
+        instance: job_id
+        emits: [jobs.job.Opened]
+        payload:
+          jobs.job.Opened: {job_id: {generated: true}}
+  - name: jobs.job.Finish
+    await_within: PT5S
+    input:
+      - {name: job_id, type: jobs.job.JobId}
+      - {name: note, type: Optional<jobs.job.Note>}
+    outcomes:
+      - name: moved
+        moves: jobs.job.Job.finish
+        instance: job_id
+        emits: [jobs.job.Finished]
+        sets: {note: input.note}
+        payload:
+          jobs.job.Finished: {job_id: input.job_id}
+      - {name: wrong-state, wrong_state: true, error: jobs.job.JobStateConflict}
+"
+    .to_owned()
+}
+
+/// The job model with the note relayed onwards as well as stored: `Finished` carries it, and a
+/// binding hands it from `Finished` to `Archive`.
+fn relaying_model() -> String {
+    let model = job_model();
+    let replace = |model: String, from: &str, to: &str| {
+        assert!(model.contains(from), "the model holds `{from}`");
+        model.replace(from, to)
+    };
+    let model = replace(
+        model,
+        "  - name: jobs.job.Finished
+    fields:
+      - {name: job_id, type: jobs.job.JobId}
+",
+        "  - name: jobs.job.Finished
+    fields:
+      - {name: job_id, type: jobs.job.JobId}
+      - {name: note, type: Optional<jobs.job.Note>}
+  - name: jobs.job.Archived
+    fields:
+      - {name: job_id, type: jobs.job.JobId}
+",
+    );
+    let model = replace(
+        model,
+        "jobs.job.Finished: {job_id: input.job_id}",
+        "jobs.job.Finished: {job_id: input.job_id, note: input.note}",
+    );
+    let model = replace(
+        model,
+        "commands: [jobs.job.Open, jobs.job.Finish]",
+        "commands: [jobs.job.Open, jobs.job.Finish, jobs.job.Archive]",
+    );
+    let model = replace(
+        model,
+        "events: [jobs.job.Opened, jobs.job.Finished]",
+        "events: [jobs.job.Opened, jobs.job.Finished, jobs.job.Archived]",
+    );
+    model
+        + "  - name: jobs.job.Archive
+    input:
+      - {name: job_id, type: jobs.job.JobId}
+      - {name: note, type: Optional<jobs.job.Note>}
+    outcomes:
+      - name: archived
+        emits: [jobs.job.Archived]
+        payload:
+          jobs.job.Archived: {job_id: input.job_id}
+bindings:
+  - id: archive-on-finished
+    when: {event: jobs.job.Finished}
+    invoke: {command: jobs.job.Archive}
+    mapping: {job_id: event.job_id, note: event.note}
+    delivery: at_least_once
+    on_failure: retry
+"
+}
+
+fn job_ir() -> EssIr {
+    ir_of(&job_model())
+}
+
+fn relaying_ir() -> EssIr {
+    ir_of(&relaying_model())
+}
+
+/// The synthesized suite's results on `target`, by scenario.
+fn synthesized_on<T: ConformanceTarget>(target: &T) -> BTreeMap<String, ScenarioResult> {
+    run(&suite_for(&job_ir()), target)
+}
+
+/// The suite synthesis writes for `ir`, with [`ARCHIVING`] reading the awaited note.
+fn suite_for(ir: &EssIr) -> AdmittedSuite {
+    suite_keeping(ir, |_| true)
+}
+
+/// The scenario that awaits `Finish` and expects the binding to invoke `Archive`.
+const ARCHIVING: &str = "archive-on-finished/binding/mapping";
+
+/// The scenarios of the suite synthesis writes for `ir` that `keep` names.
+///
+/// Synthesis writes the note [`ARCHIVING`] expects in the invocation as the one `Finished`
+/// published (`kind: observed`). It is rewritten to the one the awaited answer carried
+/// (`kind: awaited`), what synthesis writes where an invocation relays a value it invented for
+/// the awaited command, so the invocation half of the rule runs on a suite the runners admit.
+fn suite_keeping(ir: &EssIr, keep: impl Fn(&str) -> bool) -> AdmittedSuite {
+    let mut suite = ess_conformance::synthesize::synthesize(ir).suite;
+    assert!(
+        suite.scenario(&MOVED.parse().unwrap()).is_some(),
+        "`{MOVED}` is synthesized"
+    );
+    let mut rewritten = 0;
+    if let Some(scenario) = suite.scenarios.get_mut(&ARCHIVING.parse().unwrap()) {
+        for step in &mut scenario.steps {
+            if let ScenarioStep::ExpectInvocation { input, .. } = step {
+                for value in input.values_mut() {
+                    if matches!(value, ScenarioValue::Observed { event, field }
+                        if event.to_string() == FINISHED && field == "note")
+                    {
+                        *value = ScenarioValue::Awaited {
+                            field: "note".to_owned(),
+                        };
+                        rewritten += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(rewritten, 1, "{:#?}", scenario.steps);
+    }
+    suite.scenarios.retain(|id, _| keep(&id.to_string()));
+    AdmittedSuite::from_suite(&suite)
+        .unwrap_or_else(|error| panic!("the synthesized suite is admitted: {error}"))
+}
+
+#[test]
+fn an_optional_awaited_input_left_out_is_not_compared() {
+    // The interpreter issues `Finish` with `note` absent first, which reaches `moved`.
+    let results = synthesized_on(&Interpreted::for_model(job_ir()));
+    let moved = &results[MOVED];
+    assert_eq!(moved.status, Status::Passed, "{moved:#?}");
+    for (id, result) in &results {
+        assert_eq!(result.status, Status::Passed, "{id}: {result:#?}");
+    }
+}
+
+/// How [`Misreport`] departs from the interpreted model around `Finish`'s `note`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Lie {
+    /// Answers that the system issued `Finish` with a `note` it never stored or published.
+    IssuedNote,
+    /// Leaves `note` out, and publishes `Finished` carrying one anyway.
+    PublishedNote,
+    /// Leaves `note` out, and the binding invokes `Archive` with one anyway.
+    InvokedNote,
+    /// Answers the left-out `note` as an explicit `null`, and otherwise behaves as the model.
+    NullNote,
+    /// Tells no lie: the interpreted model itself.
+    Truth,
+}
+
+/// The interpreted model, misreporting by `lie`. Records whether the lie was ever told, so a case
+/// cannot pass because the lie never applied.
+struct Misreport {
+    inner: Interpreted,
+    lie: Lie,
+    told: std::rc::Rc<std::cell::Cell<bool>>,
+}
+
+impl Misreport {
+    fn new(ir: EssIr, lie: Lie) -> Self {
+        Self {
+            inner: Interpreted::for_model(ir),
+            lie,
+            told: std::rc::Rc::default(),
+        }
+    }
+}
+
+fn note(text: &str) -> Node {
+    Node::Map(BTreeMap::from([(
+        "text".to_owned(),
+        Node::Text(text.to_owned()),
+    )]))
+}
+
+impl ConformanceTarget for Misreport {
+    fn establish_entity(
+        &self,
+        request: ess_conformance::target::EntitySetupRequest,
+    ) -> Result<(), TargetError> {
+        self.inner.establish_entity(request)
+    }
+    fn identity(&self) -> Result<ess_conformance::target::ImplementationIdentity, TargetError> {
+        self.inner.identity()
+    }
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.begin_scenario(scenario)
+    }
+    fn deliver_event(
+        &self,
+        request: ess_conformance::target::EventDeliveryRequest,
+    ) -> Result<(), TargetError> {
+        self.inner.deliver_event(request)
+    }
+    fn mark_instant(
+        &self,
+        request: ess_conformance::target::InstantMark,
+    ) -> Result<(), TargetError> {
+        self.inner.mark_instant(request)
+    }
+    fn observe_elapsed(
+        &self,
+        request: ess_conformance::target::ElapsedObservationRequest,
+    ) -> Result<ess_conformance::target::ElapsedObservation, TargetError> {
+        self.inner.observe_elapsed(request)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<ess_conformance::target::SemanticCommandResult, TargetError> {
+        self.inner.execute_command(request)
+    }
+    fn execute_command_recorded(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> ess_conformance::target::RecordedCommandCompletion {
+        self.inner.execute_command_recorded(request)
+    }
+    fn execute_command_without_input(
+        &self,
+        request: ess_conformance::target::AbsentInputRequest,
+    ) -> Result<ess_conformance::target::SemanticCommandResult, TargetError> {
+        self.inner.execute_command_without_input(request)
+    }
+    fn query_view(
+        &self,
+        request: ess_conformance::target::SemanticViewRequest,
+    ) -> Result<ess_conformance::target::SemanticViewResult, TargetError> {
+        self.inner.query_view(request)
+    }
+    fn query_view_as(
+        &self,
+        request: ess_conformance::target::SemanticViewRequest,
+        reader: &ess_conformance::scenario::ActorRef,
+    ) -> Result<ess_conformance::target::SemanticViewResult, TargetError> {
+        self.inner.query_view_as(request, reader)
+    }
+    fn query_view_anonymous(
+        &self,
+        request: ess_conformance::target::SemanticViewRequest,
+    ) -> Result<ess_conformance::target::SemanticViewResult, TargetError> {
+        self.inner.query_view_anonymous(request)
+    }
+    fn observe_events(
+        &self,
+        request: ess_conformance::target::EventObservationRequest,
+    ) -> Result<Vec<ess_conformance::target::ObservedEvent>, TargetError> {
+        self.inner.observe_events(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        request: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.inner.configure_external_outcome(request)
+    }
+    fn configure_external_outcome_repeatedly(
+        &self,
+        request: ExternalOutcomeControl,
+        times: std::num::NonZeroU32,
+    ) -> Result<(), TargetError> {
+        self.inner
+            .configure_external_outcome_repeatedly(request, times)
+    }
+    fn redeliver_event(
+        &self,
+        request: ess_conformance::target::RedeliveryRequest,
+    ) -> Result<(), TargetError> {
+        self.inner.redeliver_event(request)
+    }
+    fn observe_invocations(
+        &self,
+        request: ess_conformance::target::InvocationObservationRequest,
+    ) -> Result<Vec<ess_conformance::target::ObservedInvocation>, TargetError> {
+        let mut invocations = self.inner.observe_invocations(request)?;
+        if self.lie == Lie::InvokedNote {
+            for invocation in &mut invocations {
+                if invocation.command.to_string() == ARCHIVE
+                    && !invocation.input.contains_key("note")
+                {
+                    invocation
+                        .input
+                        .insert("note".to_owned(), note("never issued"));
+                    self.told.set(true);
+                }
+            }
+        }
+        Ok(invocations)
+    }
+    fn await_outcome(&self, request: AwaitRequest) -> Result<AwaitAnswer, TargetError> {
+        let is_finish = request.command.to_string() == FINISH;
+        let mut answer = self.inner.await_outcome(request)?;
+        let AwaitAnswer::Reached { input, result, .. } = &mut answer else {
+            return Ok(answer);
+        };
+        if !is_finish || input.contains_key("note") {
+            return Ok(answer);
+        }
+        match self.lie {
+            Lie::IssuedNote => {
+                input.insert("note".to_owned(), note("issued, never stored"));
+                self.told.set(true);
+            }
+            Lie::PublishedNote => {
+                for event in &mut result.direct_events {
+                    if event.event.to_string() == FINISHED {
+                        event
+                            .payload
+                            .insert("note".to_owned(), note("never issued"));
+                        self.told.set(true);
+                    }
+                }
+            }
+            Lie::NullNote => {
+                input.insert("note".to_owned(), Node::Null);
+                self.told.set(true);
+            }
+            Lie::InvokedNote | Lie::Truth => {}
+        }
+        Ok(answer)
+    }
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.end_scenario(scenario)
+    }
+}
+
+#[test]
+fn an_optional_awaited_input_issued_with_a_wrong_value_fails() {
+    let target = Misreport::new(job_ir(), Lie::IssuedNote);
+    let results = synthesized_on(&target);
+    assert!(target.told.get(), "the lie was never told");
+    let moved = &results[MOVED];
+    assert_eq!(moved.status, Status::Failed, "{moved:#?}");
+    assert!(
+        moved
+            .checks
+            .iter()
+            .all(|check| check.status != Status::Error),
+        "an issued `note` is compared, not a suite defect: {moved:#?}"
+    );
+}
+
+/// The relaying model's `moved` reads the awaited `note` in `Finished`, and [`ARCHIVING`] reads
+/// it in the invocation of `Archive`, so the event and the invocation halves of the rule run.
+#[test]
+fn the_relaying_model_reads_the_awaited_note_in_an_event_and_an_invocation() {
+    let suite = suite_for(&relaying_ir());
+    let reads = |values: &BTreeMap<String, ScenarioValue>| {
+        values
+            .values()
+            .any(|value| matches!(value, ScenarioValue::Awaited { field } if field == "note"))
+    };
+    let steps = |id: &str| &suite.suite().scenario(&id.parse().unwrap()).unwrap().steps;
+    assert!(
+        steps(MOVED).iter().any(|step| matches!(
+            step,
+            ScenarioStep::ExpectEventValues { payload, .. } if reads(payload)
+        )),
+        "{:#?}",
+        steps(MOVED)
+    );
+    assert!(
+        steps(ARCHIVING).iter().any(|step| matches!(
+            step,
+            ScenarioStep::ExpectInvocation { input, .. } if reads(input)
+        )),
+        "{:#?}",
+        steps(ARCHIVING)
+    );
+}
+
+/// The interpreter leaves `note` out, so it stores, publishes and relays none: every scenario
+/// passes. Red against a runner that resolves the left-out value in the event or the invocation.
+#[test]
+fn an_optional_awaited_input_left_out_relays_nothing_and_passes() {
+    let results = run(
+        &suite_for(&relaying_ir()),
+        &Interpreted::for_model(relaying_ir()),
+    );
+    for (id, result) in &results {
+        assert_eq!(result.status, Status::Passed, "{id}: {result:#?}");
+    }
+}
+
+/// Each lie told on the relaying model, and the scenario it fails (none: every scenario passes).
+const RELAYING_LIES: [(Lie, Option<&str>); 5] = [
+    (Lie::Truth, None),
+    (Lie::IssuedNote, Some(MOVED)),
+    (Lie::PublishedNote, Some(MOVED)),
+    (Lie::InvokedNote, Some(ARCHIVING)),
+    (Lie::NullNote, None),
+];
+
+/// A target that publishes or relays a note the system never issued, or issued a note it never
+/// stored, fails; one that spells the left-out note `null` behaves as the model and passes.
+#[test]
+fn an_optional_awaited_input_left_out_is_absent_or_null_wherever_it_is_relayed() {
+    for (lie, fails) in RELAYING_LIES {
+        let target = Misreport::new(relaying_ir(), lie);
+        let results = run(&suite_for(&relaying_ir()), &target);
+        assert!(
+            lie == Lie::Truth || target.told.get(),
+            "{lie:?} was never told"
+        );
+        for (id, result) in &results {
+            assert!(
+                result
+                    .checks
+                    .iter()
+                    .all(|check| check.status != Status::Error),
+                "{lie:?} is compared, not a suite defect: {id}: {result:#?}"
+            );
+        }
+        match fails {
+            Some(id) => assert_eq!(results[id].status, Status::Failed, "{lie:?}: {id}"),
+            None => {
+                for (id, result) in &results {
+                    assert_eq!(result.status, Status::Passed, "{lie:?}: {id}: {result:#?}");
+                }
+            }
+        }
+    }
+}
+
+// ---- the same rule in the generated Go and TypeScript runners ---------------------------------
+//
+// Each generated runtime replays the transcript the target wrote while the Rust reference runner
+// asked it (`support_go::Recorder`), so a verdict that differs is a difference in how the runner
+// read the suite.
+
+mod support_go;
+mod support_ts;
+
+fn written(status: Status) -> String {
+    match status {
+        Status::Passed => "passed",
+        Status::Failed => "failed",
+        Status::Error => "error",
+        Status::Unsupported => "unsupported",
+    }
+    .to_owned()
+}
+
+/// The reference verdicts against `target`, and the transcript of what it answered.
+fn recorded<T: ConformanceTarget>(
+    suite: &AdmittedSuite,
+    target: T,
+) -> (BTreeMap<String, String>, support_go::Recorder<T>) {
+    let recorder = support_go::Recorder::new(target);
+    let verdicts = run(suite, &recorder)
+        .into_iter()
+        .map(|(id, result)| (id, written(result.status)))
+        .collect();
+    (verdicts, recorder)
+}
+
+/// The synthesized scenarios of `ir` that await `moved` and read what it wrote, alone: the rest
+/// of the suite reads no awaited input.
+fn moved_suite(ir: &EssIr) -> AdmittedSuite {
+    let suite = suite_keeping(ir, |id| id.ends_with("/moved") || id == ARCHIVING);
+    let kept: Vec<String> = suite
+        .suite()
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .collect();
+    let archives = ir.bindings().values().next().is_some();
+    assert_eq!(
+        kept.len(),
+        if archives { 3 } else { 2 },
+        "`moved`, the transition it takes and the binding it triggers: {kept:?}"
+    );
+    suite
+}
+
+/// Each case a generated runner replays: the model, how the target lies, and the scenario it
+/// fails, if any. Each half of the rule has a case that turns red without it: the row
+/// (`IssuedNote` on the job model), the event (`PublishedNote`), the invocation (`InvokedNote`),
+/// the left-out note read in each (`Truth` on the relaying model) and the `null` spelling
+/// (`NullNote`).
+fn replay_cases() -> Vec<(&'static str, EssIr, Lie, Option<&'static str>)> {
+    let mut cases = vec![
+        ("job", job_ir(), Lie::Truth, None),
+        ("job", job_ir(), Lie::IssuedNote, Some(MOVED)),
+    ];
+    for (lie, fails) in RELAYING_LIES {
+        cases.push(("relaying", relaying_ir(), lie, fails));
+    }
+    cases
+}
+
+/// The reference verdicts against `target` on `suite`, checked against the scenario the case
+/// fails, and the transcript of what it answered.
+fn reference(
+    suite: &AdmittedSuite,
+    target: Misreport,
+    fails: Option<&str>,
+) -> (BTreeMap<String, String>, support_go::Recorder<Misreport>) {
+    let lie = target.lie;
+    let told = std::rc::Rc::clone(&target.told);
+    let (verdicts, recorder) = recorded(suite, target);
+    assert!(lie == Lie::Truth || told.get(), "{lie:?} was never told");
+    match fails {
+        Some(id) => assert_eq!(verdicts[id], "failed", "{lie:?}: {verdicts:?}"),
+        None => assert!(
+            verdicts.values().all(|status| status == "passed"),
+            "{lie:?}: {verdicts:?}"
+        ),
+    }
+    (verdicts, recorder)
+}
+
+/// The interpreted model, which leaves `note` out, and the target spelling it `null`, pass every
+/// scenario in the Go runner; each target issuing, publishing or relaying a note it should not
+/// fails there, as in the reference runner.
+#[test]
+fn an_optional_awaited_input_left_out_or_issued_wrong_reads_alike_in_the_go_runner() {
+    let mut packages = BTreeMap::new();
+    for (model, ir, lie, fails) in replay_cases() {
+        let suite = moved_suite(&ir);
+        let directory = packages.entry(model).or_insert_with(|| {
+            support_go::package(
+                &format!("optional-await-{model}"),
+                suite.suite(),
+                &[support_go::TRANSCRIPT_TARGET],
+            )
+        });
+        let (verdicts, recorder) = reference(&suite, Misreport::new(ir, lie), fails);
+        assert_eq!(
+            go_replay(&*directory, &recorder),
+            verdicts,
+            "{model} model, {lie:?}"
+        );
+    }
+}
+
+/// The same cases in the TypeScript runner.
+#[test]
+fn an_optional_awaited_input_left_out_or_issued_wrong_reads_alike_in_the_typescript_runner() {
+    let mut packages = BTreeMap::new();
+    for (model, ir, lie, fails) in replay_cases() {
+        let suite = moved_suite(&ir);
+        let package = packages.entry(model).or_insert_with(|| {
+            support_ts::Package::new(&format!("optional-await-{model}"), suite.suite())
+        });
+        let (verdicts, recorder) = reference(&suite, Misreport::new(ir, lie), fails);
+        let replayed = package.replay(&suite, &recorder.transcript(), false);
+        assert_ne!(replayed.exit, Some(2), "{}", replayed.log);
+        assert!(
+            replayed.divergences.is_empty(),
+            "the TypeScript runtime sent requests the reference runner did not:\n{}\n{}",
+            replayed.divergences.join("\n"),
+            replayed.log
+        );
+        assert_eq!(replayed.outcomes, verdicts, "{model} model, {lie:?}");
+    }
+}
+
+/// The Go runtime's verdicts replaying what `recorder` wrote.
+fn go_replay<T>(
+    directory: &std::path::Path,
+    recorder: &support_go::Recorder<T>,
+) -> BTreeMap<String, String> {
+    let replayed = support_go::replay(directory, recorder, &[]);
+    assert!(
+        replayed.divergences.is_empty(),
+        "the Go runtime sent requests the reference runner did not:\n{}\n{}",
+        replayed.divergences.join("\n"),
+        replayed.go.log
+    );
+    assert!(
+        !replayed.go.outcomes.is_empty(),
+        "the Go run published no verdicts:\n{}",
+        replayed.go.log
+    );
+    replayed.go.outcomes
+}
