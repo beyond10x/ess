@@ -8,7 +8,7 @@ summary: 'Proposes an authentication scheme in ess-http/1 and an Authenticate po
 relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
-revision: 1
+revision: 3
 ---
 Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance.
 
@@ -57,3 +57,21 @@ conformance witness the refusal of an unauthenticated call.
 ## Acceptance evidence
 
 None yet. Acceptance is the operator's move of this record to `accepted`.
+
+## Downstream report (2026-10-23)
+
+- ess#681: an adopter needs `securitySchemes` and a per-operation `security` requirement in the projected OpenAPI. Where the scheme is declared is this decision (A: actors, B: binding), so the projection waits on it.
+
+## Open question: a scheme taken from a composed contract (2026-10-23)
+
+An adopter specifies RFC 6750 bearer usage as its own ESS specification: domain `rfc6750.bearer`, a component `resource-server` reached by network, six `Access*` commands, and refusals that carry `WWW-Authenticate: Bearer` with wire error `invalid_token`.
+
+Under option B, may a binding's scheme (per binding or per route) name a composed authentication contract (a conformance of the component to that specification, the composition the model already has) instead of restating the scheme? The projected `securitySchemes`, the 401 challenge and the binding-level refusal scenario would then come from the contract, and a binding that restates a different challenge would be refused.
+
+To settle before acceptance:
+
+- whether composition can carry transport facts (header, challenge, scheme name) without breaking the transport-free model of ADR 02, or whether the contract supplies only the refusal and its wire error while the binding keeps the scheme;
+- how a binding names the contract, and which side owns the challenge when both declare one;
+- whether conformance runs the contract's scenarios against every route that names it.
+
+A neutral reproduction of the adopter's specification is available on request.

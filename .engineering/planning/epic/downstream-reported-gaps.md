@@ -6,7 +6,7 @@ status: active
 title: Downstream-reported synthesis, binding and grant gaps are closed
 relations:
 - serves: vision:O2
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:18Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-30T13:04:29Z", actor: "human:timo", revision: 3}
@@ -230,3 +230,11 @@ The operator: "make sure ess knows that we expect all of those fixed efficiently
 - The 31 units run in the priority order above, G-U15 (N1) first: it edits ess-gen model_types.rs and U55 edits ess-gen types.rs, so the two do not share a file.
 - G-U3, G-U5, G-U9 and G-U22 wait on their ADRs. Without a decision they leave pull request 633 and their issues stay open; the rest of the wave does not wait for them.
 - One tree builds at a time; each unit tree discards its build cache when the unit merges.
+
+## Build rule for the 0.69.0 wave (2026-10-23)
+
+- Two unit trees build at once, each in its own managed worktree. Both stop below 25G free on `/` and resume at 30G.
+- Only one full workspace test run at a time; while it runs, the other tree runs targeted crates only.
+- ADR-bound units leave the batch pull request (#633) unless their ADR is accepted before the release bar: G-U3, G-U5, G-U9, G-U22, G-U28, and the keep-versus-clear half of N31 (#678). The wire half of N31 (an input that may be absent or null, projected not-required and nullable) is built with N30 (#677) as G-U30.
+
+- 2026-10-23: two downstream blockers move into this wave: story:guard-tests-list-membership (G-U34) and story:an-existence-outcome-passes-a-related-list-membership-guard (G-U35, formerly planned for 0.70.0). Neither needs an ADR: the first extends the guard predicate grammar with a design page first, the second is a synthesis search fix.
