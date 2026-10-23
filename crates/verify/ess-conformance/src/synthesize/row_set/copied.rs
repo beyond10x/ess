@@ -392,7 +392,8 @@ pub(super) fn steered(
                     .map(|row| (copy.target.to_owned(), row.instance.clone()))
             })
             .collect();
-        let Some(bound) = creator_bindings(ir, creator, &targets, (&fields, &BTreeMap::new()))
+        let Some(bound) =
+            creator_bindings(ir, creator, &targets, (&fields, &BTreeMap::new()), false)
         else {
             continue;
         };
