@@ -2614,7 +2614,7 @@ func (r *run) expectError(index int, step Step) bool {
 	// The declared fields the branch determines (ess/19), each carried and equal, as
 	// ess_conformance::runner's `expect_error` compares them: naming the right error with the wrong
 	// payload is a different repair from naming the wrong error.
-	if reason := payloadCarries(r.last.ErrorPayload, step.Fields); reason != "" {
+	if reason := errorCarries(r.last.ErrorPayload, step.Fields); reason != "" {
 		return r.assertionFailure(index, "ESS-CF-ERROR: refused with `%s`, and %s", step.Error, reason)
 	}
 	return true
@@ -2816,6 +2816,30 @@ func payloadCarries(payload, want map[string]Node) string {
 			return fmt.Sprintf("`%s` was not carried", field)
 		}
 		if !equal(actual, want[field]) {
+			return fmt.Sprintf("`%s` = %s, and the specification says %s", field, render(actual), render(want[field]))
+		}
+	}
+	return ""
+}
+
+// errorCarries is payloadCarries for the fields of an error, which compare as a view row does:
+// a dotted path that reaches nothing holds null, and struct members compare by sameValue.
+// ess_conformance::runner's `mismatch`, rule for rule. An event payload stays exact.
+func errorCarries(payload, want map[string]Node) string {
+	fields := make([]string, 0, len(want))
+	for field := range want {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	for _, field := range fields {
+		actual, ok := carriedAt(payload, field)
+		if !ok {
+			if strings.Contains(field, ".") && want[field] == nil {
+				continue
+			}
+			return fmt.Sprintf("`%s` was not carried", field)
+		}
+		if !sameValue(actual, want[field]) {
 			return fmt.Sprintf("`%s` = %s, and the specification says %s", field, render(actual), render(want[field]))
 		}
 	}
@@ -3126,7 +3150,7 @@ func (r *run) decide(index int, step Step) (bool, string, bool) {
 		}
 		found := false
 		for _, row := range r.lastView.Rows {
-			if matches(row, want) {
+			if rowMatches(row, want) {
 				found = true
 				break
 			}
@@ -3218,7 +3242,7 @@ func (r *run) decide(index int, step Step) (bool, string, bool) {
 		if at < 0 || at >= held {
 			return false, fmt.Sprintf("`%s` holds %d row(s)", step.View, held), false
 		}
-		if !matches(r.lastView.Rows[at], want) {
+		if !rowMatches(r.lastView.Rows[at], want) {
 			return false, fmt.Sprintf(
 				"row %d of `%s` is %s", at, step.View, describeRow(r.lastView.Rows[at]),
 			), false
@@ -3693,7 +3717,19 @@ func (r *run) resolve(value Value) (Node, error) {
 //
 // A subset, not an equality: a row carries what the view projects, and a scenario names the fields
 // that identify the instance it is about.
+//
+// Exact below the named field: an observed event, invocation or subject identity is compared as it
+// was carried. A view row is compared by rowMatches.
 func matches(row map[string]Node, want map[string]Node) bool {
+	return fieldsMatch(row, want, equal)
+}
+
+// rowMatches is matches for a view row, whose struct members compare by sameValue.
+func rowMatches(row map[string]Node, want map[string]Node) bool {
+	return fieldsMatch(row, want, sameValue)
+}
+
+func fieldsMatch(row map[string]Node, want map[string]Node, same func(Node, Node) bool) bool {
 	for field, expected := range want {
 		actual, ok := carriedAt(row, field)
 		if !ok {
@@ -3705,11 +3741,56 @@ func matches(row map[string]Node, want map[string]Node) bool {
 			}
 			return false
 		}
-		if !equal(actual, expected) {
+		if !same(actual, expected) {
 			return false
 		}
 	}
 	return true
+}
+
+// sameValue is equal, except that a struct member that is absent and one that is null are one value
+// at any depth below the top level: one target omits an Optional member left unset and another
+// publishes it as null. ess_conformance::runner's `same_value`, rule for rule.
+func sameValue(actual, expected Node) bool {
+	actualFields, actualIsMap := actual.(map[string]any)
+	expectedFields, expectedIsMap := expected.(map[string]any)
+	if actualIsMap && expectedIsMap {
+		for key := range actualFields {
+			if !sameMember(actualFields, expectedFields, key) {
+				return false
+			}
+		}
+		for key := range expectedFields {
+			if !sameMember(actualFields, expectedFields, key) {
+				return false
+			}
+		}
+		return true
+	}
+	actualItems, actualIsList := actual.([]any)
+	expectedItems, expectedIsList := expected.([]any)
+	if actualIsList && expectedIsList {
+		if len(actualItems) != len(expectedItems) {
+			return false
+		}
+		for index := range actualItems {
+			if !sameValue(actualItems[index], expectedItems[index]) {
+				return false
+			}
+		}
+		return true
+	}
+	return equal(actual, expected)
+}
+
+// sameMember is whether two structs hold one value under key, an absent member being null.
+func sameMember(actual, expected map[string]any, key string) bool {
+	left, leftPresent := actual[key]
+	right, rightPresent := expected[key]
+	if (!leftPresent || left == nil) && (!rightPresent || right == nil) {
+		return true
+	}
+	return leftPresent && rightPresent && sameValue(left, right)
 }
 
 // carriedAt is the value a payload or row carries under key: a field name, or — suite/26 and later
