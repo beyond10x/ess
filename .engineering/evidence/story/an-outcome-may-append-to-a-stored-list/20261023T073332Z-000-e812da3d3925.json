@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T07:33:32Z",
+  "actor": "human:timo",
+  "artifact": "story:an-outcome-may-append-to-a-stored-list",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit 456b01a7c (+ df4a547c8 fixture pins) on integrate/ess-batch-0690 5cf7e8955e, run in the unit tree: ess-domain append_set red before the change (1 passed, 7 failed), all ess-domain tests exit 0; ess-compiler 70 and ess-entity-runtime 49 test-result ok lines, exit 0; ess-service-contract and ess-diff exit 0; ess-conformance append_set 3, counter_limit 25, interpreted_value_expressions 9, value_expressions 8, generated_history_values 56, synthesis_seeds 20, synthesis_suite_bytes_table 2 passed; ess-synth append_set 2, empty_list_set 2, declared_behaviour 32 passed; ess-synth full package 73 ok lines and 0 failed before a disk stop; entity-runtime append_set 2, lowerable_subset 19; task test-xtask exit 0; ess-compiler typed_diagnostics 8; task projection-check and task fmt-check exit 0; clippy -D warnings on 9 crates exit 0. Not run locally (disk): ess-conformance --lib, ess-cli; left to the #633 Gate."
+  }
+}

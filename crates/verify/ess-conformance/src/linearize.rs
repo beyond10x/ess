@@ -436,6 +436,7 @@ fn reads_other_rows(command: &ResolvedCommand) -> bool {
             | ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::SubjectState { .. }
             | ResolvedPayloadValue::Increment { .. }
+            | ResolvedPayloadValue::Append { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::CallerAttribute { .. }
             | ResolvedPayloadValue::PayloadRead { .. }

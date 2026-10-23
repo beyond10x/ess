@@ -1277,6 +1277,7 @@ fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]
                 other @ (ess_compiler::ir::ResolvedPayloadValue::SubjectField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::SubjectState { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Increment { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::Append { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
@@ -2364,6 +2365,7 @@ fn written_sets(
                 other @ (ess_compiler::ir::ResolvedPayloadValue::SubjectField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::SubjectState { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Increment { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::Append { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }

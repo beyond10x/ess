@@ -1715,6 +1715,7 @@ fn one_row_sources(at: &ConstructRef, sets: &BTreeMap<String, PayloadSource>) ->
                 PayloadSource::SubjectField { .. } => "{subject: …}",
                 PayloadSource::RelatedField { .. } => "{related: …}",
                 PayloadSource::Increment { .. } => "{increment: …}",
+                PayloadSource::Append { .. } => "{append: …}",
                 PayloadSource::CallerAttribute { .. } => "{caller: …}",
                 _ => return,
             };

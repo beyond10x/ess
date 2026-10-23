@@ -49,6 +49,7 @@ The last column says what lowering the construct would need. *entity-core* means
 | an external refusal answered before the row, `before_row: true` | `OutcomeShapeUnsupported` | Host value: the host's own decision, answered before it loads the row |
 | a branch chosen by existence (`unknown_instance:` on a creation, `existing_instance:`) | `ExistenceSelectionUnsupported` | Host value: the host's own exists answer, selecting the declared branch |
 | `{increment: …}` | `ValueExpressionUnsupported` | entity-core: arithmetic over a stored value |
+| `{append: …}` (ess/31) | `ValueExpressionUnsupported` | entity-core: a list grown from its stored value |
 | `{cleared: true}` outside a creation's `sets:` | `ClearedValueUnsupported` | entity-core: a removal a definition states; `Remove` is a host-selected action only |
 | `alphabet:` on a response field | `AlphabetUnsupported` | entity-core: a response checked against its declared schema; an alphabet there is admitted and not enforced |
 | a text literal written outside its field's `alphabet:` | `AlphabetUnsupported` | No form: ESS admits the literal and entity-core refuses the row it writes on every request; the specification has to hold the literal to the alphabet |

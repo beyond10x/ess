@@ -1,4 +1,4 @@
-#	models=290	commands=604
+#	models=294	commands=615
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -199,6 +199,10 @@ crates/verify/ess-conformance/tests/fixtures/adversary-l3-selected-rows.yaml	adv
 crates/verify/ess-conformance/tests/fixtures/adversary-l3-selected-rows.yaml	advrows.desk.OpenDesk	default: opened
 crates/verify/ess-conformance/tests/fixtures/adversary-l3-selected-rows.yaml	advrows.desk.Start	default: started
 crates/verify/ess-conformance/tests/fixtures/adversary-l3-selected-rows.yaml	advrows.desk.Tag	default: tagged
+crates/verify/ess-conformance/tests/fixtures/adversary-u14/lockers.yaml	ir=e6c81e7380df2fa2d5adab78d6323ef5a64aa83b2ec4e7406100f20cbaad9185:18490
+crates/verify/ess-conformance/tests/fixtures/adversary-u14/lockers.yaml	depots.box.CloseBox	existence: no-such-box | default: closed
+crates/verify/ess-conformance/tests/fixtures/adversary-u14/lockers.yaml	depots.box.InstallBox	default: installed
+crates/verify/ess-conformance/tests/fixtures/adversary-u14/lockers.yaml	depots.box.PutItem	present_related: no-box, few-slots, no-slots, closed, not-accepting, closed-or-depot | default: put
 crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	ir=b737ee9077b02ce4dd8d03fe056a427c41be58ca9b020313b8e54412f16ad641:9670
 crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	demo.team.FormTeam	existence: already-formed | default: formed
 crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	demo.team.NameSuccessor	existence: no-such-team | present_related: successor-is-a-team | default: named
@@ -245,6 +249,9 @@ crates/verify/ess-conformance/tests/fixtures/aggregate-views.yaml	metrics.sessio
 crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml	ir=8f73acbe936097824f8e833f3b5ff29457a91b14304d76ff2e209929c7fa8c42:9715
 crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml	vault.acct.Configure	input_refusal: id-required, secret-too-short, missing-configuration | held_state: already-configured | default: configured
 crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml	vault.acct.Onboard	default: onboarded
+crates/verify/ess-conformance/tests/fixtures/arrangement-literal-set-subject.yaml	ir=030d308c9591be74d9bae8b835352ca9e86f90c06404c389f588884f6b8446e3:14945
+crates/verify/ess-conformance/tests/fixtures/arrangement-literal-set-subject.yaml	demo.conn.Connect	input_refusal: not-allowed, no-credential, both-invalid | accepting: by-key, by-token | default: open
+crates/verify/ess-conformance/tests/fixtures/arrangement-literal-set-subject.yaml	demo.conn.Dispatch	held_state: key-to-d, key-to-b | default: routed
 crates/verify/ess-conformance/tests/fixtures/arrangement-paid-route.yaml	ir=8078b5131c26dfc079fdf7ba8a275ef10a91bca4794ef2c058f8109268d2f1e4:13470
 crates/verify/ess-conformance/tests/fixtures/arrangement-paid-route.yaml	shop.order.CloseOrder	held_state: wrong-state | default: closed
 crates/verify/ess-conformance/tests/fixtures/arrangement-paid-route.yaml	shop.order.PayOrder	default: paid
@@ -669,6 +676,10 @@ crates/verify/ess-conformance/tests/fixtures/related-copied-view-parameter.yaml	
 crates/verify/ess-conformance/tests/fixtures/related-copied-view-parameter.yaml	shipping.m.Deliver	held_state: conflict | default: delivered
 crates/verify/ess-conformance/tests/fixtures/related-copied-view-parameter.yaml	shipping.m.OpenOrder	default: opened
 crates/verify/ess-conformance/tests/fixtures/related-copied-view-parameter.yaml	shipping.m.Pack	default: packed
+crates/verify/ess-conformance/tests/fixtures/related-guard-absent-input.yaml	ir=7b3df44a7fee285e2e0f9a8caf8bbbacf722b81109cee68b32b8cbce239c15cb:16823
+crates/verify/ess-conformance/tests/fixtures/related-guard-absent-input.yaml	tenrel.t.DropChild	existence: no-parent | default: dropped
+crates/verify/ess-conformance/tests/fixtures/related-guard-absent-input.yaml	tenrel.t.MakeChild	present_related: unknown-parent, other-tenant | default: made
+crates/verify/ess-conformance/tests/fixtures/related-guard-absent-input.yaml	tenrel.t.MakeParent	default: made
 crates/verify/ess-conformance/tests/fixtures/related-guard-captured-struct.yaml	ir=19109eef280aaef43029ec4a351c91d094312a5ade0ddb72666d062f8f8cc62c:16759
 crates/verify/ess-conformance/tests/fixtures/related-guard-captured-struct.yaml	demo.desk.Assign	related_row: nobody | accepting: elsewhere | default: assigned
 crates/verify/ess-conformance/tests/fixtures/related-guard-captured-struct.yaml	demo.desk.Join	default: joined
@@ -712,6 +723,10 @@ crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml
 crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	demo.seats.ChangeTier	existence: unknown-seat | present_related: unknown-tier, tier-closed | default: changed
 crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	demo.seats.DefineTier	default: defined
 crates/verify/ess-conformance/tests/fixtures/related-guard-unknown-instance.yaml	demo.seats.Issue	default: issued
+crates/verify/ess-conformance/tests/fixtures/related-refusal-shadowed.yaml	ir=33d106da01775532abef5fa4e651e1631ac948a9ffa9d63050ad662c6367570f:21108
+crates/verify/ess-conformance/tests/fixtures/related-refusal-shadowed.yaml	parcels.locker.CloseLocker	existence: no-such-locker | default: closed
+crates/verify/ess-conformance/tests/fixtures/related-refusal-shadowed.yaml	parcels.locker.DropParcel	related_row: no-locker | accepting: staff-closed, locker-closed, locker-shut, locker-full, at-depot | default: dropped
+crates/verify/ess-conformance/tests/fixtures/related-refusal-shadowed.yaml	parcels.locker.InstallLocker	default: installed
 crates/verify/ess-conformance/tests/fixtures/related-rows-quantifier.yaml	ir=d7645e18ee4f85edee06d1d7be71285d7aca9e27fd1afd32043fb5de45136890:33785
 crates/verify/ess-conformance/tests/fixtures/related-rows-quantifier.yaml	demo.slots.CloseSlot	default: closed
 crates/verify/ess-conformance/tests/fixtures/related-rows-quantifier.yaml	demo.slots.Finish	default: finished

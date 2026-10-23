@@ -203,6 +203,7 @@
 //! have shared since wave 1.
 
 pub(crate) mod absent_input;
+pub mod append_list;
 pub mod caller_value;
 pub mod expression_value;
 pub mod finite;
@@ -1215,6 +1216,16 @@ pub enum PayloadSource {
         /// Which YAML scalar the amount was written as; quoted text reads as a decimal.
         scalar: ScalarKind,
     },
+    /// The list the subject held before this outcome, absent read as empty, with the input's
+    /// element last: `{append: input.item}` (ess/31, [`append_list`]).
+    ///
+    /// A `sets:` source over a `List<T>` or `Optional<List<T>>` field of an existing subject, whose
+    /// element is `input.<path>` of type `T`. Below `ess/31` the shape is the nested mapping it
+    /// always was ([`append_list::read_below_ess_31`]).
+    Append {
+        /// The input field read, or from `ess/22` a path into a struct input.
+        field: String,
+    },
     /// The optional input's value when the caller sent one, otherwise a value the implementation
     /// mints: `{input: seq, else: {generated: true}}` (ess/14, #137), or the literal written after
     /// `else:`: `{input: tier, else: Standard}` (ess/16, #163).
@@ -1405,6 +1416,7 @@ impl fmt::Display for PayloadSource {
                 write!(f, "{{missing: {}{field}}}", Self::INPUT_PREFIX)
             }
             Self::Increment { by, .. } => write!(f, "increment by {by}"),
+            Self::Append { field } => write!(f, "{{append: {}{field}}}", Self::INPUT_PREFIX),
             Self::InputOrGenerated {
                 field,
                 otherwise: None,
@@ -1455,6 +1467,8 @@ impl PayloadSource {
             | Self::Scalar { .. }
             | Self::Cleared
             | Self::EmptyList
+            // ess/31: below it the shape is read back as the nested mapping it was.
+            | Self::Append { .. }
             // ess/27: below it the shape is read back as the nested mapping it was.
             | Self::Expression { .. } => false,
         }
@@ -1515,6 +1529,8 @@ enum RawPayloadSource {
     Changed(set_effects::RawChangedSource),
     /// `{missing: input.<list>}` (ess/28, beyond10x/ess#558).
     Missing(related_list::RawMissingSource),
+    /// `{append: input.<path>}` (ess/31).
+    Append(append_list::RawAppendSource),
     Nested(RawNestedSources),
     /// A list of texts, read as the `via:` of `{related: …}` (ess/22, beyond10x/ess#285), and when
     /// empty as the empty list a `sets:` entry stores (ess/31); refused anywhere else. The schema
@@ -1743,6 +1759,9 @@ impl<'de> serde::de::Visitor<'de> for Source {
         }
         if let Some(missing) = related_list::RawMissingSource::recognise(&entries) {
             return Ok(RawPayloadSource::Missing(missing));
+        }
+        if let Some(append) = append_list::RawAppendSource::recognise(&entries) {
+            return Ok(RawPayloadSource::Append(append));
         }
         if !entries.is_empty()
             && entries
@@ -2083,6 +2102,7 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
             RawPayloadSource::Expr(expression) => Ok(expression.into_source()),
             RawPayloadSource::Changed(changed) => Ok(changed.into_source()),
             RawPayloadSource::Missing(missing) => Ok(missing.into_source()),
+            RawPayloadSource::Append(append) => Ok(append.into_source()),
             RawPayloadSource::Nested(RawNestedSources(entries)) => entries
                 .into_iter()
                 .map(|(target, source)| {
@@ -2330,6 +2350,9 @@ impl From<&PayloadSource> for RawPayloadSource {
             }
             PayloadSource::MissingElement { field } => {
                 Self::Missing(related_list::RawMissingSource::of(field))
+            }
+            PayloadSource::Append { field } => {
+                Self::Append(append_list::RawAppendSource::of(field))
             }
             PayloadSource::Increment { by, scalar } => explicit(&|e| {
                 e.increment = Some(match scalar {
@@ -4367,6 +4390,8 @@ fn check_payload_entry(
         | PayloadSource::CallerAttribute { .. }
         // Checked with the changed rows' entity in hand by `set_effects::validate`.
         | PayloadSource::ChangedField { .. }
+        // Refused by name by `value_expression`: a `sets:` source only.
+        | PayloadSource::Append { .. }
         // Checked against the branch's list guard by `value_expression`.
         | PayloadSource::MissingElement { .. } => {}
         PayloadSource::ChangedCount => {
@@ -4671,6 +4696,7 @@ fn reads_row(source: &PayloadSource) -> bool {
     match source {
         PayloadSource::SubjectField { .. }
         | PayloadSource::Increment { .. }
+        | PayloadSource::Append { .. }
         | PayloadSource::RelatedField { .. }
         | PayloadSource::RelatedSelection { .. }
         | PayloadSource::RelatedHead { .. }

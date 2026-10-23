@@ -410,6 +410,9 @@ impl Specification {
         crate::command::set_effects::read_below_ess_16(system.format, &mut collected.commands);
         crate::command::set_effects::read_below_ess_25(system.format, &mut collected.commands);
         crate::command::related_list::read_below_ess_28(system.format, &mut collected.commands);
+        // `{append: input.<path>}` is an `ess/31` source; below it the same mapping is the nested one
+        // it was.
+        crate::command::append_list::read_below_ess_31(system.format, &mut collected.commands);
         let mut specification = Self {
             system,
             entities: collected.entities,
