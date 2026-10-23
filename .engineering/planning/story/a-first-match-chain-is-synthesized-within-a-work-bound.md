@@ -2,13 +2,16 @@
 format: aep.planning-md/3
 id: story:a-first-match-chain-is-synthesized-within-a-work-bound
 kind: story
-status: draft
+status: active
 title: A first-match chain over finite inputs is synthesized within a work bound and reaches every reachable branch
 summary: Directed search charges its budget per node, so synthesis time stops growing exponentially with earlier guards, and a reachable branch is no longer refused (row 40).
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-22T23:52:42Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
+- {from: "proposed", to: "active", at: "2026-10-22T23:52:42Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
 ---
 ## Need
 

@@ -3392,16 +3392,62 @@ impl Run {
 ///
 /// Partial by design (§21): a specification does not determine every value an implementation may
 /// legitimately put in a payload, so only the named fields are compared.
+///
+/// Exact below the named field: an observed event or invocation is compared as it was carried, as
+/// [`carries`] compares an immediate event. A view row is compared by [`row_matches`].
 fn matches(payload: &BTreeMap<String, Node>, wanted: &BTreeMap<String, Node>) -> bool {
+    fields_match(payload, wanted, |carried, wanted| carried == wanted)
+}
+
+/// [`matches`] for a view row, whose struct members compare by [`same_value`].
+fn row_matches(row: &BTreeMap<String, Node>, wanted: &BTreeMap<String, Node>) -> bool {
+    fields_match(row, wanted, same_value)
+}
+
+fn fields_match(
+    payload: &BTreeMap<String, Node>,
+    wanted: &BTreeMap<String, Node>,
+    same: impl Fn(&Node, &Node) -> bool,
+) -> bool {
     wanted
         .iter()
         .all(|(field, value)| match carried_at(payload, field) {
-            Some(carried) => carried == value,
+            Some(carried) => same(carried, value),
             // A leaf path finds nothing where the leaf, or a struct above it, was not written or
             // is null: that is the leaf holding nothing, which is what a `null` asks about
             // (suite/26, beyond10x/ess#179). A plain field name keeps exact comparison.
             None => field.contains('.') && matches!(value, Node::Null),
         })
+}
+
+/// `true` when a carried value is the wanted one, a struct member that is absent and one that is
+/// `null` being one value at any depth below the top level.
+///
+/// An `Optional` member left unset is omitted by one target and published as `null` by another, so
+/// with whole-value equality neither spelling of an assertion passed on both. The comparison holds
+/// no types, so the rule is not limited to `Optional` members: a required member is never absent
+/// from a conforming value, and its declared type is checked where the value is admitted. A `Map`
+/// key holding `null` therefore also reads as absent, until view and error assertions carry their
+/// value shape. A plain
+/// top-level field name keeps exact comparison (see [`matches`]).
+fn same_value(carried: &Node, wanted: &Node) -> bool {
+    match (carried, wanted) {
+        (Node::Map(carried), Node::Map(wanted)) => carried.keys().chain(wanted.keys()).all(|key| {
+            match (carried.get(key), wanted.get(key)) {
+                (Some(carried), Some(wanted)) => same_value(carried, wanted),
+                (None | Some(Node::Null), None | Some(Node::Null)) => true,
+                _ => false,
+            }
+        }),
+        (Node::Seq(carried), Node::Seq(wanted)) => {
+            carried.len() == wanted.len()
+                && carried
+                    .iter()
+                    .zip(wanted)
+                    .all(|(carried, wanted)| same_value(carried, wanted))
+        }
+        _ => carried == wanted,
+    }
 }
 
 /// The value a payload or row carries under `key`: a field name, or — suite/26 and later
@@ -3423,7 +3469,7 @@ fn mismatch(
     wanted
         .iter()
         .find_map(|(field, value)| match carried_at(payload, field) {
-            Some(observed) if observed == value => None,
+            Some(observed) if same_value(observed, value) => None,
             Some(observed) => Some(format!("{subject}.{field} = {}", quote(observed))),
             None if field.contains('.') && matches!(value, Node::Null) => None,
             None => Some(format!("{subject} carried no field `{field}`")),
@@ -3485,14 +3531,14 @@ enum Verdict {
 fn decide(required: &Required, result: &SemanticViewResult) -> Verdict {
     match required {
         Required::Contains(fields) => {
-            if result.rows.iter().any(|row| matches(row, fields)) {
+            if result.rows.iter().any(|row| row_matches(row, fields)) {
                 Verdict::Satisfied
             } else {
                 Verdict::Unsatisfied(rows(result))
             }
         }
         Required::Excludes(fields) => {
-            if result.rows.iter().any(|row| matches(row, fields)) {
+            if result.rows.iter().any(|row| row_matches(row, fields)) {
                 Verdict::Unsatisfied(rows(result))
             } else {
                 Verdict::Satisfied
@@ -3643,7 +3689,7 @@ fn at(
     let Some(row) = result.rows.get(index) else {
         return Verdict::Unsatisfied(format!("it holds {held} row(s): {}", rows(result)));
     };
-    if matches(row, fields) {
+    if row_matches(row, fields) {
         Verdict::Satisfied
     } else {
         Verdict::Unsatisfied(format!("row {index} is {}", quote_row(row)))

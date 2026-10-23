@@ -8,7 +8,7 @@ summary: 'A contains assertion writing value: null on an Optional member of a li
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 4
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-22T23:36:33Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-22T23:36:34Z", actor: "human:timo", revision: 4, correlation: "ess-0690"}
@@ -36,7 +36,7 @@ the command left unset. On the interpreted target the scenario fails as ESS-CF-V
 
 ## Acceptance
 
-- In a `contains` or `equals` assertion, an absent Optional struct member and an explicit `null`
+- In a `contains` or `at` view assertion and in an expected error's fields, an absent Optional struct member and an explicit `null`
   are one value at any depth (list elements, nested structs), in `matches` and in `mismatch`: an
   asserted `null` matches an observed element that omits the member or carries `null`, and an
   asserted element that omits the member matches an observed `null` (the adopter's testkit target
@@ -44,6 +44,7 @@ the command left unset. On the interpreted target the scenario fails as ESS-CF-V
   `tests/authored.rs` assert all four combinations on the adopter's shape.
 - A member written with a value still fails against an absent member, and `null` still fails
   against a present non-null value; tests assert both.
-- The generated Go and TypeScript runners give the same verdict for that shape, or the story names
+- The generated Go and TypeScript runners give the same verdict for that shape and for an expected error with that shape, or the story names
   the runner that differs and a follow-up story is filed.
+- Event payloads and observed invocations stay exact in all three runners. A Map key holding `null` reads as an absent key until view and error steps carry their value shape (`story:view-and-error-assertions-carry-their-value-shape`, 0.70.0); a test pins that behaviour.
 - No format change.

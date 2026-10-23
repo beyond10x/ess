@@ -2424,3 +2424,130 @@ fn authored_aggregate_presence_keeps_026_and_valid_scalar_reads_keep_the_predica
     assert_eq!(authored.refusals.len(), 0);
     assert_eq!(authored.scenarios.len(), 1);
 }
+
+// ---- an Optional member asserted null is one value with an absent one, at any depth -------------
+
+/// A view row holding a list of structs and a struct, each with an `Optional` member.
+const USAGE_MODEL: &str = r"
+format: ess/1
+system: demo
+version: v1
+domain: demo.usage
+types:
+  - name: demo.usage.Quantity
+    kind: struct
+    fields:
+      - {name: kind, type: String}
+      - {name: source, type: String}
+      - {name: value, type: 'Optional<Integer>'}
+entities:
+  - name: demo.usage.Record
+    identity: {name: record_id, type: Uuid}
+    fields:
+      - {name: quantities, type: 'List<demo.usage.Quantity>'}
+      - {name: latest, type: demo.usage.Quantity}
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+views:
+  - name: demo.usage.Records
+    source: demo.usage.Record
+    consistency: read_your_writes
+    order_by: [record_id asc]
+    fields:
+      - {name: record_id, type: Uuid}
+      - {name: quantities, type: 'List<demo.usage.Quantity>'}
+      - {name: latest, type: demo.usage.Quantity}
+";
+
+/// One authored scenario: the row is stored with `stored` as the tail of each `Quantity`, and a
+/// `contains` and an `at` assertion name `asserted` as the tail of each.
+fn usage_scenario(stored: &str, asserted: &str) -> String {
+    let quantity = |tail: &str| format!("{{kind: cached_input_tokens, source: unknown{tail}}}");
+    format!(
+        r"type: ess-scenario/2
+domain: demo.usage
+scenario: nested-optional
+summary: An Optional member left unset is asserted as the authored spelling says.
+arrange:
+  - instance: usage
+    entity: demo.usage.Record
+    setup:
+      identity: 00000000-0000-4000-8000-000000000001
+      fields: {{quantities: [{stored_quantity}], latest: {stored_quantity}}}
+      state: Recorded
+assert:
+  - view: demo.usage.Records
+    contains: {{record_id: {{$instance: usage}}, quantities: [{asserted_quantity}]}}
+  - view: demo.usage.Records
+    contains: {{record_id: {{$instance: usage}}, latest: {asserted_quantity}}}
+  - view: demo.usage.Records
+    at: {{row: first, fields: {{quantities: [{asserted_quantity}], latest: {asserted_quantity}}}}}
+",
+        stored_quantity = quantity(stored),
+        asserted_quantity = quantity(asserted),
+    )
+}
+
+/// The scenario's status on the interpreter, with the report for a failure message.
+fn usage_run(stored: &str, asserted: &str) -> (ess_conformance::report::Status, String) {
+    let ir = fixture(USAGE_MODEL);
+    let authored = authoring(&ir, &usage_scenario(stored, asserted));
+    assert!(authored.is_complete(), "{:?}", authored.refusals);
+    let mut suite = ess_conformance::synthesize::synthesize(&ir).suite;
+    suite.scenarios = authored.scenarios;
+    let admitted = ess_conformance::AdmittedSuite::from_suite(&suite)
+        .unwrap_or_else(|error| panic!("{error}"));
+    let report = ess_conformance::Runner::for_suite(admitted.suite())
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(ir),
+        )
+        .into_report();
+    let scenario = report
+        .scenarios
+        .iter()
+        .find(|scenario| scenario.scenario.to_string().ends_with("nested-optional"))
+        .expect("the authored scenario ran");
+    (scenario.status, format!("{report:?}"))
+}
+
+#[test]
+fn an_absent_optional_member_and_null_are_one_value_inside_a_list_element_and_a_struct() {
+    use ess_conformance::report::Status;
+    // (stored, asserted): asserted null against stored absent and stored null; asserted omitted
+    // against stored null and stored absent. Every combination is run before any is judged.
+    let failing: Vec<String> = [
+        ("", ", value: null"),
+        (", value: null", ", value: null"),
+        (", value: null", ""),
+        ("", ""),
+    ]
+    .into_iter()
+    .filter_map(|(stored, asserted)| {
+        let (status, report) = usage_run(stored, asserted);
+        (status != Status::Passed)
+            .then(|| format!("stored `{stored}`, asserted `{asserted}`: {status:?}: {report}"))
+    })
+    .collect();
+    assert!(failing.is_empty(), "{failing:#?}");
+}
+
+#[test]
+fn a_nested_value_still_fails_against_an_absent_member_and_null_against_a_value() {
+    use ess_conformance::report::Status;
+    for (stored, asserted) in [
+        ("", ", value: 3"),
+        (", value: null", ", value: 3"),
+        (", value: 3", ", value: null"),
+        (", value: 3", ""),
+    ] {
+        let (status, report) = usage_run(stored, asserted);
+        assert_eq!(
+            status,
+            Status::Failed,
+            "stored `{stored}`, asserted `{asserted}`: {report}"
+        );
+    }
+}

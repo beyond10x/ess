@@ -4391,7 +4391,7 @@ export class ScenarioRun {
     }
     // The declared fields the branch determines (ess/19), each carried and equal, as the Rust
     // runner's `expect_error` compares them.
-    if (!matches(this.last.errorPayload ?? {}, step.fields ?? {}))
+    if (!rowMatches(this.last.errorPayload ?? {}, step.fields ?? {}))
       return this.fail(
         index,
         `ESS-CF-ERROR: refused with \`${step.error}\`, and it did not carry ${describe(step.fields ?? {})}`,
@@ -4891,7 +4891,7 @@ export class ScenarioRun {
         }
         let found = false;
         for (const row of this.lastView) {
-          if (matches(row, want)) {
+          if (rowMatches(row, want)) {
             found = true;
             break;
           }
@@ -5125,7 +5125,7 @@ export class ScenarioRun {
           return [false, `\`${step.view}\` holds ${held} row(s)`, false];
         }
         const row = itemAt(this.lastView, at);
-        if (!matches(row, want)) {
+        if (!rowMatches(row, want)) {
           return [false, `row ${at} of \`${step.view}\` is ${describeRow(row)}`, false];
         }
         return [true, '', false];
@@ -5946,6 +5946,25 @@ export class ScenarioRun {
  * `carried_at`, rule for rule.
  */
 export function matches(row: { [field: string]: Node }, want: { [field: string]: Node }): boolean {
+  return fieldsMatch(row, want, equal);
+}
+
+/**
+ * matches for a view row or the fields of an error, whose struct members compare by sameValue. An
+ * observed event, invocation or subject identity is compared exactly by matches.
+ */
+export function rowMatches(
+  row: { [field: string]: Node },
+  want: { [field: string]: Node },
+): boolean {
+  return fieldsMatch(row, want, sameValue);
+}
+
+function fieldsMatch(
+  row: { [field: string]: Node },
+  want: { [field: string]: Node },
+  same: (actual: Node, expected: Node) => boolean,
+): boolean {
   for (const field of Object.keys(want)) {
     const [value, reach] = lookup(row, field);
     if (reach !== 'value') {
@@ -5954,11 +5973,40 @@ export function matches(row: { [field: string]: Node }, want: { [field: string]:
       }
       return false;
     }
-    if (!equal(value, want[field])) {
+    if (!same(value, want[field])) {
       return false;
     }
   }
   return true;
+}
+
+/**
+ * sameValue is equal, except that a struct member that is absent and one that is null are one value
+ * at any depth below the top level: one target omits an `Optional` member left unset and another
+ * publishes it as null. The Rust runner's `same_value`, rule for rule.
+ */
+export function sameValue(actual: Node, expected: Node): boolean {
+  if (isObject(actual) && isObject(expected)) {
+    const keys = new Set([...Object.keys(actual), ...Object.keys(expected)]);
+    for (const key of keys) {
+      const left = Object.prototype.hasOwnProperty.call(actual, key) ? actual[key] : null;
+      const right = Object.prototype.hasOwnProperty.call(expected, key) ? expected[key] : null;
+      if (isNil(left) && isNil(right)) {
+        continue;
+      }
+      if (isNil(left) || isNil(right) || !sameValue(left, right)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (Array.isArray(actual) && Array.isArray(expected)) {
+    return (
+      actual.length === expected.length &&
+      actual.every((item, index) => sameValue(item, expected[index]))
+    );
+  }
+  return equal(actual, expected);
 }
 
 /**

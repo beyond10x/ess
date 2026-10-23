@@ -2,13 +2,16 @@
 format: aep.planning-md/3
 id: story:a-literal-set-field-steers-the-creator-of-a-subject-row
 kind: story
-status: draft
+status: active
 title: A subject guard over a field a creator sets to a literal finds that creator
 summary: hinted folds literal-set fields against the creator's literal, so when_subject over (literal, input) pairs is arranged instead of refused ESS-SYNTH-003 (row 41).
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-22T23:53:09Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
+- {from: "proposed", to: "active", at: "2026-10-22T23:53:09Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
 ---
 ## Need
 
