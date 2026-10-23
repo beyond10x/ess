@@ -1450,6 +1450,147 @@ fn a_value_the_declared_type_does_not_admit_is_refused_where_it_sits() {
     ));
 }
 
+/// A command taking a `Decimal` and an `Optional<Decimal>`, for the non-finite cases
+/// (beyond10x/ess#676).
+fn metered() -> EssIr {
+    let text = "format: ess/15
+system: meter
+version: v1
+domain: meter.reading
+events:
+  - name: meter.reading.Recorded
+    fields:
+      - {name: value, type: Decimal}
+commands:
+  - name: meter.reading.Record
+    input:
+      - {name: value, type: Decimal}
+      - {name: limit, type: Optional<Decimal>}
+    outcomes:
+      - name: recorded
+        emits: [meter.reading.Recorded]
+        payload:
+          meter.reading.Recorded: {value: input.value}
+actors:
+  - name: meter.reading.Reader
+    may: [meter.reading.Record]
+";
+    let raw = RawSpecFile::parse(text).expect("well formed");
+    let specification = Specification::assemble([(SpecSource::new("meter.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("meter validates:\n{errors}"));
+    compile(&specification, &SourceMap::new())
+        .unwrap_or_else(|diagnostics| panic!("meter resolves:\n{diagnostics}"))
+}
+
+/// One `Record` act sending `input`, in the metered model's domain.
+fn metered_act(input: &str) -> String {
+    format!(
+        "type: ess-scenario/1\n\
+         domain: meter.reading\n\
+         scenario: a-scenario\n\
+         summary: What this scenario proves, in one line.\n\
+         timeline:\n  \
+         - at: 2026-01-05T09:00:00Z\n    \
+         command: meter.reading.Record\n    \
+         actor: meter.reading.Reader\n    \
+         input: {input}\n    \
+         outcome: recorded\n"
+    )
+}
+
+#[test]
+fn a_non_finite_scenario_literal_is_refused_with_the_reason() {
+    // `Decimal` and `Binary64` have no NaN and no infinity, so a scenario literal spelling one is
+    // refused for that, rather than read as `null` and refused as "expected Decimal, found null"
+    // — or, at an `Optional`, admitted as the absent value it was never written as.
+    let metered = metered();
+    assert!(
+        authoring(&metered, &metered_act("{value: 1.5}"))
+            .refusals
+            .is_empty(),
+        "the finite act compiles, so each case below is refused for its number alone"
+    );
+    let billing = example("billing");
+    let cases = [
+        (
+            &metered,
+            metered_act("{value: .nan}"),
+            "value: expected Decimal, found `.nan`",
+            "Decimal has no non-finite values",
+        ),
+        (
+            &metered,
+            metered_act("{value: 1.5, limit: .inf}"),
+            "limit: expected Optional<Decimal>, found `.inf`",
+            "Optional<Decimal> has no non-finite values",
+        ),
+        (
+            &billing,
+            document(CREATED).replace(
+                "{amount: 10, currency: EUR}",
+                "{amount: -.inf, currency: EUR}",
+            ),
+            "amount.amount: found `-.inf`",
+            "no declared type has non-finite values",
+        ),
+        (
+            &billing,
+            document(&format!("{CREATED}{OBSERVED}")).replace(
+                "payload: {customer_email: buyer@example.test}",
+                "payload: {customer_email: .nan}",
+            ),
+            "customer_email: expected billing.invoice.Email, found `.nan`",
+            "billing.invoice.Email has no non-finite values",
+        ),
+    ];
+    for (ir, text, names, reason) in cases {
+        let refused = refusal(ir, &text);
+        let message = refused.to_string();
+        assert_eq!(refused.code().to_string(), "ESS-AUTHOR-015", "{message}");
+        assert!(message.contains(names), "{names:?} in {message}");
+        assert!(message.contains(reason), "{reason:?} in {message}");
+        assert!(
+            message.contains("Decimal and Binary64 hold finite values only"),
+            "{message}"
+        );
+        assert!(!message.contains("found null"), "{message}");
+    }
+}
+
+#[test]
+fn the_guide_states_numbers_are_finite() {
+    const GUIDE: &str = "website/docs/guides/specify/fields-and-invariants.md";
+    const HEADING: &str = "### Numbers are finite";
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .join(GUIDE);
+    let page = std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{GUIDE}: {error}"));
+    let start = page
+        .find(&format!("\n{HEADING}\n"))
+        .unwrap_or_else(|| panic!("{GUIDE} has no heading `{HEADING}`"));
+    let binary64 = page
+        .find("\n### Carry finite binary floating-point values\n")
+        .expect("the guide keeps its Binary64 section");
+    assert!(start > binary64, "`{HEADING}` follows the Binary64 section");
+    let body = &page[start + HEADING.len() + 1..];
+    let section = &body[..body.find("\n#").unwrap_or(body.len())];
+    let prose = section.split_whitespace().collect::<Vec<_>>().join(" ");
+    for stated in [
+        "`Decimal` and `Binary64` hold finite values only",
+        "NaN",
+        "infinity",
+        "never reaches the domain",
+        "decoder",
+        "`malformed` refusal",
+        "ESS-AUTHOR-015",
+    ] {
+        assert!(
+            prose.contains(stated),
+            "`{HEADING}` states {stated:?}:\n{section}"
+        );
+    }
+}
+
 #[test]
 fn a_name_a_closed_set_does_not_have_is_refused_with_the_set() {
     // The one case `examples/billing` cannot make: it declares an enum and no command takes one.

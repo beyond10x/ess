@@ -266,6 +266,7 @@ use crate::scenario::{
 };
 use crate::synthesize::{payload_shape, reachable_types};
 
+mod non_finite;
 mod ties;
 
 // ---- the diagnostic catalogue ------------------------------------------------------------------
@@ -818,6 +819,10 @@ pub enum Written {
         /// The field of its payload.
         field: String,
     },
+    /// A literal holding a NaN or an infinity, which no ESS type has (beyond10x/ess#676): each
+    /// one's position below the value (empty for the value itself, `.member` or `[index]` below
+    /// it) and the number. It is refused, naming the number and why, rather than read as `null`.
+    NonFinite(Vec<(String, f64)>),
 }
 
 impl Written {
@@ -839,9 +844,16 @@ impl Written {
 
 impl<'de> serde::Deserialize<'de> for Written {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let node = Node::deserialize(deserializer)?;
+        let (node, non_finite) = non_finite::read(deserializer)?;
+        let literal = |node| {
+            if non_finite.is_empty() {
+                Self::Literal(node)
+            } else {
+                Self::NonFinite(non_finite)
+            }
+        };
         let Some((key, value)) = node.as_single_entry() else {
-            return Ok(Self::Literal(node));
+            return Ok(literal(node));
         };
         match key {
             Self::FIXTURE => {
@@ -884,7 +896,7 @@ impl<'de> serde::Deserialize<'de> for Written {
                     field: text("field")?,
                 })
             }
-            _ => Ok(Self::Literal(node)),
+            _ => Ok(literal(node)),
         }
     }
 }
@@ -1565,7 +1577,8 @@ enum RowWrite<'ir> {
 }
 
 /// Whether an act pins the value it writes: a literal does, and so does a fixture, whose whole
-/// value the suite resolves before the run; a reference states a relation and does not.
+/// value the suite resolves before the run; a reference states a relation and does not. A
+/// non-finite literal is refused for its number, and nothing more is said about it.
 fn pins(value: &Written) -> bool {
     matches!(value, Written::Literal(_) | Written::Fixture(_))
 }
@@ -1717,7 +1730,7 @@ fn value_at(value: &Written, path: &str) -> String {
             }
         }
         Written::Fixture(name) => format!("{{{}: {name}}}", Written::FIXTURE),
-        Written::Instance(_) | Written::Observed { .. } => String::new(),
+        Written::Instance(_) | Written::Observed { .. } | Written::NonFinite(_) => String::new(),
     }
 }
 
@@ -4697,6 +4710,11 @@ impl<'a> Compiler<'a> {
                 Written::Literal(node) => {
                     literals.insert(field.clone(), node.clone());
                 }
+                // Occupies its field; an undeclared one is refused by name below.
+                Written::NonFinite(found) => {
+                    referenced.insert(field.clone());
+                    self.non_finite(surface, fields, field, found);
+                }
                 Written::Instance(instance) => {
                     referenced.insert(field.clone());
                     if let Some(value) = self.instance(instance, fields, surface, field) {
@@ -4989,6 +5007,13 @@ impl<'a> Compiler<'a> {
     ) -> BTreeMap<String, Node> {
         let mut literals = BTreeMap::new();
         for (field, value) in written {
+            if let Written::NonFinite(found) = value {
+                // An undeclared field is left to the shape check below, which refuses it by name.
+                if !self.non_finite(surface, fields, field, found) {
+                    literals.insert(field.clone(), Node::Null);
+                }
+                continue;
+            }
             match value.literal() {
                 // A reference inside a compared value is the same claim the format cannot make as
                 // a whole-field one, refused by where it sits (beyond10x/ess#242) rather than read
@@ -5016,6 +5041,41 @@ impl<'a> Compiler<'a> {
             self.shape(&errors, surface);
         }
         literals
+    }
+
+    /// Refuses each NaN or infinity declared `field` holds (beyond10x/ess#676), naming the number
+    /// and that no type has one, with the declared type where it is the field's whole value.
+    /// `false`, refusing nothing, where `fields` does not declare `field`: that is refused by name.
+    fn non_finite(
+        &mut self,
+        surface: &Surface,
+        fields: &[ResolvedField],
+        field: &str,
+        found: &[(String, f64)],
+    ) -> bool {
+        let Some(declared) = fields.iter().find(|it| it.name == field) else {
+            return false;
+        };
+        for (at, value) in found {
+            let number = non_finite::spelling(*value);
+            let type_ref = &declared.type_ref;
+            let named = if at.is_empty() {
+                format!(
+                    "expected {type_ref}, found `{number}`; {type_ref} has no non-finite values"
+                )
+            } else {
+                format!("found `{number}`; no declared type has non-finite values")
+            };
+            self.refuse(Cause::ValueRejected {
+                surface: surface.clone(),
+                detail: format!(
+                    "{field}{at}: {named}, because Decimal and Binary64 hold finite values only; \
+                     a NaN or an infinity never reaches the domain, so refuse it in the decoder \
+                     that reads it"
+                ),
+            });
+        }
+        true
     }
 
     /// An instance reference, checked against the arrangement and the field it fills.

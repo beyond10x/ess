@@ -327,3 +327,19 @@ Standalone structural Rust/Go codecs and whole-system/conformance targets
 refuse Binary64; TypeScript structural output reports the finite codec obligation.
 Adding a Binary64 type to a model selected in full therefore requires checking
 every intended target's support before adopting it.
+
+### Numbers are finite
+
+`Decimal` and `Binary64` hold finite values only. A `Decimal` is its patterned decimal string, and
+a JSON number has no token for NaN or an infinity; a `Binary64` stores a finite bit pattern, and
+NaN and both infinities refuse construction and decoding. So a NaN or an infinity never reaches
+the domain, and an outcome that refuses one cannot be reached through the specification.
+
+Refuse such a value where it arises: in the decoder or adapter that turns a non-JSON or binary
+source into the command's input, and test that refusal at that seam. Over HTTP, a number the
+request cannot carry is the binding's `malformed` refusal
+([refusals](../http-routes.md#encoding-statuses-headers-and-redirects)). Do not declare an outcome
+for a non-finite input, or declare it `external:`, which no input decides.
+
+A scenario cannot write one either: `.nan`, `.inf` or `-.inf` where a value is expected is refused
+as `ESS-AUTHOR-015`, naming the number and saying that the type has no non-finite values.

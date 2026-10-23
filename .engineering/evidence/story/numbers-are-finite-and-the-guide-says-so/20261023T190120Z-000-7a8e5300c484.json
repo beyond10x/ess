@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T19:01:20Z",
+  "actor": "human:timo",
+  "artifact": "story:numbers-are-finite-and-the-guide-says-so",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit 1402de7eb on integrate/ess-batch-0690 0c457bcdb: red first (authored, the two acceptance cases: 0 passed 2 failed, found null and no guide heading); green: authored 76, ess-conformance lib 170, author_generated_value 21, coverage_refusal_catalogue 4, typed_diagnostics 8, task test-xtask 418; clippy -p ess-conformance -D warnings, task fmt-check, task ci-lint exit 0; no pinned bytes moved. Not done: entity setup: fields and direct response: claims still read .nan as null. Not run locally: the other ess-conformance binaries, ess-cli, task check; left to the pull request Gate."
+  }
+}
