@@ -1,4 +1,4 @@
-#	models=297	commands=620
+#	models=300	commands=633
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -317,6 +317,22 @@ crates/verify/ess-conformance/tests/fixtures/caller-key-unique-across-callers.ya
 crates/verify/ess-conformance/tests/fixtures/caller-key-unique-across-callers.yaml	repro.names.TakeName	present_related: taken | default: took
 crates/verify/ess-conformance/tests/fixtures/caller-struct-identity.yaml	ir=56f60d673823ca2ea0d4e35e6e9ef58dbc50b1652db15ae13a4ecf3d4a285c24:6381
 crates/verify/ess-conformance/tests/fixtures/caller-struct-identity.yaml	demo.box.OpenBox	existence: exists | default: opened
+crates/verify/ess-conformance/tests/fixtures/caller-swap-command-under-test.yaml	ir=c7c77159f852902bbc7e3419be89be860f0096c1a4f71f17621420ab41d17b56:21800
+crates/verify/ess-conformance/tests/fixtures/caller-swap-command-under-test.yaml	demo.notes.CreateBook	default: created
+crates/verify/ess-conformance/tests/fixtures/caller-swap-command-under-test.yaml	demo.notes.CreateTag	default: created
+crates/verify/ess-conformance/tests/fixtures/caller-swap-command-under-test.yaml	demo.notes.DeleteTag	existence: absent | present_related: in-use | default: deleted
+crates/verify/ess-conformance/tests/fixtures/caller-swap-command-under-test.yaml	demo.notes.ShelveBook	present_related: no-book, no-cover, untagged | default: shelved
+crates/verify/ess-conformance/tests/fixtures/caller-swap-related-tie.yaml	ir=9f42f46d3a66a51185c0485da2b259a01df4a7561c0502746dbabf7a99b54b14:26150
+crates/verify/ess-conformance/tests/fixtures/caller-swap-related-tie.yaml	demo.notes.CreateBook	default: created
+crates/verify/ess-conformance/tests/fixtures/caller-swap-related-tie.yaml	demo.notes.CreateTag	default: created
+crates/verify/ess-conformance/tests/fixtures/caller-swap-related-tie.yaml	demo.notes.DeleteTag	existence: absent | default: deleted
+crates/verify/ess-conformance/tests/fixtures/caller-swap-related-tie.yaml	demo.notes.ShelveBook	present_related: no-book, no-cover | default: shelved
+crates/verify/ess-conformance/tests/fixtures/caller-swap-related-tie.yaml	demo.notes.StartReview	present_related: no-book, same-version | default: started
+crates/verify/ess-conformance/tests/fixtures/caller-swap-unread-members.yaml	ir=099814f7e8f2ce1193f57dd7b9367cf5f3e8a60754067e7d9b50950ab300d349:21005
+crates/verify/ess-conformance/tests/fixtures/caller-swap-unread-members.yaml	demo.notes.CreateBook	default: created
+crates/verify/ess-conformance/tests/fixtures/caller-swap-unread-members.yaml	demo.notes.CreateTag	default: created
+crates/verify/ess-conformance/tests/fixtures/caller-swap-unread-members.yaml	demo.notes.DeleteTag	existence: absent | present_related: in-use | default: deleted
+crates/verify/ess-conformance/tests/fixtures/caller-swap-unread-members.yaml	demo.notes.ShelveBook	present_related: no-book, no-cover | default: shelved
 crates/verify/ess-conformance/tests/fixtures/captured-identities.yaml	ir=07dc89923f3a63619ad008f3ccfc2c8d133245b1521e09bc3e9911c830bc3a1a:14165
 crates/verify/ess-conformance/tests/fixtures/captured-identities.yaml	desk.tickets.CloseTicket	held_state: wrong-state | default: closed
 crates/verify/ess-conformance/tests/fixtures/captured-identities.yaml	desk.tickets.FileTicket	default: filed
