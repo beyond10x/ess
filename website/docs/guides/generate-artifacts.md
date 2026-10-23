@@ -353,8 +353,9 @@ exact JSON numbers, recursive records, retained typed extra fields, finite strin
 unions and fixed prefix tuples. Native unions select the first structurally decodable
 branch; schema exclusivity and refinements remain report obligations, not application
 dispatch. Unsupported native intersections, non-string literals and variable prefix
-layouts refuse before publication. Go uses only its standard library; Rust pins Serde
-and serde_json in the generated manifest. Where the selected types hold JSON numbers
+layouts refuse before publication. Go uses only its standard library; the Rust manifest requires Serde
+and serde_json, and `time` where a type holds a timestamp, as `^` ranges at the versions
+ESS tests, so a workspace that already locks newer compatible releases keeps them. Where the selected types hold JSON numbers
 in serde_json (`serde_json::Number`, `serde_json::Value`, or a union decoded through a
 `Value` whose alternatives can hold a number), the manifest declares a default-on `exact-numbers` crate feature that enables
 serde_json's `arbitrary_precision`. A consumer that depends on the library with

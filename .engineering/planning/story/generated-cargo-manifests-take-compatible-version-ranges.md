@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-cargo-manifests-take-compatible-version-ranges
 kind: story
-status: draft
+status: active
 title: Generated cargo manifests take compatible version ranges
 summary: 'Adopter report N5: Generated Cargo.toml pins exact versions (ess#660).'
 refs:
@@ -11,7 +11,10 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T10:07:36Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-23T10:07:37Z", actor: "human:timo", revision: 3}
 ---
 ## Problem
 

@@ -97,7 +97,7 @@ pub(super) fn emit(plan: &Plan, package: &str) -> Result<Realization, Refused> {
         ", features = [\"raw_value\"]"
     };
     let time = if plan.has_timestamp() {
-        "time = { version = \"=0.3.45\", features = [\"formatting\", \"parsing\"] }\n"
+        "time = { version = \"^0.3.45\", features = [\"formatting\", \"parsing\"] }\n"
     } else {
         ""
     };
@@ -108,7 +108,7 @@ pub(super) fn emit(plan: &Plan, package: &str) -> Result<Realization, Refused> {
     } else {
         format!("\n[features]\ndefault = [\"{EXACT_NUMBERS}\"]\n{EXACT_NUMBERS} = [\"serde_json/arbitrary_precision\"]\n")
     };
-    let manifest = format!("[package]\nname = {package:?}\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n[lib]\npath = \"types.rs\"\n\n[dependencies]\nserde = {{ version = \"=1.0.229\", features = [\"derive\"] }}\nserde_json = {{ version = \"=1.0.151\"{raw_feature} }}\n{time}{features}\n[workspace]\n");
+    let manifest = format!("[package]\nname = {package:?}\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n[lib]\npath = \"types.rs\"\n\n[dependencies]\nserde = {{ version = \"^1.0.229\", features = [\"derive\"] }}\nserde_json = {{ version = \"^1.0.151\"{raw_feature} }}\n{time}{features}\n[workspace]\n");
     Ok(Realization {
         declarations: output,
         report: emitter.report,

@@ -138,7 +138,7 @@ existing bundle adopter's API moves.
   normalize the spelling (for example, fractional seconds `.500` become `.5`). It does not
   preserve the original JSON string byte for byte. A string that is not RFC 3339 is refused at
   decode. The Rust library then depends on
-  `time` (`=0.3.45`, features `formatting` and `parsing`), matching the generated server's
+  `time` (`^0.3.45`, features `formatting` and `parsing`), admitting the generated server's
   Rust 1.85-compatible dependency. This lets model and server crates resolve together and
   keeps the offline dependency closure in the workspace lockfile. The former `=0.3.55`
   model pin conflicts with that server pin and requires Rust 1.88.

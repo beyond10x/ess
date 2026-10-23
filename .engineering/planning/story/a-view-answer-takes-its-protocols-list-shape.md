@@ -9,7 +9,7 @@ tags:
 - ess-0.70.0
 relations:
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -38,3 +38,7 @@ Minimal spec on 0.68.0 (a view over one entity with an optional parameter, bound
 - A view parameter may omit or truncate a field of each row, and conformance holds it.
 - A lifecycle state may carry a wire value, used by the view row, view parameters and the event payloads.
 - Split this story before dispatch: these are four constructs.
+
+## Related 2026-10-23
+
+The bare array answer (N29, ess#673) is taken by `story:ess-http-admits-text-bodies-route-refusals-empty-bodies-and-array-views`; this story keeps the renamed rows member, cursor paging, row shaping and state wire values.

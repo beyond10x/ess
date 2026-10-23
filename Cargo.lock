@@ -1884,6 +1884,7 @@ dependencies = [
  "ess-primitives",
  "fluent-uri",
  "jsonschema",
+ "semver",
  "serde",
  "serde_json",
  "sha2",

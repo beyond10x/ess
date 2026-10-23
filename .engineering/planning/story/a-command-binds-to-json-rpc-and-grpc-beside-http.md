@@ -12,7 +12,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:ess-projects-a-protobuf-idl-with-http-annotations
 - informed_by: story:http-binding-carries-transport-framing
-revision: 2
+revision: 3
 ---
 **Blocked on `architecture-decision-record:transport-and-idl-compile-targets`. Not to be implemented
 before that record is accepted.**
@@ -91,3 +91,7 @@ outlines:
 
 Claims on these codes in authored scenarios, and the protocol-level refusals -32602 and -32601,
 are `story:an-authored-scenario-claims-a-binding-error-code`, which depends on this one.
+
+## Adopter report N28 2026-10-23
+
+A JSON-RPC 2.0 envelope requested as `request: {envelope: ...}` in `ess-http/1` (ess#650 comment). It belongs here as `ess-jsonrpc/1`, behind ADR `transport-and-idl-compile-targets` (proposed).

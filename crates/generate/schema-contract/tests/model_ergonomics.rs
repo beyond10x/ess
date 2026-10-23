@@ -72,7 +72,7 @@ fn rust_holds_a_timestamp_natively_and_a_constant_newtype_carries_its_value() {
     );
     let manifest = &realization.supporting["Cargo.toml"];
     assert!(
-        manifest.contains("time = { version = \"=0.3.45\""),
+        manifest.contains("time = { version = \"^0.3.45\""),
         "{manifest}"
     );
 
@@ -446,3 +446,7 @@ fn a_unit_outside_its_alphabet_or_length_is_refused_naming_the_constraint() {
 /// A struct written as one field alone (`ess/27`, beyond10x/ess#594).
 #[path = "model_ergonomics/shorthand.rs"]
 mod shorthand;
+
+/// The generated manifest's version ranges and number feature (beyond10x/ess#660).
+#[path = "model_ergonomics/manifest.rs"]
+mod manifest;
