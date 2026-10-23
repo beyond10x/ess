@@ -795,7 +795,10 @@ fn a_guard_no_candidate_can_satisfy_is_refused_with_the_number_tried() {
         .refused(code(3))
         .next()
         .unwrap_or_else(|| panic!("the branch refuses: {:?}", refused(&synthesis)));
-    let RefusalCause::GuardUnsatisfiable { predicate, tried } = &refusal.cause else {
+    let RefusalCause::GuardUnsatisfiable {
+        predicate, tried, ..
+    } = &refusal.cause
+    else {
         panic!("{refusal}")
     };
     assert!(

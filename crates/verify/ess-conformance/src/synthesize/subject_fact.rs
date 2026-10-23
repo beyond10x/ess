@@ -2764,6 +2764,7 @@ fn external_claimed(
             claiming.join(", ")
         ),
         tried,
+        cut: 0,
     }
 }
 
@@ -3140,7 +3141,7 @@ fn refusal_input_from(
     if let (Some(cause), true) = (&retried, over_input.is_empty()) {
         return Err(cause.clone());
     }
-    let mut inputs =
+    let (mut inputs, mut cut) =
         refusal_candidates(ir, entity, arrangement, command, &row_guards, distinction)?;
     if let Some(cause) = retried {
         let grounded = grounded(ir, entity, &arrangement.settled, &row_guards);
@@ -3154,6 +3155,13 @@ fn refusal_input_from(
         let Ok(more) = candidates(ir, command, &guards, distinction) else {
             return Err(cause);
         };
+        cut = cut.max(crate::witness::cut_short(
+            ir,
+            command,
+            &guards,
+            distinction,
+            false,
+        ));
         let more: Vec<_> = more
             .into_iter()
             .filter(|input| !inputs.contains(input))
@@ -3344,7 +3352,7 @@ fn refusal_input_from(
         cause,
         holding,
         lost_on_row.then_some(halves.as_slice()),
-        inputs.len().min(super::MAX_CANDIDATES),
+        (inputs.len().min(super::MAX_CANDIDATES), cut),
     ))
 }
 
@@ -3534,7 +3542,8 @@ fn finite_alike(
 /// guard in `row_guards` that compares the row with the input, grounded on this row. Such a guard
 /// — `fence != input.publication.expected_fence` — is refuted by an input naming the value the row
 /// holds, which no plain witness does (beyond10x/ess#234); grounded, its literals are the values
-/// that input is tried at, as [`inputs_for`] tries them.
+/// that input is tried at, as [`inputs_for`] tries them. Beside them, how many goals the
+/// guard-directed search behind them gave up at its bound ([`crate::witness::cut_short`]).
 fn refusal_candidates(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -3542,7 +3551,7 @@ fn refusal_candidates(
     command: &ResolvedCommand,
     row_guards: &[Predicate],
     distinction: Distinction,
-) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
+) -> Result<(Vec<BTreeMap<String, Node>>, usize), RefusalCause> {
     let grounded = grounded(ir, entity, &arrangement.settled, row_guards);
     let guards: Vec<&Predicate> = command
         .outcomes
@@ -3550,7 +3559,9 @@ fn refusal_candidates(
         .filter_map(|branch| input_guard(&branch.condition))
         .chain(&grounded)
         .collect();
-    candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)
+    let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
+    let cut = crate::witness::cut_short(ir, command, &guards, distinction, false);
+    Ok((inputs, cut))
 }
 
 /// ESS-SYNTH-003 for [`refusal_input`]: the input guards no candidate satisfied, and — where some
@@ -3566,13 +3577,17 @@ fn refusal_candidates(
 ///   input (`cause`);
 /// * where only twins declared after it were passed over, and only on a row selecting the branch
 ///   first, the diagnostic names that row (`holding`, the branch's stored guard).
+///
+/// `tried` is how many candidates were tried, and `cut` how many goals the guard-directed search
+/// drawing them gave up at its bound: where that is any, the refusal says so, as a refusal of the
+/// plain input search does, since an input the search never reached may still satisfy the guards.
 fn refusal_unsatisfied(
     entity: &EntityHandle,
     (own, siblings, listed): (&[&Predicate], &[&Predicate], &[&Predicate]),
     cause: Option<(&OutcomeName, &Predicate)>,
     holding: Option<&Predicate>,
     halves: Option<&[Predicate]>,
-    tried: usize,
+    (tried, cut): (usize, usize),
 ) -> RefusalCause {
     let mut named = own.to_vec();
     named.extend(siblings.iter().copied());
@@ -3614,7 +3629,7 @@ fn refusal_unsatisfied(
             format!("{rendered}, on {row}")
         };
     }
-    super::unsatisfied(&named, rendered, tried)
+    super::unsatisfied(&named, rendered, tried, cut)
 }
 
 /// The stored fields `outcome`'s `sets:` fills from an input field, and the input field each reads.
@@ -4912,6 +4927,7 @@ fn search_unbound<T>(
             "`{entity}` {field} row under an instance name no earlier step of the scenario binds"
         ),
         tried: 0,
+        cut: 0,
     })
 }
 
@@ -5133,6 +5149,7 @@ fn search_rows<T>(
                             beyond_reach(&follow.names())
                         ),
                         tried: seen.len(),
+                        cut: 0,
                     });
                 }
                 return Err(missing(
@@ -5207,6 +5224,7 @@ fn search_rows<T>(
                 nested_bound(entity, nested && super::related_guard::nests(ir)),
             ),
             seen.len(),
+            0,
         )
     }))
 }
@@ -5508,6 +5526,7 @@ fn shadowed(
         Some(predicate) => RefusalCause::GuardUnsatisfiable {
             predicate,
             tried: *tried,
+            cut: cause.directed_cut(),
         },
         None => cause,
     }
@@ -6573,9 +6592,14 @@ fn claimed_states(
 /// The cause a claimed state's row was not arranged for, naming that state.
 fn in_state(cause: RefusalCause, entity: &EntityHandle, held: &super::StateName) -> RefusalCause {
     match cause {
-        RefusalCause::GuardUnsatisfiable { predicate, tried } => RefusalCause::GuardUnsatisfiable {
+        RefusalCause::GuardUnsatisfiable {
+            predicate,
+            tried,
+            cut,
+        } => RefusalCause::GuardUnsatisfiable {
             predicate: format!("{predicate}, on a `{entity}` row held in `{held}`"),
             tried,
+            cut,
         },
         other => other,
     }
@@ -7122,13 +7146,18 @@ fn limit_unreached(
             .collect::<Vec<_>>()
             .join(", ")
     };
-    let (why, tried) = match cause {
+    let (why, tried, cut) = match cause {
         None => (
             "past the most further rows one branch is witnessed on".to_owned(),
             0,
+            0,
         ),
-        Some(RefusalCause::GuardUnsatisfiable { predicate, tried }) => (predicate.clone(), *tried),
-        Some(other) => (other.to_string(), 0),
+        Some(RefusalCause::GuardUnsatisfiable {
+            predicate,
+            tried,
+            cut,
+        }) => (predicate.clone(), *tried, *cut),
+        Some(other) => (other.to_string(), 0, 0),
     };
     RefusalCause::GuardUnsatisfiable {
         predicate: format!(
@@ -7140,6 +7169,7 @@ fn limit_unreached(
             render(held),
         ),
         tried,
+        cut,
     }
 }
 
@@ -7454,6 +7484,7 @@ pub(super) fn boundaries(
                 Some(&RefusalCause::GuardUnsatisfiable {
                     predicate: why.clone(),
                     tried: 0,
+                    cut: 0,
                 }),
             );
             // Past the bound a goal adds no row, seeded or not.
@@ -7681,6 +7712,7 @@ fn unreached(
             render(held),
         ),
         tried,
+        cut: cause.map_or(0, RefusalCause::directed_cut),
     }
 }
 
@@ -8614,12 +8646,15 @@ fn free_instance(
 /// `refusal`, saying why each admitted seed row of its entity was not applied.
 pub(super) fn annotated(refusal: RefusalCause, notes: &[String]) -> RefusalCause {
     match refusal {
-        RefusalCause::GuardUnsatisfiable { predicate, tried } if !notes.is_empty() => {
-            RefusalCause::GuardUnsatisfiable {
-                predicate: format!("{predicate}; {}", notes.join("; ")),
-                tried,
-            }
-        }
+        RefusalCause::GuardUnsatisfiable {
+            predicate,
+            tried,
+            cut,
+        } if !notes.is_empty() => RefusalCause::GuardUnsatisfiable {
+            predicate: format!("{predicate}; {}", notes.join("; ")),
+            tried,
+            cut,
+        },
         other => other,
     }
 }
@@ -8696,7 +8731,7 @@ mod seed_budget {
     use crate::synthesize::caller::InvocationModels;
     use crate::synthesize::{AdmittedSeeds, SeedSelection};
 
-    const MODEL: &str = "format: ess/20
+    pub(super) const MODEL: &str = "format: ess/20
 system: counter
 version: v1
 domain: counter.model
@@ -8824,9 +8859,53 @@ assert:
         assert_eq!(
             spent(&RefusalCause::GuardUnsatisfiable {
                 predicate: String::new(),
-                tried: 9
+                tried: 9,
+                cut: 0
             }),
             9
         );
+    }
+}
+
+#[cfg(test)]
+mod refusal_cut {
+    use super::{reading, refusal_unsatisfied, Predicate};
+
+    /// A subject-row refusal drawn from candidates the guard-directed search cut short at its
+    /// bound names the bound, as the plain input search's refusal does; one it did not cut short
+    /// does not.
+    #[test]
+    fn a_subject_row_refusal_the_search_cut_short_names_the_bound() {
+        use ess_compiler::{resolve::compile, source::SourceMap};
+        use ess_domain::{spec::RawSpecFile, system::Source as File, Specification};
+        let spec = Specification::assemble([(
+            File::new("counter.yaml"),
+            RawSpecFile::parse(super::seed_budget::MODEL).unwrap(),
+        )])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+        let ir = compile(&spec, &SourceMap::new()).unwrap_or_else(|error| panic!("{error:?}"));
+        let command = ir
+            .commands()
+            .values()
+            .find(|command| command.name.to_string() == "counter.model.Authorize")
+            .unwrap();
+        let outcome = command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.name.to_string() == "authorized")
+            .unwrap();
+        let entity = &reading(command, outcome).unwrap().entity;
+        let guard = Predicate::parse_expression("revision >= 100").expect("a predicate");
+        let own = [&guard];
+        let refused = |cut| {
+            refusal_unsatisfied(entity, (&own, &[], &[]), None, None, None, (4, cut)).to_string()
+        };
+        let cut_short = refused(2);
+        assert!(
+            cut_short.contains("gave up 2 goal(s) at its bound of 1024 steps"),
+            "{cut_short}"
+        );
+        let searched = refused(0);
+        assert!(!searched.contains("bound of"), "{searched}");
     }
 }

@@ -251,6 +251,7 @@ pub(super) fn stored_external_refused(
             claiming.join(", ")
         ),
         tried: 0,
+        cut: 0,
     }
 }
 
@@ -287,7 +288,7 @@ pub(super) fn external_unwitnessed(
     outcome: &ResolvedOutcome,
     cause: RefusalCause,
 ) -> RefusalCause {
-    let RefusalCause::GuardUnsatisfiable { tried, .. } = cause else {
+    let RefusalCause::GuardUnsatisfiable { tried, cut, .. } = cause else {
         return cause;
     };
     let claiming: Vec<String> = command
@@ -314,6 +315,7 @@ pub(super) fn external_unwitnessed(
             claiming.join(", ")
         ),
         tried,
+        cut,
     }
 }
 
@@ -877,6 +879,7 @@ fn beside_refused(
             outcome.name
         ),
         tried: 1,
+        cut: 0,
     }
 }
 
@@ -1793,6 +1796,7 @@ pub(super) fn drive_on(
                 driver.outcome.name
             ),
             tried: 1,
+            cut: 0,
         });
     }
     let mut bound = bound.clone();
@@ -1847,6 +1851,7 @@ fn nested(
             entity.name()
         ),
         tried,
+        cut: 0,
     };
     if arranging.iter().filter(|held| **held == entity).count() > 1 {
         return Err(refused(
@@ -1932,6 +1937,7 @@ fn on_held(
                 driver.outcome.name
             ),
             tried,
+            cut: 0,
         })?;
     Ok(super::invoke_with(
         ir, driver, instance, actors, bound, &input,
@@ -2224,6 +2230,7 @@ fn arranged(
                     outcome.name
                 ),
                 tried: 1,
+                cut: 0,
             });
         }
     }
@@ -3527,6 +3534,7 @@ fn without_row_each(
         return Err(RefusalCause::GuardUnsatisfiable {
             predicate: format!("no row of `{}` for `input.{field}`", entity.name()),
             tried: 0,
+            cut: 0,
         });
     }
     Ok(inputs
