@@ -11,7 +11,7 @@ This page is generated from the change records kept in the repository. A release
 
 ## 0.69.0 — 2026-10-24
 
-### A stored list can be filled or appended to, an absent member may be sent as null, and ess generate types writes request and response bodies
+### Lists can be filled or appended to, absent members sent as null, and ess generate types writes body types
 
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.69.0)
 

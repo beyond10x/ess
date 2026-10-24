@@ -6,7 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
-| [0.69.0](#a-stored-list-can-be-filled-or-appended-to-an-absent-member-may-be-sent-as-null-and-ess-generate-types-writes-request-and-response-bodies) | A stored list can be filled or appended to, an absent member may be sent as null, and ess generate types writes request and response bodies | capability | notable |
+| [0.69.0](#lists-can-be-filled-or-appended-to-absent-members-sent-as-null-and-ess-generate-types-writes-body-types) | Lists can be filled or appended to, absent members sent as null, and ess generate types writes body types | capability | notable |
 | [0.68.0](#a-reference-every-writer-checks-needs-no-missing-row-branch-and-a-view-filter-can-compare-with-now) | A reference every writer checks needs no missing-row branch, and a view filter can compare with now | capability | notable |
 | [0.67.0](#a-guard-says-what-an-absent-value-compares-as-and-an-external-branch-can-be-narrowed-to-some-rows) | A guard says what an absent value compares as, and an external branch can be narrowed to some rows | capability | notable |
 | [0.66.0](#a-generated-go-or-typescript-runner-shows-an-unsupported-scenario-as-skipped-and-the-run-still-fails) | A generated Go or TypeScript runner shows an unsupported scenario as skipped, and the run still fails | capability | notable |
@@ -81,7 +81,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 ## 0.69.0 — 2026-10-24
 
-### A stored list can be filled or appended to, an absent member may be sent as null, and ess generate types writes request and response bodies
+### Lists can be filled or appended to, absent members sent as null, and ess generate types writes body types
 
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.69.0)
 
