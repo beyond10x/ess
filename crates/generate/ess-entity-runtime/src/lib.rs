@@ -2384,9 +2384,11 @@ impl Projector<'_> {
                         }
                         ResolvedPayloadValue::Literal { .. }
                         | ResolvedPayloadValue::Cleared
+                        | ResolvedPayloadValue::EmptyList
                         | ResolvedPayloadValue::SubjectField { .. }
                         | ResolvedPayloadValue::SubjectState { .. }
                         | ResolvedPayloadValue::Increment { .. }
+                        | ResolvedPayloadValue::Append { .. }
                         | ResolvedPayloadValue::InputOrGenerated { .. }
                         | ResolvedPayloadValue::Struct { .. }
                         | ResolvedPayloadValue::RelatedField { .. }
@@ -3145,6 +3147,11 @@ impl Projector<'_> {
                 kind: ProducedValueKind::Absent,
                 slot: None,
             }),
+            // ess/31: a `List<…>` member written as the empty array.
+            ResolvedPayloadValue::EmptyList => Some(ProducedValue {
+                kind: ProducedValueKind::Always(Value::Array(Vec::new())),
+                slot: None,
+            }),
             // Admitted on a set outcome only, which `refuse_set_effects` refused before this.
             ResolvedPayloadValue::ChangedCount => {
                 self.diagnostic(
@@ -3191,6 +3198,7 @@ impl Projector<'_> {
             value @ (ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::SubjectState { .. }
             | ResolvedPayloadValue::Increment { .. }
+            | ResolvedPayloadValue::Append { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }

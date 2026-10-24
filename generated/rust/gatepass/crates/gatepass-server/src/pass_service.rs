@@ -225,29 +225,50 @@ where
 /// [`entry::Refused::NotGranted`] when `caller` — who the realization authenticated the call
 /// as — is none, or is an actor the specification does not grant the command; checked before
 /// the command runs (the route's `403`).
+///
+/// `input` is held to what the route's reader admits: nested no deeper, every number spelled
+/// as JSON spells one, or [`entry::Refused::Input`]. The answer is read back at any depth; one holding a
+/// `Json` value the realization built with a number JSON does not spell is not JSON, and is
+/// [`entry::Refused::Undelivered`] for a command, whose effect stands, and [`entry::Refused::Unmet`]
+/// for a view.
 pub fn handle<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, caller: Option<&gatepass_types::actor::Caller>, name: &str, input: json::Value) -> Result<json::Value, entry::Refused>
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
+    let checked = |input: &json::Value| {
+        json::admitted(input).map_err(|expected| {
+            entry::Refused::Input(format!("the input is not JSON: expected {expected}"))
+        })
+    };
     let answered = match name {
         "gatepass.visit.AdmitVisitor" => match admit(caller, "gatepass.visit.AdmitVisitor") {
-            Ok(()) => run_gatepass_visit_admit_visitor(system, &input),
+            Ok(()) => checked(&input).and_then(|()| run_gatepass_visit_admit_visitor(system, &input)),
             Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
         },
         "gatepass.visit.ExpectedVisits" => run_gatepass_visit_expected_visits(system),
         "gatepass.visit.RegisterVisit" => match admit(caller, "gatepass.visit.RegisterVisit") {
-            Ok(()) => run_gatepass_visit_register_visit(system, &input),
+            Ok(()) => checked(&input).and_then(|()| run_gatepass_visit_register_visit(system, &input)),
             Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
         },
         "gatepass.visit.SignOutVisitor" => match admit(caller, "gatepass.visit.SignOutVisitor") {
-            Ok(()) => run_gatepass_visit_sign_out_visitor(system, &input),
+            Ok(()) => checked(&input).and_then(|()| run_gatepass_visit_sign_out_visitor(system, &input)),
             Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
         },
         "gatepass.visit.VisitById" => run_gatepass_visit_visit_by_id(system),
         other => return Err(entry::Refused::Unknown(other.to_owned())),
     };
     let (_, body) = answered?;
-    Ok(entry::read(&body))
+    entry::read(&body).map_err(|error| {
+        if matches!(name, "gatepass.visit.AdmitVisitor" | "gatepass.visit.RegisterVisit" | "gatepass.visit.SignOutVisitor") {
+            entry::Refused::Undelivered(format!(
+                "delivering what the command published: its answer is not JSON this surface reads back: {error}"
+            ))
+        } else {
+            entry::Refused::Unmet(format!(
+                "unmet obligation: view_query `{name}` answered rows this surface cannot read back: {error}"
+            ))
+        }
+    })
 }
 
 /// Nothing, where `caller` may invoke `command`; otherwise the actor the standard refusal names,

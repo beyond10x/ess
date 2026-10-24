@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-22T23:43:47Z",
+  "actor": "human:timo",
+  "artifact": "story:a-row-arranged-beside-is-created-once-under-its-name",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit/ess-0690-u6 0cc1bb8e20 merged into integrate/ess-batch-0690; cargo test -p ess-conformance --test a_row_arranged_beside_is_created_once_under_its_name ok; adversary tests stored_block_adversary 1, stored_order_adversary 3, existence_quantifier_adversary 1 ok; tables re-pinned (suite bytes 332, lowered 332, selection precedence 290)"
+  }
+}

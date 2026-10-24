@@ -291,7 +291,7 @@ fn manifest(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Artifact {
     for dependency in dependencies {
         let _ = writeln!(out, "{dependency} = {{ path = \"../{dependency}\" }}");
     }
-    out.push_str("clap = { version = \"=4.6.7\", features = [\"derive\"] }\nuuid = { version = \"=1.26.1\", features = [\"v4\"] }\ntime = { version = \"=0.3.45\", features = [\"formatting\"] }\n");
+    out.push_str("clap = { version = \"^4.6.7\", features = [\"derive\"] }\nuuid = { version = \"^1.26.1\", features = [\"v4\"] }\ntime = { version = \"^0.3.45\", features = [\"formatting\"] }\n");
     Artifact::new(format!("crates/{package}/Cargo.toml"), out)
 }
 
@@ -1010,6 +1010,13 @@ fn entry_point(
              is read.\n",
         );
     }
+    out.push_str(
+        "///\n/// `input` is held to what the route's reader admits: nested no deeper, every number \
+         spelled\n/// as JSON spells one, or [`entry::Refused::Input`]. The answer is read back \
+         at any depth; one holding a\n/// `Json` value the realization built with a number \
+         JSON does not spell is not JSON, and is\n/// [`entry::Refused::Undelivered`] for a \
+         command, whose effect stands, and [`entry::Refused::Unmet`]\n/// for a view.\n",
+    );
     let _ = writeln!(
         out,
         "pub fn handle{angled}({system}: &mut {system_crate}::System{angled}, {}name: &str, \
@@ -1021,7 +1028,38 @@ fn entry_point(
         out.push_str("{\n    Err(entry::Refused::Unknown(name.to_owned()))\n}\n");
         return;
     }
-    out.push_str("{\n    let answered = match name {\n");
+    out.push('{');
+    out.push('\n');
+    if takes_input {
+        // A value a caller built is held to what intake would have read, after the grant check as
+        // the route parses after it, so `handle` refuses what the route refuses and the answer
+        // that carries the value back stays readable.
+        out.push_str(
+            "    let checked = |input: &json::Value| {\n        \
+             json::admitted(input).map_err(|expected| {\n            \
+             entry::Refused::Input(format!(\"the input is not JSON: expected {expected}\"))\n        \
+             })\n    };\n",
+        );
+    }
+    out.push_str("    let answered = match name {\n");
+    for (named, call) in handle_arms(server, routes, grants) {
+        let _ = writeln!(out, "        {named:?} => {call},");
+    }
+    out.push_str(
+        "        other => return Err(entry::Refused::Unknown(other.to_owned())),\n    };\n    \
+         let (_, body) = answered?;\n",
+    );
+    read_back(out, ir, routes);
+}
+
+/// `handle`'s arms, sorted by qualified name: each the call answering it, behind its grant check
+/// and, where it reads `input`, behind `checked`.
+fn handle_arms(
+    server: &Server<'_>,
+    routes: &[http::Route<'_>],
+    grants: bool,
+) -> Vec<(String, String)> {
+    let ir = server.ir;
     let mut arms: Vec<(String, String)> = routes
         .iter()
         .map(|route| match route.serves {
@@ -1030,8 +1068,9 @@ fn entry_point(
                 (
                     declared.to_string(),
                     format!(
-                        "match admit(caller, {:?}) {{\n            Ok(()) => {}(system, \
-                         &input),\n            Err(actor) => \
+                        "match admit(caller, {:?}) {{\n            Ok(()) => \
+                         checked(&input).and_then(|()| {}(system, &input)),\n            \
+                         Err(actor) => \
                          Err(entry::Refused::NotGranted(actor.map(str::to_owned))),\n        }}",
                         declared.to_string(),
                         runner_ident(server.layout, declared)
@@ -1042,20 +1081,64 @@ fn entry_point(
                 let declared = &ir.command(handle).name;
                 (
                     declared.to_string(),
-                    format!("{}(system, &input)", runner_ident(server.layout, declared)),
+                    format!(
+                        "checked(&input).and_then(|()| {}(system, &input))",
+                        runner_ident(server.layout, declared)
+                    ),
                 )
             }
             Served::View(handle) => handle_view_arm(ir, server.layout, handle),
         })
         .collect();
     arms.sort();
-    for (named, call) in arms {
-        let _ = writeln!(out, "        {named:?} => {call},");
-    }
-    out.push_str(
-        "        other => return Err(entry::Refused::Unknown(other.to_owned())),\n    };\n    \
-         let (_, body) = answered?;\n    Ok(entry::read(&body))\n}\n",
+    arms
+}
+
+/// The tail of `handle`: the answer is read back as the value it returns.
+fn read_back(out: &mut String, ir: &EssIr, routes: &[http::Route<'_>]) {
+    // The answer is read back; what the realization built into a `Json` value may not read. A
+    // command has taken effect by then, so its refusal says so; a view has written nothing.
+    let commands: Vec<String> = routes
+        .iter()
+        .filter(|route| matches!(route.serves, Served::Command(_)))
+        .map(|route| format!("{:?}", served_name(ir, route)))
+        .collect();
+    let undelivered = "entry::Refused::Undelivered(format!(\n            \"delivering what the \
+                       command published: its answer is not JSON this surface reads back: \
+                       {error}\"\n        ))";
+    let unmet = "entry::Refused::Unmet(format!(\n            \"unmet obligation: view_query \
+                 `{name}` answered rows this surface cannot read back: {error}\"\n        ))";
+    let refusal = if commands.len() == routes.len() {
+        format!("        {undelivered}\n")
+    } else if commands.is_empty() {
+        format!("        {unmet}\n")
+    } else {
+        format!(
+            "        if matches!(name, {}) {{\n            {}\n        }} else {{\n            \
+             {}\n        }}\n",
+            sorted(commands),
+            undelivered.replace("\n        ", "\n            "),
+            unmet.replace("\n        ", "\n            ")
+        )
+    };
+    let _ = write!(
+        out,
+        "    entry::read(&body).map_err(|error| {{\n{refusal}    }})\n}}\n"
     );
+}
+
+/// The qualified name `handle` answers a route by.
+fn served_name(ir: &EssIr, route: &http::Route<'_>) -> String {
+    match route.serves {
+        Served::Command(handle) => ir.command(handle).name.to_string(),
+        Served::View(handle) => ir.view(handle).name.to_string(),
+    }
+}
+
+/// Quoted names as one `matches!` pattern, in order.
+fn sorted(mut names: Vec<String>) -> String {
+    names.sort();
+    names.join(" | ")
 }
 
 /// One view's `handle` arm: its qualified name, and the call answering it — behind the read grant
@@ -1070,7 +1153,10 @@ fn handle_view_arm(
     let call = if view.params.is_empty() {
         format!("{}(system)", runner_ident(layout, declared))
     } else {
-        format!("{}(system, &input)", runner_ident(layout, declared))
+        format!(
+            "checked(&input).and_then(|()| {}(system, &input))",
+            runner_ident(layout, declared)
+        )
     };
     let call = if http::read_checked(ir, declared) {
         format!(
@@ -2127,9 +2213,16 @@ impl std::error::Error for Refused {}
 
 /// A rendered outcome, read back as the value it renders.
 ///
-/// The body is written by this crate's own encoders, so it is JSON by construction; reading it
-/// back, rather than building the value a second way, keeps one rendering of every outcome.
-pub(crate) fn read(body: &str) -> crate::json::Value {
-    crate::json::parse(body).expect("this crate's encoders write JSON its reader reads")
+/// The body is written by this crate's own encoders; reading it back, rather than building the
+/// value a second way, keeps one rendering of every outcome. It is read with
+/// [`crate::json::parse_written`], which has no depth limit: a `Json` value intake admitted sits
+/// deeper in the answer than it arrived.
+///
+/// # Errors
+///
+/// The reader's refusal when the answer is not JSON, which only a `Json` value the realization
+/// built can make it: a number spelled the way JSON does not spell one.
+pub(crate) fn read(body: &str) -> Result<crate::json::Value, crate::json::ParseError> {
+    crate::json::parse_written(body)
 }
 "#;

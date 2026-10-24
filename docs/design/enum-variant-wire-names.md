@@ -75,6 +75,7 @@ A bare variant list is admitted by every format, including the four that predate
 | `ess-gen` JSON Schema `choices` | `wire()` | a generated schema describes the document on the wire |
 | `ess-cli-contract` | `name()` | that shape is what an operator types at a command line |
 | `ess-synth`, `ess-conformance` | `name()` | unchanged behaviour; consuming the spelling in the emitters is follow-up work |
+| `ess-gen` JSON Schema `x-ess-variants` | `name()` where it differs from `wire()` | the types-only Rust, Go and TypeScript outputs name each variant by its declared name, renamed to its spelling (beyond10x/ess#658); an enum where one name has no `PascalCase` identifier, or two names share one, keeps positional `V<n>` on every target, as before, rather than being refused |
 
 For a variant that declares nothing all four are the same string, so no existing model moves.
 

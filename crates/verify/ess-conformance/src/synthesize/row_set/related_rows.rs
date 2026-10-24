@@ -491,6 +491,7 @@ impl Context<'_> {
                 Owner {
                     under: None,
                     held: &owners_held,
+                    linked: None,
                 },
             ),
             &accept,

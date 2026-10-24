@@ -585,6 +585,7 @@ fn check_chain(entity: &EntityHandle, arranging: &[&EntityHandle]) -> Result<(),
         return Err(RefusalCause::GuardUnsatisfiable {
             predicate: format!("cyclic related source arrangement through `{entity}`"),
             tried: arranging.len(),
+            cut: 0,
         });
     }
     Ok(())
@@ -1359,6 +1360,7 @@ fn shared(
             ir.entity(read.entity).name
         ),
         tried: 1,
+        cut: 0,
     })
 }
 

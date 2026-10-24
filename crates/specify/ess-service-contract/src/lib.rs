@@ -465,6 +465,7 @@ fn include_payload_field(
         | ResolvedPayloadValue::ChangedField { type_ref, .. }
         | ResolvedPayloadValue::ChangedState { type_ref }
         | ResolvedPayloadValue::MissingElement { type_ref, .. }
+        | ResolvedPayloadValue::Append { type_ref, .. }
         | ResolvedPayloadValue::InputOrGenerated { type_ref, .. }
         | ResolvedPayloadValue::CallerAttribute { type_ref, .. }
         | ResolvedPayloadValue::PayloadRead { type_ref, .. }
@@ -488,7 +489,8 @@ fn include_payload_field(
         // ess/27 (#560): an expression reads the input and the subject, whose types the command
         // and the entity carry, and computes the target's type.
         | ResolvedPayloadValue::Expression { .. }
-        | ResolvedPayloadValue::Cleared => None,
+        | ResolvedPayloadValue::Cleared
+        | ResolvedPayloadValue::EmptyList => None,
     };
     if let Some(source) = source {
         include_type_ref(types, source);

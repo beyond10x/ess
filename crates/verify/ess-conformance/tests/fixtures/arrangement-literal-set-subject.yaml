@@ -1,0 +1,102 @@
+format: ess/29
+system: demo
+version: v1
+domain: demo.conn
+summary: A connection admitted in one of three modes, then routed on the stored mode and route.
+types:
+  - {name: demo.conn.ConnId, kind: newtype, of: String}
+  - {name: demo.conn.Route, kind: enum, variants: [A, B, C, D]}
+  - {name: demo.conn.Cred, kind: enum, variants: [Header, Sub, None]}
+  - {name: demo.conn.Mode, kind: enum, variants: [Key, Token, Open]}
+entities:
+  - name: demo.conn.Conn
+    identity: {name: conn_id, type: demo.conn.ConnId}
+    fields:
+      - {name: route, type: demo.conn.Route}
+      - {name: mode, type: demo.conn.Mode}
+    lifecycle:
+      initial: Admitted
+      states: [Admitted]
+      terminal: [Admitted]
+      transitions: []
+actors:
+  - name: demo.conn.Peer
+    may: [demo.conn.Connect, demo.conn.Dispatch]
+errors:
+  - {name: demo.conn.Refused, summary: Refused., fields: []}
+commands:
+  - name: demo.conn.Connect
+    input:
+      - {name: route, type: demo.conn.Route}
+      - {name: cred, type: demo.conn.Cred}
+      - {name: key_on, type: Boolean}
+      - {name: token_on, type: Boolean}
+      - {name: allowed, type: Boolean}
+      - {name: key_valid, type: Boolean}
+      - {name: token_valid, type: Boolean}
+    outcomes:
+      - name: not-allowed
+        when: {allowed: false}
+        error: demo.conn.Refused
+      - name: no-credential
+        when: {cred: None, token_on: true}
+        error: demo.conn.Refused
+      - name: both-invalid
+        when: {key_on: true, key_valid: false, token_on: true, token_valid: false}
+        error: demo.conn.Refused
+      - name: by-key
+        when: {key_on: true, key_valid: true}
+        creates: demo.conn.Conn
+        instance: conn_id
+        emits: [demo.conn.Admitted]
+        payload:
+          demo.conn.Admitted:
+            conn_id: {generated: true}
+        sets: {route: input.route, mode: Key}
+      - name: by-token
+        when: {token_on: true}
+        creates: demo.conn.Conn
+        instance: conn_id
+        emits: [demo.conn.Admitted]
+        payload:
+          demo.conn.Admitted:
+            conn_id: {generated: true}
+        sets: {route: input.route, mode: Token}
+      - name: open
+        creates: demo.conn.Conn
+        instance: conn_id
+        emits: [demo.conn.Admitted]
+        payload:
+          demo.conn.Admitted:
+            conn_id: {generated: true}
+        sets: {route: input.route, mode: Open}
+  - name: demo.conn.Dispatch
+    input:
+      - {name: conn_id, type: demo.conn.ConnId}
+    outcomes:
+      - name: key-to-d
+        when_subject:
+          predicate:
+            all: [mode == Key, route == D]
+        error: demo.conn.Refused
+      - name: key-to-b
+        when_subject:
+          predicate:
+            all: [mode == Key, route == B]
+        error: demo.conn.Refused
+      - name: routed
+        preserves: demo.conn.Conn
+        instance: conn_id
+events:
+  - name: demo.conn.Admitted
+    fields:
+      - {name: conn_id, type: demo.conn.ConnId}
+views:
+  - name: demo.conn.Conns
+    source: demo.conn.Conn
+    consistency: read_your_writes
+    fields:
+      - {name: conn_id, type: demo.conn.ConnId}
+      - {name: route, type: demo.conn.Route}
+      - {name: mode, type: demo.conn.Mode}
+      - {name: state, type: demo.conn.Conn.State}

@@ -47,14 +47,14 @@ mod naming;
 mod pinned;
 
 use super::{
-    arrange_toward_bound, arrange_toward_filter, determined_payload, fact_value,
-    has_subject_guards, insert, instance_name, lifecycle_state, not_emitted, prepare_in, reach,
-    reach_in_state, require, settled, shown, subject_fact, supply, ActorRef, Arrangement,
-    AssertionStyle, BTreeMap, BTreeSet, CommandRef, ConformanceScenario, ConformanceSuite,
-    Determined, EntityHandle, EntityRef, EssIr, EssSemanticRef, EventRef, Focus, Holds,
-    InstanceName, LeafShape, Node, OutcomeRef, PayloadShape, QualifiedName, Refusal, RefusalCause,
-    ResolvedCommand, ResolvedEffect, ResolvedOutcome, ResolvedView, ScenarioId, ScenarioStep,
-    ScenarioValue, StateName, ViewExpectation, ViewRef,
+    arrange_toward_bound, arrange_toward_filter, arrange_toward_held, determined_payload,
+    fact_value, has_subject_guards, insert, instance_name, lifecycle_state, not_emitted,
+    prepare_in, reach, reach_in_state, require, settled, shown, subject_fact, supply, ActorRef,
+    Arrangement, AssertionStyle, BTreeMap, BTreeSet, CommandRef, ConformanceScenario,
+    ConformanceSuite, Determined, EntityHandle, EntityRef, EssIr, EssSemanticRef, EventRef, Focus,
+    Holds, InstanceName, LeafShape, Node, OutcomeRef, PayloadShape, QualifiedName, Refusal,
+    RefusalCause, ResolvedCommand, ResolvedEffect, ResolvedOutcome, ResolvedView, ScenarioId,
+    ScenarioStep, ScenarioValue, StateName, ViewExpectation, ViewRef,
 };
 
 /// How many rows the filter must select, so a target that changes one of them is caught.
@@ -285,6 +285,37 @@ pub(super) const UNARRANGED: [&str; 4] = [
 const NO_MATCHING: &str =
     "has no three rows the filter selects that the arranging commands can produce";
 
+/// A moving entry whose changed rows rest only where the move arrives, and which writes nothing.
+pub(super) const ARRIVES_ONLY: &str = "is moved by its entry only from the state the move \
+     arrives in, as far as the arranging commands reach, and the entry writes no field, so a \
+     target that skips the move reads the same";
+
+/// An entry whose rows no creating branch produces, after the branches [`undriven`] names.
+pub(super) const UNDRIVEN: &str = "no arrangement takes for a row the filter selects with the \
+     rows the scenario holds when it is sent, so no row is arranged for the entry";
+
+/// The refusal for entry `at` over `entity`, where not one row the filter selects is arranged in
+/// any state: it names the branches creating the entity, which the arrangement could not drive
+/// (an adopter's report, row 14). `None` where no branch creates the entity.
+///
+/// The branches are model text and [`WitnessGap::reason`] is `'static`, so they ride in the
+/// rendered type, as a shorthand's field does (`shorthand.rs`).
+fn undriven(ir: &EssIr, entity: &EntityHandle, at: String) -> Option<RefusalCause> {
+    let creators: BTreeSet<String> = ir
+        .drivers()
+        .get(entity)?
+        .iter()
+        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .map(|driver| format!("{}/{}", driver.command.name, driver.outcome.name))
+        .collect();
+    if creators.is_empty() {
+        return None;
+    }
+    let creators: Vec<String> = creators.into_iter().collect();
+    let type_ref = format!("{entity}` and created only by `{}", creators.join("`, `"));
+    Some(gap(at, type_ref, UNDRIVEN))
+}
+
 /// No row leaving one conjunct out.
 const NO_MISS: &str = "has no row leaving out exactly one conjunct of the filter that the \
      arranging commands can produce";
@@ -502,6 +533,12 @@ struct Selection<'a> {
     symbols: BTreeMap<FactPath, InstanceName>,
     /// A second real instance of the subject, for the identity conjunct's nonmatching witness.
     other: Option<InstanceName>,
+    /// The state each captured instance of `symbols` rests in while the rows are arranged, where
+    /// the arrangement knows it.
+    held: BTreeMap<InstanceName, StateName>,
+    /// The values the arrangement settled for a captured instance of `symbols`, where it knows
+    /// them: a creator refusing that row on a comparison with its own input is decided on them.
+    rows: super::related_guard::HeldRows,
 }
 
 impl Selection<'_> {
@@ -676,14 +713,14 @@ impl Selection<'_> {
         if self.symbolic(goal) {
             let bound = self.bindings(goal, true)?;
             let steering = self.steering(steer).unwrap_or(Predicate::Always);
-            return arrange_toward_bound(
+            return arrange_toward_held(
                 self.ir,
                 self.entity,
                 &steering,
                 actors,
                 distinction,
-                None,
                 &bound,
+                (&self.held, &self.rows),
                 &accept,
             );
         }
@@ -738,6 +775,8 @@ pub(super) fn selected_row(
         sets: outcome,
         symbols: BTreeMap::new(),
         other: None,
+        held: BTreeMap::new(),
+        rows: BTreeMap::new(),
     };
     selection.row(actors, taken, rests, false)
 }
@@ -1254,6 +1293,8 @@ fn set_scenario(
         sets: outcome,
         symbols: BTreeMap::new(),
         other: None,
+        held: BTreeMap::new(),
+        rows: BTreeMap::new(),
     };
     let (arranged, to) = set_rows(&selection, actors, set)
         .map_err(|reason| unarranged(ir, entity, &set.filter, at(), reason))?;
@@ -1374,6 +1415,8 @@ fn combined(
             sets: &entry.sets,
             symbols: symbols.clone(),
             other: other.cloned(),
+            held: BTreeMap::new(),
+            rows: BTreeMap::new(),
         })
         .collect();
     let mut out = Vec::with_capacity(entries.len());
@@ -1494,11 +1537,7 @@ fn affect_rows(
             // Only `to` itself is arranged among the `from` states: the move is seen only through
             // what `sets:` writes, and with nothing written it is not seen at all.
             if affect.sets.is_empty() {
-                Err(
-                    "is moved by its entry only from the state the move arrives in, as far as \
-                     the arranging commands reach, and the entry writes no field, so a target \
-                     that skips the move reads the same",
-                )
+                Err(ARRIVES_ONLY)
             } else {
                 attempt(&movable, true).map_err(|_| reason)
             }
@@ -1570,14 +1609,54 @@ struct AffectInputs {
     literals: BTreeMap<String, Node>,
 }
 
+/// The state the second subject is arranged in: its initial state, unless no command creating the
+/// rows an entry changes admits a related subject row resting there, and one does where the subject
+/// rests `before` the command (an adopter's report, row 14: items are posted only to a feed opened
+/// after it was created, so the excluded rows need an open second feed too).
+fn second_state<'i>(
+    ir: &'i EssIr,
+    outcome: &ResolvedOutcome,
+    subject: &EntityHandle,
+    instance: &InstanceName,
+    before: Option<&'i StateName>,
+) -> &'i StateName {
+    let initial = &ir.entity(subject).lifecycle.initial;
+    let all = ir.drivers();
+    let admitted = |state: &StateName| {
+        let held = BTreeMap::from([(instance.clone(), state.clone())]);
+        outcome.affects.iter().any(|affect| {
+            all.get(&affect.entity)
+                .into_iter()
+                .flatten()
+                .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+                .any(|driver| match super::related_guard::reads(driver.command) {
+                    Some((via, entity))
+                        if entity == subject
+                            && super::related_guard::routes(driver.command, driver.outcome) =>
+                    {
+                        let bound = BTreeMap::from([(via.to_owned(), instance.clone())]);
+                        super::related_guard::present_in(ir, driver.command, &bound, &held)
+                    }
+                    _ => true,
+                })
+        })
+    };
+    match before {
+        Some(before) if before != initial && !admitted(initial) && admitted(before) => before,
+        _ => initial,
+    }
+}
+
 /// Bind identity operands and arrange a real alternative identity. These names are references
 /// to captures, not surrogate literal IDs; ordinary inputs retain the existing typed search.
+/// `before` is the state the subject rests in when the command is sent ([`second_state`]).
+/// Where `steer` is given, the second subject is searched for until it holds, as the first is.
 fn affect_inputs(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
-    instance: &InstanceName,
+    (instance, before): (&InstanceName, Option<&StateName>),
     supplied: &BTreeMap<String, ScenarioValue>,
-    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (actors, steer): (&BTreeMap<QualifiedName, ActorRef>, &[Predicate]),
     taken: &mut BTreeSet<InstanceName>,
 ) -> Result<AffectInputs, RefusalCause> {
     let subject = &outcome
@@ -1611,9 +1690,19 @@ fn affect_inputs(
         None
     } else {
         let distinction = next(ir, subject, taken);
-        let initial = &ir.entity(subject).lifecycle.initial;
-        Some(super::arrange(ir, subject, initial, actors, distinction, &[])
-            .map_err(|_| gap(format!("{}.affects", outcome.name), subject.to_string(), "cannot arrange a second subject to witness the identity filter's excluded rows"))?)
+        let state = second_state(ir, outcome, subject, instance, before);
+        let arranged = if steer.is_empty() {
+            super::arrange(ir, subject, state, actors, distinction, &[]).map_err(|_| ())
+        } else {
+            super::steered_row(ir, subject, state, actors, distinction, steer).map_err(|_| ())
+        };
+        Some(arranged.map_err(|()| {
+            gap(
+                format!("{}.affects", outcome.name),
+                subject.to_string(),
+                "cannot arrange a second subject to witness the identity filter's excluded rows",
+            )
+        })?)
     };
     let literals = supplied
         .iter()
@@ -1665,13 +1754,78 @@ fn pinned_entry<'o>(
 }
 
 /// The `affects:` segment appended to the branch's own scenario.
-#[allow(clippy::too_many_lines)] // One complete set-effect witness, including invocation authority.
+///
+/// Where no row of an entry is arranged because its creating branch is not taken on the subject
+/// the plain arrangement leaves ([`UNDRIVEN`]), and that branch reads the subject row through a
+/// `when_related:` guard comparing a stored field with its input, the segment is built once more
+/// on a subject holding each such field ([`super::prepare_steered`]): `MakeChild/made` is taken
+/// only under a parent holding a tenant. A segment the plain subject already builds is the one it
+/// always was.
 fn affects_segment(
     models: &InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     taken: &mut BTreeSet<InstanceName>,
+) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let cause = match affects_segment_on(models, command, outcome, actors, taken, &[]) {
+        Err(RefusalCause::NoWitness(gap)) if gap.reason == UNDRIVEN => RefusalCause::NoWitness(gap),
+        built => return built,
+    };
+    let steer = creators_reading_subject(models.arrangement, outcome);
+    if steer.is_empty() {
+        return Err(cause);
+    }
+    let mut again = taken.clone();
+    match affects_segment_on(models, command, outcome, actors, &mut again, &steer) {
+        Ok(built) => {
+            *taken = again;
+            Ok(built)
+        }
+        Err(_) => Err(cause),
+    }
+}
+
+/// `defined(f)` for every stored field `f` of `outcome`'s subject that a creator of an entry's
+/// entity compares with its input through a `when_related:` guard over the subject's entity
+/// ([`subject_fact::compared_presence`]).
+fn creators_reading_subject(ir: &EssIr, outcome: &ResolvedOutcome) -> Vec<Predicate> {
+    let Some(subject) = &outcome.subject else {
+        return Vec::new();
+    };
+    let all = ir.drivers();
+    let mut predicates = Vec::new();
+    for affect in &outcome.affects {
+        for creator in all.get(&affect.entity).map_or(&[][..], Vec::as_slice) {
+            if !matches!(creator.effect, ResolvedEffect::Creates) {
+                continue;
+            }
+            for branch in &creator.command.outcomes {
+                if let ess_compiler::ir::ResolvedCondition::Related {
+                    entity,
+                    test: ess_compiler::ir::ResolvedRelatedTest::Holds { predicate },
+                    ..
+                } = &branch.condition
+                {
+                    if *entity == subject.entity && !predicates.contains(predicate) {
+                        predicates.push(predicate.clone());
+                    }
+                }
+            }
+        }
+    }
+    subject_fact::compared_presence(ir, &subject.entity, &predicates)
+}
+
+/// [`affects_segment`], the subject arranged holding every field `steer` names present.
+#[allow(clippy::too_many_lines)] // One complete set-effect witness, including invocation authority.
+fn affects_segment_on(
+    models: &InvocationModels<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    taken: &mut BTreeSet<InstanceName>,
+    steer: &[Predicate],
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
     let ir = models.arrangement;
     let at = |index: usize| format!("{}.affects[{index}]", outcome.name);
@@ -1697,7 +1851,11 @@ fn affects_segment(
         )
     })?;
     let distinction = next(ir, &subject.entity, taken);
-    let setup = prepare_in(ir, outcome, actors, None, distinction)?;
+    let setup = if steer.is_empty() {
+        prepare_in(ir, outcome, actors, None, distinction)?
+    } else {
+        super::prepare_steered(ir, outcome, actors, distinction, steer)?
+    };
     let instance = setup.instance.clone().ok_or_else(|| {
         gap(
             at(0),
@@ -1751,8 +1909,39 @@ fn affects_segment(
         &mut source,
     );
     let mut entries = Vec::new();
-    let operands = affect_inputs(ir, outcome, &instance, &supplied, actors, taken)?;
+    let operands = affect_inputs(
+        ir,
+        outcome,
+        (&instance, setup.before.as_ref()),
+        &supplied,
+        (actors, steer),
+        taken,
+    )?;
     let other = operands.other.as_ref().map(|row| row.instance.clone());
+    // The rows are arranged after the subject's and the second subject's steps, which leave each
+    // where they rest when the rows' creating commands read them.
+    let held: BTreeMap<InstanceName, StateName> = setup
+        .before
+        .iter()
+        .map(|state| (instance.clone(), state.clone()))
+        .chain(
+            operands
+                .other
+                .iter()
+                .map(|row| (row.instance.clone(), row.state.clone())),
+        )
+        .collect();
+    // The values the subject's steps settled, which a creator of the rows reading the subject
+    // beside its own input is decided on (row 29, 0.69.0).
+    let rows: super::related_guard::HeldRows =
+        std::iter::once((instance.clone(), setup.settled.clone()))
+            .chain(
+                operands
+                    .other
+                    .iter()
+                    .map(|row| (row.instance.clone(), row.settled.clone())),
+            )
+            .collect();
     if let Some(other) = operands.other {
         steps.extend(other.steps);
         source.extend(other.source);
@@ -1781,10 +1970,32 @@ fn affects_segment(
             sets: &sets,
             symbols: operands.symbols.clone(),
             other: other.clone(),
+            held: held.clone(),
+            rows: rows.clone(),
         };
-        let rows = affect_rows(&selection, actors, taken, affect).map_err(|reason| {
-            unarranged(ir, &affect.entity, &selection.filter, at(index), reason)
-        })?;
+        let rows = match affect_rows(&selection, actors, taken, affect) {
+            Ok(rows) => rows,
+            // Not one row the filter selects, in any state: the cause is the creating branch the
+            // arrangement could not drive, unless the filter reads a field nothing writes.
+            Err(_)
+                if selection
+                    .row(actors, &mut taken.clone(), &|_| true, false)
+                    .is_none() =>
+            {
+                return Err(unwritten(ir, &affect.entity, &selection.filter)
+                    .or_else(|| undriven(ir, &affect.entity, at(index)))
+                    .unwrap_or_else(|| gap(at(index), affect.entity.to_string(), NO_MATCHING)));
+            }
+            Err(reason) => {
+                return Err(unarranged(
+                    ir,
+                    &affect.entity,
+                    &selection.filter,
+                    at(index),
+                    reason,
+                ))
+            }
+        };
         let (filter, closed) = (selection.filter.clone(), selection.closed.clone());
         for row in rows.changed.iter().chain(&rows.kept) {
             steps.extend(row.steps.iter().cloned());
@@ -2561,6 +2772,8 @@ fn unpublished_segment(
         sets: outcome,
         symbols: BTreeMap::new(),
         other: None,
+        held: BTreeMap::new(),
+        rows: BTreeMap::new(),
     };
     let (from, to) = match &set.effect {
         ResolvedEffect::Moves { transition } => (Some(&transition.from), Some(&transition.to)),

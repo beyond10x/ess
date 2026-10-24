@@ -177,7 +177,7 @@ fn checked(
     own: bool,
 ) -> bool {
     match source {
-        PayloadSource::Cleared => true,
+        PayloadSource::Cleared | PayloadSource::EmptyList => true,
         PayloadSource::SubjectField { field: read } => own && read == field,
         PayloadSource::InputField { field: input } => {
             !input.contains('.')

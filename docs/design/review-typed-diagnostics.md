@@ -333,7 +333,7 @@ refused as `unsupported_construct` at `view.<name>.source`, at every format, fro
 accessor.rs 1 0
 actor.rs 3 4
 binding.rs 36 0
-command.rs 13 64
+command.rs 15 65
 component.rs 15 9
 domain.rs 5 0
 entity.rs 17 5

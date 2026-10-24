@@ -152,7 +152,7 @@ fn complete_non_binary64_output_maps_remain_identical() {
             output
         });
     assert_eq!(
-        digest, "d132dabbc1afa8661656272f55e95191569e0e56abdf6e2b8f77019b3fd68235",
+        digest, "ccf08f211542ccd499d840a1222177dde4e2e802102014342a017bd3330cb89c",
         "complete old output map SHA-256 frozen at c4ba992, refrozen for beyond10x/ess#394 (`score >= 0` \
          publishes `minimum`), for beyond10x/ess#406/#407 (model `Timestamp` is native, model \
          anonymous shapes are named by position; bundle output keeps its hash names), at 48d5cc77b \
@@ -160,7 +160,9 @@ fn complete_non_binary64_output_maps_remain_identical() {
          beyond10x/ess#483 (the Rust manifest enables `arbitrary_precision` only through a default-on \
          `exact-numbers` feature, the Rust report names each `rust_exact_numbers` value, a \
          `Value`-decoded union only where an alternative can hold a number, and the `integer` \
-         obligation says it is exact only with that feature)"
+         obligation says it is exact only with that feature) and for beyond10x/ess#660 (the Rust \
+         manifest takes `^` ranges at the tested minimum) and for beyond10x/ess#658 (a model enum \
+         names its variants by their declared names, `Paused` and `Ready` rather than `V0` and `V1`)"
     );
 }
 
@@ -178,8 +180,22 @@ fn rust_original_token_wire_corpus() {
     .unwrap();
     // A Binary64-only library declares no exact-numbers feature (beyond10x/ess#483), so the
     // corpus runs as built and again with the `arbitrary_precision` a consumer's graph may unify on.
+    // The manifest takes `^` ranges (beyond10x/ess#660), so the corpus is locked to the tested
+    // minimum: it pins how that serde_json release converts a `Value`, and a newer release in the
+    // local registry would otherwise be chosen.
     for (args, arbitrary_precision) in [
         (vec!["generate-lockfile", "--offline"], "0"),
+        (
+            vec![
+                "update",
+                "--offline",
+                "--package",
+                "serde_json",
+                "--precise",
+                "1.0.151",
+            ],
+            "0",
+        ),
         (vec!["test", "--offline", "--locked"], "0"),
         (
             vec![

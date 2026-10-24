@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:seeded-state-reaches-related-rows
 kind: story
-status: draft
+status: active
 title: Setup reaches related rows a downstream specification's commands read
 summary: A downstream specification has 91 unscenarioed scenarios; 62 of 65 ESS-SYNTH-004 refusals chain from one RenderPatch case that needs a Compiled Patch row; reproduced on 0.67.0 and 0.68.0.
 tags:
@@ -11,7 +11,11 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - informed_by: story:an-input-of-list-type-may-carry-an-example
-revision: 3
+- serves: vision:O2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-22T21:27:38Z", actor: "human:timo", revision: 4, correlation: "ess-0690"}
+- {from: "proposed", to: "active", at: "2026-10-22T21:27:38Z", actor: "human:timo", revision: 5, correlation: "ess-0690"}
 ---
 ## Need
 

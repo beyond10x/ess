@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: architecture-decision-record:ess-evolution-02-semantics-before-bindings
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: 02 — Semantic models precede implementation bindings
 relations:
 - decides: initiative:ess-evolution
-revision: 2
+revision: 3
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-10-23T19:36:18Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
 ## Context
 

@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.69.0 — 2026-10-24
+
+### Lists can be filled or appended to, absent members sent as null, and ess generate types writes body types
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.69.0)
+
+Format `ess/31` lets a `sets:` entry store `[]` or append an input element to a stored list, a `List` input carry an `example:`, and a field's `presence:` be `omitted_or_null`. `ess generate types` generates a command's input and response and a view's row. Binding scenarios act on the row their setup arranged, or are refused as ESS-SYNTH-010.
+
 ## 0.68.0 — 2026-10-22
 
 ### A reference every writer checks needs no missing-row branch, and a view filter can compare with now

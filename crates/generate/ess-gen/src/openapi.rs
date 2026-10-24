@@ -208,9 +208,11 @@
 //! | binding | document |
 //! |---|---|
 //! | `request: {encoding: form}` | the request body is `application/x-www-form-urlencoded`, its schema `{command}.Input` |
-//! | `request: {encoding: query}` | no request body and no `{command}.Input`; each field the path does not carry is an `in: query` parameter under its wire name, a `List` with `style: form` and `explode: true` |
+//! | `request: {encoding: query}` | no request body and no `{command}.Input`; each field the path does not carry is an `in: query` parameter under its wire name, a `List` with `style: form` and `explode: true` and not required, its absent key the empty list |
 //! | `outcomes.<o>.status` | the outcome is answered under that status instead of the derived one |
 //! | `body: response` | the command's `{command}.Result`, bare: no `outcome`, no `published` |
+//! | `body: response.<field>` | `{command}.{outcome}.Response` is that response field's schema alone |
+//! | `errors` | each outcome with `error` the route does not list is described as if listed with that answer |
 //! | `body: {<member>: error}` | `{command}.{outcome}.Response` is the error object: `<member>` a `const` of the error's wire name beside the error's fields; two on one status are told apart by a discriminator on `<member>` |
 //! | `body: none` | no content |
 //! | `headers` | response `headers`: a literal is a `const`, a source a `string` required unless it may be absent, a challenge a `string` described param by param |
@@ -617,7 +619,7 @@ type Refusals = BTreeMap<ess_http::RefusalKey, ess_http::Refusal>;
 fn answered_by_binding(declared: Option<&ess_http::Route>, refusals: Option<&Refusals>) -> bool {
     declared.is_some_and(|route| {
         route.request.is_some()
-            || !route.outcomes.is_empty()
+            || route.declares_answers()
             || route.body != ess_http::ViewBody::Rows
             || route.empty.is_some()
             || refusals.is_some_and(|refusals| !refusals.is_empty())
@@ -810,9 +812,10 @@ fn operation(
 /// A `query`-encoded command's input fields the path does not carry, each an `in: query`
 /// parameter under its wire name, in declaration order.
 ///
-/// A field is required unless it is `Optional`, or the command declares `input_absent:`, whose
-/// branch answers a request that carries no input at all. A `List` repeats its key once per element
-/// (`style: form`, `explode: true`), the rule a view's parameters follow.
+/// A field is required unless it is `Optional` or a `List`, or the command declares
+/// `input_absent:`, whose branch answers a request that carries no input at all. A `List` repeats
+/// its key once per element (`style: form`, `explode: true`), the rule a view's parameters follow,
+/// and an absent key is the empty list, as both generated servers read it.
 fn query_parameters(command: &ResolvedCommand, carried: &BTreeSet<&str>) -> Vec<Parameter> {
     let answers_absent = command
         .outcomes
@@ -832,7 +835,7 @@ fn query_parameters(command: &ResolvedCommand, carried: &BTreeSet<&str>) -> Vec<
                     field.name
                 )
             }),
-            required: !field.type_ref.is_optional() && !answers_absent,
+            required: !field.type_ref.is_optional() && !is_list(&field.type_ref) && !answers_absent,
             style: is_list(&field.type_ref).then_some("form"),
             explode: is_list(&field.type_ref).then_some(true),
             schema: embedded(&types::field(field)),
@@ -1270,7 +1273,7 @@ fn bound_responses(
 ) -> BTreeMap<String, Response> {
     let mut by_status: BTreeMap<String, Vec<Answer<'_>>> = BTreeMap::new();
     for outcome in &command.outcomes {
-        let listed = route.outcomes.get(outcome.name.as_str());
+        let listed = route.answer(outcome.name.as_str(), outcome.error.is_some());
         let status = listed.map_or_else(
             || http::outcome_status(ir, outcome).to_owned(),
             |listed| listed.status.to_string(),
@@ -1564,6 +1567,10 @@ fn rendered_outcome(
             schema: json!({"$ref": reference(&format!("{}.Result", command.name))}),
             discriminated: None,
         }),
+        ess_http::Body::ResponseField(_) => Some(Member {
+            schema: json!({"$ref": key}),
+            discriminated: None,
+        }),
         ess_http::Body::Error { member } => Some(Member {
             schema: json!({"$ref": key}),
             discriminated: outcome.error.as_ref().map(|error| {
@@ -1652,6 +1659,10 @@ fn listed_sentence(
         ess_http::Body::Response => "the command's response, bare: no `outcome` names the branch \
                                      and no `published` lists what it published."
             .to_owned(),
+        ess_http::Body::ResponseField(field) => format!(
+            "the command's response field `{field}`, bare: its value alone, with no object around \
+             it."
+        ),
         ess_http::Body::Error { member } => {
             let wire = outcome.error.as_ref().map_or("", |error| {
                 let error = ir.error(error);
@@ -2015,8 +2026,10 @@ fn meaning(status: &str) -> &'static str {
 ///
 /// Under a binding's stage-2 keys an outcome's body decides what it needs: the envelope its
 /// `{command}.{outcome}.Response`, its events and its error's payload, as without one; `response`
-/// the command's `{command}.Result`; `{<member>: error}` the error object under
-/// `{command}.{outcome}.Response`; `none` nothing. A `single` view answers its row, so its rows
+/// the command's `{command}.Result`; `response.<field>` that field's schema under
+/// `{command}.{outcome}.Response`; `{<member>: error}` the error object under
+/// `{command}.{outcome}.Response`; `none` nothing. An outcome a route's `errors` answers needs
+/// what that answer's body needs. A `single` view answers its row, so its rows
 /// wrapper is not described.
 fn schemas(
     ir: &EssIr,
@@ -2092,7 +2105,7 @@ fn command_schemas<'a>(
     roots.extend(types::field_leaves(&command.input));
     let answered = |outcome: &ResolvedOutcome| {
         route
-            .and_then(|route| route.outcomes.get(outcome.name.as_str()))
+            .and_then(|route| route.answer(outcome.name.as_str(), outcome.error.is_some()))
             .map_or(ess_http::Body::Envelope, |listed| listed.body.clone())
     };
     if command
@@ -2101,7 +2114,9 @@ fn command_schemas<'a>(
         .any(|outcome| match answered(outcome) {
             ess_http::Body::Envelope => carries_result(ir, outcome),
             ess_http::Body::Response => true,
-            ess_http::Body::Error { .. } | ess_http::Body::None => false,
+            ess_http::Body::ResponseField(_)
+            | ess_http::Body::Error { .. }
+            | ess_http::Body::None => false,
         })
     {
         out.insert(
@@ -2121,6 +2136,20 @@ fn command_schemas<'a>(
                 );
                 if let Some(error) = &outcome.error {
                     roots.extend(types::field_leaves(&ir.error(error).fields));
+                }
+                continue;
+            }
+            ess_http::Body::ResponseField(field) => {
+                if let Some(declared) = command
+                    .response
+                    .iter()
+                    .find(|declared| declared.name == field)
+                {
+                    out.insert(
+                        response_key(command, outcome),
+                        embedded(&types::field(declared)),
+                    );
+                    roots.extend(types::field_leaves(std::slice::from_ref(declared)));
                 }
                 continue;
             }

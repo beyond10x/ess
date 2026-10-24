@@ -470,7 +470,13 @@ fn project(
                 }
                 let Some(value) = fields.get(&field.name) else {
                     if field.type_ref.is_optional() {
-                        row.insert(field.name.clone(), Node::Null);
+                        // A view field carrying `omitted_when_absent` (ess/31, beyond10x/ess#677)
+                        // leaves the member out, as its published row schema says.
+                        if field.naming.presence
+                            != Some(ess_domain::types::Presence::OmittedWhenAbsent)
+                        {
+                            row.insert(field.name.clone(), Node::Null);
+                        }
                         continue;
                     }
                     return Err(unsupported());

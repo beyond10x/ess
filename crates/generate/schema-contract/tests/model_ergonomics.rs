@@ -72,7 +72,7 @@ fn rust_holds_a_timestamp_natively_and_a_constant_newtype_carries_its_value() {
     );
     let manifest = &realization.supporting["Cargo.toml"];
     assert!(
-        manifest.contains("time = { version = \"=0.3.45\""),
+        manifest.contains("time = { version = \"^0.3.45\""),
         "{manifest}"
     );
 
@@ -446,3 +446,163 @@ fn a_unit_outside_its_alphabet_or_length_is_refused_naming_the_constraint() {
 /// A struct written as one field alone (`ess/27`, beyond10x/ess#594).
 #[path = "model_ergonomics/shorthand.rs"]
 mod shorthand;
+
+/// The generated manifest's version ranges and number feature (beyond10x/ess#660).
+#[path = "model_ergonomics/manifest.rs"]
+mod manifest;
+
+/// The Rust generator options (beyond10x/ess#657, #667, #668) held in a built crate. The
+/// option scenarios that need no build are in `rust_generator_options.rs`; these two build
+/// here, the file allowed to run cargo, into this file's shared target.
+#[allow(dead_code)]
+#[path = "fixtures/rust_generator_options.rs"]
+mod generator_option_fixtures;
+
+mod generator_options {
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::fs;
+    use std::path::Path;
+    use std::process::Command;
+
+    use schema_contract::realize::{Realization, RustDerive, RustOptions};
+
+    use super::generator_option_fixtures::{bundle_plan, declarations, open_schemas, shop_plan};
+
+    /// Builds the generated crate and runs `test` against it.
+    fn build_and_test(realization: &Realization, name: &str, test: &str) {
+        let root = super::scratch(name);
+        fs::create_dir_all(root.join("tests")).expect("tests");
+        fs::write(
+            root.join("Cargo.toml"),
+            &realization.supporting["Cargo.toml"],
+        )
+        .expect("manifest");
+        fs::write(root.join("types.rs"), &realization.declarations).expect("types");
+        fs::write(root.join("tests/options.rs"), test).expect("test");
+        let output = Command::new(env!("CARGO"))
+            .args(["test", "--offline", "--quiet", "--manifest-path"])
+            .arg(root.join("Cargo.toml"))
+            .env(
+                "CARGO_TARGET_DIR",
+                Path::new(env!("CARGO_TARGET_TMPDIR")).join("ergonomics-target"),
+            )
+            .output()
+            .expect("cargo runs");
+        assert!(
+            output.status.success(),
+            "{name}:\n{}\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+            realization.declarations
+        );
+    }
+
+    /// The same build holds the added derives: `Hash` on every type and `Eq` on the SKU.
+    #[test]
+    fn fold_null_decodes_null_as_absent() {
+        let options = RustOptions {
+            derives: BTreeSet::from([RustDerive::Hash]),
+            type_derives: BTreeMap::from([(
+                "probe.shop.Sku".to_owned(),
+                BTreeSet::from([RustDerive::Eq]),
+            )]),
+            fold_null: true,
+            ..RustOptions::default()
+        };
+        let realization = shop_plan().rust_with("shop_types", &options).unwrap();
+        assert!(
+            declarations(&realization)["ProbeShopLine"]
+                .contains("deserialize_with = \"ess_fold_null\""),
+            "{}",
+            realization.declarations
+        );
+        build_and_test(
+            &realization,
+            "fold-null",
+            r##"
+use shop_types::*;
+
+#[test]
+fn null_and_missing_decode_alike_and_encode_omitted() {
+    let missing = r#"{"amount":{"kind":"text","value":"t"},"count":1,"sku":"a"}"#;
+    let null = r#"{"amount":{"kind":"text","value":"t"},"colour":null,"count":1,"note":null,"sku":"a"}"#;
+    let from_missing: ProbeShopLine = serde_json::from_str(missing).unwrap();
+    let from_null: ProbeShopLine = serde_json::from_str(null).unwrap();
+    assert_eq!(from_missing, from_null);
+    assert!(from_null.note.is_absent() && from_null.colour.is_absent());
+    assert_eq!(serde_json::to_string(&from_null).unwrap(), missing);
+    let present: ProbeShopLine = serde_json::from_str(&missing.replace(r#""count":1,"#, r#""count":1,"note":"n","#)).unwrap();
+    assert_eq!(present.note, EssPresence::Present("n".to_owned()));
+    assert!(serde_json::to_string(&present).unwrap().contains(r#""note":"n""#));
+}
+
+fn hash_of<T: std::hash::Hash>(value: &T) -> u64 {
+    use std::hash::Hasher;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish()
+}
+
+#[test]
+fn equal_orders_hash_alike() {
+    let text = r#"{"lines":[{"sku":"a","count":1,"note":"n","colour":"red","amount":{"kind":"text","value":"t"}}],"payload":{"k":[1,2]}}"#;
+    let one: ProbeShopOrder = serde_json::from_str(text).unwrap();
+    let two: ProbeShopOrder = serde_json::from_str(text).unwrap();
+    assert_eq!(hash_of(&one), hash_of(&two));
+    let other: ProbeShopOrder = serde_json::from_str(&text.replace(r#""note":"n","#, "")).unwrap();
+    assert_ne!(hash_of(&one), hash_of(&other));
+}
+
+#[test]
+fn a_sku_goes_in_a_hash_set() {
+    let set: std::collections::HashSet<ProbeShopSku> =
+        ["a", "b", "a"].iter().map(|sku| ProbeShopSku((*sku).to_owned())).collect();
+    assert_eq!(set.len(), 2);
+}
+"##,
+        );
+    }
+
+    #[test]
+    fn drop_unknown_members_has_no_extra_field() {
+        let options = RustOptions {
+            drop_unknown_members: true,
+            ..RustOptions::default()
+        };
+        let realization = bundle_plan(&open_schemas())
+            .rust_with("open_types", &options)
+            .unwrap();
+        let declarations = declarations(&realization);
+        for name in ["Open", "Counted"] {
+            assert!(
+                !declarations[name].contains("ess_extra"),
+                "{}",
+                declarations[name]
+            );
+        }
+        // A map's members are its data, not unknown members of a record.
+        assert!(
+            declarations["Map"].contains("pub ess_extra"),
+            "{}",
+            declarations["Map"]
+        );
+        build_and_test(
+            &realization,
+            "drop-unknown",
+            r##"
+use open_types::*;
+
+#[test]
+fn unknown_members_are_decoded_and_not_encoded() {
+    let open: Open = serde_json::from_str(r#"{"y":1}"#).unwrap();
+    assert_eq!(serde_json::to_string(&open).unwrap(), "{}");
+    let counted: Counted = serde_json::from_str(r#"{"m":2,"n":1}"#).unwrap();
+    assert_eq!(serde_json::to_string(&counted).unwrap(), r#"{"n":1}"#);
+    let map: Map = serde_json::from_str(r#"{"a":"b"}"#).unwrap();
+    assert_eq!(serde_json::to_string(&map).unwrap(), r#"{"a":"b"}"#);
+    assert!(serde_json::from_str::<Closed>(r#"{"z":1}"#).is_err());
+}
+"##,
+        );
+    }
+}

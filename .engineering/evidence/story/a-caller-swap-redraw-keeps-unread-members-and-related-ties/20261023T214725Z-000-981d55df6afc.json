@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T21:47:25Z",
+  "actor": "human:timo",
+  "artifact": "story:a-caller-swap-redraw-keeps-unread-members-and-related-ties",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "fix unit 137e2567e on integrate/ess-batch-0690 f1197bcd4 after the adversary pass: caller_swap_related_tie_written_from_input red first (2 passed, 2 failed), green 4; a_caller_swap_redraw_keeps_unread_members_and_related_ties 4, synthesis_suite_bytes_table 2 (no rows moved), ess-conformance lib 170, 20 caller and row-set targets one at a time, 13 ess-cli caller/swap/conform targets; clippy -D warnings on ess-conformance, task fmt-check, task test-xtask exit 0. The adversary's pre-existing case is story:a-tied-input-also-read-by-a-row-set-guard-keeps-its-tie (0.70.0)."
+  }
+}

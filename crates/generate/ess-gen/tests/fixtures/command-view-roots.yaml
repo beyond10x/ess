@@ -1,0 +1,63 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.notes
+types:
+  - {name: demo.notes.NoteId, kind: newtype, of: String}
+  - name: demo.notes.Summary
+    kind: struct
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: title, type: String}
+entities:
+  - name: demo.notes.Note
+    identity: {name: note_id, type: demo.notes.NoteId}
+    fields:
+      - {name: title, type: String}
+      - {name: pinned, type: Boolean}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active], transitions: []}
+commands:
+  - name: demo.notes.Create
+    input:
+      - {name: note_id, type: demo.notes.NoteId, example: n-1}
+      - {name: title, type: String, example: Buy milk}
+      - {name: pinned, type: Boolean, wire: isPinned, example: true}
+    response:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: title_length, type: Integer, wire: titleLength}
+    outcomes:
+      - name: created
+        returns: true
+        creates: demo.notes.Note
+        instance: note_id
+        sets: {title: input.title, pinned: input.pinned}
+        emits: [demo.notes.Created]
+        payload:
+          demo.notes.Created: {note_id: input.note_id}
+  - name: demo.notes.Pin
+    input:
+      - {name: note_id, type: demo.notes.NoteId}
+    outcomes:
+      - name: pinned
+        emits: [demo.notes.Created]
+        payload:
+          demo.notes.Created: {note_id: input.note_id}
+events:
+  - name: demo.notes.Created
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+views:
+  - name: demo.notes.Notes
+    source: demo.notes.Note
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: title, type: String}
+  - name: demo.notes.Summaries
+    source: demo.notes.Note
+    shape: demo.notes.Summary
+components:
+  - component: notes-service
+    reached_by: network
+    owns: {domains: [demo.notes]}
+    accepts: {commands: [demo.notes.Create, demo.notes.Pin]}
+    publishes: {events: [demo.notes.Created]}

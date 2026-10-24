@@ -332,10 +332,12 @@ The same holds for an error's fields, for a member of a struct the outcome fills
 for `{input: f, else: {generated: true}}` where the act sends no `f`, for `{generated: true,
 present: true}`, and for a view row's stored field that every branch the scenario reaches mints,
 including one a `sets:` entry reads from a minted payload field with `{payload: <Event>.<field>}`.
-Drop the field from the expectation, and the suite still checks its presence and type, or state
-its relation to another value with a reference: `{$observed: {event: …, field: …}}` in a view row,
-or `capture:` on the event. A value a `setup:` states, or one a branch fills from the input, keeps
-its exact claim.
+In an event's payload or an error's fields, drop the field from the expectation, and the suite
+still checks its presence and type there, or relate it to another value with `capture:` on the
+event. A view read checks only what the scenario claims of a row, so in a view row drop the field
+and assert `satisfies: defined(<field>)` on the view, which requires it on every row and at least
+one row, or state its relation to an event's value with `{$observed: {event: …, field: …}}`. A
+value a `setup:` states, or one a branch fills from the input, keeps its exact claim.
 
 ### From `ess/30`: a minted value the scenario determines
 

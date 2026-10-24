@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-23T15:21:32Z",
+  "actor": "human:timo",
+  "artifact": "approval-record:openapi-import-open-objects-in-0700",
+  "kind": "approval-record",
+  "revision": 3,
+  "change": {
+    "change": "redaction",
+    "literal_sha256": "5fa785562659adac8ca15c81f4269bc137cfe53c94994275610330937a435597",
+    "literal_chars": 13,
+    "replacement": "Decider: operator",
+    "count": 1,
+    "reason": "committed text names no person; the decision marker reads Decider: operator"
+  }
+}

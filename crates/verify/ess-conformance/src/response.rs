@@ -125,7 +125,7 @@ impl Observation {
                     // it is what the comparison below holds an absent value to, and without one
                     // the observation keeps its bytes.
                     let mut field = Field::new(&f.name, crate::accessor::unresolve(&f.type_ref));
-                    field.naming.presence = f.naming.presence;
+                    field.naming.presence = f.naming.presence.and_then(Presence::constrains);
                     field
                 })
                 .collect();

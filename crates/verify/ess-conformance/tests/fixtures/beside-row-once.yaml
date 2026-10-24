@@ -1,0 +1,156 @@
+format: ess/30
+system: demo
+version: v1
+domain: demo.yard
+summary: Machines are added to open sites they belong to, and tagged only at the site they are in while it is open.
+types:
+  - {name: demo.yard.SiteId, kind: newtype, of: Uuid}
+  - {name: demo.yard.MachineId, kind: newtype, of: Uuid}
+  - {name: demo.yard.TagId, kind: newtype, of: Uuid}
+  - {name: demo.yard.Kind, kind: enum, variants: [alpha, beta]}
+entities:
+  - name: demo.yard.Site
+    identity: {name: site_id, type: demo.yard.SiteId}
+    fields: []
+    relations:
+      - {name: machines, kind: owns, target: demo.yard.Machine, cardinality: many, via: site_id}
+    lifecycle:
+      initial: Open
+      states: [Open, Frozen]
+      terminal: [Frozen]
+      transitions:
+        - {name: freeze, from: [Open], to: Frozen}
+  - name: demo.yard.Machine
+    identity: {name: machine_id, type: demo.yard.MachineId}
+    fields:
+      - {name: site_id, type: demo.yard.SiteId}
+      - {name: kind, type: demo.yard.Kind}
+    lifecycle:
+      initial: Idle
+      states: [Idle, Running]
+      terminal: [Running]
+      transitions:
+        - {name: start, from: [Idle], to: Running}
+  - name: demo.yard.Tag
+    identity: {name: tag_id, type: demo.yard.TagId}
+    fields:
+      - {name: machine_id, type: demo.yard.MachineId}
+    lifecycle:
+      initial: Placed
+      states: [Placed]
+      terminal: [Placed]
+errors:
+  - {name: demo.yard.NoSuchSite, summary: No site carries that identity., fields: []}
+  - {name: demo.yard.SiteFrozen, summary: The site is frozen., fields: []}
+  - {name: demo.yard.NoSuchMachine, summary: No machine carries that identity., fields: []}
+  - {name: demo.yard.MachineElsewhere, summary: The machine is in another site., fields: []}
+  - {name: demo.yard.NotAlpha, summary: The machine is not of kind alpha., fields: []}
+  - {name: demo.yard.MachineRunning, summary: The machine is already running., fields: []}
+events:
+  - name: demo.yard.SiteOpened
+    fields: [{name: site_id, type: demo.yard.SiteId}]
+  - name: demo.yard.SiteFrozenEvent
+    fields: [{name: site_id, type: demo.yard.SiteId}]
+  - name: demo.yard.MachineAdded
+    fields: [{name: machine_id, type: demo.yard.MachineId}]
+  - name: demo.yard.MachineTagged
+    fields: [{name: tag_id, type: demo.yard.TagId}]
+  - name: demo.yard.MachineStarted
+    fields: [{name: machine_id, type: demo.yard.MachineId}]
+actors:
+  - name: demo.yard.Operator
+    may:
+      - demo.yard.OpenSite
+      - demo.yard.FreezeSite
+      - demo.yard.AddMachine
+      - demo.yard.TagMachine
+      - demo.yard.StartMachine
+commands:
+  - name: demo.yard.OpenSite
+    input: []
+    outcomes:
+      - name: opened
+        creates: demo.yard.Site
+        instance: site_id
+        emits: [demo.yard.SiteOpened]
+        payload: {demo.yard.SiteOpened: {site_id: {generated: true}}}
+  - name: demo.yard.FreezeSite
+    input:
+      - {name: site_id, type: demo.yard.SiteId}
+    outcomes:
+      - {name: already-frozen, wrong_state: true, error: demo.yard.SiteFrozen}
+      - name: frozen
+        moves: demo.yard.Site.freeze
+        instance: site_id
+        emits: [demo.yard.SiteFrozenEvent]
+        payload: {demo.yard.SiteFrozenEvent: {site_id: input.site_id}}
+  - name: demo.yard.AddMachine
+    input:
+      - {name: site_id, type: demo.yard.SiteId}
+      - {name: kind, type: demo.yard.Kind}
+    outcomes:
+      - name: no-site
+        when_related: {via: input.site_id, exists: false}
+        error: demo.yard.NoSuchSite
+      - name: added
+        creates: demo.yard.Machine
+        instance: machine_id
+        sets:
+          site_id: input.site_id
+          kind: input.kind
+        emits: [demo.yard.MachineAdded]
+        payload: {demo.yard.MachineAdded: {machine_id: {generated: true}}}
+  - name: demo.yard.TagMachine
+    input:
+      - {name: machine_id, type: demo.yard.MachineId}
+      - {name: site_id, type: demo.yard.SiteId}
+    outcomes:
+      - name: no-machine
+        when_related: {via: input.machine_id, exists: false}
+        error: demo.yard.NoSuchMachine
+      - name: no-site
+        when_related: {via: input.site_id, exists: false}
+        error: demo.yard.NoSuchSite
+      - name: frozen
+        when_related: {via: input.site_id, predicate: state == Frozen}
+        error: demo.yard.SiteFrozen
+      - name: elsewhere
+        when_related: {via: input.machine_id, predicate: site_id != input.site_id}
+        error: demo.yard.MachineElsewhere
+      - name: not-alpha
+        when_related: {via: input.machine_id, predicate: kind != alpha}
+        error: demo.yard.NotAlpha
+      - name: tagged
+        creates: demo.yard.Tag
+        instance: tag_id
+        sets:
+          machine_id: input.machine_id
+        emits: [demo.yard.MachineTagged]
+        payload: {demo.yard.MachineTagged: {tag_id: {generated: true}}}
+  - name: demo.yard.StartMachine
+    input:
+      - {name: machine_id, type: demo.yard.MachineId}
+    outcomes:
+      - {name: running, wrong_state: true, error: demo.yard.MachineRunning}
+      - name: frozen
+        when_related: {via: site_id, predicate: state == Frozen}
+        error: demo.yard.SiteFrozen
+      - name: started
+        moves: demo.yard.Machine.start
+        instance: machine_id
+        emits: [demo.yard.MachineStarted]
+        payload: {demo.yard.MachineStarted: {machine_id: input.machine_id}}
+views:
+  - name: demo.yard.Sites
+    source: demo.yard.Site
+    consistency: read_your_writes
+    fields:
+      - {name: site_id, type: demo.yard.SiteId}
+      - {name: state, type: demo.yard.Site.State}
+  - name: demo.yard.Machines
+    source: demo.yard.Machine
+    consistency: read_your_writes
+    fields:
+      - {name: machine_id, type: demo.yard.MachineId}
+      - {name: site_id, type: demo.yard.SiteId}
+      - {name: kind, type: demo.yard.Kind}

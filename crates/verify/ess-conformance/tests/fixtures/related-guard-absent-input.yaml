@@ -1,0 +1,99 @@
+format: ess/29
+system: tenrel
+version: v1
+domain: tenrel.t
+summary: A child is attached only under the tenant its parent was created under, and dropped by its key.
+types:
+  - {name: tenrel.t.ParentId, kind: newtype, of: Uuid}
+  - {name: tenrel.t.ChildId, kind: newtype, of: Uuid}
+entities:
+  - name: tenrel.t.Parent
+    identity: {name: parent_id, type: tenrel.t.ParentId}
+    fields:
+      - {name: tenant, type: Optional<String>}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live], transitions: []}
+  - name: tenrel.t.Child
+    identity: {name: child_id, type: tenrel.t.ChildId}
+    fields:
+      - {name: parent_id, type: tenrel.t.ParentId}
+      - {name: key, type: String}
+      - {name: tenant, type: Optional<String>}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live], transitions: []}
+    relations:
+      - {name: parent, kind: references, target: tenrel.t.Parent, cardinality: one, via: parent_id}
+errors:
+  - {name: tenrel.t.ParentNotFound, summary: No such parent., fields: []}
+events:
+  - name: tenrel.t.ParentMade
+    fields: [{name: parent_id, type: tenrel.t.ParentId}]
+  - name: tenrel.t.ChildMade
+    fields: [{name: child_id, type: tenrel.t.ChildId}]
+  - name: tenrel.t.ChildDropped
+    fields: [{name: parent_id, type: tenrel.t.ParentId}]
+actors:
+  - name: tenrel.t.Clerk
+    may: [tenrel.t.MakeParent, tenrel.t.MakeChild, tenrel.t.DropChild]
+commands:
+  - name: tenrel.t.MakeParent
+    input:
+      - {name: tenant, type: Optional<String>, presence: omitted_when_absent}
+    outcomes:
+      - name: made
+        creates: tenrel.t.Parent
+        instance: parent_id
+        sets: {tenant: input.tenant}
+        emits: [tenrel.t.ParentMade]
+        payload: {tenrel.t.ParentMade: {parent_id: {generated: true}}}
+  - name: tenrel.t.MakeChild
+    input:
+      - {name: tenant, type: Optional<String>, presence: omitted_when_absent}
+      - {name: parent_id, type: tenrel.t.ParentId}
+      - {name: key, type: String}
+    outcomes:
+      - name: unknown-parent
+        when_related: {via: input.parent_id, exists: false}
+        error: tenrel.t.ParentNotFound
+      - name: other-tenant
+        when_related:
+          via: input.parent_id
+          predicate:
+            any: ["not defined(input.tenant)", tenant != input.tenant]
+        error: tenrel.t.ParentNotFound
+      - name: made
+        creates: tenrel.t.Child
+        instance: child_id
+        sets: {parent_id: input.parent_id, key: input.key, tenant: input.tenant}
+        emits: [tenrel.t.ChildMade]
+        payload: {tenrel.t.ChildMade: {child_id: {generated: true}}}
+  - name: tenrel.t.DropChild
+    input:
+      - {name: parent_id, type: tenrel.t.ParentId}
+      - {name: key, type: String}
+    outcomes:
+      - name: no-parent
+        unknown_instance: true
+        error: tenrel.t.ParentNotFound
+      - name: dropped
+        updates: tenrel.t.Parent
+        instance: parent_id
+        affects:
+          - entity: tenrel.t.Child
+            where: {all: [parent_id == input.parent_id, key == input.key]}
+            deletes: tenrel.t.Child
+        emits: [tenrel.t.ChildDropped]
+        payload: {tenrel.t.ChildDropped: {parent_id: input.parent_id}}
+views:
+  - name: tenrel.t.Parents
+    source: tenrel.t.Parent
+    consistency: read_your_writes
+    fields:
+      - {name: parent_id, type: tenrel.t.ParentId}
+      - {name: tenant, type: Optional<String>}
+  - name: tenrel.t.Children
+    source: tenrel.t.Child
+    consistency: read_your_writes
+    fields:
+      - {name: child_id, type: tenrel.t.ChildId}
+      - {name: parent_id, type: tenrel.t.ParentId}
+      - {name: key, type: String}
+      - {name: tenant, type: Optional<String>}

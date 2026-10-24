@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T11:51:00Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-server-manifests-take-compatible-version-ranges",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit f05b2983c on integrate/ess-batch-0690 ac08ece30: red first (generated_server_manifest_uses_caret_ranges, generated_single_manifest_uses_caret_ranges, no_generator_writes_an_exact_pin flagged single.rs:264 and http.rs:294); green: http 11, served_entry 34, single_crate_layout 7; full ess-synth before the scratch lock fix 750 passed 1 failed (served_entry, then fixed and rerun green); clippy -D warnings, task fmt-check, task test-xtask (418 passed) exit 0; cargo metadata --locked unchanged. Normalization pins kept as a format contract. Not run locally: full ess-synth after the lock fix, site-build; left to the pull request Gate."
+  }
+}

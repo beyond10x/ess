@@ -128,6 +128,13 @@ routes:
         headers:
           Cache-Control: {literal: no-store}
       out-of-stock: {status: 400, body: {error: error}}
+  - command: catalog.orders.CancelOrder
+    method: post
+    path: /api/orders/{order_id}/cancel
+    parameters: {order_id: input.order_id}
+    outcomes:
+      cancelled: {status: 200, body: response.order_id}
+    errors: {status: 409, body: {error: error}}
   - view: catalog.orders.OrderById
     method: get
     path: /orders/{order_id}
@@ -138,13 +145,21 @@ routes:
 
 The document follows those keys on the routes that use them:
 
-- `encoding: form` makes the request body `application/x-www-form-urlencoded`. `encoding: query`
-  removes the request body, and each input field the path does not carry becomes an `in: query`
-  parameter under its wire name (a `List` repeats its key, `style: form`, `explode: true`).
+- `encoding: form` makes the request body `application/x-www-form-urlencoded`. `encoding: query`,
+  on a `get` or a `delete` command, removes the request body, and each input field the path does
+  not carry becomes an `in: query` parameter under its wire name (a `List` repeats its key,
+  `style: form`, `explode: true`, and is not required: an absent key is the empty list).
+- A view's parameter the path does not carry is an `in: query` parameter under the parameter's flat
+  `wire:` when it declares one, and both generated servers read it under that name only.
 - Each declared status is its own response. `body: response` answers the command's response
-  object bare, `{error: error}` an object whose `error` is the error's wire name beside the error's
-  own fields, and `none` no content. An outcome the route does not list keeps its derived status
-  and ESS's envelope.
+  object bare, `body: response.<field>` that one response field's value alone (the field may not
+  be `Optional`), `{error: error}` an object whose `error` is the error's wire name beside the
+  error's own fields, and `none` no content. An outcome the route does not list keeps its derived
+  status and ESS's envelope.
+- `errors: {status: 400, body: {error: error}}` on a command route answers every outcome with
+  `error` that `outcomes:` does not list, `external:` refusals among them, exactly as listing it
+  under each one would. A listed outcome keeps its own answer, and the document describes each
+  outcome `errors` covers at that status.
 - Declared headers are response `headers`, a `WWW-Authenticate` challenge among them, and a
   `redirect` answers a required `Location` header and no content.
 - A `single` view answers its one row at `200` and no content at its `empty` status.

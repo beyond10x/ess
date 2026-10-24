@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-22T23:09:42Z",
+  "actor": "human:timo",
+  "artifact": "story:a-foreign-scenario-type-is-refused-by-format-before-its-keys",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit/ess-0690-u7 f18b69ff63: authored_foreign_type 6 passed, authored_foreign_type_adversary 2 passed (repeated-key case red before the fix), authored 72, ess-conformance lib 166, authored_foreign_type_cli 1, test-xtask 418, clippy ess-conformance and ess-cli exit 0, fmt-check exit 0"
+  }
+}

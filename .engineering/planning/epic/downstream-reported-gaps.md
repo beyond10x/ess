@@ -6,7 +6,7 @@ status: active
 title: Downstream-reported synthesis, binding and grant gaps are closed
 relations:
 - serves: vision:O2
-revision: 10
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:18Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-30T13:04:29Z", actor: "human:timo", revision: 3}
@@ -186,3 +186,63 @@ neutral fixture.
 | 20 | `story:an-input-path-reads-a-list-element-and-a-fallback-chain-tries-several-places` (new, gap) | no |
 
 Every item gives identical refusals, and byte-identical suites where synthesis runs, on 0.67.0 and 0.68.0. None blocks 0.68.0.
+
+## Scope 2026-10-23: one pull request
+
+The operator: "make sure ess knows that we expect all of those fixed efficiently at once via one PR". All 41 items of the adopter gap report (G1-G6, R1-R12, S1-S7, N1-N16) land in pull request 633 with the 0.69.0 wave, grouped into one unit per shared cause. An item whose fix needs an unaccepted ADR stays a row and waits on that ADR. By design, with a reason on its issue or here: R6 (ess#93), R12, S4, N6.
+
+| unit | ids | cause | size | ADR blocker | priority |
+|---|---|---|---|---|---|
+| G-U15 | N1 | generate types has no command input, response or view row root | L | none | 1 |
+| G-U16 | N15,N16 | several-row related arrangement creates the related owner apart from the subject (inferred) | L | none | 2 |
+| G-U17 | N5 | generated manifest pins exact versions | S | none | 3 |
+| G-U18 | N2,N13,N14 | Rust realizer takes no generator options | M | none | 3 |
+| G-U19 | N3 | Rust realizer reads schema values, declared variant names are gone | M | none | 4 |
+| G-U20 | N8 | Go synthesis allocates no identifier for a dotted name | S | none | 4 |
+| G-U9 | S1 | no WebSocket transport binding | L | transport-and-idl-compile-targets (proposed; needs WebSocket amendment) | 5 |
+| G-U10 | S2 | routes projected regardless of reached_by | M | none | 5 |
+| G-U11 | S5 | ess-http/1 lacks operation_id and servers | M | none | 5 |
+| U54 | N4 | input and response fields share one allocation namespace | M | none | 6 |
+| G-U13 | S6 | types generator lacks the shared --check path | S | none | 7 |
+| G-U22 | N9 | no cross-specification type import | L | new ADR needed | 8 |
+| G-U23 | N10,N11 | composition reference admission: kinds a conformance end may name, and its refusal hints | M | none | 8 |
+| G-U24 | N12 | implements rule vs a caller sending a subset (repro pending) | M | none | 8 |
+| U16 | R1,G6 | create-or-update beside a related-row refusal | M | none | 9 |
+| U19 | G4 | lifecycle states have no wire name | L | none | 9 |
+| U31 | R3,R4 | subject identity and defined coverage in guards | M | none | 9 |
+| U32 | G5 | via and instance cannot name a struct member | M | none | 9 |
+| U33 | R2,R7 | precedence of a related row against input guards (#554) | L | none | 9 |
+| U41 | R5 | sets cannot read a response value | L | none | 9 |
+| G-U1 | G1 | caller attributes not readable in when_related | M | none | 9 |
+| G-U2 | G2 | union tag unreadable; content key fixed | M | none | 9 |
+| G-U3 | G3 | no composite identity | L | a-compound-key-is-a-uniqueness-constraint-first (proposed) | 9 |
+| G-U4 | R8 | Binary64 refused at admission; suite cannot carry it | L | none | 9 |
+| G-U5 | R9 | OpenAPI import refuses open objects | L | ess-evolution-08-reviewable-source-candidates (proposed) | 9 |
+| G-U6 | R10 | imported integer formats not mapped to widths | M | none | 9 |
+| G-U7 | R11 | empty-struct refusal ignores openness | S | none | 9 |
+| G-U8 | R6,R12,S4,N6 | by design; answers documented on issues | S | none | 9 |
+| G-U12 | S3 | ESS-HTTP-025 has no declared-alike exception | M | none | 9 |
+| G-U14 | S7 | grant/denied asserts an unqueried view | S | none | 9 |
+| G-U21 | N7 | field order lost in the BTreeMap plan; Box on every reference | M | none | 9 |
+
+## Approval 2026-10-23
+
+- The 31 units run in the priority order above, G-U15 (N1) first: it edits ess-gen model_types.rs and U55 edits ess-gen types.rs, so the two do not share a file.
+- G-U3, G-U5, G-U9 and G-U22 wait on their ADRs. Without a decision they leave pull request 633 and their issues stay open; the rest of the wave does not wait for them.
+- One tree builds at a time; each unit tree discards its build cache when the unit merges.
+
+## Build rule for the 0.69.0 wave (2026-10-23)
+
+- Two unit trees build at once, each in its own managed worktree. Both stop below 25G free on `/` and resume at 30G.
+- Only one full workspace test run at a time; while it runs, the other tree runs targeted crates only.
+- ADR-bound units leave the batch pull request (#633) unless their ADR is accepted before the release bar: G-U3, G-U5, G-U9, G-U22, G-U28, and the keep-versus-clear half of N31 (#678). The wire half of N31 (an input that may be absent or null, projected not-required and nullable) is built with N30 (#677) as G-U30.
+
+- 2026-10-23: two downstream blockers move into this wave: story:guard-tests-list-membership (G-U34) and story:an-existence-outcome-passes-a-related-list-membership-guard (G-U35, formerly planned for 0.70.0). Neither needs an ADR: the first extends the guard predicate grammar with a design page first, the second is a synthesis search fix.
+
+- 2026-10-23: three adopter asks (ESS 0.68.0, verified by the reporter) are filed as stories after 0.69.0 ships and do not hold the 0.69.0 batch. Orchestrator: "file them in your store after ESS 0.69.0 ships, do not hold ess#633 for them."
+  1. OpenAPI import of a 58-operation document exits 0 with 144 unmapped items and drops every value keyword (109 `minimum`, every `pattern`, `format` and `maxLength`). Ask: map value keywords to newtype `invariants:` and `alphabet:`, map discriminators to tagged enums, and refuse a keyword the import cannot map instead of dropping it. Mapping integer bounds back to invariants is the inverse of the implemented `story:feature-request-394` and needs no ADR. Refusing instead of dropping, and the candidate shape of the import, wait on the proposed `architecture-decision-record:ess-evolution-08-reviewable-source-candidates`.
+  2. `ess verify conform run --target` has no live HTTP target. Ask: a target that drives a running service through its `ess-http/1` binding. Waits on the proposed `architecture-decision-record:ess-evolution-09-independent-conformance`.
+  3. Unmapped items exist only as YAML comments. Ask: a typed `unmapped:` declaration in the IR, so a waived difference can point at one. Waits on `ess-evolution-08` and needs a new format version.
+  Repro fixtures with neutral names come from the reporter on request.
+
+- 2026-10-23: one ess tree builds at a time. Orchestrator: "G-U34 builds only after G-U32's build is done. Rule: one ess tree builds at a time ... Editing and spec work in ess-0690-gu34 may go on; cargo waits." Reason given: a five-crate gate run measured 23453 MB on 2026-10-22. From now on, a unit dispatched while another builds edits and traces only, and starts cargo when the coordinator releases it.

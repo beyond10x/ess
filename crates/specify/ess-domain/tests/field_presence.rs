@@ -190,3 +190,162 @@ fn omitted_when_absent_on_an_optional_json_is_refused() {
         single(&text(of, "null_when_absent")).unwrap_or_else(|error| panic!("{of}: {error}"));
     }
 }
+
+/// `presence: omitted_or_null` (beyond10x/ess#678, `docs/design/omitted-or-null-presence.md`):
+/// one model at every position that takes `presence:`.
+const EVERY_POSITION: &str = "format: ess/31
+system: demo
+version: v1
+domain: demo.notes
+types:
+  - name: demo.notes.Edit
+    kind: struct
+    fields:
+      - {name: reason, type: Optional<String>, presence: omitted_or_null}
+entities:
+  - name: demo.notes.Note
+    identity: {name: id, type: Uuid}
+    fields:
+      - {name: summary, type: Optional<String>, presence: omitted_or_null}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: demo.notes.Edited
+    fields:
+      - {name: summary, type: Optional<String>, presence: omitted_or_null}
+errors:
+  - name: demo.notes.Refused
+    summary: The edit is refused.
+    fields:
+      - {name: detail, type: Optional<String>, presence: omitted_or_null}
+actors:
+  - {name: demo.notes.Clerk, may: [demo.notes.EditNote]}
+commands:
+  - name: demo.notes.EditNote
+    input:
+      - {name: summary, type: Optional<String>, presence: omitted_or_null}
+      - {name: edit, type: demo.notes.Edit}
+    response:
+      - {name: summary, type: Optional<String>, presence: omitted_or_null}
+    outcomes:
+      - name: edited
+        emits: [demo.notes.Edited]
+        payload:
+          demo.notes.Edited: {summary: input.summary}
+";
+
+#[test]
+fn omitted_or_null_is_admitted_at_every_presence_position_from_ess_31() {
+    let spec = single(EVERY_POSITION).unwrap_or_else(|error| panic!("{error}"));
+    let either = Some(Presence::OmittedOrNull);
+    let edit = spec
+        .system()
+        .types
+        .get(&"demo.notes.Edit".parse().unwrap())
+        .unwrap();
+    assert_eq!(edit.field("reason").unwrap().presence(), either);
+    let note = spec
+        .entities()
+        .get(&"demo.notes.Note".parse().unwrap())
+        .unwrap();
+    assert_eq!(
+        note.fields
+            .iter()
+            .find(|field| field.name == "summary")
+            .unwrap()
+            .presence(),
+        either
+    );
+    let event = spec
+        .events()
+        .get(&"demo.notes.Edited".parse().unwrap())
+        .unwrap();
+    assert_eq!(event.fields[0].presence(), either);
+    let error = spec
+        .errors()
+        .get(&"demo.notes.Refused".parse().unwrap())
+        .unwrap();
+    assert_eq!(error.fields[0].presence(), either);
+    let command = spec
+        .commands()
+        .get(&"demo.notes.EditNote".parse().unwrap())
+        .unwrap();
+    assert_eq!(command.input[0].presence(), either);
+    assert_eq!(command.response[0].presence(), either);
+}
+
+#[test]
+fn omitted_or_null_below_ess_31_is_refused_naming_ess_31() {
+    let error = single(&EVERY_POSITION.replace("format: ess/31", "format: ess/30"))
+        .expect_err("an older reader fails the value as an unknown variant");
+    assert!(error.contains("unsupported_format_version"), "{error}");
+    assert!(error.contains("ess/31"), "{error}");
+    assert!(error.contains("omitted_or_null"), "{error}");
+    for at in [
+        "types.demo.notes.Edit.fields.reason.presence",
+        "command.demo.notes.EditNote.input.summary.presence",
+        "command.demo.notes.EditNote.response.summary.presence",
+    ] {
+        assert!(error.contains(at), "{at} in {error}");
+    }
+    // The two older values keep their own format.
+    single(
+        &EVERY_POSITION
+            .replace("format: ess/31", "format: ess/30")
+            .replace("omitted_or_null", "null_when_absent"),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
+fn omitted_or_null_on_a_required_field_is_refused() {
+    let text = EVERY_POSITION.replacen(
+        "{name: reason, type: Optional<String>, presence: omitted_or_null}",
+        "{name: reason, type: String, presence: omitted_or_null}",
+        1,
+    );
+    let error = single(&text).expect_err("a required field is always sent");
+    assert!(error.contains("type_mismatch"), "{error}");
+    assert!(error.contains("reason"), "{error}");
+}
+
+/// `null` spells absence here, as under `null_when_absent`, so an `Optional<Json>` takes it.
+#[test]
+fn omitted_or_null_on_an_optional_json_is_admitted() {
+    let text = "format: ess/31\nsystem: demo\nversion: v1\ndomain: demo.msgs\ntypes:\n  - {name: demo.msgs.Body, kind: newtype, of: Json}\n  - name: demo.msgs.Envelope\n    kind: struct\n    fields:\n      - {name: body, type: \"Optional<demo.msgs.Body>\", presence: omitted_or_null}\n";
+    single(text).unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
+fn omitted_or_null_is_written_back() {
+    let field: Field =
+        ess_yaml::from_str("name: a\ntype: Optional<String>\npresence: omitted_or_null\n")
+            .expect("reads");
+    assert_eq!(field.presence(), Some(Presence::OmittedOrNull));
+    let written = ess_yaml::to_string(&field).expect("writes");
+    assert!(written.contains("presence: omitted_or_null"), "{written}");
+}
+
+/// A view field carries its source field's policy (beyond10x/ess#677) and keeps refusing the key.
+#[test]
+fn a_view_field_still_refuses_presence() {
+    let text = "format: ess/31
+system: demo
+version: v1
+domain: demo.notes
+entities:
+  - name: demo.notes.Note
+    identity: {name: id, type: Uuid}
+    fields:
+      - {name: summary, type: Optional<String>, presence: null_when_absent}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+views:
+  - name: demo.notes.Notes
+    source: demo.notes.Note
+    consistency: read_your_writes
+    fields:
+      - {name: id, type: Uuid}
+      - {name: summary, type: Optional<String>, presence: null_when_absent}
+";
+    let error = single(text).expect_err("a view field takes no `presence:`");
+    assert!(error.contains("presence"), "{error}");
+}

@@ -7,24 +7,51 @@ use super::native::{nullable, string_values};
 
 use super::{
     children, finding, path, Field, Finding, IntegerWidth, Node, Plan, Realization, Refused,
-    Report, Shape, ShortKind, Shorthand, TargetConfiguration, UnionMode,
+    Report, RustDerive, RustOptions, Shape, ShortKind, Shorthand, TargetConfiguration, UnionMode,
 };
 
-const DERIVE: &str =
-    "#[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]\n";
+/// The derives of a type with both serde codecs derived.
+const CODECS: &str = "Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize";
+/// The derives of a type whose decoder is written out.
+const SERIALIZE: &str = "Debug, Clone, PartialEq, ::serde::Serialize";
 const HELPERS: &str = include_str!("rust_support.rs.txt");
+/// The refusal of a malformed derive option.
+const DERIVE_RULE: &str = "rust_derive";
+/// The refusal of a derive a type cannot satisfy.
+const UNSATISFIED_RULE: &str = "rust_derive_unsatisfied";
+const FOLD_NULL_RULE: &str = "rust_fold_null";
+const FOLD_NULL_DETAIL: &str = "an explicit null decodes as the missing member, so a present null is not distinguished from an absent one; an absent member is omitted when encoding (accepted with the fold-null option)";
+const DROP_UNKNOWN_RULE: &str = "rust_drop_unknown_members";
+const DROP_UNKNOWN_DETAIL: &str = "members other than the declared fields are decoded and discarded, and encoding writes the declared fields only (accepted with the drop-unknown-members option)";
+/// The decoder an optional field uses under the fold-null option.
+const FOLD_NULL_HELPER: &str = "/// Decodes an explicit JSON null as the missing member (the fold-null generator option).
+pub fn ess_fold_null<'de, D: ::serde::Deserializer<'de>, T: ::serde::Deserialize<'de>>(deserializer: D) -> Result<EssPresence<T>, D::Error> {
+    Ok(match <::std::option::Option<T> as ::serde::Deserialize>::deserialize(deserializer)? {
+        Some(value) => EssPresence::Present(value),
+        None => EssPresence::Absent,
+    })
+}
+";
 /// The default-on crate feature that turns on `serde_json/arbitrary_precision`, declared only
 /// where a realized type holds JSON numbers in `serde_json` (beyond10x/ess#483).
 const EXACT_NUMBERS: &str = "exact-numbers";
 const EXACT_NUMBERS_RULE: &str = "rust_exact_numbers";
 const EXACT_NUMBERS_DETAIL: &str = "this value holds JSON numbers in serde_json; the generated crate's default-on `exact-numbers` feature enables serde_json/arbitrary_precision, and a consumer that turns default features off gets these numbers as binary64";
 
-pub(super) fn emit(plan: &Plan, package: &str) -> Result<Realization, Refused> {
+pub(super) fn emit(
+    plan: &Plan,
+    package: &str,
+    options: &RustOptions,
+) -> Result<Realization, Refused> {
     if !package_name(package) {
         return Err(Refused(vec![finding("/", "rust_package", "use a non-reserved lowercase Cargo package name containing letters, digits, underscores or hyphens")]));
     }
+    check_options(plan, options)?;
     let mut emitter = Emitter {
         plan,
+        options,
+        owner: String::new(),
+        declared: BTreeMap::new(),
         output: BTreeMap::new(),
         allocated: plan.names.values().cloned().collect(),
         anonymous: BTreeMap::new(),
@@ -32,38 +59,16 @@ pub(super) fn emit(plan: &Plan, package: &str) -> Result<Realization, Refused> {
         exact: BTreeSet::new(),
         report: plan.report(TargetConfiguration::Rust {
             package: package.to_owned(),
+            options: options.clone(),
         }),
     };
-    if emitter.allocated.contains("EssNever") {
-        emitter.errors.insert(finding(
-            "/",
-            "rust_helper_collision",
-            "EssNever is reserved by the Rust target",
-        ));
-    }
-    if plan.has_timestamp() && !emitter.allocated.insert("EssTimestamp".to_owned()) {
-        emitter
-            .errors
-            .insert(finding("/", "rust_helper_collision", "EssTimestamp"));
-    }
-    if !plan.binary64.is_empty() {
-        for helper in ["EssBinary64", "EssBinary64Error"] {
-            if !emitter.allocated.insert(helper.to_owned()) {
-                emitter
-                    .errors
-                    .insert(finding("/", "rust_helper_collision", helper));
-            }
-        }
-    }
-    if !plan.raw_json.is_empty() && !emitter.allocated.insert("EssRawJson".to_owned()) {
-        emitter
-            .errors
-            .insert(finding("/", "rust_helper_collision", "EssRawJson"));
-    }
+    emitter.reserve_helpers();
     for (name, node) in &plan.definitions {
         emitter.account(node);
+        emitter.owner.clone_from(name);
         emitter.named(&plan.names[name], node);
     }
+    emitter.check_derives();
     if !emitter.errors.is_empty() {
         return Err(Refused(emitter.errors.into_iter().collect()));
     }
@@ -75,6 +80,19 @@ pub(super) fn emit(plan: &Plan, package: &str) -> Result<Realization, Refused> {
     }
     let mut output = format!("// @generated by ESS {}; do not edit.\n// Source SHA-256: {}\n// {}\n// Structural serialization only; see types-report.json for runtime obligations.\n\n{HELPERS}\n",
         env!("CARGO_PKG_VERSION"), plan.source_digest, plan.input_comment());
+    let requested = options
+        .derives
+        .iter()
+        .chain(options.type_derives.values().flatten())
+        .copied()
+        .collect::<BTreeSet<_>>();
+    if !requested.is_empty() {
+        helper_impls(&mut output, &requested);
+    }
+    if options.fold_null {
+        output.push_str(FOLD_NULL_HELPER);
+        output.push('\n');
+    }
     if plan.has_timestamp() {
         output.push_str(include_str!("rust_timestamp.rs.txt"));
         output.push('\n');
@@ -97,7 +115,7 @@ pub(super) fn emit(plan: &Plan, package: &str) -> Result<Realization, Refused> {
         ", features = [\"raw_value\"]"
     };
     let time = if plan.has_timestamp() {
-        "time = { version = \"=0.3.45\", features = [\"formatting\", \"parsing\"] }\n"
+        "time = { version = \"^0.3.45\", features = [\"formatting\", \"parsing\"] }\n"
     } else {
         ""
     };
@@ -108,7 +126,7 @@ pub(super) fn emit(plan: &Plan, package: &str) -> Result<Realization, Refused> {
     } else {
         format!("\n[features]\ndefault = [\"{EXACT_NUMBERS}\"]\n{EXACT_NUMBERS} = [\"serde_json/arbitrary_precision\"]\n")
     };
-    let manifest = format!("[package]\nname = {package:?}\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n[lib]\npath = \"types.rs\"\n\n[dependencies]\nserde = {{ version = \"=1.0.229\", features = [\"derive\"] }}\nserde_json = {{ version = \"=1.0.151\"{raw_feature} }}\n{time}{features}\n[workspace]\n");
+    let manifest = format!("[package]\nname = {package:?}\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n[lib]\npath = \"types.rs\"\n\n[dependencies]\nserde = {{ version = \"^1.0.229\", features = [\"derive\"] }}\nserde_json = {{ version = \"^1.0.151\"{raw_feature} }}\n{time}{features}\n[workspace]\n");
     Ok(Realization {
         declarations: output,
         report: emitter.report,
@@ -118,6 +136,11 @@ pub(super) fn emit(plan: &Plan, package: &str) -> Result<Realization, Refused> {
 
 struct Emitter<'a> {
     plan: &'a Plan,
+    options: &'a RustOptions,
+    /// The source name of the definition being emitted, which owns its anonymous types.
+    owner: String,
+    /// What each emitted declaration holds, by its Rust name, for the derive check.
+    declared: BTreeMap<String, Declared>,
     output: BTreeMap<String, String>,
     allocated: BTreeSet<String>,
     anonymous: BTreeMap<String, String>,
@@ -128,7 +151,166 @@ struct Emitter<'a> {
     report: Report,
 }
 
+/// One emitted declaration, as the derive check reads it.
+struct Declared {
+    /// The source name of the definition that owns it.
+    owner: String,
+    pointer: String,
+    /// An enum, which cannot derive `Default`.
+    enumeration: bool,
+    /// Whether it implements `Default` by hand: a newtype fixed to one integer.
+    own_default: bool,
+    members: Vec<Member>,
+}
+
+/// One value a declaration holds: a field, a position or a variant.
+struct Member {
+    /// What the member is, for a refusal: ``field `sku` ``.
+    label: String,
+    pointer: String,
+    /// Its Rust type, as emitted.
+    ty: String,
+}
+
 impl Emitter<'_> {
+    /// Claims the names of the helpers this plan needs, refusing a type that already took one.
+    fn reserve_helpers(&mut self) {
+        if self.allocated.contains("EssNever") {
+            self.errors.insert(finding(
+                "/",
+                "rust_helper_collision",
+                "EssNever is reserved by the Rust target",
+            ));
+        }
+        if self.plan.has_timestamp() && !self.allocated.insert("EssTimestamp".to_owned()) {
+            self.errors
+                .insert(finding("/", "rust_helper_collision", "EssTimestamp"));
+        }
+        if !self.plan.binary64.is_empty() {
+            for helper in ["EssBinary64", "EssBinary64Error"] {
+                if !self.allocated.insert(helper.to_owned()) {
+                    self.errors
+                        .insert(finding("/", "rust_helper_collision", helper));
+                }
+            }
+        }
+        if !self.plan.raw_json.is_empty() && !self.allocated.insert("EssRawJson".to_owned()) {
+            self.errors
+                .insert(finding("/", "rust_helper_collision", "EssRawJson"));
+        }
+    }
+
+    /// The derives added to declarations owned by the definition `owner`.
+    fn derives_of(&self, owner: &str) -> BTreeSet<RustDerive> {
+        let mut derives = self.options.derives.clone();
+        if let Some(own) = self.options.type_derives.get(owner) {
+            derives.extend(own);
+        }
+        derives
+    }
+
+    /// The derive line of a declaration of the current owner over `base`; with no derive added
+    /// it is the line emitted before derives could be added.
+    fn derive(&self, base: &str, skip_default: bool) -> String {
+        let mut line = format!("#[derive({base}");
+        for derive in self.derives_of(&self.owner) {
+            if !(skip_default && derive == RustDerive::Default) {
+                write!(line, ", {}", derive.path()).expect("String write");
+            }
+        }
+        line.push_str(")]\n");
+        line
+    }
+
+    fn declare(&mut self, name: &str, pointer: &str, enumeration: bool, members: Vec<Member>) {
+        self.declared.insert(
+            name.to_owned(),
+            Declared {
+                owner: self.owner.clone(),
+                pointer: pointer.to_owned(),
+                enumeration,
+                own_default: false,
+                members,
+            },
+        );
+    }
+
+    /// Refuse each added derive a declaration cannot satisfy, naming the declaration and the
+    /// member that blocks it. A member whose own declaration lacks the derive is named here;
+    /// that declaration's own blocking member is named at it.
+    fn check_derives(&mut self) {
+        let mut errors = BTreeSet::new();
+        for (name, declared) in &self.declared {
+            for derive in self.derives_of(&declared.owner) {
+                if derive == RustDerive::Default && declared.own_default {
+                    continue;
+                }
+                if derive == RustDerive::Default && declared.enumeration {
+                    errors.insert(finding(
+                        &declared.pointer,
+                        UNSATISFIED_RULE,
+                        &format!(
+                            "`{name}` is an enum with no default variant and cannot derive Default"
+                        ),
+                    ));
+                    continue;
+                }
+                for member in &declared.members {
+                    if let Some(blocking) = self.lacks(&member.ty, derive) {
+                        errors.insert(finding(
+                            &member.pointer,
+                            UNSATISFIED_RULE,
+                            &format!(
+                                "`{name}` cannot derive {derive}: {} holds {blocking}",
+                                member.label
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+        self.errors.extend(errors);
+    }
+
+    /// Why the Rust type `ty` does not implement `derive`, or `None` when it does.
+    fn lacks(&self, ty: &str, derive: RustDerive) -> Option<String> {
+        use RustDerive::{Default, Eq, Hash, Ord, PartialOrd};
+        for (wrapper, defaults) in [
+            ("::std::boxed::Box<", false),
+            ("::std::vec::Vec<", true),
+            ("::std::option::Option<", true),
+            ("EssPresence<", true),
+            ("::std::collections::BTreeMap<::std::string::String, ", true),
+        ] {
+            if let Some(inner) = ty
+                .strip_prefix(wrapper)
+                .and_then(|rest| rest.strip_suffix('>'))
+            {
+                if defaults && derive == Default {
+                    return None;
+                }
+                return self.lacks(inner, derive);
+            }
+        }
+        let (implements, kind): (&[RustDerive], &str) = match ty {
+            "()" | "bool" | "i32" | "i64" | "::std::string::String" => (&RustDerive::ALL, ","),
+            "::serde_json::Value" => (&[Eq, Hash, Default], ","),
+            "::serde_json::Number" => (&[Eq, Hash], ","),
+            "EssTimestamp" | "EssNever" => (&[Eq, Hash, PartialOrd, Ord], ","),
+            "EssBinary64" => (&[], ", a binary64 float,"),
+            "EssRawJson" => (&[], ", raw JSON text,"),
+            declared => {
+                let satisfied = self.declared.get(declared).is_some_and(|other| {
+                    self.derives_of(&other.owner).contains(&derive)
+                        || (derive == Default && other.own_default)
+                });
+                return (!satisfied).then(|| format!("{declared}, which does not derive {derive}"));
+            }
+        };
+        (!implements.contains(&derive))
+            .then(|| format!("{ty}{kind} which does not implement {derive}"))
+    }
+
     fn account(&mut self, node: &Node) {
         match &node.shape {
             Shape::Integer => {
@@ -157,15 +339,17 @@ impl Emitter<'_> {
         let mut output = format!("// Source: {:?}\n", node.pointer);
         if !matches!(node.shape, Shape::Ref(_)) {
             if let Some(values) = string_values(node, self.plan, &mut BTreeSet::new()) {
-                output.push_str(DERIVE);
+                output.push_str(&self.derive(CODECS, false));
+                self.declare(name, &node.pointer, true, Vec::new());
                 writeln!(output, "pub enum {name} {{").expect("String write");
-                for (index, value) in values.iter().enumerate() {
-                    writeln!(output, "    #[serde(rename = {value:?})]\n    V{index},")
+                let variants = self.plan.variant_identifiers(&node.pointer, &values);
+                for (value, variant) in &variants {
+                    writeln!(output, "    #[serde(rename = {value:?})]\n    {variant},")
                         .expect("String write");
                 }
                 output.push_str("}\n");
                 if let Some(attributes) = self.plan.attributes.get(&node.pointer) {
-                    accessors(&mut output, name, &values, attributes);
+                    accessors(&mut output, name, &variants, attributes);
                 }
                 self.output.insert(name.to_owned(), output);
                 return;
@@ -194,13 +378,23 @@ impl Emitter<'_> {
                         "Rust currently requires an exact prefix tuple of at most 16 positions",
                     ));
                 } else {
-                    let items = prefix
+                    let members = prefix
                         .iter()
-                        .map(|item| format!("pub {}", self.ty(item)))
+                        .enumerate()
+                        .map(|(index, item)| Member {
+                            label: format!("position `{index}`"),
+                            pointer: item.pointer.clone(),
+                            ty: self.ty(item),
+                        })
                         .collect::<Vec<_>>();
-                    output.push_str(DERIVE);
+                    let items = members
+                        .iter()
+                        .map(|member| format!("pub {}", member.ty))
+                        .collect::<Vec<_>>();
+                    output.push_str(&self.derive(CODECS, false));
                     writeln!(output, "pub struct {name}({});", items.join(", "))
                         .expect("String write");
+                    self.declare(name, &node.pointer, false, members);
                 }
             }
             Shape::Intersection(_) | Shape::Literal(_) => {
@@ -211,39 +405,58 @@ impl Emitter<'_> {
                 ));
             }
             _ => {
-                let ty = self.ty(node);
-                if let Some(constraint) = self
-                    .plan
-                    .text
-                    .get(&node.pointer)
-                    .filter(|_| ty == "::std::string::String")
-                {
-                    checked_text(&mut output, name, &node.pointer, constraint);
-                    self.report.obligations.retain(|item| {
-                        item.rule != "model_alphabet"
-                            || item.pointer != path(&node.pointer, "x-ess-alphabet")
-                    });
-                    self.output.insert(name.to_owned(), output);
-                    return;
-                }
-                output.push_str(DERIVE);
-                writeln!(
-                    output,
-                    "#[serde(transparent)]\npub struct {name}(pub {ty});"
-                )
-                .expect("String write");
-                // A newtype fixed to one integer carries it, so no caller has to know it
-                // (beyond10x/ess#408).
-                if let Some(value) = self.plan.constants.get(&node.pointer) {
-                    writeln!(
-                        output,
-                        "\nimpl {name} {{\n    /// The one value this type admits.\n    pub const VALUE: {ty} = {value};\n}}\n\nimpl ::std::default::Default for {name} {{\n    fn default() -> Self {{\n        Self(Self::VALUE)\n    }}\n}}"
-                    )
-                    .expect("String write");
-                }
+                self.newtype(&mut output, name, node);
             }
         }
         self.output.insert(name.to_owned(), output);
+    }
+
+    /// A type that wraps one value: checked text, or a transparent newtype.
+    fn newtype(&mut self, output: &mut String, name: &str, node: &Node) {
+        let ty = self.ty(node);
+        let constant = self.plan.constants.get(&node.pointer);
+        self.declare(
+            name,
+            &node.pointer,
+            false,
+            vec![Member {
+                label: "the wrapped value".to_owned(),
+                pointer: node.pointer.clone(),
+                ty: ty.clone(),
+            }],
+        );
+        if let Some(declared) = self.declared.get_mut(name) {
+            declared.own_default = constant.is_some();
+        }
+        if let Some(constraint) = self
+            .plan
+            .text
+            .get(&node.pointer)
+            .filter(|_| ty == "::std::string::String")
+        {
+            let derive = self.derive(SERIALIZE, false);
+            checked_text(output, &derive, name, &node.pointer, constraint);
+            self.report.obligations.retain(|item| {
+                item.rule != "model_alphabet"
+                    || item.pointer != path(&node.pointer, "x-ess-alphabet")
+            });
+            return;
+        }
+        output.push_str(&self.derive(CODECS, constant.is_some()));
+        writeln!(
+            output,
+            "#[serde(transparent)]\npub struct {name}(pub {ty});"
+        )
+        .expect("String write");
+        // A newtype fixed to one integer carries it, so no caller has to know it
+        // (beyond10x/ess#408).
+        if let Some(value) = constant {
+            writeln!(
+                    output,
+                    "\nimpl {name} {{\n    /// The one value this type admits.\n    pub const VALUE: {ty} = {value};\n}}\n\nimpl ::std::default::Default for {name} {{\n    fn default() -> Self {{\n        Self(Self::VALUE)\n    }}\n}}"
+                )
+                .expect("String write");
+        }
     }
 
     fn record(
@@ -254,15 +467,20 @@ impl Emitter<'_> {
         additional: &Node,
         pointer: &str,
     ) {
-        let raw_map = self.plan.reaches_binary64(additional);
+        let closed = matches!(additional.shape, Shape::Never);
+        // A record whose additional members are dropped holds no flattened map, so none of the
+        // refusals below, which are about decoding that map, applies to it.
+        let dropped = self.options.drop_unknown_members && !closed && !fields.is_empty();
+        let raw_map = self.plan.reaches_binary64(additional) && !dropped;
         if raw_map && !fields.is_empty() {
             self.errors.insert(finding(&additional.pointer, "rust_binary64_open_record", "Binary64 additional values on a record with declared fields require raw-token object decoding, which this Rust target does not support"));
             return;
         }
         // Raw JSON text decodes only straight from serde_json's own deserializer, never from the
         // buffer `#[serde(flatten)]` collects a record with declared fields and extra values into.
-        let raw_map = raw_map || self.plan.reaches_raw_json(additional);
-        if !matches!(additional.shape, Shape::Never)
+        let raw_map = raw_map || (self.plan.reaches_raw_json(additional) && !dropped);
+        if !closed
+            && !dropped
             && !fields.is_empty()
             && (raw_map
                 || fields
@@ -277,56 +495,46 @@ impl Emitter<'_> {
             self.errors.insert(finding(pointer, "rust_shorthand_number", "a struct written as a number alone is not decoded: serde_json's arbitrary_precision hands a number to a visitor as a map, indistinguishable from the record, so the short form's number cannot be read soundly"));
             return;
         }
-        out.push_str(if raw_map {
-            "#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]\n"
-        } else {
-            DERIVE
-        });
+        out.push_str(&self.derive(if raw_map { SERIALIZE } else { CODECS }, false));
         // The derived codecs become `{name}::serialize` and `{name}::deserialize`, the record's
         // own; the trait impls below decode the short form beside it.
         if short.is_some() {
             out.push_str("#[serde(remote = \"Self\")]\n");
         }
-        let closed = matches!(additional.shape, Shape::Never);
         if closed {
             out.push_str("#[serde(deny_unknown_fields)]\n");
         }
         writeln!(out, "pub struct {name} {{").expect("String write");
         let mut allocated = BTreeSet::new();
-        if !closed {
+        if !closed && !dropped {
             allocated.insert("ess_extra".to_owned());
         }
-        for (wire, field) in fields {
-            let field_name = field_name(wire);
-            if field_name.is_empty()
-                || field_name.as_bytes()[0].is_ascii_digit()
-                || !allocated.insert(field_name.clone())
-            {
-                self.errors.insert(finding(
-                    &field.value.pointer,
-                    "rust_field_collision",
-                    "field name is invalid or collides after Rust normalization",
-                ));
-            }
-            let ty = self.ty(&field.value);
-            writeln!(out, "    #[serde(rename = {wire:?})]").expect("String write");
-            if field.required {
-                writeln!(out, "    #[serde(deserialize_with = \"ess_required\")]\n    pub {field_name}: {ty},").expect("String write");
-            } else {
-                writeln!(out, "    #[serde(default, skip_serializing_if = \"EssPresence::is_absent\")]\n    pub {field_name}: EssPresence<{ty}>,").expect("String write");
-            }
-        }
+        let mut members = self.fields(out, fields, allocated);
         let mut codecs = String::new();
         if let Some(short) = short {
             let ty = self.ty(&fields[&short.wire].value);
-            short_form(&mut codecs, name, fields, short, &ty, closed);
+            short_form(&mut codecs, name, fields, short, &ty, closed || dropped);
         }
-        if closed {
+        if closed || dropped {
             out.push_str("}\n");
             out.push_str(&codecs);
+            if dropped {
+                self.report.obligations.insert(finding(
+                    pointer,
+                    DROP_UNKNOWN_RULE,
+                    DROP_UNKNOWN_DETAIL,
+                ));
+            }
+            self.declare(name, pointer, false, members);
             return;
         }
         let extra = self.ty(additional);
+        members.push(Member {
+            label: "field `ess_extra`".to_owned(),
+            pointer: additional.pointer.clone(),
+            ty: format!("::std::collections::BTreeMap<::std::string::String, {extra}>"),
+        });
+        self.declare(name, pointer, false, members);
         writeln!(out, "    #[serde(flatten, serialize_with = \"{name}::ess_serialize_extra\")]\n    pub ess_extra: ::std::collections::BTreeMap<::std::string::String, {extra}>,\n}}").expect("String write");
         writeln!(out, "impl {name} {{\n    fn ess_serialize_extra<S: ::serde::Serializer>(values: &::std::collections::BTreeMap<::std::string::String, {extra}>, serializer: S) -> Result<S::Ok, S::Error> {{").expect("String write");
         if !fields.is_empty() {
@@ -345,12 +553,71 @@ impl Emitter<'_> {
         out.push_str(&codecs);
     }
 
+    /// Writes the declared fields of a record, naming each against `allocated`, and returns them
+    /// as the members a derive needs.
+    fn fields(
+        &mut self,
+        out: &mut String,
+        fields: &BTreeMap<String, Field>,
+        mut allocated: BTreeSet<String>,
+    ) -> Vec<Member> {
+        let mut members = Vec::new();
+        for (wire, field) in fields {
+            let field_name = field_name(wire);
+            if field_name.is_empty()
+                || field_name.as_bytes()[0].is_ascii_digit()
+                || !allocated.insert(field_name.clone())
+            {
+                self.errors.insert(finding(
+                    &field.value.pointer,
+                    "rust_field_collision",
+                    "field name is invalid or collides after Rust normalization",
+                ));
+            }
+            let ty = self.ty(&field.value);
+            writeln!(out, "    #[serde(rename = {wire:?})]").expect("String write");
+            let ty = if field.required {
+                writeln!(out, "    #[serde(deserialize_with = \"ess_required\")]\n    pub {field_name}: {ty},").expect("String write");
+                ty
+            } else if self.options.fold_null {
+                writeln!(out, "    #[serde(default, deserialize_with = \"ess_fold_null\", skip_serializing_if = \"EssPresence::is_absent\")]\n    pub {field_name}: EssPresence<{ty}>,").expect("String write");
+                self.report.obligations.insert(finding(
+                    &field.value.pointer,
+                    FOLD_NULL_RULE,
+                    FOLD_NULL_DETAIL,
+                ));
+                format!("EssPresence<{ty}>")
+            } else {
+                writeln!(out, "    #[serde(default, skip_serializing_if = \"EssPresence::is_absent\")]\n    pub {field_name}: EssPresence<{ty}>,").expect("String write");
+                format!("EssPresence<{ty}>")
+            };
+            members.push(Member {
+                label: format!("field `{wire}`"),
+                pointer: field.value.pointer.clone(),
+                ty,
+            });
+        }
+        members
+    }
+
     fn union(&mut self, out: &mut String, name: &str, variants: &[Node], pointer: &str) {
         let types = variants
             .iter()
             .map(|variant| self.ty(variant))
             .collect::<Vec<_>>();
-        writeln!(out, "#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]\n#[serde(untagged)]\npub enum {name} {{").expect("String write");
+        let derive = self.derive(SERIALIZE, false);
+        writeln!(out, "{derive}#[serde(untagged)]\npub enum {name} {{").expect("String write");
+        let members = variants
+            .iter()
+            .zip(&types)
+            .enumerate()
+            .map(|(index, (variant, ty))| Member {
+                label: format!("variant `V{index}`"),
+                pointer: variant.pointer.clone(),
+                ty: ty.clone(),
+            })
+            .collect();
+        self.declare(name, pointer, true, members);
         for (index, ty) in types.iter().enumerate() {
             writeln!(out, "    V{index}({ty}),").expect("String write");
         }
@@ -454,6 +721,62 @@ impl Emitter<'_> {
     }
 }
 
+/// Refuse a derive option that names no selected type, or asks for `Ord` without the two
+/// traits the derived `Ord` needs beside it.
+fn check_options(plan: &Plan, options: &RustOptions) -> Result<(), Refused> {
+    use RustDerive::{Eq, Ord, PartialOrd};
+    let mut errors = BTreeSet::new();
+    let incomplete = |set: &BTreeSet<RustDerive>| {
+        set.contains(&Ord) && !(set.contains(&Eq) && set.contains(&PartialOrd))
+    };
+    if incomplete(&options.derives) {
+        errors.insert(finding(
+            "/",
+            DERIVE_RULE,
+            "Ord needs Eq and PartialOrd beside it",
+        ));
+    }
+    for (key, own) in &options.type_derives {
+        if !plan.names.contains_key(key) {
+            errors.insert(finding(
+                "/",
+                DERIVE_RULE,
+                &format!("{key:?} names no selected type"),
+            ));
+            continue;
+        }
+        let set = options.derives.iter().chain(own).copied().collect();
+        if !incomplete(&options.derives) && incomplete(&set) {
+            errors.insert(finding(
+                "/",
+                DERIVE_RULE,
+                &format!("{key}: Ord needs Eq and PartialOrd beside it"),
+            ));
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(Refused(errors.into_iter().collect()))
+    }
+}
+
+/// The impls of the requested traits for the two generic helpers every crate carries, which
+/// derive only what the default output needs.
+fn helper_impls(output: &mut String, requested: &BTreeSet<RustDerive>) {
+    for derive in requested {
+        let text = match derive {
+            RustDerive::Eq => "impl<T: ::std::cmp::Eq> ::std::cmp::Eq for EssPresence<T> {}\nimpl ::std::cmp::Eq for EssNever {}\n",
+            RustDerive::Hash => "impl<T: ::std::hash::Hash> ::std::hash::Hash for EssPresence<T> {\n    fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {\n        match self {\n            Self::Absent => ::std::hash::Hash::hash(&0u8, state),\n            Self::Present(value) => {\n                ::std::hash::Hash::hash(&1u8, state);\n                ::std::hash::Hash::hash(value, state);\n            }\n        }\n    }\n}\nimpl ::std::hash::Hash for EssNever {\n    fn hash<H: ::std::hash::Hasher>(&self, _: &mut H) {\n        match *self {}\n    }\n}\n",
+            RustDerive::PartialOrd => "/// An absent member orders before a present one.\nimpl<T: ::std::cmp::PartialOrd> ::std::cmp::PartialOrd for EssPresence<T> {\n    fn partial_cmp(&self, other: &Self) -> ::std::option::Option<::std::cmp::Ordering> {\n        match (self, other) {\n            (Self::Absent, Self::Absent) => Some(::std::cmp::Ordering::Equal),\n            (Self::Absent, Self::Present(_)) => Some(::std::cmp::Ordering::Less),\n            (Self::Present(_), Self::Absent) => Some(::std::cmp::Ordering::Greater),\n            (Self::Present(left), Self::Present(right)) => left.partial_cmp(right),\n        }\n    }\n}\nimpl ::std::cmp::PartialOrd for EssNever {\n    fn partial_cmp(&self, _: &Self) -> ::std::option::Option<::std::cmp::Ordering> {\n        match *self {}\n    }\n}\n",
+            RustDerive::Ord => "impl<T: ::std::cmp::Ord> ::std::cmp::Ord for EssPresence<T> {\n    fn cmp(&self, other: &Self) -> ::std::cmp::Ordering {\n        match (self, other) {\n            (Self::Absent, Self::Absent) => ::std::cmp::Ordering::Equal,\n            (Self::Absent, Self::Present(_)) => ::std::cmp::Ordering::Less,\n            (Self::Present(_), Self::Absent) => ::std::cmp::Ordering::Greater,\n            (Self::Present(left), Self::Present(right)) => left.cmp(right),\n        }\n    }\n}\nimpl ::std::cmp::Ord for EssNever {\n    fn cmp(&self, _: &Self) -> ::std::cmp::Ordering {\n        match *self {}\n    }\n}\n",
+            RustDerive::Default => continue,
+        };
+        output.push_str(text);
+    }
+    output.push('\n');
+}
+
 /// Whether `node` can hold a JSON number at any depth, references followed: a `Number`, an
 /// `Integer`, a native-width integer or unrestricted JSON (beyond10x/ess#483).
 fn holds_number(plan: &Plan, node: &Node) -> bool {
@@ -525,11 +848,12 @@ pub(super) fn package_name(name: &str) -> bool {
 
 /// One accessor per typed variant attribute of the enum `name` (`ess/23`, beyond10x/ess#450),
 /// answering each variant's value: `bool`, `i64`, or the text — a `Decimal` as its decimal string —
-/// and `Option` of these where a variant may leave the attribute unfilled.
+/// and `Option` of these where a variant may leave the attribute unfilled. `variants` pairs each
+/// wire spelling with the variant it names.
 fn accessors(
     output: &mut String,
     name: &str,
-    values: &BTreeSet<String>,
+    variants: &[(String, String)],
     attributes: &[super::EnumAttribute],
 ) {
     writeln!(output, "\nimpl {name} {{").expect("String write");
@@ -551,7 +875,7 @@ fn accessors(
             field_name(&attribute.name)
         )
         .expect("String write");
-        for (index, wire) in values.iter().enumerate() {
+        for (wire, variant) in variants {
             let value = attribute.values.get(wire).map(|value| match value {
                 serde_json::Value::String(text) => format!("{text:?}"),
                 other => other.to_string(),
@@ -561,7 +885,7 @@ fn accessors(
                 (None, _) => "None".to_owned(),
                 (Some(value), false) => value,
             };
-            writeln!(output, "            Self::V{index} => {value},").expect("String write");
+            writeln!(output, "            Self::{variant} => {value},").expect("String write");
         }
         output.push_str("        }\n    }\n");
     }
@@ -573,6 +897,7 @@ fn accessors(
 /// length within its bounds, and refused otherwise with the pointer and the constraint it breaks.
 fn checked_text(
     output: &mut String,
+    derive: &str,
     name: &str,
     pointer: &str,
     constraint: &super::TextConstraint,
@@ -597,7 +922,7 @@ fn checked_text(
             format!("a value at most {maximum} characters long"),
         ));
     }
-    writeln!(output, "#[derive(Debug, Clone, PartialEq, ::serde::Serialize)]\n#[serde(transparent)]\npub struct {name}(pub ::std::string::String);\n\nimpl {name} {{\n    /// The first constraint the source schema declares that this value breaks (its alphabet,\n    /// then its length) as what a decoder expected instead, or `None` when it breaks none.\n    pub fn broken_constraint(&self) -> Option<&'static str> {{").expect("String write");
+    writeln!(output, "{derive}#[serde(transparent)]\npub struct {name}(pub ::std::string::String);\n\nimpl {name} {{\n    /// The first constraint the source schema declares that this value breaks (its alphabet,\n    /// then its length) as what a decoder expected instead, or `None` when it breaks none.\n    pub fn broken_constraint(&self) -> Option<&'static str> {{").expect("String write");
     for (check, expected) in &checks {
         writeln!(
             output,

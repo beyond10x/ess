@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T19:58:23Z",
+  "actor": "human:timo",
+  "artifact": "story:an-input-keeps-missing-and-null-apart",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "wire half only, in 0.69.0: unit 20b45883d on integrate/ess-batch-0690 2af59d755: red first (ess-domain field_presence 13 passed 1 failed; ess-gen field_presence 3 passed 2 failed; ess-conformance omitted_or_null 0 passed 3 failed); green: ess-domain 1732, ess-gen 389, ess-conformance lib 170 and omitted_or_null 3, field_presence 6, direct_returns 19, direct_response_constraints 15, absent_input 9, synthesis_suite_bytes_table 2, interpreted_response_values 9; ess-compiler 344 after the precedence table regeneration; ess-cli 1185 passed, 1 failed on a socket path longer than SUN_LEN under the local TMPDIR, passes with a short one; task test-xtask 259; clippy -D warnings on 5 crates, task projection-check, ci-lint, fmt-check exit 0. Not run locally: the other ess-conformance binaries, task check; left to the PR Gate. The keep-versus-clear half is 0.70.0 (approval-record:adr-unblocked-units-in-0700)."
+  }
+}

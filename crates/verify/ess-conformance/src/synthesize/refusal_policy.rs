@@ -128,23 +128,31 @@ fn witness(
     let alternative = super::bounded_retry::clean_trigger(ir, binding, trigger, actors)?;
     // A missing related row is a refusal the honest system answers on every attempt, where the
     // trigger names a row no row carries: no injection is needed to reach it (a downstream
-    // adopter's report of 2026-10-20). Only on the trigger as it is; one whose arrangement sets
-    // the binding off is sent from another publisher, which this does not read.
+    // adopter's report of 2026-10-20). Where the trigger refuses that missing row itself, another
+    // publisher of the event that does not is sent instead.
     let answered = match (&forced, &alternative) {
-        (Err(_), None) => invoked
+        (Err(_), None) => match invoked
             .outcomes
             .iter()
             .find(|candidate| &candidate.name == outcome)
-            .and_then(|refusal| {
-                super::binding_effects::related_missing(
-                    ir,
-                    binding,
-                    invoked,
-                    published_by,
-                    refusal,
-                    trigger,
-                )
-            }),
+        {
+            Some(refusal) => match super::binding_effects::related_missing(
+                ir,
+                binding,
+                invoked,
+                published_by,
+                refusal,
+                trigger,
+            ) {
+                None => None,
+                Some(Ok(invoke)) => Some((invoke, None)),
+                Some(Err(gap)) => Some(
+                    unguarded_publisher(ir, binding, invoked, published_by, refusal, actors)
+                        .ok_or(gap)?,
+                ),
+            },
+            None => None,
+        },
         _ => None,
     };
     let forced_ref = match (forced, &answered) {
@@ -152,10 +160,20 @@ fn witness(
         (Err(_), Some(_)) => OutcomeRef::new(command.clone(), outcome.clone()),
         (Err(gap), None) => return Err(gap),
     };
-    let trigger = alternative.as_ref().map_or(trigger, |(run, _)| run);
+    let (answered, publisher) = match answered {
+        Some((invoke, publisher)) => (Some(invoke), publisher),
+        None => (None, None),
+    };
+    let trigger = match &publisher {
+        Some((run, _)) => run,
+        None => alternative.as_ref().map_or(trigger, |(run, _)| run),
+    };
     let mut source: BTreeSet<EssSemanticRef> = [command.clone().into(), forced_ref.clone().into()]
         .into_iter()
         .collect();
+    if let Some((_, published)) = &publisher {
+        source.extend(published.iter().cloned());
+    }
     if let Some(component) = accepting_component(ir, &invoked.name) {
         source.insert(component.into());
     }
@@ -187,6 +205,45 @@ fn witness(
     ));
     steps.extend(after);
     Ok((steps, clipped(&text), source))
+}
+
+/// The invocation leaving the related row missing, sent from the first other publisher of the
+/// binding's event (by command, then branch, in declaration order) that does not refuse the missing
+/// row itself, with its arranged run and what that run rests on. `None` where every publisher
+/// refuses it, so the refusal by name stands.
+#[allow(clippy::type_complexity)]
+fn unguarded_publisher(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    invoked: &ResolvedCommand,
+    published_by: &ResolvedOutcome,
+    refusal: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Option<(Vec<ScenarioStep>, Option<(Run, Vec<EssSemanticRef>)>)> {
+    let event = binding.cause.event()?;
+    ir.commands().values().find_map(|command| {
+        command
+            .outcomes
+            .iter()
+            .filter(|outcome| {
+                !std::ptr::eq(*outcome, published_by)
+                    && outcome.error.is_none()
+                    && outcome.emits.contains(event)
+            })
+            .find_map(|outcome| {
+                let run = super::run(ir, command, outcome, actors).ok()?;
+                let invoke = super::binding_effects::related_missing(
+                    ir, binding, invoked, outcome, refusal, &run,
+                )?
+                .ok()?;
+                let name = CommandRef::new(command.name.clone());
+                let published = vec![
+                    name.clone().into(),
+                    OutcomeRef::new(name, outcome.name.clone()).into(),
+                ];
+                Some((invoke, Some((run, published))))
+            })
+    })
 }
 
 /// The refusal as a scenario forces it: an `external:` branch whose eligibility needs no

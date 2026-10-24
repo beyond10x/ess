@@ -1,0 +1,6 @@
+format: ess/29
+system: repro
+version: v1
+summary: Minimal repro.
+domains:
+  - repro.box

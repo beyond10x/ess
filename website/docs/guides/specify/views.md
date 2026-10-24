@@ -139,6 +139,31 @@ users share. A free-form filter expression the caller supplies is not something 
 `params:` can declare; a closed set of filter fields can still be declared one optional parameter
 at a time. [Design](https://github.com/beyond10x/ess/blob/main/docs/design/view-paging.md).
 
+## A view parameter is named on the wire by its `wire`
+
+A view's parameters reach an HTTP read as query parameters, and each is named there by its `wire:`
+when it declares one:
+
+```yaml
+views:
+  - name: demo.jobs.JobsOwnedBy
+    source: demo.jobs.Job
+    consistency: read_your_writes
+    params:
+      - {name: owner, type: String, wire: ownerId}
+    filter: owner == param.owner
+    fields:
+      - {name: job_id, type: demo.jobs.JobId, wire: jobId}
+      - {name: owner, type: String}
+```
+
+The generated OpenAPI document declares `ownerId` as the `in: query` parameter, and the generated
+Rust and Go servers read `?ownerId=…` and refuse `?owner=…` as an unknown parameter. A field's
+`wire:` names it the same way in each row the read answers, so the rows carry `jobId`. A parameter
+also takes the nested `naming: {wire: ownerId}` spelling, but a view field takes only the flat
+`wire:` and refuses `naming:` as an unknown field. An `ess-http/1` route that maps a parameter to a
+path variable reads it from the path instead, under the variable's name.
+
 ## A view field derived from the lifecycle state
 
 A status read often answers a value that follows from the lifecycle state: `live`, true in every

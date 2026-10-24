@@ -310,6 +310,10 @@ pub enum Undetermined {
         instance: String,
         /// The invariant, as the author wrote it.
         invariant: String,
+        /// The repair, where the model names one: the invariant reads an `Optional` field an
+        /// outcome mints with `{generated: true}` alone, which leaves it absent here
+        /// (`docs/design/minted-value-sources.md`).
+        help: Option<String>,
     },
     /// Two rows a head read selects tie on every key of an order declaring `ties: unordered`, and
     /// rank first: the model leaves which is the head to the implementation (ess/27,
@@ -363,10 +367,18 @@ impl fmt::Display for Undetermined {
             Self::BrokenInvariant {
                 instance,
                 invariant,
-            } => write!(
-                f,
-                "the model's own outcome leaves {instance} violating its invariant `{invariant}`"
-            ),
+                help,
+            } => {
+                write!(
+                    f,
+                    "the model's own outcome leaves {instance} violating its invariant \
+                     `{invariant}`"
+                )?;
+                match help {
+                    Some(help) => write!(f, "\n  help: {help}"),
+                    None => Ok(()),
+                }
+            }
             Self::UnorderedTie { entity, order } => write!(
                 f,
                 "two `{entity}` rows the selector selects tie on every key of `{order}` and rank \
@@ -2650,6 +2662,14 @@ fn value_at(
             work.operation.is_some(),
         )
         .map(Some),
+        ResolvedPayloadValue::Append { field: element, .. } => values::append(
+            ir,
+            field,
+            input.get(element),
+            work.before.as_ref(),
+            &work.target_location,
+        )
+        .map(Some),
         ResolvedPayloadValue::CallerAttribute {
             attribute,
             type_ref,
@@ -2664,6 +2684,8 @@ fn value_at(
         ResolvedPayloadValue::Literal { value } => {
             literal(ir, &field.target_type, value).map(|value| Some(Value::Known(value)))
         }
+        // ess/31: a `List<…>` field holding no element, present rather than absent.
+        ResolvedPayloadValue::EmptyList => Ok(Some(Value::Known(Node::Seq(Vec::new())))),
         // A present mint (ess/27, beyond10x/ess#545): a value of the required type, never absent.
         ResolvedPayloadValue::Generated { present } => {
             mint(ir, minted_type(&field.target_type, *present), work)
@@ -3178,6 +3200,75 @@ fn emit(
     Ok(Ok(events))
 }
 
+/// The repair for an invariant of `entity` that reads an `Optional` field some outcome stores with
+/// `{generated: true}` alone: that mint lets the implementation leave the field absent, and this
+/// interpreter does, so the model's own invariant breaks. `{generated: true, present: true}` says
+/// the minted value is present (beyond10x/ess#545, `docs/design/minted-value-sources.md`).
+///
+/// Only a field `row` actually holds absent counts: a row that breaks the invariant with the value
+/// present gets no help. An absent value records no writer, so every outcome that mints the field
+/// bare is named, in command-name order and then the command's declared outcome order.
+fn absent_mint_help(
+    ir: &EssIr,
+    entity: &QualifiedName,
+    invariant: &Predicate,
+    row: &Row,
+) -> Option<String> {
+    let read = invariant.fact_paths();
+    let absent = |name: &str| {
+        row.fields
+            .get(name)
+            .is_none_or(|value| value.presence(ir) == Some(false))
+    };
+    let mut fields: Vec<&str> = Vec::new();
+    let mut outcomes: Vec<String> = Vec::new();
+    for spec in ir.commands().values() {
+        for outcome in &spec.outcomes {
+            let subject = outcome
+                .subject
+                .iter()
+                .filter(|subject| ir.entity(&subject.entity).name == *entity)
+                .flat_map(|_| &outcome.sets);
+            let affected = outcome
+                .affects
+                .iter()
+                .filter(|affect| ir.entity(&affect.entity).name == *entity)
+                .flat_map(|affect| &affect.sets);
+            for field in subject.chain(affected) {
+                let minted_bare = field.target_type.is_optional()
+                    && field.value == ResolvedPayloadValue::Generated { present: false };
+                if !minted_bare
+                    || !absent(&field.target)
+                    || !read.iter().any(|path| path.namespace() == field.target)
+                {
+                    continue;
+                }
+                if !fields.contains(&field.target.as_str()) {
+                    fields.push(&field.target);
+                }
+                let name = format!("`{}`", branch(spec, outcome));
+                if !outcomes.contains(&name) {
+                    outcomes.push(name);
+                }
+            }
+        }
+    }
+    if fields.is_empty() {
+        return None;
+    }
+    let fields = fields
+        .iter()
+        .map(|field| format!("`{field}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(format!(
+        "{fields} is absent on this row, and {} stores it as `{{generated: true}}`, which lets \
+         the implementation leave it absent; a minted `Optional` value an invariant requires is \
+         declared `{{generated: true, present: true}}`",
+        outcomes.join(", ")
+    ))
+}
+
 /// Refuses a step that leaves an instance violating an invariant its entity declares.
 ///
 /// An invariant reading a field no outcome has written evaluates to `Unknown`, and concludes
@@ -3209,6 +3300,7 @@ fn at_rest(
             return Err(Undetermined::BrokenInvariant {
                 instance: format!("`{entity}` `{key:?}`"),
                 invariant: invariant.statement.clone(),
+                help: absent_mint_help(ir, entity, &invariant.predicate, instance),
             });
         }
         let result = invariant.predicate.outcome(&facts);
@@ -3216,6 +3308,7 @@ fn at_rest(
             return Err(Undetermined::BrokenInvariant {
                 instance: format!("`{entity}` `{key:?}`"),
                 invariant: invariant.statement.clone(),
+                help: absent_mint_help(ir, entity, &invariant.predicate, instance),
             });
         }
         if result.truth == Truth::Unknown

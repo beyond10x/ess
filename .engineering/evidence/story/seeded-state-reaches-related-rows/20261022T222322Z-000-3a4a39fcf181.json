@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-22T22:23:22Z",
+  "actor": "human:timo",
+  "artifact": "story:seeded-state-reaches-related-rows",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit/ess-0690-u4 merged into integrate/ess-batch-0690; adversary lane 2 red -> 0 after the search profile keyed on moves from the current state; ess-cli 1172 passed, ess-conformance targeted tests green"
+  }
+}

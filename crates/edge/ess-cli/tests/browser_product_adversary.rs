@@ -81,8 +81,12 @@ fn build_host(root: &Path, mode: u8) -> PathBuf {
         root,
         &format!("lock-{mode}"),
     );
-    let target = std::env::var_os("ESS_BROWSER_TARGET_DIR")
-        .map_or_else(|| root.join("compiled-host"), PathBuf::from);
+    // One target for every test, so ess-conformance and its dependencies compile once per run
+    // and each test rebuilds only its consumer crate.
+    let target = std::env::var_os("ESS_BROWSER_TARGET_DIR").map_or_else(
+        || PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("browser-host"),
+        PathBuf::from,
+    );
     run(
         Command::new("cargo")
             .args([
@@ -96,13 +100,19 @@ fn build_host(root: &Path, mode: u8) -> PathBuf {
             ])
             .arg(consumer.join("Cargo.toml"))
             .env("CARGO_TARGET_DIR", &target)
-            .env("CARGO_BUILD_JOBS", "1")
             .env("CARGO_INCREMENTAL", "0")
             .env("RUSTFLAGS", "-C link-arg=--max-memory=536870912"),
         root,
         &format!("host-{mode}"),
     );
-    target.join("wasm32-unknown-unknown/release/adversary_consumer.wasm")
+    // The shared target's output is overwritten by the next build; keep this build's own copy.
+    let destination = root.join(format!("adversary-{mode}.wasm"));
+    fs::copy(
+        target.join("wasm32-unknown-unknown/release/adversary_consumer.wasm"),
+        &destination,
+    )
+    .unwrap();
+    destination
 }
 
 /// Connect, press Run, optionally press Abort, and return every page channel the test can read.

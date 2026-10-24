@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T18:12:36Z",
+  "actor": "human:timo",
+  "artifact": "story:a-row-set-branch-arranges-rows-past-the-creators-guard",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit 85a2483ea on integrate/ess-batch-0690 a835eeabe: red first with the retry switched off (new test 2 passed 3 failed, holds-bottles refused ESS-SYNTH-001); green: new test 5, ess-conformance lib plus 610 targets one at a time 4704 passed 31 ignored, ess-cli synthesis binaries 15, task test-xtask 418 passed 3 ignored; clippy -p ess-conformance -p ess-cli -D warnings, task fmt-check exit 0; no pinned bytes or diagnostic pins moved. Not done: a guard over more than one related row keeps the old refusal; no decoy row naming another related row. Not run locally: task check; left to the pull request Gate."
+  }
+}

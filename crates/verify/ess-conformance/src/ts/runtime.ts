@@ -210,6 +210,12 @@ export function isNil(value: Node): boolean {
   return value === null || value === undefined;
 }
 
+/**
+ * The expected value of a field that relays an awaited input the answer left out: carried absent or
+ * null, never with a value. Compared by identity.
+ */
+export const UNISSUED: Node = Object.freeze({});
+
 // ---- errors ---------------------------------------------------------------------------------------
 
 const UNSUPPORTED = Symbol.for('ess.conformance.unsupported');
@@ -3472,8 +3478,13 @@ export class ScenarioRun {
   holdUnsupported = false;
   /** The first observation the target could not expose, the reason a report/2 scenario that ran on past it is skipped with. */
   unsupportedReason: string | undefined = undefined;
-  /** The token the last command returned, for a read_your_writes query. */
+  /**
+   * The token the last command that ran returned, for a read_your_writes query; `written` names
+   * that command. A send refused as not granted ran nothing and leaves both as they were, so the
+   * read after the refusal is made at the earlier token.
+   */
   consistency = '';
+  written = '';
   /** A read-your-writes query suppressed because the preceding command returned no token. */
   unreadableView = '';
   unreadableCommand = '';
@@ -3772,7 +3783,7 @@ export class ScenarioRun {
       case 'resolve_fixtures':
         return this.fail(index, 'fixture resolution must precede scenario activity');
       case 'expect_event_values': {
-        const payload = this.resolveAll(index, step.payload as Record<string, Value>);
+        const payload = this.resolveRelayed(index, step.payload as Record<string, Value>);
         return payload !== null && this.expectEventValues(index, { ...step, payload });
       }
       case 'expect_direct_response':
@@ -3973,7 +3984,10 @@ export class ScenarioRun {
         return this.fail(index, `response observation: ${errorText(error)}`);
       }
     }
-    this.consistency = normalized.consistency;
+    if (!normalized.notGranted) {
+      this.consistency = normalized.consistency;
+      this.written = step.command;
+    }
     this.last = normalized;
     this.lastCommand = step.command;
     this.lastInput = withoutInput ? undefined : input;
@@ -4137,6 +4151,7 @@ export class ScenarioRun {
     }
     const normalized = normalizeResult(answer.result);
     this.consistency = normalized.consistency;
+    this.written = step.command;
     this.last = normalized;
     this.lastCommand = step.command;
     this.lastInput = input;
@@ -4391,7 +4406,7 @@ export class ScenarioRun {
     }
     // The declared fields the branch determines (ess/19), each carried and equal, as the Rust
     // runner's `expect_error` compares them.
-    if (!matches(this.last.errorPayload ?? {}, step.fields ?? {}))
+    if (!rowMatches(this.last.errorPayload ?? {}, step.fields ?? {}))
       return this.fail(
         index,
         `ESS-CF-ERROR: refused with \`${step.error}\`, and it did not carry ${describe(step.fields ?? {})}`,
@@ -4460,7 +4475,7 @@ export class ScenarioRun {
       return Object.fromEntries(
         Object.entries((claim.payload ?? {}) as Record<string, Value>).map(([field, written]) => [
           field,
-          this.resolve(written),
+          this.leftOut(written) ? UNISSUED : this.resolve(written),
         ]),
       );
     } catch {
@@ -4611,12 +4626,12 @@ export class ScenarioRun {
     }
     const expected = this.readRefusalExpected;
     this.readRefusalExpected = false;
-    if (this.lastCommand !== '' && this.consistency === '') {
+    if (this.written !== '' && this.consistency === '') {
       if (expected) this.readAnswer = { view: step.view, unread: true, refused: false, actor: '' };
       // Current is weaker than the read-your-writes claim. Keep the cause for expect_view, and
       // discard any earlier query so it cannot satisfy the assertion after this command.
       this.unreadableView = step.view;
-      this.unreadableCommand = this.lastCommand;
+      this.unreadableCommand = this.written;
       this.queried = '';
       this.lastView = [];
       this.lastTotal = undefined;
@@ -4673,6 +4688,19 @@ export class ScenarioRun {
   }
 
   snapshotSubject(index: number, step: Step): boolean {
+    // The comparison's read was not made because a command after the snapshot returned no token:
+    // the target's contradiction, named as expect_view names it, not a gap in the suite. A capture
+    // with no read before it stays the suite error below.
+    const comparison =
+      step.step === 'expect_subject_unchanged' || step.step === 'expect_complete_subject_unchanged';
+    if (comparison && this.unreadableView === step.view) {
+      return this.fail(
+        index,
+        `ESS-CF-VIEW: \`${this.unreadableCommand}\` returned no consistency token, so ` +
+          `\`${step.view}\` was not read; asking at Current would answer a weaker question than ` +
+          'read-your-writes',
+      );
+    }
     if (this.queried === '') {
       this.recordStatus(statusError);
       this.failures.push(
@@ -4885,13 +4913,13 @@ export class ScenarioRun {
     switch (expectation.expect) {
       case 'contains':
       case 'excludes': {
-        const want = this.resolveAll(index, expectation.fields);
+        const want = this.resolveRow(index, expectation.fields);
         if (want === null) {
           return [false, 'a value the expectation names is not bound', true];
         }
         let found = false;
         for (const row of this.lastView) {
-          if (matches(row, want)) {
+          if (rowMatches(row, want)) {
             found = true;
             break;
           }
@@ -5099,7 +5127,7 @@ export class ScenarioRun {
         if (expectation.position === undefined) {
           return [false, 'the suite names no position, which is a generator defect', true];
         }
-        const want = this.resolveAll(index, expectation.fields);
+        const want = this.resolveRow(index, expectation.fields);
         if (want === null) {
           return [false, 'a value the expectation names is not bound', true];
         }
@@ -5125,7 +5153,7 @@ export class ScenarioRun {
           return [false, `\`${step.view}\` holds ${held} row(s)`, false];
         }
         const row = itemAt(this.lastView, at);
-        if (!matches(row, want)) {
+        if (!rowMatches(row, want)) {
           return [false, `row ${at} of \`${step.view}\` is ${describeRow(row)}`, false];
         }
         return [true, '', false];
@@ -5173,6 +5201,8 @@ export class ScenarioRun {
       }
       if (present) {
         want[field] = node;
+      } else if (this.leftOut(written)) {
+        want[field] = UNISSUED;
       } else {
         absent.push(field);
       }
@@ -5213,6 +5243,8 @@ export class ScenarioRun {
       }
       if (present) {
         want[field] = node;
+      } else if (this.leftOut(written)) {
+        want[field] = UNISSUED;
       } else {
         absent.push(field);
       }
@@ -5549,6 +5581,7 @@ export class ScenarioRun {
       for (const [field, value] of Object.entries(step.input ?? {})) {
         const [node, present] = this.resolveAccessorExpected(value);
         if (present) wanted[field] = node;
+        else if (this.leftOut(value)) wanted[field] = UNISSUED;
         else absent.push(field);
       }
     } catch (error) {
@@ -5794,6 +5827,58 @@ export class ScenarioRun {
     }
   }
 
+  /**
+   * Whether `value` reads an input the most recent await's answer left out, by omitting it or by
+   * spelling it null. Only an input declared `Optional` can be left out, since the await step holds
+   * the answer to its declared shape: there is nothing issued to compare, and the expectation holds
+   * the input absent or null instead (an absent `Optional` input written by `sets:` clears the
+   * field), as in the Rust runner.
+   */
+  leftOut(value: Value): boolean {
+    return (
+      value.kind === 'awaited' &&
+      this.awaited !== undefined &&
+      isNil(this.awaited[value.field as string])
+    );
+  }
+
+  /** `values` less each one that reads an awaited input the answer left out. */
+  withoutLeftOut(values: { [field: string]: Value }): { [field: string]: Value } {
+    return Object.fromEntries(Object.entries(values).filter(([, value]) => !this.leftOut(value)));
+  }
+
+  /**
+   * resolveAll for the values an event must carry: a field relaying an awaited input the answer
+   * left out expects UNISSUED, absent or null.
+   */
+  resolveRelayed(
+    index: number,
+    values: { [field: string]: Value } | undefined,
+  ): { [field: string]: Node } | null {
+    const resolved = this.resolveAll(index, this.withoutLeftOut(values ?? {}));
+    if (resolved === null) return null;
+    for (const [field, value] of Object.entries(values ?? {})) {
+      if (this.leftOut(value)) resolved[field] = UNISSUED;
+    }
+    return resolved;
+  }
+
+  /**
+   * resolveAll for the fields of an expected view row: a field `sets:` writes from an awaited
+   * input the answer left out holds nothing.
+   */
+  resolveRow(
+    index: number,
+    values: { [field: string]: Value } | undefined,
+  ): { [field: string]: Node } | null {
+    const resolved = this.resolveAll(index, this.withoutLeftOut(values ?? {}));
+    if (resolved === null) return null;
+    for (const [field, value] of Object.entries(values ?? {})) {
+      if (this.leftOut(value)) resolved[field] = null;
+    }
+    return resolved;
+  }
+
   /** resolveAll resolves every value a step carries against what this run has bound. */
   resolveAll(
     index: number,
@@ -5879,6 +5964,7 @@ export class ScenarioRun {
 
   /** resolveAccessorExpected answers a value and whether the accessor found one at all. */
   resolveAccessorExpected(value: Value): [Node, boolean] {
+    if (this.leftOut(value)) return [null, false];
     if (value.kind === 'observed_selection') {
       if (value.selection === undefined) {
         throw new Error('missing selection observation');
@@ -5946,19 +6032,71 @@ export class ScenarioRun {
  * `carried_at`, rule for rule.
  */
 export function matches(row: { [field: string]: Node }, want: { [field: string]: Node }): boolean {
+  return fieldsMatch(row, want, equal);
+}
+
+/**
+ * matches for a view row or the fields of an error, whose struct members compare by sameValue. An
+ * observed event, invocation or subject identity is compared exactly by matches.
+ */
+export function rowMatches(
+  row: { [field: string]: Node },
+  want: { [field: string]: Node },
+): boolean {
+  return fieldsMatch(row, want, sameValue);
+}
+
+function fieldsMatch(
+  row: { [field: string]: Node },
+  want: { [field: string]: Node },
+  same: (actual: Node, expected: Node) => boolean,
+): boolean {
   for (const field of Object.keys(want)) {
     const [value, reach] = lookup(row, field);
+    if (want[field] === UNISSUED) {
+      if (reach === 'value' && !isNil(value)) return false;
+      continue;
+    }
     if (reach !== 'value') {
       if (field.includes('.') && isNil(want[field])) {
         continue;
       }
       return false;
     }
-    if (!equal(value, want[field])) {
+    if (!same(value, want[field])) {
       return false;
     }
   }
   return true;
+}
+
+/**
+ * sameValue is equal, except that a struct member that is absent and one that is null are one value
+ * at any depth below the top level: one target omits an `Optional` member left unset and another
+ * publishes it as null. The Rust runner's `same_value`, rule for rule.
+ */
+export function sameValue(actual: Node, expected: Node): boolean {
+  if (isObject(actual) && isObject(expected)) {
+    const keys = new Set([...Object.keys(actual), ...Object.keys(expected)]);
+    for (const key of keys) {
+      const left = Object.prototype.hasOwnProperty.call(actual, key) ? actual[key] : null;
+      const right = Object.prototype.hasOwnProperty.call(expected, key) ? expected[key] : null;
+      if (isNil(left) && isNil(right)) {
+        continue;
+      }
+      if (isNil(left) || isNil(right) || !sameValue(left, right)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (Array.isArray(actual) && Array.isArray(expected)) {
+    return (
+      actual.length === expected.length &&
+      actual.every((item, index) => sameValue(item, expected[index]))
+    );
+  }
+  return equal(actual, expected);
 }
 
 /**
@@ -6203,6 +6341,9 @@ function quoteGo(value: string): string {
 export function render(value: Node): string {
   if (isNil(value)) {
     return 'null';
+  }
+  if (value === UNISSUED) {
+    return 'absent or null';
   }
   if (typeof value === 'string') {
     return quoteGo(value);

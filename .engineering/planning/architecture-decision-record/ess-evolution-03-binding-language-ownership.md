@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: architecture-decision-record:ess-evolution-03-binding-language-ownership
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: 03 — Bindings and language ownership
 relations:
 - decides: initiative:ess-evolution
-revision: 1
+revision: 2
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-10-23T19:36:19Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
 ## Context
 Shared semantics must not couple ESS to adopting hosts.

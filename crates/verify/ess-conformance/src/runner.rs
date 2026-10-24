@@ -64,7 +64,7 @@ use ess_domain::view::{Direction, Ranking};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
-use ess_primitives::consistency::QueryConsistency;
+use ess_primitives::consistency::{ConsistencyToken, QueryConsistency};
 use ess_primitives::facts::{FactPath, FactStore, FactValue};
 use ess_primitives::ids::CorrelationId;
 use ess_primitives::node::Node;
@@ -682,9 +682,7 @@ impl<C: Clock> Runner<C> {
             ScenarioStep::SnapshotSubject { view, subject } => {
                 snapshot_subject(view, Some(subject), None, run)
             }
-            ScenarioStep::ExpectSubjectUnchanged { view } => {
-                snapshot_subject(view, None, None, run)
-            }
+            ScenarioStep::ExpectSubjectUnchanged { view } => compare_subject(view, None, run),
             ScenarioStep::ExpectSubjectAbsent { .. }
             | ScenarioStep::SnapshotView { .. }
             | ScenarioStep::ExpectViewUnchanged { .. } => outcome_shape_step(step, run),
@@ -701,7 +699,7 @@ impl<C: Clock> Runner<C> {
                 event,
                 payload,
                 shape,
-            } => expect_event(event, payload, shape, run),
+            } => expect_event(event, &EventValues::literal(payload), shape, run),
             ScenarioStep::ExpectNoEvent { event } => expect_no_event(event, run),
             ScenarioStep::CaptureInstance {
                 instance,
@@ -814,13 +812,7 @@ impl<C: Clock> Runner<C> {
         // claim demands the token the last command returned, and an eventual one may not, because
         // demanding it would make the target block until the projection caught up — which is the
         // lag the retry is there to observe.
-        let last = run.last_command.as_ref().map(|executed| {
-            (
-                executed.command.clone(),
-                executed.result.consistency.clone(),
-            )
-        });
-        let consistency = match last {
+        let consistency = match run.written.clone() {
             _ if retry => QueryConsistency::Current,
             // Nothing has been written in this scenario, so there is no write to read no older than.
             None => QueryConsistency::Current,
@@ -919,10 +911,15 @@ impl<C: Clock> Runner<C> {
     ) -> Flow {
         let mut wanted = BTreeMap::new();
         let mut absent = BTreeSet::new();
+        // Relaying an awaited input the answer left out: nothing to carry, so absent or null.
+        let mut unissued = BTreeSet::new();
         for (field, value) in input {
             match run.resolve_expected(value) {
                 Ok(crate::accessor::Expected::Present(node)) => {
                     wanted.insert(field.clone(), node);
+                }
+                Ok(crate::accessor::Expected::Absent) if run.left_out(value) => {
+                    unissued.insert(field.clone());
                 }
                 Ok(crate::accessor::Expected::Absent) => {
                     absent.insert(field.clone());
@@ -957,6 +954,7 @@ impl<C: Clock> Runner<C> {
                         && absent
                             .iter()
                             .all(|field| !invocation.input.contains_key(field))
+                        && absent_or_null(&invocation.input, &unissued)
                 });
                 if found {
                     run.record(CheckResult::passed(CheckCode::Invocation, about));
@@ -966,6 +964,10 @@ impl<C: Clock> Runner<C> {
                         .declared_by(command.clone());
                     for field in &absent {
                         diagnostic = diagnostic.expected(format!("{command}.{field} is absent"));
+                    }
+                    for field in &unissued {
+                        diagnostic =
+                            diagnostic.expected(format!("{command}.{field} is absent or null"));
                     }
                     for (field, value) in &wanted {
                         diagnostic =
@@ -1022,6 +1024,9 @@ impl<C: Clock> Runner<C> {
     /// **not** issued, and [`expect_view`] records what actually happened — see there for why that
     /// is `failed` rather than `unsupported`. The target owns satisfying `AtLeast(T)`; a target that
     /// will not say what `T` is has not left it anything to satisfy.
+    ///
+    /// A send refused as not granted is not a write: it ran nothing and returned no token, and the
+    /// read after it is made at the token of the last command that ran ([`Run::written`]).
     fn query_view<T: ConformanceTarget>(
         &mut self,
         view: &ViewRef,
@@ -1033,16 +1038,17 @@ impl<C: Clock> Runner<C> {
             return Flow::Stop;
         };
         let expected = std::mem::take(&mut run.read_refusal_expected);
-        let consistency = match run.last_command.as_ref() {
+        let consistency = match run.written.as_ref() {
             // Nothing has been written in this scenario, so there is no write to read no older
             // than. Synthesis never produces this, and a suite that does means it.
             None => QueryConsistency::Current,
-            Some(executed) => {
-                let Some(token) = executed.result.consistency.clone() else {
+            Some((command, token)) => {
+                let Some(token) = token.clone() else {
+                    let command = command.clone();
                     if expected {
                         run.read_answer = Some((view.clone(), ReadAnswer::Unread));
                     }
-                    run.unreadable = Some((view.clone(), executed.command.clone()));
+                    run.unreadable = Some((view.clone(), command));
                     run.last_view = None;
                     return Flow::Continue;
                 };
@@ -1141,7 +1147,14 @@ impl<C: Clock> Runner<C> {
                 // crossing a component boundary changes when a consequence is observable, not what
                 // it carries.
                 let executing = run.last_command.as_ref().map(Executed::quoted);
-                expect_payload(event, &carried, &BTreeMap::new(), shape, executing, run);
+                expect_payload(
+                    event,
+                    &carried,
+                    &EventValues::default(),
+                    shape,
+                    executing,
+                    run,
+                );
                 return Flow::Continue;
             }
             if deadline.has_passed(self.clock.now()) {
@@ -1410,7 +1423,7 @@ fn execute_command<T: ConformanceTarget>(
                 }
             }
             run.remember(&result.direct_events);
-            run.last_command = Some(Executed {
+            run.executed(Executed {
                 command: command.to_string(),
                 actor: actor.cloned(),
                 input: resolved,
@@ -1421,7 +1434,7 @@ fn execute_command<T: ConformanceTarget>(
         }
         // The command's answer, not the target's failure (beyond10x/ess#265).
         Err(TargetError::NotGranted { actor: named }) => {
-            run.last_command = Some(Executed {
+            run.executed(Executed {
                 command: command.to_string(),
                 actor: actor.cloned(),
                 input: resolved,
@@ -1472,7 +1485,7 @@ fn execute_command_without_input<T: ConformanceTarget>(
                 }
             }
             run.remember(&result.direct_events);
-            run.last_command = Some(Executed {
+            run.executed(Executed {
                 command: command.to_string(),
                 actor: actor.cloned(),
                 input: BTreeMap::new(),
@@ -1482,7 +1495,7 @@ fn execute_command_without_input<T: ConformanceTarget>(
             Flow::Continue
         }
         Err(TargetError::NotGranted { actor: named }) => {
-            run.last_command = Some(Executed {
+            run.executed(Executed {
                 command: command.to_string(),
                 actor: actor.cloned(),
                 input: BTreeMap::new(),
@@ -2014,11 +2027,7 @@ fn expect_event_values(
     shape: &PayloadShape,
     run: &mut Run,
 ) -> Flow {
-    let resolved: Result<BTreeMap<_, _>, _> = payload
-        .iter()
-        .map(|(field, value)| run.resolve(value).map(|value| (field.clone(), value)))
-        .collect();
-    match resolved {
+    match run.resolve_payload(payload) {
         Ok(values) => expect_event(event, &values, shape, run),
         Err(reason) => {
             run.record(CheckResult::errored(
@@ -2035,7 +2044,7 @@ fn expect_event_values(
 /// Requires that the last command published an event it declares it emits (§13).
 fn expect_event(
     event: &EventRef,
-    payload: &BTreeMap<String, Node>,
+    payload: &EventValues,
     shape: &PayloadShape,
     run: &mut Run,
 ) -> Flow {
@@ -2083,7 +2092,7 @@ fn expect_event(
 /// many the act claims. The order claims are written in decides none of it.
 fn expect_counted_event(
     event: &EventRef,
-    payload: &BTreeMap<String, Node>,
+    payload: &EventValues,
     shape: &PayloadShape,
     run: &mut Run,
 ) -> Flow {
@@ -2112,18 +2121,14 @@ fn expect_counted_event(
                     event: claimed,
                     payload,
                     shape,
-                } if claimed == event => Some(Ok((payload.clone(), shape))),
+                } if claimed == event => Some(Ok((EventValues::literal(payload), shape))),
                 ScenarioStep::ExpectEventValues {
                     event: claimed,
                     payload,
                     shape,
-                } if claimed == event => Some(
-                    payload
-                        .iter()
-                        .map(|(field, value)| run.resolve(value).map(|node| (field.clone(), node)))
-                        .collect::<Result<BTreeMap<_, _>, _>>()
-                        .map(|values| (values, shape)),
-                ),
+                } if claimed == event => {
+                    Some(run.resolve_payload(payload).map(|values| (values, shape)))
+                }
                 _ => None,
             })
             .map(|claim| {
@@ -2170,16 +2175,36 @@ fn expect_counted_event(
     Flow::Continue
 }
 
+/// What an event claim requires of the fields it names.
+#[derive(Debug, Clone, Default)]
+struct EventValues {
+    /// Each field and the value it carries.
+    values: BTreeMap<String, Node>,
+    /// Each field relaying an awaited input the answer left out, carried absent or null.
+    unissued: BTreeSet<String>,
+}
+
+impl EventValues {
+    /// A claim whose values the suite wrote out.
+    fn literal(values: &BTreeMap<String, Node>) -> Self {
+        Self {
+            values: values.clone(),
+            unissued: BTreeSet::new(),
+        }
+    }
+}
+
 /// Whether an occurrence carries every value a claim names and every leaf of its shape: what
 /// [`expect_payload`] would pass, without recording anything.
-fn carries(
-    carried: &BTreeMap<String, Node>,
-    values: &BTreeMap<String, Node>,
-    shape: &PayloadShape,
-) -> bool {
+fn carries(carried: &BTreeMap<String, Node>, values: &EventValues, shape: &PayloadShape) -> bool {
     values
+        .values
         .iter()
         .all(|(field, expected)| carried_at(carried, field) == Some(expected))
+        && values
+            .unissued
+            .iter()
+            .all(|field| carried_at(carried, field).is_none_or(|node| *node == Node::Null))
         && shape
             .leaves()
             .iter()
@@ -2209,12 +2234,12 @@ fn carries(
 fn expect_payload(
     event: &EventRef,
     carried: &BTreeMap<String, Node>,
-    values: &BTreeMap<String, Node>,
+    values: &EventValues,
     shape: &PayloadShape,
     executing: Option<String>,
     run: &mut Run,
 ) {
-    if shape.is_empty() && values.is_empty() {
+    if shape.is_empty() && values.values.is_empty() && values.unissued.is_empty() {
         return;
     }
     let about = format!("payload of {event}");
@@ -2227,7 +2252,7 @@ fn expect_payload(
     // an event with three fields of the wrong type is three repairs, and reporting one makes the
     // other two look like consequences of it.
     let mut wrong = Vec::new();
-    for (field, expected) in values {
+    for (field, expected) in &values.values {
         if carried_at(carried, field) == Some(expected) {
             continue;
         }
@@ -2236,6 +2261,16 @@ fn expect_payload(
             Some(observed) => format!("{field} = {}", quote(observed)),
             None => format!("{field} was not carried"),
         });
+    }
+    // The system issued its command without the input this field relays, so the event has
+    // nothing to carry there.
+    for field in &values.unissued {
+        if let Some(observed) = carried_at(carried, field).filter(|node| **node != Node::Null) {
+            diagnostic = diagnostic.expected(format!(
+                "{event}.{field} absent or null: the awaited answer left the input it relays out"
+            ));
+            wrong.push(format!("{field} = {}", quote(observed)));
+        }
     }
     for (path, leaf) in shape.leaves() {
         let reached = reach_into(carried, path);
@@ -2699,43 +2734,51 @@ fn redeliver_event<T: ConformanceTarget>(event: &EventRef, run: &mut Run, target
     }
 }
 
+/// Records the failed check when the last read of `view` was not made because the command that ran
+/// before it returned no token, and says whether it did.
+///
+/// §14's demand could not be made, and the read was therefore not made at all. `failed` rather
+/// than `unsupported`, and the distinction is the finding rather than a formality: `unsupported`
+/// is for an observation the **target** cannot expose, and a target that cannot expose
+/// consistency at all says so by refusing `query_view` — which still lands as `unsupported`.
+/// Answering a command with no token is a different thing. The specification declares this view
+/// `read_your_writes`, which is a claim about the implementation, and §9 gives a command result a
+/// token so that claim can be held to something. A result without one has declined the guarantee
+/// it declared, which is the implementation contradicting the specification. The comparison
+/// against a subject snapshot reads the same way: the read it needed was not made, and the command
+/// that owed the token is named, not the suite.
+fn unread_for_want_of_a_token(view: &ViewRef, run: &mut Run) -> bool {
+    let Some(command) = run
+        .unreadable
+        .as_ref()
+        .filter(|(named, _)| named == view)
+        .map(|(_, command)| command.clone())
+    else {
+        return false;
+    };
+    run.record(CheckResult::failed(
+        format!("view {view}"),
+        Diagnostic::new(CheckCode::View, run.id.clone())
+            .declared_by(view.clone())
+            .expected(format!(
+                "`{command}` names the write `{view}` is then read no older than, which is what \
+                 `read_your_writes` promises a caller (§14)"
+            ))
+            .observed(format!(
+                "`{command}` returned no consistency token, so the read was not made: asking at \
+                 `Current` instead would answer a weaker question and report it as this one"
+            )),
+    ));
+    true
+}
+
 /// Requires something of the view last read (§14).
 ///
 /// An expectation that names a different view from the query before it is a **suite** defect, and it
 /// is refused rather than silently asserted against whatever happened to be in hand — which would be
 /// a mis-assertion nobody could see in a passing run.
 fn expect_view(view: &ViewRef, expectation: &ViewExpectation, run: &mut Run) -> Flow {
-    // §14's demand could not be made, and the read was therefore not made at all. `failed` rather
-    // than `unsupported`, and the distinction is the finding rather than a formality: `unsupported`
-    // is for an observation the **target** cannot expose, and a target that cannot expose
-    // consistency at all says so by refusing `query_view` — which still lands as `unsupported`, on
-    // the path below. Answering a command with no token is a different thing. The specification
-    // declares this view `read_your_writes`, which is a claim about the implementation, and §9 gives
-    // a command result a token so that claim can be held to something. A result without one has
-    // declined the guarantee it declared, which is the implementation contradicting the
-    // specification.
-    if run
-        .unreadable
-        .as_ref()
-        .is_some_and(|(named, _)| named == view)
-    {
-        let command = run
-            .unreadable
-            .as_ref()
-            .map_or_else(String::new, |(_, command)| command.clone());
-        run.record(CheckResult::failed(
-            format!("view {view}"),
-            Diagnostic::new(CheckCode::View, run.id.clone())
-                .declared_by(view.clone())
-                .expected(format!(
-                    "`{command}` names the write `{view}` is then read no older than, which is what \
-                     `read_your_writes` promises a caller (§14)"
-                ))
-                .observed(format!(
-                    "`{command}` returned no consistency token, so the read was not made: asking at \
-                     `Current` instead would answer a weaker question and report it as this one"
-                )),
-        ));
+    if unread_for_want_of_a_token(view, run) {
         return Flow::Continue;
     }
     if let Some(unsupported) = unexecuted_observation(view, expectation, run) {
@@ -2791,7 +2834,23 @@ fn compare_complete_subject(view: &ViewRef, run: &mut Run) -> Flow {
         .get(view)
         .cloned()
         .expect("admitted complete pair");
-    snapshot_subject(view, None, Some(&shape), run)
+    compare_subject(view, Some(&shape), run)
+}
+
+/// Compares the row read now with the subject snapshot taken earlier.
+///
+/// When that read was not made because a command after the snapshot returned no token, the
+/// comparison fails naming that command: the target's missing token, not a gap in the suite. A
+/// capture with no read before it stays a suite error in [`snapshot_subject`].
+fn compare_subject(
+    view: &ViewRef,
+    shape: Option<&crate::subject::SubjectShape>,
+    run: &mut Run,
+) -> Flow {
+    if unread_for_want_of_a_token(view, run) {
+        return Flow::Stop;
+    }
+    snapshot_subject(view, None, shape, run)
 }
 
 /// A snapshot is an observation of one real row, including values synthesis cannot predict.
@@ -3137,6 +3196,10 @@ struct Run {
     id: ScenarioId,
     context: ScenarioContext,
     last_command: Option<Executed>,
+    /// The command that last ran, and the consistency token it returned: the write a
+    /// `read_your_writes` read is no older than. A send refused as not granted ran nothing, so it
+    /// leaves this as it was, and the read after the refusal is made at the earlier token.
+    written: Option<(String, Option<ConsistencyToken>)>,
     /// The input the most recent `AwaitOutcome` answer carried (beyond10x/ess#542): what a
     /// `{kind: awaited}` value reads.
     awaited: Option<BTreeMap<String, Node>>,
@@ -3192,6 +3255,7 @@ impl Run {
             id,
             context,
             last_command: None,
+            written: None,
             awaited: None,
             last_view: None,
             unreadable: None,
@@ -3271,6 +3335,18 @@ impl Run {
         };
         self.record(check);
         self.disclosure_stopped = true;
+    }
+
+    /// Records the command a step sent and what it answered; one that ran is also the write later
+    /// `read_your_writes` reads are no older than.
+    fn executed(&mut self, executed: Executed) {
+        if executed.not_granted.is_none() {
+            self.written = Some((
+                executed.command.clone(),
+                executed.result.consistency.clone(),
+            ));
+        }
+        self.last_command = Some(executed);
     }
 
     /// Remembers occurrences observed away from a command, without recording one twice.
@@ -3353,7 +3429,41 @@ impl Run {
         }
     }
 
+    /// Whether `value` reads an input the most recent await's answer left out, by omitting it or
+    /// by spelling it `null`. Only an input declared `Optional` can be left out, since the await
+    /// step holds the answer to its declared shape: there is nothing issued to compare, and the
+    /// expectation holds the input absent or null instead (an absent `Optional` input written by
+    /// `sets:` clears the field).
+    fn left_out(&self, value: &ScenarioValue) -> bool {
+        matches!(
+            (value, &self.awaited),
+            (ScenarioValue::Awaited { field }, Some(input))
+                if input.get(field).is_none_or(|node| *node == Node::Null)
+        )
+    }
+
+    /// Each value of an event expectation resolved, and apart from them the fields that relay an
+    /// awaited input the answer left out ([`Self::left_out`]): the occurrence carries those absent
+    /// or null.
+    fn resolve_payload(
+        &self,
+        payload: &BTreeMap<String, ScenarioValue>,
+    ) -> Result<EventValues, String> {
+        let mut values = EventValues::default();
+        for (field, value) in payload {
+            if self.left_out(value) {
+                values.unissued.insert(field.clone());
+            } else {
+                values.values.insert(field.clone(), self.resolve(value)?);
+            }
+        }
+        Ok(values)
+    }
+
     fn resolve_expected(&self, value: &ScenarioValue) -> Result<crate::accessor::Expected, String> {
+        if self.left_out(value) {
+            return Ok(crate::accessor::Expected::Absent);
+        }
         if let ScenarioValue::ObservedSelection { event, selection } = value {
             let observed = self
                 .seen
@@ -3392,16 +3502,70 @@ impl Run {
 ///
 /// Partial by design (§21): a specification does not determine every value an implementation may
 /// legitimately put in a payload, so only the named fields are compared.
+///
+/// Exact below the named field: an observed event or invocation is compared as it was carried, as
+/// [`carries`] compares an immediate event. A view row is compared by [`row_matches`].
 fn matches(payload: &BTreeMap<String, Node>, wanted: &BTreeMap<String, Node>) -> bool {
+    fields_match(payload, wanted, |carried, wanted| carried == wanted)
+}
+
+/// Whether `input` carries each of `fields` absent or `null`: what relaying an awaited input the
+/// answer left out may carry.
+fn absent_or_null(input: &BTreeMap<String, Node>, fields: &BTreeSet<String>) -> bool {
+    fields
+        .iter()
+        .all(|field| input.get(field).is_none_or(|node| *node == Node::Null))
+}
+
+/// [`matches`] for a view row, whose struct members compare by [`same_value`].
+fn row_matches(row: &BTreeMap<String, Node>, wanted: &BTreeMap<String, Node>) -> bool {
+    fields_match(row, wanted, same_value)
+}
+
+fn fields_match(
+    payload: &BTreeMap<String, Node>,
+    wanted: &BTreeMap<String, Node>,
+    same: impl Fn(&Node, &Node) -> bool,
+) -> bool {
     wanted
         .iter()
         .all(|(field, value)| match carried_at(payload, field) {
-            Some(carried) => carried == value,
+            Some(carried) => same(carried, value),
             // A leaf path finds nothing where the leaf, or a struct above it, was not written or
             // is null: that is the leaf holding nothing, which is what a `null` asks about
             // (suite/26, beyond10x/ess#179). A plain field name keeps exact comparison.
             None => field.contains('.') && matches!(value, Node::Null),
         })
+}
+
+/// `true` when a carried value is the wanted one, a struct member that is absent and one that is
+/// `null` being one value at any depth below the top level.
+///
+/// An `Optional` member left unset is omitted by one target and published as `null` by another, so
+/// with whole-value equality neither spelling of an assertion passed on both. The comparison holds
+/// no types, so the rule is not limited to `Optional` members: a required member is never absent
+/// from a conforming value, and its declared type is checked where the value is admitted. A `Map`
+/// key holding `null` therefore also reads as absent, until view and error assertions carry their
+/// value shape. A plain
+/// top-level field name keeps exact comparison (see [`matches`]).
+fn same_value(carried: &Node, wanted: &Node) -> bool {
+    match (carried, wanted) {
+        (Node::Map(carried), Node::Map(wanted)) => carried.keys().chain(wanted.keys()).all(|key| {
+            match (carried.get(key), wanted.get(key)) {
+                (Some(carried), Some(wanted)) => same_value(carried, wanted),
+                (None | Some(Node::Null), None | Some(Node::Null)) => true,
+                _ => false,
+            }
+        }),
+        (Node::Seq(carried), Node::Seq(wanted)) => {
+            carried.len() == wanted.len()
+                && carried
+                    .iter()
+                    .zip(wanted)
+                    .all(|(carried, wanted)| same_value(carried, wanted))
+        }
+        _ => carried == wanted,
+    }
 }
 
 /// The value a payload or row carries under `key`: a field name, or — suite/26 and later
@@ -3423,7 +3587,7 @@ fn mismatch(
     wanted
         .iter()
         .find_map(|(field, value)| match carried_at(payload, field) {
-            Some(observed) if observed == value => None,
+            Some(observed) if same_value(observed, value) => None,
             Some(observed) => Some(format!("{subject}.{field} = {}", quote(observed))),
             None if field.contains('.') && matches!(value, Node::Null) => None,
             None => Some(format!("{subject} carried no field `{field}`")),
@@ -3485,14 +3649,14 @@ enum Verdict {
 fn decide(required: &Required, result: &SemanticViewResult) -> Verdict {
     match required {
         Required::Contains(fields) => {
-            if result.rows.iter().any(|row| matches(row, fields)) {
+            if result.rows.iter().any(|row| row_matches(row, fields)) {
                 Verdict::Satisfied
             } else {
                 Verdict::Unsatisfied(rows(result))
             }
         }
         Required::Excludes(fields) => {
-            if result.rows.iter().any(|row| matches(row, fields)) {
+            if result.rows.iter().any(|row| row_matches(row, fields)) {
                 Verdict::Unsatisfied(rows(result))
             } else {
                 Verdict::Satisfied
@@ -3643,7 +3807,7 @@ fn at(
     let Some(row) = result.rows.get(index) else {
         return Verdict::Unsatisfied(format!("it holds {held} row(s): {}", rows(result)));
     };
-    if matches(row, fields) {
+    if row_matches(row, fields) {
         Verdict::Satisfied
     } else {
         Verdict::Unsatisfied(format!("row {index} is {}", quote_row(row)))
@@ -3824,6 +3988,10 @@ impl Required {
             fields
                 .iter()
                 .map(|(field, value)| {
+                    // A row field `sets:` writes from an input the system left out holds nothing.
+                    if run.left_out(value) {
+                        return Ok((field.clone(), Node::Null));
+                    }
                     run.resolve(value)
                         .map(|node| (field.clone(), node))
                         .map_err(|reason| format!("`{field}`: {reason}"))

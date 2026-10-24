@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T20:20:13Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-enum-variants-keep-their-declared-names",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit 5ea632bdd on integrate/ess-batch-0690 11f34e5fa: red first (schema-contract enum_variant_names 3 passed 3 failed; ess-gen enum_variant_names 1 passed 1 failed; the passing ones pin the fallback); green: schema-contract 242 executed, ess-gen 391, ess-compiler selection_precedence_table 1, ess-cli 49 across the 9 generate types targets, task test-xtask 418; clippy -D warnings on schema-contract and ess-gen, task fmt-check exit 0. The acceptance test a_name_with_no_identifier_is_refused is a_name_with_no_identifier_keeps_positional_variants, per the fallback decision in this story. Not run locally: the other ess-cli targets, task check; left to the PR Gate."
+  }
+}

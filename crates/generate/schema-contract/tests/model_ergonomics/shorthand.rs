@@ -86,7 +86,7 @@ fn the_short_form_decodes_and_the_long_form_is_written() {
         serde_json::from_str(r#"{"operations":["getIssue",{"operation":"list"}],"step":"careful"}"#)
             .unwrap();
     assert_eq!(batch.operations[1].operation, "list");
-    assert_eq!(*batch.step.mode, ProbeOpsMode::V0);
+    assert_eq!(*batch.step.mode, ProbeOpsMode::Careful);
     assert!(serde_json::from_str::<ProbeOpsStep>("\"reckless\"").is_err());
     assert_eq!(
         serde_json::to_string(&batch).unwrap(),
@@ -185,7 +185,7 @@ func TestTheShortFormDecodesAndTheLongFormIsWritten(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"operations":["getIssue",{"operation":"list"}],"step":"careful"}`), &batch); err != nil {
 		t.Fatal(err)
 	}
-	if batch.Operations[1].Operation != "list" || *batch.Step.Mode != ProbeOpsModeV0 {
+	if batch.Operations[1].Operation != "list" || *batch.Step.Mode != ProbeOpsModeCareful {
 		t.Fatalf("%+v", batch)
 	}
 	var step ProbeOpsStep

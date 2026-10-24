@@ -35,5 +35,8 @@ sha2 = "0.11"
 # only: what this crate *writes* is still `serde_json`, for the reason `to_canonical_json` gives.
 ess-yaml.workspace = true
 
+[dev-dependencies]
+jsonschema = { version = "0.52.1", default-features = false }
+
 [lints]
 workspace = true

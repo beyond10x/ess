@@ -2201,8 +2201,11 @@ type run struct {
 	lastActor   string
 	retained    map[string]retainedCommandResult
 	replayMode  bool
-	// consistency is the token the last command returned, for a read_your_writes query.
+	// consistency is the token the last command that ran returned, for a read_your_writes query;
+	// written names that command. A send refused as not granted ran nothing and leaves both as they
+	// were, so the read after the refusal is made at the earlier token.
 	consistency string
+	written     string
 	// unreadableView is the read-your-writes query suppressed because the preceding command returned
 	// no token; unreadableCommand names the command that owed it.
 	unreadableView    string
@@ -2614,7 +2617,7 @@ func (r *run) expectError(index int, step Step) bool {
 	// The declared fields the branch determines (ess/19), each carried and equal, as
 	// ess_conformance::runner's `expect_error` compares them: naming the right error with the wrong
 	// payload is a different repair from naming the wrong error.
-	if reason := payloadCarries(r.last.ErrorPayload, step.Fields); reason != "" {
+	if reason := errorCarries(r.last.ErrorPayload, step.Fields); reason != "" {
 		return r.assertionFailure(index, "ESS-CF-ERROR: refused with `%s`, and %s", step.Error, reason)
 	}
 	return true
@@ -2812,10 +2815,40 @@ func payloadCarries(payload, want map[string]Node) string {
 	sort.Strings(fields)
 	for _, field := range fields {
 		actual, ok := carriedAt(payload, field)
+		if _, relayed := want[field].(unissued); relayed {
+			if ok && actual != nil {
+				return fmt.Sprintf("`%s` = %s, and the awaited answer left the input it relays out", field, render(actual))
+			}
+			continue
+		}
 		if !ok {
 			return fmt.Sprintf("`%s` was not carried", field)
 		}
 		if !equal(actual, want[field]) {
+			return fmt.Sprintf("`%s` = %s, and the specification says %s", field, render(actual), render(want[field]))
+		}
+	}
+	return ""
+}
+
+// errorCarries is payloadCarries for the fields of an error, which compare as a view row does:
+// a dotted path that reaches nothing holds null, and struct members compare by sameValue.
+// ess_conformance::runner's `mismatch`, rule for rule. An event payload stays exact.
+func errorCarries(payload, want map[string]Node) string {
+	fields := make([]string, 0, len(want))
+	for field := range want {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	for _, field := range fields {
+		actual, ok := carriedAt(payload, field)
+		if !ok {
+			if strings.Contains(field, ".") && want[field] == nil {
+				continue
+			}
+			return fmt.Sprintf("`%s` was not carried", field)
+		}
+		if !sameValue(actual, want[field]) {
 			return fmt.Sprintf("`%s` = %s, and the specification says %s", field, render(actual), render(want[field]))
 		}
 	}
@@ -2923,7 +2956,7 @@ func (r *run) queryView(index int, step Step) bool {
 	}
 	expected := r.readRefusalExpected
 	r.readRefusalExpected = false
-	if r.lastCommand != "" && r.consistency == "" {
+	if r.written != "" && r.consistency == "" {
 		if expected {
 			r.readAnswer = &readAnswer{view: step.View, unread: true}
 		}
@@ -2931,7 +2964,7 @@ func (r *run) queryView(index int, step Step) bool {
 		// was made so expect_view can report the implementation contradiction rather than reusing an
 		// earlier query.
 		r.unreadableView = step.View
-		r.unreadableCommand = r.lastCommand
+		r.unreadableCommand = r.written
 		r.queried = ""
 		r.lastView = ViewResult{}
 		return true
@@ -2977,6 +3010,17 @@ func (r *run) queryView(index int, step Step) bool {
 
 // Snapshots own a deep copy: targets may reuse or mutate row maps between queries.
 func (r *run) snapshotSubject(index int, step Step) bool {
+	// The comparison's read was not made because a command after the snapshot returned no token:
+	// the target's contradiction, named as expect_view names it, not a gap in the suite. A capture
+	// with no read before it stays the suite error below.
+	if step.Step == "expect_subject_unchanged" && r.unreadableView == step.View {
+		return r.fail(
+			index,
+			"ESS-CF-VIEW: `%s` returned no consistency token, so `%s` was not read; asking at Current would answer a weaker question than read-your-writes",
+			r.unreadableCommand,
+			step.View,
+		)
+	}
 	if r.queried == "" {
 		r.recordStatus(statusError)
 		r.t.Errorf("step %d: ESS-CF-SUITE: no consistent view query preceded the subject snapshot", index)
@@ -3120,13 +3164,13 @@ func (r *run) decide(index int, step Step) (bool, string, bool) {
 	case "page":
 		return r.pageOf(step)
 	case "contains", "excludes":
-		want, ok := r.resolveAll(index, expectation.Fields)
+		want, ok := r.resolveRow(index, expectation.Fields)
 		if !ok {
 			return false, "a value the expectation names is not bound", true
 		}
 		found := false
 		for _, row := range r.lastView.Rows {
-			if matches(row, want) {
+			if rowMatches(row, want) {
 				found = true
 				break
 			}
@@ -3198,7 +3242,7 @@ func (r *run) decide(index int, step Step) (bool, string, bool) {
 		if expectation.Position == nil {
 			return false, "the suite names no position, which is a generator defect", true
 		}
-		want, ok := r.resolveAll(index, expectation.Fields)
+		want, ok := r.resolveRow(index, expectation.Fields)
 		if !ok {
 			return false, "a value the expectation names is not bound", true
 		}
@@ -3218,7 +3262,7 @@ func (r *run) decide(index int, step Step) (bool, string, bool) {
 		if at < 0 || at >= held {
 			return false, fmt.Sprintf("`%s` holds %d row(s)", step.View, held), false
 		}
-		if !matches(r.lastView.Rows[at], want) {
+		if !rowMatches(r.lastView.Rows[at], want) {
 			return false, fmt.Sprintf(
 				"row %d of `%s` is %s", at, step.View, describeRow(r.lastView.Rows[at]),
 			), false
@@ -3285,6 +3329,8 @@ func (r *run) invocationWanted(index int, step Step) (map[string]Node, []string,
 		}
 		if present {
 			want[field] = node
+		} else if r.leftOut(value) {
+			want[field] = unissued{}
 		} else {
 			absent = append(absent, field)
 		}
@@ -3617,6 +3663,64 @@ func (r *run) resolveAll(index int, values map[string]Value) (map[string]Node, b
 	return resolved, true
 }
 
+// leftOut reports whether value reads an input the most recent await's answer left out, by
+// omitting it or by spelling it null. Only an input declared Optional can be left out, since the
+// await step holds the answer to its declared shape: there is nothing issued to compare, and the
+// expectation holds the input absent or null instead (an absent Optional input written by `sets:`
+// clears the field), as in the Rust runner.
+func (r *run) leftOut(value Value) bool {
+	if value.Kind != "awaited" || r.awaited == nil {
+		return false
+	}
+	issued, carried := r.awaited[value.Field]
+	return !carried || issued == nil
+}
+
+// unissued is the expected value of a field that relays an awaited input the answer left out: the
+// field is carried absent or null, never with a value.
+type unissued struct{}
+
+// withoutLeftOut is values less each one that reads an awaited input the answer left out.
+func (r *run) withoutLeftOut(values map[string]Value) map[string]Value {
+	kept := make(map[string]Value, len(values))
+	for field, value := range values {
+		if !r.leftOut(value) {
+			kept[field] = value
+		}
+	}
+	return kept
+}
+
+// resolveRelayed is resolveAll for the values an event or invocation must carry: a field relaying
+// an awaited input the answer left out expects unissued, absent or null.
+func (r *run) resolveRelayed(index int, values map[string]Value) (map[string]Node, bool) {
+	resolved, ok := r.resolveAll(index, r.withoutLeftOut(values))
+	if !ok {
+		return nil, false
+	}
+	for field, value := range values {
+		if r.leftOut(value) {
+			resolved[field] = unissued{}
+		}
+	}
+	return resolved, true
+}
+
+// resolveRow is resolveAll for the fields of an expected view row: a field `sets:` writes from an
+// awaited input the answer left out holds nothing.
+func (r *run) resolveRow(index int, values map[string]Value) (map[string]Node, bool) {
+	resolved, ok := r.resolveAll(index, r.withoutLeftOut(values))
+	if !ok {
+		return nil, false
+	}
+	for field, value := range values {
+		if r.leftOut(value) {
+			resolved[field] = nil
+		}
+	}
+	return resolved, true
+}
+
 func (r *run) resolve(value Value) (Node, error) {
 	switch value.Kind {
 	case "list":
@@ -3693,9 +3797,27 @@ func (r *run) resolve(value Value) (Node, error) {
 //
 // A subset, not an equality: a row carries what the view projects, and a scenario names the fields
 // that identify the instance it is about.
+//
+// Exact below the named field: an observed event, invocation or subject identity is compared as it
+// was carried. A view row is compared by rowMatches.
 func matches(row map[string]Node, want map[string]Node) bool {
+	return fieldsMatch(row, want, equal)
+}
+
+// rowMatches is matches for a view row, whose struct members compare by sameValue.
+func rowMatches(row map[string]Node, want map[string]Node) bool {
+	return fieldsMatch(row, want, sameValue)
+}
+
+func fieldsMatch(row map[string]Node, want map[string]Node, same func(Node, Node) bool) bool {
 	for field, expected := range want {
 		actual, ok := carriedAt(row, field)
+		if _, relayed := expected.(unissued); relayed {
+			if ok && actual != nil {
+				return false
+			}
+			continue
+		}
 		if !ok {
 			// A leaf path finds nothing where the leaf, or a struct above it, was not written or
 			// is null: that is the leaf holding nothing, which is what a `null` asks about
@@ -3705,11 +3827,56 @@ func matches(row map[string]Node, want map[string]Node) bool {
 			}
 			return false
 		}
-		if !equal(actual, expected) {
+		if !same(actual, expected) {
 			return false
 		}
 	}
 	return true
+}
+
+// sameValue is equal, except that a struct member that is absent and one that is null are one value
+// at any depth below the top level: one target omits an Optional member left unset and another
+// publishes it as null. ess_conformance::runner's `same_value`, rule for rule.
+func sameValue(actual, expected Node) bool {
+	actualFields, actualIsMap := actual.(map[string]any)
+	expectedFields, expectedIsMap := expected.(map[string]any)
+	if actualIsMap && expectedIsMap {
+		for key := range actualFields {
+			if !sameMember(actualFields, expectedFields, key) {
+				return false
+			}
+		}
+		for key := range expectedFields {
+			if !sameMember(actualFields, expectedFields, key) {
+				return false
+			}
+		}
+		return true
+	}
+	actualItems, actualIsList := actual.([]any)
+	expectedItems, expectedIsList := expected.([]any)
+	if actualIsList && expectedIsList {
+		if len(actualItems) != len(expectedItems) {
+			return false
+		}
+		for index := range actualItems {
+			if !sameValue(actualItems[index], expectedItems[index]) {
+				return false
+			}
+		}
+		return true
+	}
+	return equal(actual, expected)
+}
+
+// sameMember is whether two structs hold one value under key, an absent member being null.
+func sameMember(actual, expected map[string]any, key string) bool {
+	left, leftPresent := actual[key]
+	right, rightPresent := expected[key]
+	if (!leftPresent || left == nil) && (!rightPresent || right == nil) {
+		return true
+	}
+	return leftPresent && rightPresent && sameValue(left, right)
 }
 
 // carriedAt is the value a payload or row carries under key: a field name, or — suite/26 and later
@@ -3929,6 +4096,8 @@ func render(value Node) string {
 	switch value := value.(type) {
 	case nil:
 		return "null"
+	case unissued:
+		return "absent or null"
 	case string:
 		return strconv.Quote(value)
 	case float64:
@@ -7091,6 +7260,9 @@ func (a accessorObservation) evaluate(payload map[string]Node) (Node, bool, erro
 	return nil, false, fmt.Errorf("accessor operation budget exceeded")
 }
 func (r *run) resolveAccessorExpected(value Value) (Node, bool, error) {
+	if r.leftOut(value) {
+		return nil, false, nil
+	}
 	if value.Kind == "observed_selection" {
 		if value.Selection == nil {
 			return nil, false, fmt.Errorf("missing selection observation")
@@ -9286,7 +9458,10 @@ func (r *run) took(index int, command string, result CommandResult) bool {
 			return r.fail(index, "response observation: %v", err)
 		}
 	}
-	r.consistency = result.Consistency
+	if !result.NotGranted {
+		r.consistency = result.Consistency
+		r.written = command
+	}
 	r.last = result
 	r.lastCommand = command
 	// Cleared, not accumulated. Every `expect_no_event` in a scenario is a claim about *this*

@@ -251,6 +251,7 @@ pub(super) fn stored_external_refused(
             claiming.join(", ")
         ),
         tried: 0,
+        cut: 0,
     }
 }
 
@@ -287,7 +288,7 @@ pub(super) fn external_unwitnessed(
     outcome: &ResolvedOutcome,
     cause: RefusalCause,
 ) -> RefusalCause {
-    let RefusalCause::GuardUnsatisfiable { tried, .. } = cause else {
+    let RefusalCause::GuardUnsatisfiable { tried, cut, .. } = cause else {
         return cause;
     };
     let claiming: Vec<String> = command
@@ -314,6 +315,7 @@ pub(super) fn external_unwitnessed(
             claiming.join(", ")
         ),
         tried,
+        cut,
     }
 }
 
@@ -421,29 +423,153 @@ pub(super) fn reads(command: &ResolvedCommand) -> Option<(&str, &EntityHandle)> 
 /// is selected as it would be without the guard: a creator sent with a captured row in that input
 /// is decided by the rest of its input alone (a downstream adopter's report of 2026-10-20, an
 /// `affects:` row whose creating command refuses a missing related row).
+///
+/// A branch testing the row's stored fields (`predicate:`, no input guard beside it) is passed
+/// over the same way where `held` gives the state the arrangement holds the captured row in and
+/// that state alone refutes the predicate: the creating command of rows a cascade moves, refusing
+/// a related row in another state (an adopter's report, row 14).
 pub(super) fn present_in(
+    ir: &EssIr,
     command: &ResolvedCommand,
     bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    held: &BTreeMap<crate::scenario::InstanceName, super::StateName>,
 ) -> bool {
     if several(command) || stored::field(command).is_some() {
         return false;
     }
-    let Some((via, _)) = reads(command) else {
+    let Some((via, entity)) = reads(command) else {
         return false;
     };
-    bound.contains_key(via)
-        && command
-            .outcomes
-            .iter()
-            .all(|outcome| match &outcome.condition {
-                ResolvedCondition::Related {
-                    test: ResolvedRelatedTest::Absent,
-                    input: None,
-                    ..
-                } => outcome.error.is_some(),
-                ResolvedCondition::Related { .. } => false,
-                _ => true,
-            })
+    let Some(instance) = bound.get(via) else {
+        return false;
+    };
+    let refuted = |predicate: &Predicate| {
+        held.get(instance).is_some_and(|state| {
+            subject_fact::row_truth_with(
+                ir,
+                entity,
+                &BTreeMap::new(),
+                &BTreeSet::new(),
+                Some(state),
+                predicate,
+                None,
+            ) == Truth::False
+        })
+    };
+    command
+        .outcomes
+        .iter()
+        .all(|outcome| match &outcome.condition {
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Absent,
+                input: None,
+                ..
+            } => outcome.error.is_some(),
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { predicate },
+                input: None,
+                also,
+                ..
+            } if also.is_empty() => refuted(predicate),
+            ResolvedCondition::Related { .. } => false,
+            _ => true,
+        })
+}
+
+/// The values the arrangement settled for each captured row it holds, where it knows them.
+pub(super) type HeldRows =
+    BTreeMap<crate::scenario::InstanceName, BTreeMap<String, super::Determined>>;
+
+/// [`present_in`] for a creator whose stored-field refusal also reads its own input — `{any: [not
+/// defined(input.tenant), tenant != input.tenant]}` — which no held state alone refutes: whether
+/// `input` passes every refusal over the captured row `bound` names, decided on the values `rows`
+/// settled for that row (row 29, 0.69.0). `false` wherever [`present_in`] would refuse on other
+/// grounds, or the row's values are not known. A refusal a left-out value leaves `Unknown` is not passed
+/// over: the interpreter stops on it as undecidable.
+pub(super) fn present_for(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    (held, rows): (
+        &BTreeMap<crate::scenario::InstanceName, super::StateName>,
+        &HeldRows,
+    ),
+    input: &BTreeMap<String, Node>,
+) -> bool {
+    if several(command) || stored::field(command).is_some() {
+        return false;
+    }
+    let Some((via, entity)) = reads(command) else {
+        return false;
+    };
+    let Some(instance) = bound.get(via) else {
+        return false;
+    };
+    let Some(settled) = rows.get(instance) else {
+        return false;
+    };
+    command
+        .outcomes
+        .iter()
+        .all(|outcome| match &outcome.condition {
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Absent,
+                input: None,
+                ..
+            } => outcome.error.is_some(),
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { predicate },
+                input: None,
+                also,
+                ..
+            } if also.is_empty() && outcome.error.is_some() => {
+                subject_fact::row_truth_with(
+                    ir,
+                    entity,
+                    settled,
+                    &BTreeSet::new(),
+                    held.get(instance),
+                    predicate,
+                    Some((command, input)),
+                ) == Truth::False
+            }
+            ResolvedCondition::Related { .. } => false,
+            _ => true,
+        })
+}
+
+/// The input guards that steer a creator's candidates toward one [`present_for`] admits: each
+/// refusal's comparisons with the input grounded on the values `rows` settled for the captured
+/// row `bound` names, and each presence test of the input it reads. Empty where that row's values
+/// are not known.
+pub(super) fn steering_for(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    rows: &HeldRows,
+) -> Vec<Predicate> {
+    let Some((via, entity)) = reads(command) else {
+        return Vec::new();
+    };
+    let Some(settled) = bound.get(via).and_then(|instance| rows.get(instance)) else {
+        return Vec::new();
+    };
+    let refusals: Vec<Predicate> = command
+        .outcomes
+        .iter()
+        .filter(|outcome| outcome.error.is_some())
+        .filter_map(|outcome| match &outcome.condition {
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { predicate },
+                input: None,
+                ..
+            } => Some(predicate.clone()),
+            _ => None,
+        })
+        .collect();
+    let mut steering = subject_fact::grounded(ir, entity, settled, &refusals);
+    steering.extend(subject_fact::input_presence(ir, entity, &refusals));
+    steering
 }
 
 /// The input field the command's related guards read and the entity whose row it names.
@@ -849,6 +975,7 @@ fn beside_refused(
             outcome.name
         ),
         tried: 1,
+        cut: 0,
     }
 }
 
@@ -1001,11 +1128,15 @@ fn absent_branch(command: &ResolvedCommand) -> Option<&ResolvedOutcome> {
 /// where it is `None` — if exactly one does.
 ///
 /// A missing row is answered by the `exists: false` branch before any other (the #211 ruling). With
-/// the row present, a predicate it does not decide (a field the arrangement did not determine)
-/// selects nothing and is not guessed at, and a refusal the precedence plan reads before the others
-/// selected is taken before them ([`answering_refusal`]): an input-guarded refusal before any branch
-/// it overlaps (beyond10x/ess#178), as everywhere else. `existing_instance:` is answered before either
-/// and is not asked here: the command's own identity is the existence family's to arrange.
+/// the row present, a predicate it does not decide (a field the arrangement did not determine, or
+/// one it left out that a predicate reading the input compares, which the interpreter stops on as
+/// undecidable, row 29) selects nothing and is not guessed at. A predicate reading no input is
+/// read as a guard ([`subject_fact::guard_truth_with`]): a member of a field the row leaves out
+/// does not take it (beyond10x/ess#234). A refusal the precedence plan reads before
+/// the others selected is taken before them ([`answering_refusal`]): an input-guarded refusal
+/// before any branch it overlaps (beyond10x/ess#178), as everywhere else. `existing_instance:` is
+/// answered before either and is not asked here: the command's own identity is the existence
+/// family's to arrange.
 fn selects<'c>(
     ir: &EssIr,
     command: &'c ResolvedCommand,
@@ -1044,19 +1175,25 @@ fn selects<'c>(
         if let ResolvedCondition::Related { test, .. } = &branch.condition {
             match test {
                 ResolvedRelatedTest::Absent => continue,
-                ResolvedRelatedTest::Holds { predicate } => match subject_fact::guard_truth_with(
-                    ir,
-                    entity,
-                    &row.settled,
-                    &row.unwritten,
-                    Some(&row.state),
-                    predicate,
-                    Some((command, input)),
-                ) {
-                    Truth::True => {}
-                    Truth::False => continue,
-                    Truth::Unknown => return Ok(None),
-                },
+                ResolvedRelatedTest::Holds { predicate } => {
+                    match (if subject_fact::reads_input(ir, entity, predicate) {
+                        subject_fact::row_truth_with
+                    } else {
+                        subject_fact::guard_truth_with
+                    })(
+                        ir,
+                        entity,
+                        &row.settled,
+                        &row.unwritten,
+                        Some(&row.state),
+                        predicate,
+                        Some((command, input)),
+                    ) {
+                        Truth::True => {}
+                        Truth::False => continue,
+                        Truth::Unknown => return Ok(None),
+                    }
+                }
             }
         }
         if let Some(guard) = input_guard(branch) {
@@ -1765,6 +1902,7 @@ pub(super) fn drive_on(
                 driver.outcome.name
             ),
             tried: 1,
+            cut: 0,
         });
     }
     let mut bound = bound.clone();
@@ -1819,6 +1957,7 @@ fn nested(
             entity.name()
         ),
         tried,
+        cut: 0,
     };
     if arranging.iter().filter(|held| **held == entity).count() > 1 {
         return Err(refused(
@@ -1904,6 +2043,7 @@ fn on_held(
                 driver.outcome.name
             ),
             tried,
+            cut: 0,
         })?;
     Ok(super::invoke_with(
         ir, driver, instance, actors, bound, &input,
@@ -2067,9 +2207,14 @@ pub(super) fn boundary_goals(
             goals.push((refuted, held));
         }
     }
+    // A goal is read under three-valued comparison: one no row and input can meet keeps its
+    // place, so every later goal keeps its distinction, and is never searched.
     let mut goals: Vec<(Goal, subject_fact::Further)> = goals
         .into_iter()
-        .map(|goal| (goal, subject_fact::Further::Plain))
+        .map(|goal| match three_valued(&goal) {
+            Some(read) => (read, subject_fact::Further::Plain),
+            None => (goal, subject_fact::Further::Unknowable),
+        })
         .collect();
     if let Some((_, entity)) = focus(ir, command, outcome) {
         let counters = subject_fact::counters(ir, entity);
@@ -2080,6 +2225,93 @@ pub(super) fn boundary_goals(
         }
     }
     goals
+}
+
+/// `goal` as a row and input can meet it under three-valued comparison, where a path a goal
+/// leaves absent makes every comparison reading it `Unknown`: `None` where a predicate it holds is
+/// `Unknown` on every row and input meeting the rest, so nothing meets it; otherwise the goal
+/// with each predicate it refutes that is `Unknown` there, which is never true and so already
+/// reads as the goal says, replaced by `defined()` of every other path that predicate reads.
+/// `not defined(input.tenant)` held alone in
+/// `{any: [not defined(input.tenant), tenant != input.tenant]}` leaves `tenant != input.tenant`
+/// `Unknown`, not false: the goal is the input left out on a row that holds a `tenant`, the one row
+/// on which a target filling the absent input from the row answers otherwise (adversary pass on
+/// beyond10x/ess#521's absent-input story).
+fn three_valued((falses, trues): &Goal) -> Option<Goal> {
+    let mut absent = BTreeSet::new();
+    for predicate in falses {
+        forced_absent(predicate, false, &mut absent);
+    }
+    for predicate in trues {
+        forced_absent(predicate, true, &mut absent);
+    }
+    if absent.is_empty() {
+        return Some((falses.clone(), trues.clone()));
+    }
+    if trues
+        .iter()
+        .any(|predicate| unknown_when_absent(predicate, &absent))
+    {
+        return None;
+    }
+    let (unknown, falses): (Vec<&Predicate>, Vec<&Predicate>) = falses
+        .iter()
+        .partition(|predicate| unknown_when_absent(predicate, &absent));
+    let mut trues = trues.clone();
+    for path in unknown.iter().flat_map(|predicate| predicate.fact_paths()) {
+        let present = Predicate::Defined(path.clone());
+        if !gone(path, &absent) && !trues.contains(&present) {
+            trues.push(present);
+        }
+    }
+    Some((falses.into_iter().cloned().collect(), trues))
+}
+
+/// Whether `path`, or a path it lies under, is one of `absent`.
+fn gone(path: &FactPath, absent: &BTreeSet<FactPath>) -> bool {
+    let segments = path.segments();
+    (1..=segments.len()).any(|end| absent.contains(&FactPath::from_segments(&segments[..end])))
+}
+
+/// Every path `predicate` reading as `holds` says leaves absent: `defined(x)` false, and through
+/// `not`, the children of an `all` held and of an `any` refuted.
+fn forced_absent(predicate: &Predicate, holds: bool, absent: &mut BTreeSet<FactPath>) {
+    match predicate {
+        Predicate::Defined(path) if !holds => {
+            absent.insert(path.clone());
+        }
+        Predicate::Not(inner) => forced_absent(inner, !holds, absent),
+        Predicate::All(children) if holds => {
+            for child in children {
+                forced_absent(child, holds, absent);
+            }
+        }
+        Predicate::Any(children) if !holds => {
+            for child in children {
+                forced_absent(child, holds, absent);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Whether `predicate` is `Unknown` wherever every path of `absent` is: a leaf reading a value
+/// at or under one of them, or the negation of one. Connectives answer `false`, which only ever
+/// keeps a goal searched.
+fn unknown_when_absent(predicate: &Predicate, absent: &BTreeSet<FactPath>) -> bool {
+    use ess_primitives::predicate::Operand;
+    let gone = |path: &FactPath| gone(path, absent);
+    match predicate {
+        Predicate::Not(inner) => unknown_when_absent(inner, absent),
+        Predicate::Compare { left, right, .. } => [left, right]
+            .into_iter()
+            .any(|operand| matches!(operand, Operand::Fact(path) if gone(path))),
+        Predicate::Truthy(path)
+        | Predicate::AnyOf { path, .. }
+        | Predicate::NoneOf { path, .. }
+        | Predicate::FoldMatch { path, .. } => gone(path),
+        _ => false,
+    }
 }
 
 /// A boundary no arrangement reached, as a refusal states it.
@@ -2196,6 +2428,7 @@ fn arranged(
                     outcome.name
                 ),
                 tried: 1,
+                cut: 0,
             });
         }
     }
@@ -2577,6 +2810,13 @@ fn arranged_at(
             &setup.bound,
         );
         let fixed = subject_identity(ir, outcome, &setup);
+        // The rows beside are held while the row is searched for: one filed under a row beside —
+        // a machine added to the site the send names — is created by a run decided on that row as
+        // it was arranged, and never arranges a second row under its name.
+        let _beside: Vec<subject_fact::Holding> = others
+            .iter()
+            .map(|other| subject_fact::holding(ir, other.entity, &other.row))
+            .collect();
         let (mut row, first, input) = with_row(
             ir,
             command,
@@ -3492,6 +3732,7 @@ fn without_row_each(
         return Err(RefusalCause::GuardUnsatisfiable {
             predicate: format!("no row of `{}` for `input.{field}`", entity.name()),
             tried: 0,
+            cut: 0,
         });
     }
     Ok(inputs
@@ -3538,6 +3779,45 @@ fn with_row(
         &BTreeMap<String, Node>,
     ),
 ) -> Result<(Arrangement, usize, BTreeMap<String, Node>), RefusalCause> {
+    with_row_where(
+        ir,
+        command,
+        outcome,
+        entity,
+        actors,
+        (base, distinction, arranging),
+        (chosen, goal, around),
+        (pins, known, fixed),
+        &|_| true,
+    )
+}
+
+/// [`with_row`], offering the branch only the rows `admits` takes: a row it refuses is passed over
+/// and the search goes on along it, and on to the next creator.
+#[allow(
+    clippy::type_complexity,
+    reason = "the arguments of `with_row`, grouped as it reads them"
+)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn with_row_where(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (base, distinction, arranging): (usize, Distinction, &[&EntityHandle]),
+    (chosen, goal, around): (
+        Option<&BTreeMap<String, Node>>,
+        Option<&Goal>,
+        Option<Around<'_>>,
+    ),
+    (pins, known, fixed): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        &[super::ScenarioStep],
+        &BTreeMap<String, Node>,
+    ),
+    admits: &dyn Fn(&Arrangement) -> bool,
+) -> Result<(Arrangement, usize, BTreeMap<String, Node>), RefusalCause> {
     let mut guards: Vec<&Predicate> = command.outcomes.iter().filter_map(input_guard).collect();
     // An external branch's own guard, so an input it admits is among the candidates
     // (beyond10x/ess#464).
@@ -3571,38 +3851,46 @@ fn with_row(
                 && trues.iter().all(|child| truth(child) == Truth::True)
         })
     };
-    // The first input tried on a row that selects `outcome` there — and, `strict`, witnesses every
-    // quantifier over a stored collection element by element.
+    // The `defined(input.x)` tests the row's guards read, as input guards (`input_presence`).
+    let presence = subject_fact::input_presence(ir, entity, &predicates);
+    // The inputs searched on a row: the command's input guards, every row/input comparison
+    // grounded on the row, the rows beside it, and the further guards `extra`.
+    let searched_inputs = |node: &Arrangement,
+                           extra: &[Predicate]|
+     -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
+        let grounded = subject_fact::grounded(ir, entity, &node.settled, &predicates);
+        let mut searched = guards.clone();
+        searched.extend(grounded.iter());
+        searched.extend(beside_hints.iter());
+        searched.extend(extra.iter());
+        let mut inputs =
+            candidates(ir, command, &searched, distinction).map_err(RefusalCause::NoWitness)?;
+        if !grounded.is_empty() {
+            if let Ok(further) = candidates(ir, command, &searched, retry(distinction)) {
+                inputs.extend(further);
+            }
+        }
+        // A predicate comparing the row's link to its owner with an input naming an owner is
+        // decided only on an input naming an arranged owner: the row's own, or a second one
+        // (beyond10x/ess#271). The caller sends the owner named through `Setup::bound`, and a
+        // link input already bound (`pins`) names that owner whatever is chosen here.
+        let mut inputs = subject_fact::naming_owners(ir, command, entity, node, inputs, pins);
+        // An input field the arrangement decided is sent holding that value, whatever was
+        // searched here (beyond10x/ess#521).
+        for input in &mut inputs {
+            input.extend(fixed.clone());
+        }
+        Ok(inputs)
+    };
+    // On a row `admits` takes, the first input tried that selects `outcome` there — and, `strict`,
+    // witnesses every quantifier over a stored collection element by element.
     let selecting = |node: &Arrangement,
                      strict: bool|
      -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
-        let inputs = if let Some(chosen) = chosen {
-            vec![chosen.clone()]
-        } else {
-            let grounded = subject_fact::grounded(ir, entity, &node.settled, &predicates);
-            let mut searched = guards.clone();
-            searched.extend(grounded.iter());
-            searched.extend(beside_hints.iter());
-            let mut inputs =
-                candidates(ir, command, &searched, distinction).map_err(RefusalCause::NoWitness)?;
-            if !grounded.is_empty() {
-                if let Ok(further) = candidates(ir, command, &searched, retry(distinction)) {
-                    inputs.extend(further);
-                }
-            }
-            // A predicate comparing the row's link to its owner with an input naming an owner is
-            // decided only on an input naming an arranged owner: the row's own, or a second one
-            // (beyond10x/ess#271). The caller sends the owner named through `Setup::bound`, and a
-            // link input already bound (`pins`) names that owner whatever is chosen here.
-            let mut inputs = subject_fact::naming_owners(ir, command, entity, node, inputs, pins);
-            // An input field the arrangement decided is sent holding that value, whatever was
-            // searched here (beyond10x/ess#521).
-            for input in &mut inputs {
-                input.extend(fixed.clone());
-            }
-            inputs
-        };
-        Ok(inputs.into_iter().find(|input| {
+        if !admits(node) {
+            return Ok(None);
+        }
+        let takes = |input: &BTreeMap<String, Node>| {
             meets(node, input)
                 && around.is_none_or(|around| around.admits(ir, input))
                 && chooses(ir, command, outcome, entity, node, input)
@@ -3615,7 +3903,24 @@ fn with_row(
                         node,
                         input,
                     ))
-        }))
+        };
+        let found = if let Some(chosen) = chosen {
+            takes(chosen).then(|| chosen.clone())
+        } else {
+            searched_inputs(node, &[])?
+                .into_iter()
+                .find(|input| takes(input))
+        };
+        // A row's guard testing whether an Optional input is sent is decided only on an input
+        // that leaves it out, which the plain inputs never do: those inputs are tried where the
+        // plain ones select nothing on this row, so a row they already decide keeps its input.
+        if found.is_some() || chosen.is_some() || presence.is_empty() {
+            return Ok(found);
+        }
+        Ok(searched_inputs(node, &presence)
+            .unwrap_or_default()
+            .into_iter()
+            .find(|input| takes(input)))
     };
     // The row is steered toward the values the decided input fields hold, beside the command's own
     // predicates (beyond10x/ess#521); with none decided, the hints are those predicates alone.
@@ -3624,12 +3929,12 @@ fn with_row(
         subject_fact::grounded_on_input(ir, entity, fixed, &predicates),
     ]
     .concat();
-    let search = |strict: bool, under: subject_fact::Under<'_>| {
+    let search = |hints: &[Predicate], strict: bool, under: subject_fact::Under<'_>| {
         subject_fact::search_under(
             ir,
             entity,
             actors,
-            &hints,
+            hints,
             (Distinction::further(first), "related row"),
             arranging,
             under,
@@ -3641,12 +3946,30 @@ fn with_row(
     // (`subject_fact::witnesses_elements`, beyond10x/ess#240), and the plain search runs only where
     // none does. Every other command searches once, as it always did.
     let elementwise = subject_fact::has_elementwise(ir, entity, &predicates);
-    let run = |under: subject_fact::Under<'_>| {
+    let searched = |hints: &[Predicate], under: subject_fact::Under<'_>| {
         if elementwise {
-            search(true, under).or_else(|_| search(false, under))
+            search(hints, true, under).or_else(|_| search(hints, false, under))
         } else {
-            search(false, under)
+            search(hints, false, under)
         }
+    };
+    // A comparison of a stored `Optional` field with the input steers no creator, so every row
+    // the plain search reaches may leave that field out, and the comparison is `Unknown` on all of
+    // them. Where the plain search finds nothing, it runs once more steered toward rows holding
+    // each such field (`subject_fact::compared_presence`) and, where the caller chose the input,
+    // toward the values it sends there, so a row the plain search decides keeps its witness.
+    let present = subject_fact::compared_presence(ir, entity, &predicates);
+    let steered = [
+        hints.clone(),
+        present.clone(),
+        chosen.map_or_else(Vec::new, |chosen| {
+            subject_fact::grounded_on_input(ir, entity, chosen, &predicates)
+        }),
+    ]
+    .concat();
+    let run = |under: subject_fact::Under<'_>| match searched(&hints, under) {
+        Err(cause) if !present.is_empty() => searched(&steered, under).map_err(|_| cause),
+        found => found,
     };
     // A link input already bound to an owner (`pins`) is sent naming that owner, so the side of a
     // link comparison where it names the row's own is reached only on a row filed under it: where

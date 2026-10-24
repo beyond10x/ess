@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-stored-reference-is-pointed-before-the-related-row-moves
 kind: story
-status: draft
+status: active
 title: A stored reference is pointed at the related row before that row moves into the state the branch reads
 summary: Setup arranges the related row in its target state before the subject's creation that names it; where the creator refuses that state, setup fails; 1 of 18 downstream scenarios fails on 0.68.0 and the 0.69.0 build.
 tags:
@@ -10,7 +10,11 @@ tags:
 - ess-0.70.0
 relations:
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+- serves: vision:O2
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-22T23:40:01Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
+- {from: "proposed", to: "active", at: "2026-10-22T23:40:01Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
 ---
 ## Need
 

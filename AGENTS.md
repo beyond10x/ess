@@ -186,7 +186,7 @@ stories and ends in one release.
 
 `task test-browser-product` and `task test-slow-probes` run in no CI lane (those Firefox tests and
 slow probes are ignored in the CI test shards); run them locally when a change touches what they
-cover. To reproduce the whole gate locally, mind that `task test` alone builds about 45 GiB into
+cover. `test-browser-product` builds its wasm host once into one shared target and took 1120 s for 30 tests on 2026-10-22 at debuginfo 0 (about 6.8 h before, when each test built its own host on one core). To reproduce the whole gate locally, mind that `task test` alone builds about 45 GiB into
 the tree's `target/` (44.8 GiB measured on 2026-10-07 at 0.56.0), so start it only with that much
 free disk beyond what other work on the machine needs, and watch free space during the step rather
 than only between steps.
@@ -264,7 +264,7 @@ Public CI has read-only GitHub permissions and never creates or edits a Release.
 four archives under `dist/`, `dist/SHA256SUMS` and `notes.md`. From a trusted operator environment,
 the coordinator reads the successful run and its exact head commit, resolves the annotated tag to
 that same commit, and downloads only that exact artifact through
-`b10x-gates gh --repo . --repository beyond10x/ess -- ...`. Before publication, verify that the
+`b10x-gates gh --repo . --repository beyond10x/ess -- ...`. The wrapper runs `gh` in the `--repo` directory and refuses an argument holding a home-directory path, so run it from an empty download directory outside every checkout with `--repo .` and relative paths; pointed at a checkout, `run download -D <dir>` writes the release files into that checkout. Before publication, verify that the
 artifact contains exactly the four target archives, checksums and notes, run
 `sha256sum --check SHA256SUMS`, and smoke-run the Linux x86_64 archive's `ess --version` against the
 tag. Through the same bot-authenticated wrapper, create or reconcile a draft Release on that exact

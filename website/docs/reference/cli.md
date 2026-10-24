@@ -825,19 +825,24 @@ ess generate output recover [OPTIONS] --ownership-root <OWNERSHIP_ROOT>
 Realize selected model types as standalone, accounted data libraries
 
 ```text
-ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--all-types|--all-events>
+ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--all-types|--all-events|--all-commands|--all-views>
 ```
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
-| `--root` | `<ROOT>`… | no |  | Qualified model type or event root. Repeat for a shared transitive closure |
+| `--root` | `<ROOT>`… | no |  | Qualified model type or event root, or a body: `<command>.input`, `<command>.response`, `<view>.row`. Repeat for a shared transitive closure |
 | `--all-types` |  | no |  | Explicitly select every named type in the resolved model |
 | `--all-events` |  | no |  | Explicitly select every event payload in the resolved model; combines with `--all-types` |
+| `--all-commands` |  | no |  | Explicitly select every command's input, and its response when it declares one; combines with the other `--all-*` selectors |
+| `--all-views` |  | no |  | Explicitly select every view's row; combines with the other `--all-*` selectors |
 | `--target` | `<TARGET>` | yes |  | Data library target. Unsupported language targets are not silently substituted. One of `typescript`, `rust`, `go`. |
 | `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
 | `--rust-raw-json` | `<TYPE[.FIELD]>`… | no |  | Rust only: keep `Json` values as their exact JSON text (`Box<serde_json::value::RawValue>`), so their bytes round-trip without `exact-numbers`. A type, by its qualified model or component name, covers each of its `Json` fields, `<type>.<field>` that one field. Repeatable |
+| `--rust-derive` | `<[TYPE=]DERIVE>`… | no |  | Rust only: add a derive to the generated types, one of `Eq`, `Hash`, `PartialOrd`, `Ord` and `Default`. `DERIVE` adds it to every type, `TYPE=DERIVE` to that type (by its qualified model or component name) and the anonymous types it holds. A derive a type cannot satisfy is refused, naming the type and the member that blocks it. Repeatable |
+| `--rust-fold-null` |  | no |  | Rust only: decode an explicit `null` in an optional field as the missing member. Encoding still omits an absent member; types-report.json records the fold at each field |
+| `--rust-drop-unknown-members` |  | no |  | Rust only: decode an open object with declared fields without keeping the members it does not declare, so it has no `ess_extra` field. types-report.json records each such object as an obligation the consumer accepted |
 | `--names` | `<NAMES>` | no | `qualified` | How declarations are named: the qualified model name, or its last segment. One of `qualified`, `short`. |
 | `--out` | `<OUT>` | yes |  | Library destination, outside the specification input tree |
 
@@ -1013,6 +1018,9 @@ ess generate schema types-bundle [OPTIONS] --bundle <BUNDLE> --root <ROOT> --tar
 | `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
 | `--rust-raw-json` | `<TYPE[.FIELD]>`… | no |  | Rust only: keep `Json` values as their exact JSON text (`Box<serde_json::value::RawValue>`), so their bytes round-trip without `exact-numbers`. A type, by its qualified model or component name, covers each of its `Json` fields, `<type>.<field>` that one field. Repeatable |
+| `--rust-derive` | `<[TYPE=]DERIVE>`… | no |  | Rust only: add a derive to the generated types, one of `Eq`, `Hash`, `PartialOrd`, `Ord` and `Default`. `DERIVE` adds it to every type, `TYPE=DERIVE` to that type (by its qualified model or component name) and the anonymous types it holds. A derive a type cannot satisfy is refused, naming the type and the member that blocks it. Repeatable |
+| `--rust-fold-null` |  | no |  | Rust only: decode an explicit `null` in an optional field as the missing member. Encoding still omits an absent member; types-report.json records the fold at each field |
+| `--rust-drop-unknown-members` |  | no |  | Rust only: decode an open object with declared fields without keeping the members it does not declare, so it has no `ess_extra` field. types-report.json records each such object as an obligation the consumer accepted |
 | `--out` | `<OUT>` | yes |  | Directory for declarations, target accounting and the retained source bundle |
 
 #### `ess generate schema normalize-check`

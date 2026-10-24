@@ -497,10 +497,12 @@ fn unchosen(
         ResolvedPayloadValue::InputOrGenerated { .. } => "an input with a fallback",
         ResolvedPayloadValue::Generated { .. } => "`{generated: true}`",
         ResolvedPayloadValue::Cleared => "`{cleared: true}`",
+        ResolvedPayloadValue::EmptyList => "the empty list `[]`",
         ResolvedPayloadValue::SubjectField { .. } | ResolvedPayloadValue::SubjectState { .. } => {
             "a `{subject: …}` source"
         }
         ResolvedPayloadValue::Increment { .. } => "an `{increment: …}` source",
+        ResolvedPayloadValue::Append { .. } => "an `{append: …}` source",
         ResolvedPayloadValue::Struct { .. } => "a nested mapping",
         ResolvedPayloadValue::ResponseField { .. } => "an external response",
         ResolvedPayloadValue::CallerAttribute { .. } => "a `{caller: …}` source",

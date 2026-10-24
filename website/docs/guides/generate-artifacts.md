@@ -353,8 +353,9 @@ exact JSON numbers, recursive records, retained typed extra fields, finite strin
 unions and fixed prefix tuples. Native unions select the first structurally decodable
 branch; schema exclusivity and refinements remain report obligations, not application
 dispatch. Unsupported native intersections, non-string literals and variable prefix
-layouts refuse before publication. Go uses only its standard library; Rust pins Serde
-and serde_json in the generated manifest. Where the selected types hold JSON numbers
+layouts refuse before publication. Go uses only its standard library; the Rust manifest requires Serde
+and serde_json, and `time` where a type holds a timestamp, as `^` ranges at the versions
+ESS tests, so a workspace that already locks newer compatible releases keeps them. Where the selected types hold JSON numbers
 in serde_json (`serde_json::Number`, `serde_json::Value`, or a union decoded through a
 `Value` whose alternatives can hold a number), the manifest declares a default-on `exact-numbers` crate feature that enables
 serde_json's `arbitrary_precision`. A consumer that depends on the library with
@@ -367,6 +368,32 @@ A `Json` value can instead keep its exact JSON text: `--rust-raw-json <type>` re
 a `Box<serde_json::value::RawValue>`. Its bytes round-trip with or without `exact-numbers`, it does
 not count toward that feature, and the report names it under `rust_raw_json`. A location that
 names no selected type or field, or no `Json` value, is refused; other targets refuse the option.
+
+Three more Rust options are off by default. Without them the library and the report are
+exactly what the target writes otherwise, and other targets refuse each of them.
+
+- `--rust-derive <DERIVE>` adds `Eq`, `Hash`, `PartialOrd`, `Ord` or `Default` to every
+  generated type; `--rust-derive <type>=<DERIVE>` adds it to that type and the anonymous types
+  it holds. Repeat it for more. A derive a type cannot satisfy is refused before anything is
+  written, as `rust_derive_unsatisfied`, naming the type and the field that blocks it: `Eq` or
+  `Hash` over a `Binary64` field, `Default` on an enum, or a field whose own type was not given
+  the derive. `Ord` needs `Eq` and `PartialOrd` given beside it.
+- `--rust-fold-null` decodes an explicit `null` in an optional field as the missing member.
+  Encoding still omits an absent member. The report names each such field under
+  `rust_fold_null`.
+- `--rust-drop-unknown-members` decodes an open object with declared fields without keeping the
+  members it does not declare, so its type has no `ess_extra` field and encoding writes the
+  declared fields only. An object without declared fields is a map and keeps its members. The
+  report names each such object under `rust_drop_unknown_members`, in place of
+  `open_object_storage`.
+
+The report's `configuration` lists each option given.
+
+```sh
+ess generate types --path examples/billing --root billing.invoice.Money \
+  --target rust --package billing_types --rust-derive Eq --rust-derive Hash \
+  --rust-fold-null --out target/billing-types
+```
 
 The `ess-types-report/3` envelope records typed input provenance, the language and explicit native package/module
 configuration. These are data libraries, not complete schema validators or application

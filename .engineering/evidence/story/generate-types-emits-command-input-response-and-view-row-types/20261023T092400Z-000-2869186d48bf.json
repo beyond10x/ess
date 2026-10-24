@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T09:24:00Z",
+  "actor": "human:timo",
+  "artifact": "story:generate-types-emits-command-input-response-and-view-row-types",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit ce0bd3b57 on integrate/ess-batch-0690 20858a5f5, run in the unit tree: red first, ess-gen command_view_roots 0 passed 5 failed and ess-cli model_type_events 6 passed 4 failed (unknown_root, unknown --all-commands); green: ess-gen command_view_roots 5 passed and all 55 ess-gen test binaries ok; ess-cli model_type_events 10, model_types 4, command_surface 7, command_surface_adversary 4, generate_check 9, specify_formats 5 passed; schema-contract rust_realization 6 and typescript_typecheck 10 passed; clippy -D warnings on ess-gen, ess-cli, schema-contract exit 0; task projection-check, task test-xtask (418 passed) and task fmt-check exit 0. Not run locally: task ci-lint (disk under 25G), a Go decode of the generated Go types (local go is not the pinned go1.26.5); left to the pull request Gate. Adversary pass not yet run."
+  }
+}

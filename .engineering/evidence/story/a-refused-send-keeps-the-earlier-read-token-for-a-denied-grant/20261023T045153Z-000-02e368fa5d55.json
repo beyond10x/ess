@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T04:51:53Z",
+  "actor": "human:timo",
+  "artifact": "story:a-refused-send-keeps-the-earlier-read-token-for-a-denied-grant",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit c1fdc2af84 merged into integrate/ess-batch-0690: adversary_u9b_pass1 6, grant_denied 12, view_grant_denied 8, view_grant_security 2, view_grant_runtimes 6, read_your_writes_runtime_parity 5, retained_replay 36, system_issued_interpreter 14, synthesis_suite_bytes_table 2, adversary_u9a_pass1 5, adversary_u22_pass3 3 passed, ess-conformance lib 168 passed, clippy -p ess-conformance exit 0, task fmt-check exit 0, task test-xtask exit 0"
+  }
+}

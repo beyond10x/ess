@@ -323,6 +323,7 @@ is optional per field: `invoice_id` has no line because the identity is the impl
 
 Source `ess/4`, introduced in 0.23.0, requires every field of each emitted event to have a mapping. Use
 `invoice_id: {generated: true}` for an explicitly implementation-generated identity.
+A minted `Optional` value an invariant requires is declared `{generated: true, present: true}` (from `ess/27`), in `sets:` as in `payload:`; `{generated: true}` alone lets the implementation leave it absent.
 Events with no emitting outcome remain valid; they may have an external producer.
 
 A command may declare a closed typed `response` record and map one of its fields with

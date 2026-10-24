@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T00:36:30Z",
+  "actor": "human:timo",
+  "artifact": "story:a-null-member-matches-an-absent-optional-in-a-nested-assertion",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit/ess-0690-u28 60e966fd01 merged into integrate/ess-batch-0690; cargo test -p ess-conformance --test adversary_u28_pass1 6 ok, authored 74 ok, nested_optional_null_go 1 ok, typescript_runtime 4 ok; task test-xtask exit 0"
+  }
+}

@@ -592,6 +592,11 @@
       "type": "object",
       "additionalProperties": false
     },
+    "EmptyListLiteral": {
+      "description": "The empty list, `[]`: from `ess/31` a `sets:` entry stores it in a `List<…>` field.",
+      "type": "array",
+      "maxItems": 0
+    },
     "EnumVariant": {
       "description": "An enum variant: a bare name, or a mapping that also declares its wire spelling.",
       "anyOf": [
@@ -1633,6 +1638,13 @@
           "enum": [
             "omitted_when_absent"
           ]
+        },
+        {
+          "description": "The key may be left out or sent as `null`, and both read as one absent value (ess/31, beyond10x/ess#678). Projected nullable and not required.",
+          "type": "string",
+          "enum": [
+            "omitted_or_null"
+          ]
         }
       ]
     },
@@ -1913,6 +1925,20 @@
           "additionalProperties": false
         }
       ]
+    },
+    "RawAppendSource": {
+      "description": "`{append: input.<path>}` as written.",
+      "type": "object",
+      "required": [
+        "append"
+      ],
+      "properties": {
+        "append": {
+          "description": "The input element appended last, written `input.<field>` or from `ess/22` `input.<path>`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     },
     "RawBindingSpec": {
       "description": "A binding, as a document says it.",
@@ -3229,7 +3255,23 @@
           ]
         },
         {
+          "description": "`{append: input.<path>}` (ess/31).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawAppendSource"
+            }
+          ]
+        },
+        {
           "$ref": "#/definitions/RawNestedSources"
+        },
+        {
+          "description": "A list of texts, read as the `via:` of `{related: …}` (ess/22, beyond10x/ess#285), and when empty as the empty list a `sets:` entry stores (ess/31); refused anywhere else. The schema gives the chain under `via:` and admits only the empty list here.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/EmptyListLiteral"
+            }
+          ]
         },
         {
           "description": "`{related: {entity, where, field}}` (ess/22, beyond10x/ess#299).",

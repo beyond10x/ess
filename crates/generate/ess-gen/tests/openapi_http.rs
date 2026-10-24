@@ -31,6 +31,10 @@ const ORDERS: &str = include_str!("../../../specify/ess-http/tests/fixtures/orde
 /// `ess-http`).
 const AUTH: &str = include_str!("../../../specify/ess-http/tests/fixtures/auth.yaml");
 
+/// A command whose success returns a response of three fields, one under another wire name, beside
+/// an `external:` refusal and a `when:` refusal (`tests/bare_field_and_errors.rs` of `ess-http`).
+const TASKS: &str = include_str!("../../../specify/ess-http/tests/fixtures/tasks.yaml");
+
 /// The items service's document as 0.60.0 generated it from [`ON_ONE_PATH`], its provenance
 /// digests written `SOURCE_DIGEST` and `CONTRACT_DIGEST`: the digests are of the compiled
 /// specification, which another ESS release may spell differently, while every other byte is the
@@ -491,6 +495,69 @@ fn a_query_command_takes_its_unmapped_inputs_as_query_parameters_and_has_no_requ
     }
 }
 
+/// A command on `delete` whose `Optional<String>` input rides in the query string (an adopter's
+/// protocol, whose `DELETE` takes query parameters).
+#[test]
+fn a_delete_command_encoded_query_takes_its_unmapped_inputs_as_query_parameters() {
+    let text = MODEL
+        .replace(
+            "  - name: catalog.items.PurgeItems\n",
+            "  - name: catalog.items.ForgetItem
+    input:
+      - {name: item_id, type: catalog.items.ItemId}
+      - {name: reason, type: Optional<String>, wire: forgetReason}
+    outcomes:
+      - name: forgotten
+        emits: [catalog.items.ItemTouched]
+        payload:
+          catalog.items.ItemTouched: {item_id: input.item_id}
+  - name: catalog.items.PurgeItems
+",
+        )
+        .replace(
+            "accepts: {commands: [catalog.items.ListItem, catalog.items.TouchItem]}",
+            "accepts: {commands: [catalog.items.ForgetItem, catalog.items.ListItem, catalog.items.TouchItem]}",
+        );
+    let ir = model_of("catalog.yaml", &text);
+    let document = bound(
+        &ir,
+        binding(
+            &ir,
+            "routes:
+  - command: catalog.items.ForgetItem
+    method: delete
+    path: /items/{item_id}
+    parameters: {item_id: input.item_id}
+    request: {encoding: query}
+",
+        ),
+    );
+    let delete = &document["paths"]["/items/{item_id}"]["delete"];
+    assert!(delete.get("requestBody").is_none(), "{delete}");
+    assert!(
+        document["components"]["schemas"]
+            .get("catalog.items.ForgetItem.Input")
+            .is_none(),
+        "a body nothing sends has no schema"
+    );
+    let parameters = delete["parameters"].as_array().expect("parameters");
+    let placed: Vec<(&str, &str, bool)> = parameters
+        .iter()
+        .map(|parameter| {
+            (
+                parameter["in"].as_str().expect("in"),
+                parameter["name"].as_str().expect("name"),
+                parameter["required"].as_bool().unwrap_or(false),
+            )
+        })
+        .collect();
+    assert_eq!(
+        placed,
+        [("path", "item_id", true), ("query", "forgetReason", false)],
+        "{parameters:?}"
+    );
+}
+
 #[test]
 fn each_declared_status_is_its_own_response_with_x_ess_outcomes() {
     let (ir, document) = orders();
@@ -789,4 +856,92 @@ fn a_refusal_override_replaces_the_standard_answer_on_every_bound_operation() {
 fn unbound_document(ir: &EssIr, component: &str) -> Value {
     let artifacts = run(&OpenApi, ir).expect("generates");
     as_json(&artifacts[&format!("openapi/{component}.yaml")].contents)
+}
+
+/// `SendTask` on `post /api/tasks`, with `keys` beside its path, in the tasks service's document.
+fn tasks(keys: &str) -> Value {
+    let ir = model_of("tasks.yaml", TASKS);
+    let routes = format!(
+        "routes:\n  - command: catalog.tasks.SendTask\n    method: post\n    path: /api/tasks\n{keys}"
+    );
+    bound_document(&ir, binding(&ir, &routes), "tasks-service")
+}
+
+#[test]
+fn a_response_field_body_is_that_fields_schema_alone() {
+    let document = tasks("    outcomes:\n      sent: {status: 200, body: response.version}\n");
+    let ok = &document["paths"]["/api/tasks"]["post"]["responses"]["200"];
+    assert_eq!(ok["x-ess-outcomes"], json!(["sent"]));
+    let schema = &ok["content"]["application/json"]["schema"];
+    assert_eq!(
+        schema,
+        &json!({"$ref": "#/components/schemas/catalog.tasks.SendTask.sent.Response"})
+    );
+    let field = resolved(&document, schema);
+    assert_eq!(field["type"], "string", "{field}");
+    assert!(
+        field.get("properties").is_none(),
+        "no object around it: {field}"
+    );
+    let description = ok["description"].as_str().expect("a description");
+    assert!(
+        description.contains("response field `version`, bare"),
+        "{description}"
+    );
+    // The whole response is answered by no outcome, so it is not described.
+    assert!(document["components"]["schemas"]
+        .get("catalog.tasks.SendTask.Result")
+        .is_none());
+}
+
+#[test]
+fn errors_answers_every_unlisted_error_outcome_under_one_status() {
+    let document = tasks(
+        "    outcomes:\n      sent: {status: 200, body: response.task_id}\n    errors: {status: 400, body: {error: error}}\n",
+    );
+    let responses = &document["paths"]["/api/tasks"]["post"]["responses"];
+    // Neither the external refusal's derived 502 nor the `when:` refusal's derived 422 is left.
+    assert!(responses.get("502").is_none(), "{responses}");
+    assert!(responses.get("422").is_none(), "{responses}");
+    let refused = &responses["400"];
+    assert_eq!(
+        refused["x-ess-outcomes"],
+        json!(["unsupported", "too-large"])
+    );
+    let schema = &refused["content"]["application/json"]["schema"];
+    assert_eq!(schema["discriminator"]["propertyName"], "error");
+    assert_eq!(
+        schema["discriminator"]["mapping"],
+        json!({
+            "too_large": "#/components/schemas/catalog.tasks.SendTask.too-large.Response",
+            "unsupported": "#/components/schemas/catalog.tasks.SendTask.unsupported.Response",
+        })
+    );
+    let too_large = resolved(
+        &document,
+        &json!({"$ref": "#/components/schemas/catalog.tasks.SendTask.too-large.Response"}),
+    );
+    assert_eq!(keys(&too_large["properties"]), ["error", "limit"]);
+    assert_eq!(too_large["properties"]["error"]["const"], "too_large");
+}
+
+#[test]
+fn errors_alone_makes_the_route_answered_by_the_binding() {
+    let document = tasks("    errors: {status: 409, body: {error: error}}\n");
+    let responses = &document["paths"]["/api/tasks"]["post"]["responses"];
+    assert_eq!(
+        responses["409"]["x-ess-outcomes"],
+        json!(["unsupported", "too-large"])
+    );
+    assert_eq!(
+        responses["409"]["content"]["application/json"]["schema"]["discriminator"]["propertyName"],
+        "error"
+    );
+    // The success the binding does not list keeps the envelope at its derived status.
+    let sent = &responses["200"];
+    assert_eq!(sent["x-ess-outcomes"], json!(["sent"]));
+    assert_eq!(
+        sent["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/catalog.tasks.SendTask.sent.Response"
+    );
 }

@@ -279,7 +279,7 @@ jobs:
 
       - name: Free runner disk
         run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL \
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache \
             /usr/local/.ghcup /usr/lib/jvm /usr/share/swift /usr/local/share/powershell \
             /usr/local/share/chromium /usr/local/julia* /opt/microsoft /opt/google /opt/az
           df -h /
@@ -408,11 +408,13 @@ jobs:
           ESS_TUTORIAL_NETWORK: "1"
         run: task test-shard SHARD=${{ matrix.shard }}
 
+      # The feature-off archive carries every binary its tests run, so the extracted workspace
+      # binaries go too: on 2026-10-23, 16 of 20 shards ran out of disk with both extracted.
       - name: Drop the workspace archive
         if: ${{ !cancelled() }}
         run: |
           rm -f target/nextest-archives/workspace.tar.zst
-          rm -rf target/tmp
+          rm -rf target/tmp target/debug
           df -h /
 
       - name: Feature-off tests ${{ matrix.shard }}

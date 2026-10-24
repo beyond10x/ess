@@ -30,18 +30,18 @@ fn plan() -> Plan {
 
 #[test]
 fn enum_attributes_generated_accessors() {
-    // The wire values sort `Contains` before `gt`, so `V0` is `Contains` and `V1` is `gt`.
+    // Each variant keeps its declared name; `GreaterThan` is `gt` on the wire (beyond10x/ess#658).
     let rust = plan().rust("probe-rules").expect("rust").declarations;
     for expected in [
         "impl ProbeRulesOperator {",
         "pub fn takes_number(&self) -> bool {",
-        "Self::V0 => false,",
-        "Self::V1 => true,",
+        "Self::Contains => false,",
+        "Self::GreaterThan => true,",
         "pub fn arity(&self) -> Option<i64> {",
-        "Self::V0 => None,",
-        "Self::V1 => Some(2),",
+        "Self::Contains => None,",
+        "Self::GreaterThan => Some(2),",
         "pub fn label(&self) -> &'static str {",
-        "Self::V1 => \">\",",
+        "Self::GreaterThan => \">\",",
     ] {
         assert!(
             rust.contains(expected),
@@ -55,9 +55,9 @@ fn enum_attributes_generated_accessors() {
         .declarations;
     for expected in [
         "func (v ProbeRulesOperator) TakesNumber() bool {",
-        "case ProbeRulesOperatorV1:\n\t\treturn true",
+        "case ProbeRulesOperatorGreaterThan:\n\t\treturn true",
         "func (v ProbeRulesOperator) Arity() (int64, bool) {",
-        "case ProbeRulesOperatorV1:\n\t\treturn 2, true",
+        "case ProbeRulesOperatorGreaterThan:\n\t\treturn 2, true",
         "func (v ProbeRulesOperator) Label() string {",
     ] {
         assert!(go.contains(expected), "Go is missing `{expected}`:\n{go}");
@@ -117,6 +117,8 @@ use probe_rules::*;
 #[test]
 fn each_variant_answers_its_attributes() {
     let gt: ProbeRulesOperator = serde_json::from_str("\"gt\"").unwrap();
+    assert_eq!(gt, ProbeRulesOperator::GreaterThan);
+    assert_eq!(serde_json::to_string(&ProbeRulesOperator::GreaterThan).unwrap(), "\"gt\"");
     assert!(gt.takes_number());
     assert_eq!(gt.arity(), Some(2));
     assert_eq!(gt.label(), ">");
@@ -162,16 +164,16 @@ fn each_variant_answers_its_attributes() {
 import "testing"
 
 func TestEachVariantAnswersItsAttributes(t *testing.T) {
-	if !ProbeRulesOperatorV1.TakesNumber() || ProbeRulesOperatorV0.TakesNumber() {
+	if !ProbeRulesOperatorGreaterThan.TakesNumber() || ProbeRulesOperatorContains.TakesNumber() {
 		t.Fatal("takes_number")
 	}
-	if arity, ok := ProbeRulesOperatorV1.Arity(); !ok || arity != 2 {
+	if arity, ok := ProbeRulesOperatorGreaterThan.Arity(); !ok || arity != 2 {
 		t.Fatal("arity")
 	}
-	if _, ok := ProbeRulesOperatorV0.Arity(); ok {
+	if _, ok := ProbeRulesOperatorContains.Arity(); ok {
 		t.Fatal("an unfilled arity")
 	}
-	if ProbeRulesOperatorV1.Label() != ">" {
+	if ProbeRulesOperatorGreaterThan.Label() != ">" {
 		t.Fatal("label")
 	}
 }

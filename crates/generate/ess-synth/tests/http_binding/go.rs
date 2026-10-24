@@ -913,7 +913,7 @@ mod adversary_k6_pass1 {
         ],
     ];
 
-    fn ir_of(model: &str) -> EssIr {
+    pub(super) fn ir_of(model: &str) -> EssIr {
         let spec = Specification::assemble([(
             Source::new("shop.yaml"),
             RawSpecFile::parse(model).expect("well formed"),
@@ -943,7 +943,7 @@ mod adversary_k6_pass1 {
     }
 
     /// The Go server's answers to `requests`, through the module's own harness.
-    fn go_run(
+    pub(super) fn go_run(
         label: &str,
         synthesis: &Synthesis,
         requests: &[[&str; 7]],
@@ -986,10 +986,20 @@ mod adversary_k6_pass1 {
     }
 
     /// The Rust server's answers to `requests`, through [`shared::RUST_HARNESS`].
-    fn rust_run(
+    pub(super) fn rust_run(
         label: &str,
         synthesis: &Synthesis,
         requests: &[[&str; 7]],
+    ) -> BTreeMap<String, Answer> {
+        rust_run_with(label, synthesis, requests, shared::RUST_HARNESS)
+    }
+
+    /// The Rust server's answers to `requests`, through `main` as the harness's `src/main.rs`.
+    pub(super) fn rust_run_with(
+        label: &str,
+        synthesis: &Synthesis,
+        requests: &[[&str; 7]],
+        main: &str,
     ) -> BTreeMap<String, Answer> {
         let root = scratch(&format!("{label}-rust"));
         shared::write(synthesis, &root.join("shop"));
@@ -1009,7 +1019,7 @@ mod adversary_k6_pass1 {
             ),
         )
         .expect("write");
-        std::fs::write(harness.join("src/main.rs"), shared::RUST_HARNESS).expect("write");
+        std::fs::write(harness.join("src/main.rs"), main).expect("write");
         let file = root.join("requests.tsv");
         write_requests(&file, requests);
         let target = root.join("target");
@@ -1433,3 +1443,299 @@ mod adversary_k6_pass1 {
         assert!(differing.is_empty(), "the servers disagree:\n{differing}");
     }
 }
+
+/// Two adopter reports on one variant of the fixture, each server built once for both.
+///
+/// - `DropItem` gains an `Optional<String>` input and is bound `delete` with
+///   `request: {encoding: query}`: both servers read it from the query string, never from a body
+///   (`story:a-delete-command-may-take-its-input-from-the-query-string`).
+/// - `ItemById`, whose parameter `item_id` and field `title` declare `wire:`, is bound
+///   `get /lookup` with its parameter unmapped: both servers read the parameter from the query
+///   string under its wire name and write the field under its own
+///   (`story:a-view-parameter-carries-its-wire-name-on-every-http-reader`).
+mod adopter_wire_reports {
+    use std::collections::BTreeMap;
+
+    use ess_synth::{synthesize_bound, OutputLayout, Target};
+
+    use super::adversary_k6_pass1::{go_run, ir_of, rust_run};
+    use super::shared::{self, Answer};
+
+    /// `(anchor, replacement)`, each anchor once in the fixture.
+    const EDITS: &[(&str, &str)] = &[
+        (
+            "  - name: shop.items.DropItem
+    input:
+      - {name: item_id, type: shop.items.ItemId}
+    outcomes:
+      - name: dropped
+        emits: [shop.items.Touched]
+        payload:
+          shop.items.Touched: {item_id: input.item_id}
+",
+            "  - name: shop.items.DropItem
+    input:
+      - {name: item_id, type: shop.items.ItemId}
+      - {name: reason, type: Optional<String>}
+    outcomes:
+      - name: dropped
+        emits: [shop.items.Dropped]
+        payload:
+          shop.items.Dropped: {item_id: input.item_id, reason: input.reason}
+",
+        ),
+        (
+            "  - name: shop.items.Approved\n",
+            "  - name: shop.items.Dropped
+    fields:
+      - {name: item_id, type: shop.items.ItemId}
+      - {name: reason, type: Optional<String>}
+  - name: shop.items.Approved\n",
+        ),
+        (
+            "shop.items.Searched, shop.items.Approved]",
+            "shop.items.Searched, shop.items.Approved, shop.items.Dropped]",
+        ),
+        (
+            "      - {name: item_id, type: shop.items.ItemId}
+    filter: item_id == param.item_id
+    fields:
+      - {name: item_id, type: shop.items.ItemId}
+      - {name: title, type: String}
+",
+            "      - {name: item_id, type: shop.items.ItemId, wire: itemKey}
+    filter: item_id == param.item_id
+    fields:
+      - {name: item_id, type: shop.items.ItemId}
+      - {name: title, type: String, wire: itemTitle}
+",
+        ),
+    ];
+
+    /// `(anchor, replacement)` on the fixture's routes, each anchor once.
+    const ROUTE_EDITS: &[(&str, &str)] = &[
+        (
+            "  - view: shop.items.ItemById
+    method: get
+    path: /items/{item_id}
+    parameters: {item_id: param.item_id}
+",
+            "  - view: shop.items.ItemById
+    method: get
+    path: /lookup
+",
+        ),
+        (
+            "  - command: shop.items.DropItem
+    method: delete
+    path: /items/{item_id}
+    parameters: {item_id: input.item_id}
+",
+            "  - command: shop.items.DropItem
+    method: delete
+    path: /items/{item_id}
+    parameters: {item_id: input.item_id}
+    request: {encoding: query}
+",
+        ),
+    ];
+
+    /// Each `drop-…` request is preceded by a `put` of the item it drops.
+    const REQUESTS: &[[&str; 7]] = &[
+        [
+            "put",
+            "y",
+            "PUT",
+            "/items/w1",
+            "",
+            "",
+            r#"{"title":"Lamp"}"#,
+        ],
+        ["lookup", "y", "GET", "/lookup", "itemKey=w1", "", ""],
+        ["lookup-none", "y", "GET", "/lookup", "itemKey=zz", "", ""],
+        [
+            "lookup-model-name",
+            "y",
+            "GET",
+            "/lookup",
+            "item_id=w1",
+            "",
+            "",
+        ],
+        [
+            "drop-query",
+            "y",
+            "DELETE",
+            "/items/w1",
+            "reason=gone+away",
+            "",
+            "",
+        ],
+        [
+            "put-2",
+            "y",
+            "PUT",
+            "/items/w1",
+            "",
+            "",
+            r#"{"title":"Lamp"}"#,
+        ],
+        ["drop-no-reason", "y", "DELETE", "/items/w1", "", "", ""],
+        [
+            "put-3",
+            "y",
+            "PUT",
+            "/items/w1",
+            "",
+            "",
+            r#"{"title":"Lamp"}"#,
+        ],
+        [
+            "drop-body-not-read",
+            "y",
+            "DELETE",
+            "/items/w1",
+            "",
+            "application/json",
+            r#"{"reason":"from the body"}"#,
+        ],
+        [
+            "put-4",
+            "y",
+            "PUT",
+            "/items/w1",
+            "",
+            "",
+            r#"{"title":"Lamp"}"#,
+        ],
+        [
+            "drop-unknown-key",
+            "y",
+            "DELETE",
+            "/items/w1",
+            "why=x",
+            "",
+            "",
+        ],
+    ];
+
+    /// Both servers' answers to [`REQUESTS`]: `(rust, go)`, once per test binary.
+    fn both() -> &'static (BTreeMap<String, Answer>, BTreeMap<String, Answer>) {
+        static BOTH: std::sync::OnceLock<(BTreeMap<String, Answer>, BTreeMap<String, Answer>)> =
+            std::sync::OnceLock::new();
+        BOTH.get_or_init(|| {
+            let mut model = shared::MODEL.to_owned();
+            for (anchor, replacement) in EDITS {
+                assert_eq!(
+                    model.matches(anchor).count(),
+                    1,
+                    "the fixture moved: {anchor}"
+                );
+                model = model.replace(anchor, replacement);
+            }
+            let ir = ir_of(&model);
+            let mut routes = shared::ROUTES.to_owned();
+            for (anchor, replacement) in ROUTE_EDITS {
+                assert_eq!(
+                    routes.matches(anchor).count(),
+                    1,
+                    "the routes moved: {anchor}"
+                );
+                routes = routes.replace(anchor, replacement);
+            }
+            let bound = shared::binding(&ir, &routes);
+            let rust = synthesize_bound(&ir, Target::Rust, OutputLayout::Workspace, Some(&bound))
+                .unwrap_or_else(|failure| panic!("synthesizes for Rust: {failure}"));
+            let go = synthesize_bound(&ir, Target::Go, OutputLayout::Workspace, Some(&bound))
+                .unwrap_or_else(|failure| panic!("synthesizes for Go: {failure}"));
+            (
+                rust_run("adopter-wire", &rust, REQUESTS),
+                go_run("adopter-wire", &go, REQUESTS),
+            )
+        })
+    }
+
+    /// Each server's answer to `label`, both held to the same status and JSON body.
+    fn answered(label: &str) -> [&'static Answer; 2] {
+        let (rust, go) = both();
+        let rust = rust
+            .get(label)
+            .unwrap_or_else(|| panic!("the Rust server answered `{label}`"));
+        let go = go
+            .get(label)
+            .unwrap_or_else(|| panic!("the Go server answered `{label}`"));
+        assert_eq!(
+            (
+                rust.status,
+                serde_json::from_str::<serde_json::Value>(&rust.body).ok()
+            ),
+            (
+                go.status,
+                serde_json::from_str::<serde_json::Value>(&go.body).ok()
+            ),
+            "{label}: the servers disagree:\n  rust {rust:?}\n  go   {go:?}"
+        );
+        [rust, go]
+    }
+
+    /// The `reason` the command saw, as the event it published carries it.
+    fn reason(answer: &Answer) -> Option<String> {
+        let payload = shared::published(answer);
+        payload
+            .get("reason")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+    }
+
+    #[test]
+    fn a_delete_command_encoded_query_reads_its_input_from_the_query_string() {
+        for answer in answered("drop-query") {
+            assert_eq!(answer.status, 202, "{answer:?}");
+            assert_eq!(reason(answer).as_deref(), Some("gone away"), "{answer:?}");
+        }
+        for answer in answered("drop-no-reason") {
+            assert_eq!(answer.status, 202, "{answer:?}");
+            assert_eq!(reason(answer), None, "{answer:?}");
+        }
+        // A body is not where the input is read from.
+        for answer in answered("drop-body-not-read") {
+            assert_eq!(answer.status, 202, "{answer:?}");
+            assert_eq!(reason(answer), None, "{answer:?}");
+        }
+        // `unknown: refuse`, the default, holds for a query parameter no field names.
+        for answer in answered("drop-unknown-key") {
+            assert_eq!(answer.status, 400, "{answer:?}");
+        }
+    }
+
+    #[test]
+    fn a_bound_view_reads_its_parameter_and_writes_its_field_under_their_wire_names() {
+        for answer in answered("put") {
+            assert_eq!(answer.status, 202, "{answer:?}");
+        }
+        for answer in answered("lookup") {
+            assert_eq!(answer.status, 200, "{answer:?}");
+            assert_eq!(
+                answer.json(),
+                serde_json::json!({"item_id": "w1", "itemTitle": "Lamp"}),
+                "{answer:?}"
+            );
+        }
+        for answer in answered("lookup-none") {
+            assert_eq!(answer.status, 404, "{answer:?}");
+        }
+        // The model's name is not the query key: `itemKey` is missing and `item_id` is unknown.
+        for answer in answered("lookup-model-name") {
+            assert_eq!(answer.status, 400, "{answer:?}");
+        }
+    }
+}
+
+#[path = "adversary_u9c_pass1.rs"]
+mod adversary_u9c_pass1;
+
+#[path = "bare_field_and_errors.rs"]
+mod bare_field_and_errors;
+
+#[path = "adversary_u9d_pass1.rs"]
+mod adversary_u9d_pass1;

@@ -406,3 +406,105 @@ fn correction_actual_cargo_manifests_keep_their_comment_provenance() {
         "unreadable manifests: {unreadable:?}"
     );
 }
+
+/// The registry dependencies of a generated manifest, name to version requirement; path
+/// dependencies are left out.
+fn registry_requirements(manifest: &str) -> BTreeSet<(String, String)> {
+    manifest
+        .lines()
+        .filter_map(|line| {
+            let (name, value) = line.split_once(" = { version = \"")?;
+            Some((name.to_owned(), value.split('"').next()?.to_owned()))
+        })
+        .collect()
+}
+
+/// The generated HTTP server takes compatible ranges at the tested minimum, so adding it to a
+/// workspace that already locks newer patches of these crates does not downgrade them
+/// (beyond10x/ess#660).
+#[test]
+fn generated_server_manifest_uses_caret_ranges() {
+    let rust = synthesized(&gatepass(), Target::Rust);
+    let manifest = file(&rust, "crates/gatepass-server/Cargo.toml");
+    let expected = [("clap", "^4.6.7"), ("time", "^0.3.45"), ("uuid", "^1.26.1")]
+        .into_iter()
+        .map(|(name, requirement)| (name.to_owned(), requirement.to_owned()))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(registry_requirements(manifest), expected, "{manifest}");
+    assert!(
+        !manifest.contains("\"="),
+        "an exact pin remains:\n{manifest}"
+    );
+}
+
+/// Every manifest a generator writes takes ranges. The scan reads the generators' sources, so a
+/// new pin fails here before any output carries it. The normalization target is the one
+/// exception: its `Cargo.toml` bytes belong to every existing `ess-normalization/N` format
+/// (`docs/design/raw-json-normalization.md`, `docs/design/positional-array-normalization.md`,
+/// pinned by `schema-contract`'s `normalization_legacy_bytes`), so its four pins stay until a
+/// format migration moves them, and a fifth fails here.
+#[test]
+fn no_generator_writes_an_exact_pin() {
+    const FORMAT_PINNED: (&str, usize) = ("schema-contract/src/realize/normalize/target.rs", 4);
+    let generate = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut pending = vec![generate.clone()];
+    let mut scanned = 0;
+    let mut pins = Vec::new();
+    let mut format_pinned = 0;
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(&directory).expect("readable") {
+            let path = entry.expect("an entry").path();
+            let relative = path
+                .strip_prefix(&generate)
+                .expect("inside crates/generate")
+                .to_string_lossy()
+                .replace('\\', "/");
+            let in_src = relative.split('/').nth(1) == Some("src");
+            if path.is_dir() {
+                if in_src || !relative.contains('/') {
+                    pending.push(path);
+                }
+                continue;
+            }
+            if !in_src {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            scanned += 1;
+            for (number, line) in text.lines().enumerate() {
+                let found = line
+                    .match_indices("\"=")
+                    .filter(|(at, _)| {
+                        line[at + 2..]
+                            .chars()
+                            .next()
+                            .is_some_and(|next| next.is_ascii_digit())
+                    })
+                    .count();
+                if found == 0 {
+                    continue;
+                }
+                if relative == FORMAT_PINNED.0 {
+                    format_pinned += found;
+                } else {
+                    pins.push(format!("{relative}:{}: {line}", number + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        scanned > 100,
+        "the generators' sources are scanned: {scanned}"
+    );
+    assert!(
+        pins.is_empty(),
+        "a generator writes an exact `=` requirement:\n{}",
+        pins.join("\n")
+    );
+    assert_eq!(
+        format_pinned, FORMAT_PINNED.1,
+        "the format-pinned normalization manifest changed its pins"
+    );
+}

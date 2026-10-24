@@ -185,6 +185,7 @@ mod bounded_retry;
 mod caller;
 mod delivery_context;
 mod disclosure;
+mod earlier_runs;
 mod established;
 mod existence;
 mod expression;
@@ -791,6 +792,11 @@ pub enum RefusalCause {
         predicate: String,
         /// How many candidates were decided against it.
         tried: usize,
+        /// How many goals the guard-directed search gave up at its step bound
+        /// ([`MAX_DIRECTED_STEPS`](crate::witness::MAX_DIRECTED_STEPS)) while looking for those
+        /// candidates; `0` where it gave up none, so no candidate tried meant no input it could
+        /// reach.
+        cut: usize,
     },
     /// The scenario needed an instance of an entity, and the specification cannot arrange one.
     ///
@@ -1155,7 +1161,12 @@ pub const COUNT_UNWITNESSED: u16 = 18;
 /// The refusal for an outcome no candidate reaches: `ESS-SYNTH-018` when one of its guards
 /// compares a `.count` with a literal past [`MAX_COUNT_WITNESS`](crate::witness::MAX_COUNT_WITNESS),
 /// which no candidate was built to decide, and otherwise `ESS-SYNTH-003`.
-pub(crate) fn unsatisfied(guards: &[&Predicate], predicate: String, tried: usize) -> RefusalCause {
+pub(crate) fn unsatisfied(
+    guards: &[&Predicate],
+    predicate: String,
+    tried: usize,
+    cut: usize,
+) -> RefusalCause {
     fn past_the_cap(predicate: &Predicate) -> Option<(FactPath, String)> {
         match predicate {
             Predicate::All(children) | Predicate::Any(children) => {
@@ -1196,13 +1207,48 @@ pub(crate) fn unsatisfied(guards: &[&Predicate], predicate: String, tried: usize
             literal,
             bound: crate::witness::MAX_COUNT_WITNESS,
         },
-        None => RefusalCause::GuardUnsatisfiable { predicate, tried },
+        None => RefusalCause::GuardUnsatisfiable {
+            predicate,
+            tried,
+            cut,
+        },
+    }
+}
+
+/// An unmet guard restated as the invariants of the entity the branch copies its input into, where
+/// those, not the guard alone, are what no input meets (beyond10x/ess#234). The restatement keeps
+/// the goals the guard-directed search gave up at its bound, so it still says an input that search
+/// did not reach may meet them. Any other cause, or no unmet invariant, is returned as it is.
+fn invariants_named(
+    cause: RefusalCause,
+    unmet: Result<Option<(String, usize)>, crate::witness::WitnessGap>,
+) -> RefusalCause {
+    match (&cause, unmet) {
+        (RefusalCause::GuardUnsatisfiable { .. }, Ok(Some((named, tried)))) => {
+            RefusalCause::GuardUnsatisfiable {
+                predicate: named,
+                tried,
+                cut: cause.directed_cut(),
+            }
+        }
+        _ => cause,
     }
 }
 
 impl RefusalCause {
     /// The family every refusal here belongs to.
     pub const FAMILY: &'static str = "SYNTH";
+
+    /// How many goals the guard-directed search behind this refusal gave up at its step bound:
+    /// a [`GuardUnsatisfiable`](Self::GuardUnsatisfiable)'s `cut`, and `0` for every other cause.
+    /// A refusal restating one of those under other words carries it, so the restatement still
+    /// says the bound, not the guard, may have ended the search.
+    pub(crate) fn directed_cut(&self) -> usize {
+        match self {
+            Self::GuardUnsatisfiable { cut, .. } => *cut,
+            _ => 0,
+        }
+    }
 
     /// Its stable code.
     ///
@@ -1265,6 +1311,25 @@ impl RefusalCause {
                 "the rows the selector reads are changed by a binding, a set effect or a direct \
                  setup the arrangement sets off, whose effect on them synthesis does not follow; \
                  cover the branch with an authored scenario (ess-scenario/1)"
+            }
+            // A set effect's own causes (an adopter's report, row 14): the input type is not what
+            // is missing.
+            Self::NoWitness(gap) if gap.reason == set_effects::ARRIVES_ONLY => {
+                "let a command leave the rows in a `from` state of the move other than the one it \
+                 arrives in, or let the entry write a field (`sets:`) a view publishes, so a \
+                 target that skips the move reads differently"
+            }
+            Self::NoWitness(gap) if gap.reason == set_effects::UNDRIVEN => {
+                "the creating branch named is not taken when sent with the rows the scenario holds, \
+                 in the states it holds them; narrow the guard that answers before it there, or \
+                 cover the branch with an authored scenario (ess-scenario/1)"
+            }
+            // Rows whose creator refuses a missing related row (beyond10x/ess#682): the creator's
+            // input is not what is missing, the related row is.
+            Self::NoWitness(gap) if gap.reason == row_set::ROWS_GUARDED_CREATOR => {
+                "the command named creates the rows only beside an existing related row the input \
+                 names; let a declared command create that related row in a state the creator \
+                 accepts, or cover the branch with an authored scenario (ess-scenario/1)"
             }
             Self::NoWitness(gap) if set_effects::UNARRANGED.contains(&gap.reason) => {
                 "let a command that creates the entity write each field the filter reads from an \
@@ -1501,7 +1566,8 @@ crate::authored::diagnostic_catalogue! {
                 | BindingGap::UnchangedUnobservable { .. }
                 | BindingGap::EffectUnsettled { .. }
                 | BindingGap::ConditionUnarranged { .. }
-                | BindingGap::ChangedRowUnarranged { .. },
+                | BindingGap::ChangedRowUnarranged { .. }
+                | BindingGap::RelatedRowNeededByTrigger { .. },
             ..
         } => 10,
             "A binding clause has nothing a scenario could observe.",
@@ -1602,10 +1668,25 @@ impl fmt::Display for RefusalCause {
             }
             Self::NoWitness(gap) => write!(f, "no witness: {gap}"),
             Self::GuardUnevaluable(refusal) => write!(f, "{refusal}"),
-            Self::GuardUnsatisfiable { predicate, tried } => write!(
-                f,
-                "no candidate of the {tried} tried satisfies `{predicate}`"
-            ),
+            Self::GuardUnsatisfiable {
+                predicate,
+                tried,
+                cut,
+            } => {
+                write!(
+                    f,
+                    "no candidate of the {tried} tried satisfies `{predicate}`"
+                )?;
+                if *cut > 0 {
+                    write!(
+                        f,
+                        "; the guard-directed search gave up {cut} goal(s) at its bound of {} \
+                         steps each, so an input it did not reach may still satisfy it",
+                        crate::witness::MAX_DIRECTED_STEPS
+                    )?;
+                }
+                Ok(())
+            }
             Self::InstanceRequired {
                 entity,
                 need,
@@ -2022,6 +2103,16 @@ pub enum BindingGap {
         /// The entity whose rows it changes.
         entity: EntityRef,
     },
+    /// The selected refusal answers a missing related row, and every command that publishes the
+    /// binding's event refuses that same missing row itself: each publishes only while the row
+    /// exists, so no trigger leaves it absent when the binding is delivered, and the honest system never
+    /// reaches the refusal (a downstream adopter's report of 2026-10-22).
+    RelatedRowNeededByTrigger {
+        /// The refusal the policy selects.
+        refusal: OutcomeRef,
+        /// The first publisher's command, which refuses the missing row before it publishes.
+        trigger: CommandRef,
+    },
 }
 
 impl BindingGap {
@@ -2102,6 +2193,11 @@ impl BindingGap {
                 "let the trigger copy every input the filter reads from an input of its own, and \
                  a command that creates the entity write each field the filter reads from an \
                  input; or cover the binding with an authored scenario (ess-scenario/1)"
+            }
+            Self::RelatedRowNeededByTrigger { .. } => {
+                "add a command that publishes the event without first refusing the missing row, \
+                 declare the refusal `external:` so a scenario can force it, or cover its policy \
+                 with an authored scenario (ess-scenario/1)"
             }
         }
     }
@@ -2202,6 +2298,13 @@ impl fmt::Display for BindingGap {
                 "invokes `{outcome}`, which publishes an event once per `{entity}` it changes, and \
                  no row its filter selects can be arranged before the trigger"
             ),
+            Self::RelatedRowNeededByTrigger { refusal, trigger } => write!(
+                f,
+                "selects its failure policy per refusal, and the refusal `{refusal}` answers a \
+                 missing related row, and every publisher of its event, `{trigger}` first, refuses \
+                 that missing row itself before it publishes, so the absent-row case cannot be \
+                 arranged"
+            ),
         }
     }
 }
@@ -2285,6 +2388,34 @@ pub enum Unreachable {
         /// The branches reading that row that the send would have to pass over.
         guards: Vec<OutcomeRef>,
     },
+    /// The branch on the route creates the row and reads a related row (ess/18), and no row of
+    /// the related entity the declared commands create, with any input searched beside it, lets
+    /// the send pass over the guards beside it — a list-membership guard over a list no creator
+    /// sets from its input. Named so the refusal points at those guards rather than at the search.
+    RelatedUnmet {
+        /// The creating branch.
+        outcome: Box<OutcomeRef>,
+        /// The entity whose row the guards read.
+        related: EntityRef,
+        /// The branches reading that row that the send would have to pass over.
+        guards: Vec<OutcomeRef>,
+    },
+}
+
+/// `guards` as a list in prose, or "the guards beside it" where there are none.
+fn write_guards(f: &mut fmt::Formatter<'_>, guards: &[OutcomeRef]) -> fmt::Result {
+    for (nth, guard) in guards.iter().enumerate() {
+        let gap = match nth {
+            0 => "",
+            _ if nth + 1 == guards.len() => " and ",
+            _ => ", ",
+        };
+        write!(f, "{gap}`{guard}`")?;
+    }
+    if guards.is_empty() {
+        f.write_str("the guards beside it")?;
+    }
+    Ok(())
 }
 
 impl Unreachable {
@@ -2322,7 +2453,7 @@ impl Unreachable {
                  end every chain, and declare an unfiltered view showing the row's identity and \
                  state"
             }
-            Self::Unsteered { .. } => {
+            Self::Unsteered { .. } | Self::RelatedUnmet { .. } => {
                 "let the command creating the related row set each field those guards compare \
                  from its own input (`sets: <field>: input.<field>`), or cover the state with an \
                  authored scenario (ess-scenario/1)"
@@ -2381,18 +2512,19 @@ impl fmt::Display for Unreachable {
                      row of `{related}` it reads, and no row the declared commands create lets \
                      that input pass over "
                 )?;
-                for (nth, guard) in guards.iter().enumerate() {
-                    let gap = match nth {
-                        0 => "",
-                        _ if nth + 1 == guards.len() => " and ",
-                        _ => ", ",
-                    };
-                    write!(f, "{gap}`{guard}`")?;
-                }
-                if guards.is_empty() {
-                    f.write_str("the guards beside it")?;
-                }
-                Ok(())
+                write_guards(f, guards)
+            }
+            Self::RelatedUnmet {
+                outcome,
+                related,
+                guards,
+            } => {
+                write!(
+                    f,
+                    "the route runs through `{outcome}`, and no row of `{related}` the declared \
+                     commands create, with any input searched beside it, lets that send pass over "
+                )?;
+                write_guards(f, guards)
             }
         }
     }
@@ -3072,6 +3204,9 @@ fn outcome_scenario_noting(
     };
     // Every further run below is this branch again (beyond10x/ess#546).
     let _under_test = crate::witness::under_test(models.arrangement, command, outcome);
+    // Every further run numbers its companions past the names the runs before it captured
+    // (beyond10x/ess#679).
+    let _runs = earlier_runs::scenario();
     let (mut steps, mut source, run) = exercise_as(
         models,
         command,
@@ -3324,7 +3459,9 @@ fn absent_references(
 /// every row it could without holding it — `open_cards == 4` where nothing raises the counter past
 /// 3 — is a row no run of the model holds, and adds none; one the search went past its bound for, or
 /// stopped short of for another cause, is refused; so is one whose nearest value a run holds lies
-/// past the search's reach ([`subject_fact::Further::Past`]), without a search.
+/// past the search's reach ([`subject_fact::Further::Past`]), without a search. A boundary no row
+/// and input meets under three-valued comparison ([`subject_fact::Further::Unknowable`]) adds
+/// nothing and is not searched.
 fn related_boundaries(
     models: &caller::InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -3346,6 +3483,9 @@ fn related_boundaries(
         .expect("the outcome is the command's");
     let goals = related_guard::boundary_goals(ir, command, outcome);
     for (goal, ((refuted, held), kind)) in goals.iter().enumerate() {
+        if *kind == subject_fact::Further::Unknowable {
+            continue;
+        }
         if let subject_fact::Further::Past(why) = kind {
             refusals.push(Refusal::about(
                 id,
@@ -3355,6 +3495,7 @@ fn related_boundaries(
                         related_guard::describe_goal(refuted, held),
                     ),
                     tried: 0,
+                    cut: 0,
                 },
             ));
             continue;
@@ -3401,6 +3542,7 @@ fn related_boundaries(
                             .join("; ")
                     ),
                     tried: answering.len(),
+                    cut: 0,
                 },
             )),
             None => refusals.push(Refusal::about(
@@ -3408,6 +3550,7 @@ fn related_boundaries(
                 RefusalCause::GuardUnsatisfiable {
                     predicate: related_guard::describe_goal(refuted, held),
                     tried: answering.len(),
+                    cut: 0,
                 },
             )),
         }
@@ -3510,6 +3653,7 @@ fn exercise_as(
     };
     if witness == Witness::Full {
         force_beside_unnarrowed(models.arrangement, command, outcome, &mut run);
+        binding_effects::arrange_retried(models.arrangement, outcome, actors, &mut run);
     }
 
     exercise_run_in(models, command, outcome, actors, id, refusals, run)
@@ -3734,6 +3878,7 @@ fn exercise_run_in(
     source.extend(run.source.iter().cloned());
     source.extend(views.source);
     record_refused(id, &run, refusals);
+    earlier_runs::record(&steps);
     Some((steps, source, run))
 }
 
@@ -3965,6 +4110,7 @@ fn run_as(
         return Err(RefusalCause::GuardUnsatisfiable {
             predicate: named,
             tried,
+            cut: 0,
         });
     }
     let routed = subject_fact::routes(command, outcome);
@@ -3980,107 +4126,100 @@ fn run_as(
     let mut row_gaps: Vec<RefusalCause> = Vec::new();
     // ess/28 (beyond10x/ess#558): the list of references the branch is sent, where it guards on one.
     let mut listed: Option<related_list::Listed> = None;
-    let (setup, input) =
-        if related_list::routes(command, outcome) {
-            if witness != Witness::Full {
-                return Err(related_guard::unarranged());
-            }
-            // A refusal acting on no row has nothing of its own to arrange: the rows its list
-            // names are the whole arrangement.
-            let (mut setup, input) = if outcome.subject.is_none() && outcome.error.is_some() {
-                let input = candidates(ir, command, &[], Distinction::PLAIN)
-                    .map_err(RefusalCause::NoWitness)?
-                    .into_iter()
-                    .next()
-                    .ok_or_else(related_guard::unarranged)?;
-                (Setup::none(), input)
-            } else {
-                arranged_as(ir, command, outcome, actors, routed, witness)?
-            };
-            listed = Some(related_list::arrange(
-                ir, command, outcome, actors, &mut setup, &input,
-            )?);
-            (setup, input)
-        } else if rows {
-            if witness != Witness::Full {
-                return Err(row_set::unarranged());
-            }
-            let (setup, input, gaps) = row_set::prepare(models, command, outcome, actors)?;
-            row_gaps = gaps;
-            (setup, input)
-        } else if related {
-            match witness {
-                Witness::Full => related_guard::prepare_at_in(
+    let (setup, input) = if related_list::routes(command, outcome) {
+        if witness != Witness::Full {
+            return Err(related_guard::unarranged());
+        }
+        // A refusal acting on no row has nothing of its own to arrange: the rows its list
+        // names are the whole arrangement.
+        let (mut setup, input) = if outcome.subject.is_none() && outcome.error.is_some() {
+            let input = candidates(ir, command, &[], Distinction::PLAIN)
+                .map_err(RefusalCause::NoWitness)?
+                .into_iter()
+                .next()
+                .ok_or_else(related_guard::unarranged)?;
+            (Setup::none(), input)
+        } else {
+            arranged_as(ir, command, outcome, actors, routed, witness)?
+        };
+        listed = Some(related_list::arrange(
+            ir, command, outcome, actors, &mut setup, &input,
+        )?);
+        (setup, input)
+    } else if rows {
+        if witness != Witness::Full {
+            return Err(row_set::unarranged());
+        }
+        let (setup, input, gaps) = row_set::prepare(models, command, outcome, actors)?;
+        row_gaps = gaps;
+        (setup, input)
+    } else if related {
+        match witness {
+            Witness::Full => related_guard::prepare_at_in(
+                models,
+                command,
+                outcome,
+                actors,
+                Distinction::PLAIN,
+                None,
+            )?,
+            Witness::RelatedBoundary { of, goal } => {
+                let goals = command
+                    .outcomes
+                    .get(of)
+                    .map(|branch| related_guard::boundary_goals(ir, command, branch))
+                    .unwrap_or_default();
+                let (named, _) = goals.get(goal).ok_or_else(related_guard::unarranged)?;
+                related_at = Distinction::further(goal + 1);
+                related_guard::prepare_at_in(
                     models,
                     command,
                     outcome,
                     actors,
-                    Distinction::PLAIN,
-                    None,
-                )?,
-                Witness::RelatedBoundary { of, goal } => {
-                    let goals = command
-                        .outcomes
-                        .get(of)
-                        .map(|branch| related_guard::boundary_goals(ir, command, branch))
-                        .unwrap_or_default();
-                    let (named, _) = goals.get(goal).ok_or_else(related_guard::unarranged)?;
-                    related_at = Distinction::further(goal + 1);
-                    related_guard::prepare_at_in(
-                        models,
-                        command,
-                        outcome,
-                        actors,
-                        related_at,
-                        Some(named),
-                    )?
-                }
-                Witness::RelatedAbsent(nth) => {
-                    related_at = Distinction::further(nth);
-                    related_guard::prepare_absent_in(models, command, outcome, actors, related_at)?
-                }
-                Witness::LiteralFallbacks(_)
-                | Witness::Listed(_)
-                | Witness::RelatedValueAbsent(_)
-                | Witness::UnionVariant(_)
-                | Witness::ExpressionPoint(_)
-                | Witness::Unstored
-                | Witness::InsideLaterRefusal(_) => return Err(related_guard::unarranged()),
+                    related_at,
+                    Some(named),
+                )?
             }
-        } else {
-            // A guard no input meets beside the invariants of the entity it copies the input into is
-            // refused naming them, where the guard alone is met (beyond10x/ess#234).
-            let ordinary =
-                arranged_as(ir, command, outcome, actors, routed, witness).map_err(|cause| match (
-                    &cause,
+            Witness::RelatedAbsent(nth) => {
+                related_at = Distinction::further(nth);
+                related_guard::prepare_absent_in(models, command, outcome, actors, related_at)?
+            }
+            Witness::LiteralFallbacks(_)
+            | Witness::Listed(_)
+            | Witness::RelatedValueAbsent(_)
+            | Witness::UnionVariant(_)
+            | Witness::ExpressionPoint(_)
+            | Witness::Unstored
+            | Witness::InsideLaterRefusal(_) => return Err(related_guard::unarranged()),
+        }
+    } else {
+        // A guard no input meets beside the invariants of the entity it copies the input into is
+        // refused naming them, where the guard alone is met (beyond10x/ess#234).
+        let ordinary =
+            arranged_as(ir, command, outcome, actors, routed, witness).map_err(|cause| {
+                invariants_named(
+                    cause,
                     crate::witness::unmet_invariants(ir, command, outcome, true),
-                ) {
-                    (RefusalCause::GuardUnsatisfiable { .. }, Ok(Some((named, tried)))) => {
-                        RefusalCause::GuardUnsatisfiable {
-                            predicate: named,
-                            tried,
-                        }
-                    }
-                    _ => cause,
-                });
-            // Ordinary arrangement first; an explicitly admitted seed row only where it left the
-            // branch's stored row unmet (beyond10x/ess#413).
-            match ordinary {
-                Err(cause) if routed && witness == Witness::Full && !models.seeds.is_empty() => {
-                    match subject_fact::prepare_seeded(models, command, outcome, actors, &cause) {
-                        Ok(Ok(found)) => found,
-                        Ok(Err(notes)) => return Err(subject_fact::annotated(cause, &notes)),
-                        Err(unmet) => {
-                            return Err(subject_fact::annotated(
-                                cause,
-                                &[format!("a synthesis seed row was not applied: {unmet}")],
-                            ))
-                        }
+                )
+            });
+        // Ordinary arrangement first; an explicitly admitted seed row only where it left the
+        // branch's stored row unmet (beyond10x/ess#413).
+        match ordinary {
+            Err(cause) if routed && witness == Witness::Full && !models.seeds.is_empty() => {
+                match subject_fact::prepare_seeded(models, command, outcome, actors, &cause) {
+                    Ok(Ok(found)) => found,
+                    Ok(Err(notes)) => return Err(subject_fact::annotated(cause, &notes)),
+                    Err(unmet) => {
+                        return Err(subject_fact::annotated(
+                            cause,
+                            &[format!("a synthesis seed row was not applied: {unmet}")],
+                        ))
                     }
                 }
-                ordinary => ordinary?,
             }
-        };
+            ordinary => ordinary?,
+        }
+    };
     // An external branch beside guards over a related row (beyond10x/ess#464): the plain witness
     // names a row nobody arranged, which `exists: false` claims, so it is kept only where it
     // reads no row; otherwise the branch is arranged as its siblings are, on a present row and an
@@ -4105,6 +4244,7 @@ fn run_as(
         return Err(RefusalCause::GuardUnsatisfiable {
             predicate: named,
             tried: 1,
+            cut: 0,
         });
     }
 
@@ -4351,6 +4491,7 @@ fn supplied_sibling_subject(command: &ResolvedCommand) -> Option<&ResolvedSubjec
 /// where none is found the scenario is refused naming the guards (`ESS-SYNTH-003`), never written
 /// for a target to fail. A related row is the run's to arrange ([`run_as`]), and a row set's
 /// scenario is checked by [`row_set::contradictions`].
+#[allow(clippy::too_many_lines)]
 fn unclaimed_external(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -4467,6 +4608,7 @@ fn unclaimed_external(
             named_guards(&siblings)
         ),
         tried,
+        cut: 0,
     })
 }
 
@@ -4545,6 +4687,7 @@ fn answered_first(
             first.name,
         ),
         tried: starts.len(),
+        cut: 0,
     })
 }
 
@@ -5318,6 +5461,7 @@ fn replay_eligibility(
                 outcome.name
             ),
             tried: 1,
+            cut: 0,
         });
     }
     let mut steps = Vec::new();
@@ -5514,6 +5658,81 @@ fn prepare_in(
 ) -> Result<Setup, RefusalCause> {
     let setup = prepare_subject(ir, outcome, actors, held, distinction)?;
     related::arrange(ir, outcome, actors, distinction, setup)
+}
+
+/// [`prepare_in`] for a branch updating, preserving or removing an existing subject, the subject
+/// searched for until every predicate of `steer` holds on it, its creators steered toward them
+/// ([`subject_fact::search_within`]); refused where the plain arrangement would be, or where no
+/// row the search reaches holds them.
+fn prepare_steered(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    steer: &[Predicate],
+) -> Result<Setup, RefusalCause> {
+    let Some(subject) = &outcome.subject else {
+        return Ok(Setup::none());
+    };
+    let (ResolvedEffect::Updates | ResolvedEffect::Preserves | ResolvedEffect::Deletes) =
+        &subject.effect
+    else {
+        return prepare_in(ir, outcome, actors, None, distinction);
+    };
+    let initial = &ir.entity(&subject.entity).lifecycle.initial;
+    let arrangement = steered_row(ir, &subject.entity, initial, actors, distinction, steer)?;
+    let after = match &subject.effect {
+        ResolvedEffect::Deletes => None,
+        _ => Some(initial.clone()),
+    };
+    let setup = Setup {
+        steps: arrangement.steps,
+        instance: Some(arrangement.instance),
+        bound: BTreeMap::new(),
+        source: arrangement.source,
+        after,
+        before: Some(arrangement.state),
+        settled: arrangement.settled,
+        unobserved: arrangement.unobserved,
+    };
+    related::arrange(ir, outcome, actors, distinction, setup)
+}
+
+/// A row of `entity` resting in `state` on which every predicate of `steer` holds, its creators
+/// steered toward them ([`subject_fact::search_within`]).
+fn steered_row(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    state: &StateName,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    steer: &[Predicate],
+) -> Result<Arrangement, RefusalCause> {
+    let (arrangement, ()) = subject_fact::search_within(
+        ir,
+        entity,
+        actors,
+        steer,
+        distinction,
+        "subject",
+        &[],
+        |node| {
+            Ok((node.state == *state
+                && steer.iter().all(|predicate| {
+                    subject_fact::row_truth_with(
+                        ir,
+                        entity,
+                        &node.settled,
+                        &node.unwritten,
+                        Some(&node.state),
+                        predicate,
+                        None,
+                    ) == Truth::True
+                }))
+            .then_some(()))
+        },
+    )?;
+    Ok(arrangement)
 }
 
 /// [`prepare`], with the existing subject arranged under `distinction`: a further witness for every
@@ -6957,10 +7176,12 @@ fn reach_in_state(
         }
         tried = tried.max(inputs.len());
     }
+    let cut = searches_cut_short(ir, command, std::slice::from_ref(&guards), distinction);
     Err(unsatisfied(
         &guards,
         format!("{} selected in held state {held}", outcome.name),
         tried,
+        cut,
     ))
 }
 
@@ -7182,6 +7403,7 @@ fn reach_external_beside(
         widened.extend(held.iter().copied());
         searches.push(widened);
     }
+    let goal_sets = searches.clone();
     let mut tried = 0;
     let mut shadow = Shadow::default();
     for inputs in searched_candidates(ir, command, searches, distinction) {
@@ -7204,7 +7426,8 @@ fn reach_external_beside(
     let predicate = shadow
         .rendered(&guards)
         .unwrap_or_else(|| rendered(&guards, true));
-    Err(unsatisfied(&guards, predicate, tried))
+    let cut = searches_cut_short(ir, command, &goal_sets, distinction);
+    Err(unsatisfied(&guards, predicate, tried, cut))
 }
 
 /// The input that reaches this branch, decided rather than assumed.
@@ -7265,6 +7488,7 @@ fn reach(
     let mut tried = 0;
     let mut shadow = Shadow::default();
     let searches = searched_guards(ir.format(), command, outcome, &guards, satisfy);
+    let goal_sets = searches.clone();
     if satisfy {
         if let Some(input) =
             outside_later_refusals(ir, command, outcome, &guards, &searches, distinction)
@@ -7293,7 +7517,8 @@ fn reach(
     if let Some(gap) = crate::witness::exhausted_key_domain(ir, command, &guards) {
         return Err(RefusalCause::NoWitness(gap));
     }
-    Err(unsatisfied(&guards, predicate, tried))
+    let cut = searches_cut_short(ir, command, &goal_sets, distinction);
+    Err(unsatisfied(&guards, predicate, tried, cut))
 }
 
 /// `input` with `field` sent as `value`, where it still selects `outcome`; otherwise the first
@@ -7614,6 +7839,24 @@ fn searched_candidates<'c>(
             .transpose()
     });
     plain.chain(between)
+}
+
+/// The most goals the guard-directed search behind any of `searches` gave up at its step bound
+/// ([`searched_candidates`] over the same searches); `0` where none was. Asked only once those
+/// searches found nothing, so it reruns none of them.
+fn searches_cut_short(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    searches: &[Vec<&Predicate>],
+    distinction: Distinction,
+) -> usize {
+    let plain = searches
+        .iter()
+        .map(|searched| crate::witness::cut_short(ir, command, searched, distinction, false));
+    let between = searches
+        .last()
+        .map(|widest| crate::witness::cut_short(ir, command, widest, distinction, true));
+    plain.chain(between).max().unwrap_or(0)
 }
 
 /// The first candidate satisfying `holds`: over the ladders of `searched`, then between the
@@ -8081,8 +8324,10 @@ fn determined_fields(
             ResolvedPayloadValue::ResponseField { .. }
             | ResolvedPayloadValue::Generated { .. }
             | ResolvedPayloadValue::Cleared
-            // ess/27 (#545): a `sets:` source only, refused in a payload by `ess-domain`.
+            | ResolvedPayloadValue::EmptyList
+            // ess/27 (#545) and ess/31: `sets:` sources only, refused in a payload by `ess-domain`.
             | ResolvedPayloadValue::PayloadRead { .. }
+            | ResolvedPayloadValue::Append { .. }
             // ess/16 (#167): the rows one scenario changed, asserted by `set_effects` alone.
             | ResolvedPayloadValue::ChangedCount
             // ess/25 (#531): the row one occurrence is for, asserted by `set_effects` alone.
@@ -8231,7 +8476,10 @@ fn mark_presence(
     shape: &mut PayloadShape,
 ) {
     let (Some(presence), false, true) = (
-        field.naming.presence,
+        field
+            .naming
+            .presence
+            .and_then(ess_domain::types::Presence::constrains),
         enclosed,
         field.type_ref.is_optional(),
     ) else {
@@ -8449,7 +8697,8 @@ fn view_expectations(
         }
     }
 
-    let taken = captured(run);
+    let mut taken = captured(run);
+    taken.extend(earlier_runs::captured());
     let context = Beside {
         ir,
         entity: &subject.entity,
@@ -9259,6 +9508,29 @@ fn expression_value(
     )
 }
 
+/// ess/31: the list the arrangement left the row holding, absent read as empty, with the element
+/// the scenario sent last; nothing where the row's list or the sent element is undetermined.
+fn appended_at(
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+    target_location: &[String],
+    element: &str,
+) -> Option<ScenarioValue> {
+    let mut items = match before_literal_at(before, target_location)? {
+        Node::Seq(items) => items.clone(),
+        Node::Null => Vec::new(),
+        _ => return None,
+    };
+    match supplied_at(supplied, element)? {
+        ScenarioValue::Literal { value: Node::Null } => return None,
+        ScenarioValue::Literal { value } => items.push(value),
+        _ => return None,
+    }
+    Some(ScenarioValue::Literal {
+        value: Node::Seq(items),
+    })
+}
+
 fn expression_value_at(
     ir: &EssIr,
     field: &ess_compiler::ir::ResolvedPayloadField,
@@ -9333,6 +9605,9 @@ fn expression_value_at(
                 value: Node::Number(sum),
             })
         }
+        ResolvedPayloadValue::Append { field: element, .. } => {
+            appended_at(supplied, before, target_location, element)
+        }
         // An omitted input leaves the fallback: nothing determined for `{generated: true}`, and the
         // literal read as the target's type for `else: <literal>` (ess/16, #163), so an
         // implementation storing any other default fails the scenario.
@@ -9375,6 +9650,7 @@ fn expression_value_at(
         | ResolvedPayloadValue::ResponseField { .. }
         | ResolvedPayloadValue::Generated { .. }
         | ResolvedPayloadValue::Cleared
+        | ResolvedPayloadValue::EmptyList
         // ess/27 (#545): the published value, which `subject_row` claims where it is safe to.
         | ResolvedPayloadValue::PayloadRead { .. }
         // ess/16 (#168): read only through `caller::synthesize`, which writes the caller's value in.
@@ -9708,6 +9984,7 @@ fn arranged_inside_later(
     Err(RefusalCause::GuardUnsatisfiable {
         predicate: rendered(&wanted, true),
         tried,
+        cut: 0,
     })
 }
 
@@ -10135,7 +10412,9 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         | ResolvedPayloadValue::RelatedState {
             via: ess_compiler::ir::ResolvedRelatedVia::Input { field, .. },
             ..
-        } => out.push((field, Read::Needed)),
+        }
+        // ess/31: the element appended is sent.
+        | ResolvedPayloadValue::Append { field, .. } => out.push((field, Read::Needed)),
         ResolvedPayloadValue::Struct { fields } => {
             for leaf in fields {
                 reads(leaf, out);
@@ -10159,6 +10438,7 @@ fn reads<'a>(target: &'a ess_compiler::ir::ResolvedPayloadField, out: &mut Vec<(
         | ResolvedPayloadValue::ResponseField { .. }
         | ResolvedPayloadValue::Generated { .. }
         | ResolvedPayloadValue::Cleared
+        | ResolvedPayloadValue::EmptyList
         | ResolvedPayloadValue::SubjectField { .. }
         | ResolvedPayloadValue::RelatedField { .. }
         | ResolvedPayloadValue::Increment { .. }
@@ -10664,6 +10944,9 @@ fn settled(
         }
         let value = match &field.value {
             ResolvedPayloadValue::Cleared => ScenarioValue::Literal { value: Node::Null },
+            ResolvedPayloadValue::EmptyList => ScenarioValue::Literal {
+                value: Node::Seq(Vec::new()),
+            },
             ResolvedPayloadValue::Literal { value } => {
                 let Some(read) = literal_value(ir, &field.target_type, value, 0) else {
                     continue;
@@ -10694,6 +10977,7 @@ fn settled(
             ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::SubjectState { .. }
             | ResolvedPayloadValue::Increment { .. }
+            | ResolvedPayloadValue::Append { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
             | ResolvedPayloadValue::RelatedField { .. }
@@ -11674,7 +11958,39 @@ fn arrange_toward_named_owner(
         actors,
         distinction,
         (None, true),
-        &BTreeMap::new(),
+        (
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &related_guard::HeldRows::new(),
+        ),
+        accept,
+    )
+}
+
+/// [`arrange_toward_bound`], where `held` gives the state each captured instance rests in while
+/// the row is created: a creator refusing a related row in some state is then sent naming a
+/// captured row whose state refutes that refusal ([`related_guard::present_in`]). Where `rows` holds a
+/// captured row's settled values, a refusal that also reads the input is decided on them per input
+/// ([`related_guard::present_for`]).
+#[allow(clippy::too_many_arguments)]
+fn arrange_toward_held(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    filter: &Predicate,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    fields: &BTreeMap<String, InstanceName>,
+    (held, rows): (&BTreeMap<InstanceName, StateName>, &related_guard::HeldRows),
+    accept: &dyn Fn(&Arrangement) -> bool,
+) -> Option<Arrangement> {
+    arrange_toward_with(
+        ir,
+        entity,
+        filter,
+        actors,
+        distinction,
+        (None, false),
+        (fields, held, rows),
         accept,
     )
 }
@@ -11700,14 +12016,18 @@ fn arrange_toward_bound(
         actors,
         distinction,
         (owner, false),
-        fields,
+        (fields, &BTreeMap::new(), &related_guard::HeldRows::new()),
         accept,
     )
 }
 
 /// [`arrange_toward_bound`], and where `named` is set, the owner left to the input the steering
-/// chose ([`arrange_toward_named_owner`]).
-#[allow(clippy::too_many_arguments)]
+/// chose ([`arrange_toward_named_owner`]); `held` as [`arrange_toward_held`] reads it.
+///
+/// A creating branch below input-guarded siblings is tried, where no candidate for its own guards
+/// is selected, with candidates refuting theirs too (an adopter's report, row 14): a default branch
+/// below `when: urgent == true` needs `urgent` false, which no ladder over the filter alone tries.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn arrange_toward_with(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -11715,17 +12035,30 @@ fn arrange_toward_with(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
     (owner, named): (Option<&InstanceName>, bool),
-    fields: &BTreeMap<String, InstanceName>,
+    (fields, resting, rows): (
+        &BTreeMap<String, InstanceName>,
+        &BTreeMap<InstanceName, StateName>,
+        &related_guard::HeldRows,
+    ),
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
     let all = ir.drivers();
     let drivers: &[Driver<'_>] = all.get(entity).map_or(&[], Vec::as_slice);
     let states = &ir.entity(entity).lifecycle.states;
     let identity = &ir.entity(entity).identity;
-    for creator in drivers
-        .iter()
-        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
-    {
+    // A second pass, only where the first arranged nothing, sends the creators whose refusal of
+    // the captured row also reads their input, steered by that row's settled values (row 29).
+    let passes: &[bool] = if rows.is_empty() {
+        &[false]
+    } else {
+        &[false, true]
+    };
+    for (per_input, creator) in passes.iter().flat_map(|per_input| {
+        drivers
+            .iter()
+            .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+            .map(move |creator| (*per_input, creator))
+    }) {
         let mut mapped: BTreeMap<&str, &str> = creator
             .outcome
             .sets
@@ -11742,8 +12075,22 @@ fn arrange_toward_with(
         if let Some(field) = published {
             mapped.entry(identity.name.as_str()).or_insert(field);
         }
-        let Some(bound) = creator_bindings(creator, &mapped, fields) else {
+        let checked = creator_bindings(ir, creator, &mapped, (fields, resting), false);
+        let bound = if per_input {
+            if checked.is_some() {
+                continue;
+            }
+            creator_bindings(ir, creator, &mapped, (fields, resting), true)
+        } else {
+            checked
+        };
+        let Some(bound) = bound else {
             continue;
+        };
+        let steering = if per_input {
+            related_guard::steering_for(ir, creator.command, &bound, rows)
+        } else {
+            Vec::new()
         };
         let onto = |path: &FactPath| match path.segments().split_first() {
             Some((head, tail)) => mapped.get(head.as_str()).map_or_else(
@@ -11760,13 +12107,20 @@ fn arrange_toward_with(
             None => path.clone(),
         };
         let toward = map_paths(filter, &onto);
-        let mut guards = vec![&toward];
-        guards.extend(when(creator.outcome));
-        let Ok(inputs) = candidates(ir, creator.command, &guards, distinction) else {
+        let Some(inputs) = creator_candidates(ir, creator, &toward, &steering, distinction) else {
             continue;
         };
         for input in inputs {
-            if selects_branch(ir, creator.command, creator.outcome, None, &input) != Ok(true) {
+            if selects_branch(ir, creator.command, creator.outcome, None, &input) != Ok(true)
+                || (per_input
+                    && !related_guard::present_for(
+                        ir,
+                        creator.command,
+                        &bound,
+                        (resting, rows),
+                        &input,
+                    ))
+            {
                 continue;
             }
             let owner =
@@ -11870,12 +12224,48 @@ fn published_identity_input(outcome: &ResolvedOutcome) -> Option<&str> {
         })
 }
 
+/// The inputs [`arrange_toward_with`] tries for `creator`, steered `toward` the filter: those
+/// satisfying its own input guard, then, where siblings carry input guards, those refuting theirs
+/// too (an adopter's report, row 14). `None` where the first list has no witness. `steering` joins
+/// the first list's guards: the related refusal grounded on a captured row ([`related_guard::steering_for`]).
+fn creator_candidates(
+    ir: &EssIr,
+    creator: &Driver<'_>,
+    toward: &Predicate,
+    steering: &[Predicate],
+    distinction: Distinction,
+) -> Option<Vec<BTreeMap<String, Node>>> {
+    let mut guards = vec![toward];
+    guards.extend(steering);
+    guards.extend(when(creator.outcome));
+    let mut inputs = candidates(ir, creator.command, &guards, distinction).ok()?;
+    let siblings: Vec<&Predicate> = creator
+        .command
+        .outcomes
+        .iter()
+        .filter(|other| other.name != creator.outcome.name)
+        .filter_map(when)
+        .collect();
+    if !siblings.is_empty() {
+        guards.extend(siblings);
+        inputs.extend(candidates(ir, creator.command, &guards, distinction).unwrap_or_default());
+    }
+    Some(inputs)
+}
+
 /// Map the requested fields onto creator inputs only where the capture does not invalidate a
 /// guard proved from literal inputs. Symbolic guard solving is outside this arrangement seam.
+/// Where `deferred` is set, a related refusal no held state refutes is left to each input
+/// ([`related_guard::present_for`]).
 fn creator_bindings(
+    ir: &EssIr,
     creator: &Driver<'_>,
     mapped: &BTreeMap<&str, &str>,
-    fields: &BTreeMap<String, InstanceName>,
+    (fields, held): (
+        &BTreeMap<String, InstanceName>,
+        &BTreeMap<InstanceName, StateName>,
+    ),
+    deferred: bool,
 ) -> Option<BTreeMap<String, InstanceName>> {
     let bound = fields
         .iter()
@@ -11891,7 +12281,8 @@ fn creator_bindings(
         })?;
     if !bound.is_empty()
         && ((related_guard::routes(creator.command, creator.outcome)
-            && !related_guard::present_in(creator.command, &bound))
+            && !deferred
+            && !related_guard::present_in(ir, creator.command, &bound, held))
             || creator
                 .command
                 .outcomes
@@ -17896,6 +18287,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_unmet_guard_restated_as_invariants_keeps_the_goals_its_search_gave_up() {
+        // The guard-directed search gave up two goals at its bound; naming the invariants instead
+        // of the guard must not turn that into a refusal that says no input exists.
+        let cut_short = RefusalCause::GuardUnsatisfiable {
+            predicate: "amount > 0".to_owned(),
+            tried: 9,
+            cut: 2,
+        };
+        let restated = invariants_named(cut_short, Ok(Some(("`Order` invariants".to_owned(), 3))));
+        assert!(
+            matches!(
+                &restated,
+                RefusalCause::GuardUnsatisfiable {
+                    tried: 3,
+                    cut: 2,
+                    ..
+                }
+            ),
+            "{restated:?}"
+        );
+        let text = restated.to_string();
+        assert!(text.contains("bound of 1024 steps"), "{text}");
+        let whole = RefusalCause::GuardUnsatisfiable {
+            predicate: "amount > 0".to_owned(),
+            tried: 9,
+            cut: 0,
+        };
+        let restated = invariants_named(whole, Ok(Some(("`Order` invariants".to_owned(), 3))));
+        assert!(!restated.to_string().contains("bound of"), "{restated}");
+    }
+
+    #[test]
     fn every_refusal_carries_a_distinct_code_in_one_family() {
         // A code is what a harness matches on, so two causes sharing one is two defects a reader
         // cannot tell apart. Built here rather than derived, so adding a variant without deciding
@@ -17914,6 +18337,7 @@ mod tests {
             RefusalCause::GuardUnsatisfiable {
                 predicate: "never".to_owned(),
                 tried: 4,
+                cut: 0,
             },
             RefusalCause::InstanceRequired {
                 entity: EntityRef::new(
@@ -18123,6 +18547,7 @@ mod unclaimed_refusal_tests {
                         `demo.inst.Instance` row held in `Removed`"
                 .to_owned(),
             tried: 3,
+            cut: 0,
         };
         let beside = Refusal::beside(&id, cause.clone()).to_string();
         assert!(!beside.contains("has no scenario"), "{beside}");

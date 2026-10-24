@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:docs-a-tagged-union-has-a-page
 kind: story
-status: draft
+status: active
 title: The tagged union type has a documentation page
 summary: 'kind: union with tag: and variants: is not shown on any website/docs page; an adopter modelled a sum type as a struct of optional fields.'
 tags:
@@ -10,7 +10,11 @@ tags:
 - ess-0.70.0
 relations:
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+- serves: vision:O2
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-23T00:38:01Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
+- {from: "proposed", to: "active", at: "2026-10-23T00:38:01Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
 ---
 ## Need
 

@@ -96,12 +96,23 @@ fn presence(
     let Some(policy) = field.presence() else {
         return;
     };
-    // An older reader fails `presence:` as an unknown field with no version hint.
-    if format.major() < FormatVersion::V15.major() {
+    // An older reader fails `presence:` as an unknown field, and `omitted_or_null` as an unknown
+    // variant, with no version hint.
+    let (required, message) = match policy {
+        crate::types::Presence::OmittedOrNull => (
+            FormatVersion::V31,
+            "`presence: omitted_or_null` requires specification format ess/31",
+        ),
+        _ => (
+            FormatVersion::V15,
+            "field presence policies require specification format ess/15",
+        ),
+    };
+    if format.major() < required.major() {
         errors.push(ValidationError::new(
             ValidationCode::UnsupportedFormatVersion,
             at,
-            "field presence policies require specification format ess/15",
+            message,
         ));
     }
     if !field.type_ref.is_optional() {

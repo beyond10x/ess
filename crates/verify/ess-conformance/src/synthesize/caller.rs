@@ -32,8 +32,9 @@ mod arranged;
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
-    EssIr, ResolvedCommand, ResolvedCondition, ResolvedField, ResolvedInstance,
+    EssIr, ResolvedCommand, ResolvedCondition, ResolvedField, ResolvedInstance, ResolvedOutcome,
     ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedVia, ResolvedRowSetTest,
+    ResolvedSubject,
 };
 use ess_domain::command::caller_value::CALLER_NAMESPACE;
 use ess_domain::name::QualifiedName;
@@ -43,7 +44,8 @@ use ess_primitives::predicate::{Operand, Predicate};
 
 use super::{grant, synthesize_plain, Focus, Note, Synthesis};
 use crate::scenario::{
-    ConformanceScenario, ScenarioId, ScenarioStep, ScenarioValue, ViewExpectation,
+    ConformanceScenario, EventRef, InstanceName, ScenarioId, ScenarioStep, ScenarioValue,
+    ViewExpectation,
 };
 use crate::witness::{candidates, Distinction, MAX_CANDIDATES};
 
@@ -312,7 +314,7 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
         let Some(again) = swapped.suite.scenarios.get(id) else {
             continue;
         };
-        let Err(exhausted) = append(ir, scenario, again, &mut identities) else {
+        let Err(exhausted) = append(ir, (Some(id), scenario), again, &mut identities) else {
             continue;
         };
         match one_row_acted_on(
@@ -359,7 +361,9 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
             }
             if let Some(again) = back.suite.scenarios.get(&id) {
                 identities.take(&scenario.steps);
-                if let Err(exhausted) = append(ir, &mut scenario, again, &mut identities) {
+                if let Err(exhausted) =
+                    append(ir, (Some(&id), &mut scenario), again, &mut identities)
+                {
                     whole.notes.push(unswapped(&id, exhausted));
                 }
             }
@@ -446,7 +450,8 @@ fn cross_single_command(ir: &EssIr, callers: &Callers, whole: &mut Synthesis) {
                 )
             });
             if let Some(again) = reversed.suite.scenarios.get(&id) {
-                if let Err(reason) = append_independent(ir, &mut scenario, again) {
+                if let Err(reason) = append_independent_about(ir, (Some(&id), &mut scenario), again)
+                {
                     whole.notes.push(Note::CrossCallerUnswapped {
                         scenario: id.clone(),
                         reason,
@@ -620,7 +625,7 @@ fn arranged_by_callers(
             else {
                 continue;
             };
-            if let Err(exhausted) = append(ir, scenario, again, identities) {
+            if let Err(exhausted) = append(ir, (Some(&id), scenario), again, identities) {
                 whole.notes.push(unswapped(&id, exhausted));
             }
         }
@@ -918,6 +923,16 @@ pub(super) fn append_independent(
     scenario: &mut ConformanceScenario,
     again: &ConformanceScenario,
 ) -> Result<(), &'static str> {
+    append_independent_about(ir, (None, scenario), again)
+}
+
+/// [`append_independent`] for the scenario `id` names, where given: the fresh values must keep its
+/// command under test on the branch the first run took (beyond10x/ess#672).
+fn append_independent_about(
+    ir: &EssIr,
+    (id, scenario): (Option<&ScenarioId>, &mut ConformanceScenario),
+    again: &ConformanceScenario,
+) -> Result<(), &'static str> {
     // A row established by setup carries its literal identity, which is never renamed or drawn
     // afresh (beyond10x/ess#413): a second run would establish the same row twice.
     if established(&scenario.steps) || established(&again.steps) {
@@ -927,7 +942,7 @@ pub(super) fn append_independent(
     }
     let mut identities = Identities::of(ir, [&*scenario, again]);
     let before = scenario.steps.len();
-    append(ir, scenario, again, &mut identities)
+    append(ir, (id, scenario), again, &mut identities)
         .map_err(|_| "the follow-up arrangement exhausted its fresh identity witnesses")?;
     if scenario.steps.len() == before {
         return Err("the follow-up assertions cannot compose with the retained origin state");
@@ -939,10 +954,11 @@ pub(super) fn append_independent(
 /// `again`'s steps after `scenario`'s own, with every instance and instant it binds renamed apart
 /// from the first run's and every caller-supplied identity it sends drawn afresh, where both runs
 /// can share one scenario. A swapped run left out because no fresh identity could be drawn for it
-/// is answered as [`Exhausted`], which the caller names in a note or answers otherwise.
+/// is answered as [`Exhausted`], which the caller names in a note or answers otherwise. `id`, where
+/// given, names the scenario, whose command under test the fresh values must keep on its branch.
 fn append(
     ir: &EssIr,
-    scenario: &mut ConformanceScenario,
+    (id, scenario): (Option<&ScenarioId>, &mut ConformanceScenario),
     again: &ConformanceScenario,
     identities: &mut Identities<'_>,
 ) -> Result<(), Exhausted> {
@@ -961,7 +977,26 @@ fn append(
     if once(&scenario.steps) || once(&again.steps) || reads_every_row(ir, &again.steps) {
         return Ok(());
     }
-    let drawn = identities.drawn(&scenario.steps, &again.steps)?;
+    // The branches selection tries up to the one under test, which it reaches only past every
+    // earlier one; a later branch's guard decides nothing where that one is selected.
+    let tested = id.and_then(under_test).and_then(|name| {
+        let command = ir
+            .commands()
+            .values()
+            .find(|command| command.name.to_string() == name)?;
+        let reached = match id {
+            Some(ScenarioId::Outcome { outcome } | ScenarioId::HeldOutcome { outcome, .. }) => {
+                command
+                    .outcomes
+                    .iter()
+                    .position(|branch| branch.name == outcome.outcome)
+                    .map_or(command.outcomes.len(), |at| at + 1)
+            }
+            _ => command.outcomes.len(),
+        };
+        Some((command, &command.outcomes[..reached]))
+    });
+    let drawn = identities.drawn(&scenario.steps, &again.steps, tested)?;
     let Ok(mut value) = serde_json::to_value(&again.steps) else {
         return Ok(());
     };
@@ -1261,6 +1296,9 @@ struct Identities<'a> {
     /// it acts on ([`supplied_instances`]), and the ones a guard compares with stored rows
     /// ([`selected`]).
     inputs: BTreeMap<String, (&'a ResolvedCommand, BTreeSet<String>)>,
+    /// The struct inputs of [`Self::inputs`] drawn afresh only in some members, by command and
+    /// input, with those members' paths ([`selected`]); every other input is drawn whole.
+    members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     /// Every declared field, input, event field and view column of an identity input's type, and
     /// every name the model copies an identity under whatever its type ([`derived`]): where a
     /// serialized run may carry a copy of an identity that is not text (see [`redraw`]).
@@ -1286,6 +1324,7 @@ impl<'a> Identities<'a> {
         let mut types = BTreeSet::new();
         let selected_fields = row_fields_read(ir);
         let mut guarded_names = BTreeSet::new();
+        let mut members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>> = BTreeMap::new();
         for command in ir.commands().values() {
             let created: BTreeSet<String> = command
                 .outcomes
@@ -1306,8 +1345,16 @@ impl<'a> Identities<'a> {
             // written where such a guard reads (beyond10x/ess#580): drawn afresh like an identity,
             // and redrawn under its own name, not under every name its type is declared at.
             let compared = selected(command, &selected_fields);
-            guarded_names.extend(compared.iter().cloned());
-            fields.extend(compared);
+            guarded_names.extend(compared.keys().cloned());
+            for (name, read) in &compared {
+                if let (Some(paths), false) = (read, fields.contains(name)) {
+                    members
+                        .entry(command.name.to_string())
+                        .or_default()
+                        .insert(name.clone(), paths.clone());
+                }
+            }
+            fields.extend(compared.into_keys());
             if fields.is_empty() {
                 continue;
             }
@@ -1342,6 +1389,7 @@ impl<'a> Identities<'a> {
             ir,
             creating,
             inputs,
+            members,
             keys,
             taken: BTreeSet::new(),
             next: 0,
@@ -1399,11 +1447,19 @@ impl<'a> Identities<'a> {
     /// A fresh value for every caller-supplied identity `again` sends, by the serialized value it
     /// replaces; [`Exhausted`] where the type has too few values to keep one apart from every
     /// identity taken, in which case the scenario keeps its first run only.
+    ///
+    /// Where the scenario is about a branch of `tested`, a fresh value must also leave every guard
+    /// of `tested` reading a row the run writes it into, and that `tested` addresses in the run,
+    /// deciding as before ([`keeps_stored_branch`], beyond10x/ess#672).
     fn drawn(
         &mut self,
         first: &[ScenarioStep],
         again: &[ScenarioStep],
+        tested: Option<(&ResolvedCommand, &[ResolvedOutcome])>,
     ) -> Result<BTreeMap<String, serde_json::Value>, Exhausted> {
+        let tested =
+            tested.map(|(command, branches)| Tested::of(self.ir, command, branches, again));
+        let tested = tested.as_ref();
         let mut drawn = BTreeMap::new();
         let sent = self.sent(again);
         let mut avoid: BTreeSet<String> = self
@@ -1434,16 +1490,31 @@ impl<'a> Identities<'a> {
                 .iter()
                 .filter(|other| key(other.value) == old)
                 .collect();
+            let members = self
+                .members
+                .get(&command.name.to_string())
+                .and_then(|inputs| inputs.get(field))
+                .cloned();
             let fresh = self
-                .draw(command, field, one.value, &avoid, &sending)
+                .draw(
+                    (command, field, one.value),
+                    members.as_ref(),
+                    &avoid,
+                    &sending,
+                    tested,
+                )
                 .ok_or_else(exhausted)?;
             let new = key(&fresh);
             avoid.insert(new.clone());
             self.taken.insert(new);
             // A struct identity is replaced whole, and each member leaf by its fresh member too,
             // wherever a member is copied on its own — a view parameter compared with
-            // `slot.shelf`, an event field set from it (beyond10x/ess#430).
+            // `slot.shelf`, an event field set from it (beyond10x/ess#430). A member kept as it was
+            // is no replacement (beyond10x/ess#672).
             for (from, to) in member_leaves(one.value, &fresh) {
+                if from == to {
+                    continue;
+                }
                 if let Ok(to) = serde_json::to_value(to) {
                     drawn.entry(key(from)).or_insert(to);
                 }
@@ -1461,14 +1532,16 @@ impl<'a> Identities<'a> {
     /// witness would take another branch.
     ///
     /// A struct is fresh only where every member differs from the member it replaces
-    /// (beyond10x/ess#430): a member copied on its own must not name the first run's row.
+    /// (beyond10x/ess#430): a member copied on its own must not name the first run's row. A struct
+    /// drawn afresh only in `members` keeps every other member of `old`, and is fresh where those
+    /// members are (beyond10x/ess#672).
     fn draw(
         &mut self,
-        command: &ResolvedCommand,
-        field: &str,
-        old: &Node,
+        (command, field, old): (&ResolvedCommand, &str, &Node),
+        members: Option<&BTreeSet<String>>,
         avoid: &BTreeSet<String>,
         sending: &[&Sent<'_, '_>],
+        tested: Option<&Tested<'_>>,
     ) -> Option<Node> {
         let far: Vec<Distinction> = (0..SWAPPED_TRIES)
             .map(|offset| Distinction::further(SWAPPED_IDENTITY + self.next + offset))
@@ -1483,12 +1556,29 @@ impl<'a> Identities<'a> {
         });
         let guided = super::guided_values(self.ir, command, field);
         for value in witnesses.chain(guided) {
+            let (value, fresh) = if let Some(paths) = members {
+                let Some(value) = only_members(old, &value, paths) else {
+                    continue;
+                };
+                let fresh = paths.iter().all(|path| {
+                    match (at_member(old, path), at_member(&value, path)) {
+                        (Some(before), Some(after)) => fresh_everywhere(before, after),
+                        _ => true,
+                    }
+                });
+                (value, fresh)
+            } else {
+                let fresh = fresh_everywhere(old, &value);
+                (value, fresh)
+            };
             let at = key(&value);
-            if self.taken.contains(&at) || avoid.contains(&at) || !fresh_everywhere(old, &value) {
+            if self.taken.contains(&at) || avoid.contains(&at) || !fresh {
                 continue;
             }
             if sending.iter().all(|sent| {
                 super::keeps_branch(self.ir, sent.command, &sent.input, sent.field, &value)
+                    && tested
+                        .is_none_or(|tested| keeps_stored_branch(self.ir, tested, sent, &value))
             }) {
                 return Some(value);
             }
@@ -1626,35 +1716,73 @@ fn row_fields_read(ir: &EssIr) -> BTreeMap<String, BTreeSet<String>> {
 
 /// Every input of `command` a swapped run must draw afresh because a guard compares it with stored
 /// rows that do not belong to the run (beyond10x/ess#580), whatever its type: the inputs a row-set
-/// selector or its `forall:` test reads, the input a `when_related:` guard names its row by and the
-/// inputs its test reads, and every input a branch writes into a field a row-set selector reads
-/// (`selected`, [`row_fields_read`]), so a row a run arranges is still the row its guard finds. A
-/// guard reading the caller is not among them: its value is the swapped caller's already.
+/// selector or its `forall:` test reads, the input a `when_related:` guard names its row by, and
+/// every input a branch writes into a field a row-set selector reads (`selected`,
+/// [`row_fields_read`]), so a row a run arranges is still the row its guard finds. A guard reading
+/// the caller is not among them: its value is the swapped caller's already.
+///
+/// Each input maps to the members of it that are read, by path below the input: `None` where the
+/// whole input is, and the member paths where only a member of a struct input is written into a
+/// selected field — the rest of the struct is the arranged value and is kept (beyond10x/ess#672,
+/// N24). The inputs a `when_related:` test reads are not among them (N25): the row they are
+/// compared with is the one the guard names by its input, which the run draws or arranges itself,
+/// so the value the first run tied to that row's stored field is still the tie. Unless that stored
+/// field is one a row-set selector reads: a run writes it from a value drawn afresh, and the tied
+/// input is drawn with it.
 fn selected(
     command: &ResolvedCommand,
     selected: &BTreeMap<String, BTreeSet<String>>,
-) -> BTreeSet<String> {
+) -> BTreeMap<String, Option<BTreeSet<String>>> {
+    fn whole(fields: &mut BTreeMap<String, Option<BTreeSet<String>>>, name: &str) {
+        fields.insert(name.to_owned(), None);
+    }
+    fn member(fields: &mut BTreeMap<String, Option<BTreeSet<String>>>, root: &str, path: &str) {
+        if let Some(paths) = fields
+            .entry(root.to_owned())
+            .or_insert_with(|| Some(BTreeSet::new()))
+        {
+            paths.insert(path.to_owned());
+        }
+    }
     let declared = |name: &str| command.input.iter().any(|input| input.name == name);
-    let mut fields = BTreeSet::new();
+    let mut fields = BTreeMap::new();
     for outcome in &command.outcomes {
         match &outcome.condition {
             ResolvedCondition::RelatedSet {
                 selection, test, ..
             } => {
-                fields.extend(super::row_set::input_reads(&selection.filter).map(str::to_owned));
+                for read in super::row_set::input_reads(&selection.filter) {
+                    whole(&mut fields, read);
+                }
                 if let ResolvedRowSetTest::Forall(predicate) = test {
-                    fields.extend(super::row_set::input_reads(predicate).map(str::to_owned));
+                    for read in super::row_set::input_reads(predicate) {
+                        whole(&mut fields, read);
+                    }
                 }
             }
             ResolvedCondition::Related { via, also, .. } => {
-                // From ess/28 every row an `all:` branch lists, and the predicate over each.
+                // From ess/28 every row an `all:` branch lists.
                 for via in std::iter::once(via).chain(also.iter().map(|row| &row.via)) {
                     if let ResolvedRelatedVia::Input { field, .. } = via {
-                        fields.insert(field.clone());
+                        whole(&mut fields, field);
                     }
                 }
-                for (_, _, predicate) in outcome.condition.related_predicates() {
-                    fields.extend(super::row_set::input_reads(predicate).map(str::to_owned));
+                // A test comparing an input with a stored field a row-set selector reads is the
+                // exception to N25: a run writes that field from a value it draws afresh, so the
+                // tied input is drawn with it, under the same old value.
+                for (_, entity, predicate) in outcome.condition.related_predicates() {
+                    let Some(read) = selected.get(&entity.name().to_string()) else {
+                        continue;
+                    };
+                    let ties_selected = predicate
+                        .fact_paths()
+                        .iter()
+                        .any(|path| matches!(path.segments(), [field] if read.contains(field)));
+                    if ties_selected {
+                        for read in super::row_set::input_reads(predicate) {
+                            whole(&mut fields, read);
+                        }
+                    }
                 }
             }
             _ => {}
@@ -1672,12 +1800,257 @@ fn selected(
             if let ResolvedPayloadValue::InputField { field, .. }
             | ResolvedPayloadValue::InputOrGenerated { field, .. } = &entry.value
             {
-                fields.insert(field.split('.').next().unwrap_or(field).to_owned());
+                match field.split_once('.') {
+                    Some((root, path)) => member(&mut fields, root, path),
+                    None => whole(&mut fields, field),
+                }
             }
         }
     }
-    fields.retain(|field| declared(field));
+    fields.retain(|field, _| declared(field));
     fields
+}
+
+/// The value at the member `path` (dotted, below the struct) of `value`.
+fn at_member<'n>(value: &'n Node, path: &str) -> Option<&'n Node> {
+    path.split('.').try_fold(value, |node, name| match node {
+        Node::Map(members) => members.get(name),
+        _ => None,
+    })
+}
+
+/// `old` with each member `paths` names, where `old` holds one, replaced by the member `drawn`
+/// holds at the same path: a struct input redrawn only where a guard reads it, its other members
+/// the arranged ones (beyond10x/ess#672). `None` where `drawn` lacks a member `old` holds.
+fn only_members(old: &Node, drawn: &Node, paths: &BTreeSet<String>) -> Option<Node> {
+    let mut merged = old.clone();
+    for path in paths {
+        if at_member(old, path).is_none() {
+            continue;
+        }
+        let fresh = at_member(drawn, path)?.clone();
+        let mut node = &mut merged;
+        for name in path.split('.') {
+            let Node::Map(members) = node else {
+                return None;
+            };
+            node = members.get_mut(name)?;
+        }
+        *node = fresh;
+    }
+    Some(merged)
+}
+
+/// The command under test of the scenario a swapped run is appended to, the branches whose guards
+/// decide the one under test, and the input of every step of that run sending it: what a
+/// stored-row guard of it reads is the row those inputs address.
+struct Tested<'t> {
+    branches: &'t [ResolvedOutcome],
+    /// Each step's input, every value the literal it is or names: an instance a step captured is
+    /// the identity its creating step sent, where that step sent it as a literal. `None` where it
+    /// is neither.
+    inputs: Vec<BTreeMap<&'t str, Option<&'t Node>>>,
+}
+
+impl<'t> Tested<'t> {
+    fn of(
+        ir: &EssIr,
+        command: &ResolvedCommand,
+        branches: &'t [ResolvedOutcome],
+        steps: &'t [ScenarioStep],
+    ) -> Self {
+        let mut captured: BTreeMap<&InstanceName, &Node> = BTreeMap::new();
+        let mut last: Option<(&ResolvedCommand, &BTreeMap<String, ScenarioValue>)> = None;
+        let mut inputs = Vec::new();
+        for step in steps {
+            match step {
+                ScenarioStep::ExecuteCommand {
+                    command: sent,
+                    input,
+                    ..
+                } => {
+                    last = ir
+                        .commands()
+                        .values()
+                        .find(|known| known.name.to_string() == sent.to_string())
+                        .map(|known| (known, input));
+                    if sent.to_string() == command.name.to_string() {
+                        inputs.push(
+                            input
+                                .iter()
+                                .map(|(name, value)| {
+                                    let value = match value {
+                                        ScenarioValue::Literal { value } => Some(value),
+                                        ScenarioValue::Instance { instance } => {
+                                            captured.get(instance).copied()
+                                        }
+                                        _ => None,
+                                    };
+                                    (name.as_str(), value)
+                                })
+                                .collect(),
+                        );
+                    }
+                }
+                ScenarioStep::CaptureInstance {
+                    instance,
+                    event,
+                    field,
+                    ..
+                } => {
+                    let Some((creating, input)) = last else {
+                        continue;
+                    };
+                    let from = creating.outcomes.iter().find_map(|outcome| {
+                        let subject = outcome.subject.as_ref()?;
+                        let ResolvedInstance::Observed {
+                            event: published,
+                            field: carried,
+                        } = &subject.instance
+                        else {
+                            return None;
+                        };
+                        (EventRef::from(published) == *event && carried.name == *field)
+                            .then(|| instance_input(outcome, subject))
+                            .flatten()
+                    });
+                    if let Some(ScenarioValue::Literal { value }) =
+                        from.and_then(|name| input.get(name))
+                    {
+                        captured.insert(instance, value);
+                    }
+                }
+                _ => {}
+            }
+        }
+        Tested { branches, inputs }
+    }
+
+    /// Whether a step of the run sending the command under test may address `row` in `by`: where
+    /// either is unknown — the row's identity is not a literal, the guard reads a row through a
+    /// stored field, or a step sends no literal there — it may.
+    fn addresses(&self, row: Option<&Node>, by: Option<&str>) -> bool {
+        let (Some(row), Some(by)) = (row, by) else {
+            return true;
+        };
+        self.inputs.iter().any(|input| {
+            input
+                .get(by)
+                .is_none_or(|value| value.is_none_or(|value| value == row))
+        })
+    }
+}
+
+/// The input field a branch takes the identity of the row it acts on from: named by `instance:`
+/// directly, or carried by the created row's event field, which the payload fills from input.
+fn instance_input<'o>(
+    outcome: &'o ResolvedOutcome,
+    subject: &'o ResolvedSubject,
+) -> Option<&'o str> {
+    match &subject.instance {
+        ResolvedInstance::Supplied { field } => Some(&field.name),
+        ResolvedInstance::Observed { event, field } => outcome
+            .payload
+            .iter()
+            .filter(|payload| &payload.event == event)
+            .flat_map(|payload| &payload.fields)
+            .find(|filled| filled.target == field.name)
+            .and_then(|filled| match &filled.value {
+                ResolvedPayloadValue::InputField { field, .. }
+                | ResolvedPayloadValue::InputOrGenerated { field, .. } => Some(field.as_str()),
+                _ => None,
+            }),
+    }
+}
+
+/// Whether the redraw of `sent`'s value to `new` leaves every guard of the command under test
+/// that reads a stored row deciding as it did (beyond10x/ess#672): a stored field `sent`'s command
+/// writes from the value, or from a member of it, is read by a `when_related:` test or a
+/// stored-subject guard of the command under test over the same entity, on the row a step sending
+/// it addresses, and that guard decides the field's old value and its new one alike, read alone. A
+/// guard the field alone leaves undecided both times is kept: it is the scenario's other values
+/// that decide it. A row the command under test never addresses — another row of the same entity
+/// the run arranges — decides nothing of its branch.
+fn keeps_stored_branch(ir: &EssIr, tested: &Tested<'_>, sent: &Sent<'_, '_>, new: &Node) -> bool {
+    let (field, old) = (sent.field, sent.value);
+    for outcome in &sent.command.outcomes {
+        let Some(subject) = &outcome.subject else {
+            continue;
+        };
+        let written = subject.entity.name().to_string();
+        let entity = ir.entity(&subject.entity);
+        let row = instance_input(outcome, subject).and_then(|name| sent.input.get(name));
+        for entry in &outcome.sets {
+            let (ResolvedPayloadValue::InputField { field: from, .. }
+            | ResolvedPayloadValue::InputOrGenerated { field: from, .. }) = &entry.value
+            else {
+                continue;
+            };
+            let (before, after) = match from.split_once('.') {
+                Some((root, path)) if root == field => (at_member(old, path), at_member(new, path)),
+                None if from == field => (Some(old), Some(new)),
+                _ => continue,
+            };
+            if before == after {
+                continue;
+            }
+            let decide = |predicate: &Predicate, value: Option<&Node>| {
+                let mut row = BTreeMap::new();
+                if let Some(value) = value {
+                    row.insert(entry.target.clone(), value.clone());
+                }
+                let Ok(facts) = crate::input::bind(
+                    ir,
+                    &entity.fields,
+                    &row,
+                    crate::input::Completeness::Partial,
+                ) else {
+                    return None;
+                };
+                Some(predicate.evaluate(&crate::input::TypedFacts::new(ir, &entity.fields, facts)))
+            };
+            let guards = tested.branches.iter().flat_map(|guarded| {
+                let related = guarded
+                    .condition
+                    .related_predicates()
+                    .into_iter()
+                    .filter(|(_, over, _)| over.name().to_string() == written)
+                    .map(|(via, _, predicate)| {
+                        let by = match via {
+                            ResolvedRelatedVia::Input { field, .. } => Some(field.as_str()),
+                            ResolvedRelatedVia::Subject { .. } => None,
+                        };
+                        (by, predicate)
+                    });
+                let stored = match (&guarded.condition, &guarded.subject) {
+                    (ResolvedCondition::SubjectPredicate { predicate, .. }, Some(on))
+                        if on.entity.name().to_string() == written =>
+                    {
+                        let by = match &on.instance {
+                            ResolvedInstance::Supplied { field } => Some(field.name.as_str()),
+                            ResolvedInstance::Observed { .. } => None,
+                        };
+                        Some((by, predicate))
+                    }
+                    _ => None,
+                };
+                related.chain(stored)
+            });
+            for (by, guard) in guards {
+                let reads = guard
+                    .fact_paths()
+                    .iter()
+                    .any(|path| path.segments().first() == Some(&entry.target));
+                if reads
+                    && tested.addresses(row, by)
+                    && decide(guard, before) != decide(guard, after)
+                {
+                    return false;
+                }
+            }
+        }
+    }
+    true
 }
 
 /// Every view parameter the filter compares with a member of its row's identity, where that

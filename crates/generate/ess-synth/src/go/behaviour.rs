@@ -3718,6 +3718,30 @@ impl<'a> Writer<'a> {
             }
             ResolvedPayloadValue::Generated { .. } => self.generate(target),
             ResolvedPayloadValue::Cleared => "nil".to_owned(),
+            // ess/31: an empty slice, never nil, which encodes as `null` rather than `[]`.
+            ResolvedPayloadValue::EmptyList => format!("{}{{}}", self.emit.go_type(target)),
+            // ess/31: a fresh slice holding the previous elements, an absent list read as empty,
+            // and the element last; the held row's slice is never shared.
+            ResolvedPayloadValue::Append { field: source, .. } => {
+                let previous = previous
+                    .as_deref()
+                    .expect("the plan admits `{append:}` only on a held row");
+                let element = self.input_value(source);
+                let list = self.emit.go_type(target.required());
+                let appended = if target.is_optional() {
+                    format!(
+                        "func() {list} {{ items := {list}{{}}; if {previous} != nil {{ items = \
+                         append(items, (*{previous})...) }}; return append(items, {element}) }}()"
+                    )
+                } else {
+                    format!("append(append({list}{{}}, {previous}...), {element})")
+                };
+                if target.is_optional() {
+                    self.some(&appended)
+                } else {
+                    appended
+                }
+            }
             ResolvedPayloadValue::Increment { by } => self.increment(
                 target,
                 previous
@@ -3938,7 +3962,9 @@ fn outcome_reads_before(outcome: &ResolvedOutcome) -> bool {
 /// Whether one value source reads the row as it was before the outcome.
 fn reads_subject(value: &ResolvedPayloadValue) -> bool {
     match value {
-        ResolvedPayloadValue::SubjectField { .. } | ResolvedPayloadValue::Increment { .. } => true,
+        ResolvedPayloadValue::SubjectField { .. }
+        | ResolvedPayloadValue::Increment { .. }
+        | ResolvedPayloadValue::Append { .. } => true,
         ResolvedPayloadValue::Struct { fields } => {
             fields.iter().any(|field| reads_subject(&field.value))
         }

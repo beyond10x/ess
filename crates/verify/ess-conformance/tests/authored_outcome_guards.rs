@@ -6,7 +6,9 @@
 //! default only where no `when:` holds. An act expecting a branch that order decidedly does not
 //! take — by `outcome:`, or by `error:` with no `outcome:` — is refused (`ESS-AUTHOR-041`). Where
 //! the input does not decide it — a guard reading an `{$instance}`, the held state, a related row,
-//! or an external answer — the act is accepted as before.
+//! or an external answer — the act is accepted as before. One related-row case is decided whatever
+//! the row holds: a `when_related:` branch answered after another over the same row whose guard
+//! its own implies is never taken (row 27 of an adopter's report).
 
 use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile;
@@ -782,4 +784,160 @@ fn a_guard_over_the_current_time_is_decided_only_where_every_run_reads_it_alike(
         &clocked("clock.c.Hold", "2020-01-01T00:00:00Z", "near"),
     );
     names(&text, &["`near`", "refutes it"]);
+}
+
+/// Refusals over one related locker row on `DropParcel`, in declaration order: `staff-closed`
+/// (`accepting == false` beside `recipient == staff`), `locker-closed` (`accepting == false`),
+/// `locker-shut` (the same guard), `locker-full` (`accepting == false` and `site == Depot`) and
+/// `at-depot` (`site == Depot`). A brand-free copy of an adopter's reproduction (row 27, 0.69.0).
+const LOCKERS: &str = include_str!("fixtures/related-refusal-shadowed.yaml");
+/// The adopter's scenario: its last act expects `locker-shut`, which `locker-closed` answers first.
+/// Held here rather than on disk, so no committed scenario draws `ESS-AUTHOR-041`
+/// (`adversary_222_pass1`).
+const TWO_RELATED: &str = r"type: ess-scenario/1
+domain: parcels.locker
+scenario: two-related
+summary: Two closed-locker refusals hold on the same locker; the model leaves the answer open, so an implementation may give either.
+
+arrange:
+  - instance: locker
+    entity: parcels.locker.Locker
+
+timeline:
+  - at: 2026-09-30T11:00:00Z
+    command: parcels.locker.InstallLocker
+    actor: parcels.locker.Courier
+    input: {site: Harbour}
+    outcome: installed
+    capture: {instance: locker, event: parcels.locker.LockerInstalled, field: locker_id}
+
+  - at: 2026-09-30T11:00:01Z
+    command: parcels.locker.DropParcel
+    actor: parcels.locker.Courier
+    input: {parcel_code: PX-80, locker_id: {$instance: locker}, recipient: Ada}
+    outcome: dropped
+
+  - at: 2026-09-30T11:00:02Z
+    command: parcels.locker.CloseLocker
+    actor: parcels.locker.Courier
+    input: {locker_id: {$instance: locker}}
+    outcome: closed
+
+  - at: 2026-09-30T11:00:03Z
+    command: parcels.locker.DropParcel
+    actor: parcels.locker.Courier
+    input: {parcel_code: PX-81, locker_id: {$instance: locker}, recipient: Ada}
+    outcome: locker-closed
+
+  - at: 2026-09-30T11:00:04Z
+    command: parcels.locker.DropParcel
+    actor: parcels.locker.Courier
+    input: {parcel_code: PX-82, locker_id: {$instance: locker}, recipient: Ada}
+    outcome: locker-shut
+
+assert:
+  - view: parcels.locker.Parcels
+    contains: {parcel_code: PX-80, recipient: Ada}
+";
+
+/// One `DropParcel` act on an installed locker, expecting `outcome`.
+fn drop_parcel(recipient: &str, outcome: &str) -> String {
+    document(
+        "parcels.locker",
+        "arrange:\n  - instance: locker\n    entity: parcels.locker.Locker\n",
+        &format!(
+            "  - at: 2026-01-05T09:00:00Z\n    command: parcels.locker.InstallLocker\n    \
+             input: {{site: Harbour}}\n    outcome: installed\n    \
+             capture: {{instance: locker, event: parcels.locker.LockerInstalled, field: locker_id}}\n{}",
+            act(
+                1,
+                "parcels.locker.DropParcel",
+                &format!("{{parcel_code: PX-1, locker_id: {{$instance: locker}}, recipient: {recipient}}}"),
+                &format!("    outcome: {outcome}\n"),
+            )
+        ),
+    )
+}
+
+#[test]
+fn a_related_refusal_an_earlier_one_over_the_same_row_answers_first_is_refused() {
+    let ir = fixture(LOCKERS);
+    // Identical guards: the first declared answers wherever the second would.
+    let text = contradiction(&ir, &drop_parcel("Ada", "locker-shut"));
+    names(
+        &text,
+        &[
+            "`parcels.locker.DropParcel`",
+            "`locker-shut`",
+            "`locker-closed`",
+            "accepting == false",
+            "input.locker_id",
+            "precedence order",
+        ],
+    );
+    // A guard that implies the earlier one's: `accepting == false` holds wherever it does.
+    let text = contradiction(&ir, &drop_parcel("Ada", "locker-full"));
+    names(
+        &text,
+        &["`locker-full`", "`locker-closed`", "precedence order"],
+    );
+}
+
+#[test]
+fn an_earlier_related_refusal_answers_first_only_where_its_input_guard_holds() {
+    let ir = fixture(LOCKERS);
+    // `staff-closed` reads the same row, but its `when:` refutes this input.
+    accepted(&ir, &drop_parcel("Ada", "locker-closed"));
+    // Where it holds, it answers first.
+    let text = contradiction(&ir, &drop_parcel("staff", "locker-closed"));
+    names(
+        &text,
+        &["`locker-closed`", "`staff-closed`", "recipient == staff"],
+    );
+}
+
+#[test]
+fn a_related_refusal_whose_guard_does_not_imply_an_earlier_one_is_admitted() {
+    let ir = fixture(LOCKERS);
+    // `site == Depot` implies none of the closed-locker guards declared before it.
+    accepted(&ir, &drop_parcel("Ada", "at-depot"));
+    accepted(&ir, &drop_parcel("Ada", "dropped"));
+    accepted(&ir, &drop_parcel("staff", "staff-closed"));
+}
+
+#[test]
+fn the_reproduction_is_refused_and_its_repair_passes_on_the_interpreter() {
+    let ir = fixture(LOCKERS);
+    let text = contradiction(&ir, TWO_RELATED);
+    names(&text, &["`locker-shut`", "`locker-closed`", "PX-82"]);
+
+    // The act expecting the branch the order takes is admitted and passes.
+    let repaired = TWO_RELATED.replace("outcome: locker-shut", "outcome: locker-closed");
+    let authored = authoring(&ir, &repaired);
+    assert!(authored.is_complete(), "{:?}", authored.refusals);
+    let mut suite = ess_conformance::synthesize::synthesize(&ir).suite;
+    suite.scenarios = authored.scenarios;
+    let admitted = ess_conformance::AdmittedSuite::from_suite(&suite)
+        .unwrap_or_else(|error| panic!("{error}"));
+    let report = ess_conformance::Runner::for_suite(admitted.suite())
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(ir),
+        )
+        .into_report();
+    let scenario = report
+        .scenarios
+        .iter()
+        .find(|scenario| {
+            scenario
+                .scenario
+                .to_string()
+                .ends_with("authored/two-related")
+        })
+        .expect("the authored scenario ran");
+    assert_eq!(
+        scenario.status,
+        ess_conformance::report::Status::Passed,
+        "{report:?}"
+    );
 }

@@ -266,6 +266,7 @@ use crate::scenario::{
 };
 use crate::synthesize::{payload_shape, reachable_types};
 
+mod non_finite;
 mod ties;
 
 // ---- the diagnostic catalogue ------------------------------------------------------------------
@@ -818,6 +819,10 @@ pub enum Written {
         /// The field of its payload.
         field: String,
     },
+    /// A literal holding a NaN or an infinity, which no ESS type has (beyond10x/ess#676): each
+    /// one's position below the value (empty for the value itself, `.member` or `[index]` below
+    /// it) and the number. It is refused, naming the number and why, rather than read as `null`.
+    NonFinite(Vec<(String, f64)>),
 }
 
 impl Written {
@@ -839,9 +844,16 @@ impl Written {
 
 impl<'de> serde::Deserialize<'de> for Written {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let node = Node::deserialize(deserializer)?;
+        let (node, non_finite) = non_finite::read(deserializer)?;
+        let literal = |node| {
+            if non_finite.is_empty() {
+                Self::Literal(node)
+            } else {
+                Self::NonFinite(non_finite)
+            }
+        };
         let Some((key, value)) = node.as_single_entry() else {
-            return Ok(Self::Literal(node));
+            return Ok(literal(node));
         };
         match key {
             Self::FIXTURE => {
@@ -884,7 +896,7 @@ impl<'de> serde::Deserialize<'de> for Written {
                     field: text("field")?,
                 })
             }
-            _ => Ok(Self::Literal(node)),
+            _ => Ok(literal(node)),
         }
     }
 }
@@ -1565,7 +1577,8 @@ enum RowWrite<'ir> {
 }
 
 /// Whether an act pins the value it writes: a literal does, and so does a fixture, whose whole
-/// value the suite resolves before the run; a reference states a relation and does not.
+/// value the suite resolves before the run; a reference states a relation and does not. A
+/// non-finite literal is refused for its number, and nothing more is said about it.
 fn pins(value: &Written) -> bool {
     matches!(value, Written::Literal(_) | Written::Fixture(_))
 }
@@ -1717,7 +1730,7 @@ fn value_at(value: &Written, path: &str) -> String {
             }
         }
         Written::Fixture(name) => format!("{{{}: {name}}}", Written::FIXTURE),
-        Written::Instance(_) | Written::Observed { .. } => String::new(),
+        Written::Instance(_) | Written::Observed { .. } | Written::NonFinite(_) => String::new(),
     }
 }
 
@@ -1735,10 +1748,13 @@ fn value_at(value: &Written, path: &str) -> String {
 /// command guarded by a related row `existing_instance:` and an `exists: false` over a row the
 /// input names come before every input refusal, so nothing claims them; an `exists: false` over a
 /// stored reference comes after the input refusals, which claim it where their guard holds, as the
-/// model interpreter answers. Whatever else a branch reads — the held state, a stored or related
-/// row, a provider — is not decided, and a `when:` the literals leave undecided claims nothing.
+/// model interpreter answers. A related row's values are not decided, but a `when_related:`
+/// predicate branch the plan answers after another over the same row, whose guard implies that
+/// one's, is never taken whatever the row holds ([`related_shadow`]). Whatever else a branch
+/// reads — the held state, a stored or related row, a provider — is not decided, and a `when:` the
+/// literals leave undecided claims nothing.
 fn not_taken(
-    format: ess_domain::system::FormatVersion,
+    ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     decided: &impl Fn(&Predicate) -> Option<bool>,
@@ -1748,6 +1764,7 @@ fn not_taken(
 
     // The accepting `when:` branches the precedence plan answers before this one: the claimers of
     // beyond10x/ess#217. Which branches they answer before is the plan's.
+    let format = ir.format();
     let earlier_accepting = crate::synthesize::precedence::answers_before(format, command, outcome)
         .into_iter()
         .filter(|other| {
@@ -1766,6 +1783,9 @@ fn not_taken(
             ));
         }
     }
+    if let Some(reason) = related_shadow(ir, command, outcome, decided) {
+        return Some(reason);
+    }
     let own = when(outcome)?;
     (decided(own) == Some(false)).then(|| {
         format!(
@@ -1773,6 +1793,239 @@ fn not_taken(
             outcome.name
         )
     })
+}
+
+/// Why a `when_related:` predicate branch is never taken because a branch the precedence plan
+/// answers before it reads the same related row with a guard its own implies (adopter report,
+/// row 27): wherever the row selects `outcome`, it selects that earlier branch too, and of two
+/// branches over one related row the first the order reads answers
+/// (`docs/design/cross-record-and-stored-field-guards.md#the-precedence-order`). The earlier
+/// branch's own input guard must hold for this input — `decided` says so, or `outcome`'s input
+/// guard implies it — and every further row it requires (`all:`) must be one `outcome` requires
+/// too. Implication is read from the guards' shape and from comparisons of one field against
+/// literals ([`implies`]); a guard it cannot show implied is left to the run, as before.
+fn related_shadow(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    decided: &impl Fn(&Predicate) -> Option<bool>,
+) -> Option<String> {
+    use ess_compiler::ir::{ResolvedCondition, ResolvedRelatedTest};
+
+    let ResolvedCondition::Related {
+        via,
+        entity,
+        test: ResolvedRelatedTest::Holds { predicate: own },
+        input: own_input,
+        also: own_also,
+    } = &outcome.condition
+    else {
+        return None;
+    };
+    let row_booleans = boolean_fields(&ir.entity(entity).fields);
+    let input_booleans = boolean_fields(&command.input);
+    crate::synthesize::precedence::answers_before(ir.format(), command, outcome)
+        .into_iter()
+        .find_map(|first| {
+            let ResolvedCondition::Related {
+                via: first_via,
+                entity: first_entity,
+                test: ResolvedRelatedTest::Holds { predicate },
+                input,
+                also,
+            } = &first.condition
+            else {
+                return None;
+            };
+            let same_row = first_via == via && first_entity == entity;
+            let input_holds = input.as_ref().is_none_or(|guard| {
+                decided(guard) == Some(true)
+                    || own_input.as_ref().is_some_and(|own| implies(&input_booleans, own, guard))
+            });
+            (same_row
+                && implies(&row_booleans, own, predicate)
+                && also.iter().all(|row| own_also.contains(row))
+                && input_holds)
+                .then(|| {
+                    let beside = input
+                        .as_ref()
+                        .map(|guard| format!(" beside {guard}"))
+                        .unwrap_or_default();
+                    format!(
+                        "`{}` (`{via}`: {predicate}{beside}) reads the same related row with a \
+                         guard `{}`'s ({own}) implies, and the precedence order answers it first \
+                         (docs/design/cross-record-and-stored-field-guards.md#the-precedence-order), \
+                         so `{}` is not taken",
+                        first.name, outcome.name, outcome.name
+                    )
+                })
+        })
+}
+
+/// The top-level fields of `fields` whose type is `Boolean` and not `Optional`: those whose
+/// comparison against `true` with `!=` holds exactly where the one against `false` with `==` does.
+fn boolean_fields(fields: &[ess_compiler::ir::ResolvedField]) -> BTreeSet<&str> {
+    use ess_compiler::ir::ResolvedTypeRef;
+    fields
+        .iter()
+        .filter(|field| {
+            matches!(
+                field.type_ref,
+                ResolvedTypeRef::Primitive {
+                    name: ess_domain::types::Primitive::Boolean,
+                }
+            )
+        })
+        .map(|field| field.name.as_str())
+        .collect()
+}
+
+/// Whether `premise` implies `conclusion` wherever it holds: equal guards, a conjunction one of
+/// whose conjuncts implies it, a disjunction each of whose disjuncts does, a conclusion every
+/// conjunct of which, or some disjunct of which, the premise implies, or two comparisons of one
+/// field against literals ([`compare_implies`]). `booleans` names the fields that are `Boolean` and
+/// not `Optional` ([`boolean_fields`]). Sound under three-valued reading, and incomplete: `false`
+/// means not shown.
+fn implies(booleans: &BTreeSet<&str>, premise: &Predicate, conclusion: &Predicate) -> bool {
+    if premise == conclusion
+        || matches!(conclusion, Predicate::Always)
+        || matches!(premise, Predicate::Never)
+        || compare_implies(booleans, premise, conclusion)
+    {
+        return true;
+    }
+    if let Predicate::All(children) = conclusion {
+        return children
+            .iter()
+            .all(|child| implies(booleans, premise, child));
+    }
+    if let Predicate::Any(children) = conclusion {
+        if children
+            .iter()
+            .any(|child| implies(booleans, premise, child))
+        {
+            return true;
+        }
+    }
+    match premise {
+        Predicate::All(children) => children
+            .iter()
+            .any(|child| implies(booleans, child, conclusion)),
+        Predicate::Any(children) => {
+            !children.is_empty()
+                && children
+                    .iter()
+                    .all(|child| implies(booleans, child, conclusion))
+        }
+        _ => false,
+    }
+}
+
+/// A comparison of one fact path against one literal, by value, read with the fact on the left.
+fn field_literal(
+    predicate: &Predicate,
+) -> Option<(
+    &ess_primitives::facts::FactPath,
+    ess_primitives::predicate::CompareOp,
+    &ess_primitives::facts::FactValue,
+)> {
+    use ess_primitives::predicate::{CompareKind, CompareOp, Operand};
+    let Predicate::Compare {
+        left,
+        op,
+        right,
+        kind: CompareKind::Value,
+    } = predicate
+    else {
+        return None;
+    };
+    match (left, right) {
+        (Operand::Fact(path), Operand::Literal(value)) => Some((path, *op, value)),
+        (Operand::Literal(value), Operand::Fact(path)) => Some((
+            path,
+            match op {
+                CompareOp::Lt => CompareOp::Gt,
+                CompareOp::Le => CompareOp::Ge,
+                CompareOp::Gt => CompareOp::Lt,
+                CompareOp::Ge => CompareOp::Le,
+                CompareOp::Eq => CompareOp::Eq,
+                CompareOp::Ne => CompareOp::Ne,
+            },
+            value,
+        )),
+        _ => None,
+    }
+}
+
+/// Whether one comparison of a field against a literal implies another of the same field, read
+/// over the values the premise admits (adversary pass on row 27: `free_slots < 1` implies
+/// `free_slots < 5`, and `accepting != true` implies `accepting == false`).
+///
+/// Three-valued soundness: a comparison holds only where its field holds a value (an absent one
+/// leaves it `Unknown`), so where the premise holds the field is present whatever its declared
+/// optionality. Ordering is read only between two numbers: a premise `<`, `<=`, `>`, `>=` or `==`
+/// against a number admits only numbers, and a premise `!=` admits values of any kind, so it
+/// implies only another `!=` against the same literal (equal guards, above). The one exception is a
+/// field `booleans` names, a `Boolean` that is not `Optional`, whose every value is `true` or
+/// `false`: there `!= b` is `== !b`.
+fn compare_implies(booleans: &BTreeSet<&str>, premise: &Predicate, conclusion: &Predicate) -> bool {
+    use ess_primitives::facts::FactValue;
+    use ess_primitives::predicate::CompareOp;
+    use std::cmp::Ordering;
+
+    let (Some((path, op, premise_value)), Some((conclusion_path, conclusion_op, value))) =
+        (field_literal(premise), field_literal(conclusion))
+    else {
+        return false;
+    };
+    if path != conclusion_path {
+        return false;
+    }
+    let boolean = matches!(path.segments(), [name] if booleans.contains(name.as_str()));
+    let (op, premise_value) = match (op, premise_value) {
+        (CompareOp::Ne, FactValue::Bool(held)) if boolean => {
+            (CompareOp::Eq, FactValue::Bool(!held))
+        }
+        (op, premise_value) => (op, premise_value.clone()),
+    };
+    if op == CompareOp::Eq {
+        // The field holds exactly `premise_value`. Read between two numbers or two Booleans only:
+        // two texts may name one instant in two spellings, which `==` reads as equal.
+        return match (&premise_value, value) {
+            (FactValue::Number(held), FactValue::Number(bound)) => {
+                let order = held.cmp(bound);
+                match conclusion_op {
+                    CompareOp::Eq => order == Ordering::Equal,
+                    CompareOp::Ne => order != Ordering::Equal,
+                    CompareOp::Lt => order == Ordering::Less,
+                    CompareOp::Le => order != Ordering::Greater,
+                    CompareOp::Gt => order == Ordering::Greater,
+                    CompareOp::Ge => order != Ordering::Less,
+                }
+            }
+            (FactValue::Bool(held), FactValue::Bool(bound)) => match conclusion_op {
+                CompareOp::Eq => held == bound,
+                CompareOp::Ne => held != bound,
+                _ => false,
+            },
+            _ => false,
+        };
+    }
+    let (FactValue::Number(bound), FactValue::Number(other)) = (&premise_value, value) else {
+        return false;
+    };
+    let order = bound.cmp(other);
+    match (op, conclusion_op) {
+        // x < bound, or x <= bound: every x is below `other` (or at most it).
+        (CompareOp::Lt, CompareOp::Lt | CompareOp::Le | CompareOp::Ne)
+        | (CompareOp::Le, CompareOp::Le) => order != Ordering::Greater,
+        (CompareOp::Le, CompareOp::Lt | CompareOp::Ne) => order == Ordering::Less,
+        // x > bound, or x >= bound: every x is above `other` (or at least it).
+        (CompareOp::Gt, CompareOp::Gt | CompareOp::Ge | CompareOp::Ne)
+        | (CompareOp::Ge, CompareOp::Ge) => order != Ordering::Less,
+        (CompareOp::Ge, CompareOp::Gt | CompareOp::Ne) => order == Ordering::Greater,
+        _ => false,
+    }
 }
 
 /// Whether `guard` holds of `facts` at every moment a target may handle the act, where that is one
@@ -1942,9 +2195,10 @@ diagnostic_catalogue! {
              key it does not know is refused rather than ignored";
         Self::UnsupportedFormat { .. } => 2,
             "The document claims a format this build does not implement.",
-            "write `type: ess-scenario/1`, `ess-scenario/2` for entity setup, `ess-scenario/3` for \
-             fixture values, `ess-scenario/4` for direct responses, or `ess-scenario/5` for \
-             caller values";
+            "a scenario's `type:` is `ess-scenario/1`, `ess-scenario/2` for entity setup, \
+             `ess-scenario/3` for fixture values, `ess-scenario/4` for direct responses, or \
+             `ess-scenario/5` for caller values; a document in a repository-defined trace format \
+             is not a scenario input, so leave it out of `--scenarios` and `ess-inputs.yaml`";
         Self::Duplicate { .. } => 3,
             "Two files produce the same scenario id.",
             "two files name one scenario in one domain; rename one of them";
@@ -2099,11 +2353,13 @@ diagnostic_catalogue! {
         Self::GeneratedValuePinned { .. } => 42,
             "An act states an exact value for a field the outcome marks `{generated: true}`.",
             "the implementation mints a `{generated: true}` field, so an exact value passes only \
-             where it happens to mint that one: drop the field from the expectation, and the \
-             suite still checks its presence and type, or state its relation to another value \
-             with a reference, `{$observed: {event: …, field: …}}` in a view row or `capture:` \
-             on the event; from `format: ess/30` an exact value there is the scenario's own \
-             claim, which the suite checks as written";
+             where it happens to mint that one: in an event's payload or an error's fields, drop \
+             the field from the expectation, and the suite still checks its presence and type \
+             there, or relate it to another value with `capture:` on the event; in a view row, \
+             drop it and assert `satisfies: defined(<field>)` on the view, which requires it on \
+             every row and at least one row, or state its relation to an event's value with \
+             `{$observed: {event: …, field: …}}`; from `format: ess/30` an exact value there is \
+             the scenario's own claim, which the suite checks as written";
         Self::UnorderedTie { .. } => 43,
             "An act reads the head of an order declaring `ties: unordered`, and the arranged rows \
              tie on every key and rank first.",
@@ -2497,9 +2753,7 @@ pub(crate) fn arrangements(
     ir: &EssIr,
     source: &Source,
 ) -> Result<Vec<(InstanceName, bool)>, String> {
-    let document: Document = map_key_newtypes(ir)
-        .scope(|| ess_yaml::from_str(&source.text))
-        .map_err(|error| error.to_string())?;
+    let document = read_document(ir, &source.text).map_err(|cause| cause.to_string())?;
     Ok(document
         .arrange
         .iter()
@@ -2521,15 +2775,7 @@ pub(crate) fn compile_one(
         }]
     };
 
-    // A fixture is declared in the specification's own type spellings, so a map keyed by one of
-    // the model's newtypes (beyond10x/ess#143) reads here exactly as it did there.
-    let document: Document = map_key_newtypes(ir)
-        .scope(|| ess_yaml::from_str(&source.text))
-        .map_err(|error| {
-            bare(Cause::Unreadable {
-                detail: error.to_string(),
-            })
-        })?;
+    let document = read_document(ir, &source.text).map_err(|cause| bare(*cause))?;
     if let Some(cause) = document_format_refusal(&document) {
         return Err(bare(cause));
     }
@@ -2611,11 +2857,81 @@ pub(crate) fn compile_one(
     Ok((id, scenario))
 }
 
-fn document_format_refusal(document: &Document) -> Option<Cause> {
-    if !matches!(
-        document.format.as_str(),
+/// Whether `format` is one of the scenario formats this module reads.
+fn is_scenario_format(format: &str) -> bool {
+    matches!(
+        format,
         FORMAT | "ess-scenario/2" | "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5"
-    ) {
+    )
+}
+
+/// A document, its `type:` looked at before any other key is admitted.
+///
+/// A document in another format is refused for its format, and one without a `type:` for the
+/// missing key, rather than for the first key `Document` does not know: an adopter's own trace
+/// format read as an ESS scenario with a misspelt `story:`. A `type:` that is not a plain string,
+/// and text that is not a mapping, are left to the full read and keep the refusal it gives.
+fn read_document(ir: &EssIr, text: &str) -> Result<Document, Box<Cause>> {
+    if let Some(format) = header_type(text) {
+        match &format {
+            Header::Untyped => {
+                return Err(Box::new(Cause::Unreadable {
+                    detail: "missing field `type`".into(),
+                }));
+            }
+            Header::Typed(ess_yaml::Value::String(found)) if !is_scenario_format(found) => {
+                return Err(Box::new(Cause::UnsupportedFormat {
+                    found: found.clone(),
+                }));
+            }
+            Header::Typed(_) => {}
+        }
+    }
+    // A fixture is declared in the specification's own type spellings, so a map keyed by one of
+    // the model's newtypes (beyond10x/ess#143) reads here exactly as it did there.
+    map_key_newtypes(ir)
+        .scope(|| ess_yaml::from_str(text))
+        .map_err(|error| {
+            Box::new(Cause::Unreadable {
+                detail: error.to_string(),
+            })
+        })
+}
+
+/// What a mapping document says in its `type:` key, read before the rest of it.
+enum Header {
+    Typed(ess_yaml::Value),
+    Untyped,
+}
+
+/// The header of a mapping document, and `None` when the text is not a mapping.
+///
+/// A document that repeats a key anywhere fails the read as a value, so its `type:` is then read
+/// alone, every other key ignored: a trace repeating `then:` is still refused for its format. Such
+/// a document without a `type:` keeps the full read's refusal.
+fn header_type(text: &str) -> Option<Header> {
+    #[derive(serde::Deserialize)]
+    struct TypeOnly {
+        #[serde(rename = "type")]
+        format: Option<ess_yaml::Value>,
+    }
+    match ess_yaml::from_str::<ess_yaml::Value>(text) {
+        Ok(ess_yaml::Value::Mapping(header)) => Some(
+            header
+                .get("type")
+                .cloned()
+                .map_or(Header::Untyped, Header::Typed),
+        ),
+        Ok(_) => None,
+        Err(_) => ess_yaml::from_str::<TypeOnly>(text)
+            .ok()
+            .and_then(|header| header.format)
+            .map(Header::Typed),
+    }
+}
+
+fn document_format_refusal(document: &Document) -> Option<Cause> {
+    if !is_scenario_format(&document.format) {
         return Some(Cause::UnsupportedFormat {
             found: document.format.clone(),
         });
@@ -3169,7 +3485,7 @@ impl<'a> Compiler<'a> {
         };
         let mut reasons = Vec::new();
         for outcome in candidates {
-            match not_taken(self.ir.format(), command, outcome, &decided) {
+            match not_taken(self.ir, command, outcome, &decided) {
                 Some(reason) => reasons.push(reason),
                 None => return,
             }
@@ -4394,6 +4710,11 @@ impl<'a> Compiler<'a> {
                 Written::Literal(node) => {
                     literals.insert(field.clone(), node.clone());
                 }
+                // Occupies its field; an undeclared one is refused by name below.
+                Written::NonFinite(found) => {
+                    referenced.insert(field.clone());
+                    self.non_finite(surface, fields, field, found);
+                }
                 Written::Instance(instance) => {
                     referenced.insert(field.clone());
                     if let Some(value) = self.instance(instance, fields, surface, field) {
@@ -4686,6 +5007,13 @@ impl<'a> Compiler<'a> {
     ) -> BTreeMap<String, Node> {
         let mut literals = BTreeMap::new();
         for (field, value) in written {
+            if let Written::NonFinite(found) = value {
+                // An undeclared field is left to the shape check below, which refuses it by name.
+                if !self.non_finite(surface, fields, field, found) {
+                    literals.insert(field.clone(), Node::Null);
+                }
+                continue;
+            }
             match value.literal() {
                 // A reference inside a compared value is the same claim the format cannot make as
                 // a whole-field one, refused by where it sits (beyond10x/ess#242) rather than read
@@ -4713,6 +5041,41 @@ impl<'a> Compiler<'a> {
             self.shape(&errors, surface);
         }
         literals
+    }
+
+    /// Refuses each NaN or infinity declared `field` holds (beyond10x/ess#676), naming the number
+    /// and that no type has one, with the declared type where it is the field's whole value.
+    /// `false`, refusing nothing, where `fields` does not declare `field`: that is refused by name.
+    fn non_finite(
+        &mut self,
+        surface: &Surface,
+        fields: &[ResolvedField],
+        field: &str,
+        found: &[(String, f64)],
+    ) -> bool {
+        let Some(declared) = fields.iter().find(|it| it.name == field) else {
+            return false;
+        };
+        for (at, value) in found {
+            let number = non_finite::spelling(*value);
+            let type_ref = &declared.type_ref;
+            let named = if at.is_empty() {
+                format!(
+                    "expected {type_ref}, found `{number}`; {type_ref} has no non-finite values"
+                )
+            } else {
+                format!("found `{number}`; no declared type has non-finite values")
+            };
+            self.refuse(Cause::ValueRejected {
+                surface: surface.clone(),
+                detail: format!(
+                    "{field}{at}: {named}, because Decimal and Binary64 hold finite values only; \
+                     a NaN or an infinity never reaches the domain, so refuse it in the decoder \
+                     that reads it"
+                ),
+            });
+        }
+        true
     }
 
     /// An instance reference, checked against the arrangement and the field it fills.

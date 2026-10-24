@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T15:35:53Z",
+  "actor": "human:timo",
+  "artifact": "story:an-existence-outcome-passes-a-related-list-membership-guard",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit 3b8dbf386 on integrate/ess-batch-0690 b66479dab: red first (an_existence_outcome_passes_a_related_list_membership_guard: 1 passed, 1 failed, refusal named no guard); green: that target 2, ess-conformance 609 targets 4524 passed 0 failed 31 ignored, ess-cli 9 synthesis targets 36, task test-xtask 418; clippy -p ess-conformance -p ess-cli -D warnings, task fmt-check exit 0; downstream spec 30 scenarios 0 refusals, 30 passed on the interpreted target. Not run locally: task ci-lint, task check; left to the pull request Gate."
+  }
+}

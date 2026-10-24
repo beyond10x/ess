@@ -158,6 +158,9 @@ The JSON Schema and OpenAPI projections annotate the enum with `x-ess-attributes
 documentation lists each variant's values, and the types-only Rust, Go and TypeScript outputs give
 each enum an accessor per attribute.
 
+A value that is one of several cases, each with its own payload, is not an enum and not a struct of
+optional fields: it is a `kind: union` with a `tag:`, declared on [tagged unions](unions.md).
+
 ### Order two instants
 
 A right-hand side without a dot is a literal, so `when: ends_at > starts_at` compares `ends_at`
@@ -203,7 +206,8 @@ Every character of a value is one of the alphabet's, compared exactly, with no n
 folding. Synthesis builds the input's witness from those characters, and a guard such as
 `keys.count > 64` from texts of 65 and 64 characters. An `example:` on a command input is the value
 the first witness starts from. It is not a constraint, it has to be a value of the input's type, and
-only a scalar input takes one. The published JSON Schema, OpenAPI and AsyncAPI assert the alphabet
+only a scalar input takes one, or from `ess/31` a list input, whose example is a list of element
+values, `example: [websocket]`, sent as written wherever no guard reads into the list. The published JSON Schema, OpenAPI and AsyncAPI assert the alphabet
 as an anchored `pattern` beside the `x-ess-alphabet` annotation, so a schema validator refuses a
 value outside it: `0123456789abcdef` is `^[0-9a-f]*$`, and every character other than an ASCII
 letter or digit is written as a four-digit `\u` escape. An alphabet holding a character outside the
@@ -237,7 +241,7 @@ declare a longer prefix that starts with the inner one. Entity Runtime lowers th
 A newtype or a struct that declares `invariants:` makes a claim about every value of the type, and a
 generated suite reads it wherever a view publishes a value of the type: directly in a field, or as
 the element of a `List`, the value of a `Map`, the present value of an `Optional` or the payload of
-one `Union` variant.
+one `Union` variant ([tagged unions](unions.md)).
 
 ```yaml
 types:
@@ -323,3 +327,19 @@ Standalone structural Rust/Go codecs and whole-system/conformance targets
 refuse Binary64; TypeScript structural output reports the finite codec obligation.
 Adding a Binary64 type to a model selected in full therefore requires checking
 every intended target's support before adopting it.
+
+### Numbers are finite
+
+`Decimal` and `Binary64` hold finite values only. A `Decimal` is its patterned decimal string, and
+a JSON number has no token for NaN or an infinity; a `Binary64` stores a finite bit pattern, and
+NaN and both infinities refuse construction and decoding. So a NaN or an infinity never reaches
+the domain, and an outcome that refuses one cannot be reached through the specification.
+
+Refuse such a value where it arises: in the decoder or adapter that turns a non-JSON or binary
+source into the command's input, and test that refusal at that seam. Over HTTP, a number the
+request cannot carry is the binding's `malformed` refusal
+([refusals](../http-routes.md#encoding-statuses-headers-and-redirects)). Do not declare an outcome
+for a non-finite input, or declare it `external:`, which no input decides.
+
+A scenario cannot write one either: `.nan`, `.inf` or `-.inf` where a value is expected is refused
+as `ESS-AUTHOR-015`, naming the number and saying that the type has no non-finite values.

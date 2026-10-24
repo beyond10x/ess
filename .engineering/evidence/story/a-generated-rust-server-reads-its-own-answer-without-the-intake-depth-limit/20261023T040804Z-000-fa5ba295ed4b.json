@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T04:08:04Z",
+  "actor": "human:timo",
+  "artifact": "story:a-generated-rust-server-reads-its-own-answer-without-the-intake-depth-limit",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit f14e93069f merged into integrate/ess-batch-0690: transport_free_entry 8 passed, actor_grants 8 passed, served_entry 34 passed, cargo xtask generate --check exit 0, clippy -p ess-synth exit 0, task fmt-check exit 0, task test-xtask exit 0"
+  }
+}

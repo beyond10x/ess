@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T01:34:48Z",
+  "actor": "human:timo",
+  "artifact": "story:docs-a-tagged-union-has-a-page",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit/ess-0690-u12 76540e6355 merged into integrate/ess-batch-0690: union_page 4 passed, site_navigation 8 passed, task fmt-check exit 0, task test-xtask exit 0"
+  }
+}

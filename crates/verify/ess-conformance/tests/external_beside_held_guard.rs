@@ -860,7 +860,10 @@ fn unclaimed_external_witnesses_keep_their_bytes() {
 /// suites for unread `Optional` inputs left absent (beyond10x/ess#546, 15db24d97), two for a suite
 /// stating its catalog once (beyond10x/ess#570, 036d89dae), and the refusals of `model-types`,
 /// `adversary_expression` (unit U5, 63a581f88) and the `ess/22` identity selector (the review fix
-/// a422cac9d, whose row-set refusal now carries the arrangement help).
+/// a422cac9d, whose row-set refusal now carries the arrangement help). The refusals of
+/// `calendar-windows.yaml` were re-pinned when the creating branch also left rows chosen toward
+/// the stored-field guards of the moves (story seeded-state-reaches-related-rows): the same nine
+/// refusals, `Deploy/frozen` now listed last, the suite unchanged.
 const BASE: &str = include_str!("fixtures/external-beside-held-guard-base.tsv");
 
 fn root() -> PathBuf {

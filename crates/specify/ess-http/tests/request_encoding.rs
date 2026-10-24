@@ -354,17 +354,97 @@ fn ess_http_020_an_encoding_outside_the_set_or_on_the_wrong_method_is_refused() 
         shown[3].contains("`query`") && shown[3].contains("`post`"),
         "{shown:?}"
     );
-    // `query` is refused on every method but `get`.
-    for method in ["put", "patch", "delete"] {
+    // `query` is refused on every method but `get` and `delete`, and the refusal names both.
+    for method in ["put", "patch"] {
         let routes = format!(
             "routes:\n  - command: catalog.items.ListItem\n    method: {method}\n    request: {{encoding: query}}\n"
         );
+        let result = compiled(&ir, &routes);
         assert_eq!(
-            located(compiled(&ir, &routes)),
+            located(result.clone()),
             [refused("ESS-HTTP-020", "routes[0].request.encoding")],
             "{method}"
         );
+        let shown = worded(result);
+        assert!(
+            shown[0].contains("`get`") && shown[0].contains("`delete`"),
+            "{shown:?}"
+        );
     }
+}
+
+/// The adopter's reproduction: a command bound to `delete` whose `Optional<String>` input rides in
+/// the query string, as a protocol whose `DELETE` takes query parameters needs.
+fn forgetting_model() -> EssIr {
+    let text = MODEL
+        .replace(
+            "  - name: catalog.items.PurgeItems\n",
+            "  - name: catalog.items.ForgetItem
+    input:
+      - {name: item_id, type: catalog.items.ItemId}
+      - {name: reason, type: Optional<String>}
+    outcomes:
+      - name: forgotten
+        emits: [catalog.items.ItemTouched]
+        payload:
+          catalog.items.ItemTouched: {item_id: input.item_id}
+  - name: catalog.items.PurgeItems
+",
+        )
+        .replace(
+            "accepts: {commands: [catalog.items.ListItem, catalog.items.TouchItem]}",
+            "accepts: {commands: [catalog.items.ForgetItem, catalog.items.ListItem, catalog.items.TouchItem]}",
+        );
+    model_from(&text)
+}
+
+#[test]
+fn ess_http_020_a_delete_command_may_encode_its_input_as_query() {
+    let ir = forgetting_model();
+    for routes in [
+        // Every input field in the query string.
+        "routes:
+  - command: catalog.items.ForgetItem
+    method: delete
+    path: /items/forget
+    request: {encoding: query}
+",
+        // The identity in the path, the rest in the query string, an unknown key ignored.
+        "routes:
+  - command: catalog.items.ForgetItem
+    method: delete
+    path: /items/{item_id}
+    parameters: {item_id: input.item_id}
+    request: {encoding: query, unknown: ignore}
+",
+    ] {
+        let http = compiled(&ir, routes).unwrap_or_else(|refused| panic!("{refused}"));
+        let route = http
+            .route(&Operation::Command("catalog.items.ForgetItem".into()))
+            .expect("ForgetItem is routed");
+        assert_eq!(route.method, Method::Delete);
+        assert_eq!(
+            route.request.as_ref().map(|request| request.encoding),
+            Some(Encoding::Query)
+        );
+        // The compiled IR reads back, byte for byte: `ess-http-ir/1` admits `query` on `delete`.
+        let json = http.to_canonical_json();
+        let read = HttpIr::from_json(&json).unwrap_or_else(|error| panic!("{error}: {json}"));
+        assert_eq!(read.to_canonical_json(), json, "round trip changed bytes");
+    }
+    // A delete still may not leave a non-flat field to the query string (`ESS-HTTP-021`).
+    let shaped = shaped_model();
+    let routes = "routes:
+  - command: catalog.items.ShapeItems
+    method: delete
+    path: /shapes
+    request: {encoding: query}
+";
+    let found = located(compiled(&shaped, routes));
+    assert!(
+        !found.is_empty() && found.iter().all(|(code, _)| *code == "ESS-HTTP-021"),
+        "{found:?}"
+    );
 }
 
 #[test]

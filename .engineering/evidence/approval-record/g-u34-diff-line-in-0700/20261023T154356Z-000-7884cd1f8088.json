@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-23T15:43:56Z",
+  "actor": "human:timo",
+  "artifact": "approval-record:g-u34-diff-line-in-0700",
+  "kind": "approval-record",
+  "revision": 3,
+  "change": {
+    "change": "redaction",
+    "literal_sha256": "348c31798b5922886b63166e23f03d82d1f9d6f7e0abe274397b84559337616f",
+    "literal_chars": 17,
+    "replacement": "Approved by session b10x-chef-orchestrator under its grant.",
+    "count": 1,
+    "reason": "the orchestrator session approved this under its grant; the operator marker means a decision that waits for the operator"
+  }
+}

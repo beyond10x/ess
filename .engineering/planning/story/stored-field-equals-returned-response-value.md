@@ -6,7 +6,7 @@ status: draft
 title: 'Store the value an outcome returns with {response: <field>} in sets: (ess/24)'
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -199,3 +199,126 @@ refused: refusal[ESS-SYNTH-008]: outcome catalog.item.Claim/claimed has no scena
 The same run also refuses the retry cell with `ESS-SYNTH-001` ("the identical retry has no uniquely
 witnessed post-state branch"), whose help text ("give the field a type that has a finite value")
 does not fit the cause. Not filed.
+
+## Fit review
+
+Retargeted from ess/24 to ess/31. Request (an adopter, verbatim): `sets: {token: {response:
+token}}` on a create with `response: [{name: token, type: String}]` and `returns: true` is refused:
+"error[ESS-COMMAND-004]: response and generated sources are admitted only in event payloads", yet
+`{generated: true}` validates in sets:. Need: one minted value both stored and answered.
+
+## Fit review
+
+1. **Need.** A value the implementation mints (a pin, a token) is returned to the caller and stored
+   on the row, and the suite holds the two equal: a later command guarded on the stored value
+   accepts the returned one.
+
+2. **Class.** Semantics. No spelling today states that the stored value equals the response.
+
+3. **Already expressible?** No. Reproduction (fit/repro/r5-response.yaml, ess 0.68.0, ess/30):
+
+   ```yaml
+   - name: orders.order.Place
+     response: [{name: pin, type: String}]
+     outcomes:
+       - name: placed
+         creates: orders.order.Order
+         returns: true
+         sets: {pin: {response: pin}}
+   ```
+
+   ESS-COMMAND-004 "response and generated sources are admitted only in event payloads", from
+   crates/specify/ess-domain/src/command.rs:4853-4870, which admits `Generated` from ess/14 and
+   never `ResponseField`. The nearest idiom routes the value through an event
+   (`sets: {pin: {payload: orders.order.OrderPlaced.pin}}`, payload `pin: {response: pin}`,
+   fit/repro/r5-payload-idiom.yaml): it validates, but synthesis refuses 4 cases (ESS-SYNTH-003 "no
+   candidate … satisfies `orders.order.Order` stored pin" for Confirm/confirmed, Confirm/mismatch
+   and the confirm transition; ESS-SYNTH-004 for the Confirmed state), and the interpreted run
+   reports Place unsupported: "an actual response field or its executable conversion is not
+   interpreted yet". The same holds with the identity taken from input
+   (fit/repro/r5-payload-idiom-input-id.yaml), so the gap is the typed response, not the minted
+   identity.
+
+4. **Fit with grids and targets.**
+   - typed-response-outcome-payloads.md:23 states response sources are not admitted in `sets`;
+     minted-value-sources.md (ess/27, #545) admits `{generated: true, present: true}` and
+     `{payload: E.f}`, which shows the grid already has a "stored minted value" row; the response is
+     the missing source in it.
+   - Interpreter: interpret/execute/values.rs:410-430 `response()` returns NotInterpreted when the
+     actual response is absent.
+   - Suite vocabulary: ScenarioValue (scenario.rs:1826) has `Observed{event, field}` and
+     `Awaited{field}` but nothing reads a previous invocation's response; CaptureCommandResult and
+     ExpectResponsePayload exist as steps. SUPPORTED_SUITE_FORMATS is 1..=57 (scenario.rs:542).
+   - Generated Rust keeps any command with a typed `response:` an obligation
+     (crates/generate/ess-synth/src/rust/behaviour.rs:55-56; determined.rs:642-643), so generated
+     targets are unchanged by this story.
+
+5. **Second adopter.** Issue #498 asked for the same thing at ess/24; repro files under
+   .engineering/repro/498/ (stored-response.yaml, stored-generated.yaml, one-time-wrong-state.yaml).
+
+6. **Cost.** Domain: lift one refusal, add four. Interpreter: produce the actual response. Suite:
+   one ScenarioValue and a suite format pair. Synthesis: arrange a later guard from a captured
+   response. L.
+
+7. **Alternatives.** (a) The payload-read idiom: fails synthesis and interpretation today (item 3).
+   (b) A new `{minted: f}` source shared by sets and response: a second spelling for an existing
+   source; declined. (c) Admit `{response: f}` in `sets`: chosen.
+
+## Decisions
+
+**Accept, redesigned, at ess/31.**
+
+- **Syntax.** `sets: {f: {response: r}}` on an outcome with `returns: true`, where `r` is a field of
+  the command's typed `response:`.
+- **Refusals** (all ESS-COMMAND-004 conflicting_declaration, no new code): on an `error:` or
+  `compensates:` outcome; `r` not a response field; type of `r` not assignable to `f`; `r` marked
+  `one_time_response`. Below ess/31 the existing message stays, with a hint naming ess/31.
+- **IR.** The existing `ResolvedPayloadValue::ResponseField` in the outcome's resolved sets. No new
+  IR type.
+- **Format.** ess/31, an additive row in FORMAT_HISTORY (system.rs): "`{response: f}` in sets;
+  below ess/31 refused as unsupported_format_version naming ess/31; a model without it keeps its IR
+  bytes".
+- **Interpreter.** `response()` produces the actual response for a response field that a `sets`
+  entry or a payload names, minting the value once and using it for the row, the payload and the
+  reply.
+- **Suite.** A new `ScenarioValue::Responded{field}` (sibling of `Awaited`) reads the captured
+  response of the origin step. Suite format pair 58/59 (inferred from the 57 ceiling; the writer
+  emits the new number only when a suite uses `Responded`). Synthesis: the origin scenario expects
+  the row equal to the response; a later guard on the stored field is witnessed by feeding
+  `Responded{field}` back. The `unarrangeable` check (synthesize/subject_fact.rs:5630-5662) counts
+  a ResponseField as written.
+- **Targets.** Generated Rust and Go keep the obligation; Entity Runtime refuses by name.
+- **Files.** ess-domain command.rs:4853-4870, command/minted_value.rs, system.rs; ess-compiler
+  lowering of sets; ess-conformance interpret/execute/values.rs, scenario.rs, synthesize.rs
+  (`minted_row`), synthesize/subject_fact.rs; schemas (`cargo xtask schema`,
+  `task projection-check` if RawSpecFile changes); docs typed-response-outcome-payloads.md and
+  minted-value-sources.md; CHANGELOG.md. Pins: `task test-xtask`,
+  `cargo test -p ess-compiler --test typed_diagnostics`.
+- **One unit with U11?** No. They share minted-value-sources.md, minted_value.rs, the interpreter's
+  value resolution and the later-guard arrangement over a stored minted value. R5 is domain,
+  interpreter and suite vocabulary; U11 is ess-synth generation and a nested payload path. Sequence
+  them, or run them in parallel with a file-overlap note on minted_value.rs and the arrangement;
+  the arrangement is R5's first step and U11 builds on it.
+- **Reply to the adopter.** "Accepted for ess/31: `{response: token}` in sets on a `returns: true`
+  outcome stores the value the caller receives, and the suite holds them equal."
+- **Size.** L.
+
+## Acceptance
+
+In crates/specify/ess-domain/tests/response_payload.rs:
+
+- `a_response_field_is_stored_by_a_returning_outcome_at_ess_31` (first red test): the reproduction
+  at ess/31 validates and its IR carries ResponseField in the sets.
+- `a_response_source_in_sets_below_ess_31_names_the_format`.
+- `a_response_source_in_sets_on_an_error_outcome_is_refused`.
+- `an_unknown_response_field_in_sets_is_refused`.
+- `a_response_field_of_another_type_is_refused`.
+- In tests/one_time_response.rs: `a_one_time_response_field_is_not_stored`.
+
+In crates/verify/ess-conformance/tests/interpreted_response_values.rs:
+
+- `a_stored_response_field_equals_the_reply`: Place passes on the interpreted target.
+- `a_later_guard_accepts_the_returned_value`: Confirm/confirmed is synthesized with
+  `Responded{field}` and passes; Confirm/mismatch passes.
+- `a_target_storing_another_value_fails`.
+- In the suite format tests: `responded_needs_suite_format_58`.

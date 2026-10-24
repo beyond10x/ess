@@ -138,7 +138,7 @@ existing bundle adopter's API moves.
   normalize the spelling (for example, fractional seconds `.500` become `.5`). It does not
   preserve the original JSON string byte for byte. A string that is not RFC 3339 is refused at
   decode. The Rust library then depends on
-  `time` (`=0.3.45`, features `formatting` and `parsing`), matching the generated server's
+  `time` (`^0.3.45`, features `formatting` and `parsing`), admitting the generated server's
   Rust 1.85-compatible dependency. This lets model and server crates resolve together and
   keeps the offline dependency closure in the workspace lockfile. The former `=0.3.55`
   model pin conflicts with that server pin and requires Rust 1.88.
@@ -203,6 +203,34 @@ String literal sets become enums with exact wire renames. Untagged union decodin
 tries typed alternatives from a retained JSON value, preserving unknown data, and number
 precision with the default `exact-numbers` feature (binary64 without it); the chosen Rust
 variant does not certify source branch validation.
+
+Three Rust generator options change that output, each off by default, each a command-line
+flag rather than a specification construct, and each recorded in the report's
+`configuration` only when given, so a run without them writes the bytes it wrote before
+they existed:
+
+- `--rust-derive [TYPE=]DERIVE` (beyond10x/ess#657) adds `Eq`, `Hash`, `PartialOrd`, `Ord`
+  or `Default` to every declaration, or to one selected type and the anonymous declarations
+  it owns. Only these std derives are admitted: any other would need a dependency the
+  generated manifest does not declare. Each declaration records the Rust type of every
+  member, and a derive a member cannot satisfy is refused before publication as
+  `rust_derive_unsatisfied` at that member, naming the declaration, the member and the type
+  that blocks it (`EssBinary64` and `EssRawJson` implement none of the five; `Number` has
+  no order; an enum has no default variant; a declaration that lacks the derive blocks every
+  declaration holding it). A newtype fixed to one value keeps its own `Default`. `Ord`
+  without `Eq` and `PartialOrd` in the same set, and an unknown type, are `rust_derive`.
+  The `EssPresence` and `EssNever` helpers gain the requested trait impls, an absent member
+  ordering before a present one.
+- `--rust-fold-null` (beyond10x/ess#667) decodes an optional field's explicit `null` as the
+  missing member through `ess_fold_null`. Encoding is unchanged: an absent member is
+  omitted. This gives up the absent/present-null distinction above, so the report carries a
+  `rust_fold_null` obligation at each such field.
+- `--rust-drop-unknown-members` (beyond10x/ess#668) declares an open object with declared
+  fields without `ess_extra`: unknown members are decoded and discarded, and encoding writes
+  the declared fields only. A field-less object is a map, so it keeps its members. The
+  report carries `rust_drop_unknown_members` at each such object in place of
+  `open_object_storage`, the obligation the consumer accepted, and the raw-value open-record
+  refusals no longer apply to it because it holds no flattened map.
 Fixed prefix tuples become tuple structs. Unsupported native intersections or
 variable prefix layouts refuse explicitly rather than becoming an untyped JSON bag.
 Anonymous native declarations derive names from source identity, not traversal order.

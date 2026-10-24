@@ -1,0 +1,164 @@
+format: ess/29
+system: demo
+version: v1
+domain: demo.notes
+summary: A redrawn struct input whose other member another command reads.
+types:
+  - name: demo.notes.BookId
+    kind: newtype
+    of: String
+  - name: demo.notes.TagId
+    kind: newtype
+    of: String
+  - name: demo.notes.OwnerId
+    kind: newtype
+    of: String
+  - name: demo.notes.BookSettings
+    kind: struct
+    fields:
+      - {name: cover, type: Optional<String>}
+      - {name: tags, type: List<demo.notes.TagId>}
+entities:
+  - name: demo.notes.Tag
+    identity: {name: tag_id, type: demo.notes.TagId}
+    fields:
+      - {name: owner_id, type: demo.notes.OwnerId}
+    lifecycle:
+      initial: Live
+      states: [Live]
+      terminal: [Live]
+  - name: demo.notes.Book
+    identity: {name: book_id, type: demo.notes.BookId}
+    fields:
+      - {name: owner_id, type: demo.notes.OwnerId}
+      - {name: version, type: Integer}
+      - {name: cover, type: Optional<String>}
+      - {name: tags, type: List<demo.notes.TagId>}
+    relations:
+      - name: tags
+        kind: references
+        target: demo.notes.Tag
+        cardinality: many
+        via: tags
+    invariants:
+      - version >= 1
+    lifecycle:
+      initial: Live
+      states: [Live]
+      terminal: [Live]
+  - name: demo.notes.Shelf
+    identity: {name: shelf_id, type: String}
+    fields:
+      - {name: owner_id, type: demo.notes.OwnerId}
+      - {name: book_id, type: demo.notes.BookId}
+    relations:
+      - name: book
+        kind: references
+        target: demo.notes.Book
+        cardinality: one
+        via: book_id
+    lifecycle:
+      initial: Live
+      states: [Live]
+      terminal: [Live]
+actors:
+  - name: demo.notes.Writer
+    attributes:
+      - {name: owner_id, type: demo.notes.OwnerId}
+    may:
+      - demo.notes.CreateTag
+      - demo.notes.DeleteTag
+      - demo.notes.CreateBook
+      - demo.notes.ShelveBook
+errors:
+  - name: demo.notes.TagInUse
+    fields: []
+  - name: demo.notes.NoBook
+    fields: []
+  - name: demo.notes.NoCover
+    fields: []
+commands:
+  - name: demo.notes.CreateTag
+    input:
+      - {name: tag_id, type: demo.notes.TagId}
+    outcomes:
+      - name: created
+        creates: demo.notes.Tag
+        instance: tag_id
+        emits: [demo.notes.TagCreated]
+        payload:
+          demo.notes.TagCreated: {tag_id: input.tag_id}
+        sets:
+          owner_id: {caller: owner_id}
+  - name: demo.notes.DeleteTag
+    input:
+      - {name: tag_id, type: demo.notes.TagId}
+    outcomes:
+      - name: in-use
+        when_related:
+          entity: demo.notes.Book
+          where:
+            exists: {in: tags, as: t, that: "t == input.tag_id"}
+          exists: true
+        error: demo.notes.TagInUse
+      - name: deleted
+        deletes: demo.notes.Tag
+        instance: tag_id
+      - name: absent
+        unknown_instance: true
+        refuses: false
+  - name: demo.notes.CreateBook
+    input:
+      - {name: book_id, type: demo.notes.BookId}
+      - {name: settings, type: demo.notes.BookSettings}
+    outcomes:
+      - name: created
+        creates: demo.notes.Book
+        instance: book_id
+        emits: [demo.notes.BookCreated]
+        payload:
+          demo.notes.BookCreated: {book_id: input.book_id}
+        sets:
+          owner_id: {caller: owner_id}
+          version: '1'
+          cover: input.settings.cover
+          tags: input.settings.tags
+  - name: demo.notes.ShelveBook
+    input:
+      - {name: shelf_id, type: String}
+      - {name: book_id, type: demo.notes.BookId}
+    outcomes:
+      - name: no-book
+        when_related: {via: input.book_id, exists: false}
+        error: demo.notes.NoBook
+      - name: no-cover
+        when_related:
+          via: input.book_id
+          predicate:
+            not: defined(cover)
+        error: demo.notes.NoCover
+      - name: shelved
+        creates: demo.notes.Shelf
+        instance: shelf_id
+        emits: [demo.notes.BookShelved]
+        payload:
+          demo.notes.BookShelved: {shelf_id: input.shelf_id}
+        sets:
+          owner_id: {caller: owner_id}
+          book_id: input.book_id
+events:
+  - name: demo.notes.TagCreated
+    fields:
+      - {name: tag_id, type: demo.notes.TagId}
+  - name: demo.notes.BookCreated
+    fields:
+      - {name: book_id, type: demo.notes.BookId}
+  - name: demo.notes.BookShelved
+    fields:
+      - {name: shelf_id, type: String}
+views:
+  - name: demo.notes.Books
+    source: demo.notes.Book
+    consistency: read_your_writes
+    fields:
+      - {name: book_id, type: demo.notes.BookId}

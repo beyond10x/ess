@@ -38,6 +38,7 @@ import {
   isUnsupported,
   lookup,
   matches,
+  rowMatches,
   newHarness,
   paddedBase64,
   primitive,
@@ -584,6 +585,37 @@ test('values compare structurally and numbers compare across carriers', () => {
   assert.deepEqual(compare('b', 'a'), [1, true]);
   assert.deepEqual(compare(false, true), [-1, true]);
   assert.deepEqual(compare(1, 'a'), [0, false]);
+});
+
+test('an absent struct member and a null one are one value at any depth of a match', () => {
+  const quantity = (tail: { [key: string]: Node }): Node => ({
+    kind: 'cached_input_tokens',
+    source: 'unknown',
+    ...tail,
+  });
+  const row = (tail: { [key: string]: Node }) => ({
+    quantities: [quantity(tail)],
+    latest: quantity(tail),
+  });
+  for (const [stored, asserted, passes] of [
+    [{}, { value: null }, true],
+    [{ value: null }, { value: null }, true],
+    [{ value: null }, {}, true],
+    [{}, {}, true],
+    [{}, { value: 3 }, false],
+    [{ value: null }, { value: 3 }, false],
+    [{ value: 3 }, { value: null }, false],
+    [{ value: 3 }, {}, false],
+  ] as [{ [key: string]: Node }, { [key: string]: Node }, boolean][]) {
+    const label = `${JSON.stringify(stored)} against ${JSON.stringify(asserted)}`;
+    assert.equal(rowMatches(row(stored), { quantities: [quantity(asserted)] }), passes, label);
+    assert.equal(rowMatches(row(stored), { latest: quantity(asserted) }), passes, label);
+  }
+  // A plain top-level field name keeps exact comparison, as before.
+  assert.equal(rowMatches({}, { value: null }), false);
+  // An observed event or invocation stays exact below the named field.
+  assert.equal(matches(row({}), { latest: quantity({ value: null }) }), false);
+  assert.equal(matches(row({ value: null }), { latest: quantity({}) }), false);
 });
 
 test('ranking orders RFC 3339 instants and not their spellings', () => {

@@ -33,8 +33,8 @@ use ess_primitives::node::Node;
 use super::{
     absent_input, acting, block_start, candidates, decides, entity_ref, flatten, input_guard,
     is_absent, observe_read, own_arrangement, predicates, read, row_at, search_rows, selects,
-    surround, unarranged, with_row, ActorRef, Arrangement, Distinction, Goal, RefusalCause, Setup,
-    OWN,
+    surround, unarranged, with_row, with_row_where, ActorRef, Arrangement, Distinction, Goal,
+    RefusalCause, Setup, OWN,
 };
 use crate::scenario::{InstanceName, ScenarioStep, ScenarioValue};
 use ess_compiler::ir::{ResolvedCondition, ResolvedRelatedTest, ResolvedRelatedVia};
@@ -72,6 +72,7 @@ fn unpointed(field: &str, why: &str) -> RefusalCause {
     RefusalCause::GuardUnsatisfiable {
         predicate: format!("the stored `{field}` of the addressed subject: {why}"),
         tried: 0,
+        cut: 0,
     }
 }
 
@@ -131,7 +132,7 @@ fn unreachable(
             let mut checked = false;
             for set in written {
                 match &set.value {
-                    ResolvedPayloadValue::Cleared => {}
+                    ResolvedPayloadValue::Cleared | ResolvedPayloadValue::EmptyList => {}
                     ResolvedPayloadValue::SubjectField { field: read, .. }
                         if own && read == field => {}
                     ResolvedPayloadValue::InputField { field: input, .. }
@@ -412,27 +413,13 @@ pub(super) fn arranged_at(
         }
         unrefused(ir, command, distinction)?
     } else {
-        let (row, first, input) = with_row(
+        let (row, first, input) = reachable_row(
             ir,
-            command,
-            outcome,
-            entity,
-            actors,
-            (OWN, distinction, &[]),
-            None,
-            goal,
-            None,
-            (&BTreeMap::new(), &setup.steps, &BTreeMap::new()),
+            (command, outcome, actors),
+            (entity, &subject, field),
+            &setup,
+            (distinction, goal),
         )?;
-        surround(
-            ir,
-            (command, outcome, entity),
-            actors,
-            (first, &input),
-            (&row, &[]),
-            (&mut steps, &mut setup.source),
-        );
-        observe_read(ir, command, entity, &row, &mut steps, &mut setup.source);
         relink(
             ir,
             &mut setup.steps,
@@ -441,6 +428,21 @@ pub(super) fn arranged_at(
             field,
             &Link::Row(&row.instance),
         )?;
+        let named = ordered(ir, &setup, (entity, &subject, field), &row, &mut after)?;
+        surround(
+            ir,
+            (command, outcome, entity),
+            actors,
+            (first, &input),
+            (&named, &[]),
+            (&mut steps, &mut setup.source),
+        );
+        let observing = if after.is_empty() {
+            &mut steps
+        } else {
+            &mut after
+        };
+        observe_read(ir, command, entity, &row, observing, &mut setup.source);
         input
     };
     // The related rows go ahead of the subject's own arrangement, whose creation names one.
@@ -449,6 +451,60 @@ pub(super) fn arranged_at(
     setup.steps.append(&mut after);
     setup.source.insert(entity_ref(entity));
     Ok((setup, input, false))
+}
+
+/// The related row [`arranged_at`] points the subject at, the distinction it was arranged at and
+/// the input: the row [`with_row`] reaches first, unless no order of the subject's arrangement
+/// `setup` reaches the branch on it ([`order`]) — a row created straight into the state the branch
+/// reads, by a creator the arrangement refuses it from — and another creator's row reaches that
+/// state by moves after the arrangement. That row is searched for, and the first row stands, to be
+/// refused by [`ordered`], where none is found.
+fn reachable_row(
+    ir: &EssIr,
+    (command, outcome, actors): (
+        &ResolvedCommand,
+        &ResolvedOutcome,
+        &BTreeMap<QualifiedName, ActorRef>,
+    ),
+    (entity, subject, field): (&EntityHandle, &InstanceName, &str),
+    setup: &Setup,
+    (distinction, goal): (Distinction, Option<&Goal>),
+) -> Result<(Arrangement, usize, BTreeMap<String, Node>), RefusalCause> {
+    let search = |admits: &dyn Fn(&Arrangement) -> bool| {
+        with_row_where(
+            ir,
+            command,
+            outcome,
+            entity,
+            actors,
+            (OWN, distinction, &[]),
+            (None, goal, None),
+            (&BTreeMap::new(), &setup.steps, &BTreeMap::new()),
+            admits,
+        )
+    };
+    // The subject's arrangement as it runs once its creation names `row`.
+    let pointed = |row: &Arrangement| {
+        let mut steps = setup.steps.clone();
+        let mut settled = setup.settled.clone();
+        relink(
+            ir,
+            &mut steps,
+            setup.instance.is_some().then_some(&mut settled),
+            subject,
+            field,
+            &Link::Row(&row.instance),
+        )
+        .map(|()| steps)
+    };
+    let reaches = |row: &Arrangement| {
+        pointed(row).is_ok_and(|steps| order(ir, &steps, (entity, subject, field), row).is_ok())
+    };
+    let found = search(&|_| true)?;
+    if reaches(&found.0) {
+        return Ok(found);
+    }
+    Ok(search(&reaches).unwrap_or(found))
 }
 
 /// A row of `entity` where its lifecycle starts, under the further witness `at`, and the steps of
@@ -556,10 +612,232 @@ fn runs(steps: &[ScenarioStep], command: &ResolvedCommand) -> bool {
     })
 }
 
-/// The block the related row an arranging run points a stored reference at is created in: apart
-/// from every block [`super`] arranges rows in, so it names no row a scenario, a driver, a nested
-/// arrangement or a companion does.
-const STORED: usize = 13;
+/// The related row as it goes ahead of the subject's arrangement `setup`; the moves that
+/// follow that arrangement are pushed onto `after`.
+///
+/// The subject's arrangement is sent with the related row as it is when it runs. Where an act of
+/// it refuses the row in the state the branch reads — the creator of a machine refusing a frozen
+/// site — the row is created first and moved there once the subject is arranged; where the act
+/// refuses the row as created too, no order reaches the branch and it is refused by name.
+fn ordered(
+    ir: &EssIr,
+    setup: &Setup,
+    (entity, subject, field): (&EntityHandle, &InstanceName, &str),
+    row: &Arrangement,
+    after: &mut Vec<ScenarioStep>,
+) -> Result<Arrangement, RefusalCause> {
+    let Some((created, later)) = order(ir, &setup.steps, (entity, subject, field), row)? else {
+        return Ok(row.clone());
+    };
+    let mut named = row.clone();
+    named.steps = created;
+    after.extend(later);
+    Ok(named)
+}
+
+/// The steps that create a related row, and the moves that bring it on from there.
+type Split = (Vec<ScenarioStep>, Vec<ScenarioStep>);
+
+/// How [`ordered`] splits `row` around the subject's arrangement `steps`: `None` where no act of it
+/// refuses the row as the branch reads it, else the steps that create the row and the moves that
+/// follow the arrangement. Refused by name where the act refuses the row as created too, or the row
+/// is created straight into the state the branch reads.
+fn order(
+    ir: &EssIr,
+    steps: &[ScenarioStep],
+    (entity, subject, field): (&EntityHandle, &InstanceName, &str),
+    row: &Arrangement,
+) -> Result<Option<Split>, RefusalCause> {
+    let Some(refusing) = refuses(ir, steps, entity, subject, field, row) else {
+        return Ok(None);
+    };
+    let (created, later) = split_moves(row);
+    let born = created_state(ir, entity, &created);
+    let as_created = born.as_ref().and_then(|state| {
+        refuses_in(
+            ir,
+            steps,
+            (entity, subject, field, &row.instance),
+            state,
+            None,
+        )
+    });
+    if later.is_empty() || born.is_none() || as_created.is_some() {
+        return Err(unpointed(
+            field,
+            &format!(
+                "`{refusing}`, which arranges the subject, refuses the related row in the state \
+                 the branch reads and where the row is created, so no order of the arrangement \
+                 reaches the branch"
+            ),
+        ));
+    }
+    Ok(Some((created, later)))
+}
+
+/// The steps of `row` up to the one capturing it, and the moves that bring it on from there to the
+/// state it was arranged in.
+fn split_moves(row: &Arrangement) -> (Vec<ScenarioStep>, Vec<ScenarioStep>) {
+    let captured = row.steps.iter().position(|step| {
+        matches!(step, ScenarioStep::CaptureInstance { instance, .. } if *instance == row.instance)
+    });
+    match captured {
+        Some(at) => {
+            let mut created = row.steps.clone();
+            let moves = created.split_off(at + 1);
+            (created, moves)
+        }
+        None => (row.steps.clone(), Vec::new()),
+    }
+}
+
+/// The state the act ending `created` leaves the row it creates in: the state its `into:` names,
+/// or where the entity's lifecycle starts. `None` where that act is not a declared creation.
+fn created_state(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    created: &[ScenarioStep],
+) -> Option<super::super::StateName> {
+    let taken = created.iter().rev().find_map(|step| match step {
+        ScenarioStep::ExpectOutcome { outcome } => Some(outcome),
+        _ => None,
+    })?;
+    let command = ir
+        .commands()
+        .values()
+        .find(|command| super::super::CommandRef::new(command.name.clone()) == taken.command)?;
+    let subject = command
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.name == taken.outcome)?
+        .subject
+        .as_ref()
+        .filter(|subject| subject.entity == *entity && subject.effect == ResolvedEffect::Creates)?;
+    Some(
+        subject
+            .into
+            .clone()
+            .unwrap_or_else(|| ir.entity(entity).lifecycle.initial.clone()),
+    )
+}
+
+/// The command of an act in `steps` that a `when_related:` refusal it does not expect to take
+/// answers once the related row is held as `row` holds it: an act naming the row through its
+/// input, or reading the stored `field` of `subject` that names it.
+fn refuses(
+    ir: &EssIr,
+    steps: &[ScenarioStep],
+    entity: &EntityHandle,
+    subject: &InstanceName,
+    field: &str,
+    row: &Arrangement,
+) -> Option<QualifiedName> {
+    refuses_in(
+        ir,
+        steps,
+        (entity, subject, field, &row.instance),
+        &row.state,
+        Some((&row.settled, &row.unwritten)),
+    )
+}
+
+/// [`refuses`] with the row in `state`, its fields as `fields` hold them where known.
+fn refuses_in(
+    ir: &EssIr,
+    steps: &[ScenarioStep],
+    (entity, subject, field, instance): (&EntityHandle, &InstanceName, &str, &InstanceName),
+    state: &super::super::StateName,
+    fields: Option<(
+        &BTreeMap<String, super::super::Determined>,
+        &std::collections::BTreeSet<String>,
+    )>,
+) -> Option<QualifiedName> {
+    let (empty, none) = (BTreeMap::new(), std::collections::BTreeSet::new());
+    let (settled, unwritten) = fields.unwrap_or((&empty, &none));
+    let named = ScenarioValue::instance(instance.clone());
+    let addressed = ScenarioValue::instance(subject.clone());
+    steps.iter().enumerate().find_map(|(at, step)| {
+        let ScenarioStep::ExecuteCommand {
+            command: sent,
+            input,
+            ..
+        } = step
+        else {
+            return None;
+        };
+        let taken = match steps.get(at + 1) {
+            Some(ScenarioStep::ExpectOutcome { outcome }) => Some(&outcome.outcome),
+            _ => None,
+        };
+        let command = ir
+            .commands()
+            .values()
+            .find(|command| sent.name() == &command.name)?;
+        let refused = command.outcomes.iter().any(|branch| {
+            let ResolvedCondition::Related {
+                via,
+                entity: read,
+                test: ResolvedRelatedTest::Holds { predicate },
+                input: None,
+                also,
+            } = &branch.condition
+            else {
+                return false;
+            };
+            let reads_row = match via {
+                ResolvedRelatedVia::Input { field: from, .. } => input.get(from) == Some(&named),
+                ResolvedRelatedVia::Subject { field: from, .. } => {
+                    from == field && input.values().any(|value| *value == addressed)
+                }
+            };
+            branch.error.is_some()
+                && taken != Some(&branch.name)
+                && read == entity
+                && also.is_empty()
+                && reads_row
+                && super::super::subject_fact::guard_truth_with(
+                    ir,
+                    entity,
+                    settled,
+                    unwritten,
+                    Some(state),
+                    predicate,
+                    None,
+                ) == ess_primitives::predicate::Truth::True
+        });
+        refused.then(|| command.name.clone())
+    })
+}
+
+/// The block the related row an arranging run points a stored reference at is created in: past
+/// every block [`super`] arranges rows in, so it names no row a scenario, a driver, a nested
+/// arrangement, a companion, a row beside or an overlap does, and apart from the block the rows a
+/// list names are created in ([`super::super::related_list`], `25`) and the one a copied field's
+/// related row is ([`super::super::subject_fact`], `13`). It was `13`, the first block of the rows
+/// beside, and a machine row's site was then opened under the name of the site beside it, which
+/// rebound that name before the send (an adopter's report); then `25`, and the site it opened was
+/// named as the first site a list in the same scenario names.
+const STORED: usize = super::OVERLAP + 5;
+
+// Every block another strategy creates rows in is checked here, so a block that moves onto this
+// one fails the build instead of naming one row twice in a scenario.
+const _: () = {
+    let others = [
+        super::OWN,
+        super::DRIVEN,
+        super::NESTED,
+        super::COMPANION,
+        super::super::related_list::ROWS / super::BLOCK,
+        super::super::subject_fact::COPIED / super::BLOCK,
+    ];
+    let mut at = 0;
+    while at < others.len() {
+        assert!(STORED != others[at]);
+        at += 1;
+    }
+    // The rows beside, a driver's rows beside and the overlaps, each four blocks wide.
+    assert!(STORED >= super::OVERLAP + 4 || STORED < super::OWN);
+};
 
 /// One arranging run of a branch of a command reading a stored reference, on the row `arrangement`
 /// brought into being, and the row as the run leaves it.
@@ -648,6 +926,7 @@ fn on_held(
                 driver.outcome.name
             ),
             tried,
+            cut: 0,
         })?;
     Ok(advanced(ir, driver, arrangement.clone(), actors, &input))
 }

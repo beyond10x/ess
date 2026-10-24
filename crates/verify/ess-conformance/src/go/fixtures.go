@@ -223,6 +223,10 @@ func (r *run) claimValues(step Step) (map[string]Node, bool) {
 	}
 	resolved := make(map[string]Node, len(values))
 	for field, value := range values {
+		if r.leftOut(value) {
+			resolved[field] = unissued{}
+			continue
+		}
 		node, err := r.resolve(value)
 		if err != nil {
 			return nil, false
@@ -244,7 +248,7 @@ func (r *run) expectEventValues(index int, step Step) bool {
 	if err := decoder.Decode(&values); err != nil {
 		return r.fail(index, "fixture event values: %v", err)
 	}
-	payload, ok := r.resolveAll(index, values)
+	payload, ok := r.resolveRelayed(index, values)
 	if !ok {
 		return false
 	}

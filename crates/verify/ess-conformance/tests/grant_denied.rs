@@ -8,6 +8,7 @@
 //! no grant runs the command instead, and fails exactly the denied scenarios.
 
 mod support_go;
+mod support_ts;
 mod support_versions;
 
 use std::collections::BTreeSet;
@@ -16,7 +17,8 @@ use std::path::{Path, PathBuf};
 use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
-use ess_conformance::report::Status;
+use ess_conformance::interpret::Interpreted;
+use ess_conformance::report::{ScenarioResult, Status};
 use ess_conformance::synthesize::Note;
 use ess_conformance::target::{
     ConformanceTarget, EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity,
@@ -585,5 +587,272 @@ impl ConformanceTarget for Desk {
     }
     fn redeliver_event(&self, _: RedeliveryRequest) -> Result<(), TargetError> {
         Err(TargetError::unsupported("redelivering", "no binding"))
+    }
+}
+
+/// A `read_your_writes` view of a job, read-granted to both actors, and a read command that
+/// preserves the job, refused to `Watcher`: the shape an adopter reported, where the denied
+/// scenario snapshots the job, has the read refused, and reads the view again to show the refusal
+/// left it as it was.
+const JOBS: &str = "format: ess/27
+system: jobs
+version: v1
+domain: jobs.work
+entities:
+  - name: jobs.work.Job
+    identity: {name: id, type: String}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+errors:
+  - {name: jobs.work.JobNotFound, summary: No job carries the identity., fields: []}
+events:
+  - name: jobs.work.JobOpened
+    fields:
+      - {name: id, type: String}
+commands:
+  - name: jobs.work.OpenJob
+    input:
+      - {name: id, type: String}
+      - {name: title, type: String}
+    outcomes:
+      - name: opened
+        creates: jobs.work.Job
+        instance: id
+        sets: {title: input.title}
+        emits: [jobs.work.JobOpened]
+        payload:
+          jobs.work.JobOpened: {id: input.id}
+  - name: jobs.work.GetJob
+    input:
+      - {name: id, type: String}
+    outcomes:
+      - {name: not-found, unknown_instance: true, error: jobs.work.JobNotFound}
+      - name: found
+        preserves: jobs.work.Job
+        instance: id
+views:
+  - name: jobs.work.JobById
+    source: jobs.work.Job
+    consistency: read_your_writes
+    fields:
+      - {name: id, type: String}
+      - {name: title, type: String}
+      - {name: state, type: jobs.work.Job.State}
+actors:
+  - name: jobs.work.Dispatcher
+    may: [jobs.work.OpenJob, jobs.work.GetJob, jobs.work.JobById]
+  - name: jobs.work.Watcher
+    may: [jobs.work.OpenJob, jobs.work.JobById]
+components:
+  - component: jobs-service
+    owns: {domains: [jobs.work]}
+    accepts: {commands: [jobs.work.OpenJob, jobs.work.GetJob]}
+    publishes: {events: [jobs.work.JobOpened]}
+    reached_by: network
+";
+
+const GET_JOB_DENIED: &str = "jobs.work.GetJob/grant/denied";
+
+/// The denied `GetJob` scenario alone, checked to read the view after the refusal.
+fn denied_get_job_suite() -> ConformanceSuite {
+    let synthesis = ess_conformance::synthesize(&compiled(JOBS));
+    let mut suite = synthesis.suite;
+    let filed: Vec<String> = suite.scenarios.keys().map(ToString::to_string).collect();
+    suite
+        .scenarios
+        .retain(|id, _| id.to_string() == GET_JOB_DENIED);
+    let scenario = suite.scenarios.values().next().unwrap_or_else(|| {
+        panic!(
+            "the denied scenario is filed: {filed:#?}\n{:#?}\n{:#?}",
+            synthesis.notes, synthesis.refusals
+        )
+    });
+    let refused = scenario
+        .steps
+        .iter()
+        .position(|step| matches!(step, ScenarioStep::ExpectNotGranted { .. }))
+        .expect("the refusal is required");
+    assert!(
+        scenario.steps[..refused - 1]
+            .iter()
+            .any(|step| matches!(step, ScenarioStep::ExecuteCommand { .. })),
+        "a write precedes the refused send: {:#?}",
+        scenario.steps
+    );
+    assert!(
+        matches!(&scenario.steps[refused + 1..], [ScenarioStep::QueryView { view, .. }, unchanged]
+            if view.to_string() == "jobs.work.JobById"
+                && matches!(unchanged, ScenarioStep::ExpectSubjectUnchanged { .. }
+                    | ScenarioStep::ExpectCompleteSubjectUnchanged { .. })),
+        "the view is read again after the refusal and compared: {:#?}",
+        scenario.steps
+    );
+    suite
+}
+
+/// The denied `GetJob` scenario run against `target`.
+fn denied_get_job(target: &impl ConformanceTarget) -> ScenarioResult {
+    let suite = denied_get_job_suite();
+    let admitted = AdmittedSuite::from_suite(&suite).expect("admits");
+    let mut report = Runner::for_suite(&suite)
+        .run_admitted(&admitted, target)
+        .into_report();
+    assert_eq!(report.scenarios.len(), 1);
+    report.scenarios.remove(0)
+}
+
+/// A refused send wrote nothing, so the view after it is read at the token the last write before it
+/// returned, and the snapshot comparison runs (an adopter's report: the read was skipped and the
+/// scenario errored "no consistent view query preceded the snapshot assertion").
+#[test]
+fn a_refused_send_keeps_the_earlier_read_token() {
+    let result = denied_get_job(&Interpreted::for_model(compiled(JOBS)));
+    assert_eq!(result.status, Status::Passed, "{result:#?}");
+}
+
+/// The same scenario against a target that does write on the refused send: the comparison after the
+/// refusal is what catches it, so the scenario fails rather than passing or erroring.
+#[test]
+fn a_refused_send_that_writes_fails_the_denied_snapshot() {
+    let result = denied_get_job(&WritesOnRefusal::new());
+    assert_eq!(result.status, Status::Failed, "{result:#?}");
+    assert!(
+        result.checks.iter().any(
+            |check| check.status == Status::Failed && check.about.contains("jobs.work.JobById")
+        ),
+        "the unchanged assertion on the view fails: {result:#?}"
+    );
+}
+
+/// The Go runtime reads the view after the refusal at the earlier token too: it passes the denied
+/// scenario against the interpreted target and fails it against one that writes on the refusal,
+/// as the reference runner does, sending every request the reference runner sent.
+#[test]
+fn a_refused_send_keeps_the_earlier_read_token_in_the_go_runner() {
+    let suite = denied_get_job_suite();
+    let kept = support_go::assert_parity(
+        "grant-denied-token",
+        &suite,
+        Interpreted::for_model(compiled(JOBS)),
+    );
+    assert!(support_go::not_passed(&kept).is_empty(), "{kept:?}");
+    let written = support_go::assert_parity("grant-denied-writes", &suite, WritesOnRefusal::new());
+    assert_eq!(written[GET_JOB_DENIED], "failed", "{written:?}");
+}
+
+/// The same two targets in the TypeScript runner.
+#[test]
+fn a_refused_send_keeps_the_earlier_read_token_in_the_typescript_runner() {
+    let suite = denied_get_job_suite();
+    let admitted = AdmittedSuite::from_suite(&suite).expect("admits");
+    let package = support_ts::Package::new("grant-denied-token", &suite);
+    for (target, verdict) in [
+        (
+            support_go::Recorder::new(WritesOnRefusal::honest()),
+            "passed",
+        ),
+        (support_go::Recorder::new(WritesOnRefusal::new()), "failed"),
+    ] {
+        let reference = support_go::rust_outcomes_admitted(&admitted, &target);
+        assert_eq!(reference[GET_JOB_DENIED], verdict, "{reference:?}");
+        let replayed = package.replay(&admitted, &target.transcript(), false);
+        assert_ne!(replayed.exit, Some(2), "{}", replayed.log);
+        assert!(
+            replayed.divergences.is_empty(),
+            "the TypeScript runtime sent requests the reference runner did not:\n{}\n{}",
+            replayed.divergences.join("\n"),
+            replayed.log
+        );
+        assert_eq!(replayed.outcomes, reference, "{}", replayed.log);
+    }
+}
+
+/// The interpreted target, except that a refused send changes the job's title anyway: every read
+/// after the refusal shows the write. [`WritesOnRefusal::honest`] writes nothing.
+struct WritesOnRefusal {
+    inner: Interpreted,
+    writes: bool,
+    refused: std::cell::Cell<bool>,
+}
+
+impl WritesOnRefusal {
+    fn new() -> Self {
+        Self {
+            inner: Interpreted::for_model(compiled(JOBS)),
+            writes: true,
+            refused: std::cell::Cell::new(false),
+        }
+    }
+
+    fn honest() -> Self {
+        Self {
+            writes: false,
+            ..Self::new()
+        }
+    }
+
+    fn seen(&self, mut result: SemanticViewResult) -> SemanticViewResult {
+        if self.writes && self.refused.get() {
+            for row in &mut result.rows {
+                row.insert(
+                    "title".to_owned(),
+                    ess_primitives::node::Node::Text("written by the refused send".to_owned()),
+                );
+            }
+        }
+        result
+    }
+}
+
+impl ConformanceTarget for WritesOnRefusal {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        Ok(ImplementationIdentity::new("writes-on-refusal", "1"))
+    }
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.refused.set(false);
+        self.inner.begin_scenario(scenario)
+    }
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.end_scenario(scenario)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        let answer = self.inner.execute_command(request);
+        if matches!(answer, Err(TargetError::NotGranted { .. })) {
+            self.refused.set(true);
+        }
+        answer
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        self.inner
+            .query_view(request)
+            .map(|result| self.seen(result))
+    }
+    fn query_view_as(
+        &self,
+        request: SemanticViewRequest,
+        reader: &ess_conformance::scenario::ActorRef,
+    ) -> Result<SemanticViewResult, TargetError> {
+        self.inner
+            .query_view_as(request, reader)
+            .map(|result| self.seen(result))
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.inner.observe_events(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        request: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.inner.configure_external_outcome(request)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.inner.redeliver_event(request)
     }
 }

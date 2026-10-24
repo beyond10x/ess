@@ -87,7 +87,10 @@ fn declarations_with_presence<'a>(
                         let mut field =
                             Field::new(&f.name, crate::accessor::unresolve(&f.type_ref));
                         if preserve_presence {
-                            field.naming.presence = f.naming.presence;
+                            field.naming.presence = f
+                                .naming
+                                .presence
+                                .and_then(ess_domain::types::Presence::constrains);
                         }
                         field
                     })

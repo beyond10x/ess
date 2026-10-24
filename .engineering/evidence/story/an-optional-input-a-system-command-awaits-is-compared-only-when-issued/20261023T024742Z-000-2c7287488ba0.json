@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-23T02:47:42Z",
+  "actor": "human:timo",
+  "artifact": "story:an-optional-input-a-system-command-awaits-is-compared-only-when-issued",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "unit 4957baa943 merged into integrate/ess-batch-0690: adversary_u9a_pass1 5 passed, system_issued_interpreter 14 passed, system_issued_synthesis 6 passed, clippy -p ess-conformance exit 0, task fmt-check exit 0, task test-xtask exit 0"
+  }
+}
