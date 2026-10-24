@@ -925,8 +925,27 @@ fn opening(ir: &EssIr, command: &ResolvedCommand, field: &str) -> Option<Opened>
 
 /// How many searches for a row beside [`opening`] has cut on this thread: a search during which it
 /// moved reached a row beside whose search was already open.
-fn cuts() -> usize {
+pub(super) fn cuts() -> usize {
     BESIDE_OPEN.with(|open| open.borrow().cut)
+}
+
+/// Counts `more` searches as cut, for a search answered from memory that cut them when it ran
+/// ([`super::made`]).
+pub(super) fn add_cuts(more: usize) {
+    BESIDE_OPEN.with(|open| open.borrow_mut().cut += more);
+}
+
+/// The searches for a row beside open on this thread, as the key of what a search inside them
+/// made ([`super::made`]): which of them [`opening`] cuts depends on it.
+pub(super) fn open_key() -> String {
+    BESIDE_OPEN.with(|open| {
+        open.borrow()
+            .open
+            .iter()
+            .map(|(model, command, field)| format!("{model:p}:{command}:{field}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    })
 }
 
 /// A row of `entity`, which `via` of `command` names, that leaves `outcome` to answer

@@ -1,0 +1,310 @@
+format: ess/29
+system: demo
+version: v1
+domain: demo.fit
+summary: Candidates of a run on a checked graph, where a candidate outranked by a sibling of its run cannot be selected.
+types:
+  - {name: demo.fit.GraphId, kind: newtype, of: Uuid}
+  - {name: demo.fit.RunId, kind: newtype, of: Uuid}
+  - {name: demo.fit.CandidateId, kind: newtype, of: Uuid}
+  - {name: demo.fit.PatchId, kind: newtype, of: Uuid}
+  - name: demo.fit.Node
+    kind: struct
+    fields:
+      - {name: id, type: Integer}
+  - name: demo.fit.Edge
+    kind: struct
+    fields:
+      - {name: from_node, type: Integer}
+      - {name: to_node, type: Integer}
+entities:
+  - name: demo.fit.Graph
+    identity: {name: graph_id, type: demo.fit.GraphId}
+    fields:
+      - {name: nodes, type: List<demo.fit.Node>}
+      - {name: edges, type: List<demo.fit.Edge>}
+    lifecycle:
+      initial: Loaded
+      states: [Loaded, Checked]
+      terminal: [Checked]
+      transitions:
+        - {name: check, from: [Loaded], to: Checked}
+  - name: demo.fit.Run
+    identity: {name: run_id, type: demo.fit.RunId}
+    fields:
+      - {name: graph_id, type: demo.fit.GraphId}
+      - {name: seed, type: Integer}
+    relations:
+      - {name: graph, kind: references, target: demo.fit.Graph, cardinality: one, via: graph_id}
+    lifecycle:
+      initial: Running
+      states: [Running, Completed]
+      terminal: [Completed]
+      transitions:
+        - {name: complete, from: [Running], to: Completed}
+  - name: demo.fit.Patch
+    identity: {name: patch_id, type: demo.fit.PatchId}
+    fields:
+      - {name: graph_id, type: demo.fit.GraphId}
+    relations:
+      - {name: graph, kind: references, target: demo.fit.Graph, cardinality: one, via: graph_id}
+    lifecycle: {initial: Built, states: [Built], terminal: [Built]}
+  - name: demo.fit.Candidate
+    identity: {name: candidate_id, type: demo.fit.CandidateId}
+    fields:
+      - {name: run_id, type: demo.fit.RunId}
+      - {name: patch_id, type: demo.fit.PatchId}
+      - {name: graph_id, type: demo.fit.GraphId}
+      - {name: loss, type: Decimal}
+      - {name: penalty, type: Decimal}
+      - {name: score, type: Decimal}
+    relations:
+      - {name: run, kind: references, target: demo.fit.Run, cardinality: one, via: run_id}
+      - {name: patch, kind: references, target: demo.fit.Patch, cardinality: one, via: patch_id}
+      - {name: graph, kind: references, target: demo.fit.Graph, cardinality: one, via: graph_id}
+    lifecycle:
+      initial: Proposed
+      states: [Proposed, Selected]
+      terminal: [Selected]
+      transitions:
+        - {name: select, from: [Proposed], to: Selected}
+errors:
+  - {name: demo.fit.NoGraph, summary: No graph carries the identity., fields: []}
+  - {name: demo.fit.NegativeNode, summary: A node id is negative., fields: []}
+  - {name: demo.fit.UnknownNode, summary: An edge names a node the graph does not declare., fields: []}
+  - {name: demo.fit.NotLoaded, summary: The graph was checked already., fields: []}
+  - {name: demo.fit.NotChecked, summary: The graph was not checked., fields: []}
+  - {name: demo.fit.BadSeed, summary: The seed is negative., fields: []}
+  - {name: demo.fit.NoRun, summary: No run carries the identity., fields: []}
+  - {name: demo.fit.NotRunning, summary: The run is not running., fields: []}
+  - {name: demo.fit.NoPatch, summary: No patch carries the identity., fields: []}
+  - {name: demo.fit.NoCandidate, summary: No candidate carries the identity., fields: []}
+  - {name: demo.fit.Outranked, summary: A candidate of the same run scores lower., fields: []}
+  - {name: demo.fit.NotProposed, summary: The candidate was selected already., fields: []}
+  - {name: demo.fit.Finished, summary: The run was completed already., fields: []}
+events:
+  - name: demo.fit.GraphLoaded
+    fields:
+      - {name: graph_id, type: demo.fit.GraphId}
+  - name: demo.fit.GraphChecked
+    fields:
+      - {name: graph_id, type: demo.fit.GraphId}
+  - name: demo.fit.PatchBuilt
+    fields:
+      - {name: patch_id, type: demo.fit.PatchId}
+  - name: demo.fit.RunStarted
+    fields:
+      - {name: run_id, type: demo.fit.RunId}
+  - name: demo.fit.RunCompleted
+    fields:
+      - {name: run_id, type: demo.fit.RunId}
+  - name: demo.fit.CandidateProposed
+    fields:
+      - {name: candidate_id, type: demo.fit.CandidateId}
+  - name: demo.fit.CandidateSelected
+    fields:
+      - {name: candidate_id, type: demo.fit.CandidateId}
+actors:
+  - name: demo.fit.Operator
+    may: [demo.fit.Load, demo.fit.Check, demo.fit.Start, demo.fit.Build, demo.fit.Complete, demo.fit.Propose, demo.fit.Select]
+commands:
+  - name: demo.fit.Load
+    input:
+      - {name: graph_id, type: demo.fit.GraphId}
+      - {name: nodes, type: List<demo.fit.Node>}
+      - {name: edges, type: List<demo.fit.Edge>}
+    outcomes:
+      - name: negative-node
+        when: {exists: {in: nodes, as: n, that: n.id < 0}}
+        error: demo.fit.NegativeNode
+        payload:
+          demo.fit.NegativeNode: {}
+      - name: loaded
+        creates: demo.fit.Graph
+        instance: graph_id
+        sets:
+          nodes: input.nodes
+          edges: input.edges
+        emits: [demo.fit.GraphLoaded]
+        payload:
+          demo.fit.GraphLoaded: {graph_id: input.graph_id}
+  - name: demo.fit.Check
+    input:
+      - {name: graph_id, type: demo.fit.GraphId}
+    outcomes:
+      - name: no-graph
+        unknown_instance: true
+        error: demo.fit.NoGraph
+        payload:
+          demo.fit.NoGraph: {}
+      - name: unknown-node
+        when_subject:
+          predicate:
+            exists:
+              in: edges
+              as: e
+              that:
+                any:
+                  - not: {exists: {in: nodes, as: n, that: n.id == e.from_node}}
+                  - not: {exists: {in: nodes, as: n, that: n.id == e.to_node}}
+        error: demo.fit.UnknownNode
+        payload:
+          demo.fit.UnknownNode: {}
+      - name: not-loaded
+        wrong_state: true
+        error: demo.fit.NotLoaded
+        payload:
+          demo.fit.NotLoaded: {}
+      - name: checked
+        moves: demo.fit.Graph.check
+        instance: graph_id
+        emits: [demo.fit.GraphChecked]
+        payload:
+          demo.fit.GraphChecked: {graph_id: input.graph_id}
+  - name: demo.fit.Start
+    input:
+      - {name: graph_id, type: demo.fit.GraphId}
+      - {name: seed, type: Integer}
+    outcomes:
+      - name: bad-seed
+        when: seed < 0
+        error: demo.fit.BadSeed
+        payload:
+          demo.fit.BadSeed: {}
+      - name: no-graph
+        when_related:
+          via: input.graph_id
+          exists: false
+        error: demo.fit.NoGraph
+        payload:
+          demo.fit.NoGraph: {}
+      - name: not-checked
+        when_related:
+          via: input.graph_id
+          predicate: state != Checked
+        error: demo.fit.NotChecked
+        payload:
+          demo.fit.NotChecked: {}
+      - name: started
+        creates: demo.fit.Run
+        instance: run_id
+        sets:
+          graph_id: input.graph_id
+          seed: input.seed
+        emits: [demo.fit.RunStarted]
+        payload:
+          demo.fit.RunStarted: {run_id: {generated: true}}
+  - name: demo.fit.Build
+    input:
+      - {name: graph_id, type: demo.fit.GraphId}
+    outcomes:
+      - name: no-graph
+        when_related: {via: input.graph_id, exists: false}
+        error: demo.fit.NoGraph
+        payload:
+          demo.fit.NoGraph: {}
+      - name: not-checked
+        when_related: {via: input.graph_id, predicate: state != Checked}
+        error: demo.fit.NotChecked
+        payload:
+          demo.fit.NotChecked: {}
+      - name: built
+        creates: demo.fit.Patch
+        instance: patch_id
+        sets:
+          graph_id: input.graph_id
+        emits: [demo.fit.PatchBuilt]
+        payload:
+          demo.fit.PatchBuilt: {patch_id: {generated: true}}
+  - name: demo.fit.Complete
+    input:
+      - {name: run_id, type: demo.fit.RunId}
+    outcomes:
+      - name: no-run
+        unknown_instance: true
+        error: demo.fit.NoRun
+        payload:
+          demo.fit.NoRun: {}
+      - name: finished
+        wrong_state: true
+        error: demo.fit.Finished
+        payload:
+          demo.fit.Finished: {}
+      - name: completed
+        moves: demo.fit.Run.complete
+        instance: run_id
+        emits: [demo.fit.RunCompleted]
+        payload:
+          demo.fit.RunCompleted: {run_id: input.run_id}
+  - name: demo.fit.Propose
+    input:
+      - {name: run_id, type: demo.fit.RunId}
+      - {name: graph_id, type: demo.fit.GraphId}
+      - {name: loss, type: Decimal}
+      - {name: patch_id, type: demo.fit.PatchId}
+      - {name: penalty, type: Decimal}
+    outcomes:
+      - name: no-run
+        when_related: {via: input.run_id, exists: false}
+        error: demo.fit.NoRun
+        payload:
+          demo.fit.NoRun: {}
+      - name: not-running
+        when_related: {via: input.run_id, predicate: state != Running}
+        error: demo.fit.NotRunning
+        payload:
+          demo.fit.NotRunning: {}
+      - name: no-graph
+        when_related: {via: input.graph_id, exists: false}
+        error: demo.fit.NoGraph
+        payload:
+          demo.fit.NoGraph: {}
+      - name: no-patch
+        when_related: {via: input.patch_id, exists: false}
+        error: demo.fit.NoPatch
+        payload:
+          demo.fit.NoPatch: {}
+      - name: proposed
+        creates: demo.fit.Candidate
+        instance: candidate_id
+        sets:
+          run_id: input.run_id
+          graph_id: input.graph_id
+          loss: input.loss
+          patch_id: input.patch_id
+          penalty: input.penalty
+          score: {expr: "input.loss + input.penalty"}
+        emits: [demo.fit.CandidateProposed]
+        payload:
+          demo.fit.CandidateProposed: {candidate_id: {generated: true}}
+  - name: demo.fit.Select
+    input:
+      - {name: candidate_id, type: demo.fit.CandidateId}
+    outcomes:
+      - name: no-candidate
+        unknown_instance: true
+        error: demo.fit.NoCandidate
+        payload:
+          demo.fit.NoCandidate: {}
+      - name: outranked
+        when_related:
+          entity: demo.fit.Candidate
+          where:
+            all:
+              - run_id == subject.run_id
+              - score < subject.score
+          exists: true
+        error: demo.fit.Outranked
+        payload:
+          demo.fit.Outranked: {}
+      - name: selected
+        moves: demo.fit.Candidate.select
+        instance: candidate_id
+        emits: [demo.fit.CandidateSelected]
+        payload:
+          demo.fit.CandidateSelected: {candidate_id: input.candidate_id}
+      - name: not-proposed
+        wrong_state: true
+        error: demo.fit.NotProposed
+        payload:
+          demo.fit.NotProposed: {}

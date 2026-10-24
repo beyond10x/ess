@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-24T22:48:09Z",
+  "actor": "human:timo",
+  "artifact": "story:rows-a-guarded-move-reaches-are-made-once",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "b10x-build-slot cargo test -p ess-conformance --locked --test related_guard_ranked_candidates_work (3 passed; with the memo disabled the bound test fails at 574 > 120); synthesis_suite_bytes_table 346 existing pins unchanged; 37 further affected ess-conformance test binaries green except row_sets_runtimes (TS2688 missing @types/node on the host); cargo test -p ess-cli 155 binaries ok"
+  }
+}

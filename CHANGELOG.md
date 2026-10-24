@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Synthesis finishes in the time 0.68.0 took again where related rows reach their state through a move with a stored-field guard, as an adopter reported. 0.69.0 arranged the rows a creating branch leaves anew for every arrangement that asked, and each level of a chain of related rows asked several times, so an adopter's specification of 9 domains and 125 authored scenarios ran for more than 13 minutes. Those rows are now made once per synthesis and context; the specification synthesizes in 50 s, as on 0.68.0, and keeps the scenarios 0.69.0 added (464 against 0.68.0's 397). The synthesized suites are unchanged.
+
 ## [0.69.0] — 2026-10-24
 
 ### Added
