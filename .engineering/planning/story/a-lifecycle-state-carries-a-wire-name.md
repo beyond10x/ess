@@ -5,13 +5,15 @@ kind: story
 status: draft
 title: A lifecycle state carries a wire name
 summary: 'Adopter report G4: A lifecycle state cannot carry a wire spelling (ess#639).'
+tags:
+- ess-0.70.0
 refs:
 - provider: github
   reference: beyond10x/ess#639
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Problem
 

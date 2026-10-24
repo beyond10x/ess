@@ -6,6 +6,7 @@ status: active
 title: A row-set guard beside an identity-addressed when_related validates and answers in the rule's step-4 order
 tags:
 - adopter-report
+- ess-0.70.0
 refs:
 - provider: github
   reference: beyond10x/ess#473
@@ -25,7 +26,7 @@ scope:
   path: crates/verify/ess-conformance/src/interpret/execute/row_set.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:07:58Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:07:58Z", actor: "human:timo", revision: 3}
