@@ -1,4 +1,4 @@
-#	models=346	lines=482
+#	models=347	lines=483
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -249,6 +249,7 @@ crates/verify/ess-conformance/tests/fixtures/related-guard-multiple.yaml	run-ser
 crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/related-guard-optional.yaml	release-service	REFUSED	3bd8d0f48acca624a5fa1c21ee7839ab555df37780523afcc8a8e17f7b7afa7d:783
 crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-guard-release.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-guard-sign-in.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/related-guard-stored-reference.yaml	components=1
