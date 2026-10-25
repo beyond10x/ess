@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.69.1](#synthesis-takes-the-time-it-took-in-0680-again-where-related-rows-reach-their-state-through-a-guarded-move) | Synthesis takes the time it took in 0.68.0 again where related rows reach their state through a guarded move | capability | notable |
 | [0.69.0](#lists-can-be-filled-or-appended-to-absent-members-sent-as-null-and-ess-generate-types-writes-body-types) | Lists can be filled or appended to, absent members sent as null, and ess generate types writes body types | capability | notable |
 | [0.68.0](#a-reference-every-writer-checks-needs-no-missing-row-branch-and-a-view-filter-can-compare-with-now) | A reference every writer checks needs no missing-row branch, and a view filter can compare with now | capability | notable |
 | [0.67.0](#a-guard-says-what-an-absent-value-compares-as-and-an-external-branch-can-be-narrowed-to-some-rows) | A guard says what an absent value compares as, and an external branch can be narrowed to some rows | capability | notable |
@@ -78,6 +79,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.69.1 — 2026-10-25
+
+### Synthesis takes the time it took in 0.68.0 again where related rows reach their state through a guarded move
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.69.1)
+
+0.69.0 arranged the rows a creating branch leaves once per arrangement that asked, so a specification whose related rows reach their state through a move with a stored-field guard synthesized for more than 13 minutes. Those rows are now made once per synthesis, the time is back at 0.68.0's, and the synthesized suites keep the scenarios 0.69.0 added.
 
 ## 0.69.0 — 2026-10-24
 
