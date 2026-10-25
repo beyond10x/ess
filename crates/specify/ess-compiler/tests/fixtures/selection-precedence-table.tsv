@@ -1,4 +1,4 @@
-#	models=302	commands=646
+#	models=303	commands=648
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -518,6 +518,9 @@ crates/verify/ess-conformance/tests/fixtures/expression-roots.yaml	demo.review.S
 crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	ir=5b9804acff0e81eee23558ad3a1f1e3df0cb34e7ec8f77eb2e74cd02dfa92bc7:12384
 crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	demo.desk.CheckPick	held_state: stale, wrong-state | accepting: unlisted | default: accepted
 crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	demo.desk.MakePick	default: picked
+crates/verify/ess-conformance/tests/fixtures/external-creator-beside-related-guard.yaml	ir=e2bb47b1d79545634b30c95389aa3e9e6c727f984713786a98c9f1b0184df502:15546
+crates/verify/ess-conformance/tests/fixtures/external-creator-beside-related-guard.yaml	demo.studio.LoadPatch	default: loaded
+crates/verify/ess-conformance/tests/fixtures/external-creator-beside-related-guard.yaml	demo.studio.RenderPatch	present_related: no-such-patch | accepting: rendered-limited | default: rendered
 crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-subject.yaml	ir=708c1b55eee0a6544cb0010f8ccb140f417d1a17cb7b109044d2f05b882059e1:12437
 crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-subject.yaml	demo.vault.Issue	default: issued
 crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-subject.yaml	demo.vault.Redeem	held_state: hashed-mismatch, redirect-mismatch, plain-mismatch, already-redeemed | default: redeemed

@@ -1,0 +1,90 @@
+format: ess/29
+system: demo
+version: v1
+domain: demo.studio
+summary: A render of a loaded patch, whose limiter a provider reports.
+types:
+  - {name: demo.studio.PatchId, kind: newtype, of: Uuid}
+  - {name: demo.studio.RenderId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.studio.Patch
+    identity: {name: patch_id, type: demo.studio.PatchId}
+    fields:
+      - {name: name, type: String}
+    lifecycle:
+      initial: Loaded
+      states: [Loaded]
+      terminal: [Loaded]
+  - name: demo.studio.Render
+    identity: {name: render_id, type: demo.studio.RenderId}
+    fields:
+      - {name: patch_id, type: demo.studio.PatchId}
+      - {name: block_size, type: Integer}
+      - {name: limited, type: Boolean}
+    lifecycle:
+      initial: Rendered
+      states: [Rendered]
+      terminal: [Rendered]
+actors:
+  - name: demo.studio.Operator
+    may: [demo.studio.LoadPatch, demo.studio.RenderPatch]
+commands:
+  - name: demo.studio.LoadPatch
+    input:
+      - {name: name, type: String}
+    outcomes:
+      - name: loaded
+        creates: demo.studio.Patch
+        instance: patch_id
+        sets: {name: input.name}
+        emits: [demo.studio.PatchLoaded]
+        payload:
+          demo.studio.PatchLoaded: {patch_id: {generated: true}}
+  - name: demo.studio.RenderPatch
+    input:
+      - {name: patch_id, type: demo.studio.PatchId}
+      - {name: block_size, type: Optional<Integer>}
+    outcomes:
+      - name: no-such-patch
+        when_related: {via: input.patch_id, exists: false}
+        error: demo.studio.PatchNotFound
+      - name: rendered-limited
+        external: the protective limiter engaged on at least one sample
+        creates: demo.studio.Render
+        instance: render_id
+        sets:
+          patch_id: input.patch_id
+          block_size: {input: block_size, else: 256}
+          limited: true
+        emits: [demo.studio.PatchRendered]
+        payload:
+          demo.studio.PatchRendered: {render_id: {generated: true}, patch_id: input.patch_id}
+      - name: rendered
+        creates: demo.studio.Render
+        instance: render_id
+        sets:
+          patch_id: input.patch_id
+          block_size: {input: block_size, else: 256}
+          limited: false
+        emits: [demo.studio.PatchRendered]
+        payload:
+          demo.studio.PatchRendered: {render_id: {generated: true}, patch_id: input.patch_id}
+events:
+  - name: demo.studio.PatchLoaded
+    fields: [{name: patch_id, type: demo.studio.PatchId}]
+  - name: demo.studio.PatchRendered
+    fields:
+      - {name: render_id, type: demo.studio.RenderId}
+      - {name: patch_id, type: demo.studio.PatchId}
+errors:
+  - name: demo.studio.PatchNotFound
+views:
+  - name: demo.studio.Renders
+    source: demo.studio.Render
+    consistency: read_your_writes
+    fields:
+      - {name: render_id, type: demo.studio.RenderId}
+      - {name: patch_id, type: demo.studio.PatchId}
+      - {name: block_size, type: Integer}
+      - {name: limited, type: Boolean}
+      - {name: state, type: demo.studio.Render.State}

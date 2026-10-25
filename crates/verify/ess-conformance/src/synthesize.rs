@@ -4239,9 +4239,18 @@ fn run_as(
         return Err(related_guard::stored_external_refused(command, outcome));
     }
     let external_row = !related
-        && witness == Witness::Full
         && related_guard::arranges_external(command, outcome)
         && related_guard::reads_row(command, &input, &setup.bound);
+    // Its further witnesses are its siblings' ([`related_guard::arranges_external`]). A further
+    // run (an Optional left out of an `else:` fallback, a union variant, …) is arranged as for a
+    // command reading no row, so it would send a literal identity no step created, and the
+    // `exists: false` branch declared before it would answer in its place: the scenario failed
+    // every target that honours the specification. Only a refusal answered before the row
+    // (`before_row: true`, ess/25) reads no row, and keeps its further runs.
+    if external_row && witness != Witness::Full && !outcome.before_row {
+        return Err(related_guard::unarranged());
+    }
+    let external_row = external_row && witness == Witness::Full;
     let (mut setup, input) = if external_row {
         related_guard::prepare_at_in(models, command, outcome, actors, Distinction::PLAIN, None)
             .map_err(|cause| related_guard::external_unwitnessed(command, outcome, cause))?

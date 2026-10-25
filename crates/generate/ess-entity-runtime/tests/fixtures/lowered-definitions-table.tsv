@@ -1,4 +1,4 @@
-#	models=347	lines=483
+#	models=348	lines=484
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -183,6 +183,7 @@ crates/verify/ess-conformance/tests/fixtures/explore.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/expression-arithmetic-and-time.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/expression-roots.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/external-creator-beside-related-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/external-narrowed-by-subject.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/fleet-sites.yaml	components=0

@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/external-creator-further-runs-0.69.2
+repository: ess
+publishedAt: 2026-10-25T00:00:00Z
+title: An external branch that copies an optional input keeps naming the row its arrangement created
+summary: >-
+  The outcome scenario of an external branch that copies an Optional input, on a command guarded by
+  when_related over the row its input names, ran the branch once more with the Optional left out and
+  named an identity no step created, so it failed every conforming target. Its further runs now
+  name the arranged row, as its plain sibling's already did.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.69.2
+  version: 0.69.2
+journeys: [specify]
+affectedSurfaces: [ess/docs]

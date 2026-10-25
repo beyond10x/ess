@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.69.2] — 2026-10-25
+
+### Fixed
+
+- The outcome scenario of an external branch that copies an `Optional` input through `{input: …, else: …}`, on a command with a `when_related:` guard over the row its input names, sends every run for the row the arrangement created. It ran the branch once more with the `Optional` left out, and that run named a literal identity no step created, so the `exists: false` branch declared before it answered and the scenario failed every target that honours the specification, the model interpreter included. An adopter's render command, whose limiter is reported by an external branch beside a `no-such-patch` refusal, failed `RenderPatch/outcome/rendered-limited` this way under 0.69.1, where 0.68.0 had refused the route; a minimal model fails the same way on every release from 0.50.0. The further runs of such a branch are its siblings', as those of its plain sibling already were, so the scenario keeps its full invocation; an external refusal answered before the row (`before_row: true`) keeps its further runs.
+
 ## [0.69.1] — 2026-10-25
 
 ### Fixed
