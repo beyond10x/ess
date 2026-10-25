@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.69.2 — 2026-10-25
+
+### An external branch that copies an optional input keeps naming the row its arrangement created
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.69.2)
+
+The outcome scenario of an external branch that copies an Optional input, on a command guarded by when_related over the row its input names, ran the branch once more with the Optional left out and named an identity no step created, so it failed every conforming target. Its further runs now name the arranged row, as its plain sibling's already did.
+
 ## 0.69.1 — 2026-10-25
 
 ### Synthesis takes the time it took in 0.68.0 again where related rows reach their state through a guarded move

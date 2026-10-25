@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.69.2](#an-external-branch-that-copies-an-optional-input-keeps-naming-the-row-its-arrangement-created) | An external branch that copies an optional input keeps naming the row its arrangement created | capability | notable |
 | [0.69.1](#synthesis-takes-the-time-it-took-in-0680-again-where-related-rows-reach-their-state-through-a-guarded-move) | Synthesis takes the time it took in 0.68.0 again where related rows reach their state through a guarded move | capability | notable |
 | [0.69.0](#lists-can-be-filled-or-appended-to-absent-members-sent-as-null-and-ess-generate-types-writes-body-types) | Lists can be filled or appended to, absent members sent as null, and ess generate types writes body types | capability | notable |
 | [0.68.0](#a-reference-every-writer-checks-needs-no-missing-row-branch-and-a-view-filter-can-compare-with-now) | A reference every writer checks needs no missing-row branch, and a view filter can compare with now | capability | notable |
@@ -79,6 +80,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.69.2 — 2026-10-25
+
+### An external branch that copies an optional input keeps naming the row its arrangement created
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.69.2)
+
+The outcome scenario of an external branch that copies an Optional input, on a command guarded by when_related over the row its input names, ran the branch once more with the Optional left out and named an identity no step created, so it failed every conforming target. Its further runs now name the arranged row, as its plain sibling's already did.
 
 ## 0.69.1 — 2026-10-25
 
