@@ -191,6 +191,7 @@ mod existence;
 mod expression;
 mod grant;
 mod identity;
+mod made;
 mod ordered_head;
 mod paging;
 pub(crate) mod precedence;
@@ -2575,6 +2576,14 @@ pub fn row_set_arrangements_tried<R>(run: impl FnOnce() -> R) -> (R, u64) {
     row_set::counting(run)
 }
 
+/// What `run` returns, and how many times a creating branch's rows were arranged on this thread
+/// while it ran rather than answered from what the synthesis made before: the work a test bounds
+/// where a wall-clock bound would depend on the machine (beyond10x/ess#633). Not part of the suite.
+#[doc(hidden)]
+pub fn creations_made<R>(run: impl FnOnce() -> R) -> (R, u64) {
+    made::counting(run)
+}
+
 /// [`synthesize`], with explicitly admitted synthesis seeds (beyond10x/ess#413,
 /// `docs/design/synthesis-seeds.md`).
 ///
@@ -2618,6 +2627,7 @@ pub fn synthesize_for_with_seeds(
 fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     // Each witness search is run once per question for the whole synthesis (beyond10x/ess#301).
     let _memoised = crate::witness_memo::memoise(ir);
+    let _remembered = made::remember(ir);
     // ess/16 (#168): a model whose actors carry attributes is synthesized once per caller
     // assignment, each read with the caller's values written in (`caller::synthesize`). Seeds are
     // refused for such a model before this point (`AdmittedSeeds::bound_to`).
@@ -2724,6 +2734,7 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     let ir = models.arrangement;
     // A caller assignment's model is another model: its answers are held apart and dropped with it.
     let _memoised = crate::witness_memo::memoise(ir);
+    let _remembered = made::remember(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     for (path, subject) in ess_compiler::binary64::uses(ir) {
@@ -11172,6 +11183,12 @@ pub(crate) fn with_dropped_write<R>(
     let previous = DROPPED.with(|it| it.replace(dropped));
     let _restore = Restore(previous);
     synthesize()
+}
+
+/// The dropped write [`with_dropped_write`] names, as the key of what a search under it made
+/// ([`made`]).
+fn dropped_key() -> String {
+    DROPPED.with(|it| format!("{:?}", it.borrow()))
 }
 
 /// The dropped write [`with_dropped_write`] names for `command`'s `outcome`, if any.

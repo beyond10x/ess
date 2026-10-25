@@ -4735,9 +4735,61 @@ fn score(profile: &Profile) -> (usize, usize, usize) {
     )
 }
 
+/// The rows the creating branch can leave ([`make_creations`]), made once per model and context
+/// ([`super::made`]) where the branch is one the model declares.
+fn creations(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    hints: &[Predicate],
+    distinction: Distinction,
+    (arranging, under): (&[&EntityHandle], Under<'_>),
+) -> Result<Vec<Arrangement>, RefusalCause> {
+    let make = || {
+        make_creations(
+            ir,
+            entity,
+            creator,
+            actors,
+            hints,
+            distinction,
+            (arranging, under),
+        )
+    };
+    // A branch of a command the model does not declare as such (one projected for a related guard)
+    // has no stable name to be remembered by.
+    let declared = ir
+        .commands()
+        .get(&creator.command.name)
+        .is_some_and(|command| std::ptr::eq(command, creator.command));
+    let Some(outcome) = creator
+        .command
+        .outcomes
+        .iter()
+        .position(|outcome| std::ptr::eq(outcome, creator.outcome))
+        .filter(|_| declared)
+    else {
+        return make();
+    };
+    let key = || {
+        format!(
+            "{entity:?}|{}|{outcome}|{:?}|{actors:?}|{hints:?}|{distinction:?}|{arranging:?}|{under:?}|{}|{:?}|{}|{}|{}",
+            creator.command.name,
+            creator.effect,
+            held_key(ir),
+            super::earlier_runs::captured(),
+            crate::witness::under_test_key(),
+            super::related_guard::open_key(),
+            super::dropped_key(),
+        )
+    };
+    super::made::made(ir, key, make)
+}
+
 /// The rows the creating branch can leave: its plain witness first, then one per input chosen
 /// toward the hints, then one per input chosen toward the stored-field guards of the moves.
-fn creations(
+fn make_creations(
     ir: &EssIr,
     entity: &EntityHandle,
     creator: &Driver<'_>,
@@ -5422,6 +5474,19 @@ pub(super) fn holding(ir: &EssIr, entity: &EntityHandle, row: &Arrangement) -> H
             .push((std::ptr::from_ref(ir), entity.clone(), row.clone()));
     });
     Holding
+}
+
+/// The rows of `ir` held on this thread ([`holding`]), as the key of what a search under them
+/// made ([`super::made`]).
+fn held_key(ir: &EssIr) -> String {
+    HELD.with(|held| {
+        held.borrow()
+            .iter()
+            .filter(|(model, _, _)| std::ptr::eq(*model, ir))
+            .map(|(_, entity, row)| format!("{entity:?}={row:?}"))
+            .collect::<Vec<_>>()
+            .join(";")
+    })
 }
 
 /// The held row of `entity` named `instance` ([`holding`]), as the steps so far leave it.

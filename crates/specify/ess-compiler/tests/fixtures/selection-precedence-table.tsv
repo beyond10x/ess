@@ -1,4 +1,4 @@
-#	models=301	commands=639
+#	models=302	commands=646
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -731,6 +731,14 @@ crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	mini.
 crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	mini.m.CreateOwner	default: created
 crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	mini.m.Start	related_row: no-item | accepting: other-owner | default: started
 crates/verify/ess-conformance/tests/fixtures/related-guard-owner-link.yaml	mini.m.Stop	held_state: not-running | default: stopped
+crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	ir=a6869ad4125e0be888b6c9fb6bdbec8db7486bf2c11143e983e6e935e5c9b5ba:42098
+crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	demo.fit.Build	present_related: no-graph, not-checked | default: built
+crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	demo.fit.Check	existence: no-graph | held_state: unknown-node, not-loaded | default: checked
+crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	demo.fit.Complete	existence: no-run | held_state: finished | default: completed
+crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	demo.fit.Load	input_refusal: negative-node | default: loaded
+crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	demo.fit.Propose	present_related: no-run, no-graph, no-patch, not-running | default: proposed
+crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	demo.fit.Select	existence: no-candidate | held_state: not-proposed | present_related: outranked | default: selected
+crates/verify/ess-conformance/tests/fixtures/related-guard-ranked-candidates.yaml	demo.fit.Start	input_refusal: bad-seed | present_related: no-graph, not-checked | default: started
 crates/verify/ess-conformance/tests/fixtures/related-guard-release.yaml	ir=f94e97df357fa758fd87a94f6d4e4cd0364dd017618c5a9e9e77c579544504ee:15482
 crates/verify/ess-conformance/tests/fixtures/related-guard-release.yaml	demo.release.AcceptCandidate	default: accepted
 crates/verify/ess-conformance/tests/fixtures/related-guard-release.yaml	demo.release.DraftRelease	default: drafted

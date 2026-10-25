@@ -2637,6 +2637,11 @@ thread_local! {
     static STEPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
+/// The scope [`under_test`] holds on this thread, as the key of what a search inside it made.
+pub(crate) fn under_test_key() -> String {
+    UNDER_TEST.with(|scope| format!("{:?}", scope.borrow()))
+}
+
 /// `run`'s result, and how many steps the guard-directed search took on this thread while it ran:
 /// one per truth value it broke a goal down to, pruned or not.
 ///

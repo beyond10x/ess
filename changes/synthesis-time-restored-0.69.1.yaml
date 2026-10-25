@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/synthesis-time-restored-0.69.1
+repository: ess
+publishedAt: 2026-10-25T00:00:00Z
+title: Synthesis takes the time it took in 0.68.0 again where related rows reach their state through a guarded move
+summary: >-
+  0.69.0 arranged the rows a creating branch leaves once per arrangement that asked, so a
+  specification whose related rows reach their state through a move with a stored-field guard
+  synthesized for more than 13 minutes. Those rows are now made once per synthesis, the time is back
+  at 0.68.0's, and the synthesized suites keep the scenarios 0.69.0 added.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.69.1
+  version: 0.69.1
+journeys: [specify]
+affectedSurfaces: [ess/docs]
