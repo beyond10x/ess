@@ -115,12 +115,34 @@ impl SubjectShape {
     }
 }
 
-pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
+/// Why a scenario's complete-subject or retained-result steps are refused, and the step that is:
+/// its position in the scenario's steps. Admission reads only the reason; synthesis names the step
+/// in the refusal of a scenario it withdraws for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StepRefusal {
+    /// The refused step's position in the scenario's steps.
+    pub(crate) step: usize,
+    /// Why, as admission states it.
+    pub(crate) reason: String,
+}
+
+impl StepRefusal {
+    pub(crate) fn at(step: usize, reason: impl Into<String>) -> Self {
+        Self {
+            step,
+            reason: reason.into(),
+        }
+    }
+}
+
+pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), StepRefusal> {
     let mut bound = BTreeSet::new();
+    // By view: the invocation the snapshot follows, the identity it selects, and its own step.
     let mut snapshots = BTreeMap::new();
     let mut invocation = 0_usize;
     let mut queried = None;
-    for step in steps {
+    for (at_step, step) in steps.iter().enumerate() {
+        let refused = |reason: &str| StepRefusal::at(at_step, reason);
         match step {
             // A step the system takes itself, awaited or required not to happen, is the one
             // command a complete comparison brackets as a sent one is (beyond10x/ess#542).
@@ -128,8 +150,8 @@ pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
             | ScenarioStep::ExecuteCommandWithoutInput { .. }
             | ScenarioStep::AwaitOutcome { .. }
             | ScenarioStep::ExpectNotIssued { .. } => {
-                if snapshots.values().any(|(at, _)| *at < invocation) {
-                    return Err("command interrupted complete subject comparison".into());
+                if snapshots.values().any(|(at, _, _)| *at < invocation) {
+                    return Err(refused("command interrupted complete subject comparison"));
                 }
                 invocation += 1;
                 queried = None;
@@ -139,9 +161,9 @@ pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
             | ScenarioStep::EstablishEntity { instance, .. } => {
                 if snapshots
                     .values()
-                    .any(|(_, selected)| selected == &instance)
+                    .any(|(_, selected, _)| selected == &instance)
                 {
-                    return Err("complete subject identity was overwritten".into());
+                    return Err(refused("complete subject identity was overwritten"));
                 }
                 bound.insert(instance);
             }
@@ -150,43 +172,55 @@ pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
                 subject,
                 shape,
             } => {
-                shape.validate()?;
+                shape.validate().map_err(|reason| refused(&reason))?;
                 let Some(ScenarioValue::Instance { instance }) = subject.get(&shape.identity_field)
                 else {
-                    return Err("complete snapshot requires its declared bound identity".into());
+                    return Err(refused(
+                        "complete snapshot requires its declared bound identity",
+                    ));
                 };
                 if subject.len() != 1
                     || !bound.contains(instance)
                     || invocation == 0
                     || queried != Some((view, invocation))
-                    || snapshots.insert(view, (invocation, instance)).is_some()
+                    || snapshots
+                        .insert(view, (invocation, instance, at_step))
+                        .is_some()
                 {
-                    return Err(
-                        "complete snapshot is unbound, overwritten or lacks a fresh query".into(),
-                    );
+                    return Err(refused(
+                        "complete snapshot is unbound, overwritten or lacks a fresh query",
+                    ));
                 }
             }
             ScenarioStep::ExpectCompleteSubjectUnchanged { view } => {
-                let Some((at, _)) = snapshots.remove(view) else {
-                    return Err("complete comparison has no matching complete snapshot".into());
+                let Some((at, _, _)) = snapshots.remove(view) else {
+                    return Err(refused(
+                        "complete comparison has no matching complete snapshot",
+                    ));
                 };
                 if invocation != at + 1 || queried != Some((view, invocation)) {
-                    return Err(
-                        "complete comparison must follow one command and a fresh query".into(),
-                    );
+                    return Err(refused(
+                        "complete comparison must follow one command and a fresh query",
+                    ));
                 }
             }
             ScenarioStep::SnapshotSubject { view, .. }
             | ScenarioStep::ExpectSubjectUnchanged { view }
                 if snapshots.contains_key(view) =>
             {
-                return Err("legacy snapshot cannot replace complete subject authority".into());
+                return Err(refused(
+                    "legacy snapshot cannot replace complete subject authority",
+                ));
             }
             _ => {}
         }
     }
-    if !snapshots.is_empty() {
-        return Err("complete subject snapshot has no comparison".into());
+    // The first snapshot left without its comparison.
+    if let Some(step) = snapshots.values().map(|(_, _, step)| *step).min() {
+        return Err(StepRefusal::at(
+            step,
+            "complete subject snapshot has no comparison",
+        ));
     }
     Ok(())
 }

@@ -1,6 +1,7 @@
 //! Exact, command-local retained-result observations, independent of event payload mappings.
 use crate::scenario::{CommandRef, EventRef, InstanceName, OutcomeRef, ScenarioStep};
 use crate::selection::Declaration;
+use crate::subject::StepRefusal;
 use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedCommand, ResolvedOutcome};
 use ess_domain::{Field, Primitive, QualifiedName, TypeRef};
 use ess_primitives::node::Node;
@@ -403,8 +404,9 @@ pub fn used_by(suite: &crate::ConformanceSuite) -> bool {
     })
 }
 
-/// Reject unbound, overwritten, or substituted captures before target callbacks.
-pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
+/// Reject unbound, overwritten, or substituted captures before target callbacks, naming the step.
+#[allow(clippy::too_many_lines)] // One walk over the steps, each refusal at the step it names.
+pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), StepRefusal> {
     crate::subject::validate_steps(steps)?;
     validate_bindings(steps)?;
     let mut active: Option<&Observation> = None;
@@ -415,12 +417,17 @@ pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
     let mut arguments = None;
     let mut captured_arguments = None;
     let mut queried = None;
-    for step in steps {
+    // The capture, or the replay expectation, whose comparison is still owed.
+    let mut open = 0_usize;
+    for (at_step, step) in steps.iter().enumerate() {
         match step {
             ScenarioStep::ConfigureExternalOutcome { .. }
                 if active.is_some() || !unchanged.is_empty() =>
             {
-                return Err("retained result retry cannot use fault injection".into())
+                return Err(StepRefusal::at(
+                    at_step,
+                    "retained result retry cannot use fault injection",
+                ))
             }
             ScenarioStep::ExecuteCommand {
                 command: c,
@@ -429,7 +436,10 @@ pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
                 ..
             } => {
                 if !unchanged.is_empty() {
-                    return Err("command interrupted retained subject comparison".into());
+                    return Err(StepRefusal::at(
+                        at_step,
+                        "command interrupted retained subject comparison",
+                    ));
                 }
                 if let Some(capture) = active {
                     if views.is_empty()
@@ -437,10 +447,10 @@ pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
                         || c != &capture.replay.command
                         || invocation != captured_at
                     {
-                        return Err(
-                            "retry substituted invocation or preceded original subject snapshot"
-                                .into(),
-                        );
+                        return Err(StepRefusal::at(
+                            at_step,
+                            "retry substituted invocation or preceded original subject snapshot",
+                        ));
                     }
                 }
                 invocation += 1;
@@ -451,10 +461,10 @@ pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
             // repeats the original request, and it ends whatever the previous one bound.
             ScenarioStep::ExecuteCommandWithoutInput { .. } => {
                 if !unchanged.is_empty() || active.is_some() {
-                    return Err(
-                        "an invocation with no input interrupted a retained result comparison"
-                            .into(),
-                    );
+                    return Err(StepRefusal::at(
+                        at_step,
+                        "an invocation with no input interrupted a retained result comparison",
+                    ));
                 }
                 invocation += 1;
                 queried = None;
@@ -462,34 +472,46 @@ pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
             }
             ScenarioStep::CaptureCommandResult { capture } => {
                 if active.is_some() || !unchanged.is_empty() {
-                    return Err("aliased or incomplete retained result snapshot".into());
+                    return Err(StepRefusal::at(
+                        at_step,
+                        "aliased or incomplete retained result snapshot",
+                    ));
                 }
                 active = Some(capture);
                 captured_at = invocation;
                 captured_arguments = arguments;
                 views.clear();
+                open = at_step;
             }
             ScenarioStep::ExpectReplayResult { capture } => {
                 if active != Some(capture) || views.is_empty() || invocation != captured_at + 1 {
-                    return Err(
-                        "replay lacks original subject snapshots and a subsequent retry".into(),
-                    );
+                    return Err(StepRefusal::at(
+                        at_step,
+                        "replay lacks original subject snapshots and a subsequent retry",
+                    ));
                 }
                 unchanged.clone_from(&views);
                 active = None;
+                open = at_step;
             }
             ScenarioStep::SnapshotCompleteSubject { .. } if !unchanged.is_empty() => {
-                return Err("original subject snapshot overwritten after retry".into())
+                return Err(StepRefusal::at(
+                    at_step,
+                    "original subject snapshot overwritten after retry",
+                ))
             }
             ScenarioStep::SnapshotCompleteSubject { view, subject, .. } if active.is_some() => {
                 let expected = &active.expect("guarded").instance;
                 if queried != Some((view, invocation)) || invocation != captured_at || subject.is_empty() || !subject.values().all(|v| matches!(v, crate::ScenarioValue::Instance { instance } if instance == expected)) || !views.insert(view) {
-                    return Err("original subject snapshot is aliased, overwritten, or names a different identity".into());
+                    return Err(StepRefusal::at(at_step, "original subject snapshot is aliased, overwritten, or names a different identity"));
                 }
             }
             ScenarioStep::ExpectCompleteSubjectUnchanged { view } if !unchanged.is_empty() => {
                 if queried != Some((view, invocation)) || !unchanged.remove(view) {
-                    return Err("replay compares a different subject snapshot".into());
+                    return Err(StepRefusal::at(
+                        at_step,
+                        "replay compares a different subject snapshot",
+                    ));
                 }
             }
             ScenarioStep::QueryView { view, .. } => queried = Some((view, invocation)),
@@ -497,19 +519,22 @@ pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
         }
     }
     if active.is_some() || !unchanged.is_empty() {
-        return Err("retained result has no complete subject comparison".into());
+        return Err(StepRefusal::at(
+            open,
+            "retained result has no complete subject comparison",
+        ));
     }
     Ok(())
 }
 
-fn validate_bindings(steps: &[ScenarioStep]) -> Result<(), String> {
+fn validate_bindings(steps: &[ScenarioStep]) -> Result<(), StepRefusal> {
     let mut bindings = BTreeMap::new();
     let mut captures = BTreeMap::new();
     let mut command = None;
     let mut outcome = None;
     let mut input = None;
     let mut invocation = 0_usize;
-    for step in steps {
+    for (at_step, step) in steps.iter().enumerate() {
         match step {
             ScenarioStep::ExecuteCommand {
                 command: c,
@@ -538,7 +563,10 @@ fn validate_bindings(steps: &[ScenarioStep]) -> Result<(), String> {
                     .values()
                     .any(|c: &&Observation| &c.instance == instance)
                 {
-                    return Err("captured subject identity was overwritten".into());
+                    return Err(StepRefusal::at(
+                        at_step,
+                        "captured subject identity was overwritten",
+                    ));
                 }
                 bindings.insert(instance, Some((event, field, invocation)));
             }
@@ -547,27 +575,36 @@ fn validate_bindings(steps: &[ScenarioStep]) -> Result<(), String> {
                     .values()
                     .any(|c: &&Observation| &c.instance == instance)
                 {
-                    return Err("captured subject identity was overwritten".into());
+                    return Err(StepRefusal::at(
+                        at_step,
+                        "captured subject identity was overwritten",
+                    ));
                 }
                 bindings.insert(instance, None);
             }
             ScenarioStep::CaptureCommandResult { capture } => {
-                capture.validate()?;
+                capture
+                    .validate()
+                    .map_err(|reason| StepRefusal::at(at_step, reason))?;
                 if command != Some(&capture.origin.command)
                     || outcome != Some(&capture.origin)
                     || !bindings.contains_key(&capture.instance)
                     || captures.insert(&capture.snapshot, capture).is_some()
                 {
-                    return Err("invalid or overwritten original result capture".into());
+                    return Err(StepRefusal::at(
+                        at_step,
+                        "invalid or overwritten original result capture",
+                    ));
                 }
                 let selected = match &capture.identity {
                     Identity::Input { field } => input.and_then(|i| i.get(field)).is_some_and(|v| matches!(v, crate::ScenarioValue::Instance { instance } if instance == &capture.instance)),
                     Identity::Event { event, field } => bindings.get(&capture.instance) == Some(&Some((event, field, invocation))),
                 };
                 if !selected {
-                    return Err(
-                        "original capture is not bound to the declared invocation identity".into(),
-                    );
+                    return Err(StepRefusal::at(
+                        at_step,
+                        "original capture is not bound to the declared invocation identity",
+                    ));
                 }
             }
             ScenarioStep::ExpectReplayResult { capture }
@@ -575,7 +612,10 @@ fn validate_bindings(steps: &[ScenarioStep]) -> Result<(), String> {
                     || command != Some(&capture.replay.command)
                     || outcome != Some(&capture.replay) =>
             {
-                return Err("replay has no matching original capture".into());
+                return Err(StepRefusal::at(
+                    at_step,
+                    "replay has no matching original capture",
+                ));
             }
             _ => {}
         }
@@ -596,7 +636,7 @@ pub(crate) fn admit_suite(
     }
     for scenario in suite.scenarios.values() {
         validate_steps(&scenario.steps)
-            .map_err(|e| AdmissionError::new("InvalidReplay", "$suite", e))?;
+            .map_err(|e| AdmissionError::new("InvalidReplay", "$suite", e.reason))?;
     }
     Ok(())
 }

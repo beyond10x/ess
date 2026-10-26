@@ -203,6 +203,7 @@ mod related_list;
 mod repeated_identity;
 mod row_set;
 mod seeds;
+mod self_admission;
 mod set_effects;
 mod shorthand;
 mod singleton;
@@ -1382,6 +1383,10 @@ impl RefusalCause {
                 ordered_head::HEAD_REPAIR
             }
             Self::NoWitness(gap) if gap.type_ref == RESPONSE_GAP => RESPONSE_REPAIR,
+            Self::NoWitness(gap) if gap.type_ref == self_admission::SELF_ADMISSION => {
+                "nothing to change in the specification; this is a defect in ess to report, with \
+                 the specification that produced it"
+            }
             Self::NoWitness(gap) if gap.type_ref == SUBJECT_GAP => SUBJECT_REPAIR,
             Self::NoWitness(_) => {
                 "give the field a type that has a finite value, or drop it from the command's input"
@@ -1698,6 +1703,9 @@ impl fmt::Display for RefusalCause {
                     f,
                     "the disclosure cell cannot be arranged or observed: {detail}"
                 )
+            }
+            Self::NoWitness(gap) if gap.type_ref == self_admission::SELF_ADMISSION => {
+                f.write_str(&self_admission::line(&gap.path))
             }
             Self::NoWitness(gap) => write!(f, "no witness: {gap}"),
             Self::GuardUnevaluable(refusal) => write!(f, "{refusal}"),
@@ -2707,7 +2715,16 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
             .into_iter()
             .map(|location| Note::UnreachedBinary64 { location }),
     );
+    // Last, so no pass after it can write a scenario the suite's own admission refuses.
+    self_admission::withdraw_inadmissible(&mut synthesis);
     synthesis
+}
+
+/// Each scenario of `synthesis` its own admission refuses, withdrawn and refused with the scenario
+/// and the step, as [`synthesize`] does before it returns; a test holds a hand-broken suite to it.
+#[doc(hidden)]
+pub fn withdraw_inadmissible(synthesis: &mut Synthesis) {
+    self_admission::withdraw_inadmissible(synthesis);
 }
 
 /// `id` taken out of the finished suite and refused with `cause`, with every note about it: a note

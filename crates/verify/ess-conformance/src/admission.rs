@@ -1150,7 +1150,8 @@ fn setup_literal(value: &Node, depth: u16, path: &str) -> Result<(), AdmissionEr
     }
 }
 
-fn escape(value: &str) -> String {
+/// `value` as one JSON Pointer reference token (RFC 6901): `~` as `~0`, `/` as `~1`.
+pub(crate) fn escape(value: &str) -> String {
     value.replace('~', "~0").replace('/', "~1")
 }
 fn checked(locations: Vec<String>) -> Result<(), AdmissionError> {
