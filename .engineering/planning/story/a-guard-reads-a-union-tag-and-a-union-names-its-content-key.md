@@ -5,13 +5,15 @@ kind: story
 status: draft
 title: A guard reads a union tag and a union names its content key
 summary: 'Adopter report G2: A guard cannot read a union''s tag, and a union cannot name its content key (ess#637).'
+tags:
+- ess-0.71.0
 refs:
 - provider: github
   reference: beyond10x/ess#637
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Problem
 

@@ -5,13 +5,15 @@ kind: story
 status: draft
 title: Generated fields keep declaration order and box only recursion
 summary: 'Adopter report N7: Generated Rust boxes every reference and sorts fields (ess#661).'
+tags:
+- ess-0.71.0
 refs:
 - provider: github
   reference: beyond10x/ess#661
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Problem
 

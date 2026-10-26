@@ -4,10 +4,12 @@ id: story:http-binding-carries-transport-framing
 kind: story
 status: draft
 title: 'An HTTP binding states transport framing: long-polling, CORS, JSONP, WebSocket'
+tags:
+- ess-0.71.0
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 

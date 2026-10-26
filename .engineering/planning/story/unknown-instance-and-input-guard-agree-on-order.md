@@ -7,10 +7,11 @@ title: Validation, interpreter and explorer agree on an unknown-instance branch 
 tags:
 - adopter-report
 - defect
+- ess-0.71.0
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
