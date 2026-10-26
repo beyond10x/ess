@@ -233,7 +233,11 @@ struct identity's own member keeps its meaning: `<reference>.<member>` reads the
 reference's type has one. Navigation in an aggregate view, beside `paging:` or `absent:`, or as an
 `order_by:` key is refused with `unsupported_construct`; a field read through a reference under the
 name of a source field with `conflicting_declaration`; a required field with `type_mismatch`. Below
-`ess/28` each is refused with `unsupported_format_version` naming `ess/28`.
+`ess/28` each is refused with `unsupported_format_version` naming `ess/28`. A view field written
+`from: <relation>.<field>` is not this spelling: it is refused with `unsupported_construct` at its
+line, and the hint is the `field: {related: …}` rewrite when `<relation>` is a reference of the
+source or a `references` relation carried by one, and otherwise names `field: {related: …}` and
+`expr:`.
 
 Synthesis writes one `<view>/reference/<field>` scenario per view and reference (suite/54, /55): two
 referenced rows, a source row pointed at each, one more pointed at nothing where the reference may
