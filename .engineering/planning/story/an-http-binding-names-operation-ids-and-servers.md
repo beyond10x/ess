@@ -5,13 +5,15 @@ kind: story
 status: draft
 title: An http binding names operation ids and servers
 summary: 'Adopter report S5: HTTP binding has no operation_id and no servers (ess#653).'
+tags:
+- ess-0.71.0
 refs:
 - provider: github
   reference: beyond10x/ess#653
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Problem
 

@@ -730,6 +730,50 @@ func TestRetainedSchemaRefusesFloatingFamilies(t *testing.T) {
 	}
 }
 
+// A Decimal in an exact observer is compared by numeric value from suite/58: 1.5 and 1.50 are one
+// value and 1.25 another. Below /58 it is refused by version; a Binary64 is refused at every one.
+func TestRetainedDecimalComparesByValue(t *testing.T) {
+	reading := map[string]any{"retained.core.Reading": map[string]any{"kind": "struct", "fields": []any{map[string]any{"name": "value", "type": "Decimal"}}}}
+	for _, c := range []struct {
+		ty                       string
+		declarations             map[string]any
+		original, equal, changed Node
+	}{
+		{"Decimal", map[string]any{}, json.Number("1.5"), json.Number("1.50"), json.Number("1.25")},
+		{"List<retained.core.Reading>", reading, []any{map[string]any{"value": json.Number("1.5")}}, []any{map[string]any{"value": json.Number("1.50")}}, []any{map[string]any{"value": json.Number("1.25")}}},
+	} {
+		contract := replayContract(t, c.ty, c.declarations)
+		if err := contract.compare(map[string]Node{"item": c.original}, map[string]Node{"item": c.equal}); err != nil {
+			t.Fatal(c.ty, err)
+		}
+		if err := contract.compare(map[string]Node{"item": c.original}, map[string]Node{"item": c.changed}); err == nil {
+			t.Fatal(c.ty, ": a changed Decimal passed")
+		}
+	}
+	for _, ty := range []string{"Binary64", "List<Binary64>"} {
+		value := map[string]any{"snapshot": "original", "instance": "record", "identity": map[string]any{"kind": "event", "event": "retained.core.Seeded", "field": "record_id"}, "origin": map[string]any{"command": "retained.core.Seed", "outcome": "seeded"}, "replay": map[string]any{"command": "retained.core.Seed", "outcome": "replayed"}, "fields": []any{map[string]any{"name": "item", "type": ty}}, "declarations": map[string]any{}}
+		if err := admitReplay(value); err == nil {
+			t.Fatal(ty, ": a Binary64 retained result was admitted")
+		}
+	}
+	for _, version := range []string{"ess-conformance/34", "ess-conformance/56", "ess-conformance/58"} {
+		for _, ty := range []string{"Decimal", "Binary64"} {
+			doc := retainedDocument(t)
+			doc["provenance"].(map[string]any)["suite_version"] = version
+			shape := completeShapeStep(t, doc)["shape"].(map[string]any)
+			shape["fields"] = append(shape["fields"].([]any), map[string]any{"name": "level", "type": ty})
+			raw, err := json.Marshal(doc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = admitRunInput(string(raw))
+			if admitted := version == "ess-conformance/58" && ty == "Decimal"; (err == nil) != admitted {
+				t.Fatalf("%s %s: admitted=%v, error %v", version, ty, admitted, err)
+			}
+		}
+	}
+}
+
 func TestRetainedAdmissionRejectsSubstitutedAuthority(t *testing.T) {
 	for _, mode := range []string{"unknown", "unknown-field", "missing", "overwrite", "wrong-command", "wrong-instance", "wrong-schema", "wrong-metadata", "late-snapshot", "post-retry-overwrite", "missing-snapshot", "wrong-subject", "missing-preservation", "wrong-view", "wrong-input", "wrong-actor", "aliased-capture", "unbound", "same-invocation", "pending-command", "injected-outcome", "missing-original-query", "missing-retry-query"} {
 		t.Run(mode, func(t *testing.T) {
@@ -1277,5 +1321,25 @@ func TestExternalCommitStaleRefusals(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Adversary pass 1, unit e. `docs/design/retained-command-results.md`: "The Go and TypeScript
+// runtimes compare the exact numeric value." Spellings of one value compare equal; each pair in
+// the second list is two different decimals, so the retry changed the retained result.
+func TestAdversaryEDecimalExactValue(t *testing.T) {
+	contract := replayContract(t, "Decimal", map[string]any{})
+	compare := func(original, retry string) error {
+		return contract.compare(map[string]Node{"item": json.Number(original)}, map[string]Node{"item": json.Number(retry)})
+	}
+	for _, pair := range [][2]string{{"1", "1.0"}, {"1.10", "1.1"}, {"-0", "0"}, {"1.5e0", "1.5"}, {"1E2", "100"}} {
+		if err := compare(pair[0], pair[1]); err != nil {
+			t.Errorf("%s then %s: %v", pair[0], pair[1], err)
+		}
+	}
+	for _, pair := range [][2]string{{"1.5", "1.25"}, {"0.1", "0.10000000000000001"}, {"1", "1.0000000000000000001"}, {"123456789012345678901234567890", "123456789012345678901234567891"}} {
+		if err := compare(pair[0], pair[1]); err == nil {
+			t.Errorf("%s then %s: two different decimals compared equal", pair[0], pair[1])
+		}
 	}
 }

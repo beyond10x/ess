@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 
-use ess_compiler::ir::EssIr;
+use ess_compiler::ir::{EssIr, ResolvedBody};
 use ess_domain::name::QualifiedName;
 
 /// Every declaration that wrote `naming: { code: … }`, and what it wrote.
@@ -28,5 +28,31 @@ pub(crate) fn code_aliases(ir: &EssIr) -> BTreeMap<QualifiedName, String> {
         };
     }
     collect!(types, entities, commands, events, errors, views);
+    aliases
+}
+
+/// Every enum variant that wrote `code:`, by its enum and then its name, and what it wrote
+/// (beyond10x/ess#662).
+///
+/// A variant's identifier is derived from its name, and a wire spelling used as the name can
+/// derive one another variant holds (`a.b` and `a_b` are both `AB`) or none at all (`1.0`). The
+/// author names it the way a declaration is named, and both code targets read it here. A union
+/// label declares no naming, so it has no entry.
+pub(crate) fn variant_code_aliases(
+    ir: &EssIr,
+) -> BTreeMap<QualifiedName, BTreeMap<String, String>> {
+    let mut aliases: BTreeMap<QualifiedName, BTreeMap<String, String>> = BTreeMap::new();
+    for (name, declared) in ir.types() {
+        if let ResolvedBody::Enum { variants } = &declared.body {
+            for variant in variants {
+                if let Some(code) = variant.naming.code() {
+                    aliases
+                        .entry(name.clone())
+                        .or_default()
+                        .insert(variant.name.clone(), code.to_owned());
+                }
+            }
+        }
+    }
     aliases
 }

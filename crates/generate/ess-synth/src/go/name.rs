@@ -149,6 +149,12 @@ pub fn type_fragment(text: &str) -> String {
         .collect()
 }
 
+/// `true` when `word` is an exported Go identifier: [`valid_ident`], starting with an upper-case
+/// letter. Every Go keyword is lower case, so an exported name is never one.
+pub fn is_exported(word: &str) -> bool {
+    valid_ident(word) && word.chars().next().is_some_and(char::is_uppercase)
+}
+
 /// `true` when `word` is spelled as a Go identifier: a letter or `_`, then letters, digits and
 /// `_`.
 ///

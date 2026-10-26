@@ -21,6 +21,7 @@ a reviewer or a consumer reads. Rebuild the rest in CI, where they cannot drift 
 | `site` and `docs` projections | no; build them in CI for publication | `ess generate --kind site` or `--kind docs` | none needed |
 | synthesized suite document (`--target ir`) | yes, when `ess verify impact --suite` or a review reads it | `ess verify conform synthesize --target ir --out <file>`; synthesizing twice is byte-identical | the same command with `--check`; review a change with `ess verify conform diff` |
 | synthesized runner and suite (`--target go` or `--target typescript`) | yes | `ess verify conform synthesize` | the same command with `--check` |
+| type library a consumer links (`ess generate types`), with `.ess-output` | yes | `ess generate types --target <target> --out <root>` | the same command with `--check` |
 | synthesized code your implementation links | yes | `ess generate synthesize` | regenerate, then fail CI on a dirty tree |
 | planning store and evidence | see [AEP](https://beyond10x.github.io/docs/aep/concepts/planning-store/) | AEP | AEP |
 

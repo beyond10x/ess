@@ -5,13 +5,15 @@ kind: story
 status: draft
 title: Reference outside component names its remedy
 summary: 'Adopter report N11: reference_outside_component has no hint for an unowned domain (ess#665).'
+tags:
+- ess-0.71.0
 refs:
 - provider: github
   reference: beyond10x/ess#665
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Problem
 

@@ -5,13 +5,15 @@ kind: story
 status: draft
 title: An imported integer format realizes at its native width
 summary: 'Adopter report R10: An imported integer format does not realize at native width (ess#648).'
+tags:
+- ess-0.71.0
 refs:
 - provider: github
   reference: beyond10x/ess#648
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Problem
 

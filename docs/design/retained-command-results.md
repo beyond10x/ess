@@ -103,10 +103,17 @@ Add explicit bounded result-capture and replay-comparison steps to the suite's
 closed vocabulary. Their references bind the command, origin and snapshot key.
 Only a real successful observed result can be captured. Reject missing,
 overwritten, wrong-command or aliased snapshots. Deep-copy observed mutable
-values. Recursively refuse Decimal and Binary64 in this initial replay response
-contract, including through named wrappers, structs and collections; EKR's
-retained result types require neither. Do not change existing response-to-event
-semantics or silently route these new comparisons through binary64.
+values. Recursively refuse Binary64 in this replay response contract, including
+through named wrappers, structs and collections, and name the field that holds it.
+From `ess-conformance/58` (ordinary) and `/59` (declared coverage) a Decimal is
+admitted and compared by numeric value: `1.5` and `1.50` are one value and `1.25`
+another. A suite labelled below 58 that carries a Decimal in a retained result or
+a complete subject is refused by version. The Go and TypeScript runtimes compare
+the exact value of the number token. The Rust runner holds a target's number as
+`ess_primitives::facts::Number` holds every number: a non-integer, and an integer
+past 64 bits, is read through binary64, so two decimals that round to one
+binary64, such as `0.1` and `0.10000000000000001`, compare as one value there. Do not change existing
+response-to-event semantics.
 
 After closed typed admission, compare Integer as the exact admitted i64 value,
 Boolean exactly, and String/Timestamp/Duration/Uuid/Bytes as exact admitted text.
@@ -219,7 +226,8 @@ Before callbacks, refuse omitted/malformed descriptors, invalid identities,
 unknown or unrelated declarations, unsupported recursive observers, mismatched
 pairs/views/identity binding and new steps mislabeled as an old suite. The exact
 complete-subject profile shares retained-result resource and finite structural type bounds;
-Decimal/Binary64 and reading observers refuse synthesis recursively. Newtype wrappers in a
+Binary64 and reading observers refuse synthesis recursively, naming the field; a Decimal is
+compared by value from suite/58 or /59, as above. Newtype wrappers in a
 complete subject may carry source invariants: this observation compares their actual represented
 values exactly and checks their structural type, without claiming to evaluate those invariants.
 Other constrained declarations still refuse. Retained-result response observations retain their

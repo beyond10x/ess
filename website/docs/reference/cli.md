@@ -845,6 +845,7 @@ ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--all-
 | `--rust-drop-unknown-members` |  | no |  | Rust only: decode an open object with declared fields without keeping the members it does not declare, so it has no `ess_extra` field. types-report.json records each such object as an obligation the consumer accepted |
 | `--names` | `<NAMES>` | no | `qualified` | How declarations are named: the qualified model name, or its last segment. One of `qualified`, `short`. |
 | `--out` | `<OUT>` | yes |  | Library destination, outside the specification input tree |
+| `--check` |  | no |  | Compare the library with what `--out` holds instead of writing it: exit 1 naming each file that is missing, differs, or is recorded in `.ess-output` and no longer generated. Writes nothing |
 
 #### `ess generate client`
 

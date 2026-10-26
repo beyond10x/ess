@@ -5,10 +5,12 @@ kind: story
 status: draft
 title: A command may declare that an existing related row answers before its input guards
 summary: 'Adopter report R2: a second initialize answers already-initialized before its payload is read; the precedence rule forbids that order.'
+tags:
+- ess-0.71.0
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 2
+revision: 3
 ---
 ## Report
 

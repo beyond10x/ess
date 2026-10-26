@@ -4,9 +4,11 @@ id: story:stored-field-equals-returned-response-value
 kind: story
 status: draft
 title: 'Store the value an outcome returns with {response: <field>} in sets: (ess/24)'
+tags:
+- ess-0.71.0
 relations:
 - serves: vision:O2
-revision: 2
+revision: 3
 ---
 ## Outcome
 

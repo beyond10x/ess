@@ -5,13 +5,15 @@ kind: story
 status: draft
 title: A component not reached over the network has no http route
 summary: 'Adopter report S2: A component not reached over the network still gets HTTP routes (ess#651).'
+tags:
+- ess-0.71.0
 refs:
 - provider: github
   reference: beyond10x/ess#651
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Problem
 

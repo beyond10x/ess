@@ -1,10 +1,14 @@
-//! Model and bundle identity are distinct; root failures never publish partial libraries.
+//! Model and bundle identity are distinct; root failures never publish partial libraries; `--check`
+//! compares a generated library with the files the same command would write (beyond10x/ess#654).
 
 use ess_cli::TemporaryDirectory;
 use serde_json::Value;
 use std::{
+    collections::BTreeMap,
     fs,
+    path::{Path, PathBuf},
     process::{Command, Output},
+    time::SystemTime,
 };
 
 struct Fixture(TemporaryDirectory);
@@ -219,4 +223,266 @@ fn all_type_binary64_libraries_publish_finite_codecs_with_atomic_preflight() {
         assert!(!fixture.run(&args).status.success());
         assert_eq!(fs::read_to_string(&source).unwrap(), "sentinel");
     }
+}
+
+/// Every file under `root`, with its bytes and modification time (as `generate_check.rs` takes it).
+fn snapshot(root: &Path) -> BTreeMap<PathBuf, (Vec<u8>, SystemTime)> {
+    fn visit(root: &Path, dir: &Path, out: &mut BTreeMap<PathBuf, (Vec<u8>, SystemTime)>) {
+        for entry in fs::read_dir(dir).expect("readable directory") {
+            let path = entry.expect("directory entry").path();
+            let meta = fs::symlink_metadata(&path).expect("metadata");
+            if meta.is_dir() {
+                visit(root, &path, out);
+            } else {
+                out.insert(
+                    path.strip_prefix(root).expect("under root").to_path_buf(),
+                    (
+                        fs::read(&path).expect("readable file"),
+                        meta.modified().expect("mtime"),
+                    ),
+                );
+            }
+        }
+    }
+    let mut files = BTreeMap::new();
+    visit(root, root, &mut files);
+    files
+}
+
+/// A Rust library of the fixture's record, the arguments that generate it into `out`.
+fn rust_library(out: &str) -> Vec<&str> {
+    vec![
+        "--root",
+        "sample.data.Record",
+        "--target",
+        "rust",
+        "--package",
+        "model_types",
+        "--out",
+        out,
+    ]
+}
+
+fn checked<'a>(args: &[&'a str]) -> Vec<&'a str> {
+    let mut args = args.to_vec();
+    args.push("--check");
+    args
+}
+
+fn stderr(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+/// The one `--check` line naming `file`.
+fn drift_line<'a>(err: &'a str, file: &str) -> &'a str {
+    err.lines()
+        .find(|line| line.contains(file))
+        .unwrap_or_else(|| panic!("stderr names {file}: {err}"))
+}
+
+#[test]
+fn generate_types_check_passes_on_fresh_output_and_writes_nothing() {
+    let fixture = Fixture::new();
+    let args = rust_library("rust");
+    assert!(fixture.run(&args).status.success());
+    let before = snapshot(&fixture.0.join("rust"));
+    let check = fixture.run(&checked(&args));
+    assert_eq!(
+        check.status.code(),
+        Some(0),
+        "current output passes: {check:?}"
+    );
+    assert!(
+        !stderr(&check).contains("ess generate types"),
+        "no drift line on current output: {}",
+        stderr(&check)
+    );
+    assert_eq!(
+        snapshot(&fixture.0.join("rust")),
+        before,
+        "--check changed no file's bytes or modification time"
+    );
+}
+
+#[test]
+fn generate_types_check_names_a_drifted_file() {
+    let fixture = Fixture::new();
+    let args = rust_library("rust");
+    assert!(fixture.run(&args).status.success());
+    fs::write(fixture.0.join("rust/types.rs"), "edited by hand\n").unwrap();
+    let before = snapshot(&fixture.0.join("rust"));
+    let check = fixture.run(&checked(&args));
+    assert_eq!(check.status.code(), Some(1), "drift exits 1: {check:?}");
+    let err = stderr(&check);
+    let line = drift_line(&err, "types.rs");
+    assert!(
+        line.contains("ess generate types"),
+        "the remedy names the command: {line}"
+    );
+    assert_eq!(
+        err.lines().filter(|line| line.contains("types.rs")).count(),
+        1,
+        "one line for the drifted file: {err}"
+    );
+    assert_eq!(
+        snapshot(&fixture.0.join("rust")),
+        before,
+        "--check wrote nothing"
+    );
+}
+
+#[test]
+fn generate_types_check_names_a_missing_file_and_one_no_longer_generated() {
+    let fixture = Fixture::new();
+    let args = rust_library("rust");
+    assert!(fixture.run(&args).status.success());
+    fs::remove_file(fixture.0.join("rust/types-report.json")).unwrap();
+    let before = snapshot(&fixture.0.join("rust"));
+    let check = fixture.run(&checked(&args));
+    assert_eq!(check.status.code(), Some(1), "drift exits 1: {check:?}");
+    let err = stderr(&check);
+    let line = drift_line(&err, "types-report.json");
+    assert!(
+        line.contains("is missing") && line.contains("regenerate it with `ess generate types`"),
+        "{line}"
+    );
+    assert_eq!(
+        snapshot(&fixture.0.join("rust")),
+        before,
+        "--check wrote nothing"
+    );
+
+    let again = rust_library("mixed");
+    assert!(fixture.run(&again).status.success());
+    let before = snapshot(&fixture.0.join("mixed"));
+    let check = fixture.run(&[
+        "--root",
+        "sample.data.Record",
+        "--target",
+        "typescript",
+        "--out",
+        "mixed",
+        "--check",
+    ]);
+    assert_eq!(check.status.code(), Some(1), "drift exits 1: {check:?}");
+    let err = stderr(&check);
+    let line = drift_line(&err, "Cargo.toml");
+    assert!(
+        line.contains("is recorded in .ess-output but no longer generated")
+            && line.contains("ess generate types"),
+        "{line}"
+    );
+    assert_eq!(
+        snapshot(&fixture.0.join("mixed")),
+        before,
+        "--check wrote nothing"
+    );
+}
+
+#[test]
+fn generate_types_check_passes_on_a_copied_output_root() {
+    fn copy(from: &Path, to: &Path) {
+        fs::create_dir_all(to).unwrap();
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), &target).unwrap();
+            }
+        }
+    }
+    let fixture = Fixture::new();
+    assert!(fixture.run(&rust_library("original")).status.success());
+    copy(&fixture.0.join("original"), &fixture.0.join("copied"));
+    fs::write(fixture.0.join("copied/NOTES.md"), "kept by hand\n").unwrap();
+    let check = fixture.run(&checked(&rust_library("copied")));
+    assert_eq!(
+        check.status.code(),
+        Some(0),
+        "a copied root is current: {check:?}"
+    );
+    assert!(
+        !stderr(&check).contains("NOTES.md"),
+        "an unrecorded extra file is not drift: {}",
+        stderr(&check)
+    );
+}
+
+#[test]
+fn generate_types_check_requires_out() {
+    let fixture = Fixture::new();
+    let check = fixture.run(&[
+        "--root",
+        "sample.data.Record",
+        "--target",
+        "typescript",
+        "--check",
+    ]);
+    assert_eq!(
+        check.status.code(),
+        Some(2),
+        "the argument parser refuses --check without --out: {check:?}"
+    );
+    let err = stderr(&check);
+    assert!(
+        err.contains("required arguments were not provided") && err.contains("--out"),
+        "the refusal names --out: {err}"
+    );
+}
+
+/// Adversary pass 1 (regression guard): a library generated before the model moved is drift
+/// through the regeneration route, not the re-enroll one, and the line names this command.
+#[test]
+fn adv_g_types_check_after_a_model_change_names_regeneration_by_this_command() {
+    let fixture = Fixture::new();
+    let args = rust_library("rust");
+    assert!(fixture.run(&args).status.success());
+    let model = fixture.0.join("model/system.yaml");
+    let text = fs::read_to_string(&model).unwrap();
+    let moved = text.replacen(
+        "      - name: score\n",
+        "      - name: added\n        type: String\n      - name: score\n",
+        1,
+    );
+    assert_ne!(moved, text, "the fixture still declares `score`");
+    fs::write(&model, moved).unwrap();
+    let before = snapshot(&fixture.0.join("rust"));
+    let check = fixture.run(&checked(&args));
+    assert_eq!(check.status.code(), Some(1), "drift exits 1: {check:?}");
+    let err = stderr(&check);
+    let line = drift_line(&err, "types.rs");
+    assert!(
+        line.contains("regenerate it with `ess generate types`"),
+        "the regeneration remedy names this command: {line}"
+    );
+    assert!(
+        !line.contains("move it aside"),
+        "an unedited file is not re-enrolled: {line}"
+    );
+    assert_eq!(
+        snapshot(&fixture.0.join("rust")),
+        before,
+        "--check wrote nothing"
+    );
+}
+
+/// Adversary pass 1 (regression guard): `--check` against an `--out` nothing was generated into
+/// names the files as missing and leaves no directory behind.
+#[test]
+fn adv_g_types_check_on_an_absent_out_creates_nothing() {
+    let fixture = Fixture::new();
+    let check = fixture.run(&checked(&rust_library("never")));
+    assert_eq!(
+        check.status.code(),
+        Some(1),
+        "absent output is drift: {check:?}"
+    );
+    let err = stderr(&check);
+    assert!(drift_line(&err, "types.rs").contains("is missing"), "{err}");
+    assert!(
+        !fixture.0.join("never").exists(),
+        "--check created the output directory"
+    );
 }

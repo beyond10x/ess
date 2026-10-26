@@ -5,13 +5,15 @@ kind: story
 status: draft
 title: Caller attributes are readable in a when related predicate
 summary: 'Adopter report G1: A when_related predicate cannot read a caller attribute (ess#636).'
+tags:
+- ess-0.71.0
 refs:
 - provider: github
   reference: beyond10x/ess#636
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Problem
 

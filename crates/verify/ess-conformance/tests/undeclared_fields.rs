@@ -539,13 +539,15 @@ fn a_reader_of_48_refuses_a_later_major_by_version() {
     // `/50` is the cumulative `hold_now` major above it (beyond10x/ess#586), `/52` the cumulative
     // wrapped value-invariant and await major above that (beyond10x/ess#542), `/54` the view-reference
     // major above that (beyond10x/ess#564), `/56` the one-time reader major above that
-    // (beyond10x/ess#614); `/58` is the first no reader implements.
+    // (beyond10x/ess#614), `/58` the exact-Decimal major above that; `/60` is the first no reader
+    // implements.
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 50)).is_ok());
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 52)).is_ok());
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 54)).is_ok());
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 56)).is_ok());
-    let Err(error) = AdmittedSuite::from_json(&relabelled(&suite, 58)) else {
-        panic!("no reader implements suite/58");
+    assert!(AdmittedSuite::from_json(&relabelled(&suite, 58)).is_ok());
+    let Err(error) = AdmittedSuite::from_json(&relabelled(&suite, 60)) else {
+        panic!("no reader implements suite/60");
     };
     assert!(
         error
@@ -683,13 +685,13 @@ fn an_older_go_reader_refuses_a_suite_48_by_version() {
     let runtime = directory.join("essconform/runtime.go");
     let text = std::fs::read_to_string(&runtime).unwrap();
     assert!(
-        text.contains("const newestSuiteMajor = 57\n"),
+        text.contains("const newestSuiteMajor = 59\n"),
         "the runtime reads /53"
     );
     std::fs::write(
         &runtime,
         text.replace(
-            "const newestSuiteMajor = 57\n",
+            "const newestSuiteMajor = 59\n",
             "const newestSuiteMajor = 47\n",
         ),
     )

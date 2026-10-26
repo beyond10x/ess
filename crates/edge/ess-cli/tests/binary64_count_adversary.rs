@@ -42,7 +42,7 @@ fn record(root: &Path, label: &str, command: &Command, result: &Output) -> Strin
 fn cli_binary64_model_and_original_suites_preserve_report_destinations_in_both_formats() {
     let root = scratch("cli");
     fs::create_dir_all(root.join("model")).unwrap();
-    fs::write(root.join("model/system.yaml"),"format: ess/2\nsystem: probe\nversion: v1\ndomains: [probe.data]\ndomain: probe.data\ntypes:\n  - {name: probe.data.Ratio, kind: newtype, of: Binary64}\n").unwrap();
+    fs::write(root.join("model/system.yaml"),"format: ess/2\nsystem: probe\nversion: v1\ndomains: [probe.data]\ndomain: probe.data\ntypes:\n  - {name: probe.data.Ratio, kind: newtype, of: Binary64}\nevents:\n  - name: probe.data.Measured\n    fields: [{name: ratio, type: probe.data.Ratio}]\n").unwrap();
     fs::write(root.join("suite.json"), document(Some(true)).to_string()).unwrap();
     for format in ["1", "2"] {
         for model in [false, true] {

@@ -1,4 +1,4 @@
-#	models=304	commands=650
+#	models=307	commands=657
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -34,6 +34,9 @@ crates/generate/ess-gen/tests/fixtures/command-view-roots.yaml	ir=cda1b1a8c526e3
 crates/generate/ess-gen/tests/fixtures/command-view-roots.yaml	demo.notes.Create	default: created
 crates/generate/ess-gen/tests/fixtures/command-view-roots.yaml	demo.notes.Pin	default: pinned
 crates/generate/ess-gen/tests/fixtures/model-types.yaml	ir=91f0042ec0ca486d80956e85ed6a896e6811c6240ec1b1062b209b752ea1fa57:4855
+crates/generate/ess-gen/tests/fixtures/state-wire.yaml	ir=8dd07d4a3a7b8ca59624ca3ccd43ce6f848baf00712a06f3ca615673235fd8f2:9904
+crates/generate/ess-gen/tests/fixtures/state-wire.yaml	jobs.queue.Finish	held_state: wrong-state | default: finished
+crates/generate/ess-gen/tests/fixtures/state-wire.yaml	jobs.queue.Queue	default: queued
 crates/generate/ess-synth/tests/fixtures/binding-selection.yaml	ir=e40145284e7b85a5f309ab433ddc336fd87a70ca4c1259c4e752244be7993b77:19800
 crates/generate/ess-synth/tests/fixtures/binding-selection.yaml	selection.core.Receive	default: received
 crates/generate/ess-synth/tests/fixtures/bounded-accessor.yaml	ir=56aa0e7b552a4b29064d4cc0178f48566a6abdf860a5fc93cf5b255cddc2b753:24246
@@ -660,6 +663,9 @@ crates/verify/ess-conformance/tests/fixtures/one-time-coverage-53/model.yaml	cre
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/caller-guard.yaml	ir=7ee442b98bdcd1d712728e588c8552fad5bc1233c6ed778b9618e7c527e20060:9160
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/caller-guard.yaml	devices.api.PairDevice	default: paired
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/caller-guard.yaml	devices.api.RenameDevice	held_state: not-owner | default: renamed
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/external-before-update.yaml	ir=53ac4b3ad231d8432eb6e9b252d4b053878d29d0d5598b98b8c9234d8547116b:8939
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/external-before-update.yaml	demo.shop.CreateItem	default: created
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/external-before-update.yaml	demo.shop.Relabel	accepting: store-unavailable | default: relabelled
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/unknown-first.yaml	ir=61bb22cfb19ecc11ead29a86aae021cad374ad37dd6e140f1792644045cae528:9064
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/unknown-first.yaml	devices.api.PairDevice	default: paired
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/unknown-first.yaml	devices.api.RenameDevice	existence: no-device | default: renamed
@@ -791,6 +797,10 @@ crates/verify/ess-conformance/tests/fixtures/retained-commit.yaml	retained.core.
 crates/verify/ess-conformance/tests/fixtures/retained-commit.yaml	retained.core.Validate	held_state: refused | default: validated
 crates/verify/ess-conformance/tests/fixtures/retained-replay.yaml	ir=efc7dbb71d6ef6cd0830c2ebcfd4a530cdf0688d8806c69a6b845c9a8439432e:6978
 crates/verify/ess-conformance/tests/fixtures/retained-replay.yaml	retained.core.Seed	accepting: replayed | default: seeded
+crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	ir=8ac026b20c78ca4077e7dec9499f9db26c9e0657715826d16618743f04368fe8:15914
+crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	demo.items.CreateChild	present_related: parent-not-found, other-tenant | default: created
+crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	demo.items.CreateParent	default: created
+crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	demo.items.GetChild	present_related: child-not-found | default: found
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	ir=bf2f4184b5bcfb943cb4fc7037d9ced79cfc67fc49abe8abca03b63fc9f1a4fa:13760
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	demo.seats.Check	accepting: qualified | default: not-qualified
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	demo.seats.DefineTier	default: defined

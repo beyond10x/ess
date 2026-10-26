@@ -5,13 +5,15 @@ kind: story
 status: draft
 title: Role input drift tells a caller from an implementation
 summary: 'Adopter report N12: role_input_drift on a producer sending a subset (ess#666).'
+tags:
+- ess-0.71.0
 refs:
 - provider: github
   reference: beyond10x/ess#666
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Problem
 

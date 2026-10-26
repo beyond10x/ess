@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-binary64-field-is-admitted-by-a-conformance-run
 kind: story
-status: active
+status: implemented
 title: A binary64 field is admitted by a conformance run
 summary: 'Adopter report R8: A Binary64 field blocks a whole conformance run (ess#646).'
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T09:18:54Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-26T09:18:54Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-26T15:50:35Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 

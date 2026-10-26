@@ -5,13 +5,15 @@ kind: story
 status: draft
 title: Two outcomes answered alike may share a status and body
 summary: 'Adopter report S3: Two outcomes answered alike cannot share a status and body (ess#652).'
+tags:
+- ess-0.71.0
 refs:
 - provider: github
   reference: beyond10x/ess#652
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Problem
 

@@ -211,7 +211,7 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     if !crate::go::admitted_major(version.major()) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–57",
+            "execution readers admit suite majors 1–59",
         ));
     }
     match p.get("synthesis_seeds") {
@@ -274,11 +274,12 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
             | 53
             | 55
             | 57
+            | 59
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /57",
+            "coverage is required exactly for odd suite majors from /5 through /59",
         ));
     }
     compact_spellings(value, version.major())?;
@@ -805,8 +806,16 @@ fn nested_response_metadata(field: &Json) -> Result<(), AdmissionError> {
 }
 
 /// Check the model even when synthesis would omit unsupported fields or whole scenarios.
+///
+/// A `Binary64` refuses it where a scenario could send or read one
+/// (`ess_compiler::binary64::reached_uses`); one in a type nothing reaches is noted by synthesis
+/// instead, and the structural inventory a codec reads is not this one.
 pub fn model(ir: &ess_compiler::EssIr) -> Result<(), AdmissionError> {
-    checked(ess_compiler::binary64::locations(ir).into_iter().collect())
+    checked(
+        ess_compiler::binary64::reached_uses(ir)
+            .into_keys()
+            .collect(),
+    )
 }
 
 fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
@@ -848,6 +857,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::hold_now::admit(suite)?;
     crate::value_invariant::admit(suite)?;
     crate::view_reference::admit(suite)?;
+    crate::exact_decimal::admit(suite)?;
     crate::system_issued::admit(suite)?;
     crate::delivery_context::admit(suite)?;
     crate::no_invocation::admit(suite)?;

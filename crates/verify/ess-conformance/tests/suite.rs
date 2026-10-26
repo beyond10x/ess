@@ -345,22 +345,399 @@ fn sparse_models_cannot_publish_an_empty_success_for_binary64() {
     )])
     .unwrap();
     let ir = compile(&spec, &SourceMap::new()).unwrap();
+    // The newtype is reached by nothing, so it refuses nothing; the model still has nothing to
+    // check, so its suite is empty, and the note names the position nobody exercises.
     let synthesized = ess_conformance::synthesize::synthesize(&ir);
     assert!(synthesized.suite.is_empty());
-    assert_eq!(synthesized.refusals.len(), 1);
-    let errors = ess_conformance::admission::model(&ir).unwrap_err();
-    assert_eq!(errors.issues.len(), 1);
-    assert!(errors.issues[0].path.contains("sample.data.Ratio"));
-    assert_eq!(
-        ess_conformance::web::emit(&ir, &synthesized.suite).unwrap_err(),
-        errors
+    assert!(
+        synthesized.refusals.is_empty(),
+        "{:?}",
+        synthesized.refusals
     );
+    let notes: Vec<String> = synthesized.notes.iter().map(ToString::to_string).collect();
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(
+        notes[0].contains("`types.sample.data.Ratio.of`"),
+        "{notes:?}"
+    );
+    ess_conformance::admission::model(&ir).unwrap();
     let authored = ess_conformance::authored::compile(&ir, &[]);
     assert!(authored.scenarios.is_empty());
-    assert_eq!(authored.refusals.len(), 1);
+    assert!(authored.refusals.is_empty(), "{:?}", authored.refusals);
+}
+
+/// The adopter's minimal reproduction: a note entity and its command, and a `Rate` type declared
+/// for another component that nothing here reaches.
+const UNREACHED: &str = "format: ess/31
+system: demo
+version: v1
+domain: demo.notes
+summary: A note is added; a rate type is declared for another component and reached by nothing here.
+types:
+  - {name: demo.notes.NoteId, kind: newtype, of: Uuid}
+  - name: demo.notes.Rate
+    kind: struct
+    fields:
+      - {name: per_second, type: Binary64}
+entities:
+  - name: demo.notes.Note
+    identity: {name: note_id, type: demo.notes.NoteId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+events:
+  - name: demo.notes.NoteAdded
+    fields: [{name: note_id, type: demo.notes.NoteId}]
+commands:
+  - name: demo.notes.AddNote
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: added
+        creates: demo.notes.Note
+        instance: note_id
+        sets: {label: input.label}
+        emits: [demo.notes.NoteAdded]
+        payload: {demo.notes.NoteAdded: {note_id: {generated: true}}}
+views:
+  - name: demo.notes.Notes
+    source: demo.notes.Note
+    consistency: read_your_writes
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: label, type: String}
+";
+
+fn notes_model(text: &str) -> EssIr {
+    let spec =
+        Specification::assemble([(Source::new("notes.yaml"), RawSpecFile::parse(text).unwrap())])
+            .unwrap();
+    compile(&spec, &SourceMap::new()).unwrap()
+}
+
+#[test]
+fn an_unreached_binary64_type_does_not_block_a_run() {
+    use ess_conformance::{report::Status, AdmittedSuite, Runner};
+    let ir = notes_model(UNREACHED);
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    assert!(synthesis.refusals.is_empty(), "{:?}", synthesis.refusals);
+    let notes: Vec<String> = synthesis.notes.iter().map(ToString::to_string).collect();
+    let binary: Vec<&String> = notes
+        .iter()
+        .filter(|note| note.contains("Binary64"))
+        .collect();
+    assert_eq!(binary.len(), 1, "{notes:?}");
+    assert!(
+        binary[0].contains("`types.demo.notes.Rate.fields.per_second`"),
+        "{notes:?}"
+    );
+    assert!(
+        synthesis
+            .suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string() == "demo.notes.AddNote/outcome/added"),
+        "{:?}",
+        synthesis.suite.scenarios.keys().collect::<Vec<_>>()
+    );
+    ess_conformance::admission::model(&ir).unwrap();
+    let json = synthesis.suite.to_canonical_json().unwrap();
+    let admitted = AdmittedSuite::from_json(&json).unwrap();
+    let target = ess_conformance::interpret::Interpreted::for_model(ir.clone());
+    let report = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
+    assert_eq!(report.scenarios.len(), synthesis.suite.len());
+    for scenario in &report.scenarios {
+        assert_eq!(scenario.status, Status::Passed, "{scenario:?}");
+    }
+}
+
+/// An adopter's shape: an entity with a top-level `Decimal`, a `read_your_writes` view publishing
+/// it, and a close command with a `wrong_state` refusal. Through 0.69.2 the refusal had no scenario
+/// from `ess/7` (`ESS-SYNTH-001`, "Decimal and Binary64 replay results are unsupported").
+const WRONG_STATE_DECIMAL: &str = "format: {format}
+system: demo
+version: v1
+summary: Probe.
+domain: demo.p
+types:
+  - {name: demo.p.ItemId, kind: newtype, of: Uuid}
+  - {name: demo.p.Line, kind: struct, fields: [{name: price, type: Decimal}]}
+entities:
+  - name: demo.p.Item
+    identity: {name: item_id, type: demo.p.ItemId}
+    fields:
+      - {name: price, type: Decimal}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+commands:
+  - name: demo.p.Make
+    input:
+      - {name: price, type: Decimal}
+    outcomes:
+      - name: made
+        creates: demo.p.Item
+        instance: item_id
+        sets: {price: input.price}
+        emits: [demo.p.Made]
+        payload:
+          demo.p.Made: {item_id: {generated: true}}
+  - name: demo.p.Close
+    input:
+      - {name: item_id, type: demo.p.ItemId}
+    outcomes:
+      - {name: wrong-state, wrong_state: true, error: demo.p.WrongState}
+      - name: closed
+        moves: demo.p.Item.close
+        instance: item_id
+        emits: [demo.p.Closed]
+        payload:
+          demo.p.Closed: {item_id: input.item_id}
+events:
+  - {name: demo.p.Made, fields: [{name: item_id, type: demo.p.ItemId}]}
+  - {name: demo.p.Closed, fields: [{name: item_id, type: demo.p.ItemId}]}
+views:
+  - name: demo.p.Items
+    source: demo.p.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: demo.p.ItemId}
+      - {name: price, type: Decimal}
+errors:
+  - {name: demo.p.WrongState, summary: Wrong state.}
+";
+
+/// At `ess/7`, where complete subjects begin, and at the newest format, the wrong-state refusal of
+/// [`WRONG_STATE_DECIMAL`] synthesizes with no refusal: its scenario snapshots the complete
+/// subject, `price` typed `Decimal`, before the refused command and compares it after, the suite
+/// is written at /58, and the interpreted target passes every scenario.
+#[test]
+fn a_wrong_state_refusal_snapshots_a_top_level_decimal_subject() {
+    use ess_conformance::{report::Status, AdmittedSuite, Runner};
+    const SCENARIO: &str = "demo.p.Item/state/Closed/refuses/demo.p.Close";
+    for format in ["ess/7", "ess/32"] {
+        let ir = notes_model(&WRONG_STATE_DECIMAL.replace("{format}", format));
+        let synthesis = ess_conformance::synthesize::synthesize(&ir);
+        assert!(
+            synthesis.refusals.is_empty(),
+            "{format}: {:?}",
+            synthesis.refusals
+        );
+        let json = synthesis.suite.to_canonical_json().unwrap();
+        let document: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            document["provenance"]["suite_version"], "ess-conformance/58",
+            "{format}"
+        );
+        let steps: Vec<&serde_json::Value> = document["scenarios"][SCENARIO]["steps"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{format}: no `{SCENARIO}`"))
+            .iter()
+            .collect();
+        let kind = |step: &serde_json::Value| step["step"].as_str().unwrap_or("").to_owned();
+        let snapshot = steps
+            .iter()
+            .position(|step| kind(step) == "snapshot_complete_subject")
+            .unwrap_or_else(|| panic!("{format}: no snapshot in {steps:?}"));
+        let refused = snapshot
+            + steps[snapshot..]
+                .iter()
+                .position(|step| kind(step) == "execute_command")
+                .unwrap_or_else(|| panic!("{format}: no refused command after the snapshot"));
+        assert!(
+            steps[refused..]
+                .iter()
+                .any(|step| kind(step) == "expect_complete_subject_unchanged"
+                    && step["view"] == "demo.p.Items"),
+            "{format}: no comparison after the refused command: {steps:?}"
+        );
+        let shape = steps[snapshot]["shape"].to_string();
+        assert!(
+            shape.contains("\"price\"") && shape.contains("\"Decimal\""),
+            "{format}: the snapshot types `price` as Decimal: {shape}"
+        );
+        let admitted = AdmittedSuite::from_json(&json).unwrap();
+        let target = ess_conformance::interpret::Interpreted::for_model(ir.clone());
+        let report = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
+        assert_eq!(report.scenarios.len(), synthesis.suite.len(), "{format}");
+        for scenario in &report.scenarios {
+            assert_eq!(scenario.status, Status::Passed, "{format}: {scenario:?}");
+        }
+    }
+}
+
+#[test]
+fn a_reached_binary64_still_refuses_by_name() {
+    let rate = "{name: rate, type: Optional<demo.notes.Rate>}";
+    for (owner, text) in [
+        (
+            "command input",
+            UNREACHED.replace(
+                "    input:\n      - {name: label, type: String}\n",
+                &format!("    input:\n      - {{name: label, type: String}}\n      - {rate}\n"),
+            ),
+        ),
+        (
+            "entity field",
+            UNREACHED.replace(
+                "    fields:\n      - {name: label, type: String}\n    lifecycle",
+                &format!("    fields:\n      - {{name: label, type: String}}\n      - {rate}\n    lifecycle"),
+            ),
+        ),
+        (
+            "view field",
+            UNREACHED
+                .replace(
+                    "    fields:\n      - {name: label, type: String}\n    lifecycle",
+                    &format!("    fields:\n      - {{name: label, type: String}}\n      - {rate}\n    lifecycle"),
+                )
+                .replace(
+                    "      - {name: note_id, type: demo.notes.NoteId}\n      - {name: label, type: String}\n",
+                    &format!("      - {{name: note_id, type: demo.notes.NoteId}}\n      - {{name: label, type: String}}\n      - {rate}\n"),
+                ),
+        ),
+        (
+            "event field",
+            UNREACHED.replace(
+                "events:\n",
+                "events:\n  - name: demo.notes.RateMeasured\n    fields: [{name: rate, type: demo.notes.Rate}]\n",
+            ),
+        ),
+    ] {
+        assert_ne!(text, UNREACHED, "{owner}: the replacement applied");
+        let ir = notes_model(&text);
+        let path = "types.demo.notes.Rate.fields.per_second";
+        let errors = ess_conformance::admission::model(&ir).unwrap_err();
+        assert_eq!(errors.issues.len(), 1, "{owner}: {errors}");
+        assert_eq!(errors.issues[0].path, path, "{owner}");
+        let synthesis = ess_conformance::synthesize::synthesize(&ir);
+        assert!(synthesis.suite.is_empty(), "{owner}");
+        assert!(
+            synthesis
+                .refusals
+                .iter()
+                .any(|refusal| refusal.to_string().contains(path)),
+            "{owner}: {:?}",
+            synthesis.refusals
+        );
+        assert!(
+            !synthesis
+                .notes
+                .iter()
+                .any(|note| note.to_string().contains("Binary64")),
+            "{owner}"
+        );
+        let authored = ess_conformance::authored::compile(&ir, &[]);
+        assert!(
+            matches!(
+                authored.refusals.as_slice(),
+                [refusal] if matches!(
+                    refusal.cause,
+                    ess_conformance::authored::Cause::UnsupportedBinary64 { .. }
+                )
+            ),
+            "{owner}: {:?}",
+            authored.refusals
+        );
+    }
+}
+
+/// A gauge whose `level` is `level` and which its view publishes or leaves out; a `wrong_state`
+/// refusal snapshots the complete subject.
+fn gauge(level: &str, published: bool) -> EssIr {
+    let mut text = format!(
+        "format: ess/31\nsystem: demo\nversion: v1\ndomain: demo.gauge\n\
+         types:\n  - {{name: demo.gauge.GaugeId, kind: newtype, of: Uuid}}\n\
+         entities:\n  - name: demo.gauge.Gauge\n    identity: {{name: gauge_id, type: demo.gauge.GaugeId}}\n\
+         \x20   fields: [{{name: level, type: {level}}}]\n\
+         \x20   lifecycle: {{initial: Open, states: [Open, Closed], terminal: [Closed], transitions: [{{name: close, from: [Open], to: Closed}}]}}\n\
+         errors: [{{name: demo.gauge.NotOpen, fields: []}}]\n\
+         events:\n  - {{name: demo.gauge.GaugeAdded, fields: [{{name: gauge_id, type: demo.gauge.GaugeId}}]}}\n\
+         \x20 - {{name: demo.gauge.GaugeClosed, fields: [{{name: gauge_id, type: demo.gauge.GaugeId}}]}}\n\
+         commands:\n  - name: demo.gauge.AddGauge\n    input: [{{name: level, type: {level}}}]\n\
+         \x20   outcomes:\n      - {{name: added, creates: demo.gauge.Gauge, instance: gauge_id, sets: {{level: input.level}}, emits: [demo.gauge.GaugeAdded], payload: {{demo.gauge.GaugeAdded: {{gauge_id: {{generated: true}}}}}}}}\n\
+         \x20 - name: demo.gauge.CloseGauge\n    input: [{{name: gauge_id, type: demo.gauge.GaugeId}}]\n\
+         \x20   outcomes:\n      - {{name: closed, moves: demo.gauge.Gauge.close, instance: gauge_id, emits: [demo.gauge.GaugeClosed], payload: {{demo.gauge.GaugeClosed: {{gauge_id: input.gauge_id}}}}}}\n\
+         \x20     - {{name: not-open, wrong_state: true, error: demo.gauge.NotOpen}}\n\
+         views:\n  - name: demo.gauge.Gauges\n    source: demo.gauge.Gauge\n    consistency: read_your_writes\n\
+         \x20   fields:\n      - {{name: gauge_id, type: demo.gauge.GaugeId}}\n      - {{name: state, type: demo.gauge.Gauge.State}}\n"
+    );
+    if published {
+        text += &["      - {name: level, type: ", level, "}\n"].concat();
+    }
+    let spec = Specification::assemble([(
+        Source::new("gauge.yaml"),
+        RawSpecFile::parse(&text).expect("the gauge parses"),
+    )])
+    .expect("the gauge assembles");
+    compile(&spec, &SourceMap::new()).expect("the gauge compiles")
+}
+
+fn digest(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .fold(String::new(), |mut hex, byte| {
+            use std::fmt::Write as _;
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        })
+}
+
+#[test]
+fn a_suite_without_a_decimal_observer_keeps_its_bytes() {
+    // Each digest was read on the base, before `Decimal` was admitted in an exact observer: an
+    // `Integer` the view publishes, and a `Decimal` the view leaves out (sent, never observed).
+    let expected = [
+        (
+            "Integer",
+            "ess-conformance/34".to_owned(),
+            "f261e548f04518a9406fd98e1e7c1b7f6a8cf7c4a66385ab868c72e079ddd9f3".to_owned(),
+        ),
+        (
+            "Decimal",
+            "ess-conformance/34".to_owned(),
+            "3596ab6bc8a9715206450e5bb6d92fa5c35b7f1fa5f7270368d1eab579e7d8ee".to_owned(),
+        ),
+    ];
+    let actual = [("Integer", true), ("Decimal", false)].map(|(level, published)| {
+        let synthesis = ess_conformance::synthesize::synthesize(&gauge(level, published));
+        assert!(
+            synthesis.refusals.is_empty(),
+            "{level}: {:?}",
+            synthesis.refusals
+        );
+        let json = synthesis.suite.to_canonical_json().unwrap();
+        (
+            level,
+            synthesis.suite.provenance.suite_version.to_string(),
+            digest(json.as_bytes()),
+        )
+    });
+    assert_eq!(actual, expected);
+    // The same model publishing its `Decimal` is the pair that carries it, and only that pair.
+    let synthesis = ess_conformance::synthesize::synthesize(&gauge("Decimal", true));
+    assert!(synthesis.refusals.is_empty(), "{:?}", synthesis.refusals);
+    let json = synthesis.suite.to_canonical_json().unwrap();
     assert_eq!(
-        authored.refusals[0].cause.code().to_string(),
-        "ESS-AUTHOR-036"
+        synthesis.suite.provenance.suite_version.to_string(),
+        "ess-conformance/58"
+    );
+    assert!(ess_conformance::AdmittedSuite::from_json(&json).is_ok());
+    // A reader that admits no later major refuses /58 by its version, never by a step.
+    let later = ess_conformance::scenario::SuiteFormat::parse("ess-conformance/60").unwrap();
+    assert!(!later.is_supported());
+    let refused = ess_conformance::AdmittedSuite::from_json(
+        &json.replace("\"ess-conformance/58\"", "\"ess-conformance/60\""),
+    )
+    .unwrap_err();
+    assert!(
+        refused.to_string().contains("UnsupportedSuiteVersion")
+            || refused.to_string().contains("suite major"),
+        "{refused}"
     );
 }
 
@@ -1052,4 +1429,163 @@ fn contains_token(text: &str, token: &str) -> bool {
                 .is_none_or(|it| !word(it));
         before && after
     })
+}
+
+/// Adversary pass 1, unit e: the reachability closure. Each model reaches a `Binary64` through one
+/// further root or chain `ess_compiler::binary64::reached_uses` names; each must still refuse the
+/// model at that position and note nothing.
+#[test]
+fn adversary_e_a_binary64_reached_through_every_root_still_refuses() {
+    let input = "    input:\n      - {name: label, type: String}\n";
+    let with_input = |field: &str, types: &str| {
+        UNREACHED
+            .replace(input, &format!("{input}      - {field}\n"))
+            .replace("types:\n", &format!("types:\n{types}"))
+    };
+    let rate = "types.demo.notes.Rate.fields.per_second";
+    let cases: Vec<(&str, String, &str)> = vec![
+        (
+            "command response",
+            UNREACHED.replace(
+                "    outcomes:\n      - name: added\n",
+                "    response:\n      - {name: rate, type: Optional<demo.notes.Rate>}\n    outcomes:\n      - name: added\n",
+            ),
+            rate,
+        ),
+        (
+            "error field",
+            UNREACHED.replace(
+                "events:\n",
+                "errors:\n  - {name: demo.notes.TooFast, summary: Too fast., fields: [{name: rate, type: demo.notes.Rate}]}\nevents:\n",
+            ),
+            rate,
+        ),
+        (
+            "actor attribute",
+            UNREACHED.replace(
+                "commands:\n",
+                "actors:\n  - name: demo.notes.Writer\n    attributes: [{name: rate, type: Optional<demo.notes.Rate>}]\n    may: [demo.notes.AddNote]\ncommands:\n",
+            ),
+            rate,
+        ),
+        (
+            "nested struct",
+            with_input(
+                "{name: holder, type: Optional<demo.notes.Holder>}",
+                "  - {name: demo.notes.Holder, kind: struct, fields: [{name: inner, type: demo.notes.Rate}]}\n",
+            ),
+            rate,
+        ),
+        (
+            "union variant",
+            with_input(
+                "{name: choice, type: Optional<demo.notes.Choice>}",
+                "  - name: demo.notes.Choice\n    kind: union\n    tag: kind\n    variants:\n      rate: demo.notes.Rate\n      text: String\n",
+            ),
+            rate,
+        ),
+        (
+            "map value",
+            with_input("{name: rates, type: 'Map<String, demo.notes.Rate>'}", ""),
+            rate,
+        ),
+        (
+            "newtype in a struct",
+            with_input(
+                "{name: wrapped, type: Optional<demo.notes.Wrapped>}",
+                "  - {name: demo.notes.Ratio, kind: newtype, of: Binary64}\n  - {name: demo.notes.Wrapped, kind: struct, fields: [{name: ratio, type: demo.notes.Ratio}]}\n",
+            ),
+            "types.demo.notes.Ratio.of",
+        ),
+    ];
+    let mut wrong = Vec::new();
+    for (owner, text, path) in &cases {
+        assert_ne!(text, UNREACHED, "{owner}: the replacement applied");
+        let ir = notes_model(text);
+        match ess_conformance::admission::model(&ir) {
+            Ok(()) => wrong.push(format!("{owner}: admitted")),
+            Err(errors) => {
+                if !errors.issues.iter().any(|issue| issue.path == *path) {
+                    wrong.push(format!("{owner}: refused without `{path}`: {errors}"));
+                }
+            }
+        }
+        let synthesis = ess_conformance::synthesize::synthesize(&ir);
+        if synthesis
+            .notes
+            .iter()
+            .any(|note| note.to_string().contains(path))
+        {
+            wrong.push(format!("{owner}: noted as unreached"));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// Regression guard: the unreached note is the same text on every synthesis of one model, one note
+/// per position, in the inventory's sorted order.
+#[test]
+fn adversary_e_the_unreached_binary64_note_is_deterministic() {
+    let text = UNREACHED.replace(
+        "types:\n",
+        "types:\n  - {name: demo.notes.Zeta, kind: newtype, of: Binary64}\n  - {name: demo.notes.Alpha, kind: struct, fields: [{name: b, type: Binary64}, {name: a, type: 'List<Binary64>'}]}\n",
+    );
+    let ir = notes_model(&text);
+    let notes = || {
+        ess_conformance::synthesize::synthesize(&ir)
+            .notes
+            .iter()
+            .map(ToString::to_string)
+            .filter(|note| note.contains("Binary64"))
+            .collect::<Vec<_>>()
+    };
+    let first = notes();
+    assert_eq!(first, notes());
+    let at: Vec<&str> = first
+        .iter()
+        .map(|note| note.split('`').nth(1).unwrap_or(""))
+        .collect();
+    assert_eq!(
+        at,
+        [
+            "types.demo.notes.Alpha.fields.a.of",
+            "types.demo.notes.Alpha.fields.b",
+            "types.demo.notes.Rate.fields.per_second",
+            "types.demo.notes.Zeta.of",
+        ],
+        "{first:#?}"
+    );
+}
+
+/// Adversary pass 1, unit e: an actor attribute is a root the closure names ("an actor's
+/// attributes"), and a scenario sends it with every command the actor may issue. Declared directly
+/// as `Binary64`, rather than inside a declared type, it must refuse the model as the same
+/// attribute through `Rate` does.
+#[test]
+fn adversary_e_a_binary64_actor_attribute_refuses_the_model() {
+    let mut wrong = Vec::new();
+    for attribute in ["Binary64", "Optional<demo.notes.Rate>"] {
+        let text = UNREACHED.replace(
+            "commands:\n",
+            &format!(
+                "actors:\n  - name: demo.notes.Writer\n    attributes: [{{name: rate, type: '{attribute}'}}]\n    may: [demo.notes.AddNote]\ncommands:\n"
+            ),
+        );
+        let ir = notes_model(&text);
+        if ess_conformance::admission::model(&ir).is_ok() {
+            let synthesis = ess_conformance::synthesize::synthesize(&ir);
+            wrong.push(format!(
+                "{attribute}: admitted; synthesis wrote {} scenario(s), {} refusal(s); the suite \
+                 sends `rate`: {}",
+                synthesis.suite.len(),
+                synthesis.refusals.len(),
+                synthesis
+                    .suite
+                    .to_canonical_json()
+                    .unwrap()
+                    .contains("\"rate\"")
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
 }

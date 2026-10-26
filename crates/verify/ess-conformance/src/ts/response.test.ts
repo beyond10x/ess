@@ -10,8 +10,12 @@ import test from 'node:test';
 import { JsonNumber, type CommandResult, type Node, type Step } from './runtime.js';
 import {
   admitResponse,
+  admitRetainedCapture,
+  admitSubjectShape,
   compareResponse,
   decodeResponseObservation,
+  exactDecimalMajor,
+  exactObservationEqual,
   expectResponsePayload,
   responseAssignable,
   responseEqual,
@@ -827,6 +831,77 @@ test('responseEqual compares tokens exactly and everything else structurally', (
   assert.equal(responseEqual(1, token('1')), true, 'a binary64 on the left falls back to equal');
 });
 
+// ---- a Decimal in an exact observer (suite/58) ---------------------------------------------------
+
+function retainedWire(type: string, declarations: Record<string, unknown> = {}): unknown {
+  return {
+    snapshot: 'original',
+    origin: { command: 'retained.core.Seed', outcome: 'seeded' },
+    replay: { command: 'retained.core.Seed', outcome: 'replayed' },
+    instance: 'record',
+    identity: { kind: 'event', event: 'retained.core.Seeded', field: 'record_id' },
+    fields: [{ name: 'item', type }],
+    declarations,
+  };
+}
+
+function subjectWire(type: string, declarations: Record<string, unknown> = {}): unknown {
+  return {
+    identity_field: 'record_id',
+    fields: [
+      { name: 'record_id', type: 'Uuid' },
+      { name: 'level', type },
+    ],
+    declarations,
+  };
+}
+
+const READING = {
+  'retained.core.Reading': { kind: 'struct', fields: [{ name: 'value', type: 'Decimal' }] },
+};
+
+test('both exact observers admit a Decimal from suite/58 and refuse a Binary64', () => {
+  for (const [type, declarations] of [
+    ['Decimal', {}],
+    ['Optional<Decimal>', {}],
+    ['List<retained.core.Reading>', READING],
+  ] as const) {
+    admitRetainedCapture(retainedWire(type, declarations));
+    admitSubjectShape(subjectWire(type, declarations));
+    exactDecimalMajor(retainedWire(type, declarations), 58);
+    exactDecimalMajor(subjectWire(type, declarations), 59);
+    for (const major of [34, 56, 57]) {
+      assert.throws(
+        () => exactDecimalMajor(retainedWire(type, declarations), major),
+        /requires suite\/58 or \/59/,
+      );
+      assert.throws(
+        () => exactDecimalMajor(subjectWire(type, declarations), major),
+        /requires suite\/58 or \/59/,
+      );
+    }
+  }
+  exactDecimalMajor(retainedWire('Integer'), 34);
+  exactDecimalMajor(subjectWire('Integer'), 34);
+  for (const type of ['Binary64', 'List<Binary64>']) {
+    assert.throws(() => admitRetainedCapture(retainedWire(type)), /Binary64/);
+    assert.throws(() => admitSubjectShape(subjectWire(type)), /Binary64/);
+  }
+});
+
+test('an exact observation compares a Decimal by value', () => {
+  const token = (raw: string): Node => new JsonNumber(raw);
+  const one = (value: Node): Node => ({ item: [{ value }] });
+  assert.equal(exactObservationEqual(one(token('1.5')), one(token('1.50'))), true);
+  assert.equal(exactObservationEqual(one(token('1.5')), one(token('1.25'))), false);
+  assert.equal(exactObservationEqual({ item: token('1.5') }, { item: token('1.50') }), true);
+  assert.equal(exactObservationEqual({ item: token('1.5') }, { item: token('1.25') }), false);
+  assert.equal(
+    exactObservationEqual({ item: token('1') }, { item: token('1'), extra: null }),
+    false,
+  );
+});
+
 // ---- presence policies on a response field (suite/24, beyond10x/ess#139) --------------------------
 
 function withPresence(presence: string): ResponseObservation {
@@ -888,5 +963,30 @@ test('response snapshots stay lossless without JSON.parse reviver source context
     assert.equal(result.response.exact.raw, '9007199254740993');
   } finally {
     JSON.parse = nativeParse;
+  }
+});
+
+// ---- adversary pass 1, unit e: a Decimal past binary64's digits ------------------------------------
+
+test('adversary e: an exact observation keeps two decimals past binary64 apart', () => {
+  const token = (raw: string): Node => new JsonNumber(raw);
+  const same = (left: string, right: string): boolean =>
+    exactObservationEqual({ item: token(left) }, { item: token(right) });
+  for (const [left, right] of [
+    ['1', '1.0'],
+    ['1.10', '1.1'],
+    ['-0', '0'],
+    ['1.5e0', '1.5'],
+    ['1E2', '100'],
+  ]) {
+    assert.equal(same(left!, right!), true, `${left} then ${right}`);
+  }
+  for (const [left, right] of [
+    ['1.5', '1.25'],
+    ['0.1', '0.10000000000000001'],
+    ['1', '1.0000000000000000001'],
+    ['123456789012345678901234567890', '123456789012345678901234567891'],
+  ]) {
+    assert.equal(same(left!, right!), false, `${left} then ${right}`);
   }
 });

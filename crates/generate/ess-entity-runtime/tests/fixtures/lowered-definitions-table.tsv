@@ -1,4 +1,4 @@
-#	models=349	lines=485
+#	models=352	lines=489
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -25,6 +25,8 @@ crates/generate/ess-entity-runtime/tests/fixtures/held-state-after-disjoint-acce
 crates/generate/ess-gen/tests/fixtures/command-view-roots.yaml	components=1
 crates/generate/ess-gen/tests/fixtures/command-view-roots.yaml	notes-service	REFUSED	0ca5fcf3877c0b783bb92cd9414b256213f1a4e5812ea8c5929b396c8c899518:327
 crates/generate/ess-gen/tests/fixtures/model-types.yaml	components=0
+crates/generate/ess-gen/tests/fixtures/state-wire.yaml	components=1
+crates/generate/ess-gen/tests/fixtures/state-wire.yaml	jobs-service	REFUSED	1a29cb5777d84bf9652846f2aa468c23a6f9b398e311c44869b41573b9f6d44b:328
 crates/generate/ess-synth/tests/fixtures/binding-selection.yaml	components=0
 crates/generate/ess-synth/tests/fixtures/bounded-accessor.yaml	components=1
 crates/generate/ess-synth/tests/fixtures/bounded-accessor.yaml	projection-service	REFUSED	3a3c03ad213b7d7fffc460e7a14bff66db28cb161ccf9ab3a6513bff0ecddc30:695
@@ -225,6 +227,7 @@ crates/verify/ess-conformance/tests/fixtures/one-time-caller/without-caller.yaml
 crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/one-time-coverage-53/model.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/caller-guard.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/one-time-followup/external-before-update.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/unknown-first.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/one-time-followup/wrong-state-first.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/optional-input-narrowed.yaml	components=0
@@ -267,6 +270,7 @@ crates/verify/ess-conformance/tests/fixtures/response-union.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/restart.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/retained-commit.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/retained-replay.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	vault-lib	REFUSED	bccabb45b72adc4e53e56a40e11f47886c7a6388102c64b527ae8406928bd29d:563

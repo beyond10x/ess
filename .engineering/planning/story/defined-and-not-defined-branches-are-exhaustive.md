@@ -5,10 +5,12 @@ kind: story
 status: draft
 title: Branches over defined(x) and not defined(x) are proved exhaustive
 summary: 'Adopter report R4: two update branches over one stored Optional field draw ESS-COMMAND-005.'
+tags:
+- ess-0.71.0
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 2
+revision: 3
 ---
 ## Report
 
