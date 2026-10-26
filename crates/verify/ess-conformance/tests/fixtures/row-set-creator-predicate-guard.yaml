@@ -1,0 +1,158 @@
+format: ess/29
+system: demo
+version: v1
+domain: demo.items
+summary: Parents and the children created under them, a child read back by its parent and its own id.
+
+types:
+  - name: demo.items.ParentId
+    kind: newtype
+    of: String
+  - name: demo.items.ChildId
+    kind: newtype
+    of: String
+  - name: demo.items.ChildRow
+    kind: newtype
+    of: String
+
+entities:
+  - name: demo.items.Parent
+    identity:
+      name: id
+      type: demo.items.ParentId
+    fields:
+      - name: tenant
+        type: String
+    relations:
+      - name: children
+        kind: owns
+        target: demo.items.Child
+        cardinality: many
+        via: parent_id
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+
+  - name: demo.items.Child
+    identity:
+      name: row
+      type: demo.items.ChildRow
+    fields:
+      - name: child_id
+        type: demo.items.ChildId
+      - name: parent_id
+        type: demo.items.ParentId
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+
+actors:
+  - name: demo.items.Client
+    may:
+      - demo.items.CreateParent
+      - demo.items.CreateChild
+      - demo.items.GetChild
+      - demo.items.Parents
+
+commands:
+  - name: demo.items.CreateParent
+    input:
+      - name: tenant
+        type: String
+    outcomes:
+      - name: created
+        creates: demo.items.Parent
+        instance: parent_id
+        sets:
+          tenant: input.tenant
+        emits: [demo.items.ParentCreated]
+        payload:
+          demo.items.ParentCreated:
+            parent_id: {generated: true}
+
+  - name: demo.items.CreateChild
+    input:
+      - name: tenant
+        type: String
+      - name: parent_id
+        type: demo.items.ParentId
+      - name: id
+        type: demo.items.ChildId
+    outcomes:
+      - name: parent-not-found
+        when_related:
+          via: input.parent_id
+          exists: false
+        error: demo.items.NotFound
+      - name: other-tenant
+        when_related:
+          via: input.parent_id
+          predicate: tenant != input.tenant
+        error: demo.items.NotFound
+      - name: created
+        creates: demo.items.Child
+        instance: row
+        sets:
+          child_id: input.id
+          parent_id: input.parent_id
+        emits: [demo.items.ChildCreated]
+        payload:
+          demo.items.ChildCreated:
+            row: {generated: true}
+            child_id: input.id
+            parent_id: input.parent_id
+
+  - name: demo.items.GetChild
+    input:
+      - name: parent_id
+        type: demo.items.ParentId
+      - name: id
+        type: demo.items.ChildId
+    outcomes:
+      - name: child-not-found
+        when_related:
+          entity: demo.items.Child
+          where: {all: [parent_id == input.parent_id, child_id == input.id]}
+          exists: false
+        error: demo.items.NotFound
+      - name: found
+        emits: [demo.items.ChildRead]
+        payload:
+          demo.items.ChildRead:
+            parent_id: input.parent_id
+
+errors:
+  - name: demo.items.NotFound
+    summary: The parent or child is unknown.
+
+events:
+  - name: demo.items.ParentCreated
+    fields:
+      - name: parent_id
+        type: demo.items.ParentId
+  - name: demo.items.ChildCreated
+    fields:
+      - name: row
+        type: demo.items.ChildRow
+      - name: child_id
+        type: demo.items.ChildId
+      - name: parent_id
+        type: demo.items.ParentId
+  - name: demo.items.ChildRead
+    fields:
+      - name: parent_id
+        type: demo.items.ParentId
+
+views:
+  - name: demo.items.Parents
+    source: demo.items.Parent
+    consistency: read_your_writes
+    fields:
+      - name: id
+        type: demo.items.ParentId
+      - name: state
+        type: demo.items.Parent.State
+      - name: tenant
+        type: String
