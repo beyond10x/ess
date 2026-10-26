@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T15:50:22Z",
+  "actor": "human:timo",
+  "artifact": "story:a-view-may-publish-a-decimal",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit E: retained_replay 42/0/1 ignored (deferred finding), suite 23/0, typescript_runtime 4/0 (279 cases), Go replay 188/0, ess-compiler 343/0 after re-pin, ess-cli 26/0, clippy and fmt clean",
+    "reference": "44268b2d6"
+  }
+}

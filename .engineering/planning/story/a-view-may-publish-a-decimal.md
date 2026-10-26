@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-may-publish-a-decimal
 kind: story
-status: active
+status: implemented
 title: A Decimal inside a list of structs in a view does not cost the scenarios that observe the subject
 summary: A view field List<struct with a Decimal member> gives ESS-SYNTH-001 'Decimal and Binary64 replay results are unsupported' on 0.67.0 and 0.68.0 (12 scenarios, unscenarioed 91 -> 103); a top-level Decimal view field passes.
 tags:
@@ -11,10 +11,11 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T09:19:02Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-10-26T09:19:02Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-10-26T15:50:35Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 
