@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T18:05:08Z",
+  "actor": "human:timo",
+  "artifact": "story:create-or-update-beside-a-related-row-refusal-synthesizes-every-branch",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-conformance --test adversary_i_create_or_update: 8 passed, 3 ignored; related_guard_unknown_instance 10/0; external_beside_held_guard 17/0; task fmt-check 0",
+    "reference": "0ef84f592"
+  }
+}

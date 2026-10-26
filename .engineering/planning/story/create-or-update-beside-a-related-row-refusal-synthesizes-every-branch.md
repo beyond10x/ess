@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:create-or-update-beside-a-related-row-refusal-synthesizes-every-branch
 kind: story
-status: active
+status: implemented
 title: Create or update beside a related row refusal synthesizes every branch
 summary: 'Adopter report G6: Create-or-update beside a related-row refusal does not synthesize every branch (ess#641).'
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T09:18:58Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-26T09:18:58Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-26T18:06:56Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 
