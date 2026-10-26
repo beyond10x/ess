@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-dispatch-and-handle-return-the-emitted-events
 kind: story
-status: active
+status: implemented
 title: Generated dispatch and handle return the events their command emitted
 summary: 'Adopter report row 26: generated dispatch and handle discard the system log.'
 tags:
@@ -10,10 +10,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T09:18:51Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-26T09:18:52Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-26T11:30:09Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Problem
 
