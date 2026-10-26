@@ -836,10 +836,11 @@ fn denied_cell(
         }
     };
     let mut steps = run.setup;
-    let Some(mut invoke) = run.invoke.into_iter().find(|step| matches!(step, ScenarioStep::ExecuteCommand { command: named, .. } if named.name() == &command.name)) else {
+    let Some(at) = run.invoke.iter().position(|step| matches!(step, ScenarioStep::ExecuteCommand { command: named, .. } if named.name() == &command.name)) else {
         synthesis.refusals.push(refusal(&id, "denied witness has no typed command invocation"));
         return;
     };
+    let mut invoke = run.invoke[at].clone();
     // Sent as the denied actor: a caller a reading marked it with was the granted actor's.
     if let ScenarioStep::ExecuteCommand {
         actor: sender,
@@ -859,6 +860,13 @@ fn denied_cell(
             .map(|event| EventRef::new(event.name.clone()))
             .collect(),
     });
+    let after: Vec<_> = run.invoke[at + 1..]
+        .iter()
+        .chain(&run.after_steps)
+        .cloned()
+        .collect();
+    let compared = read_back_comparisons(&steps, &after);
+    steps.extend(compared);
     let mut denied = ConformanceScenario::new(purpose(origin, outcome), steps, run.source);
     denied.source.insert(actor.into());
     denied
@@ -869,6 +877,49 @@ fn denied_cell(
         return;
     }
     insert(ir, synthesis, id, scenario);
+}
+
+/// The comparisons, each with the fresh query it reads, that answer a complete read-back `kept`
+/// makes and leaves open, taken from what followed the send in the branch's own run (`after`).
+///
+/// A branch that refuses an existing row reads the row back before the send and compares it after
+/// (ess/26, beyond10x/ess#587). The read-back is in the run's setup and the comparison in what
+/// follows the send (its invoke and its after steps), so a denied cell that kept the setup and only
+/// the send left a snapshot no comparison answers: a suite its own admission refuses. A denied
+/// send changes nothing, so the comparison holds and is kept, as a grant-denied scenario keeps it
+/// ([`super::grant`]). A model that makes no complete read-back keeps its bytes.
+fn read_back_comparisons(kept: &[ScenarioStep], after: &[ScenarioStep]) -> Vec<ScenarioStep> {
+    let mut open = std::collections::BTreeSet::new();
+    for step in kept {
+        match step {
+            ScenarioStep::SnapshotCompleteSubject { view, .. } => {
+                open.insert(view.clone());
+            }
+            ScenarioStep::ExpectCompleteSubjectUnchanged { view } => {
+                open.remove(view);
+            }
+            _ => {}
+        }
+    }
+    let compares = |step: &ScenarioStep, view: &ViewRef| matches!(step, ScenarioStep::ExpectCompleteSubjectUnchanged { view: other } if other == view);
+    let mut answered = Vec::new();
+    for (offset, step) in after.iter().enumerate() {
+        match step {
+            ScenarioStep::QueryView { view, .. }
+                if open.contains(view)
+                    && after[offset + 1..]
+                        .iter()
+                        .any(|later| compares(later, view)) =>
+            {
+                answered.push(step.clone());
+            }
+            ScenarioStep::ExpectCompleteSubjectUnchanged { view } if open.remove(view) => {
+                answered.push(step.clone());
+            }
+            _ => {}
+        }
+    }
+    answered
 }
 
 fn insert(
