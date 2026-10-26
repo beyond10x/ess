@@ -62,6 +62,10 @@
 //! from a counter the scenario's [`Store`] carries, reset by
 //! [`begin_scenario`](ConformanceTarget::begin_scenario) — so two runs of one suite produce the
 //! same ones, and the runner never compares one against an expected value.
+//!
+//! A consumer that must show the same values, or order rows it holds as a view read answers them,
+//! calls [`values::mint`] and [`values::order_view_rows`]: the functions this target itself calls,
+//! not a copy of them.
 
 mod await_outcome;
 mod bindings;
@@ -72,6 +76,7 @@ mod facts;
 mod protected;
 mod response;
 mod setup;
+pub mod values;
 mod views;
 pub(crate) use views::compare as rank_compare;
 

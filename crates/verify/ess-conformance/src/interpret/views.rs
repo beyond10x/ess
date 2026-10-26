@@ -65,7 +65,7 @@ pub(super) fn query(
             rows.push(default_row(ir, view, absent, &request.params)?);
         }
     }
-    rows.sort_by(|left, right| rank(ir, view, left, right));
+    super::values::order_view_rows(ir, view, &mut rows);
     let total = rows.len();
     if let Some(paging) = &view.paging {
         match (
@@ -308,7 +308,9 @@ fn kind(ir: &EssIr, ty: &ResolvedTypeRef) -> crate::aggregate::ValueKind {
         _ => ValueKind::Other,
     }
 }
-fn rank(ir: &EssIr, view: &ResolvedView, left: &ViewRow, right: &ViewRow) -> Ordering {
+/// How two rows of `view` rank by its `order_by` keys, which [`super::values::order_view_rows`]
+/// sorts by.
+pub(super) fn rank(ir: &EssIr, view: &ResolvedView, left: &ViewRow, right: &ViewRow) -> Ordering {
     for key in &view.order_by {
         let field = view
             .fields

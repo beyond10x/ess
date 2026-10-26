@@ -768,27 +768,468 @@ fn a_refused_send_keeps_the_earlier_read_token_in_the_typescript_runner() {
     }
 }
 
-/// The interpreted target, except that a refused send changes the job's title anyway: every read
-/// after the refusal shows the write. [`WritesOnRefusal::honest`] writes nothing.
+/// A `read_your_writes` view of notes beside `Check`, which accepts and writes nothing and is
+/// refused to `Reader` (an adopter's report, beyond10x/ess#655): its denied scenario sends nothing
+/// before the refusal, so the view it reads before and after is empty.
+const NOTES: &str = "format: ess/27
+system: memo
+version: v1
+domain: memo.pad
+types:
+  - {name: memo.pad.NoteId, kind: newtype, of: String}
+entities:
+  - name: memo.pad.Note
+    identity: {name: note_id, type: memo.pad.NoteId}
+    fields:
+      - {name: text, type: String}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active], transitions: []}
+events:
+  - name: memo.pad.NoteCreated
+    fields:
+      - {name: note_id, type: memo.pad.NoteId}
+actors:
+  - name: memo.pad.Writer
+    may: [memo.pad.CreateNote, memo.pad.Check]
+  - name: memo.pad.Reader
+    may: [memo.pad.CreateNote]
+commands:
+  - name: memo.pad.CreateNote
+    input:
+      - {name: text, type: String}
+    outcomes:
+      - name: created
+        creates: memo.pad.Note
+        instance: note_id
+        emits: [memo.pad.NoteCreated]
+        payload:
+          memo.pad.NoteCreated: {note_id: {generated: true}}
+        sets:
+          text: input.text
+  - name: memo.pad.Check
+    input:
+      - {name: text, type: String}
+    outcomes:
+      - name: checked
+        accepts: nothing
+views:
+  - name: memo.pad.Notes
+    source: memo.pad.Note
+    consistency: read_your_writes
+    fields:
+      - {name: note_id, type: memo.pad.NoteId}
+      - {name: text, type: String}
+components:
+  - component: notes-api
+    owns: {domains: [memo.pad]}
+    accepts: {commands: [memo.pad.CreateNote, memo.pad.Check]}
+    reached_by: network
+";
+
+const CHECK_DENIED: &str = "memo.pad.Check/grant/denied";
+
+/// The row a refused `Check` adds to the empty `Notes` view in [`WritesOnRefusal::over`].
+fn added_note() -> ess_conformance::target::ViewRow {
+    use ess_primitives::node::Node;
+    ess_conformance::target::ViewRow::from([
+        (
+            "note_id".to_owned(),
+            Node::Text("written-by-refusal".to_owned()),
+        ),
+        (
+            "text".to_owned(),
+            Node::Text("written by the refused send".to_owned()),
+        ),
+    ])
+}
+
+/// The denied `Check` scenario alone, checked to send nothing before the refused send and to read
+/// the view before and after it.
+fn denied_check_suite() -> ConformanceSuite {
+    let mut suite = ess_conformance::synthesize(&compiled(NOTES)).suite;
+    suite
+        .scenarios
+        .retain(|id, _| id.to_string() == CHECK_DENIED);
+    let scenario = suite
+        .scenarios
+        .values()
+        .next()
+        .expect("the denied scenario is filed");
+    let refused = scenario
+        .steps
+        .iter()
+        .position(|step| matches!(step, ScenarioStep::ExpectNotGranted { .. }))
+        .expect("the refusal is required");
+    let sends: Vec<usize> = scenario
+        .steps
+        .iter()
+        .enumerate()
+        .filter(|(_, step)| matches!(step, ScenarioStep::ExecuteCommand { .. }))
+        .map(|(index, _)| index)
+        .collect();
+    assert_eq!(
+        sends,
+        [refused - 1],
+        "the refused send is the only command the scenario sends: {:#?}",
+        scenario.steps
+    );
+    let reads = |steps: &[ScenarioStep]| {
+        steps.iter().any(|step| {
+            matches!(step, ScenarioStep::QueryView { view, .. } if view.to_string() == "memo.pad.Notes")
+        })
+    };
+    assert!(
+        reads(&scenario.steps[..refused]) && reads(&scenario.steps[refused..]),
+        "the view is read before and after the refusal: {:#?}",
+        scenario.steps
+    );
+    assert!(
+        matches!(scenario.steps.last(), Some(ScenarioStep::ExpectViewUnchanged { view })
+            if view.to_string() == "memo.pad.Notes"),
+        "the scenario ends comparing the view: {:#?}",
+        scenario.steps
+    );
+    suite
+}
+
+/// A denied command that writes nothing, with no write anywhere before the refusal: the scenario
+/// passes on the interpreted target, and the whole suite errors nowhere (an adopter's model reported
+/// three `ESS-CF-SUITE` errors on 0.68.0, beyond10x/ess#655).
+#[test]
+fn a_denied_grant_over_a_command_writing_nothing_passes() {
+    let denied = denied_check_suite();
+    let suite = ess_conformance::synthesize(&compiled(NOTES)).suite;
+    assert!(suite.scenarios.len() > denied.scenarios.len(), "{suite:#?}");
+    let admitted = AdmittedSuite::from_suite(&suite).expect("admits");
+    let report = Runner::for_suite(&suite)
+        .run_admitted(&admitted, &Interpreted::for_model(compiled(NOTES)))
+        .into_report();
+    let errors: Vec<&ScenarioResult> = report
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status == Status::Error)
+        .collect();
+    assert!(errors.is_empty(), "{errors:#?}");
+    let checked = report
+        .scenarios
+        .iter()
+        .find(|scenario| scenario.scenario.to_string() == CHECK_DENIED)
+        .expect("the denied scenario ran");
+    assert_eq!(checked.status, Status::Passed, "{checked:#?}");
+}
+
+/// The same denied scenario in the Go and TypeScript runners: `passed` against the interpreted
+/// target and `failed` against one whose refused send adds a row, as the reference runner says.
+#[test]
+fn a_denied_grant_over_a_command_writing_nothing_reads_alike_in_go_and_typescript() {
+    let suite = denied_check_suite();
+    let kept = support_go::assert_parity(
+        "grant-denied-nothing",
+        &suite,
+        Interpreted::for_model(compiled(NOTES)),
+    );
+    assert_eq!(kept[CHECK_DENIED], "passed", "{kept:?}");
+    let written = support_go::assert_parity(
+        "grant-denied-nothing-writes",
+        &suite,
+        WritesOnRefusal::over(NOTES, added_note()),
+    );
+    assert_eq!(written[CHECK_DENIED], "failed", "{written:?}");
+
+    let admitted = AdmittedSuite::from_suite(&suite).expect("admits");
+    let package = support_ts::Package::new("grant-denied-nothing", &suite);
+    for (target, verdict) in [
+        (
+            support_go::Recorder::new(WritesOnRefusal {
+                writes: false,
+                ..WritesOnRefusal::over(NOTES, added_note())
+            }),
+            "passed",
+        ),
+        (
+            support_go::Recorder::new(WritesOnRefusal::over(NOTES, added_note())),
+            "failed",
+        ),
+    ] {
+        let reference = support_go::rust_outcomes_admitted(&admitted, &target);
+        assert_eq!(reference[CHECK_DENIED], verdict, "{reference:?}");
+        let replayed = package.replay(&admitted, &target.transcript(), false);
+        assert_ne!(replayed.exit, Some(2), "{}", replayed.log);
+        assert!(
+            replayed.divergences.is_empty(),
+            "the TypeScript runtime sent requests the reference runner did not:\n{}\n{}",
+            replayed.divergences.join("\n"),
+            replayed.log
+        );
+        assert_eq!(replayed.outcomes, reference, "{}", replayed.log);
+    }
+}
+
+/// Every snapshot and every comparison of a view in a denied scenario compares a read: the step
+/// right before it queries the same view.
+#[test]
+fn every_denied_scenario_queries_before_it_compares() {
+    let mut denied = 0;
+    for (label, ir) in [
+        ("desk", compiled(&desk())),
+        ("jobs", compiled(JOBS)),
+        ("notes", compiled(NOTES)),
+        ("lamp", lamp()),
+    ] {
+        let suite = ess_conformance::synthesize(&ir).suite;
+        for (id, scenario) in &suite.scenarios {
+            if !id.to_string().ends_with("/grant/denied") {
+                continue;
+            }
+            denied += 1;
+            for (index, step) in scenario.steps.iter().enumerate() {
+                let (ScenarioStep::SnapshotView { view: compared }
+                | ScenarioStep::ExpectViewUnchanged { view: compared }
+                | ScenarioStep::SnapshotSubject { view: compared, .. }
+                | ScenarioStep::ExpectSubjectUnchanged { view: compared }
+                | ScenarioStep::SnapshotCompleteSubject { view: compared, .. }
+                | ScenarioStep::ExpectCompleteSubjectUnchanged { view: compared }) = step
+                else {
+                    continue;
+                };
+                assert!(
+                    index > 0
+                        && matches!(&scenario.steps[index - 1],
+                            ScenarioStep::QueryView { view, .. } if view == compared),
+                    "{label}: {id} step {index} compares `{compared}` without reading it first: \
+                     {:#?}",
+                    scenario.steps
+                );
+            }
+        }
+    }
+    assert!(
+        denied >= 4,
+        "a denied scenario from each model, {denied} in all"
+    );
+}
+
+/// The model an adopter reported for 0.68.0 (beyond10x/ess#655), as three files: `CheckWiring`
+/// accepts nothing on its accepting branch and is refused to `Visitor`, beside a
+/// `read_your_writes` view of bulbs. [`lamp`] compiles them.
+const LAMP_SYSTEM: &str = "format: ess/29
+system: lamp
+version: v1
+
+domains:
+  - lamp.shed
+";
+const LAMP_COMPONENTS: &str = "components:
+  - component: shed-service
+    summary: Fits bulbs and checks the wiring.
+    owns:
+      domains:
+        - lamp.shed
+    accepts:
+      commands:
+        - lamp.shed.FitBulb
+        - lamp.shed.CheckWiring
+    publishes:
+      events:
+        - lamp.shed.BulbFitted
+    reached_by: network
+";
+const LAMP_SHED: &str = "domain: lamp.shed
+
+summary: Bulbs a keeper fits, and a check that writes nothing.
+
+types:
+  - name: lamp.shed.BulbId
+    kind: newtype
+    of: String
+
+entities:
+  - name: lamp.shed.Bulb
+    identity:
+      name: bulb_id
+      type: lamp.shed.BulbId
+    fields:
+      - name: watts
+        type: Integer
+    lifecycle:
+      initial: Fitted
+      states: [Fitted]
+      terminal: [Fitted]
+
+actors:
+  - name: lamp.shed.Keeper
+    may:
+      - lamp.shed.FitBulb
+      - lamp.shed.CheckWiring
+
+  - name: lamp.shed.Visitor
+    may:
+      - lamp.shed.FitBulb
+
+errors:
+  - name: lamp.shed.WiringUnsafe
+    summary: The wiring is not earthed.
+    fields: []
+  - name: lamp.shed.BulbTaken
+    summary: A bulb with this id is already fitted.
+    fields: []
+
+events:
+  - name: lamp.shed.BulbFitted
+    fields:
+      - {name: bulb_id, type: lamp.shed.BulbId}
+
+commands:
+  - name: lamp.shed.FitBulb
+    input:
+      - name: bulb_id
+        type: lamp.shed.BulbId
+      - name: watts
+        type: Integer
+    outcomes:
+      - name: taken
+        existing_instance: true
+        error: lamp.shed.BulbTaken
+      - name: fitted
+        creates: lamp.shed.Bulb
+        instance: bulb_id
+        emits: [lamp.shed.BulbFitted]
+        payload:
+          lamp.shed.BulbFitted:
+            bulb_id: input.bulb_id
+        sets:
+          watts: input.watts
+
+  - name: lamp.shed.CheckWiring
+    input:
+      - name: earthed
+        type: Boolean
+    outcomes:
+      - name: checked
+        when: earthed == true
+        accepts: nothing
+      - name: unsafe
+        when: earthed == false
+        error: lamp.shed.WiringUnsafe
+
+views:
+  - name: lamp.shed.Bulbs
+    source: lamp.shed.Bulb
+    consistency: read_your_writes
+    fields:
+      - {name: bulb_id, type: lamp.shed.BulbId}
+      - {name: watts, type: Integer}
+";
+
+/// The reported model, compiled.
+fn lamp() -> EssIr {
+    let mut sources = SourceMap::new();
+    let mut parsed = Vec::new();
+    for (label, text) in [
+        ("system.yaml", LAMP_SYSTEM),
+        ("components.yaml", LAMP_COMPONENTS),
+        ("domains/shed.yaml", LAMP_SHED),
+    ] {
+        sources.insert(label.to_owned(), text.to_owned());
+        let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{label}: {error}"));
+        parsed.push((Source::new(label), raw));
+    }
+    let specification =
+        Specification::assemble(parsed).unwrap_or_else(|errors| panic!("lamp: {errors}"));
+    compile(&specification, &sources).unwrap_or_else(|errors| panic!("lamp: {errors}"))
+}
+
+const CHECK_WIRING_DENIED: &str = "lamp.shed.CheckWiring/grant/denied";
+
+/// The reported model's whole synthesized suite against `target`, by scenario id.
+fn lamp_run(target: &impl ConformanceTarget) -> Vec<ScenarioResult> {
+    let suite = ess_conformance::synthesize(&lamp()).suite;
+    let admitted = AdmittedSuite::from_suite(&suite).expect("admits");
+    Runner::for_suite(&suite)
+        .run_admitted(&admitted, target)
+        .into_report()
+        .scenarios
+}
+
+/// The reported model passes every scenario synthesized from it on the interpreted target, 5 of 5;
+/// on 0.68.0 `CheckWiring/grant/denied` errored with `ESS-CF-SUITE`.
+#[test]
+fn the_reported_lamp_model_passes_five_of_five_on_the_interpreter() {
+    let results = lamp_run(&Interpreted::for_model(lamp()));
+    let verdicts: Vec<(String, Status)> = results
+        .iter()
+        .map(|result| (result.scenario.to_string(), result.status))
+        .collect();
+    assert_eq!(verdicts.len(), 5, "{verdicts:#?}");
+    assert!(
+        verdicts.iter().any(|(id, _)| id == CHECK_WIRING_DENIED),
+        "{verdicts:#?}"
+    );
+    assert!(
+        verdicts.iter().all(|(_, status)| *status == Status::Passed),
+        "{results:#?}"
+    );
+}
+
+/// A target whose refused `CheckWiring` adds a bulb to the view fails exactly the denied scenario,
+/// at the comparison of the view.
+#[test]
+fn a_target_that_changes_the_view_on_the_refused_check_fails_it() {
+    use ess_primitives::node::Node;
+    let added = ess_conformance::target::ViewRow::from([
+        (
+            "bulb_id".to_owned(),
+            Node::Text("written-by-refusal".to_owned()),
+        ),
+        ("watts".to_owned(), Node::Number(60_i64.into())),
+    ]);
+    let results = lamp_run(&WritesOnRefusal::over_model(lamp(), added));
+    let denied = results
+        .iter()
+        .find(|result| result.scenario.to_string() == CHECK_WIRING_DENIED)
+        .expect("the denied scenario ran");
+    assert_eq!(denied.status, Status::Failed, "{denied:#?}");
+    assert!(
+        denied
+            .checks
+            .iter()
+            .any(|check| check.status == Status::Failed && check.about.contains("lamp.shed.Bulbs")),
+        "the unchanged assertion on the view fails: {denied:#?}"
+    );
+}
+
+/// The interpreted target, except that a refused send writes anyway: every read after the refusal
+/// shows the write, as a changed `title` on each row and, in a view the refusal found empty, the
+/// row [`WritesOnRefusal::over`] names. With `writes` false it writes nothing.
 struct WritesOnRefusal {
     inner: Interpreted,
     writes: bool,
+    added: ess_conformance::target::ViewRow,
     refused: std::cell::Cell<bool>,
 }
 
 impl WritesOnRefusal {
     fn new() -> Self {
-        Self {
-            inner: Interpreted::for_model(compiled(JOBS)),
-            writes: true,
-            refused: std::cell::Cell::new(false),
-        }
+        Self::over(JOBS, ess_conformance::target::ViewRow::new())
     }
 
     fn honest() -> Self {
         Self {
             writes: false,
             ..Self::new()
+        }
+    }
+
+    /// Over the model `source`, adding `added` to every empty view read after a refusal.
+    fn over(source: &str, added: ess_conformance::target::ViewRow) -> Self {
+        Self::over_model(compiled(source), added)
+    }
+
+    fn over_model(model: EssIr, added: ess_conformance::target::ViewRow) -> Self {
+        Self {
+            inner: Interpreted::for_model(model),
+            writes: true,
+            added,
+            refused: std::cell::Cell::new(false),
         }
     }
 
@@ -799,6 +1240,9 @@ impl WritesOnRefusal {
                     "title".to_owned(),
                     ess_primitives::node::Node::Text("written by the refused send".to_owned()),
                 );
+            }
+            if result.rows.is_empty() && !self.added.is_empty() {
+                result.rows.push(self.added.clone());
             }
         }
         result
@@ -854,5 +1298,61 @@ impl ConformanceTarget for WritesOnRefusal {
     }
     fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
         self.inner.redeliver_event(request)
+    }
+}
+
+/// Adversary (unit d, pass 1): the reported lamp model's denied scenario in the Go and TypeScript
+/// runners, which so far only the memo model reaches: `passed` on the interpreted target, and
+/// `failed` against a target whose refused `CheckWiring` adds a bulb, as the reference runner says.
+#[test]
+fn adv_d_the_reported_lamp_model_reads_alike_in_go_and_typescript() {
+    use ess_primitives::node::Node;
+    let mut suite = ess_conformance::synthesize(&lamp()).suite;
+    suite
+        .scenarios
+        .retain(|id, _| id.to_string() == CHECK_WIRING_DENIED);
+    assert_eq!(suite.scenarios.len(), 1, "{suite:#?}");
+    let added = ess_conformance::target::ViewRow::from([
+        (
+            "bulb_id".to_owned(),
+            Node::Text("written-by-refusal".to_owned()),
+        ),
+        ("watts".to_owned(), Node::Number(60_i64.into())),
+    ]);
+    let kept = support_go::assert_parity("lamp-denied", &suite, Interpreted::for_model(lamp()));
+    assert_eq!(kept[CHECK_WIRING_DENIED], "passed", "{kept:?}");
+    let written = support_go::assert_parity(
+        "lamp-denied-writes",
+        &suite,
+        WritesOnRefusal::over_model(lamp(), added.clone()),
+    );
+    assert_eq!(written[CHECK_WIRING_DENIED], "failed", "{written:?}");
+
+    let admitted = AdmittedSuite::from_suite(&suite).expect("admits");
+    let package = support_ts::Package::new("lamp-denied", &suite);
+    for (target, verdict) in [
+        (
+            support_go::Recorder::new(WritesOnRefusal {
+                writes: false,
+                ..WritesOnRefusal::over_model(lamp(), added.clone())
+            }),
+            "passed",
+        ),
+        (
+            support_go::Recorder::new(WritesOnRefusal::over_model(lamp(), added.clone())),
+            "failed",
+        ),
+    ] {
+        let reference = support_go::rust_outcomes_admitted(&admitted, &target);
+        assert_eq!(reference[CHECK_WIRING_DENIED], verdict, "{reference:?}");
+        let replayed = package.replay(&admitted, &target.transcript(), false);
+        assert_ne!(replayed.exit, Some(2), "{}", replayed.log);
+        assert!(
+            replayed.divergences.is_empty(),
+            "the TypeScript runtime sent requests the reference runner did not:\n{}\n{}",
+            replayed.divergences.join("\n"),
+            replayed.log
+        );
+        assert_eq!(replayed.outcomes, reference, "{}", replayed.log);
     }
 }

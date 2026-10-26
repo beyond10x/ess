@@ -536,3 +536,76 @@ fn numeric_json_history_evidence_is_rejected_without_text_coercion() {
         );
     }
 }
+
+/// A consumer that shows what the interpreter would answer mints with the interpreter's own
+/// function, not a copy of it: the `tick`-th draw of a fresh scenario's counter is the identity the
+/// `tick`-th `Create` publishes, for a `Uuid`, a `String` newtype with a prefix and an `Integer`
+/// identity, and an `Optional` type draws nothing.
+#[test]
+fn a_consumer_mints_the_identity_the_interpreter_mints() {
+    use ess_compiler::ir::ResolvedTypeRef;
+    use ess_conformance::interpret::values::mint;
+    for (kind, types) in [
+        ("Uuid", ""),
+        (
+            "demo.ids.Id",
+            "types:\n  - {name: demo.ids.Id, kind: newtype, of: String, prefix: \"row-\"}\n",
+        ),
+        ("Integer", ""),
+    ] {
+        let source = MODEL.replace("IDTYPE", kind) + types;
+        let ir = model(&source);
+        let target = target(&source);
+        let published: Vec<Node> = (0..3)
+            .map(|index| {
+                invoke(
+                    &target,
+                    "Create",
+                    BTreeMap::from([("note".into(), text(&format!("note{index}")))]),
+                )
+                .unwrap()
+                .direct_events[0]
+                    .payload["id"]
+                    .clone()
+            })
+            .collect();
+        let identity = &ir
+            .entities()
+            .values()
+            .next()
+            .expect("one entity")
+            .identity
+            .type_ref;
+        let minted: Vec<Node> = (1..=3)
+            .map(|tick| {
+                mint(&ir, identity, tick)
+                    .unwrap_or_else(|why| panic!("{kind}: {why:?}"))
+                    .unwrap_or_else(|| panic!("{kind}: a required type mints a value"))
+            })
+            .collect();
+        assert_eq!(
+            published, minted,
+            "{kind}: published (left), minted (right)"
+        );
+        let mut stored: Vec<Node> = rows(&target)
+            .into_iter()
+            .map(|row| row["id"].clone())
+            .collect();
+        stored.sort();
+        let mut expected = minted.clone();
+        expected.sort();
+        assert_eq!(stored, expected, "{kind}: the stored identities");
+        if kind == "demo.ids.Id" {
+            assert!(
+                minted
+                    .iter()
+                    .all(|id| id.as_text().is_some_and(|id| id.starts_with("row-"))),
+                "{minted:?}"
+            );
+        }
+        let optional = ResolvedTypeRef::Optional {
+            of: Box::new(identity.clone()),
+        };
+        assert_eq!(mint(&ir, &optional, 1), Ok(None), "{kind}: Optional");
+    }
+}
