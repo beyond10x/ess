@@ -2,12 +2,18 @@
 format: aep.planning-md/3
 id: story:a-refused-grant-scenario-runs-on-the-interpreter
 kind: story
-status: draft
+status: active
 title: A synthesized grant/denied scenario runs on the interpreted target
 summary: 'ESS 0.68.0 synthesizes a grant/denied scenario whose expect_view_unchanged step its own interpreted runner rejects when the accepting branch is accepts: nothing.'
 tags:
 - ess-0.70.0
-revision: 2
+relations:
+- serves: vision:O2
+- decomposes: epic:downstream-reported-gaps
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-26T12:33:52Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-26T12:33:52Z", actor: "human:timo", revision: 4}
 ---
 ## Finding
 

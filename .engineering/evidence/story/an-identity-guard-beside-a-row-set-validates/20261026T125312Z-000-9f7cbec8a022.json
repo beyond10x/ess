@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T12:53:12Z",
+  "actor": "human:timo",
+  "artifact": "story:an-identity-guard-beside-a-row-set-validates",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit A 640bc35dd (merged with B and C): ess-conformance row_sets 23, precedence_plan_answers 9, synthesis_suite_bytes_table compare 2, unit B adversary 13+18 and creators_guard 5, unit A adversary 2/1/5/1/7, ess-domain row_sets 12, all passed 0 failed; clippy -p ess-conformance --all-targets -D warnings exit 0; task fmt-check exit 0; earlier rounds: task test-xtask 418/0, task projection-check exit 0, clippy ess-domain ess-entity-runtime ess-cli exit 0",
+    "reference": "640bc35dd"
+  }
+}

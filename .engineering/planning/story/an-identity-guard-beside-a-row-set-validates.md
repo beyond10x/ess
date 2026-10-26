@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-identity-guard-beside-a-row-set-validates
 kind: story
-status: active
+status: implemented
 title: A row-set guard beside an identity-addressed when_related validates and answers in the rule's step-4 order
 tags:
 - adopter-report
@@ -26,10 +26,11 @@ scope:
   path: crates/verify/ess-conformance/src/interpret/execute/row_set.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:07:58Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:07:58Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-26T12:53:16Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 
