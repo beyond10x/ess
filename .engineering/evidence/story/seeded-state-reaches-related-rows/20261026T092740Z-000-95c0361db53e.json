@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T09:27:40Z",
+  "actor": "human:timo",
+  "artifact": "story:seeded-state-reaches-related-rows",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "fix commit 8fe9e8798 is in tag 0.69.0 (released 2026-10-24, release Gate green, verify-release exit 0); store left the story active; closed 2026-10-26 by the 0.70.0 wave",
+    "reference": "8fe9e8798"
+  }
+}

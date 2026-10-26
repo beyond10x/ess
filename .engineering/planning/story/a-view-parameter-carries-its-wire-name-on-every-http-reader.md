@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-parameter-carries-its-wire-name-on-every-http-reader
 kind: story
-status: active
+status: implemented
 title: A view parameter is named on the wire by its naming.wire in the projection, the generated servers and the runner
 summary: Adopter found no wire-name override for a view query parameter (snake_case vs camelCase); naming.wire appears to cover it in OpenAPI, unverified elsewhere (a2a wave 2, H7, 2026-10-22).
 tags:
@@ -13,10 +13,11 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 - informed_by: story:a-command-binds-to-a-protocol-or-deployment-http-route
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T04:42:46Z", actor: "human:timo", revision: 5, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-23T04:42:47Z", actor: "human:timo", revision: 6, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:39Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Need
 

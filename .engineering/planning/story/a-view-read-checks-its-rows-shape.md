@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-read-checks-its-rows-shape
 kind: story
-status: active
+status: implemented
 title: A view read checks each row's declared shape
 summary: Rows of a view read are checked for required fields and types; the AUTHOR-042 hint stops claiming it for view rows
 tags:
@@ -13,10 +13,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T18:26:24Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-23T18:26:25Z", actor: "human:timo", revision: 4, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:27Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Problem
 

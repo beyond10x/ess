@@ -2,16 +2,17 @@
 format: aep.planning-md/3
 id: story:a-generated-rust-server-reads-its-own-answer-without-the-intake-depth-limit
 kind: story
-status: active
+status: implemented
 title: A generated Rust server reads back its own answer without the intake depth limit
 summary: A Json field nested to the intake limit makes generated handle panic or answer 500 on read-back (rows 33, 34); defect, 0.69.0.
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T01:54:31Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-23T01:54:32Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:18Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Need
 

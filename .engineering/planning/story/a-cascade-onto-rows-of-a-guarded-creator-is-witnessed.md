@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-cascade-onto-rows-of-a-guarded-creator-is-witnessed
 kind: story
-status: active
+status: implemented
 title: 'A moving affects: entry is witnessed when its rows'' creator has a guarded sibling branch'
 tags:
 - adopter-report
@@ -18,10 +18,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/related_record_effects.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-22T21:27:19Z", actor: "human:timo", revision: 7, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-22T21:27:19Z", actor: "human:timo", revision: 8, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:19Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Outcome
 

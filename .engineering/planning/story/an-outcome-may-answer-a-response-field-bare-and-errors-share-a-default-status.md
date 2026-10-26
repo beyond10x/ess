@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-outcome-may-answer-a-response-field-bare-and-errors-share-a-default-status
 kind: story
-status: active
+status: implemented
 title: An ess-http/1 outcome may answer one response field bare, and error outcomes may share a default status
 summary: 'body: response keeps the response object wrapper; upstream answers the bare message and puts errors under default (a2a wave 2, H6, 2026-10-22).'
 tags:
@@ -13,10 +13,11 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 - informed_by: story:a-command-binds-to-a-protocol-or-deployment-http-route
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T05:42:26Z", actor: "human:timo", revision: 5, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-23T05:42:27Z", actor: "human:timo", revision: 6, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:22Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Need
 

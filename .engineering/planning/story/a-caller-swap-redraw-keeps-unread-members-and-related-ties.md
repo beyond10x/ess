@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-caller-swap-redraw-keeps-unread-members-and-related-ties
 kind: story
-status: active
+status: implemented
 title: A caller-swap redraw keeps unread members and related ties
 summary: 'Adopter reports N24, N25: the swapped replay redraws a whole struct and breaks related ties (ess#672).'
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T10:47:53Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-23T10:47:54Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:20Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"verification":2}}}
 ---
 ## Problem
 

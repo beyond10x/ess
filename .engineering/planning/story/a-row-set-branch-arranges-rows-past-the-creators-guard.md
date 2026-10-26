@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-row-set-branch-arranges-rows-past-the-creators-guard
 kind: story
-status: active
+status: implemented
 title: A row-set branch arranges rows past the creator's own guard
 summary: A row-set refusal's accepting branch is refused with ESS-SYNTH-001 when the only creator of the selected rows carries a when_related via guard; reported on 0.67.0 and 0.68.0
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T12:41:20Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-23T12:41:21Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:29Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Report (adopter, ESS 0.67.0 and 0.68.0)
 

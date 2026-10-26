@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T09:27:21Z",
+  "actor": "human:timo",
+  "artifact": "story:an-outcome-may-answer-a-response-field-bare-and-errors-share-a-default-status",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "fix commit d8923f060 is in tag 0.69.0 (released 2026-10-24, release Gate green, verify-release exit 0); store left the story active; closed 2026-10-26 by the 0.70.0 wave",
+    "reference": "d8923f060"
+  }
+}

@@ -2,16 +2,17 @@
 format: aep.planning-md/3
 id: story:a-minted-optional-an-invariant-requires-names-present-true
 kind: story
-status: active
+status: implemented
 title: 'A broken invariant over a minted Optional names present: true'
 summary: 'The ESS-CF-TARGET refusal for an invariant over an Optional minted with generated: true gains a help line, and the specify guide names {generated: true, present: true} (row 46, not a language gap).'
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-22T23:11:24Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-22T23:11:25Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:26Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Need
 

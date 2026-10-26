@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-input-of-list-type-may-carry-an-example
 kind: story
-status: active
+status: implemented
 title: An input of List type may carry an example that synthesis builds the input from
 summary: 'example: is refused on a List input as not a scalar, so a list input cannot carry a witness value and synthesis sends [] or a first-variant list; same on 0.67.0 and 0.68.0.'
 tags:
@@ -13,10 +13,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-22T21:27:25Z", actor: "human:timo", revision: 7, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-22T21:27:26Z", actor: "human:timo", revision: 8, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:41Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 
