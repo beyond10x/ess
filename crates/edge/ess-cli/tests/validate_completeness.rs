@@ -518,13 +518,15 @@ fn an_unknown_component_is_refused_as_synthesize_refuses_it() {
 
 #[test]
 fn a_model_conformance_does_not_admit_is_named_not_counted() {
-    // `conform synthesize` refuses a model with a finite `Binary64` outright; validate names why
-    // instead of reporting nothing owed.
+    // `conform synthesize` refuses a model a command input of which reaches a finite `Binary64`
+    // outright; validate names why instead of reporting nothing owed.
     let root = scratch("unadmitted");
     fs::write(
         root.join("system.yaml"),
-        "format: ess/2\nsystem: sample\nversion: v1\ndomains: [sample.data]\ndomain: sample.data\n\
-         types:\n  - {name: sample.data.Ratio, kind: newtype, of: Binary64}\n",
+        NOTES.replace(
+            "{input}",
+            "      - {name: rate, type: Optional<demo.notes.Rate>}\n",
+        ),
     )
     .unwrap();
     let synthesize = ess(&[
@@ -547,10 +549,85 @@ fn a_model_conformance_does_not_admit_is_named_not_counted() {
         unsynthesizable[0]["path"]
             .as_str()
             .unwrap()
-            .contains("sample.data.Ratio"),
+            .contains("demo.notes.Rate"),
         "{report}"
     );
     assert_eq!(report["completeness"]["counts"]["unsynthesizable"], 1);
+}
+
+/// A note entity and its command, and a `Rate` type with a `Binary64` field. `{input}` is the
+/// command's further input.
+const NOTES: &str = "format: ess/31
+system: demo
+version: v1
+domain: demo.notes
+summary: A note is added; a rate type holds a finite floating-point figure.
+types:
+  - {name: demo.notes.NoteId, kind: newtype, of: Uuid}
+  - name: demo.notes.Rate
+    kind: struct
+    fields:
+      - {name: per_second, type: Binary64}
+entities:
+  - name: demo.notes.Note
+    identity: {name: note_id, type: demo.notes.NoteId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+events:
+  - name: demo.notes.NoteAdded
+    fields: [{name: note_id, type: demo.notes.NoteId}]
+commands:
+  - name: demo.notes.AddNote
+    input:
+      - {name: label, type: String}
+{input}    outcomes:
+      - name: added
+        creates: demo.notes.Note
+        instance: note_id
+        sets: {label: input.label}
+        emits: [demo.notes.NoteAdded]
+        payload: {demo.notes.NoteAdded: {note_id: {generated: true}}}
+views:
+  - name: demo.notes.Notes
+    source: demo.notes.Note
+    consistency: read_your_writes
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: label, type: String}
+";
+
+#[test]
+fn an_unreached_binary64_type_is_noted_not_unsynthesizable() {
+    // Nothing reaches `Rate`: `conform synthesize` admits the model and notes the position, and
+    // validate counts that note instead of naming the model unsynthesizable.
+    let root = scratch("unreached");
+    fs::write(root.join("system.yaml"), NOTES.replace("{input}", "")).unwrap();
+    let printed = synthesized(&root, &[]);
+    let notes = lines_after(&printed, "note: ");
+    let binary: Vec<&&str> = notes
+        .iter()
+        .filter(|note| note.contains("Binary64"))
+        .collect();
+    assert_eq!(binary.len(), 1, "{printed}");
+    assert!(
+        binary[0].contains("types.demo.notes.Rate.fields.per_second"),
+        "{printed}"
+    );
+
+    let (output, report) = validated(&root, &[]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        report["completeness"]["unsynthesizable"].is_null(),
+        "{report}"
+    );
+    let unanswered: Vec<&str> = report["completeness"]["unanswered"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{report}"))
+        .iter()
+        .map(|note| note.as_str().unwrap())
+        .collect();
+    assert_eq!(unanswered, notes, "{report}");
 }
 
 #[test]

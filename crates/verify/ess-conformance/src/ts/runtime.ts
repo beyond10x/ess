@@ -96,6 +96,8 @@ import {
   admitSubjectShape,
   decodeSubjectShape,
   decodeResponseObservation,
+  exactDecimalMajor,
+  exactObservationEqual,
   expectResponsePayload,
   responsePrimitiveAdmits,
   responseEqual,
@@ -2835,7 +2837,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /57 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /59 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -4748,7 +4750,13 @@ export class ScenarioRun {
       this.snapshots.set(step.view, { identity, row: goMarshal(rows[0]!) });
       return true;
     }
-    if (goMarshal(rows[0]!) !== previous!.row)
+    // A complete subject is an exact observer: every number by its value, so a `Decimal` `1.5`
+    // equals `1.50` (suite/58), as in the Go runner.
+    const unchanged =
+      shape !== undefined
+        ? exactObservationEqual(strictJSON(previous!.row), strictJSON(goMarshal(rows[0]!)))
+        : goMarshal(rows[0]!) === previous!.row;
+    if (!unchanged)
       return this.fail(
         index,
         `subject changed in ${step.view}: before=${previous!.row} after=${goMarshal(rows[0]!)}`,
@@ -7112,6 +7120,10 @@ const SUITE_MAJORS: { [version: string]: number } = {
   // every major below, the view-reference pair included.
   'ess-conformance/56': 56,
   'ess-conformance/57': 57,
+  // An exact observer (a complete subject or a retained result) compares a `Decimal` by value.
+  // Cumulative over every major below, the one-time reader pair included.
+  'ess-conformance/58': 58,
+  'ess-conformance/59': 59,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
@@ -7120,8 +7132,8 @@ const COVERAGE_MAJORS = new Set([
   // The coverage majors of the conditional measure, expression, seed-bearing and counted-claim
   // pairs, of the constrained-response and opened-response pairs, of the held-now pair and of the
   // pair carrying wrapped value-invariant observations and awaits, of the view-reference pair and
-  // of the pair whose one-time read cells read as their actor.
-  39, 41, 43, 45, 47, 49, 51, 53, 55, 57,
+  // of the pair whose one-time read cells read as their actor, and of the exact-Decimal pair.
+  39, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59,
 ]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
@@ -7160,7 +7172,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
   if (carriesCoverage !== coverageMajor(major)) {
-    throw new Error('coverage is required exactly for odd suite majors from /5 through /57');
+    throw new Error('coverage is required exactly for odd suite majors from /5 through /59');
   }
   expandCompactSuite(root, major);
   for (const key of ['system', 'specification_version', 'spec_digest', 'contract_digest']) {
@@ -8691,10 +8703,12 @@ export function admitStep(value: Node, major: number): void {
         break;
       case 'capture':
         admitRetainedCapture(held);
+        exactDecimalMajor(held, major);
         break;
       case 'shape':
         if (tag === 'snapshot_complete_subject') {
           admitSubjectShape(held);
+          exactDecimalMajor(held, major);
           break;
         }
         admitShape(held, major);

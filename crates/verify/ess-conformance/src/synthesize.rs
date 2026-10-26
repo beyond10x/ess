@@ -428,6 +428,13 @@ pub enum Note {
         /// The view.
         view: ViewRef,
     },
+    /// A `Binary64` position in a declared type no command, event, error, view, entity, actor,
+    /// binding or conversion reaches (`ess_compiler::binary64::unreached_locations`): no scenario
+    /// sends or reads it, so it refuses nothing, and no run exercises it.
+    UnreachedBinary64 {
+        /// The position, as the compiler's Binary64 inventory spells it.
+        location: String,
+    },
 }
 
 impl fmt::Display for Note {
@@ -537,6 +544,11 @@ impl fmt::Display for Note {
             Self::ReadGrantedToEveryActor { .. }
             | Self::ReadGrantEnforcedByCaller
             | Self::ReadGrantUnwitnessed { .. } => self.read_grant(f),
+            Self::UnreachedBinary64 { location } => write!(
+                f,
+                "`{location}` is a `Binary64` in a type outside everything a scenario sends \
+                 or reads, so no run exercises it"
+            ),
         }
     }
 }
@@ -1370,6 +1382,7 @@ impl RefusalCause {
                 ordered_head::HEAD_REPAIR
             }
             Self::NoWitness(gap) if gap.type_ref == RESPONSE_GAP => RESPONSE_REPAIR,
+            Self::NoWitness(gap) if gap.type_ref == SUBJECT_GAP => SUBJECT_REPAIR,
             Self::NoWitness(_) => {
                 "give the field a type that has a finite value, or drop it from the command's input"
             }
@@ -1496,6 +1509,17 @@ const CHILD_REPAIR: &str = "cover the child with an authored scenario (ess-scena
 
 /// The type a [`WitnessGap`] names when a command's response, not its input, has no observation.
 pub(crate) const RESPONSE_GAP: &str = "command response";
+
+/// The type a [`WitnessGap`] names when a view publishes a field the complete subject cannot
+/// compare exactly.
+pub(crate) const SUBJECT_GAP: &str = "complete subject observation";
+
+/// The repair for that gap: the field is the view's, so "drop it from the command's input" names the
+/// wrong place.
+const SUBJECT_REPAIR: &str =
+    "a complete subject compares every field the view publishes, exactly, \
+     and the line above names what it cannot compare; drop that field from the view, or give it \
+     a type the exact observer compares";
 
 /// The repair for a response field no runner can check (beyond10x/ess#499): the input field's
 /// "drop it from the command's input" names the wrong side of the command.
@@ -2676,6 +2700,13 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     let overlaps = unwitnessed_overlaps(ir, &synthesis.suite);
     synthesis.notes.extend(overlaps);
     disclosure::augment(ir, &mut synthesis);
+    // A Binary64 position in a type nothing reaches refuses nothing; it is named, so a reader sees
+    // what the run does not exercise.
+    synthesis.notes.extend(
+        ess_compiler::binary64::unreached_locations(ir)
+            .into_iter()
+            .map(|location| Note::UnreachedBinary64 { location }),
+    );
     synthesis
 }
 
@@ -2745,7 +2776,8 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     let _remembered = made::remember(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
-    for (path, subject) in ess_compiler::binary64::uses(ir) {
+    // A Binary64 nothing a scenario sends or reads reaches is noted, not refused (`synthesize_in`).
+    for (path, subject) in ess_compiler::binary64::reached_uses(ir) {
         refusals.push(Refusal { subject, scenario: None, stands: false, caused_by: None, cause: RefusalCause::NoWitness(WitnessGap {
             path, type_ref: "Binary64".to_owned(), reason: "requires a qualified finite Binary64 suite and codec that this conformance format does not admit",
         }) });

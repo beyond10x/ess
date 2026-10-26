@@ -723,7 +723,7 @@ test('a suite admits only what the format declares', () => {
   withCoverage.coverage = { knowledge: 'unknown' };
   assert.throws(
     () => admitSuiteDocument(JSON.stringify(withCoverage), false),
-    /coverage is required exactly for odd suite majors from \/5 through \/57/,
+    /coverage is required exactly for odd suite majors from \/5 through \/59/,
   );
 
   const unknownStep = JSON.parse(suiteText()) as any;

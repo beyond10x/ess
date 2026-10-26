@@ -1,4 +1,4 @@
-#	models=304	commands=650
+#	models=305	commands=653
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -791,6 +791,10 @@ crates/verify/ess-conformance/tests/fixtures/retained-commit.yaml	retained.core.
 crates/verify/ess-conformance/tests/fixtures/retained-commit.yaml	retained.core.Validate	held_state: refused | default: validated
 crates/verify/ess-conformance/tests/fixtures/retained-replay.yaml	ir=efc7dbb71d6ef6cd0830c2ebcfd4a530cdf0688d8806c69a6b845c9a8439432e:6978
 crates/verify/ess-conformance/tests/fixtures/retained-replay.yaml	retained.core.Seed	accepting: replayed | default: seeded
+crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	ir=8ac026b20c78ca4077e7dec9499f9db26c9e0657715826d16618743f04368fe8:15914
+crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	demo.items.CreateChild	present_related: parent-not-found, other-tenant | default: created
+crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	demo.items.CreateParent	default: created
+crates/verify/ess-conformance/tests/fixtures/row-set-creator-predicate-guard.yaml	demo.items.GetChild	present_related: child-not-found | default: found
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	ir=bf2f4184b5bcfb943cb4fc7037d9ced79cfc67fc49abe8abca03b63fc9f1a4fa:13760
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	demo.seats.Check	accepting: qualified | default: not-qualified
 crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	demo.seats.DefineTier	default: defined
