@@ -2,14 +2,20 @@
 format: aep.planning-md/3
 id: story:a-field-less-command-input-refuses-a-value-that-is-no-object
 kind: story
-status: draft
+status: implemented
 title: A field-less command input refuses a value that is no object
 summary: The generated Rust decoder of a command input with no fields reads a string, null or array as the input; the field-less event decoder refuses one.
 tags:
-- ess-0.71.0
+- ess-0.70.0
 relations:
 - derived_from: review-result:adversary-ess-0700-unit-c-pass-2
-revision: 1
+- serves: vision:O2
+- decomposes: epic:downstream-reported-gaps
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-26T14:51:20Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-26T14:51:20Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-26T14:51:53Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Finding
 

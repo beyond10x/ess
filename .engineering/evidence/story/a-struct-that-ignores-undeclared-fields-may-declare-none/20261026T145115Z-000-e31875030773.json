@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T14:51:15Z",
+  "actor": "human:timo",
+  "artifact": "story:a-struct-that-ignores-undeclared-fields-may-declare-none",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit F bd281f21b: task test-xtask 418/0; task projection-check exit 0; cargo xtask schema and format-history no drift; ess-compiler typed_diagnostics 8; ess-cli specify_formats 5, validate_parse_refusals 8; consumer_cli_model_ingress 24; per-lane 1103 to 1132 executed, 0 failed; correction round: ess-synth adversary_f_pass1 3, served_codec_names 12, adversary_c_event_wire_2 8; schema-contract adversary_f_pass1 1, typescript_bindings 5, rust_realization 8; ess-conformance undeclared_fields 22, field_wire_names 3; clippy on 9 crates -D warnings exit 0; task fmt-check exit 0; Go realization tests not run locally (pinned go1.26.5 absent)",
+    "reference": "bd281f21b"
+  }
+}

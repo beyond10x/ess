@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-lifecycle-state-carries-a-wire-name
 kind: story
-status: active
+status: implemented
 title: A lifecycle state carries a wire name
 summary: 'Adopter report G4: A lifecycle state cannot carry a wire spelling (ess#639).'
 tags:
@@ -13,10 +13,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T09:18:55Z", actor: "human:timo", revision: 7}
 - {from: "proposed", to: "active", at: "2026-10-26T09:18:56Z", actor: "human:timo", revision: 8}
+- {from: "active", to: "implemented", at: "2026-10-26T14:51:53Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 

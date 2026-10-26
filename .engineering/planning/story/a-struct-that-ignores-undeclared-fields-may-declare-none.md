@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-struct-that-ignores-undeclared-fields-may-declare-none
 kind: story
-status: active
+status: implemented
 title: A struct that ignores undeclared fields may declare none
 summary: 'Adopter report R11: A struct ignoring undeclared fields cannot declare none (ess#649).'
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T09:18:55Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-26T09:18:55Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-26T14:51:52Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 
