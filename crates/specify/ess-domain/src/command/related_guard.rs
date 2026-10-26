@@ -1277,6 +1277,13 @@ fn carried<'a>(
 pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     for command in spec.commands().values().filter(|command| uses(command)) {
+        // A row set beside the related row below ess/32 is refused by its shape check
+        // ([`super::row_set::validate_shape`]); partitioning it here would only bury that refusal.
+        if super::row_set::uses(command)
+            && !super::row_set::admits_identity_beside(spec.system().format)
+        {
+            continue;
+        }
         if spec.system().format.major() < crate::system::FormatVersion::V18.major() {
             for outcome in &command.outcomes {
                 if matches!(outcome.condition, OutcomeCondition::Related { .. }) {
@@ -1862,6 +1869,10 @@ fn validate_partition(
                         ..
                     }
                 )
+                // A row-set branch (ess/32, beyond10x/ess#554) is credited with no case: whether
+                // its rows exist is no field of this row, so it answers nothing this partition
+                // can count on.
+                && !matches!(outcome.condition, OutcomeCondition::RelatedSet { .. })
         })
         .collect();
     let guards: Vec<_> = guarded
@@ -2218,13 +2229,16 @@ fn validate_joint_partition(
 /// rows' fields or the input. Left out are the defaults, the externally decided branches, the
 /// `existing_instance:` and `wrong_state:` markers, which answer the command's own identity and the
 /// addressed row's held state, and the `exists: false` branches, which answer missing rows: none of
-/// those is a question this partition proves. The order branches answer in is not read here.
+/// those is a question this partition proves. Nor are the row-set branches beside them (ess/32,
+/// beyond10x/ess#554): whether rows a selector selects exist is no field of a named row, so they are
+/// credited with no case. The order branches answer in is not read here.
 fn partitioned(command: &CommandSpec) -> Vec<&super::Outcome> {
     command
         .outcomes
         .iter()
         .filter(|outcome| {
             !outcome.is_unconditional()
+                && !matches!(outcome.condition, OutcomeCondition::RelatedSet { .. })
                 && outcome.condition.cause().is_none()
                 && outcome.condition != OutcomeCondition::ExistingInstance
                 && outcome.condition != OutcomeCondition::WrongState

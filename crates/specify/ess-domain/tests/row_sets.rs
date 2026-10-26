@@ -604,3 +604,108 @@ fn below_ess_22_a_where_leaf_the_nested_reader_refuses_is_refused_at_parse() {
     let source22 = text.replacen("format: ess/21", "format: ess/22", 1);
     assert!(RawSpecFile::parse(&source22).is_ok());
 }
+
+/// The reproduction of beyond10x/ess#554, at `ess/32`: a wire joins an output port to an
+/// input port, each port named by the input and read through `when_related: {via: …}`, beside a
+/// row-set guard refusing a source port a wire already leaves.
+const REPRO: &str = include_str!("fixtures/identity-beside-row-set.yaml");
+
+/// The reproduction under `format`.
+fn identity_beside(format: &str) -> String {
+    let text = REPRO.replacen("format: ess/32\n", &format!("format: {format}\n"), 1);
+    assert!(text.starts_with(&format!("format: {format}\n")), "{text}");
+    text
+}
+
+#[test]
+fn from_ess_32_an_identity_guard_beside_a_row_set_validates() {
+    let source = identity_beside("ess/32");
+    let spec = validates(&source);
+    let connect = spec
+        .commands()
+        .values()
+        .find(|command| command.name.to_string() == "wiring.board.Connect")
+        .expect("Connect");
+    assert!(connect
+        .outcomes
+        .iter()
+        .any(|outcome| matches!(outcome.condition, OutcomeCondition::RelatedSet { .. })));
+    assert!(connect
+        .outcomes
+        .iter()
+        .any(|outcome| matches!(outcome.condition, OutcomeCondition::Related { .. })));
+    // The row set is credited with no case of the named rows' partition: without the default,
+    // the pair is refused as before rather than read as covered.
+    let without_default = source.replacen(
+        "      - name: connected\n        creates",
+        "      - name: connected\n        when: input.from_port != input.to_port\n        creates",
+        1,
+    );
+    assert_ne!(without_default, source);
+    refusals(&without_default, ValidationCode::NonExhaustiveBranches, "");
+    // A row-set refusal declared above a named row's `exists: false` validates: a marker declared
+    // below a guarded branch is not refused (ess/29), and the missing row still answers first
+    // (`precedence_plan_answers.rs`, `identity_and_row_set_guards_answer_in_step_4_order`).
+    let taken = "      - name: source-taken
+        when_related:
+          entity: wiring.board.Wire
+          where: from_port == input.from_port
+          exists: true
+        error: wiring.board.SourceTaken
+";
+    let reordered = source.replacen(taken, "", 1).replacen(
+        "      - name: no-source\n",
+        &format!("{taken}      - name: no-source\n"),
+        1,
+    );
+    assert_ne!(reordered, source);
+    validates(&reordered);
+}
+
+#[test]
+fn below_ess_32_an_identity_guard_beside_a_row_set_names_ess_32() {
+    for format in ["ess/31", "ess/25"] {
+        let text = identity_beside(format);
+        let errors = assemble(&text).expect_err("refused below ess/32");
+        let refused: Vec<_> = errors
+            .as_slice()
+            .iter()
+            .filter(|error| error.code == ValidationCode::UnsupportedConstruct)
+            .collect();
+        assert_eq!(refused.len(), 1, "{format}:\n{}", listed(&errors));
+        assert_eq!(
+            refused[0].message,
+            "`wiring.board.Connect` selects on a row set (`when_related: {entity, where, …}`) and \
+             on an identity-addressed `when_related`; one command reads one kind of related row \
+             in this cut",
+            "{format}"
+        );
+        let hint = refused[0].hint.as_deref().unwrap_or_default();
+        assert!(hint.contains("`format: ess/32`"), "{format}: {hint}");
+        // The refusal is the only one: nothing partitions the pair under it.
+        assert_eq!(errors.as_slice().len(), 1, "{format}:\n{}", listed(&errors));
+    }
+    // Any other guard beside a row set keeps its refusal, and its hint, at ess/32.
+    let subject = probe(
+        "ess/32",
+        "        when_related: {entity: demo.jobs.Attempt, where: worker_id == input.worker_id, exists: true}",
+        "      - name: probed\n        when_subject:\n          predicate: worker_id == input.worker_id\n        error: demo.jobs.Refused",
+    );
+    let errors = assemble(&subject).expect_err("a `when_subject` beside a row set is refused");
+    let refused = errors
+        .as_slice()
+        .iter()
+        .find(|error| {
+            error.code == ValidationCode::UnsupportedConstruct
+                && error.message.contains("a `when_subject` guard")
+        })
+        .unwrap_or_else(|| panic!("{}", listed(&errors)));
+    assert!(
+        !refused
+            .hint
+            .as_deref()
+            .unwrap_or_default()
+            .contains("ess/32"),
+        "{refused:?}"
+    );
+}

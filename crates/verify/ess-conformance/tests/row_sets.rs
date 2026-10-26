@@ -370,6 +370,119 @@ fn optional_key_needs_defined() {
     assert_eq!(identities(&unguarded), before);
 }
 
+// ---- an identity guard beside a row set (ess/32, beyond10x/ess#554) ---------------------------
+
+/// The reproduction of beyond10x/ess#554, at `ess/32`: `Connect` names two ports through
+/// its input, refuses a missing or wrong-facing one, and refuses a source port a wire already
+/// leaves, a row set.
+const IDENTITY_REPRO: &str =
+    include_str!("../../../specify/ess-domain/tests/fixtures/identity-beside-row-set.yaml");
+
+const SOURCE_NOT_OUTPUT: &str = "      - name: source-not-output
+        when_related: {via: input.from_port, predicate: direction != output}
+        error: wiring.board.SourceNotOutput
+";
+
+const SOURCE_TAKEN: &str = "      - name: source-taken
+        when_related:
+          entity: wiring.board.Wire
+          where: from_port == input.from_port
+          exists: true
+        error: wiring.board.SourceTaken
+";
+
+/// The reproduction at `ess/32`, with `drop` cut out of it.
+fn identity_beside(drop: &str) -> String {
+    let text = IDENTITY_REPRO.to_owned();
+    assert!(text.starts_with("format: ess/32\n"));
+    if drop.is_empty() {
+        return text;
+    }
+    let cut = text.replacen(drop, "", 1);
+    assert_ne!(cut, text, "`{drop}` is in the reproduction");
+    cut
+}
+
+/// Each scenario of `synthesis` run against the interpreter over `model`, by id.
+fn statuses(
+    synthesis: &ess_conformance::synthesize::Synthesis,
+    model: ess_compiler::ir::EssIr,
+) -> std::collections::BTreeMap<String, ess_conformance::report::Status> {
+    let admitted = ess_conformance::AdmittedSuite::from_suite(&synthesis.suite)
+        .unwrap_or_else(|error| panic!("{error}"));
+    ess_conformance::Runner::for_suite(admitted.suite())
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(model),
+        )
+        .into_report()
+        .scenarios
+        .into_iter()
+        .map(|result| (result.scenario.to_string(), result.status))
+        .collect()
+}
+
+/// Synthesis refuses nothing on the reproduction at `ess/32`, a scenario reaches every branch of
+/// `Connect`, the suite passes against the interpreter, and a model dropping the row set or an
+/// identity guard fails a scenario.
+#[test]
+fn identity_and_row_set_guards_synthesize_without_refusal() {
+    use ess_conformance::report::Status;
+    let healthy = identity_beside("");
+    let synthesis = ess_conformance::synthesize::synthesize(&model(&healthy));
+    let refused: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .map(|refusal| format!("{:?} {}", refusal.scenario, refusal.cause))
+        .collect();
+    assert_eq!(refused, Vec::<String>::new(), "refusals");
+    let ids: Vec<String> = synthesis
+        .suite
+        .scenarios
+        .keys()
+        .map(ToString::to_string)
+        .collect();
+    for branch in [
+        "no-source",
+        "no-sink",
+        "source-not-output",
+        "sink-not-input",
+        "source-taken",
+        "connected",
+    ] {
+        let id = format!("wiring.board.Connect/outcome/{branch}");
+        assert!(ids.contains(&id), "no `{id}` in {ids:#?}");
+    }
+    let run = statuses(&synthesis, model(&healthy));
+    let failing: Vec<_> = run
+        .iter()
+        .filter(|(_, status)| **status != Status::Passed)
+        .collect();
+    assert!(
+        failing.is_empty(),
+        "not passed against interpreted: {failing:?}"
+    );
+    for (label, drop, killed) in [
+        (
+            "the row set dropped",
+            SOURCE_TAKEN,
+            "wiring.board.Connect/outcome/source-taken",
+        ),
+        (
+            "an identity guard dropped",
+            SOURCE_NOT_OUTPUT,
+            "wiring.board.Connect/outcome/source-not-output",
+        ),
+    ] {
+        let mutant = statuses(&synthesis, model(&identity_beside(drop)));
+        assert_ne!(
+            mutant.get(killed),
+            Some(&Status::Passed),
+            "{label}: `{killed}` still passes: {mutant:?}"
+        );
+    }
+}
+
 /// The children of one parent, created past a guard over the parent's tenant.
 const CREATOR_PREDICATE: &str = include_str!("fixtures/row-set-creator-predicate-guard.yaml");
 

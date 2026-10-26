@@ -3985,9 +3985,14 @@ impl CommandSpec {
         }
 
         // A command guarded by a row set (ess/22, beyond10x/ess#228, #299): its count-decided
-        // branches, and that it reads no other kind of related row.
+        // branches, and that it reads no other kind of related row but, from ess/32, an
+        // identity-addressed one (beyond10x/ess#554), whose own branches are then checked too.
         if row_set::uses(self) {
-            return row_set::validate_shape(self);
+            let errors = row_set::validate_shape(self, types);
+            if errors.is_empty() && types.is_some() && related_guard::uses(self) {
+                return related_guard::validate_shape(self, types);
+            }
+            return errors;
         }
         // A command reading a related row (ess/18, beyond10x/ess#211) partitions that row's fields
         // with the input, which needs the other entity's field types, known at assembly; here its

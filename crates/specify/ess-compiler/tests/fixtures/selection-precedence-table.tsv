@@ -1,4 +1,4 @@
-#	models=303	commands=648
+#	models=304	commands=650
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -155,6 +155,9 @@ crates/specify/ess-composition/tests/fixtures/owner-consumer/owner/system.yaml	A
 crates/specify/ess-composition/tests/fixtures/two-components/system.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/binding-selection.yaml	ir=e40145284e7b85a5f309ab433ddc336fd87a70ca4c1259c4e752244be7993b77:19800
 crates/specify/ess-domain/tests/fixtures/binding-selection.yaml	selection.core.Receive	default: received
+crates/specify/ess-domain/tests/fixtures/identity-beside-row-set.yaml	ir=44d131b89da89603f27da5d6f478b6b0054d85cfe510cffcad642e16bfb07179:14730
+crates/specify/ess-domain/tests/fixtures/identity-beside-row-set.yaml	wiring.board.AddPort	default: added
+crates/specify/ess-domain/tests/fixtures/identity-beside-row-set.yaml	wiring.board.Connect	present_related: no-source, no-sink, source-not-output, sink-not-input, source-taken | default: connected
 crates/specify/ess-domain/tests/fixtures/lending/system.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/list-input-example.yaml	ir=a8bcb8005bd39246c66ebbbb3f7c013afbeba715b0b71369364d4f09764b959d:5725
 crates/specify/ess-domain/tests/fixtures/list-input-example.yaml	demo.server.Handshake	default: accepted

@@ -2617,3 +2617,61 @@ fn a_related_row_no_accepting_component_stores_stays_owed() {
         plan.to_markdown()
     );
 }
+
+/// The reproduction of beyond10x/ess#554, at `ess/32`: `Connect` reads two ports through
+/// its input beside a row-set guard over the wires.
+const IDENTITY_BESIDE_REPRO: &str =
+    include_str!("../../../specify/ess-domain/tests/fixtures/identity-beside-row-set.yaml");
+
+/// From `ess/32` an identity-addressed `when_related:` beside a row set validates (beyond10x/ess#554),
+/// and generated Rust and Go still read no row set: the command stays an obligation, named, and
+/// `AddPort` beside it is generated. With one named row, the row set is what keeps it owed.
+#[test]
+fn identity_and_row_set_guards_stay_an_obligation() {
+    let at_32 = IDENTITY_BESIDE_REPRO.to_owned();
+    assert!(at_32.starts_with("format: ess/32\n"));
+    let one_row = at_32
+        .replacen(
+            "      - name: no-sink
+        when_related: {via: input.to_port, exists: false}
+        error: wiring.board.SinkNotFound
+",
+            "",
+            1,
+        )
+        .replacen(
+            "      - name: sink-not-input
+        when_related: {via: input.to_port, predicate: direction != input}
+        error: wiring.board.SinkNotInput
+",
+            "",
+            1,
+        );
+    assert!(!one_row.contains("input.to_port, "), "{one_row}");
+    for (model, names) in [
+        (&at_32, "`when_related:`"),
+        (
+            &one_row,
+            "a guard over the rows a selector selects (`when_related: {entity, where, exists | \
+             count | forall}`)",
+        ),
+    ] {
+        let ir = compile_text(model);
+        let plan = SynthesisPlan::of(&ir);
+        match plan.disposition_of(CapabilityKind::CommandBehavior, "wiring.board.Connect") {
+            Some(SynthesisDisposition::Obligation(obligation)) => {
+                let why = obligation.reason.describes();
+                assert!(why.contains(names), "names `{names}`, not: {why}");
+            }
+            other => panic!("`wiring.board.Connect` stays an obligation, not {other:?}"),
+        }
+        assert_eq!(
+            plan.disposition_of(CapabilityKind::CommandBehavior, "wiring.board.AddPort"),
+            Some(&SynthesisDisposition::Generated)
+        );
+        for target in [Target::Rust, Target::Go] {
+            synthesize_for(&ir, target)
+                .unwrap_or_else(|error| panic!("{target:?} carries the obligation: {error:?}"));
+        }
+    }
+}

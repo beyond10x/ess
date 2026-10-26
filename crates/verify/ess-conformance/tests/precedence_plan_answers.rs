@@ -634,3 +634,125 @@ fn guard_pair_corpus_answers_by_the_rule() {
     assert_eq!(forced.len(), 1);
     assert_eq!(answered(&forced[0]), "bad-secret");
 }
+
+// ---- an identity guard beside a row set (ess/32, beyond10x/ess#554) ---------------------------
+
+/// The reproduction of beyond10x/ess#554, at `ess/32`.
+const IDENTITY_REPRO: &str =
+    include_str!("../../../specify/ess-domain/tests/fixtures/identity-beside-row-set.yaml");
+
+fn identity_beside() -> String {
+    let text = IDENTITY_REPRO.to_owned();
+    assert!(text.starts_with("format: ess/32\n"));
+    text
+}
+
+const NO_PORT: &str = "00000000-0000-4000-8000-0000000000cc";
+
+/// A port facing `direction`, added to `store`, and its identity.
+fn port(ir: &EssIr, store: &Store, direction: &str) -> (Store, String) {
+    let added = step(
+        ir,
+        store,
+        "wiring.board.AddPort",
+        &[("direction", text(direction))],
+    );
+    assert_eq!(answered(&added), "added");
+    let port = minted(&added, "wiring.board.PortAdded");
+    (added.next, port)
+}
+
+/// `Connect` from `from` to `to` on `store`: the interpreter's answer, and the store after it.
+fn connect(ir: &EssIr, store: &Store, from: &str, to: &str) -> (String, Store) {
+    let connected = step(
+        ir,
+        store,
+        "wiring.board.Connect",
+        &[("from_port", text(from)), ("to_port", text(to))],
+    );
+    (answered(&connected), connected.next)
+}
+
+/// Every branch of the reproduction, each answered where every branch after it in step 4 order
+/// also holds: a missing named row before a wrong-direction row before an occupied source port,
+/// and the plan reading the same branch first of those that hold.
+#[test]
+fn identity_and_row_set_guards_answer_in_step_4_order() {
+    let ir = ir_of(&identity_beside());
+    let (store, out_a) = port(&ir, &Store::default(), "output");
+    let (store, in_b) = port(&ir, &store, "input");
+    let (store, out_c) = port(&ir, &store, "output");
+    let (first, store) = connect(&ir, &store, &out_a, &in_b);
+    assert_eq!(first, "connected");
+    // `out_a` now has a wire leaving it.
+    let cases: [(&str, &str, &str, &[&str]); 6] = [
+        // missing source, wrong-direction sink, beside the default
+        (
+            NO_PORT,
+            &out_c,
+            "no-source",
+            &["no-source", "sink-not-input", "connected"],
+        ),
+        // occupied source, missing sink
+        (
+            &out_a,
+            NO_PORT,
+            "no-sink",
+            &["no-sink", "source-taken", "connected"],
+        ),
+        // wrong-direction source and sink
+        (
+            &in_b,
+            &out_c,
+            "source-not-output",
+            &["source-not-output", "sink-not-input", "connected"],
+        ),
+        // occupied source, wrong-direction sink
+        (
+            &out_a,
+            &out_c,
+            "sink-not-input",
+            &["sink-not-input", "source-taken", "connected"],
+        ),
+        // occupied source, both rows facing the right way
+        (
+            &out_a,
+            &in_b,
+            "source-taken",
+            &["source-taken", "connected"],
+        ),
+        // a free output to an input
+        (&out_c, &in_b, "connected", &["connected"]),
+    ];
+    for (from, to, expected, holding) in cases {
+        let (interpreter, _) = connect(&ir, &store, from, to);
+        assert_eq!(interpreter, expected, "from {from} to {to}");
+        assert_eq!(
+            plan_first(&ir, "wiring.board.Connect", holding),
+            interpreter,
+            "from {from} to {to}"
+        );
+    }
+    // The row set declared above every named row's guard: a missing sink still answers before the
+    // occupied source, and among refusals over present rows declaration order decides, so the
+    // occupied source answers before the wrong-facing sink.
+    let taken = "      - name: source-taken
+        when_related:
+          entity: wiring.board.Wire
+          where: from_port == input.from_port
+          exists: true
+        error: wiring.board.SourceTaken
+";
+    let model = identity_beside();
+    let reordered = model.replacen(taken, "", 1).replacen(
+        "      - name: no-source\n",
+        &format!("{taken}      - name: no-source\n"),
+        1,
+    );
+    assert_ne!(reordered, model);
+    let ir = ir_of(&reordered);
+    for (to, expected) in [(NO_PORT, "no-sink"), (out_c.as_str(), "source-taken")] {
+        let (interpreter, _) = connect(&ir, &store, &out_a, to);
+        assert_eq!(interpreter, expected, "declared first, to {to}");
+    }
+}

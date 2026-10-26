@@ -37,8 +37,10 @@
 //! definitely false.
 //!
 //! This cut reads one kind of related row per command: a row-set guard does not share a command
-//! with an identity-addressed `when_related:` or a `when_subject*` guard, and is refused there by
-//! name.
+//! with a `when_subject*` guard, and is refused there by name. From `ess/32` it shares one with an
+//! identity-addressed `when_related:` (beyond10x/ess#554): the named rows' `exists: false` answer
+//! first, then every refusal over a present named row or a row set in declaration order, then the
+//! accepting branches; below `ess/32` that pair is refused too, the hint naming `ess/32`.
 use std::collections::BTreeMap;
 
 use ess_primitives::error::{ConstructRef, ValidationCode, ValidationError, ValidationErrors};
@@ -322,16 +324,57 @@ fn beside(condition: &OutcomeCondition) -> Option<&'static str> {
     }
 }
 
-/// Local declaration checks, which need no registry: one kind of related read per command, one
-/// unconditional branch at most, every cardinality answered where no default is declared, no branch
-/// a branch before it always answers first, and a branch a scenario can reach.
-pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
+/// Whether `format` admits an identity-addressed `when_related:` beside a row set in one command
+/// (`ess/32`, beyond10x/ess#554): the one precedence rule answers the named rows' `exists: false`
+/// first, in declaration order, then every refusal over a present row or a row set in declaration
+/// order, then the accepting branches (`docs/design/generic-language-features.md` § G4).
+pub fn admits_identity_beside(format: FormatVersion) -> bool {
+    format.major() >= FormatVersion::V32.major()
+}
+
+/// Whether `command` guards on a row set and on an identity-addressed row, and on no other kind
+/// [`beside`] names: the pair `ess/32` admits.
+pub fn identity_beside(command: &CommandSpec) -> bool {
+    uses(command)
+        && command
+            .outcomes
+            .iter()
+            .any(|outcome| matches!(outcome.condition, OutcomeCondition::Related { .. }))
+        && command.outcomes.iter().all(|outcome| {
+            matches!(outcome.condition, OutcomeCondition::Related { .. })
+                || beside(&outcome.condition).is_none()
+        })
+}
+
+/// Local declaration checks: one kind of related read per command, one unconditional branch at
+/// most, every cardinality answered where no default is declared, no branch a branch before it
+/// always answers first, and a branch a scenario can reach.
+///
+/// From `ess/32` an identity-addressed `when_related:` sits beside the row set
+/// ([`admits_identity_beside`]); below it the pair is refused as before, the hint naming `ess/32`.
+/// Where `types` is not yet known the format is not either, so such a command is left to the pass
+/// that knows it; a registry that records no format reads as the newest.
+pub fn validate_shape(command: &CommandSpec, types: Option<&TypeRegistry>) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
-    if let Some(other) = command
-        .outcomes
-        .iter()
-        .find_map(|outcome| beside(&outcome.condition))
-    {
+    // A guard no format admits beside a row set is named before an identity-addressed one, which
+    // `ess/32` admits: the refusal points at the guard the author has to move in every format.
+    let named = |related: bool| {
+        command.outcomes.iter().find_map(|outcome| {
+            (matches!(outcome.condition, OutcomeCondition::Related { .. }) == related)
+                .then(|| beside(&outcome.condition))
+                .flatten()
+        })
+    };
+    if let Some(other) = named(false).or_else(|| named(true)) {
+        let identity = identity_beside(command);
+        if identity {
+            let Some(types) = types else {
+                return errors;
+            };
+            if types.format().is_none_or(admits_identity_beside) {
+                return validate_counts(command, errors);
+            }
+        }
         errors.push(
             ValidationError::at(
                 command.site().key("outcomes"),
@@ -342,13 +385,23 @@ pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
                     command.name
                 ),
             )
-            .with_hint(
+            .with_hint(if identity {
+                "declare `format: ess/32`, where the one precedence rule answers the named rows' \
+                 `exists: false` first and then every refusal over a present row or a row set in \
+                 declaration order, guard the command on the row set alone, or move the other \
+                 guard to a command of its own"
+            } else {
                 "guard the command on the row set alone, or move the other guard to a command of \
-                 its own",
-            ),
+                 its own"
+            }),
         );
         return errors;
     }
+    validate_counts(command, errors)
+}
+
+/// [`validate_shape`] once the command's guards are admitted together.
+fn validate_counts(command: &CommandSpec, mut errors: ValidationErrors) -> ValidationErrors {
     let unconditional: Vec<_> = command
         .outcomes
         .iter()
