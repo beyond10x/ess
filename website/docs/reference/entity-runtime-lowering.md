@@ -91,6 +91,7 @@ The last column says what lowering the construct would need. *entity-core* means
 | a refusal that compensates (`compensates: true`, ess/22) | `CompensatingRefusalUnsupported` | entity-core: a refusal that changes the instance it answers for |
 | a re-key (`updates:` writing the identity, ess/23) | `IdentityChangeUnsupported` | entity-core: an operation that moves the instance it names to another identity |
 | a function of a fact in a guard (`sha256(…)`, `base64url(…)`, `ascii(…)`, ess/27) | `FunctionCallUnsupported` | entity-core: a digest and encoding operand: SHA-256, base64url, ASCII bytes |
+| a lifecycle state's wire spelling (`states: [{name, wire}]`, ess/32) | `StateWireNameUnsupported` | entity-core: a lifecycle state spelled apart from its name |
 
 ## Every code
 
@@ -138,5 +139,6 @@ A harness matches on the code. The construct is the one a diagnostic under that 
 | `CompensatingRefusalUnsupported` | a refusal that compensates (`compensates: true`, ess/22) | A refusal changes its addressed instance before answering its error. |
 | `IdentityChangeUnsupported` | a re-key (`updates:` writing the identity, ess/23) | An update writes the identity and re-keys its record. |
 | `FunctionCallUnsupported` | a function of a fact in a guard (`sha256(…)`, `base64url(…)`, `ascii(…)`, ess/27) | A guard reads a fact through a digest or encoding function. |
+| `StateWireNameUnsupported` | a lifecycle state's wire spelling (`states: [{name, wire}]`, ess/32) | A lifecycle state declares its wire spelling. |
 
 [ess-lowering-end]: #

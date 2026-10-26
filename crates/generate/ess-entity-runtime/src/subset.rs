@@ -112,6 +112,8 @@ pub(crate) const IDENTITY_CHANGE: &str = "a re-key (`updates:` writing the ident
 pub(crate) const EXPRESSION: &str = "an expression value (`{expr: …}`, ess/27)";
 pub(crate) const FUNCTION_CALL: &str =
     "a function of a fact in a guard (`sha256(…)`, `base64url(…)`, `ascii(…)`, ess/27)";
+pub(crate) const STATE_WIRE_NAME: &str =
+    "a lifecycle state's wire spelling (`states: [{name, wire}]`, ess/32)";
 
 /// The row a refused value expression is named by.
 pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -> &'static str {
@@ -658,6 +660,12 @@ pub const CONSTRUCTS: &[Construct] = &[
         Needs::EntityCore("a digest and encoding operand: SHA-256, base64url, ASCII bytes"),
         &["tests/digest_guard.rs::a_guard_reading_a_fact_through_a_function_is_refused_by_name"],
     ),
+    refused(
+        STATE_WIRE_NAME,
+        LoweringCode::StateWireNameUnsupported,
+        Needs::EntityCore("a lifecycle state spelled apart from its name"),
+        &["tests/state_wire_name.rs::a_state_wire_name_is_refused_by_name"],
+    ),
 ];
 
 impl LoweringCode {
@@ -703,6 +711,7 @@ impl LoweringCode {
         Self::CompensatingRefusalUnsupported,
         Self::IdentityChangeUnsupported,
         Self::FunctionCallUnsupported,
+        Self::StateWireNameUnsupported,
     ];
 
     /// The code as a harness matches on it: the variant's name.
@@ -959,6 +968,11 @@ impl LoweringCode {
                 "FunctionCallUnsupported",
                 FUNCTION_CALL,
                 "A guard reads a fact through a digest or encoding function.",
+            ),
+            Self::StateWireNameUnsupported => (
+                "StateWireNameUnsupported",
+                STATE_WIRE_NAME,
+                "A lifecycle state declares its wire spelling.",
             ),
         }
     }

@@ -82,3 +82,43 @@ fn property_names_and_unemitted_items_do_not_reserve_bindings() {
     assert_eq!(source, before);
     assert_eq!(project(&source, "namespace").unwrap(), rendered);
 }
+
+#[path = "support/empty_struct.rs"]
+mod empty_struct;
+
+/// The declaration and report an open `fields: []` struct realizes as (ess/32, beyond10x/ess#649):
+/// an object type with a string index, so `{}` and `{"x": 1}` are both values of it.
+#[test]
+fn an_open_empty_struct_decodes_any_object() {
+    let result = empty_struct::plan().typescript();
+    let declarations = &result.declarations;
+    assert!(
+        declarations.contains("export type DemoAckOpen = ({\n} & { [key: string]: "),
+        "{declarations}"
+    );
+}
+
+/// A closed `fields: []` struct is the object every key of which is `never`, so no string, number
+/// or array is one. A decoded value reaches the type by a cast, so the report still names the
+/// runtime check of its keys as the `closed_object` obligation.
+#[test]
+fn a_closed_empty_struct_decodes_only_the_empty_object() {
+    let result = empty_struct::plan().typescript();
+    let declarations = &result.declarations;
+    assert!(
+        declarations.contains("export type DemoAckClosed = Record<string, never>;"),
+        "{declarations}"
+    );
+    let report = serde_json::to_value(&result.report).unwrap();
+    assert!(
+        report["obligations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["rule"] == "closed_object"
+                && entry["pointer"]
+                    .as_str()
+                    .is_some_and(|pointer| pointer.contains("demo.ack.Closed"))),
+        "{report}"
+    );
+}

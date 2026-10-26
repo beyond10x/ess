@@ -155,3 +155,7 @@ fn it_serialises_under_its_own_kind_and_leaves_every_other_branch_alone() {
     assert_eq!(refreshed.condition, ResolvedCondition::Otherwise);
     assert_eq!(refreshed.test_strategy.as_str(), "default_branch");
 }
+
+/// A lifecycle state's wire name (`ess/32`, beyond10x/ess#639) in the IR.
+#[path = "state_change_ir/state_wire.rs"]
+mod state_wire;

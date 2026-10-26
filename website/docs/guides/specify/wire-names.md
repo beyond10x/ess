@@ -56,6 +56,27 @@ with `unsupported_format_version` at `types.<type>.variants.<variant>`, and a ba
 by every format, so nothing written before this moves. `ess verify diff` reports a moved spelling as
 `VariantWireNameChanged` under [`ess-diff/5`](../../reference/formats.md#change-and-conformance-records).
 
+From `ess/32` two variants of one enum may not share a spelling, whether by name or by `wire:`:
+`conflicting_declaration` names the spelling. Below `ess/32` such an enum keeps validating.
+
+## A lifecycle state can carry its own wire spelling
+
+From `ess/32` a state takes the variant's mapping form with its one member, `wire:`:
+
+```yaml
+lifecycle:
+  initial: Indexing
+  states: [{name: Indexing, wire: indexing}, Ready]
+  terminal: [Ready]
+```
+
+The spelling is the wire value of the state's variant of `<Entity>.State`, so every schema and
+generated codec spells the state `indexing` and refuses `Indexing`. Everything else keeps the
+declared name: `initial:`, `terminal:`, transitions, `moves:`, guards and conformance suites. Two
+states spelled alike are `conflicting_declaration`. Below `ess/32` the mapping is refused as
+`unsupported_format_version` naming `ess/32`, at the state. Entity Runtime lowering refuses a spelled
+state as `StateWireNameUnsupported`.
+
 ## A field can carry its own wire name
 
 A field of a struct, an event or a command input that travels under another name declares it, flat

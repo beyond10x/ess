@@ -145,3 +145,33 @@ The object form gains `attributes:`, a typed value per attribute the enum declar
 - **Revision comparison.** No released delta format has a case for an attribute, so an attribute
   declared, removed or revalued stays in the residual and is `unclassified-changed`; a guard whose
   lowered membership moved is its own `outcome-condition-changed`.
+
+## A lifecycle state's wire spelling (ess/32, beyond10x/ess#639)
+
+A state takes the variant's mapping form with one member, `wire:`:
+`states: [{name: Indexing, wire: indexing}, Ready]`. A state with nothing to declare stays a bare
+name, so the mapping requires `wire:`.
+
+- **Model.** `StateMachine.states` stays the set of declared names; the spelling is held beside it
+  in `StateMachine.naming`, a map from state to `Naming` skipped when empty, so a lifecycle that
+  spells no state keeps its IR bytes and no reader of `.states` moves.
+- **Lowering.** `EntitySpec::state_type` gives the state's variant of `<Entity>.State` the
+  state's `Naming`. Every reader in the table above that reads `wire()` therefore spells the state:
+  JSON Schema, OpenAPI and AsyncAPI list `indexing` with `x-ess-variants` naming `Indexing`;
+  generated Rust, Go and TypeScript decode `"indexing"` and refuse `"Indexing"`; a served Rust view
+  answers `"state":"indexing"`.
+- **Names stay names.** `initial:`, `terminal:`, transitions, `moves:`, `when_subject_state:`, the
+  interpreter and conformance suites keep the declared name; a suite carries `Indexing` and the
+  adapter spells the wire, as for an enum variant.
+- **Admission.** Below `ess/32` the mapping is refused as `unsupported_format_version` naming
+  `ess/32` at `entity <name>.states.<state>`, where an older reader fails the whole file with
+  `invalid type: map`.
+- **One spelling, one state.** Two states of one lifecycle spelled alike are
+  `conflicting_declaration` at the second state; one state written twice with two spellings is the
+  same refusal. From `ess/32` the rule holds for a declared enum too, two variants spelled alike by
+  name or by `wire:` (a `stricter:` entry); below `ess/32` such an enum keeps validating.
+- **Revision comparison.** `<Entity>.State` is a type the compiled IR holds, so a moved spelling is
+  that type's `VariantWireNameChanged`; no delta format moves.
+- **Entity Runtime.** A lifecycle there names its states with nothing to spell them apart, so a
+  spelled state is refused as `StateWireNameUnsupported` rather than stored and answered by its
+  declared name.

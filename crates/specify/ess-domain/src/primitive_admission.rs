@@ -232,10 +232,46 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
                         ));
                     }
                 }
+                if system.format.major() >= FormatVersion::V32.major() {
+                    shared_variant_spellings(&at, variants, &mut errors);
+                }
             }
         }
     }
     errors
+}
+
+/// Two variants of one enum spelled alike on the wire, refused from `ess/32` (beyond10x/ess#639).
+///
+/// A value on the wire names one variant, or a reader cannot tell which it holds. Stricter, not
+/// added: below `ess/32` such an enum keeps validating, because it always has. A lifecycle's states
+/// are held to the same rule by [`StateMachine::validate_at`](crate::entity::StateMachine), at the
+/// state, so the synthesised `<Entity>.State` enum is not checked here a second time.
+fn shared_variant_spellings(
+    at: &str,
+    variants: &[crate::types::EnumVariant],
+    errors: &mut ValidationErrors,
+) {
+    let mut spelled: std::collections::BTreeMap<&str, &str> = std::collections::BTreeMap::new();
+    for variant in variants {
+        let wire = variant.wire();
+        if let Some(first) = spelled.get(wire) {
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::ConflictingDeclaration,
+                    format!("{at}.variants.{}", variant.name()),
+                    format!(
+                        "`{first}` and `{}` are both spelled `{wire}` on the wire, so a value \
+                         there cannot say which variant it is",
+                        variant.name()
+                    ),
+                )
+                .with_hint("give each variant its own wire spelling"),
+            );
+        } else {
+            spelled.insert(wire, variant.name());
+        }
+    }
 }
 
 /// The two conditions that read the state a subject already holds, each against its own format.
@@ -624,6 +660,22 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
             &format!("entity {}.fields", entity.name),
             &mut errors,
         );
+        // An older reader fails the mapping as `invalid type: map` for the whole file, with no
+        // line and no version hint (beyond10x/ess#639).
+        if format.major() < FormatVersion::V32.major() {
+            for state in entity.states.naming.keys() {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UnsupportedFormatVersion,
+                        format!("entity {}.states.{state}", entity.name),
+                        "a lifecycle state's wire spelling requires specification format ess/32",
+                    )
+                    .with_hint(format!(
+                        "declare `format: ess/32`, or write the state as `{state}`"
+                    )),
+                );
+            }
+        }
     }
     for command in spec.commands().values() {
         held_state_conditions(command, format, &mut errors);

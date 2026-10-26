@@ -320,3 +320,7 @@ fn a_value_other_than_ignored_or_refused_is_refused_naming_the_key() {
 /// `undeclared_fields:` is: its projected schema, held by `ess generate schema validate`.
 #[path = "validate_undeclared_fields/shorthand.rs"]
 mod shorthand;
+
+/// A struct with `fields: []`, open or closed (`ess/32`, beyond10x/ess#649).
+#[path = "validate_undeclared_fields/empty_struct.rs"]
+mod empty_struct;

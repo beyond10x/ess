@@ -183,3 +183,7 @@ fn the_published_schema_accepts_what_the_parser_accepts() {
         "the mapping form carries none either"
     );
 }
+
+/// A lifecycle state's wire name (`ess/32`, beyond10x/ess#639), lowered onto `<Entity>.State`.
+#[path = "enum_variant_wire_names/state_wire.rs"]
+mod state_wire;

@@ -1,0 +1,72 @@
+format: ess/32
+system: jobs
+version: v1
+domain: jobs.queue
+summary: A job queue whose service spells the state Indexing as `indexing` (beyond10x/ess#639).
+types:
+  - {name: jobs.queue.JobId, kind: newtype, of: Uuid}
+entities:
+  - name: jobs.queue.Job
+    identity: {name: job_id, type: jobs.queue.JobId}
+    fields:
+      - {name: title, type: String}
+    lifecycle:
+      initial: Indexing
+      states: [{name: Indexing, wire: indexing}, Ready]
+      terminal: [Ready]
+      transitions:
+        - {name: finish, from: [Indexing], to: Ready}
+events:
+  - name: jobs.queue.JobQueued
+    fields:
+      - {name: job_id, type: jobs.queue.JobId}
+  - name: jobs.queue.JobFinished
+    fields:
+      - {name: job_id, type: jobs.queue.JobId}
+      - {name: seen, type: jobs.queue.Job.State}
+errors:
+  - name: jobs.queue.JobStateConflict
+    summary: The job is not in a state this command acts from, so nothing moved.
+    fields:
+      - {name: state, type: jobs.queue.Job.State}
+actors:
+  - name: jobs.queue.Worker
+    may: [jobs.queue.Queue, jobs.queue.Finish]
+commands:
+  - name: jobs.queue.Queue
+    input:
+      - {name: title, type: String}
+    outcomes:
+      - name: queued
+        creates: jobs.queue.Job
+        instance: job_id
+        emits: [jobs.queue.JobQueued]
+        payload: {jobs.queue.JobQueued: {job_id: {generated: true}}}
+        sets: {title: input.title}
+  - name: jobs.queue.Finish
+    input:
+      - {name: job_id, type: jobs.queue.JobId}
+      - {name: seen, type: jobs.queue.Job.State}
+    outcomes:
+      - name: finished
+        moves: jobs.queue.Job.finish
+        instance: job_id
+        emits: [jobs.queue.JobFinished]
+        payload: {jobs.queue.JobFinished: {job_id: input.job_id, seen: input.seen}}
+      - name: wrong-state
+        wrong_state: true
+        error: jobs.queue.JobStateConflict
+views:
+  - name: jobs.queue.Jobs
+    source: jobs.queue.Job
+    consistency: read_your_writes
+    fields:
+      - {name: job_id, type: jobs.queue.JobId}
+      - {name: title, type: String}
+      - {name: state, type: jobs.queue.Job.State}
+components:
+  - component: jobs-service
+    owns: {domains: [jobs.queue]}
+    accepts: {commands: [jobs.queue.Queue, jobs.queue.Finish]}
+    publishes: {events: [jobs.queue.JobQueued, jobs.queue.JobFinished]}
+    reached_by: network
