@@ -1634,7 +1634,7 @@ obligation, naming the row set; Entity Runtime refuses it as `RowSetUnsupported`
 From `ess/32` a command may read rows its input names, `when_related: {via: input.<field>, …}`,
 and a row set in one decision (beyond10x/ess#554):
 
-```yaml
+```text
 - name: no-source
   when_related: {via: input.from_port, exists: false}
   error: wiring.board.SourceNotFound

@@ -461,6 +461,7 @@ func (r replayObservation) validateSchema() error {
 	}
 	return nil
 }
+
 // exactDecimalMajor refuses a Decimal in an exact observer (a retained result or a complete
 // subject) below suite/58, the pair that compares it by numeric value. value is the step's
 // already admitted `capture` or `shape`.
