@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:synthesis-at-ess26-does-not-stop-with-invalid-replay
 kind: story
-status: active
+status: implemented
 title: Synthesis at ess/26 does not stop with InvalidReplay
 summary: Synthesis at ess/26 and later stops with InvalidReplay (complete subject snapshot has no comparison) on a model with a one-time response and an external refusal before an updating branch; reproduced on 0.69.2.
 tags:
@@ -10,10 +10,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T15:23:03Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-26T15:23:04Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-10-26T16:50:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 
