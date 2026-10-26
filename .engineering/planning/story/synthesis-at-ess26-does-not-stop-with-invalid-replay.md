@@ -2,15 +2,18 @@
 format: aep.planning-md/3
 id: story:synthesis-at-ess26-does-not-stop-with-invalid-replay
 kind: story
-status: draft
+status: active
 title: Synthesis at ess/26 does not stop with InvalidReplay
-summary: 'Adopter report (2026-10-22, ess 0.68.0): synthesis stops at ess/26 with InvalidReplay; not yet reproduced.'
+summary: Synthesis at ess/26 and later stops with InvalidReplay (complete subject snapshot has no comparison) on a model with a one-time response and an external refusal before an updating branch; reproduced on 0.69.2.
 tags:
 - ess-0.70.0
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 2
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-26T15:23:03Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-10-26T15:23:04Z", actor: "human:timo", revision: 6}
 ---
 ## Problem
 
@@ -37,3 +40,9 @@ Priority: this adopter's reports go first; this story is ahead of the other 0.70
 - `a_replay_beside_an_ess26_read_back_is_admitted`: that fixture synthesizes at `ess/26` and later, and every synthesized scenario passes `admit_suite`.
 - `a_synthesized_suite_never_fails_its_own_admission`: synthesis that would write a suite its own admission refuses reports a typed refusal naming the scenario and the step, instead of stopping.
 - Models below `ess/26` keep their suite bytes.
+
+## Reproduction
+
+Reproduced 2026-10-26 on ess 0.69.2 with a neutral model from a second adopter report (one entity, a creator with `one_time_response`, an updater whose first outcome is an `external:` refusal before the updating branch, an actor that may not send the updater, a `read_your_writes` view of the entity). `ess verify conform synthesize` exits 1 at `ess/26` and `ess/30` with `error: $suite: InvalidReplay: complete subject snapshot has no comparison;`; the same model at `ess/25` exits 0. Failing scenario as reported: `CreateItem/disclosure/created/code/denied/demo.shop.Relabel/as/actor/demo.shop.Clerk`.
+
+Reporter hypothesis (unverified): in `synthesize/disclosure.rs`, `denied_run` picks the external refusal branch, whose run splits the complete-row check into `snapshot_complete_subject` in `run.setup` and `expect_complete_subject_unchanged` in `run.invoke`; `denied_cell` keeps all of `run.setup` but only `ExecuteCommand` from `run.invoke`, so the snapshot stays and its comparison is lost. `grant.rs::refused_from_template` keeps both.
