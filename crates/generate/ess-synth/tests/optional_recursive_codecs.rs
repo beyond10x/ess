@@ -13,8 +13,10 @@
 //! - the Go server's codecs and its served command.
 //!
 //! The controls hold the rest of the decision (`docs/design/optional-recursive-rust.md`): a label
-//! used as an identifier is refused, source-addressed, by every code target rather than emitted
-//! as source that does not compile, and a mutual optional cycle stays a Rust `recursive-layout`
+//! used as an identifier derives one on every code target, every non-alphanumeric character a
+//! word break (`call.started` is `CallStarted`, beyond10x/ess#662), a variant's `code:` names it
+//! instead, and a label left with no identifier is refused, source-addressed, rather than emitted
+//! as source that does not compile; a mutual optional cycle stays a Rust `recursive-layout`
 //! refusal while Go, whose optional is a pointer, compiles and round-trips it.
 
 use std::path::{Path, PathBuf};
@@ -631,54 +633,219 @@ fn mutual_optional_recursion_stays_a_rust_refusal_and_compiles_in_go() {
     assert!(String::from_utf8_lossy(&tested.stdout).contains("go mutual values compile"));
 }
 
-/// Spellings that are wire text and not identifiers, reached as identifiers: a bare enum label, a
-/// union label, and an explicit variant name.
-const NOT_IDENTIFIERS: &str = r"format: ess/19
+/// Wire spellings used as variant names (beyond10x/ess#662): bare dotted enum labels, a label that
+/// is not one word, an explicit variant name that is not an identifier, and a union label, each
+/// reached by a served command so every codec that names a variant names these.
+const DOTTED: &str = r"format: ess/19
 system: demo
 version: v1
 domain: demo.kernel
 types:
-  - name: demo.kernel.ExplanationFormat
+  - name: demo.kernel.CallEvent
     kind: enum
     variants:
+      - call.started
+      - call.ended
       - demo.explanation/2
       - {name: 'Bad.Name', wire: demo.bad/1}
-      - {name: Fine, wire: demo.fine/1}
   - name: demo.kernel.Shape
     kind: union
     tag: kind
     variants:
       demo.shape/1: String
+events:
+  - name: demo.kernel.Recorded
+    fields:
+      - {name: event, type: demo.kernel.CallEvent}
+      - {name: shape, type: demo.kernel.Shape}
+commands:
+  - name: demo.kernel.Record
+    input:
+      - {name: event, type: demo.kernel.CallEvent}
+      - {name: shape, type: demo.kernel.Shape}
+    outcomes:
+      - name: recorded
+        emits: [demo.kernel.Recorded]
+        payload:
+          demo.kernel.Recorded:
+            event: input.event
+            shape: input.shape
+components:
+  - component: kernel
+    owns:
+      domains: [demo.kernel]
+    accepts:
+      commands: [demo.kernel.Record]
+    publishes:
+      events: [demo.kernel.Recorded]
+    reached_by: network
+";
+
+/// The Go harness for [`DOTTED`]: each label encodes as its declared spelling and decodes back to
+/// the variant whose identifier was derived from it; the derived identifier is not a wire value.
+const GO_DOTTED_HARNESS: &str = r#"package server
+
+import (
+	"testing"
+
+	"example.invalid/demo/types/kernel"
+)
+
+func TestDottedLabels(t *testing.T) {
+	labels := []struct {
+		variant kernel.CallEvent
+		label   string
+	}{
+		{kernel.CallEventCallStarted{}, "call.started"},
+		{kernel.CallEventCallEnded{}, "call.ended"},
+		{kernel.CallEventDemoExplanation2{}, "demo.explanation/2"},
+		{kernel.CallEventBadName{}, "demo.bad/1"},
+	}
+	for _, each := range labels {
+		if got := encodeDemoKernelCallEvent(each.variant); got != each.label {
+			t.Fatalf("%T encodes as %v, want %q", each.variant, got, each.label)
+		}
+		back, err := decodeDemoKernelCallEvent(each.label, "event")
+		if err != nil || back != each.variant {
+			t.Fatalf("%q decodes as %T, %v", each.label, back, err)
+		}
+	}
+	if _, err := decodeDemoKernelCallEvent("CallStarted", "event"); err == nil {
+		t.Fatal("the derived identifier is not the wire label")
+	}
+	t.Log("go codecs: dotted labels exact")
+}
+"#;
+
+/// The generated Rust workspace of `synthesis`, checked by its own toolchain.
+fn rust_checks(synthesis: &Synthesis, label: &str) {
+    let root = scratch(label);
+    write(synthesis, &root);
+    let checked = cargo(&root, &["check", "--offline", "--workspace"], false);
+    assert!(
+        checked.status.success(),
+        "the generated {label} workspace compiles; see {}",
+        root.display()
+    );
+}
+
+/// The Go module of `synthesis`, vetted, with `harness` run inside its server package.
+fn go_runs(synthesis: &Synthesis, label: &str, harness: &str, test: &str, expected: &str) {
+    let directory = scratch(label);
+    write(synthesis, &directory);
+    std::fs::write(directory.join("server/zz_labels_test.go"), harness).unwrap();
+    assert!(go(&directory, &["vet", "./..."]).status.success());
+    let tested = go(
+        &directory,
+        &["test", "-count=1", "-run", test, "-v", "./server/"],
+    );
+    assert!(tested.status.success(), "the Go {label} harness failed");
+    assert!(String::from_utf8_lossy(&tested.stdout).contains(expected));
+}
+
+fn everything(synthesis: &Synthesis) -> String {
+    synthesis
+        .artifacts
+        .values()
+        .map(|artifact| artifact.contents.as_str())
+        .collect()
+}
+
+#[test]
+fn dotted_labels_synthesize_as_derived_identifiers_on_every_code_target() {
+    let ir = ir(DOTTED);
+    let rust = synthesize_for(&ir, Target::Rust)
+        .unwrap_or_else(|failure| panic!("Rust derives identifiers from labels: {failure}"));
+    let web = synthesize_for(&ir, Target::Web)
+        .unwrap_or_else(|failure| panic!("Web derives identifiers from labels: {failure}"));
+    let go = synthesize_for(&ir, Target::Go)
+        .unwrap_or_else(|failure| panic!("Go derives identifiers from labels: {failure}"));
+    let rust_text = everything(&rust);
+    for identifier in [
+        "CallStarted",
+        "CallEnded",
+        "DemoExplanation2",
+        "BadName",
+        "DemoShape1",
+    ] {
+        assert!(
+            rust_text.contains(&format!("    {identifier},"))
+                || rust_text.contains(&format!("    {identifier}(")),
+            "Rust declares the variant `{identifier}`"
+        );
+    }
+    for label in [
+        "\"call.started\"",
+        "\"demo.explanation/2\"",
+        "\"demo.shape/1\"",
+    ] {
+        assert!(rust_text.contains(label), "Rust's codec writes {label}");
+    }
+    assert!(
+        everything(&web).contains("CallStarted"),
+        "the Web bridge names the derived variant"
+    );
+    let go_text = everything(&go);
+    for identifier in [
+        "CallEventCallStarted",
+        "CallEventDemoExplanation2",
+        "CallEventBadName",
+        "ShapeDemoShape1",
+    ] {
+        assert!(
+            go_text.contains(&format!("type {identifier} ")),
+            "Go declares `{identifier}`"
+        );
+    }
+    for target in [Target::Rust, Target::Web, Target::Go] {
+        assert_eq!(
+            synthesize_for(&ir, target).unwrap().artifacts,
+            synthesize_for(&ir, target).unwrap().artifacts,
+            "{} synthesis is deterministic",
+            target.name()
+        );
+    }
+    rust_checks(&rust, "rust-dotted");
+    go_runs(
+        &go,
+        "go-dotted",
+        GO_DOTTED_HARNESS,
+        "TestDottedLabels",
+        "go codecs: dotted labels exact",
+    );
+}
+
+/// A label that is still not an identifier once every non-alphanumeric character is a word break.
+const LEADING_DIGIT: &str = r"format: ess/19
+system: demo
+version: v1
+domain: demo.kernel
+types:
+  - name: demo.kernel.CallEvent
+    kind: enum
+    variants:
+      - '1.0'
+      - call.started
 ";
 
 #[test]
-fn labels_used_as_identifiers_are_refused_by_every_code_target() {
-    let ir = ir(NOT_IDENTIFIERS);
-    let expected = [
-        "demo.kernel.ExplanationFormat.Bad.Name",
-        "demo.kernel.ExplanationFormat.demo.explanation/2",
-        "demo.kernel.Shape.demo.shape/1",
-    ];
+fn a_label_with_no_identifier_after_conversion_is_still_refused() {
+    let ir = ir(LEADING_DIGIT);
     for (target, format) in [
         (Target::Rust, "ess-target-failure/1"),
         (Target::Web, "ess-target-failure/1"),
-        (Target::Go, "ess-target-failure/2"),
     ] {
         let (actual, causes) = refusal(&ir, target);
         assert_eq!(actual, format, "{}", target.name());
+        assert_eq!(causes.len(), 1, "{}: {causes:?}", target.name());
+        let (code, sources, detail) = &causes[0];
+        assert_eq!(code, "invalid-identifier", "{}", target.name());
+        assert_eq!(sources, &["demo.kernel.CallEvent.1.0"], "{}", target.name());
         assert!(
-            causes
-                .iter()
-                .all(|(code, _, _)| code == "invalid-identifier"),
-            "{}: {causes:?}",
+            detail.contains("`10`") && detail.contains("`{name: …, code: <identifier>}`"),
+            "{}: the refusal names the derived identifier and the code remedy: {detail}",
             target.name()
         );
-        let mut sources: Vec<&str> = causes
-            .iter()
-            .flat_map(|(_, sources, _)| sources.iter().map(String::as_str))
-            .collect();
-        sources.sort_unstable();
-        assert_eq!(sources, expected, "{}: {causes:?}", target.name());
         assert_eq!(
             synthesize_for(&ir, target)
                 .err()
@@ -691,14 +858,276 @@ fn labels_used_as_identifiers_are_refused_by_every_code_target() {
             "the refusal is deterministic"
         );
     }
-    let (_, go) = refusal(&ir, Target::Go);
-    let bare = go
-        .iter()
-        .find(|(_, sources, _)| sources[0].ends_with("demo.explanation/2"))
-        .unwrap();
+    let go = synthesize_for(&ir, Target::Go)
+        .unwrap_or_else(|failure| panic!("Go prefixes the type name: {failure}"));
+    assert!(everything(&go).contains("type CallEvent10 "));
+}
+
+/// A dotted label whose identifier the author names, beside one derived.
+const CODED: &str = r"format: ess/19
+system: demo
+version: v1
+domain: demo.kernel
+types:
+  - name: demo.kernel.CallEvent
+    kind: enum
+    variants:
+      - {name: call.started, code: Begun}
+      - call.ended
+events:
+  - name: demo.kernel.Recorded
+    fields:
+      - {name: event, type: demo.kernel.CallEvent}
+commands:
+  - name: demo.kernel.Record
+    input:
+      - {name: event, type: demo.kernel.CallEvent}
+    outcomes:
+      - name: recorded
+        emits: [demo.kernel.Recorded]
+        payload:
+          demo.kernel.Recorded:
+            event: input.event
+components:
+  - component: kernel
+    owns:
+      domains: [demo.kernel]
+    accepts:
+      commands: [demo.kernel.Record]
+    publishes:
+      events: [demo.kernel.Recorded]
+    reached_by: network
+";
+
+const GO_CODED_HARNESS: &str = r#"package server
+
+import (
+	"testing"
+
+	"example.invalid/demo/types/kernel"
+)
+
+func TestCodedLabel(t *testing.T) {
+	if got := encodeDemoKernelCallEvent(kernel.Begun{}); got != "call.started" {
+		t.Fatalf("Begun encodes as %v", got)
+	}
+	back, err := decodeDemoKernelCallEvent("call.started", "event")
+	if err != nil || back != (kernel.Begun{}) {
+		t.Fatalf("call.started decodes as %T, %v", back, err)
+	}
+	if _, err := decodeDemoKernelCallEvent("Begun", "event"); err == nil {
+		t.Fatal("the authored identifier is not the wire label")
+	}
+	t.Log("go codecs: the authored identifier carries its label")
+}
+"#;
+
+#[test]
+fn a_variant_code_names_its_identifier_on_every_target() {
+    let ir = ir(CODED);
+    let rust = synthesize_for(&ir, Target::Rust)
+        .unwrap_or_else(|failure| panic!("Rust honours a variant's code: {failure}"));
+    let rust_text = everything(&rust);
+    assert!(rust_text.contains("    Begun,"), "Rust declares `Begun`");
     assert!(
-        bare.2.contains("invalid Go identifier") && bare.2.contains("wire"),
-        "the Go refusal names the identifier and the explicit-name remedy: {}",
-        bare.2
+        rust_text.contains("    CallEnded,"),
+        "Rust derives `CallEnded`"
+    );
+    assert!(
+        !rust_text.contains("CallStarted"),
+        "the authored identifier replaces the derived one"
+    );
+    assert!(rust_text.contains("::Begun => json::push_text(out, \"call.started\")"));
+    synthesize_for(&ir, Target::Web)
+        .unwrap_or_else(|failure| panic!("Web honours a variant's code: {failure}"));
+    let go = synthesize_for(&ir, Target::Go)
+        .unwrap_or_else(|failure| panic!("Go honours a variant's code: {failure}"));
+    let go_text = everything(&go);
+    assert!(go_text.contains("type Begun "), "Go declares `Begun`");
+    assert!(go_text.contains("type CallEventCallEnded "));
+    assert!(!go_text.contains("CallStarted"));
+    rust_checks(&rust, "rust-coded");
+    go_runs(
+        &go,
+        "go-coded",
+        GO_CODED_HARNESS,
+        "TestCodedLabel",
+        "go codecs: the authored identifier carries its label",
+    );
+}
+
+/// Two labels that derive one identifier.
+const COLLIDING: &str = r"format: ess/19
+system: demo
+version: v1
+domain: demo.kernel
+types:
+  - name: demo.kernel.Kind
+    kind: enum
+    variants:
+      - a.b
+      - a_b
+";
+
+#[test]
+fn labels_colliding_after_conversion_are_refused_by_rust() {
+    let ir = ir(COLLIDING);
+    for target in [Target::Rust, Target::Web] {
+        let (_, causes) = refusal(&ir, target);
+        assert_eq!(causes.len(), 1, "{}: {causes:?}", target.name());
+        let (code, sources, detail) = &causes[0];
+        assert_eq!(code, "symbol-collision", "{}", target.name());
+        assert_eq!(
+            sources,
+            &["demo.kernel.Kind.a.b", "demo.kernel.Kind.a_b"],
+            "{}",
+            target.name()
+        );
+        assert!(
+            detail.contains("`AB`") && detail.contains("`{name: …, code: <identifier>}`"),
+            "{}: the refusal names the identifier and the flat code remedy: {detail}",
+            target.name()
+        );
+    }
+    synthesize_for(&ir, Target::Go).expect("Go suffixes the second identifier, as for `a-b`");
+}
+
+// Adversary pass 1 on this unit: moved here from `adversary_g_labels.rs` because its Rust half runs
+// `cargo check`, and only a file already on `ess-xtask`'s `no_test_builds` allowlist may.
+
+/// A coded dotted variant, a derived dotted variant and a dotted union label, each read by a
+/// command guard, a stored-row guard, a literal in a payload and in `sets:`, an entity invariant
+/// and a view filter.
+const EVERY_SITE: &str = r#"format: ess/22
+system: demo
+version: v1
+domain: demo.kernel
+types:
+  - name: demo.kernel.Phase
+    kind: enum
+    variants:
+      - {name: call.started, code: Begun}
+      - call.ended
+      - Idle
+  - name: demo.kernel.Shape
+    kind: union
+    tag: kind
+    variants:
+      demo.shape/1: String
+      demo.none: ~
+entities:
+  - name: demo.kernel.Call
+    identity: {name: call_id, type: String}
+    fields:
+      - {name: phase, type: demo.kernel.Phase}
+      - {name: shape, type: demo.kernel.Shape}
+    invariants:
+      - phase: {any_of: [call.started, call.ended]}
+    lifecycle:
+      initial: Open
+      states: [Open, Done]
+      terminal: [Done]
+      transitions:
+        - {name: finish, from: [Open], to: Done}
+errors:
+  - name: demo.kernel.Refused
+events:
+  - name: demo.kernel.Opened
+    fields:
+      - {name: call_id, type: String}
+      - {name: phase, type: demo.kernel.Phase}
+      - {name: first, type: demo.kernel.Phase}
+  - name: demo.kernel.Finished
+    fields:
+      - {name: call_id, type: String}
+commands:
+  - name: demo.kernel.Open
+    input:
+      - {name: call_id, type: String}
+      - {name: phase, type: demo.kernel.Phase}
+      - {name: shape, type: demo.kernel.Shape}
+    outcomes:
+      - name: ended
+        when: phase == "call.ended"
+        error: demo.kernel.Refused
+      - name: idle
+        when: phase == Idle
+        error: demo.kernel.Refused
+      - name: opened
+        creates: demo.kernel.Call
+        instance: call_id
+        sets: {phase: input.phase, shape: input.shape}
+        emits: [demo.kernel.Opened]
+        payload:
+          demo.kernel.Opened: {call_id: input.call_id, phase: input.phase, first: call.started}
+  - name: demo.kernel.Finish
+    input:
+      - {name: call_id, type: String}
+    outcomes:
+      - name: finished
+        when_subject: {field: phase, equals: call.started}
+        moves: demo.kernel.Call.finish
+        instance: call_id
+        sets: {phase: call.ended}
+        emits: [demo.kernel.Finished]
+        payload:
+          demo.kernel.Finished: {call_id: input.call_id}
+      - name: not-started
+        error: demo.kernel.Refused
+views:
+  - name: demo.kernel.Started
+    source: demo.kernel.Call
+    consistency: read_your_writes
+    filter: phase == "call.started"
+    fields:
+      - {name: call_id, type: String}
+      - {name: phase, type: demo.kernel.Phase}
+components:
+  - component: kernel
+    owns: {domains: [demo.kernel]}
+    accepts: {commands: [demo.kernel.Open, demo.kernel.Finish]}
+    publishes: {events: [demo.kernel.Opened, demo.kernel.Finished]}
+    reached_by: network
+"#;
+
+/// Regression guard: every site that names a variant agrees with the declaration, so the
+/// generated Rust workspace checks and the Go module vets.
+#[test]
+fn adv_g_dotted_and_coded_labels_reach_every_rust_and_go_site() {
+    let ir = ir(EVERY_SITE);
+    let rust = synthesize_for(&ir, Target::Rust)
+        .unwrap_or_else(|failure| panic!("Rust synthesizes every site: {failure}"));
+    let rust_text: String = rust
+        .artifacts
+        .values()
+        .map(|a| a.contents.as_str())
+        .collect();
+    assert!(
+        rust_text.contains("Phase::Begun"),
+        "Rust names the coded variant"
+    );
+    assert!(
+        !rust_text.contains("CallStarted"),
+        "nothing names the derived one"
+    );
+    let root = scratch("rust-every-site");
+    write(&rust, &root);
+    assert!(
+        cargo(&root, &["check", "--offline", "--workspace"], false)
+            .status
+            .success(),
+        "the generated Rust workspace checks; see {}",
+        root.display()
+    );
+    synthesize_for(&ir, Target::Web)
+        .unwrap_or_else(|failure| panic!("Web synthesizes every site: {failure}"));
+    let module = synthesize_for(&ir, Target::Go)
+        .unwrap_or_else(|failure| panic!("Go synthesizes every site: {failure}"));
+    let directory = scratch("go-every-site");
+    write(&module, &directory);
+    assert!(
+        go(&directory, &["vet", "./..."]).status.success(),
+        "the generated Go module vets; see {}",
+        directory.display()
     );
 }

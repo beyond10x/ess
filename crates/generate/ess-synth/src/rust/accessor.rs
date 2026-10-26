@@ -143,6 +143,7 @@ fn emit_projection(
             Operation::Optional { next } => {
                 let _ = write!(out, "value.as_ref().and_then(project_{next})");
             }
+            // A union label declares no `code:`, so its identifier is the derived one.
             Operation::Union { variants, .. } => {
                 out.push_str("match value {\n");
                 for (label, next) in variants {
@@ -151,12 +152,12 @@ fn emit_projection(
                             let _ = writeln!(
                                 out,
                                 "{source}::{}(inner) => project_{next}(inner),",
-                                name::pascal(label)
+                                name::variant(label)
                             );
                         }
                         // A unit variant (ess/22) carries nothing to read.
                         None => {
-                            let _ = writeln!(out, "{source}::{} => None,", name::pascal(label));
+                            let _ = writeln!(out, "{source}::{} => None,", name::variant(label));
                         }
                     }
                 }

@@ -678,7 +678,7 @@ impl<'a> Check<'a> {
                             .map(|variant| {
                                 format!(
                                     "{enumeration}::{} => {:?}",
-                                    name::pascal(variant.name()),
+                                    self.emit.layout.variant(handle.name(), variant.name()),
                                     variant.name()
                                 )
                             })

@@ -57,6 +57,17 @@ pub fn type_fragment(text: &str) -> String {
         .collect()
 }
 
+/// The Rust identifier an enum or union label derives: [`type_fragment`] of it, so `call.started`
+/// is `CallStarted` and `demo.explanation/2` is `DemoExplanation2` (beyond10x/ess#662).
+///
+/// The types generator derives a variant's identifier with the same rule, every non-alphanumeric
+/// character a word break. For a label of letters, digits, `-` and `_` it is [`pascal`], so only a
+/// label that allocated no identifier before derives another one now. A variant's authored `code:`
+/// wins over it; `Layout::variant` is where that is read.
+pub fn variant(label: &str) -> String {
+    type_fragment(label)
+}
+
 /// A Rust value identifier for a specification word: lower snake case, keyword-escaped.
 ///
 /// Fields, methods and modules all take this path, so `invoice_id` stays itself, a transition named

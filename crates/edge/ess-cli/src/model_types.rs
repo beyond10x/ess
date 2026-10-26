@@ -44,6 +44,11 @@ pub struct Args {
     /// Library destination, outside the specification input tree.
     #[arg(long)]
     out: PathBuf,
+    /// Compare the library with what `--out` holds instead of writing it: exit 1 naming each file
+    /// that is missing, differs, or is recorded in `.ess-output` and no longer generated. Writes
+    /// nothing.
+    #[arg(long, requires = "out")]
+    check: bool,
 }
 
 /// How generated declarations are named (beyond10x/ess#409).
@@ -108,13 +113,21 @@ pub fn run(args: &Args) -> Result<ExitCode> {
     {
         bail!("model type output must not replace or reside within its specification input");
     }
-    crate::write_owned_files(
-        &destination,
-        "model-types",
-        files
-            .iter()
-            .map(|(path, contents)| (path.as_str(), contents.as_str())),
-    )?;
+    let owned = files
+        .iter()
+        .map(|(path, contents)| (path.as_str(), contents.as_str()));
+    if args.check {
+        if !crate::check_owned_tree(&destination, "model-types", owned, "ess generate types")? {
+            return Ok(ExitCode::from(1));
+        }
+        println!(
+            "{} model type(s), current in {}",
+            plan.declarations().len(),
+            args.out.display()
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
+    crate::write_owned_files(&destination, "model-types", owned)?;
     println!(
         "{} model type(s), written to {}; runtime obligations in types-report.json",
         plan.declarations().len(),

@@ -3368,9 +3368,17 @@ impl Guards<'_> {
             Kind::Bool => format!("{reference}.map(|value| *value)"),
             Kind::Enum(type_ref, variants) => {
                 let path = self.layout.absolute_type(type_ref);
+                let ResolvedTypeRef::Declared { name: enumeration } = type_ref else {
+                    unreachable!("an enum path ends at the declared enum")
+                };
                 let arms: Vec<String> = variants
                     .iter()
-                    .map(|variant| format!("{path}::{} => {variant:?}", name::pascal(variant)))
+                    .map(|variant| {
+                        format!(
+                            "{path}::{} => {variant:?}",
+                            self.layout.variant(enumeration.name(), variant)
+                        )
+                    })
                     .collect();
                 format!(
                     "{reference}.map(|value| match value {{ {} }}.to_owned())",
@@ -3390,7 +3398,7 @@ impl Guards<'_> {
                     .map(|variant| {
                         format!(
                             "{path}::{} => {:?}",
-                            name::pascal(&variant.name),
+                            self.layout.variant(state_type.name(), &variant.name),
                             variant.name
                         )
                     })
@@ -3518,7 +3526,9 @@ fn literal(ir: &EssIr, layout: &Layout, target: &ResolvedTypeRef, text: &str) ->
                 ResolvedBody::Newtype { of, .. } => {
                     format!("{path}({})", literal(ir, layout, of, text))
                 }
-                ResolvedBody::Enum { .. } => format!("{path}::{}", name::pascal(text)),
+                ResolvedBody::Enum { .. } => {
+                    format!("{path}::{}", layout.variant(name.name(), text))
+                }
                 _ => unreachable!("the plan admits literals of scalars only"),
             }
         }

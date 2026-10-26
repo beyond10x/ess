@@ -115,7 +115,7 @@ fn predicate(
                 End::Enum(of) => format!(
                     "matches!(value, {}::{})",
                     types_path(layout, types, of.name()),
-                    name::pascal(literal)
+                    layout.variant(of.name(), literal)
                 ),
                 End::Boolean | End::Other => {
                     unreachable!("admission compares String and enum leaves with text only")

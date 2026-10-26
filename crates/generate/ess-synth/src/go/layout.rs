@@ -104,6 +104,12 @@ pub(crate) struct Layout {
     owners: BTreeMap<QualifiedName, QualifiedName>,
     /// Every identifier this emitter declares, allocated once, keyed by [`Key`].
     names: BTreeMap<String, String>,
+    /// The `code:` an author wrote, keyed like [`Self::names`], for each name allocated from one:
+    /// a declaration's `naming: { code: … }` or a variant's `{name: …, code: …}`.
+    ///
+    /// Kept apart because an authored name is held to more than a derived one. It is emitted
+    /// verbatim and referenced from other packages, so it has to be an exported identifier.
+    authored: BTreeMap<String, String>,
     /// Every event the system's log can carry, in name order.
     system_events: BTreeSet<EventHandle>,
     /// The stem every codec and served handler of a declaration is named by.
@@ -303,6 +309,7 @@ impl Layout {
             invariant,
             owners,
             names: BTreeMap::new(),
+            authored: BTreeMap::new(),
             system_events,
             codecs: crate::codec_names::CodecNames::of(ir, |declared| {
                 name::type_fragment(&declared.to_string())
@@ -452,14 +459,25 @@ impl Layout {
     ///
     /// The table is the whole set of identifiers this emitter declares, so checking it once checks
     /// every derivation, present and future. A wire label used as an enum variant's name
-    /// (`demo.explanation/2`) or a union label is the case that reaches here: Go would otherwise
-    /// receive a type declaration it cannot parse. The source is the key's specification
-    /// spellings joined by `.`, the address the Rust target gives the same declaration.
+    /// (`demo.explanation/2`) or a union label derives an identifier in
+    /// [`Self::allocate_type_names`], so what reaches here is mostly an authored name: a
+    /// declaration's `naming: { code: … }` or a variant's `code:`, emitted verbatim. An authored
+    /// name is held to an exported identifier, because other packages reference it: `begun` would
+    /// be `undefined: kernel.begun` there, and the keyword `type` does not parse.
+    /// The source is the key's specification spellings joined by `.`, the address the Rust target
+    /// gives the same declaration.
     fn invalid_identifiers(&self, ir: &EssIr) -> Vec<crate::TargetFailureCause> {
         self.names
             .iter()
-            .filter(|(_, allocated)| !name::valid_ident(allocated))
-            .map(|(key, allocated)| {
+            .filter_map(|(key, allocated)| {
+                let written = self.authored.get(key);
+                let admitted = match written {
+                    Some(_) => name::is_exported(allocated),
+                    None => name::valid_ident(allocated),
+                };
+                (!admitted).then_some((key, allocated, written))
+            })
+            .map(|(key, allocated, written)| {
                 let parts: Vec<&str> = key.split('\u{1f}').collect();
                 let (kind, spellings) = parts.split_first().expect("a key names its kind");
                 let enumerated = *kind == key::VARIANT
@@ -469,16 +487,23 @@ impl Layout {
                                 && matches!(candidate.body, ResolvedBody::Enum { .. })
                         })
                     });
-                let remedy = if enumerated {
-                    "; declare the variant as `{name: <identifier>, wire: <this spelling>}` to \
-                     keep its serialized value"
-                } else {
-                    ""
+                let detail = match written {
+                    Some(written) => format!(
+                        "{kind} allocates invalid Go identifier `{allocated}`: the written \
+                         `code: {written}` is not an exported Go identifier (an upper-case letter, \
+                         then letters, digits or `_`), so write one that is"
+                    ),
+                    None if enumerated => format!(
+                        "{kind} allocates invalid Go identifier `{allocated}`; write the variant \
+                         as `{{name: …, code: <identifier>}}` to choose the identifier it is \
+                         emitted as, which changes no wire value"
+                    ),
+                    None => format!("{kind} allocates invalid Go identifier `{allocated}`"),
                 };
                 crate::TargetFailureCause::new(
                     crate::TargetFailureCode::InvalidIdentifier,
                     vec![spellings.join(".")],
-                    format!("{kind} allocates invalid Go identifier `{allocated}`{remedy}"),
+                    detail,
                 )
             })
             .collect()
@@ -709,7 +734,13 @@ impl Layout {
     }
 
     /// A newtype's constructor, and one variant type per enum or union alternative.
+    ///
+    /// A variant type is the type's name and the identifier its label derives, every
+    /// non-alphanumeric character a word break (`CallEvent` and `call.started` are
+    /// `CallEventCallStarted`, beyond10x/ess#662), the rule the Rust target and the types generator
+    /// apply. An enum variant's `code:` names the whole identifier instead, as a declaration's does.
     fn allocate_type_names(&mut self, ir: &EssIr, taken: &mut BTreeMap<String, BTreeSet<String>>) {
+        let variant_aliases = crate::variant_code_aliases(ir);
         for declared in ir.types().values() {
             let package = self.package_of(&declared.name).clone();
             let type_name = self.declared(&declared.name).to_owned();
@@ -724,19 +755,22 @@ impl Layout {
                     );
                 }
                 ResolvedBody::Enum { variants } => {
+                    let aliases = variant_aliases.get(&declared.name);
                     for variant in variants {
-                        let candidate = format!("{type_name}{}", name::exported(variant));
-                        self.put(
-                            taken,
-                            &package,
-                            &[key::VARIANT, &declared.name.to_string(), variant],
-                            candidate,
-                        );
+                        let parts = [key::VARIANT, &declared.name.to_string(), variant];
+                        let written = aliases.and_then(|aliases| aliases.get(variant.name()));
+                        if let Some(written) = written {
+                            self.authored.insert(parts.join("\u{1f}"), written.clone());
+                        }
+                        let candidate = written.cloned().unwrap_or_else(|| {
+                            format!("{type_name}{}", name::type_fragment(variant))
+                        });
+                        self.put(taken, &package, &parts, candidate);
                     }
                 }
                 ResolvedBody::Union { variants, .. } => {
                     for variant in variants.keys() {
-                        let candidate = format!("{type_name}{}", name::exported(variant));
+                        let candidate = format!("{type_name}{}", name::type_fragment(variant));
                         self.put(
                             taken,
                             &package,
@@ -1086,16 +1120,15 @@ impl Layout {
         declared: &QualifiedName,
     ) {
         let package = self.package_of(declared).clone();
+        let parts = [key::DECLARED, &declared.to_string()];
+        if let Some(written) = self.code_aliases.get(declared) {
+            self.authored.insert(parts.join("\u{1f}"), written.clone());
+        }
         let candidate =
             self.code_aliases.get(declared).cloned().unwrap_or_else(|| {
                 name::type_name(declared, self.owner(declared).segments().len())
             });
-        self.put(
-            taken,
-            &package,
-            &[key::DECLARED, &declared.to_string()],
-            candidate,
-        );
+        self.put(taken, &package, &parts, candidate);
     }
 
     /// Records one identifier, moving it out of the way of anything already declared in its

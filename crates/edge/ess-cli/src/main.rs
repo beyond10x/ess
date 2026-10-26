@@ -4897,13 +4897,27 @@ fn check_owned_suite<'a>(
     family: &str,
     files: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> Result<bool> {
+    check_owned_tree(root, family, files, "ess verify conform synthesize")
+}
+
+/// Compare one owner's files with the tree under `root` as `ess generate --check` compares a
+/// projection, writing nothing; `false` after naming each drifted file.
+///
+/// The shared comparison's remedies name `ess generate`; each line here names `command`, the verb
+/// that regenerates this owner, instead (beyond10x/ess#654).
+fn check_owned_tree<'a>(
+    root: &Path,
+    family: &str,
+    files: impl IntoIterator<Item = (&'a str, &'a str)>,
+    command: &str,
+) -> Result<bool> {
     let drifted =
         output_ownership::drift(root, &[output_ownership::Publication::tree(family, files)?])?;
     for drift in &drifted {
-        let remedy = if drift.remedy == output_ownership::REGENERATE {
-            SUITE_REMEDY
-        } else {
-            drift.remedy
+        let remedy = match drift.remedy {
+            output_ownership::REGENERATE => format!("regenerate it with `{command}`"),
+            output_ownership::REENROLL => format!("{} with `{command}`", drift.remedy),
+            other => other.to_owned(),
         };
         eprintln!(
             "{} {}; {remedy}",

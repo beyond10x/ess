@@ -626,7 +626,7 @@ fn mapping_expression(
         DeterminedInput::Variant { of, value } => format!(
             "{}::{}",
             types_path(layout, types, of.name()),
-            name::pascal(value)
+            layout.variant(of.name(), value)
         ),
         DeterminedInput::Omitted => "None".to_owned(),
     }
