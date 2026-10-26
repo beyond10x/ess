@@ -10,7 +10,7 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Problem
 
@@ -20,3 +20,9 @@ Adopter review batch 2c, item K (repro `repro-r3a-r1`, ess/25; reproduced on 0.6
 
 - `repro-r3a-r1` and `repro-r3a` synthesize `SyncFlag/synced` with no refusal, and the suite passes the interpreter.
 - A model whose creator writes the filtered fields from inputs keeps its suite bytes.
+
+## Second report
+
+A second adopter (agentplugins, 0.69.2, the part of beyond10x/ess#682 still open) shows the same shape with an explicit guard. An `updates:` outcome with `instances: {where: shelf_id == input.shelf_id}` (`relabelled`) is refused as ESS-SYNTH-001 "no three rows the filter selects" when the row's creator has `when_related: {via: input.shelf_id, exists: false}` (`inst.yaml`, 5/1). Without that branch it gives 5/0 (`inst-u.yaml`). It reproduces on the 0.70.0 head as well. The creator already writes `shelf_id` from an input, so the help is wrong here too.
+
+The shared cause: a constraint the creator puts on a related row keyed by the filtered field (a related read, or an `exists: false` refusal) stops synthesis from arranging the three rows the filter's witness needs, each with its own related row. Acceptance adds: `agentplugins-guarded-creator/inst.yaml` synthesizes `relabelled` with no refusal and passes the interpreter.
