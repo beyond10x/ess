@@ -155,7 +155,7 @@ fn type_encoder(
                 let _ = writeln!(
                     out,
                     "        {path}::{} => json::push_text(out, {:?}),",
-                    name::pascal(variant),
+                    layout.variant(&declared.name, variant),
                     variant.wire()
                 );
             }
@@ -172,7 +172,7 @@ fn type_encoder(
                         "        {path}::{} => {{\n            out.push('{{');\n            \
                          json::member(out, {tag:?});\n            json::push_text(out, \
                          {label:?});\n            out.push('}}');\n        }}",
-                        name::pascal(label)
+                        layout.variant(&declared.name, label)
                     );
                     continue;
                 };
@@ -180,7 +180,7 @@ fn type_encoder(
                     out,
                     "        {path}::{}(held) => {{\n            out.push('{{');\n            \
                      json::member(out, {tag:?});\n            json::push_text(out, {label:?});",
-                    name::pascal(label)
+                    layout.variant(&declared.name, label)
                 );
                 encode_member(out, layout, "            ", content, "*held", payload, 0);
                 out.push_str("            out.push('}');\n        }\n");
@@ -269,7 +269,7 @@ fn type_decoder(
                     out,
                     "        {:?} => {path}::{},",
                     variant.wire(),
-                    name::pascal(variant)
+                    surface.layout().variant(&declared.name, variant)
                 );
             }
             let _ = writeln!(
@@ -298,7 +298,7 @@ fn type_decoder(
                          Err(json::DecodeError::of(&json::nested(at, {content:?}), {:?}, \
                          found));\n            }}\n            {path}::{}\n        }}",
                         format!("no `{content}`: `{label}` carries nothing"),
-                        name::pascal(label)
+                        surface.layout().variant(&declared.name, label)
                     );
                     continue;
                 };
@@ -310,7 +310,7 @@ fn type_decoder(
                 let _ = writeln!(
                     out,
                     "        {label:?} => {path}::{}({}),",
-                    name::pascal(label),
+                    surface.layout().variant(&declared.name, label),
                     decode_member(surface, &carried, position)
                 );
             }

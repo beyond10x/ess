@@ -139,7 +139,11 @@ fn enumeration(
         emit.layout.type_name(&declared.name)
     );
     for variant in variants {
-        let _ = writeln!(out, "    /// `{variant}`.\n    {},", name::pascal(variant));
+        let _ = writeln!(
+            out,
+            "    /// `{variant}`.\n    {},",
+            emit.layout.variant(&declared.name, variant)
+        );
     }
     out.push_str("}\n");
 }
@@ -179,7 +183,7 @@ fn union(
                 let _ = writeln!(
                     out,
                     "    /// Tagged `{tag_value}` — `{type_ref}`.\n    {}({}),",
-                    name::pascal(tag_value),
+                    emit.layout.variant(&declared.name, tag_value),
                     emit.rust_type(type_ref)
                 );
             }
@@ -188,7 +192,7 @@ fn union(
                 let _ = writeln!(
                     out,
                     "    /// Tagged `{tag_value}`, carrying nothing.\n    {},",
-                    name::pascal(tag_value)
+                    emit.layout.variant(&declared.name, tag_value)
                 );
             }
         }

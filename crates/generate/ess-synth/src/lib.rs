@@ -60,7 +60,7 @@ pub(crate) mod set_effects;
 pub(crate) mod view_query;
 pub mod web;
 
-pub(crate) use alias::code_aliases;
+pub(crate) use alias::{code_aliases, variant_code_aliases};
 pub use failure::{TargetFailure, TargetFailureCause, TargetFailureCode};
 
 use std::collections::BTreeMap;

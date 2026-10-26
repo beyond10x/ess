@@ -101,7 +101,7 @@ impl<'a> Keys<'a> {
                         let _ = writeln!(
                             arms,
                             "{ty}::{} => MemoryKey::Text({:?}.into()),",
-                            name::pascal(&variant),
+                            self.layout.variant(&name, &variant),
                             variant.to_string()
                         );
                     }
@@ -112,11 +112,11 @@ impl<'a> Keys<'a> {
                     for (variant, reference) in variants {
                         // A unit variant (ess/22) is keyed by its tag alone.
                         let Some(reference) = reference else {
-                            let _ = writeln!(arms, "{ty}::{} => MemoryKey::List(vec![MemoryKey::Text({variant:?}.into())]),", name::pascal(&variant));
+                            let _ = writeln!(arms, "{ty}::{} => MemoryKey::List(vec![MemoryKey::Text({variant:?}.into())]),", self.layout.variant(&name, &variant));
                             continue;
                         };
                         let key = self.expression(&reference, "value");
-                        let _ = writeln!(arms, "{ty}::{}(value) => MemoryKey::List(vec![MemoryKey::Text({variant:?}.into()), {key}]),", name::pascal(&variant));
+                        let _ = writeln!(arms, "{ty}::{}(value) => MemoryKey::List(vec![MemoryKey::Text({variant:?}.into()), {key}]),", self.layout.variant(&name, &variant));
                     }
                     format!("match value {{ {arms} }}")
                 }

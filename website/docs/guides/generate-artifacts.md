@@ -875,6 +875,11 @@ record.
 [Commit what a reviewer reads, regenerate the rest](./commit-generated-files.md) says which
 projections to commit.
 
+A committed type library is checked the same way: `ess generate types` with the arguments that
+wrote it plus `--check` compares the library with `--out`, writes nothing, and names
+`ess generate types` in each line. A copy of the library at another path checks clean, because
+`.ess-output` records no absolute path.
+
 This repository checks its own `generated/` tree with `cargo xtask generate --check`, a command that
 is this repository's own and does not ship with `ess`. Structural synthesis, conformance, schema,
 and infrastructure fixtures are exercised by their Rust tests in `task check`.

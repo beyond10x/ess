@@ -42,6 +42,38 @@ impl Inventory {
                 format!("{role} allocates invalid Rust identifier `{token}` in `{scope}`"),
             );
         }
+        self.record(scope, token, source, role);
+    }
+
+    /// A variant's identifier, `written` when its author gave it a `code:`.
+    ///
+    /// The refusal of an invalid one says what the author can change. A written code is theirs to
+    /// rewrite. An enum variant's identifier is otherwise derived from its name, which is a wire
+    /// value, so the author names the identifier instead. A union label has no `code:`.
+    fn variant(&mut self, scope: &str, token: &str, source: &str, role: &str, written: bool) {
+        if !name::valid_ident(token) {
+            let remedy = if written {
+                format!(
+                    "; the written `code: {token}` is not a Rust identifier (a keyword, or not \
+                     spelled as one), so write one that is"
+                )
+            } else if role == "enum variant" {
+                "; write the variant as `{name: …, code: <identifier>}` to choose the identifier \
+                 it is emitted as, which changes no wire value"
+                    .to_owned()
+            } else {
+                String::new()
+            };
+            self.cause(
+                Code::InvalidIdentifier,
+                vec![source.to_owned()],
+                format!("{role} allocates invalid Rust identifier `{token}` in `{scope}`{remedy}"),
+            );
+        }
+        self.record(scope, token, source, role);
+    }
+
+    fn record(&mut self, scope: &str, token: &str, source: &str, role: &str) {
         let ident = token.strip_prefix("r#").unwrap_or(token);
         self.symbols
             .entry((scope.to_owned(), ident.to_owned()))
@@ -134,11 +166,20 @@ impl Inventory {
                 // `naming: { code: … }` is how. Say so here rather than leaving the reader to work
                 // out that a name they never wrote — the lifecycle enum a target derives — is one
                 // of the two things holding the identifier.
-                let remedy = if code == Code::SymbolCollision {
+                // An enum's or a union's variants share a scope only with their siblings. An enum
+                // variant takes the flat `code:`; a union label takes none.
+                let all = |wanted: &str| entries.iter().all(|(_, role)| role == wanted);
+                let remedy = if code != Code::SymbolCollision {
+                    ""
+                } else if all("union variant") {
+                    "; a union label declares no `code:`, so only renaming one of them, which \
+                     changes its tag on the wire, separates them"
+                } else if all("enum variant") {
+                    "; write one of them as `{name: …, code: <identifier>}` to choose the \
+                     identifier it is emitted as, which changes no wire value"
+                } else {
                     "; give one of them `naming: { code: … }` to choose the identifier it is \
                      emitted as, which changes no wire name, no document schema and no qualified name"
-                } else {
-                    ""
                 };
                 self.causes.push(TargetFailureCause::new(
                     code,
@@ -353,21 +394,23 @@ fn type_declarations(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) {
             ResolvedBody::Struct { fields, .. } => inventory.fields(&scope, &declared.name, fields),
             ResolvedBody::Enum { variants } => {
                 for variant in variants {
-                    inventory.symbol(
+                    inventory.variant(
                         &format!("variants:{source}"),
-                        &name::pascal(variant),
+                        &layout.variant(&declared.name, variant),
                         &format!("{source}.{variant}"),
                         "enum variant",
+                        layout.variant_code(&declared.name, variant).is_some(),
                     );
                 }
             }
             ResolvedBody::Union { variants, .. } => {
                 for (variant, reference) in variants {
-                    inventory.symbol(
+                    inventory.variant(
                         &format!("variants:{source}"),
-                        &name::pascal(variant),
+                        &layout.variant(&declared.name, variant),
                         &format!("{source}.{variant}"),
                         "union variant",
+                        false,
                     );
                     if let Some(reference) = reference {
                         inventory.reference(&scope, reference, &format!("{source}.{variant}"));
