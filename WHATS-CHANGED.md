@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.70.0](#a-command-guards-named-rows-beside-a-row-set-states-carry-wire-spellings-and-conformance-replays-no-longer-stop-with-invalidreplay) | A command guards named rows beside a row set, states carry wire spellings, and conformance replays no longer stop with InvalidReplay | capability | notable |
 | [0.69.2](#an-external-branch-that-copies-an-optional-input-keeps-naming-the-row-its-arrangement-created) | An external branch that copies an optional input keeps naming the row its arrangement created | capability | notable |
 | [0.69.1](#synthesis-takes-the-time-it-took-in-0680-again-where-related-rows-reach-their-state-through-a-guarded-move) | Synthesis takes the time it took in 0.68.0 again where related rows reach their state through a guarded move | capability | notable |
 | [0.69.0](#lists-can-be-filled-or-appended-to-absent-members-sent-as-null-and-ess-generate-types-writes-body-types) | Lists can be filled or appended to, absent members sent as null, and ess generate types writes body types | capability | notable |
@@ -80,6 +81,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.70.0 — 2026-10-26
+
+### A command guards named rows beside a row set, states carry wire spellings, and conformance replays no longer stop with InvalidReplay
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.70.0)
+
+Format `ess/32` lets one command guard on rows its input names beside a row-set guard, a struct declare `fields: []` and a lifecycle state declare its wire spelling. A view may publish a `Decimal`. `ess verify conform synthesize` no longer stops with InvalidReplay at `ess/26` and later.
 
 ## 0.69.2 — 2026-10-25
 

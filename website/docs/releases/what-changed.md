@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.70.0 — 2026-10-26
+
+### A command guards named rows beside a row set, states carry wire spellings, and conformance replays no longer stop with InvalidReplay
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/named-rows-beside-a-row-set) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.70.0)
+
+Format `ess/32` lets one command guard on rows its input names beside a row-set guard, a struct declare `fields: []` and a lifecycle state declare its wire spelling. A view may publish a `Decimal`. `ess verify conform synthesize` no longer stops with InvalidReplay at `ess/26` and later.
+
 ## 0.69.2 — 2026-10-25
 
 ### An external branch that copies an optional input keeps naming the row its arrangement created
