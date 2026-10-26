@@ -11,6 +11,10 @@
 
 - The synthesized Rust server's decoders refuse a field that declares a wire name when it is sent under its model name, at that field's path, instead of reading it as absent. This covers command inputs, the types they and event payloads use, and event payloads; before, an optional field sent that way was silently dropped. View parameters are unchanged.
 
+### Fixed
+
+- The accepting branch of a row-set command now gets its scenario when the creator of the rows it selects also refuses the related row on that row's stored fields, for example `when_related: {via: input.parent_id, predicate: tenant != input.tenant}` beside `exists: false`, as an adopter reported against 0.69.2. Synthesis creates the related row so that a refusal reading only its fields passes, writes an optional field a refusal compares with the input where an input then passes every refusal, and sends the creator such an input. Before, the branch was refused as ESS-SYNTH-001, and the refusal named the `exists: false` guard. Where no arrangement passes all such refusals at once, the ESS-SYNTH-001 refusal now names the fewest guards that still refuse, with each predicate printed as YAML that reads back.
+
 ## [0.69.2] — 2026-10-25
 
 ### Fixed

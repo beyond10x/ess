@@ -193,6 +193,14 @@ pub(super) const ROWS_GUARDED_CREATOR: &str = "has no arrangement of rows its se
      the command creating them refuses a missing related row through the input the selector \
      compares, and no arrangement left a related row for the rows and the send to name";
 
+/// Why no rows were arranged that take a row-set branch, where the command creating them refuses
+/// the related row the input it sets the compared field from names, on that row's stored fields,
+/// and neither the related row arranged nor the creator's input steered by it passed that refusal
+/// (beyond10x/ess#682).
+pub(super) const ROWS_REFUSING_CREATOR: &str = "has no arrangement of rows its selector selects: \
+     the command creating them refuses, on its stored fields, the related row the input the \
+     selector compares names, and no arrangement left a related row and an input it accepts";
+
 /// Why the rows a selector reads are not the scenario's steps' to decide.
 const UNFOLLOWED: &str = "a step of the scenario changes rows of the selector's entity in a way \
      synthesis does not follow (a set effect, a binding or a direct setup)";
@@ -2169,7 +2177,7 @@ fn arrange_row(
                 actors,
                 distinction,
                 &linked.fields,
-                (&linked.held, &super::related_guard::HeldRows::new()),
+                (&linked.held, &linked.rows),
                 accept,
             )
         };
@@ -2897,7 +2905,11 @@ pub(super) type Prepared = (Setup, BTreeMap<String, Node>, Vec<RefusalCause>);
 /// Where no arrangement stands and a selector compares its rows' field with an input naming a
 /// related row their creator refuses while missing, the arrangement is tried once more with that
 /// row created first, the send naming it and every row created naming it (beyond10x/ess#682).
-/// Where that fails too, a refusal for want of an arrangement names the creator's guard instead.
+/// That row is filled so the creator's refusals over its stored fields pass, and the creator's
+/// input steered by its settled values, so a refusal comparing it with the input passes too.
+/// Where that fails too, a refusal for want of an arrangement names the creator's guard that
+/// refused instead: the one refusing a missing row where no such row could be arranged, and
+/// otherwise the ones over its stored fields that the arranged row does not refute.
 pub(super) fn prepare(
     models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -2915,35 +2927,119 @@ pub(super) fn prepare(
     }) else {
         return Err(refused);
     };
-    prepare_with(models, command, outcome, actors, true)
-        .map_err(|_| guarded_creator(command, outcome, &link, refused))
+    prepare_with(models, command, outcome, actors, true).map_err(|_| {
+        guarded_creator(
+            models.arrangement,
+            (command, outcome),
+            &link,
+            actors,
+            refused,
+        )
+    })
 }
 
 /// `refused`, where it is the refusal for want of an arrangement, restated as the guard of the
-/// creator `link` names (beyond10x/ess#682): the creator's input was never the gap, so the help
-/// about writing filtered fields from an input does not apply. Every other refusal is kept.
+/// creator `link` names that refused (beyond10x/ess#682): the creator's input was never the gap,
+/// so the help about writing filtered fields from an input does not apply. Every refusal over the
+/// related row's stored fields is decided at once, on every row [`rows_tried`] arranges and every
+/// input [`steered_inputs`] tries beside it; where none leaves them all passed, the fewest that
+/// some arrangement leaves refusing are named, together where several such sets differ. Where no
+/// related row can be arranged, or some arrangement passes them all, that is the guard refusing a
+/// missing row. Every other refusal is kept.
 fn guarded_creator(
-    command: &ResolvedCommand,
-    outcome: &ResolvedOutcome,
+    ir: &EssIr,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
     link: &Link,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
     refused: RefusalCause,
 ) -> RefusalCause {
-    match &refused {
-        RefusalCause::NoWitness(unarranged) if unarranged.reason == ROWS_UNARRANGED => gap(
-            format!(
-                "{}/{}: `{}` created by `{}`, whose `{}` refuses a missing `{}` \
-                 (`when_related: {{via: input.{}, exists: false}}`)",
-                command.name,
-                outcome.name,
-                link.field,
-                link.creator,
-                link.guard,
-                link.entity.name(),
-                link.via,
-            ),
-            ROWS_GUARDED_CREATOR,
+    let RefusalCause::NoWitness(unarranged) = &refused else {
+        return refused;
+    };
+    if unarranged.reason != ROWS_UNARRANGED {
+        return refused;
+    }
+    let at = format!(
+        "{}/{}: `{}` created by `{}`",
+        command.name, outcome.name, link.field, link.creator
+    );
+    if let Some(creator) = ir.commands().get(&link.creator) {
+        let rows = rows_tried(ir, link, actors, Distinction::PLAIN);
+        let left: Vec<Vec<usize>> = rows
+            .iter()
+            .flat_map(|row| left_refusing(ir, link, creator, row))
+            .collect();
+        let fewest = left.iter().map(Vec::len).min().unwrap_or(0);
+        if fewest > 0 {
+            let mut closest: Vec<&Vec<usize>> = Vec::new();
+            for set in left.iter().filter(|set| set.len() == fewest) {
+                if !closest.contains(&set) {
+                    closest.push(set);
+                }
+            }
+            let named: BTreeSet<usize> =
+                closest.iter().flat_map(|set| set.iter().copied()).collect();
+            let guards: Vec<String> = named
+                .iter()
+                .map(|&index| {
+                    let refusal = &link.refusals[index];
+                    format!(
+                        "`{}` (`when_related: {{via: input.{}, predicate: {}}}`)",
+                        refusal.branch,
+                        link.via,
+                        flow(&refusal.predicate.to_node())
+                    )
+                })
+                .collect();
+            let mut states: Vec<String> = Vec::new();
+            for row in &rows {
+                let state = format!("`{}`", row.state);
+                if !states.contains(&state) {
+                    states.push(state);
+                }
+            }
+            let states = joined(&states, "or");
+            let entity = link.entity.name();
+            let sentence = if guards.len() == 1 {
+                format!(
+                    "{at}, whose {} refuses the `{entity}` arranged for the rows to name: no \
+                     arrangement tried, resting in {states}, with an input steered toward passing \
+                     the creator's guards passes them all, and the closest leave it refusing",
+                    guards.concat(),
+                )
+            } else {
+                let leaves = if closest.len() == 1 {
+                    "them all"
+                } else {
+                    "some of them"
+                };
+                format!(
+                    "{at}, whose {} refuse the `{entity}` arranged for the rows to name: no \
+                     arrangement tried, resting in {states}, with an input steered toward passing \
+                     them passes them all, and each of the closest leaves {leaves} refusing",
+                    joined(&guards, "and"),
+                )
+            };
+            return gap(sentence, ROWS_REFUSING_CREATOR);
+        }
+    }
+    gap(
+        format!(
+            "{at}, whose `{}` refuses a missing `{}` (`when_related: {{via: input.{}, exists: \
+             false}}`)",
+            link.guard,
+            link.entity.name(),
+            link.via,
         ),
-        _ => refused,
+        ROWS_GUARDED_CREATOR,
+    )
+}
+
+/// `items` in prose: `a`, `a <word> b`, `a, b <word> c`.
+fn joined(items: &[String], word: &str) -> String {
+    match items.split_last() {
+        Some((last, rest)) if !rest.is_empty() => format!("{} {word} {last}", rest.join(", ")),
+        _ => items.concat(),
     }
 }
 
@@ -3290,17 +3386,75 @@ fn without_link(filter: &Predicate, link: &Predicate) -> Predicate {
 
 /// A selector's conjunct `<field> == input.<input>` where a creating command of its rows sets
 /// `<field>` from the input its related guard reads, a row of `entity` (beyond10x/ess#682): a
-/// creator refusing with `when_related: {via: input.<input>, exists: false}`, whose rows name a
-/// related row the send must name too.
+/// creator refusing with `when_related: {via: input.<input>, exists: false}`, and perhaps with
+/// predicates over that row's stored fields, whose rows name a related row the send must name too.
 struct Link {
     conjunct: Predicate,
     input: String,
     field: String,
     entity: EntityHandle,
-    /// The creating command, the input of it the guard reads and the branch refusing the row.
+    /// The creating command, the input of it the guard reads and the branch refusing the row
+    /// missing.
     creator: QualifiedName,
     via: String,
     guard: OutcomeName,
+    /// The creator's branches refusing the row on its stored fields, in declaration order.
+    refusals: Vec<StoredRefusal>,
+}
+
+/// A branch of a creator refusing its related row on the row's stored fields
+/// (`when_related: {via: input.<x>, predicate: …}`, with an `error:`).
+struct StoredRefusal {
+    branch: OutcomeName,
+    predicate: Predicate,
+    /// Whether the branch reads the row alone: no input guard beside it, no further row and no
+    /// input in its predicate. Only such a refusal is passed by filling the row; one comparing the
+    /// row with the input is passed by steering the creator's input.
+    stored_only: bool,
+}
+
+impl StoredRefusal {
+    /// Whether this refusal answers for `row`, created and resting as arranged, and `creator`
+    /// sent `input`: anything but `False`, as [`super::related_guard::present_for`] decides it.
+    fn refuses(
+        &self,
+        ir: &EssIr,
+        (entity, row): (&EntityHandle, &Arrangement),
+        creator: &ResolvedCommand,
+        input: &BTreeMap<String, Node>,
+    ) -> bool {
+        subject_fact::row_truth_with(
+            ir,
+            entity,
+            &row.settled,
+            &row.unwritten,
+            Some(&row.state),
+            &self.predicate,
+            Some((creator, input)),
+        ) != Truth::False
+    }
+
+    /// The `Optional` stored fields of `entity` this refusal reads beside the input: a refusal
+    /// comparing a field the row leaves unwritten with the input is decided on no value, so a row
+    /// with each of them written is tried. It is taken only where some input then passes every
+    /// refusal ([`passes_all`]): a field read in the refusing polarity stays unwritten.
+    fn compared_optional<'e>(&self, ir: &'e EssIr, entity: &EntityHandle) -> Vec<&'e str> {
+        if self.stored_only {
+            return Vec::new();
+        }
+        let read: BTreeSet<String> = self
+            .predicate
+            .fact_paths()
+            .iter()
+            .map(|path| path.namespace().to_owned())
+            .collect();
+        ir.entity(entity)
+            .fields
+            .iter()
+            .filter(|field| field.type_ref.is_optional() && read.contains(&field.name))
+            .map(|field| field.name.as_str())
+            .collect()
+    }
 }
 
 /// The related row a selector's rows are created naming, arranged before them, and the conjunct of
@@ -3311,6 +3465,9 @@ struct Linked {
     fields: BTreeMap<String, InstanceName>,
     /// The state the arrangement leaves the related row in.
     held: BTreeMap<InstanceName, StateName>,
+    /// The values the arrangement settled for the related row, which the creator's refusals over
+    /// its stored fields are decided on, per input ([`super::related_guard::present_for`]).
+    rows: super::related_guard::HeldRows,
 }
 
 impl Linked {
@@ -3357,7 +3514,7 @@ fn related_link(
                 .then(|| (field.clone(), input.to_owned()))
         };
         let (field, input) = pair(left, right).or_else(|| pair(right, left))?;
-        let (entity, creator, via, guard) = ir
+        let (entity, creator, via, (guard, refusals)) = ir
             .drivers_of(&selection.entity)
             .iter()
             .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
@@ -3374,22 +3531,14 @@ fn related_link(
                 if via != from.as_str() {
                     return None;
                 }
-                let guard = driver.command.outcomes.iter().find(|branch| {
-                    branch.error.is_some()
-                        && matches!(
-                            &branch.condition,
-                            ResolvedCondition::Related {
-                                via: read,
-                                test: ess_compiler::ir::ResolvedRelatedTest::Absent,
-                                ..
-                            } if read.field() == via
-                        )
-                })?;
+                // A creator reading the row's fields declares the branch refusing it missing,
+                // which validation requires (`non_exhaustive_branches`).
+                let (guard, refusals) = creator_guards(driver.command, via);
                 Some((
                     related.clone(),
                     driver.command.name.clone(),
                     via.to_owned(),
-                    guard.name.clone(),
+                    (guard?, refusals),
                 ))
             })?;
         Some(Link {
@@ -3400,13 +3549,298 @@ fn related_link(
             creator,
             via,
             guard,
+            refusals,
         })
     })
 }
 
+/// The branches of `creator` refusing the related row `input.<via>` names: the one refusing it
+/// missing, where declared, and those refusing it on its stored fields.
+fn creator_guards(
+    creator: &ResolvedCommand,
+    via: &str,
+) -> (Option<OutcomeName>, Vec<StoredRefusal>) {
+    let mut missing = None;
+    let mut refusals = Vec::new();
+    for branch in creator
+        .outcomes
+        .iter()
+        .filter(|branch| branch.error.is_some())
+    {
+        let ResolvedCondition::Related {
+            via: read,
+            test,
+            input,
+            also,
+            ..
+        } = &branch.condition
+        else {
+            continue;
+        };
+        if read.field() != via {
+            continue;
+        }
+        match test {
+            ess_compiler::ir::ResolvedRelatedTest::Absent => {
+                missing.get_or_insert_with(|| branch.name.clone());
+            }
+            ess_compiler::ir::ResolvedRelatedTest::Holds { predicate } => {
+                refusals.push(StoredRefusal {
+                    branch: branch.name.clone(),
+                    predicate: predicate.clone(),
+                    stored_only: input.is_none()
+                        && also.is_empty()
+                        && !predicate.fact_paths().iter().any(|path| {
+                            path.namespace() == ess_domain::command::subject_fact::INPUT_NAMESPACE
+                        }),
+                });
+            }
+        }
+    }
+    (missing, refusals)
+}
+
+/// The related row `link` names, arranged at `distinction` (beyond10x/ess#682): the plain row,
+/// created and left in the initial state of its lifecycle, where some input of the creator passes
+/// every refusal over it at once ([`passes_all`]); otherwise the first row arranged toward one of
+/// [`row_targets`] on which some input does; otherwise the plain row.
+fn related_row(
+    ir: &EssIr,
+    link: &Link,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+) -> Option<Arrangement> {
+    let creator = ir.commands().get(&link.creator);
+    let passes = |row: &Arrangement| passes_all(ir, link, creator, row);
+    let plain = plain_row(ir, link, actors, distinction);
+    if plain.as_ref().is_some_and(passes) {
+        return plain;
+    }
+    row_targets(ir, link)
+        .iter()
+        .find_map(|target| {
+            super::arrange_toward_filter(ir, &link.entity, target, actors, distinction, &|row| {
+                holds(ir, link, target, row) && passes(row)
+            })
+        })
+        .or(plain)
+}
+
+/// Every related row of `link` an arrangement tries: the plain row, and a row toward each of
+/// [`row_targets`] where one holding it can be arranged.
+fn rows_tried(
+    ir: &EssIr,
+    link: &Link,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+) -> Vec<Arrangement> {
+    let targets = row_targets(ir, link);
+    plain_row(ir, link, actors, distinction)
+        .into_iter()
+        .chain(targets.iter().filter_map(|target| {
+            super::arrange_toward_filter(ir, &link.entity, target, actors, distinction, &|row| {
+                holds(ir, link, target, row)
+            })
+        }))
+        .collect()
+}
+
+/// The related row of `link` as the plain arrangement creates it, in its lifecycle's initial state.
+fn plain_row(
+    ir: &EssIr,
+    link: &Link,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+) -> Option<Arrangement> {
+    let initial = ir.entity(&link.entity).lifecycle.initial.clone();
+    super::arrange_first(ir, &link.entity, &[initial], actors, distinction, &[]).ok()
+}
+
+/// What a related row of `link` is arranged toward beside the plain row, in the order tried: every
+/// refusal over the row alone refuted, with each `Optional` field a refusal compares with the input
+/// written ([`StoredRefusal::compared_optional`]); each such refusal refuted on its own; and those
+/// fields written on their own, and left unwritten on their own. Empty and repeated targets are
+/// left out.
+fn row_targets(ir: &EssIr, link: &Link) -> Vec<Predicate> {
+    let refuted: Vec<Predicate> = link
+        .refusals
+        .iter()
+        .filter(|refusal| refusal.stored_only)
+        .map(|refusal| Predicate::Not(Box::new(refusal.predicate.clone())))
+        .collect();
+    let mut defined: Vec<Predicate> = Vec::new();
+    for field in link
+        .refusals
+        .iter()
+        .flat_map(|refusal| refusal.compared_optional(ir, &link.entity))
+    {
+        let written =
+            Predicate::Defined(FactPath::from_segments(std::iter::once(field.to_owned())));
+        if !defined.contains(&written) {
+            defined.push(written);
+        }
+    }
+    let conjunction = |parts: Vec<Predicate>| match <[Predicate; 1]>::try_from(parts) {
+        Ok([only]) => only,
+        Err(parts) => Predicate::All(parts),
+    };
+    let mut targets: Vec<Predicate> = Vec::new();
+    let absent = conjunction(
+        defined
+            .iter()
+            .map(|written| Predicate::Not(Box::new(written.clone())))
+            .collect(),
+    );
+    let tried = std::iter::once(conjunction(
+        refuted.iter().chain(&defined).cloned().collect(),
+    ))
+    .chain(refuted.iter().cloned())
+    .chain([conjunction(defined), absent]);
+    for target in tried {
+        if !matches!(&target, Predicate::All(parts) if parts.is_empty())
+            && !targets.contains(&target)
+        {
+            targets.push(target);
+        }
+    }
+    targets
+}
+
+/// Whether `row` holds `target`, read without an input.
+fn holds(ir: &EssIr, link: &Link, target: &Predicate, row: &Arrangement) -> bool {
+    subject_fact::row_truth_with(
+        ir,
+        &link.entity,
+        &row.settled,
+        &row.unwritten,
+        Some(&row.state),
+        target,
+        None,
+    ) == Truth::True
+}
+
+/// The inputs of `creator` tried beside `row`: steered on the row's settled values toward passing
+/// every refusal of `link` at once, and toward passing each alone, each comparison it grounds
+/// tried held and refuted on its own, from the plain witness and from one moved off it (a value
+/// the row holds may be the plain one, which no candidate then refutes); the input with nothing
+/// sent where no steering yields one.
+fn steered_inputs(
+    ir: &EssIr,
+    link: &Link,
+    creator: &ResolvedCommand,
+    row: &Arrangement,
+) -> Vec<BTreeMap<String, Node>> {
+    let every: Vec<Predicate> = link
+        .refusals
+        .iter()
+        .map(|refusal| refusal.predicate.clone())
+        .collect();
+    let mut inputs: Vec<BTreeMap<String, Node>> = Vec::new();
+    for set in std::iter::once(every.clone()).chain(every.iter().map(|one| vec![one.clone()])) {
+        let mut steering = subject_fact::grounded(ir, &link.entity, &row.settled, &set);
+        steering.extend(subject_fact::input_presence(ir, &link.entity, &set));
+        let negated: Vec<Predicate> = steering
+            .iter()
+            .map(|guard| Predicate::Not(Box::new(guard.clone())))
+            .collect();
+        let guard_sets = std::iter::once(steering.iter().collect::<Vec<&Predicate>>())
+            .chain(steering.iter().chain(&negated).map(|guard| vec![guard]));
+        for guards in guard_sets {
+            for distinction in [Distinction::PLAIN, Distinction::further(1)] {
+                for input in candidates(ir, creator, &guards, distinction).unwrap_or_default() {
+                    if !inputs.contains(&input) {
+                        inputs.push(input);
+                    }
+                }
+            }
+        }
+    }
+    if inputs.is_empty() {
+        inputs.push(BTreeMap::new());
+    }
+    inputs
+}
+
+/// Beside `row`, for each input [`steered_inputs`] tries, the refusals of `link` that answer, by
+/// their index in declaration order: every refusal is decided at once, per input.
+fn left_refusing(
+    ir: &EssIr,
+    link: &Link,
+    creator: &ResolvedCommand,
+    row: &Arrangement,
+) -> Vec<Vec<usize>> {
+    steered_inputs(ir, link, creator, row)
+        .iter()
+        .map(|input| {
+            link.refusals
+                .iter()
+                .enumerate()
+                .filter(|(_, refusal)| refusal.refuses(ir, (&link.entity, row), creator, input))
+                .map(|(at, _)| at)
+                .collect()
+        })
+        .collect()
+}
+
+/// Whether some input tried beside `row` passes every refusal of `link` at once; trivially where
+/// the creator refuses the row on none of its fields.
+fn passes_all(
+    ir: &EssIr,
+    link: &Link,
+    creator: Option<&ResolvedCommand>,
+    row: &Arrangement,
+) -> bool {
+    if link.refusals.is_empty() {
+        return true;
+    }
+    creator.is_some_and(|creator| {
+        left_refusing(ir, link, creator, row)
+            .iter()
+            .any(Vec::is_empty)
+    })
+}
+
+/// `node` in YAML flow style, each text quoted where a plain scalar would not read back as it.
+fn flow(node: &Node) -> String {
+    match node {
+        Node::Text(text) => flow_text(text),
+        Node::Seq(items) => format!(
+            "[{}]",
+            items.iter().map(flow).collect::<Vec<_>>().join(", ")
+        ),
+        Node::Map(entries) => format!(
+            "{{{}}}",
+            entries
+                .iter()
+                .map(|(key, value)| format!("{}: {}", flow_text(key), flow(value)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        other => other.to_string(),
+    }
+}
+
+/// `text` as a YAML flow scalar: plain where it starts with a letter or `(`, holds only letters,
+/// digits, spaces and `_.=!<>()+-/`, and reads as no boolean or null; double-quoted otherwise.
+fn flow_text(text: &str) -> String {
+    let plain = text.starts_with(|first: char| first.is_ascii_alphabetic() || first == '(')
+        && !text.ends_with(' ')
+        && text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || " _.=!<>()+-/".contains(c))
+        && !["true", "false", "null", "yes", "no", "on", "off", "y", "n"]
+            .contains(&text.to_ascii_lowercase().as_str());
+    if plain {
+        text.to_owned()
+    } else {
+        serde_json::to_string(text).unwrap_or_else(|_| format!("{text:?}"))
+    }
+}
+
 /// Beside each selector, the related row its rows are created naming where it has a [`Link`] and
-/// is not arranged under the addressed subject: created after `setup`'s steps, once per input, and
-/// bound to that input of the send.
+/// is not arranged under the addressed subject: created after `setup`'s steps ([`related_row`]),
+/// once per input, and bound to that input of the send. Its settled values go with it, so the
+/// creator's input is steered to pass a refusal comparing the row with the input.
 fn linked(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -3432,10 +3866,7 @@ fn linked(
                 }
                 let mut taken = captured(&setup.steps);
                 let distinction = next(ir, &link.entity, &mut taken);
-                let initial = ir.entity(&link.entity).lifecycle.initial.clone();
-                let row =
-                    super::arrange_first(ir, &link.entity, &[initial], actors, distinction, &[])
-                        .ok()?;
+                let row = related_row(ir, &link, actors, distinction)?;
                 setup.steps.extend(row.steps.iter().cloned());
                 setup.source.extend(row.source.iter().cloned());
                 setup.bound.insert(link.input.clone(), row.instance.clone());
@@ -3445,7 +3876,8 @@ fn linked(
             Some(Linked {
                 conjunct: link.conjunct,
                 fields: BTreeMap::from([(link.field, row.instance.clone())]),
-                held: BTreeMap::from([(row.instance, row.state)]),
+                held: BTreeMap::from([(row.instance.clone(), row.state)]),
+                rows: BTreeMap::from([(row.instance, row.settled)]),
             })
         })
         .collect()

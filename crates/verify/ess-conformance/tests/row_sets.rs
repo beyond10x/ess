@@ -11,10 +11,22 @@
 //!
 //! `tests/fixtures/unique-within-scope.yaml`: `BindIdentity` refuses claims another user of the
 //! tenant carries; an Optional `org_id` key is guarded by its `defined(org_id)` conjunct.
+//!
+//! `tests/fixtures/row-set-creator-predicate-guard.yaml`: `GetChild` answers `found` once a child
+//! of the parent and id it is sent is stored. `CreateChild`, the only creator of children, refuses
+//! a missing parent (`exists: false`) and a parent of another tenant (`predicate: tenant !=
+//! input.tenant`), so the rows `found` selects are arranged past both guards (an adopter's report
+//! of 2026-10-25, ess 0.69.2).
 
 mod support_row_sets;
 
+use std::collections::BTreeMap;
+
+use ess_conformance::interpret::Interpreted;
+use ess_conformance::report::{ScenarioResult, Status};
+use ess_conformance::synthesize::{Refusal, Synthesis};
 use ess_conformance::target::ConformanceTarget;
+use ess_conformance::{AdmittedSuite, Runner};
 use ess_primitives::node::Node;
 use support_row_sets::*;
 
@@ -356,4 +368,153 @@ fn optional_key_needs_defined() {
         "an unknown member decides nothing: {answered:?}"
     );
     assert_eq!(identities(&unguarded), before);
+}
+
+/// The children of one parent, created past a guard over the parent's tenant.
+const CREATOR_PREDICATE: &str = include_str!("fixtures/row-set-creator-predicate-guard.yaml");
+
+/// The guard over the parent's stored tenant, as [`CREATOR_PREDICATE`] writes it.
+const TENANT_GUARD: &str = "predicate: tenant != input.tenant";
+
+/// The branch of the reader whose rows are created past the creator's guards.
+const FOUND: &str = "demo.items.GetChild/outcome/found";
+
+/// [`CREATOR_PREDICATE`] with the tenant guard replaced by `guard`, and nothing else changed.
+fn tenant_guard(guard: &str) -> String {
+    assert_eq!(CREATOR_PREDICATE.matches(TENANT_GUARD).count(), 1);
+    CREATOR_PREDICATE.replacen(TENANT_GUARD, guard, 1)
+}
+
+struct Synthesized {
+    synthesis: Synthesis,
+    results: BTreeMap<String, ScenarioResult>,
+}
+
+/// `text` synthesized, and its suite run on the interpreted target.
+fn synthesized(text: &str) -> Synthesized {
+    let ir = support_row_sets::model(text);
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    let admitted =
+        AdmittedSuite::from_suite(&synthesis.suite).unwrap_or_else(|error| panic!("{error}"));
+    let results = Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, &Interpreted::for_model(ir))
+        .into_report()
+        .scenarios
+        .into_iter()
+        .map(|result| (result.scenario.to_string(), result))
+        .collect();
+    Synthesized { synthesis, results }
+}
+
+/// Every refusal of the scenario `wanted`.
+fn refusals_of<'s>(synthesized: &'s Synthesized, wanted: &str) -> Vec<&'s Refusal> {
+    synthesized
+        .synthesis
+        .refusals
+        .iter()
+        .filter(|refusal| {
+            refusal
+                .scenario
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref()
+                == Some(wanted)
+        })
+        .collect()
+}
+
+/// `wanted` is synthesized, unrefused, and passes on the interpreted target.
+fn assert_witnessed(synthesized: &Synthesized, wanted: &str) {
+    let refusals: Vec<String> = refusals_of(synthesized, wanted)
+        .into_iter()
+        .map(|refusal| format!("[{}] {}", refusal.code(), refusal.cause))
+        .collect();
+    assert!(
+        refusals.is_empty(),
+        "{wanted} is not refused: {refusals:#?}"
+    );
+    let result = synthesized.results.get(wanted).unwrap_or_else(|| {
+        panic!(
+            "{wanted} is synthesized: {:#?}",
+            synthesized.results.keys().collect::<Vec<_>>()
+        )
+    });
+    assert_eq!(
+        result.status,
+        Status::Passed,
+        "{wanted} passes on the interpreted target: {:#?}",
+        result.diagnostics().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn a_row_set_branch_arranges_rows_past_the_creators_predicate_guard() {
+    let synthesized = synthesized(CREATOR_PREDICATE);
+    assert_witnessed(&synthesized, FOUND);
+    assert_witnessed(&synthesized, "demo.items.GetChild/outcome/child-not-found");
+    let synth_001: Vec<String> = synthesized
+        .synthesis
+        .refusals
+        .iter()
+        .filter(|refusal| refusal.code().to_string() == "ESS-SYNTH-001")
+        .map(|refusal| refusal.cause.to_string())
+        .collect();
+    assert_eq!(synth_001, Vec::<String>::new(), "no ESS-SYNTH-001 is left");
+}
+
+#[test]
+fn a_row_set_branch_fills_the_related_row_the_creators_predicate_reads() {
+    // The creator refuses every parent but the one of tenant `home`: the parent the rows name is
+    // created with that tenant.
+    let synthesized = synthesized(&tenant_guard("predicate: tenant != \"home\""));
+    assert_witnessed(&synthesized, FOUND);
+}
+
+/// The one refusal of [`FOUND`] synthesizing `text` gives, as it prints; ESS-SYNTH-001.
+fn found_refused(text: &str) -> String {
+    let synthesized = synthesized(text);
+    let refusals = refusals_of(&synthesized, FOUND);
+    let [refusal] = refusals.as_slice() else {
+        panic!("{FOUND} is refused once: {refusals:#?}");
+    };
+    let message = refusal.cause.to_string();
+    assert_eq!(refusal.code().to_string(), "ESS-SYNTH-001", "{message}");
+    message
+}
+
+#[test]
+fn an_unreachable_row_set_branch_names_every_guard_that_refused_as_written() {
+    // Both guards hold on every parent, which is always `Open`; the first also reads the input.
+    let message = found_refused(&tenant_guard(
+        "predicate: {any: [state == Open, tenant == input.tenant]}
+        error: demo.items.NotFound
+      - name: sealed
+        when_related:
+          via: input.parent_id
+          predicate: state == Open",
+    ));
+    let named = "whose `other-tenant` (`when_related: {via: input.parent_id, predicate: {any: \
+         [state == Open, tenant == input.tenant]}}`) and `sealed` (`when_related: {via: \
+         input.parent_id, predicate: state == Open}`) refuse the `demo.items.Parent` arranged \
+         for the rows to name: no arrangement tried, resting in `Open`, with an input steered \
+         toward passing them passes them all, and each of the closest leaves them all refusing";
+    assert!(message.contains(named), "{message}");
+}
+
+#[test]
+fn an_unreachable_row_set_branch_names_the_guard_that_refused() {
+    // Every parent is `Open`, so the creator refuses every child past the existence guard.
+    let message = found_refused(&tenant_guard("predicate: state == Open"));
+    for named in ["demo.items.CreateChild", "`other-tenant`", "state == Open"] {
+        assert!(
+            message.contains(named),
+            "the refusal names {named}: {message}"
+        );
+    }
+    for wrong in ["`parent-not-found`", "exists: false"] {
+        assert!(
+            !message.contains(wrong),
+            "the refusal does not blame {wrong}: {message}"
+        );
+    }
 }
