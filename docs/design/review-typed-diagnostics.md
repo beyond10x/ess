@@ -141,6 +141,10 @@ No parser position source exists yet — `serde_yaml` discards positions for sem
 (`ess-compiler/src/source.rs:1-11`) — so every migrated producer in this wave sets `span: None` and the
 `Locator` still finds the line. `SyntaxSpan` exists and is honoured by `bridge` so that the first
 producer able to supply a position needs no further change here; its consumption is tested directly.
+The first such producer came later and is not a parser: `ess-domain`'s `view::from` reads the line
+and column of the view-field `from:` it refuses out of the text where it takes the key, because
+every lifecycle transition also writes `from:` and the `Locator`'s trailing-key guess needs one
+occurrence per file (beyond10x/ess#675).
 
 ## Migration order and what this wave migrated
 

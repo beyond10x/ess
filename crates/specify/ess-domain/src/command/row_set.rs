@@ -333,7 +333,7 @@ pub fn admits_identity_beside(format: FormatVersion) -> bool {
 }
 
 /// Whether `command` guards on a row set and on an identity-addressed row, and on no other kind
-/// [`beside`] names: the pair `ess/32` admits.
+/// `beside` names: the pair `ess/32` admits.
 pub fn identity_beside(command: &CommandSpec) -> bool {
     uses(command)
         && command

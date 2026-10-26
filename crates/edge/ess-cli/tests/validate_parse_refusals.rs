@@ -451,3 +451,204 @@ fn selection_where_that_does_not_parse_is_refused_at_its_binding() {
     assert_eq!(validated.problems.len(), 1, "{}", validated.output);
     assert_eq!(validated.code(location), "ESS-SPEC-012");
 }
+
+/// Adopter report N22 (beyond10x/ess#675): a shelf view reading its book's cover as
+/// `from: book.cover`, beside a second view whose filter does not parse.
+const SHELF: &str = "format: ess/31
+system: fit
+version: v1
+domain: fit.shelf
+summary: A shelf view shows the cover of the book it holds.
+types:
+  - {name: fit.shelf.ShelfId, kind: newtype, of: Uuid}
+  - {name: fit.shelf.BookId, kind: newtype, of: Uuid}
+entities:
+  - name: fit.shelf.Book
+    identity: {name: book_id, type: fit.shelf.BookId}
+    fields:
+      - {name: cover, type: Optional<String>}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active], transitions: []}
+  - name: fit.shelf.Shelf
+    identity: {name: shelf_id, type: fit.shelf.ShelfId}
+    fields:
+      - {name: book_id, type: fit.shelf.BookId}
+    relations:
+      - {name: book, kind: references, target: fit.shelf.Book, cardinality: one, via: book_id}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active], transitions: []}
+events:
+  - name: fit.shelf.BookAdded
+    fields: [{name: book_id, type: fit.shelf.BookId}]
+  - name: fit.shelf.ShelfAdded
+    fields: [{name: shelf_id, type: fit.shelf.ShelfId}]
+actors:
+  - name: fit.shelf.Keeper
+    may: [fit.shelf.AddBook, fit.shelf.AddShelf]
+commands:
+  - name: fit.shelf.AddBook
+    input:
+      - {name: cover, type: Optional<String>}
+    outcomes:
+      - name: added
+        creates: fit.shelf.Book
+        instance: book_id
+        emits: [fit.shelf.BookAdded]
+        payload: {fit.shelf.BookAdded: {book_id: {generated: true}}}
+        sets: {cover: input.cover}
+  - name: fit.shelf.AddShelf
+    input:
+      - {name: book_id, type: fit.shelf.BookId}
+    outcomes:
+      - name: unknown-book
+        when_related: {via: input.book_id, exists: false}
+        error: fit.shelf.BookNotFound
+      - name: added
+        creates: fit.shelf.Shelf
+        instance: shelf_id
+        emits: [fit.shelf.ShelfAdded]
+        payload: {fit.shelf.ShelfAdded: {shelf_id: {generated: true}}}
+        sets: {book_id: input.book_id}
+errors:
+  - {name: fit.shelf.BookNotFound, summary: No book carries this identity., fields: []}
+views:
+  - name: fit.shelf.Shelves
+    source: fit.shelf.Shelf
+    consistency: read_your_writes
+    fields:
+      - {name: shelf_id, type: fit.shelf.ShelfId}
+      - {name: cover, type: Optional<String>, from: book.cover}
+  - name: fit.shelf.Stocked
+    source: fit.shelf.Shelf
+    consistency: read_your_writes
+    fields:
+      - {name: shelf_id, type: fit.shelf.ShelfId}
+    filter: shelf_id ~= \"\"
+";
+
+const VIEW_FROM: &str = "view.fit.shelf.Shelves.fields[1].from";
+
+#[test]
+fn a_view_field_from_is_refused_at_its_line_beside_other_refusals() {
+    let validated = validate("shelf.yaml", SHELF);
+    assert_eq!(validated.code, Some(1), "{}", validated.output);
+    let found = validated.at("unsupported_construct", VIEW_FROM);
+    assert_eq!(found.len(), 1, "`{VIEW_FROM}`:\n{}", validated.output);
+    assert!(
+        found[0].contains("field: {related: {via: book_id, field: cover}}"),
+        "the hint is the rewrite: {}",
+        found[0]
+    );
+    assert_eq!(
+        validated.code(VIEW_FROM),
+        "ESS-VIEW-009",
+        "{}",
+        validated.output
+    );
+    assert_eq!(
+        validated.line(VIEW_FROM),
+        line_of(SHELF, "name: fit.shelf.Shelves", "from: book.cover"),
+        "the refusal is located at the `from:` it refuses:\n{}",
+        validated.output
+    );
+    // The file's other refusal is reported beside it, and nothing else.
+    assert_eq!(
+        validated
+            .at("unparsable_predicate", "view.fit.shelf.Stocked.filter")
+            .len(),
+        1,
+        "{}",
+        validated.output
+    );
+    assert_eq!(validated.problems.len(), 2, "{}", validated.output);
+    assert!(
+        !validated.output.contains("unknown field `from`"),
+        "{}",
+        validated.output
+    );
+}
+
+#[test]
+fn from_outside_a_view_field_keeps_its_refusal() {
+    let premise = replaced(
+        &replaced(
+            SHELF,
+            "from: book.cover}",
+            "field: {related: {via: book_id, field: cover}}}",
+        ),
+        "    filter: shelf_id ~= \"\"\n",
+        "",
+    );
+    let validated = validate("shelf.yaml", &premise);
+    assert_eq!(
+        validated.code,
+        Some(0),
+        "the premise: written with the idiom and without the unparsable filter, the model \
+         validates:\n{}",
+        validated.output
+    );
+    for (from, to) in [
+        // An entity's field.
+        (
+            "      - {name: cover, type: Optional<String>}\n    lifecycle",
+            "      - {name: cover, type: Optional<String>, from: book.cover}\n    lifecycle",
+        ),
+        // A command's input.
+        (
+            "    input:\n      - {name: cover, type: Optional<String>}",
+            "    input:\n      - {name: cover, type: Optional<String>, from: book.cover}",
+        ),
+        // A view itself, beside its fields.
+        (
+            "    source: fit.shelf.Shelf\n    consistency: read_your_writes\n    fields:\n      - \
+             {name: shelf_id, type: fit.shelf.ShelfId}\n      - {name: cover",
+            "    source: fit.shelf.Shelf\n    from: book.cover\n    consistency: \
+             read_your_writes\n    fields:\n      - {name: shelf_id, type: \
+             fit.shelf.ShelfId}\n      - {name: cover",
+        ),
+        // An event's field.
+        (
+            "    fields: [{name: shelf_id, type: fit.shelf.ShelfId}]",
+            "    fields: [{name: shelf_id, type: fit.shelf.ShelfId, from: book.cover}]",
+        ),
+    ] {
+        let validated = validate("shelf.yaml", &replaced(&premise, from, to));
+        assert_eq!(validated.code, Some(1), "`{to}`:\n{}", validated.output);
+        assert_eq!(validated.problems.len(), 1, "`{to}`:\n{}", validated.output);
+        assert!(
+            validated.problems[0].contains("unknown field `from`"),
+            "`{to}` keeps the refusal of an unknown key:\n{}",
+            validated.output
+        );
+    }
+}
+
+/// Adversary pass 1 on unit h: the reproduction's entities keep `transitions: []`, so its `from:`
+/// is the only `from:` in the file. A model whose lifecycle moves at all writes `from:` on every
+/// transition (`examples/billing/domains/invoice.yaml`), and the view field's refusal must still
+/// be cited at the `from:` it refuses, not at its view's `name:` line.
+#[test]
+fn adversary_h_a_view_field_from_is_cited_at_its_line_beside_a_lifecycle_transition() {
+    let text = replaced(
+        SHELF,
+        "      - {name: cover, type: Optional<String>}\n    lifecycle: {initial: Active, states: \
+         [Active], terminal: [Active], transitions: []}\n",
+        "      - {name: cover, type: Optional<String>}\n    lifecycle:\n      initial: Active\n      \
+         states: [Active, Retired]\n      terminal: [Retired]\n      transitions:\n        - name: \
+         retire\n          from: [Active]\n          to: Retired\n",
+    );
+    let validated = validate("shelf.yaml", &text);
+    assert_eq!(validated.code, Some(1), "{}", validated.output);
+    assert_eq!(
+        validated.at("unsupported_construct", VIEW_FROM).len(),
+        1,
+        "{}",
+        validated.output
+    );
+    assert_eq!(
+        validated.line(VIEW_FROM),
+        line_of(&text, "name: fit.shelf.Shelves", "from: book.cover"),
+        "the refusal is located at the `from:` it refuses, not at line {} (`name: \
+         fit.shelf.Shelves`):\n{}",
+        line_of(&text, "views:", "name: fit.shelf.Shelves"),
+        validated.output
+    );
+}
