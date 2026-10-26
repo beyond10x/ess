@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-view-field-from-names-the-related-spelling
 kind: story
-status: active
+status: implemented
 title: 'A view field from: names the related spelling'
 summary: 'Adopter report N22: from: on a view field gives no hint (ess#675).'
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T09:18:57Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-26T09:18:58Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-26T17:50:13Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 

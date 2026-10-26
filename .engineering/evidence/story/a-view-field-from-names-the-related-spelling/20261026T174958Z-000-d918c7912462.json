@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T17:49:58Z",
+  "actor": "human:timo",
+  "artifact": "story:a-view-field-from-names-the-related-spelling",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit H: ess-domain 1752/0/2 ignored, row_queries_navigate 18/0, ess-cli validate_parse_refusals 11/0 and the validate_* binaries, typed_diagnostics 8/0, task test-xtask 418/0, clippy ess-domain/ess-compiler/ess-cli/ess-primitives, cargo doc -D warnings, schema unchanged",
+    "reference": "423e29845"
+  }
+}
