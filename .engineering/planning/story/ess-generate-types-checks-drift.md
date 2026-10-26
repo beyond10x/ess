@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ess-generate-types-checks-drift
 kind: story
-status: active
+status: implemented
 title: Ess generate types checks drift
 summary: 'Adopter report S6: ess generate types has no --check (ess#654).'
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T09:18:57Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-26T09:18:57Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-26T16:45:25Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 

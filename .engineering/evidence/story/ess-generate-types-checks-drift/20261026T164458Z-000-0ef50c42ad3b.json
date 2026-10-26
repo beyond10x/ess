@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T16:44:58Z",
+  "actor": "human:timo",
+  "artifact": "story:ess-generate-types-checks-drift",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit G: adversary_g_labels 6/0, optional_recursive_codecs 9/0, served_codec_names 13/0 (pins unchanged), model_types 11/0, ess-synth regression set green, task test-xtask green, clippy and fmt clean, gatepass regenerates byte-identical",
+    "reference": "5d6d61a53"
+  }
+}

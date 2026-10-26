@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-dotted-variant-name-synthesizes-as-an-identifier
 kind: story
-status: active
+status: implemented
 title: A dotted variant name synthesizes as an identifier
 summary: 'Adopter report N8: synthesize --http refuses dotted variant names (ess#662).'
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T09:18:56Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-26T09:18:56Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-26T16:45:25Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 
