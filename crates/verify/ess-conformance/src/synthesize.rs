@@ -7566,8 +7566,9 @@ fn reach(
     }
     // Every branch of a command guarded by a related row (ess/18, #211) is decided by that row, which
     // only `related_guard::prepare` arranges: an input chosen here would be sent for a row nobody
-    // arranged, and a correct implementation would answer another branch.
-    if related_guard::uses(command) {
+    // arranged, and a correct implementation would answer another branch. The creating half of
+    // create-or-update is answered at step 2, before the row is read ([`related_guard::routes`]).
+    if related_guard::uses(command) && !existence::creates_unknown(outcome) {
         return Err(related_guard::unarranged());
     }
     let (guards, satisfy) = plain_guards(command, outcome)?;

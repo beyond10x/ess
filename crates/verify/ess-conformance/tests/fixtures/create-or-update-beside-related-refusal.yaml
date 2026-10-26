@@ -1,0 +1,83 @@
+format: ess/31
+system: demo
+version: v1
+domain: demo.desk
+summary: A seat is bound to an existing agent; binding again rebinds or keeps it, and a missing agent is refused.
+types:
+  - {name: demo.desk.AgentId, kind: newtype, of: String}
+  - {name: demo.desk.SeatId, kind: newtype, of: String}
+entities:
+  - name: demo.desk.Agent
+    identity: {name: agent_id, type: demo.desk.AgentId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.desk.Binding
+    identity: {name: seat_id, type: demo.desk.SeatId}
+    fields:
+      - {name: agent_id, type: demo.desk.AgentId}
+    relations:
+      - {name: agent, kind: references, target: demo.desk.Agent, cardinality: one, via: agent_id}
+    lifecycle: {initial: Bound, states: [Bound], terminal: [Bound]}
+errors:
+  - {name: demo.desk.NoAgent, summary: No agent carries the identity., fields: []}
+events:
+  - name: demo.desk.AgentAdded
+    fields: [{name: agent_id, type: demo.desk.AgentId}]
+  - name: demo.desk.SeatBound
+    fields: [{name: seat_id, type: demo.desk.SeatId}]
+actors:
+  - name: demo.desk.Operator
+    may: [demo.desk.AddAgent, demo.desk.Bind]
+commands:
+  - name: demo.desk.AddAgent
+    input:
+      - {name: agent_id, type: demo.desk.AgentId}
+      - {name: label, type: String}
+    outcomes:
+      - name: added
+        creates: demo.desk.Agent
+        instance: agent_id
+        emits: [demo.desk.AgentAdded]
+        payload: {demo.desk.AgentAdded: {agent_id: input.agent_id}}
+        sets: {label: input.label}
+  - name: demo.desk.Bind
+    input:
+      - {name: seat_id, type: demo.desk.SeatId}
+      - {name: agent_id, type: demo.desk.AgentId}
+    outcomes:
+      - name: already-bound
+        when_subject:
+          predicate: agent_id == input.agent_id
+        preserves: demo.desk.Binding
+        instance: seat_id
+      - name: no-agent
+        when_related: {via: input.agent_id, exists: false}
+        error: demo.desk.NoAgent
+      - name: rebound
+        updates: demo.desk.Binding
+        instance: seat_id
+        emits: [demo.desk.SeatBound]
+        payload: {demo.desk.SeatBound: {seat_id: input.seat_id}}
+        sets: {agent_id: input.agent_id}
+      - name: bound
+        unknown_instance: true
+        creates: demo.desk.Binding
+        instance: seat_id
+        emits: [demo.desk.SeatBound]
+        payload: {demo.desk.SeatBound: {seat_id: input.seat_id}}
+        sets: {agent_id: input.agent_id}
+views:
+  - name: demo.desk.Bindings
+    source: demo.desk.Binding
+    consistency: read_your_writes
+    fields:
+      - {name: seat_id, type: demo.desk.SeatId}
+      - {name: state, type: demo.desk.Binding.State}
+      - {name: agent_id, type: demo.desk.AgentId}
+  - name: demo.desk.Agents
+    source: demo.desk.Agent
+    consistency: read_your_writes
+    fields:
+      - {name: agent_id, type: demo.desk.AgentId}
+      - {name: label, type: String}
