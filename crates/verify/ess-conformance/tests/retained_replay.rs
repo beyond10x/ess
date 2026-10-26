@@ -267,13 +267,9 @@ fn replay_envelope_refuses_old_labels_unknown_fields_and_unbound_or_overwritten_
 }
 #[test]
 fn replay_response_refuses_floating_representations_recursively() {
-    for ty in [
-        "Decimal",
-        "Binary64",
-        "Optional<Decimal>",
-        "List<Binary64>",
-        "Map<String, Decimal>",
-    ] {
+    // A `Decimal` is compared by value from suite/58 (`decimal_retained_results_replay_by_value`);
+    // a `Binary64` has no suite contract yet and stays refused.
+    for ty in ["Binary64", "Optional<Binary64>", "List<Binary64>"] {
         let source = MODEL.replace("type: Integer}", &format!("type: '{ty}'}}"));
         let spec = Specification::assemble([(
             Source::new("retained.yaml"),
@@ -1736,13 +1732,9 @@ fn complementary_complete_views_observe_the_actual_subject() {
 
 #[test]
 fn unsupported_complete_subject_observers_refuse_by_name() {
-    for ty in [
-        "Decimal",
-        "Binary64",
-        "Optional<Decimal>",
-        "List<Binary64>",
-        "Map<String, Decimal>",
-    ] {
+    // A `Decimal` is observed by value from suite/58
+    // (`a_decimal_published_by_a_view_keeps_the_wrong_state_scenario`); a `Binary64` is not.
+    for ty in ["Binary64", "Optional<Binary64>", "List<Binary64>"] {
         let source = MODEL
             .replace(
                 "      - {name: stamp, type: Timestamp}\n    lifecycle:",
@@ -1768,6 +1760,362 @@ fn unsupported_complete_subject_observers_refuse_by_name() {
                 .any(|id| id.to_string().ends_with("/outcome/replayed")),
             "{ty}"
         );
+    }
+}
+
+/// One entity whose view publishes a `Decimal`, and a `wrong_state` refusal whose scenario
+/// snapshots the complete subject before and after it (the story's minimal reproduction).
+const GAUGE: &str = "format: ess/31
+system: demo
+version: v1
+domain: demo.gauge
+summary: A gauge holds a level and is closed once; its view publishes the level.
+types:
+  - {name: demo.gauge.GaugeId, kind: newtype, of: Uuid}
+  - {name: demo.gauge.Reading, kind: struct, fields: [{name: value, type: Decimal}]}
+entities:
+  - name: demo.gauge.Gauge
+    identity: {name: gauge_id, type: demo.gauge.GaugeId}
+    fields:
+      - {name: level, type: Decimal}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+errors:
+  - {name: demo.gauge.NotOpen, summary: The gauge is closed., fields: []}
+events:
+  - name: demo.gauge.GaugeAdded
+    fields: [{name: gauge_id, type: demo.gauge.GaugeId}]
+  - name: demo.gauge.GaugeClosed
+    fields: [{name: gauge_id, type: demo.gauge.GaugeId}]
+commands:
+  - name: demo.gauge.AddGauge
+    input:
+      - {name: level, type: Decimal}
+    outcomes:
+      - name: added
+        creates: demo.gauge.Gauge
+        instance: gauge_id
+        sets: {level: input.level}
+        emits: [demo.gauge.GaugeAdded]
+        payload: {demo.gauge.GaugeAdded: {gauge_id: {generated: true}}}
+  - name: demo.gauge.CloseGauge
+    input:
+      - {name: gauge_id, type: demo.gauge.GaugeId}
+    outcomes:
+      - name: closed
+        moves: demo.gauge.Gauge.close
+        instance: gauge_id
+        emits: [demo.gauge.GaugeClosed]
+        payload: {demo.gauge.GaugeClosed: {gauge_id: input.gauge_id}}
+      - {name: not-open, wrong_state: true, error: demo.gauge.NotOpen}
+views:
+  - name: demo.gauge.Gauges
+    source: demo.gauge.Gauge
+    consistency: read_your_writes
+    fields:
+      - {name: gauge_id, type: demo.gauge.GaugeId}
+      - {name: level, type: Decimal}
+      - {name: state, type: demo.gauge.Gauge.State}
+";
+
+/// [`GAUGE`] with `level` of another type, compiled.
+fn gauge(level: &str) -> ess_compiler::ir::EssIr {
+    let source = GAUGE.replace(
+        "{name: level, type: Decimal}",
+        &format!("{{name: level, type: '{level}'}}"),
+    );
+    let spec = Specification::assemble([(
+        Source::new("gauge.yaml"),
+        RawSpecFile::parse(&source).unwrap(),
+    )])
+    .unwrap();
+    compile(&spec, &SourceMap::new()).unwrap()
+}
+
+/// The interpreted model, whose view shows `level` re-spelled or changed after a refusal.
+struct Gauges {
+    inner: ess_conformance::interpret::Interpreted,
+    mode: &'static str,
+    refused: Cell<bool>,
+}
+
+impl Gauges {
+    fn shown(&self, level: &Node) -> Node {
+        match (self.mode, level) {
+            ("respelled", Node::Number(number)) => {
+                let text = serde_json::to_string(number).unwrap();
+                let respelled = if text.contains(['e', 'E']) {
+                    text
+                } else if text.contains('.') {
+                    format!("{text}0")
+                } else {
+                    format!("{text}.0")
+                };
+                serde_json::from_str(&respelled).unwrap()
+            }
+            ("respelled", Node::Seq(items)) => {
+                Node::Seq(items.iter().map(|item| self.shown(item)).collect())
+            }
+            ("respelled", Node::Map(members)) => Node::Map(
+                members
+                    .iter()
+                    .map(|(key, value)| (key.clone(), self.shown(value)))
+                    .collect(),
+            ),
+            ("changed", Node::Seq(_)) => serde_json::from_str(r#"[{"value": 987654.25}]"#).unwrap(),
+            ("changed", _) => serde_json::from_str("987654.25").unwrap(),
+            _ => level.clone(),
+        }
+    }
+}
+
+impl ConformanceTarget for Gauges {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        self.inner.identity()
+    }
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.refused.set(false);
+        self.inner.begin_scenario(scenario)
+    }
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.end_scenario(scenario)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        let result = self.inner.execute_command(request)?;
+        if result.error.is_some() {
+            self.refused.set(true);
+        }
+        Ok(result)
+    }
+    fn execute_command_without_input(
+        &self,
+        request: AbsentInputRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        self.inner.execute_command_without_input(request)
+    }
+    fn establish_entity(&self, request: EntitySetupRequest) -> Result<(), TargetError> {
+        self.inner.establish_entity(request)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        let mut result = self.inner.query_view(request)?;
+        if self.refused.get() {
+            for row in &mut result.rows {
+                if let Some(level) = row.get("level").cloned() {
+                    row.insert("level".into(), self.shown(&level));
+                }
+            }
+        }
+        Ok(result)
+    }
+    fn configure_external_outcome(
+        &self,
+        control: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.inner.configure_external_outcome(control)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.inner.redeliver_event(request)
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.inner.observe_events(request)
+    }
+    fn observe_invocations(
+        &self,
+        request: InvocationObservationRequest,
+    ) -> Result<Vec<ObservedInvocation>, TargetError> {
+        self.inner.observe_invocations(request)
+    }
+}
+
+#[test]
+fn a_decimal_published_by_a_view_keeps_the_wrong_state_scenario() {
+    const REFUSES: &str = "demo.gauge.Gauge/state/Closed/refuses/demo.gauge.CloseGauge";
+    for level in ["Decimal", "List<demo.gauge.Reading>"] {
+        let ir = gauge(level);
+        let synthesis = ess_conformance::synthesize::synthesize(&ir);
+        assert!(
+            synthesis.refusals.is_empty(),
+            "{level}: {:?}",
+            synthesis
+                .refusals
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            synthesis.suite.provenance.suite_version.to_string(),
+            "ess-conformance/58",
+            "{level}"
+        );
+        let mut suite = synthesis.suite;
+        suite.scenarios.retain(|id, _| id.to_string() == REFUSES);
+        let scenario = suite.scenarios.values().next().unwrap_or_else(|| {
+            panic!("{level}: no `{REFUSES}`");
+        });
+        assert!(
+            scenario
+                .steps
+                .iter()
+                .any(|step| matches!(step, ScenarioStep::SnapshotCompleteSubject { .. })),
+            "{level}"
+        );
+        let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+        for (mode, status) in [
+            ("valid", Status::Passed),
+            ("respelled", Status::Passed),
+            ("changed", Status::Failed),
+        ] {
+            let target = Gauges {
+                inner: ess_conformance::interpret::Interpreted::for_model(ir.clone()),
+                mode,
+                refused: Cell::new(false),
+            };
+            let report = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
+            let scenario = &report.scenarios[0];
+            assert_eq!(scenario.status, status, "{level} {mode}: {scenario:?}");
+            if mode == "changed" {
+                assert!(
+                    format!("{scenario:?}").contains("unchanged=false"),
+                    "{level}: {scenario:?}"
+                );
+            }
+        }
+        // A reader keeps an older label's meaning: the suite relabelled /56 is refused by name.
+        let relabelled = suite
+            .to_canonical_json()
+            .unwrap()
+            .replace("\"ess-conformance/58\"", "\"ess-conformance/56\"");
+        let refused = AdmittedSuite::from_json(&relabelled).unwrap_err();
+        assert!(
+            refused.to_string().contains("suite/58"),
+            "{level}: {refused}"
+        );
+    }
+}
+
+/// The retained-result backend, answering `number` with the first value and its retry with the
+/// value `retry` selects.
+struct DecimalBackend {
+    inner: Backend,
+    values: [&'static str; 3],
+    retry: usize,
+}
+
+impl ConformanceTarget for DecimalBackend {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        self.inner.identity()
+    }
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.begin_scenario(scenario)
+    }
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.inner.end_scenario(scenario)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        let value = self.values[if self.inner.calls.get() > 0 {
+            self.retry
+        } else {
+            0
+        }];
+        let mut result = self.inner.execute_command(request)?;
+        if let Some(response) = result.response.as_mut() {
+            response.insert("number".into(), serde_json::from_str(value).unwrap());
+        }
+        Ok(result)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        self.inner.query_view(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        control: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.inner.configure_external_outcome(control)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.inner.redeliver_event(request)
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.inner.observe_events(request)
+    }
+    fn observe_invocations(
+        &self,
+        request: InvocationObservationRequest,
+    ) -> Result<Vec<ObservedInvocation>, TargetError> {
+        self.inner.observe_invocations(request)
+    }
+}
+
+#[test]
+fn decimal_retained_results_replay_by_value() {
+    for (ty, values) in [
+        ("Decimal", ["1.5", "1.50", "1.25"]),
+        ("Optional<Decimal>", ["1.5", "1.50", "1.25"]),
+        ("List<Decimal>", ["[1.5, 2]", "[1.50, 2.0]", "[1.5, 2.25]"]),
+        (
+            "Map<String, Decimal>",
+            [r#"{"a": 1.5}"#, r#"{"a": 1.50}"#, r#"{"a": 1.25}"#],
+        ),
+    ] {
+        let source = MODEL.replace("type: Integer}", &format!("type: '{ty}'}}"));
+        let spec = Specification::assemble([(
+            Source::new("retained.yaml"),
+            RawSpecFile::parse(&source).unwrap(),
+        )])
+        .unwrap();
+        let result =
+            ess_conformance::synthesize::synthesize(&compile(&spec, &SourceMap::new()).unwrap());
+        assert!(result.refusals.is_empty(), "{ty}: {:?}", result.refusals);
+        let mut suite = result.suite;
+        suite
+            .scenarios
+            .retain(|id, _| id.to_string().ends_with("/outcome/replayed"));
+        assert_eq!(suite.scenarios.len(), 1, "{ty}");
+        assert_eq!(
+            suite.provenance.suite_version.to_string(),
+            "ess-conformance/58",
+            "{ty}"
+        );
+        let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+        for (retry, status) in [(1, Status::Passed), (2, Status::Failed)] {
+            let target = DecimalBackend {
+                inner: Backend {
+                    mode: "valid",
+                    calls: Cell::new(0),
+                    queries: Cell::new(0),
+                },
+                values,
+                retry,
+            };
+            let report = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
+            assert_eq!(
+                report.scenarios[0].status, status,
+                "{ty} {}: {:?}",
+                values[retry], report.scenarios[0]
+            );
+        }
+        let relabelled = suite
+            .to_canonical_json()
+            .unwrap()
+            .replace("\"ess-conformance/58\"", "\"ess-conformance/56\"");
+        let refused = AdmittedSuite::from_json(&relabelled).unwrap_err();
+        assert!(refused.to_string().contains("suite/58"), "{ty}: {refused}");
     }
 }
 
@@ -2200,14 +2548,11 @@ mod issue_308 {
         shape
             .admit_row(&structurally_valid)
             .expect("structural observation makes no invariant-validation claim");
-        for primitive in ["Decimal", "Binary64"] {
-            let descriptor =
-                DESCRIPTOR.replace("\"of\":\"String\"", &format!("\"of\":\"{primitive}\""));
-            assert!(
-                serde_json::from_str::<SubjectShape>(&descriptor).is_err(),
-                "{primitive}"
-            );
-        }
+        // A `Decimal` is compared by value from suite/58; a `Binary64` is not.
+        let decimal = DESCRIPTOR.replace("\"of\":\"String\"", "\"of\":\"Decimal\"");
+        assert!(serde_json::from_str::<SubjectShape>(&decimal).is_ok());
+        let binary = DESCRIPTOR.replace("\"of\":\"String\"", "\"of\":\"Binary64\"");
+        assert!(serde_json::from_str::<SubjectShape>(&binary).is_err());
         let recursive =
             DESCRIPTOR.replace("\"of\":\"String\"", "\"of\":\"retained.core.RecordId\"");
         assert!(serde_json::from_str::<SubjectShape>(&recursive).is_err());
@@ -2283,4 +2628,238 @@ mod issue_308 {
             );
         }
     }
+}
+
+// ---- adversary pass 1, unit e: a Decimal across spellings and at the binary64 boundary ---------
+
+/// The retained-result retry scenario of a top-level `Decimal` response field, admitted.
+fn adversary_e_decimal_suite() -> AdmittedSuite {
+    let source = MODEL.replace("type: Integer}", "type: 'Decimal'}");
+    let spec = Specification::assemble([(
+        Source::new("retained.yaml"),
+        RawSpecFile::parse(&source).unwrap(),
+    )])
+    .unwrap();
+    let result =
+        ess_conformance::synthesize::synthesize(&compile(&spec, &SourceMap::new()).unwrap());
+    assert!(result.refusals.is_empty(), "{:?}", result.refusals);
+    let mut suite = result.suite;
+    suite
+        .scenarios
+        .retain(|id, _| id.to_string().ends_with("/outcome/replayed"));
+    assert_eq!(suite.scenarios.len(), 1);
+    AdmittedSuite::from_suite(&suite).unwrap()
+}
+
+/// The retry scenario's status when the target answers `original` and then, on the retry, `retry`.
+fn adversary_e_retry(
+    admitted: &AdmittedSuite,
+    original: &'static str,
+    retry: &'static str,
+) -> Status {
+    let target = DecimalBackend {
+        inner: Backend {
+            mode: "valid",
+            calls: Cell::new(0),
+            queries: Cell::new(0),
+        },
+        values: [original, retry, retry],
+        retry: 1,
+    };
+    Runner::for_suite(admitted.suite())
+        .run_admitted(admitted, &target)
+        .scenarios[0]
+        .status
+}
+
+/// Regression guard: two spellings of one value are one `Decimal`, and two values are two.
+#[test]
+fn adversary_e_decimal_spellings_of_one_value_replay_equal() {
+    let admitted = adversary_e_decimal_suite();
+    let mut wrong = Vec::new();
+    for (original, retry, status) in [
+        ("1", "1.0", Status::Passed),
+        ("1.10", "1.1", Status::Passed),
+        ("-0", "0", Status::Passed),
+        ("0", "-0.0", Status::Passed),
+        ("1.5e0", "1.5", Status::Passed),
+        ("15e-1", "1.5", Status::Passed),
+        ("1E2", "100", Status::Passed),
+        ("1e-7", "0.0000001", Status::Passed),
+        ("1.5", "1.25", Status::Failed),
+        ("-1", "1", Status::Failed),
+        ("0.1", "0.2", Status::Failed),
+    ] {
+        let actual = adversary_e_retry(&admitted, original, retry);
+        if actual != status {
+            wrong.push(format!(
+                "{original} then {retry}: {actual:?}, want {status:?}"
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// `docs/design/retained-command-results.md` and the CHANGELOG: "the Rust reader compares exactly
+/// within its exact decimal range". Each pair is two different decimals whose digits fit an `i128`
+/// at a scale under 256 (`ess_primitives::facts::Number`'s exact range), so the retry changed the
+/// retained result and must fail. The TypeScript runner fails each (`compareExact`).
+#[test]
+#[ignore = "finding: Rust reads a Decimal through binary64 before the runner sees it; story:a-rust-runner-compares-a-decimal-by-exact-value (ess-0.71.0)"]
+fn adversary_e_two_decimals_inside_the_exact_range_replay_unequal() {
+    let admitted = adversary_e_decimal_suite();
+    let mut equal = Vec::new();
+    for (original, retry) in [
+        ("0.1", "0.10000000000000001"),
+        ("1", "1.0000000000000000001"),
+        (
+            "123456789012345678901234567890",
+            "123456789012345678901234567891",
+        ),
+    ] {
+        let actual = adversary_e_retry(&admitted, original, retry);
+        if actual != Status::Failed {
+            equal.push(format!("{original} then {retry}: {actual:?}"));
+        }
+    }
+    assert!(
+        equal.is_empty(),
+        "different decimals replayed as one value: {equal:#?}"
+    );
+}
+
+/// Runs only the generated Go runtime's `TestAdversaryE*` cases
+/// (`fixtures/retained-replay-runtime.go`).
+#[test]
+fn adversary_e_go_runtime_compares_a_decimal_by_exact_value() {
+    let root = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-retained-go-adv-e-{}", std::process::id())),
+    );
+    emit_runtime(&root);
+    let result = std::process::Command::new("go")
+        .args([
+            "test",
+            "-count=1",
+            "-run",
+            "^TestAdversaryE",
+            "-v",
+            "./essconform",
+        ])
+        .env("GOWORK", "off")
+        .env("GOPROXY", "off")
+        .env("GOMAXPROCS", "2")
+        .current_dir(&root)
+        .output()
+        .expect("required Go toolchain executes retained-result witnesses");
+    let output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(
+        output.contains("--- PASS: TestAdversaryEDecimalExactValue") || !result.status.success(),
+        "the case ran: {output}"
+    );
+    assert!(result.status.success(), "{output}");
+}
+
+/// Regression guard: a `Decimal` the view publishes through an `Optional`, a `Map` value or a
+/// newtype raises the suite to /58 and is compared by value; one the view publishes on an entity
+/// with no `wrong_state` refusal is in no exact observer and leaves the suite below /58.
+#[test]
+fn adversary_e_decimal_floor_follows_the_exact_observer_through_wrappers() {
+    const REFUSES: &str = "demo.gauge.Gauge/state/Closed/refuses/demo.gauge.CloseGauge";
+    let with_level = GAUGE.replace(
+        "  - {name: demo.gauge.GaugeId, kind: newtype, of: Uuid}\n",
+        "  - {name: demo.gauge.GaugeId, kind: newtype, of: Uuid}\n  - {name: demo.gauge.Level, kind: newtype, of: Decimal}\n",
+    );
+    let mut wrong = Vec::new();
+    for level in [
+        "Optional<Decimal>",
+        "Map<String, Decimal>",
+        "demo.gauge.Level",
+    ] {
+        let source = with_level.replace(
+            "{name: level, type: Decimal}",
+            &format!("{{name: level, type: '{level}'}}"),
+        );
+        let spec = Specification::assemble([(
+            Source::new("gauge.yaml"),
+            RawSpecFile::parse(&source).unwrap(),
+        )])
+        .unwrap();
+        let ir = compile(&spec, &SourceMap::new()).unwrap();
+        let synthesis = ess_conformance::synthesize::synthesize(&ir);
+        let version = synthesis.suite.provenance.suite_version.to_string();
+        if !synthesis.refusals.is_empty() || version != "ess-conformance/58" {
+            wrong.push(format!(
+                "{level}: {version}, refusals {:?}",
+                synthesis
+                    .refusals
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+            ));
+            continue;
+        }
+        let mut suite = synthesis.suite;
+        suite.scenarios.retain(|id, _| id.to_string() == REFUSES);
+        if suite.scenarios.len() != 1 {
+            wrong.push(format!("{level}: no `{REFUSES}`"));
+            continue;
+        }
+        let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+        for (mode, passes) in [("valid", true), ("respelled", true), ("changed", false)] {
+            let target = Gauges {
+                inner: ess_conformance::interpret::Interpreted::for_model(ir.clone()),
+                mode,
+                refused: Cell::new(false),
+            };
+            let report = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
+            if (report.scenarios[0].status == Status::Passed) != passes {
+                wrong.push(format!("{level} {mode}: {:?}", report.scenarios[0]));
+            }
+        }
+    }
+    let unobserved = GAUGE.replace(
+        "      - {name: not-open, wrong_state: true, error: demo.gauge.NotOpen}\n",
+        "",
+    );
+    assert_ne!(unobserved, GAUGE);
+    let spec = Specification::assemble([(
+        Source::new("gauge.yaml"),
+        RawSpecFile::parse(&unobserved).unwrap(),
+    )])
+    .unwrap();
+    let synthesis =
+        ess_conformance::synthesize::synthesize(&compile(&spec, &SourceMap::new()).unwrap());
+    let version = synthesis.suite.provenance.suite_version.major();
+    if version >= 58 {
+        wrong.push(format!("published, unobserved: suite/{version}"));
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// Regression guard for `coverage_build::coverage_version`: declared coverage of a model whose view
+/// publishes a `Decimal` into a complete subject is `/59`, and the same model with an `Integer`
+/// stays below the pair. Nothing else in the suite pins the coverage half.
+#[test]
+fn adversary_e_decimal_coverage_is_written_at_59() {
+    let mut majors = Vec::new();
+    for level in ["Decimal", "Integer"] {
+        let ir = gauge(level);
+        let covered = ess_conformance::coverage_build::build(
+            &ir,
+            &[],
+            ess_conformance::coverage::Scope::System,
+            ess_conformance::coverage::Origins::Generated,
+        )
+        .unwrap();
+        let major = covered.selected().suite().provenance.suite_version.major();
+        AdmittedSuite::from_json(covered.selected().original_json())
+            .unwrap_or_else(|e| panic!("{level}: coverage at /{major} is not admitted: {e}"));
+        majors.push((level, major));
+    }
+    assert_eq!(majors[0], ("Decimal", 59), "{majors:?}");
+    assert!(majors[1].1 < 58, "{majors:?}");
 }

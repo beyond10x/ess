@@ -354,11 +354,11 @@ const INTENDED: &[(&str, &str)] = &[
     ),
     (
         "crates/generate/ess-synth/tests/fixtures/generated-views.yaml",
-        "ir=d684139b5be5288707c0:29577 suite=d51cd175899fabc318ca:58807 refusals=bfb251ea7183b9cfb016:399 mutants=8eea32c81ed7d126b3d2:996",
+        "ir=d684139b5be5288707c0:29577 suite=f88bb646379f8be8ac10:67900 refusals=e3b0c44298fc1c149afb:0 mutants=8eea32c81ed7d126b3d2:996",
     ),
     (
         "crates/generate/ess-synth/tests/fixtures/generated-views.yaml@ess22",
-        "ir=d684139b5be5288707c0:29577 suite=d51cd175899fabc318ca:58807 refusals=bfb251ea7183b9cfb016:399 mutants=8eea32c81ed7d126b3d2:996",
+        "ir=d684139b5be5288707c0:29577 suite=f88bb646379f8be8ac10:67900 refusals=e3b0c44298fc1c149afb:0 mutants=8eea32c81ed7d126b3d2:996",
     ),
     (
         "crates/specify/ess-compiler/tests/fixtures/adversary_expression.yaml",

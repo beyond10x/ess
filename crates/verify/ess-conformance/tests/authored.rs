@@ -2024,7 +2024,7 @@ fn every_cause_is_reachable_from_a_document() {
 const CAUSES: u16 = 40;
 
 /// The one cause no document reaches: `ESS-AUTHOR-036` refuses the model before any file is read
-/// (`sparse_models_cannot_publish_an_empty_success_for_binary64` in `tests/suite.rs`).
+/// (`a_reached_binary64_still_refuses_by_name` in `tests/suite.rs`).
 const MODEL_LEVEL: u16 = 36;
 
 /// One entry per refusal, each the documents that reach it compiled together.

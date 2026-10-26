@@ -44,8 +44,10 @@ in both actual query results before comparing all returned fields. Returning
 only the identity fails even when that partial row stays unchanged. Optional
 absence is distinct from null; extra returned fields also participate in the
 comparison. Declared Integer values must reach the adapter without rounding.
-Recursive Decimal and Binary64 response or complete-row positions are outside
-this observation profile and refuse.
+A Decimal response or complete-row position is compared by numeric value from
+suite `ess-conformance/58` (or `/59` with declared coverage): `1.5` and `1.50`
+are one value. A Binary64 position is outside this observation profile and
+refuses, naming the field.
 
 Source `ess/7` uses the same complete observations for ordinary `wrong_state`
 refusal witnesses. Existing independent snapshot steps remain available with

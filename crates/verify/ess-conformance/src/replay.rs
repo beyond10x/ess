@@ -250,6 +250,9 @@ pub(crate) fn declarations_for(
     Ok(declarations)
 }
 
+/// What both exact observers say of a `Binary64`, prefixed with the field that reaches it.
+pub(crate) const BINARY64: &str = "Binary64 replay results are unsupported";
+
 pub(crate) struct ExactShape<'a> {
     pub fields: &'a [Field],
     pub declarations: &'a BTreeMap<QualifiedName, Declaration>,
@@ -280,7 +283,11 @@ impl ExactShape<'_> {
                 .resolve(&field.type_ref, "replay")
                 .into_result(())
                 .map_err(|e| e.to_string())?;
-            self.check_type(&field.type_ref, &mut used, &mut BTreeSet::new(), 0)?;
+            self.check_type(&field.type_ref, &mut used, &mut BTreeSet::new(), 0)
+                .map_err(|reason| match reason.as_str() {
+                    BINARY64 => format!("field `{}`: {reason}", field.name),
+                    _ => reason,
+                })?;
         }
         if used.len() != self.declarations.len() {
             return Err("unrelated replay declaration".into());
@@ -331,9 +338,9 @@ impl ExactShape<'_> {
                 }
                 self.check_type(of, used, stack, depth + 1)?;
             }
-            TypeRef::Primitive(Primitive::Decimal | Primitive::Binary64) => {
-                return Err("Decimal and Binary64 replay results are unsupported".into())
-            }
+            // A `Decimal` is compared by value (suite/58, [`crate::exact_decimal`]); a `Binary64` has
+            // no exact observer contract yet.
+            TypeRef::Primitive(Primitive::Binary64) => return Err(BINARY64.into()),
             TypeRef::Primitive(_) => {}
         }
         Ok(())

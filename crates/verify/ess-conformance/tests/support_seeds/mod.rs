@@ -602,9 +602,9 @@ pub fn forgeries(good: &Value, authored: &Value, authored_id: &str) -> Vec<Forge
     // Majors no reader implements: /50 and /51 carry `hold_now` (beyond10x/ess#586), /52 and /53
     // the wrapped value-invariant observation and the await vocabulary (beyond10x/ess#542) and /54
     // and /55 a view read through a reference (beyond10x/ess#564) and /56 and /57 one-time read
-    // cells that read as their actor (beyond10x/ess#614), each admitting seeds cumulatively, so
-    // the first unimplemented pair is /58 and /59.
-    for major in [58, 59, 99] {
+    // cells that read as their actor (beyond10x/ess#614) and /58 and /59 a `Decimal` in an exact
+    // observer, each admitting seeds cumulatively, so the first unimplemented pair is /60 and /61.
+    for major in [60, 61, 99] {
         add(
             &format!("unimplemented-major-{major}"),
             "execution readers admit suite majors",

@@ -371,17 +371,87 @@ export function decodeRetainedCapture(value: unknown): RetainedCapture {
   if (capture.fields.length === 0 || capture.fields.length > 256) {
     throw new Error('replay schema resource limit');
   }
+  // Named before the type grammar, which does not know `Binary64` and would refuse it unnamed.
+  refuseBinary64(capture.fields, declarations);
   validateTypedFields([capture.fields], declarations);
-  const floating = (type: string): boolean => /(^|[<,\s])(Decimal|Binary64)([>,\s]|$)/.test(type);
-  if (
-    capture.fields.some((field) => floating(field.type)) ||
-    Object.values(declarations).some(
-      (declared) => floating(declared.of) || declared.fields.some((field) => floating(field.type)),
-    )
-  ) {
-    throw new Error('Decimal and Binary64 replay results are unsupported');
-  }
   return capture;
+}
+
+/**
+ * The first field of an exact schema that reaches `primitive`, through any wrapper or declaration
+ * it names.
+ */
+function exactFieldReaching(
+  fields: AccessorField[],
+  declarations: Record<string, SelectionDeclaration>,
+  primitive: 'Decimal' | 'Binary64',
+): string | undefined {
+  const seen = new Set<string>();
+  const reaches = (type: string, depth: number): boolean => {
+    if (depth > 128) {
+      throw new Error('replay type depth limit');
+    }
+    if (type === primitive) {
+      return true;
+    }
+    const [inner, optional] = accessorOptional(type);
+    if (optional) {
+      return reaches(inner, depth + 1);
+    }
+    const [item, collection] = accessorCollection(type);
+    if (collection) {
+      return reaches(item, depth + 1);
+    }
+    const declared = owned(declarations, type);
+    if (declared === undefined || seen.has(type)) {
+      return false;
+    }
+    seen.add(type);
+    return declarationChildren(declared)
+      .filter((child) => typeof child === 'string' && child !== '')
+      .some((child) => reaches(child, depth + 1));
+  };
+  return fields.find((field) => reaches(field.type, 0))?.name;
+}
+
+/** Both exact observers refuse a `Binary64`, naming the field that reaches it. */
+function refuseBinary64(
+  fields: AccessorField[],
+  declarations: Record<string, SelectionDeclaration>,
+): void {
+  const field = exactFieldReaching(fields, declarations, 'Binary64');
+  if (field !== undefined) {
+    throw new Error(`field \`${field}\`: Binary64 replay results are unsupported`);
+  }
+}
+
+/**
+ * Refuse a `Decimal` in an exact observer (a retained result's `capture` or a complete subject's
+ * `shape`) below suite/58, the pair whose exact observers compare it by numeric value.
+ */
+export function exactDecimalMajor(value: unknown, major: number): void {
+  const schema =
+    isObject(value) && Object.hasOwn(value, 'identity_field')
+      ? decodeSubjectShape(value)
+      : decodeRetainedCapture(value);
+  if (
+    major < 58 &&
+    exactFieldReaching(schema.fields, schema.declarations, 'Decimal') !== undefined
+  ) {
+    throw new Error(
+      'a Decimal in an exact observer (a complete subject or a retained result) requires ' +
+        'suite/58 or /59',
+    );
+  }
+}
+
+/**
+ * The comparison of both exact observers: structural, every number by its exact value, so a
+ * `Decimal` `1.5` equals `1.50` and `0.1` differs from `0.10000000000000001`. The Go runner
+ * compares the same way; the Rust runner reads a non-integer through binary64.
+ */
+export function exactObservationEqual(left: Node, right: Node): boolean {
+  return responseEqual(left, right);
 }
 
 /** Admit one retained-result observation: its grammar, then the checks decoding makes. */
@@ -522,38 +592,13 @@ export function retainedResult(
     }
     admitRetainedResponse(capture, saved.response);
     const replayed = admitRetainedResponse(capture, run.last.response);
-    if (!exactlyEqual(saved.response, replayed)) {
+    if (!exactObservationEqual(saved.response, replayed)) {
       throw new Error('retry result differs from retained original response');
     }
     return true;
   } catch (error) {
     return refuse(errorText(error));
   }
-}
-
-/** Structural equality with every number compared as the digits it was written with. */
-function exactlyEqual(left: Node, right: Node): boolean {
-  if (left instanceof JsonNumber || right instanceof JsonNumber) {
-    return left instanceof JsonNumber && right instanceof JsonNumber && left.raw === right.raw;
-  }
-  if (Array.isArray(left)) {
-    return (
-      Array.isArray(right) &&
-      left.length === right.length &&
-      left.every((item, position) => exactlyEqual(item, right[position]))
-    );
-  }
-  if (isObject(left)) {
-    if (!isObject(right)) {
-      return false;
-    }
-    const keys = Object.keys(left);
-    return (
-      keys.length === Object.keys(right).length &&
-      keys.every((key) => Object.hasOwn(right, key) && exactlyEqual(left[key], right[key]))
-    );
-  }
-  return left === right || (left === null && right === null);
 }
 
 // ---- complete subject rows (suite/12 vocabulary, synthesized into every later suite) -------------
@@ -601,6 +646,7 @@ export function admitSubjectShape(value: unknown): void {
 }
 
 function validateSubjectShape(shape: SubjectShape): void {
+  refuseBinary64(shape.fields, shape.declarations);
   validateTypedFields([shape.fields], shape.declarations);
   const identity = shape.fields.find((field) => field.name === shape.identityField);
   if (identity === undefined) {

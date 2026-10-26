@@ -679,7 +679,13 @@ export function parseDisclosureId(id: string): DisclosureCell {
 }
 
 /** The suite versions whose one-time read cells read as the actor they name (beyond10x/ess#614). */
-const READER_VERSIONS = ['ess-conformance/56', 'ess-conformance/57'];
+const READER_VERSIONS = [
+  'ess-conformance/56',
+  'ess-conformance/57',
+  // Cumulative: the exact-Decimal pair.
+  'ess-conformance/58',
+  'ess-conformance/59',
+];
 
 export function admitDisclosureId(
   id: string,

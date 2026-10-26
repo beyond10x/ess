@@ -149,7 +149,7 @@ fn coverage_cli_refuses_binary64_model_before_each_new_production_surface() {
     let dir = directory("binary64");
     let model = dir.join("model");
     fs::create_dir_all(&model).unwrap();
-    fs::write(model.join("system.yaml"),"format: ess/2\nsystem: sample\nversion: v1\ndomains: [sample.data]\ndomain: sample.data\ntypes:\n  - {name: sample.data.Ratio, kind: newtype, of: Binary64}\n").unwrap();
+    fs::write(model.join("system.yaml"),"format: ess/2\nsystem: sample\nversion: v1\ndomains: [sample.data]\ndomain: sample.data\ntypes:\n  - {name: sample.data.Ratio, kind: newtype, of: Binary64}\nevents:\n  - name: sample.data.Measured\n    fields: [{name: ratio, type: sample.data.Ratio}]\n").unwrap();
     let scenarios = dir.join("scenarios");
     fs::create_dir_all(&scenarios).unwrap();
     fs::write(

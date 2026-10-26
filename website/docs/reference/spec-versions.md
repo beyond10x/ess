@@ -742,6 +742,15 @@ cell is written at 56 (ordinary) or 57 (declared coverage); each implies every m
 54/55 pair included. Rust, Go and TypeScript run it, and older readers refuse these envelopes by
 version. A suite without such a cell keeps its earlier format and bytes.
 
+`ess-conformance/58` and `ess-conformance/59`, added in [0.70.0][r70], let a view publish a
+`Decimal` that an exact observer reads: a complete subject or a retained result compares it by
+numeric value, so `1.5` and `1.50` are one value and `1.25` another. Before, such a view refused
+every wrong-state scenario of its entity. A suite carrying one is written at 58 (ordinary) or 59
+(declared coverage); each implies every major below it, the 56/57 pair included. Rust, Go and
+TypeScript run it, older readers refuse these envelopes by version, and every reader refuses a
+Decimal in an exact observer under a lower major. A `Binary64` there is still refused, and the
+refusal names the field. A suite without one keeps its earlier format and bytes.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named

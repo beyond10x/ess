@@ -1,9 +1,12 @@
 //! Concrete finite-number use inventory for adapters that cannot execute its wire contract.
 
-use crate::ir::{EssIr, ResolvedBody, ResolvedField, ResolvedTypeRef};
-use crate::refs::{
-    CommandRef, DeclaredTypeRef, EntityRef, ErrorRef, EssSemanticRef, EventRef, ViewRef,
+use crate::ir::{
+    EssIr, ResolvedBody, ResolvedField, ResolvedMappingValue, ResolvedTypeRef, TypeHandle,
 };
+use crate::refs::{
+    ActorRef, CommandRef, DeclaredTypeRef, EntityRef, ErrorRef, EssSemanticRef, EventRef, ViewRef,
+};
+use ess_domain::name::QualifiedName;
 use ess_domain::Primitive;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -18,6 +21,119 @@ pub fn uses(ir: &EssIr) -> BTreeMap<String, EssSemanticRef> {
     uses_of(ir, Primitive::Binary64)
 }
 
+/// The Binary64 positions of [`uses`] a conformance run reaches, in stable source order.
+///
+/// A position whose owner is an entity, command, event, error, view or actor is reached. One in a declared
+/// type is reached when that type is in the type closure of an entity (its identity and every
+/// field, published or not), a command's input or response, an event, an error, a view's fields,
+/// parameters or row shape, an actor's attributes, a binding's delivery context, mappings or
+/// selection, or a declared conversion. Every other position is in a type nothing a scenario sends
+/// or reads names; [`unreached_locations`] lists those. [`locations`] stays the structural
+/// inventory a codec reads.
+pub fn reached_uses(ir: &EssIr) -> BTreeMap<String, EssSemanticRef> {
+    let reached = reached_types(ir);
+    uses(ir)
+        .into_iter()
+        .filter(|(_, owner)| match owner {
+            EssSemanticRef::Type { name } => reached.contains(name.name()),
+            _ => true,
+        })
+        .collect()
+}
+
+/// Every Binary64 position of [`uses`] that [`reached_uses`] leaves out, in stable source order.
+pub fn unreached_locations(ir: &EssIr) -> BTreeSet<String> {
+    let reached = reached_uses(ir);
+    locations(ir)
+        .into_iter()
+        .filter(|at| !reached.contains_key(at))
+        .collect()
+}
+
+/// The declared types a model's commands, events, errors, views, entities, actors, bindings and
+/// conversions reach, through every wrapper and declaration.
+fn reached_types(ir: &EssIr) -> BTreeSet<QualifiedName> {
+    let mut roots: Vec<&ResolvedTypeRef> = Vec::new();
+    let mut named: Vec<&TypeHandle> = Vec::new();
+    for entity in ir.entities().values() {
+        roots.push(&entity.identity.type_ref);
+        roots.extend(entity.fields.iter().map(|field| &field.type_ref));
+        named.push(&entity.state_type);
+    }
+    for command in ir.commands().values() {
+        roots.extend(command.input.iter().map(|field| &field.type_ref));
+        roots.extend(command.response.iter().map(|field| &field.type_ref));
+    }
+    for event in ir.events().values() {
+        roots.extend(event.fields.iter().map(|field| &field.type_ref));
+    }
+    for error in ir.errors().values() {
+        roots.extend(error.fields.iter().map(|field| &field.type_ref));
+    }
+    for view in ir.views().values() {
+        roots.extend(view.fields.iter().map(|field| &field.type_ref));
+        roots.extend(view.params.iter().map(|field| &field.type_ref));
+        named.extend(view.shape.iter());
+    }
+    for actor in ir.actors().values() {
+        roots.extend(actor.attributes.iter().map(|field| &field.type_ref));
+    }
+    for binding in ir.bindings().values() {
+        if let Some(context) = &binding.context {
+            roots.extend(context.fields.iter().map(|field| &field.type_ref));
+        }
+        for mapping in &binding.mapping {
+            roots.push(&mapping.target_type);
+            match &mapping.value {
+                ResolvedMappingValue::DeliveryContext { type_ref, .. }
+                | ResolvedMappingValue::HostContext { type_ref, .. }
+                | ResolvedMappingValue::HostRead { type_ref, .. }
+                | ResolvedMappingValue::Selection { type_ref, .. }
+                | ResolvedMappingValue::EventField { type_ref, .. } => roots.push(type_ref),
+                ResolvedMappingValue::EventAccessor {
+                    type_ref, types, ..
+                } => {
+                    roots.push(type_ref);
+                    named.extend(types.values());
+                }
+                ResolvedMappingValue::Literal { .. } => {}
+            }
+        }
+        if let Some(selection) = &binding.selection {
+            named.extend(selection.types.values());
+        }
+    }
+    for conversion in ir.conversions() {
+        roots.push(&conversion.from);
+        roots.push(&conversion.to);
+    }
+    let mut found = BTreeSet::new();
+    let mut pending: Vec<&TypeHandle> = named;
+    for root in roots {
+        pending.extend(root.named_leaves());
+    }
+    while let Some(handle) = pending.pop() {
+        if !found.insert(handle.name().clone()) {
+            continue;
+        }
+        match &ir.named_type(handle).body {
+            ResolvedBody::Newtype { of, .. } => pending.extend(of.named_leaves()),
+            ResolvedBody::Struct { fields, .. } => {
+                for field in fields {
+                    pending.extend(field.type_ref.named_leaves());
+                }
+            }
+            ResolvedBody::Union { variants, .. } => {
+                for variant in variants.values().flatten() {
+                    pending.extend(variant.named_leaves());
+                }
+            }
+            ResolvedBody::Enum { .. } => {}
+        }
+    }
+    found
+}
+
 /// Every directly declared position of `primitive` in the checked model, in stable source order:
 /// the same inventory for another primitive an adapter may have no codec for, such as `Json`
 /// (beyond10x/ess#138).
@@ -27,22 +143,27 @@ pub fn locations_of(ir: &EssIr, primitive: Primitive) -> BTreeSet<String> {
 
 fn uses_of(ir: &EssIr, primitive: Primitive) -> BTreeMap<String, EssSemanticRef> {
     let mut found = BTreeMap::new();
+    declared_type_uses(ir, primitive, &mut found);
+    owner_uses(ir, primitive, &mut found);
+    found
+}
+
+/// The positions of `primitive` inside declared type bodies, each owned by its type.
+fn declared_type_uses(
+    ir: &EssIr,
+    primitive: Primitive,
+    found: &mut BTreeMap<String, EssSemanticRef>,
+) {
     for declared in ir.types().values() {
         let at = format!("types.{}", declared.name);
         let owner = DeclaredTypeRef::new(declared.name.clone()).into();
         match &declared.body {
             ResolvedBody::Newtype { of, .. } => {
-                reference(primitive, of, &format!("{at}.of"), &owner, &mut found);
+                reference(primitive, of, &format!("{at}.of"), &owner, found);
             }
             ResolvedBody::Struct {
                 fields: members, ..
-            } => fields(
-                primitive,
-                members,
-                &format!("{at}.fields"),
-                &owner,
-                &mut found,
-            ),
+            } => fields(primitive, members, &format!("{at}.fields"), &owner, found),
             ResolvedBody::Union { variants, .. } => {
                 for (name, ty) in variants.iter().filter_map(|(n, t)| Some((n, t.as_ref()?))) {
                     reference(
@@ -50,13 +171,17 @@ fn uses_of(ir: &EssIr, primitive: Primitive) -> BTreeMap<String, EssSemanticRef>
                         ty,
                         &format!("{at}.variants.{name}"),
                         &owner,
-                        &mut found,
+                        found,
                     );
                 }
             }
             ResolvedBody::Enum { .. } => {}
         }
     }
+}
+
+/// The positions of `primitive` an entity, command, event, error, view or actor declares itself.
+fn owner_uses(ir: &EssIr, primitive: Primitive, found: &mut BTreeMap<String, EssSemanticRef>) {
     for entity in ir.entities().values() {
         let owner = EntityRef::new(entity.name.clone()).into();
         reference(
@@ -64,14 +189,14 @@ fn uses_of(ir: &EssIr, primitive: Primitive) -> BTreeMap<String, EssSemanticRef>
             &entity.identity.type_ref,
             &format!("entity {}.identity", entity.name),
             &owner,
-            &mut found,
+            found,
         );
         fields(
             primitive,
             &entity.fields,
             &format!("entity {}.fields", entity.name),
             &owner,
-            &mut found,
+            found,
         );
     }
     for command in ir.commands().values() {
@@ -80,14 +205,14 @@ fn uses_of(ir: &EssIr, primitive: Primitive) -> BTreeMap<String, EssSemanticRef>
             &command.response,
             &format!("command.{}.response", command.name),
             &CommandRef::new(command.name.clone()).into(),
-            &mut found,
+            found,
         );
         fields(
             primitive,
             &command.input,
             &format!("command.{}.input", command.name),
             &CommandRef::new(command.name.clone()).into(),
-            &mut found,
+            found,
         );
     }
     for event in ir.events().values() {
@@ -96,7 +221,7 @@ fn uses_of(ir: &EssIr, primitive: Primitive) -> BTreeMap<String, EssSemanticRef>
             &event.fields,
             &format!("event.{}.fields", event.name),
             &EventRef::new(event.name.clone()).into(),
-            &mut found,
+            found,
         );
     }
     for error in ir.errors().values() {
@@ -105,7 +230,7 @@ fn uses_of(ir: &EssIr, primitive: Primitive) -> BTreeMap<String, EssSemanticRef>
             &error.fields,
             &format!("error.{}.fields", error.name),
             &ErrorRef::new(error.name.clone()).into(),
-            &mut found,
+            found,
         );
     }
     for view in ir.views().values() {
@@ -115,17 +240,25 @@ fn uses_of(ir: &EssIr, primitive: Primitive) -> BTreeMap<String, EssSemanticRef>
             &view.fields,
             &format!("view.{}.fields", view.name),
             &owner,
-            &mut found,
+            found,
         );
         fields(
             primitive,
             &view.params,
             &format!("view.{}.params", view.name),
             &owner,
-            &mut found,
+            found,
         );
     }
-    found
+    for actor in ir.actors().values() {
+        fields(
+            primitive,
+            &actor.attributes,
+            &format!("actor.{}.attributes", actor.name),
+            &ActorRef::new(actor.name.clone()).into(),
+            found,
+        );
+    }
 }
 
 fn fields(
