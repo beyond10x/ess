@@ -72,7 +72,16 @@ pub struct ViewReference {
 /// `Optional`) is one entity's identity by [`referenced_entity`]'s rule — the identity only where a
 /// relation makes it name another entity's row. Empty where the source is not declared.
 pub fn references(spec: &Specification, view: &ViewSpec) -> Vec<ViewReference> {
-    let Some(source) = spec.entities().get(&view.source) else {
+    source_references(spec, &view.source)
+}
+
+/// [`references`] of a view whose source is `source`, for a view that is not in `spec`
+/// ([`super::from`]).
+pub(crate) fn source_references(
+    spec: &Specification,
+    source: &crate::name::QualifiedName,
+) -> Vec<ViewReference> {
+    let Some(source) = spec.entities().get(source) else {
         return Vec::new();
     };
     std::iter::once(&source.identity)

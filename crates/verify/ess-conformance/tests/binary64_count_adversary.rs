@@ -170,17 +170,88 @@ fn original_byte_and_serde_admission_refuse_binary64_across_all_legacy_suite_maj
     eprintln!("16 admitted decimal controls and 48 Binary64 reader refusals; both typed runners reject suite/5 before effects");
 }
 
-#[test]
-fn unified_model_issues_survive_authored_synthesis_and_web_boundaries() {
+/// Three Binary64 positions in one struct, and a command whose input is `{input}`.
+const VALUES: &str = "format: ess/31
+system: probe
+version: v1
+domain: probe.data
+types:
+  - {name: probe.data.RecordId, kind: newtype, of: Uuid}
+  - name: probe.data.Values
+    kind: struct
+    fields:
+      - {name: alpha, type: Binary64}
+      - {name: beta, type: 'List<Binary64>'}
+      - {name: gamma, type: 'Optional<Binary64>'}
+entities:
+  - name: probe.data.Record
+    identity: {name: record_id, type: probe.data.RecordId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+events:
+  - name: probe.data.Recorded
+    fields: [{name: record_id, type: probe.data.RecordId}]
+commands:
+  - name: probe.data.Measure
+    input:
+      - {name: label, type: String}
+{input}    outcomes:
+      - name: measured
+        creates: probe.data.Record
+        instance: record_id
+        sets: {label: input.label}
+        emits: [probe.data.Recorded]
+        payload: {probe.data.Recorded: {record_id: {generated: true}}}
+views:
+  - name: probe.data.Records
+    source: probe.data.Record
+    consistency: read_your_writes
+    fields:
+      - {name: record_id, type: probe.data.RecordId}
+      - {name: label, type: String}
+";
+
+fn values_model(input: &str) -> ess_compiler::EssIr {
     use ess_compiler::{resolve::compile, source::SourceMap};
     use ess_domain::{
         spec::{RawSpecFile, Specification},
         system::Source,
     };
-    let source = "format: ess/2\nsystem: probe\nversion: v1\ndomains: [probe.data]\ndomain: probe.data\ntypes:\n  - name: probe.data.Values\n    kind: struct\n    fields:\n      - {name: alpha, type: Binary64}\n      - {name: beta, type: 'List<Binary64>'}\n      - {name: gamma, type: 'Optional<Binary64>'}\n";
-    let spec = Specification::assemble([(Source::document(), RawSpecFile::parse(source).unwrap())])
-        .unwrap();
-    let ir = compile(&spec, &SourceMap::new()).unwrap();
+    let source = VALUES.replace("{input}", input);
+    let spec =
+        Specification::assemble([(Source::document(), RawSpecFile::parse(&source).unwrap())])
+            .unwrap();
+    compile(&spec, &SourceMap::new()).unwrap()
+}
+
+/// The positions sit in a type outside everything a scenario sends or reads: the model is
+/// admitted everywhere, and synthesis notes each position.
+#[test]
+fn unreached_model_positions_are_admitted_across_authored_synthesis_and_web_boundaries() {
+    let ir = values_model("");
+    ess_conformance::admission::model(&ir).unwrap();
+    let authoring = ess_conformance::authored::compile(&ir, &[]);
+    assert!(authoring.refusals.is_empty(), "{:?}", authoring.refusals);
+    let synthesis = ess_conformance::synthesize(&ir);
+    assert!(synthesis.refusals.is_empty(), "{:?}", synthesis.refusals);
+    assert!(!synthesis.suite.is_empty());
+    let notes: Vec<String> = synthesis.notes.iter().map(ToString::to_string).collect();
+    for field in ["alpha", "beta.of", "gamma.of"] {
+        let at = format!("`types.probe.data.Values.fields.{field}`");
+        assert!(
+            notes.iter().any(|note| note.contains(&at)),
+            "{at}: {notes:?}"
+        );
+    }
+    ess_conformance::web::emit(&ir, &synthesis.suite).unwrap();
+    eprintln!("three unreached model positions admitted by the model, authored, synthesis and web boundaries, each noted");
+}
+
+/// The same positions reached through a command input refuse the model at every boundary.
+#[test]
+fn unified_model_issues_survive_authored_synthesis_and_web_boundaries() {
+    let ir = values_model("      - {name: values, type: probe.data.Values}\n");
     let expected = ess_conformance::admission::model(&ir).unwrap_err();
     assert_eq!(expected.issues.len(), 3);
     let paths = expected

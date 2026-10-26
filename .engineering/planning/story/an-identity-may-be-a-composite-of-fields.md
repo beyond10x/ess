@@ -7,12 +7,12 @@ title: 'An entity may be identified by several fields, and instance: addresses i
 summary: 'A composite identity is refused both as instance: map and as a published struct (a2a wave 1, M1).'
 tags:
 - adopter-report
-- ess-0.70.0
+- ess-0.71.0
 - feature-request
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 2
+revision: 3
 ---
 ## Need
 

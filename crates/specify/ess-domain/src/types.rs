@@ -1231,12 +1231,45 @@ impl NamedType {
     /// [`state`](crate::entity::EntitySpec::STATE) for a lifecycle no field carries.
     pub const VALUE: &'static str = "value";
 
+    /// The refusal of a body that declares no `part`, `empty_declaration` at `types.<name>.<part>`.
+    fn declares_nothing(&self, part: &str, hint: &str) -> ValidationError {
+        ValidationError::new(
+            ValidationCode::EmptyDeclaration,
+            format!("types.{}.{part}", self.name),
+            format!("`{}` declares no {part}, so no value can be one", self.name),
+        )
+        .with_hint(hint)
+    }
+
+    /// A struct with `fields: []` in a specification below `ess/32`, refused as before that
+    /// format admitted it (beyond10x/ess#649); its message is unchanged and its hint names `ess/32`.
+    fn empty_struct_below_format(
+        &self,
+        format: Option<crate::system::FormatVersion>,
+    ) -> Option<ValidationError> {
+        let TypeBody::Struct { fields, .. } = &self.body else {
+            return None;
+        };
+        let below =
+            format.is_some_and(|format| format.major() < crate::system::FormatVersion::V32.major());
+        (fields.is_empty() && below).then(|| {
+            self.declares_nothing(
+                "fields",
+                "give it at least one, delete the declaration, or declare `format: ess/32`, \
+                 where a struct may declare no fields",
+            )
+        })
+    }
+
     /// Refuses a body that declares nothing.
     ///
-    /// A type with no variants and a struct with no fields both parse, and both name something no
-    /// value can be: every generator downstream would emit an enum with no cases or a struct with no
-    /// members, and the first place anyone notices is a compiler error in generated code, where the
-    /// mistake is furthest from the document that caused it.
+    /// A type with no variants parses, and names something no value can be: every generator
+    /// downstream would emit an enum with no cases, and the first place anyone notices is a
+    /// compiler error in generated code, where the mistake is furthest from the document that
+    /// caused it. A struct with no fields is not such a body: `{}` is a value of it, and every
+    /// object is one when it ignores undeclared fields, so it is refused only below `ess/32`, by
+    /// the registry that knows the format ([`NamedType::empty_struct_below_format`],
+    /// beyond10x/ess#649).
     fn check_shape(&self) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let at = |part: &str| format!("types.{}.{part}", self.name);
@@ -1255,21 +1288,16 @@ impl NamedType {
             }
         }
 
-        let (part, empty) = match &self.body {
-            TypeBody::Enum { variants } => ("variants", variants.is_empty()),
-            TypeBody::Union { variants, .. } => ("variants", variants.is_empty()),
-            TypeBody::Struct { fields, .. } => ("fields", fields.is_empty()),
-            TypeBody::Newtype { .. } => ("of", false),
+        let no_variants = match &self.body {
+            TypeBody::Enum { variants } => variants.is_empty(),
+            TypeBody::Union { variants, .. } => variants.is_empty(),
+            TypeBody::Struct { .. } | TypeBody::Newtype { .. } => false,
         };
-        if empty {
-            errors.push(
-                ValidationError::new(
-                    ValidationCode::EmptyDeclaration,
-                    at(part),
-                    format!("`{}` declares no {part}, so no value can be one", self.name),
-                )
-                .with_hint("give it at least one, or delete the declaration"),
-            );
+        if no_variants {
+            errors.push(self.declares_nothing(
+                "variants",
+                "give it at least one, or delete the declaration",
+            ));
         }
 
         if let TypeBody::Newtype {
@@ -2606,6 +2634,10 @@ impl TypeRegistry {
             errors.extend(declared.validate_prefix(self));
             errors.extend(declared.validate_attributes(self));
             errors.extend(declared.validate_invariants(self));
+            // A struct with `fields: []`, below `ess/32` (beyond10x/ess#649).
+            if let Some(refused) = declared.empty_struct_below_format(self.format()) {
+                errors.push(refused);
+            }
             // A struct's `undeclared_fields:`, below `ess/24` (beyond10x/ess#500).
             if let TypeBody::Struct {
                 undeclared_fields: Some(_),
@@ -3148,10 +3180,6 @@ mod tests {
                 "a union",
                 "name: billing.Payee\nkind: union\ntag: kind\nvariants: {}\n",
             ),
-            (
-                "a struct",
-                "name: billing.Money\nkind: struct\nfields: []\n",
-            ),
         ] {
             let errors = declaration(yaml).expect_err(label);
             assert!(
@@ -3159,6 +3187,29 @@ mod tests {
                 "{label}: {errors}"
             );
         }
+    }
+
+    /// A struct with `fields: []` is a declaration; the registry refuses it below `ess/32` only
+    /// (beyond10x/ess#649).
+    #[test]
+    fn a_struct_with_no_fields_is_refused_below_ess_32_only() {
+        use crate::system::FormatVersion;
+        let declared = declaration("name: billing.Money\nkind: struct\nfields: []\n")
+            .expect("a struct with no fields is a declaration");
+        let mut registry = TypeRegistry::new();
+        registry.insert(declared).expect("new");
+        let errors = registry
+            .clone()
+            .with_format(FormatVersion::V31)
+            .validate_invariants();
+        assert!(
+            errors.contains(ValidationCode::EmptyDeclaration),
+            "{errors}"
+        );
+        let errors = registry
+            .with_format(FormatVersion::V32)
+            .validate_invariants();
+        assert!(errors.is_empty(), "{errors}");
     }
 
     #[test]

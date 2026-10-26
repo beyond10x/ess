@@ -340,7 +340,13 @@ fn cascade(ir: &EssIr, plan: &SynthesisPlan, refused: &mut BTreeMap<Capability, 
     }
 
     let grants = unserved_grants(ir, &ports);
-    for (capability, detail) in ports.into_iter().chain(bindings).chain(grants) {
+    let transports = unserved_transports(&ports);
+    for (capability, detail) in ports
+        .into_iter()
+        .chain(transports)
+        .chain(bindings)
+        .chain(grants)
+    {
         if matches!(
             plan.disposition_of(capability.kind, &capability.source),
             Some(SynthesisDisposition::Generated | SynthesisDisposition::Obligation(_))
@@ -348,6 +354,25 @@ fn cascade(ir: &EssIr, plan: &SynthesisPlan, refused: &mut BTreeMap<Capability, 
             refused.insert(capability, detail);
         }
     }
+}
+
+/// The transport of every component whose port is refused, refused for the same reason.
+///
+/// Such a component is not served ([`super::http::served`]), so a transport the plan marks
+/// generated would otherwise be planned and never emitted.
+fn unserved_transports(ports: &BTreeMap<Capability, String>) -> Vec<(Capability, String)> {
+    ports
+        .iter()
+        .map(|(port, because)| {
+            (
+                Capability {
+                    kind: CapabilityKind::ComponentTransport,
+                    source: port.source.clone(),
+                },
+                because.clone(),
+            )
+        })
+        .collect()
 }
 
 /// Every actor's grant, refused, where the specification serves components and this target

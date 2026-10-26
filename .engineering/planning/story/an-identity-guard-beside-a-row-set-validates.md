@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-identity-guard-beside-a-row-set-validates
 kind: story
-status: active
+status: implemented
 title: A row-set guard beside an identity-addressed when_related validates and answers in the rule's step-4 order
 tags:
 - adopter-report
@@ -26,10 +26,11 @@ scope:
   path: crates/verify/ess-conformance/src/interpret/execute/row_set.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
-revision: 6
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:07:58Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:07:58Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-26T12:53:16Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 
@@ -77,11 +78,13 @@ that change:
 ## Decisions
 
 - Accept, as the binding design states: lift ESS-COMMAND-009 for the identity-plus-row-set pair
-  from `ess/30`; below it the message is unchanged and the hint names `ess/30`.
+  from `ess/32` (the first unreleased format; `ess/30` and `ess/31` shipped without it); below it
+  the message is unchanged and the hint names `ess/32`.
 - Order within step 4 is existence of identity-addressed rows, then predicate and row-set
-  refusals over present rows, each in declaration order (§ G4 table, step 4). A row-set refusal
-  declared before an identity-addressed `exists: false` is refused as `conflicting_declaration`
-  by `story:declaration-order-agrees-with-every-step-pair`'s check, not by a new rule here.
+  refusals over present rows, each in declaration order (§ G4 table, step 4). Corrected by unit A
+  (2026-10-26): a row-set refusal declared above an identity-addressed `exists: false` is not
+  refused; it validates. `story:declaration-order-agrees-with-every-step-pair`'s check does not
+  pair those two steps, and this story adds no rule for them.
 - Generated Rust and Go keep such a command a named obligation (row sets are not generated,
   `docs/design/generic-language-features.md` § G2 "Cost"); Entity Runtime keeps
   `RelatedGuardUnsupported` (§ G4 "Entity Runtime and `when_related:`").

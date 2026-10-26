@@ -2,16 +2,17 @@
 format: aep.planning-md/3
 id: story:a-null-member-matches-an-absent-optional-in-a-nested-assertion
 kind: story
-status: active
+status: implemented
 title: An Optional struct member asserted null matches it being absent at any depth
 summary: 'A contains assertion writing value: null on an Optional member of a list element fails on the interpreter, which leaves the member absent; the absent-equals-null rule applies only to top-level dotted paths.'
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-22T23:36:33Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-22T23:36:34Z", actor: "human:timo", revision: 4, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:38Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Need
 

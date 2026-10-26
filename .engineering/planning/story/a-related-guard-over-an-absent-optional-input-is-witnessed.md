@@ -2,16 +2,17 @@
 format: aep.planning-md/3
 id: story:a-related-guard-over-an-absent-optional-input-is-witnessed
 kind: story
-status: active
+status: implemented
 title: A related guard that needs an Optional input absent is witnessed
 summary: A when_related predicate true when an Optional input is left out gets no witness (ESS-SYNTH-003); as when_subject it does (row 29, 2026-10-23).
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T04:52:43Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-23T04:52:43Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:29Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Need
 

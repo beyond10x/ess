@@ -2819,7 +2819,9 @@ fn residual_entity(declaration: &mut serde_json::Value) {
     residual_fields(declaration, "fields");
     remove_keys(declaration, &["state_type", "invariants", "relations"]);
     if let Some(lifecycle) = declaration.get_mut("lifecycle") {
-        remove_keys(lifecycle, &["initial", "states", "terminal"]);
+        // A state's wire spelling (`ess/32`, beyond10x/ess#639) is the spelling of its variant of
+        // `<Entity>.State`, compared there as `variant-wire-name-changed`.
+        remove_keys(lifecycle, &["initial", "states", "terminal", "naming"]);
         if let Some(transitions) = lifecycle
             .get_mut("transitions")
             .and_then(serde_json::Value::as_array_mut)

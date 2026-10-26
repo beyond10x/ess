@@ -117,8 +117,23 @@ The Go target did not check its identifiers. A label used as a variant's name
 (`- demo.explanation/2`), a union label or an explicit name that is not an identifier produced a
 type declaration `go build` could not parse. The Go layout now checks every name it allocates
 before rendering. It refuses with `invalid-identifier`, addressed to the same source the Rust
-target names. An enum variant's refusal names the explicit `{name, wire}` remedy. Valid models
-allocate only valid names, so their output is unchanged.
+target names. Valid models allocate only valid names, so their output is unchanged.
+
+Since 0.70.0 (beyond10x/ess#662) a label used as a variant's name derives its identifier on the
+Rust, Web and Go targets instead of being refused: every character other than a letter or a digit
+is a word break, the rule the types generator applies, so `call.started` is `CallStarted`,
+`demo.explanation/2` is `DemoExplanation2` and the union label `demo.shape/1` is `DemoShape1`;
+Go prefixes the type name, as before. The label stays the wire value. A variant's `code:`
+(`{name: call.started, code: Begun}`) names the identifier instead, on every target. A label with
+no identifier after that, such as `1.0` on Rust and Web, keeps `invalid-identifier`, and an
+enum variant's refusal now names its flat `{name: …, code: <identifier>}` as the remedy. A written
+`code:` the target cannot use (`Self` on Rust and Web; on Go any code that is not an exported
+identifier, such as `begun` or `type`, and the same for a declaration's `naming: { code: … }`) is
+refused where it is written, and the refusal names the code. Two labels that derive one identifier
+(`a.b` and `a_b`) are a Rust and Web `symbol-collision`; Go suffixes the second, as it does for
+`a-b` and `a_b`. The collision names an enum variant's `code:` as the remedy. A union label declares
+none, so for two union labels it says that only renaming one separates them. A label of letters, digits, `-` and `_` derives what it derived before,
+so a model without other characters in its labels keeps its bytes.
 
 A mutual optional cycle stays a Rust and Web `recursive-layout` refusal, as decided above. Go
 represents an optional as a pointer, so the same model compiles there; the test keeps both

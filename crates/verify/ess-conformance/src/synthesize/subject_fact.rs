@@ -8599,7 +8599,7 @@ fn preserve(
                 |reason| {
                     RefusalCause::NoWitness(WitnessGap {
                         path: format!("{name}: {reason}"),
-                        type_ref: "complete subject observation".into(),
+                        type_ref: super::SUBJECT_GAP.into(),
                         reason: "complete subject requires a finite exact typed observer",
                     })
                 },

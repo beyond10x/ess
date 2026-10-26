@@ -698,9 +698,10 @@ impl fmt::Display for ConstructRef {
 
 /// Where a construct was written, when the producer knows.
 ///
-/// Nothing supplies one yet: `ess-yaml` discards positions for a semantic error, so the compiler
-/// still finds the line by searching the source text. The type exists because the first producer
-/// that can supply a position needs no change to the bridge that consumes it.
+/// The parser supplies none: `ess-yaml` discards positions for a semantic error, so the compiler
+/// still finds most lines by searching the source text. One producer supplies its own, read from
+/// the text where it takes the key it refuses: a view field's `from:` (`ess-domain`'s `view::from`,
+/// beyond10x/ess#675). The bridge that consumes a span needs no change for another.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SyntaxSpan {
     /// The file, as the specification labelled it.

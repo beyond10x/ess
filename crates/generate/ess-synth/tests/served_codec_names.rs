@@ -848,3 +848,147 @@ fn go_serves_flattening_commands_of_two_contexts() {
     assert!(ran.status.success(), "the Go harness builds and runs");
     assert_eq!(lines, expected(&ir, false));
 }
+
+/// A lifecycle state's wire name (`ess/32`, beyond10x/ess#639) through the served surface.
+#[path = "served_codec_names/state_wire.rs"]
+mod state_wire;
+
+/// Enum and union labels that were identifiers before dotted labels derived one (beyond10x/ess#662):
+/// hyphenated, underscored and plain, each reached by a served command.
+const LABELLED: &str = "format: ess/20
+system: renewal
+version: v1
+domain: renewal.input
+types:
+  - name: renewal.input.Channel
+    kind: enum
+    variants:
+      - wrong-state
+      - bank_transfer
+      - Plain
+      - {name: Card, wire: card.payment}
+  - name: renewal.input.Settlement
+    kind: union
+    tag: kind
+    variants:
+      card-payment: String
+      bank_transfer: Integer
+commands:
+  - name: renewal.input.Settle
+    input:
+      - {name: channel, type: renewal.input.Channel}
+      - {name: settlement, type: renewal.input.Settlement}
+    outcomes:
+      - name: settled
+        emits: [renewal.input.Settled]
+        payload:
+          renewal.input.Settled: {channel: input.channel, settlement: input.settlement}
+events:
+  - name: renewal.input.Settled
+    fields:
+      - {name: channel, type: renewal.input.Channel}
+      - {name: settlement, type: renewal.input.Settlement}
+components:
+  - component: renewal-service
+    owns: {domains: [renewal.input]}
+    accepts: {commands: [renewal.input.Settle]}
+    publishes: {events: [renewal.input.Settled]}
+    reached_by: network
+";
+
+/// FNV-1a, 64 bits: a digest stable across toolchains, unlike `DefaultHasher`.
+fn fnv(bytes: &[u8]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+/// Every artifact's path and bytes, or the refusal as it reads, as one digest.
+fn digest(result: Result<Synthesis, SynthesisFailure>) -> String {
+    match result {
+        Ok(synthesis) => {
+            let mut text = String::new();
+            for (path, artifact) in &synthesis.artifacts {
+                let _ = write!(text, "{path}\0{}\0", artifact.contents);
+            }
+            format!(
+                "{} artifact(s) {}",
+                synthesis.artifacts.len(),
+                fnv(text.as_bytes())
+            )
+        }
+        Err(failure) => format!("refused {}", fnv(failure.to_string().as_bytes())),
+    }
+}
+
+/// The digests 0.69.2 synthesizes for each fixture, target and layout, recorded before variant
+/// identifiers were derived with the fragment rule. Only a label holding a character other than a
+/// letter, a digit, `-` or `_` was refused then, and only such a label derives another identifier
+/// now, so a model without one keeps every byte.
+const BEFORE_DERIVED_LABELS: &[(&str, &str)] = &[
+    ("aliased rust-workspace", "25 artifact(s) 6e8ba51b41773d08"),
+    ("aliased rust-crate", "22 artifact(s) fffa3fc2b8eae1cc"),
+    ("aliased web", "14 artifact(s) d12516abe01e46a3"),
+    ("cross rust-workspace", "26 artifact(s) e0adb70818119a39"),
+    ("cross rust-crate", "23 artifact(s) 06b949618f866471"),
+    ("cross web", "14 artifact(s) 056080abb781f618"),
+    ("cross go", "20 artifact(s) 75ec5e2490b76f1b"),
+    ("labelled rust-workspace", "25 artifact(s) 7f565f0b219eda49"),
+    ("labelled rust-crate", "22 artifact(s) 4aedcbbd9644f44e"),
+    ("labelled web", "14 artifact(s) 43f74cb7878746cd"),
+    ("labelled go", "19 artifact(s) 5c298d0e009048e5"),
+];
+
+#[test]
+fn a_model_without_dotted_labels_keeps_its_bytes() {
+    let mut actual = Vec::new();
+    // `ALIASED` is not synthesized for Go: its port is outside what the Go target serves (module
+    // documentation), and the Go emitter answers it with a panic rather than a refusal.
+    for (label, text, go) in [
+        ("aliased", ALIASED, false),
+        ("cross", CROSS, true),
+        ("labelled", LABELLED, true),
+    ] {
+        let ir = compile_model(text);
+        let mut results = vec![
+            (
+                "rust-workspace",
+                synthesize_laid_out(&ir, Target::Rust, OutputLayout::Workspace),
+            ),
+            (
+                "rust-crate",
+                synthesize_laid_out(&ir, Target::Rust, OutputLayout::Crate),
+            ),
+            (
+                "web",
+                synthesize_for(&ir, Target::Web).map_err(SynthesisFailure::from),
+            ),
+        ];
+        if go {
+            results.push((
+                "go",
+                synthesize_for(&ir, Target::Go).map_err(SynthesisFailure::from),
+            ));
+        }
+        for (target, result) in results {
+            actual.push((format!("{label} {target}"), digest(result)));
+        }
+    }
+    let expected: Vec<(String, String)> = BEFORE_DERIVED_LABELS
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect();
+    assert_eq!(
+        actual,
+        expected,
+        "generated bytes moved; actual:\n{}",
+        actual
+            .iter()
+            .map(|(key, value)| format!("    ({key:?}, {value:?}),"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}

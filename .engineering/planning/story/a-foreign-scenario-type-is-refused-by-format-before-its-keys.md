@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-foreign-scenario-type-is-refused-by-format-before-its-keys
 kind: story
-status: active
+status: implemented
 title: A scenario document of a foreign type is refused for its type, not for its first unknown key
 tags:
 - adopter-report
@@ -10,10 +10,11 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-22T22:34:54Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-22T22:34:54Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:21Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Need
 

@@ -1005,6 +1005,17 @@
         }
       ]
     },
+    "LifecycleState": {
+      "description": "A lifecycle state: a bare name, or from `ess/32` a mapping that also declares its wire spelling.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/StateName"
+        },
+        {
+          "$ref": "#/definitions/SpelledState"
+        }
+      ]
+    },
     "Lifetime": {
       "description": "The poll belongs to one authenticated host instance.",
       "oneOf": [
@@ -3587,10 +3598,10 @@
           ]
         },
         "states": {
-          "description": "Every state the entity can be in.",
+          "description": "Every state the entity can be in, each a bare name or, from `ess/32`, a name with its wire spelling.",
           "type": "array",
           "items": {
-            "$ref": "#/definitions/StateName"
+            "$ref": "#/definitions/LifecycleState"
           },
           "uniqueItems": true
         },
@@ -4290,6 +4301,29 @@
         "selection": {
           "type": "string",
           "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpelledState": {
+      "description": "A lifecycle state with its wire spelling, `{name: Indexing, wire: indexing}`. `wire:` is required: a state with nothing to declare beside its name is written as the name.",
+      "type": "object",
+      "required": [
+        "name",
+        "wire"
+      ],
+      "properties": {
+        "name": {
+          "description": "The state's declared name.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/StateName"
+            }
+          ]
+        },
+        "wire": {
+          "description": "What the state is called on the wire (`ess/32`).",
+          "type": "string"
         }
       },
       "additionalProperties": false

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:numbers-are-finite-and-the-guide-says-so
 kind: story
-status: active
+status: implemented
 title: Decimal and Binary64 are finite, and the guide says so
 summary: State that no non-finite value reaches the domain and where its refusal belongs
 tags:
@@ -13,10 +13,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T19:01:19Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-23T19:01:20Z", actor: "human:timo", revision: 4, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:37Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Problem
 

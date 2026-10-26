@@ -203,6 +203,7 @@ mod related_list;
 mod repeated_identity;
 mod row_set;
 mod seeds;
+mod self_admission;
 mod set_effects;
 mod shorthand;
 mod singleton;
@@ -428,6 +429,13 @@ pub enum Note {
         /// The view.
         view: ViewRef,
     },
+    /// A `Binary64` position in a declared type no command, event, error, view, entity, actor,
+    /// binding or conversion reaches (`ess_compiler::binary64::unreached_locations`): no scenario
+    /// sends or reads it, so it refuses nothing, and no run exercises it.
+    UnreachedBinary64 {
+        /// The position, as the compiler's Binary64 inventory spells it.
+        location: String,
+    },
 }
 
 impl fmt::Display for Note {
@@ -537,6 +545,11 @@ impl fmt::Display for Note {
             Self::ReadGrantedToEveryActor { .. }
             | Self::ReadGrantEnforcedByCaller
             | Self::ReadGrantUnwitnessed { .. } => self.read_grant(f),
+            Self::UnreachedBinary64 { location } => write!(
+                f,
+                "`{location}` is a `Binary64` in a type outside everything a scenario sends \
+                 or reads, so no run exercises it"
+            ),
         }
     }
 }
@@ -1332,6 +1345,14 @@ impl RefusalCause {
                  names; let a declared command create that related row in a state the creator \
                  accepts, or cover the branch with an authored scenario (ess-scenario/1)"
             }
+            // Rows whose creator refuses its related row on the row's stored fields: the guard
+            // named is what no arranged row and input passed.
+            Self::NoWitness(gap) if gap.reason == row_set::ROWS_REFUSING_CREATOR => {
+                "the command named creates the rows only beside a related row its guard named \
+                 accepts; let a declared command create that related row with stored fields and \
+                 in a state that guard accepts for some input, or cover the branch with an \
+                 authored scenario (ess-scenario/1)"
+            }
             Self::NoWitness(gap) if set_effects::UNARRANGED.contains(&gap.reason) => {
                 "let a command that creates the entity write each field the filter reads from an \
                  input or from a caller attribute (`{caller: <attribute>}`) rather than from a \
@@ -1362,6 +1383,11 @@ impl RefusalCause {
                 ordered_head::HEAD_REPAIR
             }
             Self::NoWitness(gap) if gap.type_ref == RESPONSE_GAP => RESPONSE_REPAIR,
+            Self::NoWitness(gap) if gap.type_ref == self_admission::SELF_ADMISSION => {
+                "nothing to change in the specification; this is a defect in ess to report, with \
+                 the specification that produced it"
+            }
+            Self::NoWitness(gap) if gap.type_ref == SUBJECT_GAP => SUBJECT_REPAIR,
             Self::NoWitness(_) => {
                 "give the field a type that has a finite value, or drop it from the command's input"
             }
@@ -1488,6 +1514,17 @@ const CHILD_REPAIR: &str = "cover the child with an authored scenario (ess-scena
 
 /// The type a [`WitnessGap`] names when a command's response, not its input, has no observation.
 pub(crate) const RESPONSE_GAP: &str = "command response";
+
+/// The type a [`WitnessGap`] names when a view publishes a field the complete subject cannot
+/// compare exactly.
+pub(crate) const SUBJECT_GAP: &str = "complete subject observation";
+
+/// The repair for that gap: the field is the view's, so "drop it from the command's input" names the
+/// wrong place.
+const SUBJECT_REPAIR: &str =
+    "a complete subject compares every field the view publishes, exactly, \
+     and the line above names what it cannot compare; drop that field from the view, or give it \
+     a type the exact observer compares";
 
 /// The repair for a response field no runner can check (beyond10x/ess#499): the input field's
 /// "drop it from the command's input" names the wrong side of the command.
@@ -1666,6 +1703,9 @@ impl fmt::Display for RefusalCause {
                     f,
                     "the disclosure cell cannot be arranged or observed: {detail}"
                 )
+            }
+            Self::NoWitness(gap) if gap.type_ref == self_admission::SELF_ADMISSION => {
+                f.write_str(&self_admission::line(&gap.path))
             }
             Self::NoWitness(gap) => write!(f, "no witness: {gap}"),
             Self::GuardUnevaluable(refusal) => write!(f, "{refusal}"),
@@ -2668,7 +2708,23 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     let overlaps = unwitnessed_overlaps(ir, &synthesis.suite);
     synthesis.notes.extend(overlaps);
     disclosure::augment(ir, &mut synthesis);
+    // A Binary64 position in a type nothing reaches refuses nothing; it is named, so a reader sees
+    // what the run does not exercise.
+    synthesis.notes.extend(
+        ess_compiler::binary64::unreached_locations(ir)
+            .into_iter()
+            .map(|location| Note::UnreachedBinary64 { location }),
+    );
+    // Last, so no pass after it can write a scenario the suite's own admission refuses.
+    self_admission::withdraw_inadmissible(&mut synthesis);
     synthesis
+}
+
+/// Each scenario of `synthesis` its own admission refuses, withdrawn and refused with the scenario
+/// and the step, as [`synthesize`] does before it returns; a test holds a hand-broken suite to it.
+#[doc(hidden)]
+pub fn withdraw_inadmissible(synthesis: &mut Synthesis) {
+    self_admission::withdraw_inadmissible(synthesis);
 }
 
 /// `id` taken out of the finished suite and refused with `cause`, with every note about it: a note
@@ -2737,7 +2793,8 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     let _remembered = made::remember(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
-    for (path, subject) in ess_compiler::binary64::uses(ir) {
+    // A Binary64 nothing a scenario sends or reads reaches is noted, not refused (`synthesize_in`).
+    for (path, subject) in ess_compiler::binary64::reached_uses(ir) {
         refusals.push(Refusal { subject, scenario: None, stands: false, caused_by: None, cause: RefusalCause::NoWitness(WitnessGap {
             path, type_ref: "Binary64".to_owned(), reason: "requires a qualified finite Binary64 suite and codec that this conformance format does not admit",
         }) });
@@ -3234,8 +3291,11 @@ fn outcome_scenario_noting(
         });
     }
     // A row-set branch is witnessed on the rows its own arrangement selects (ess/22,
-    // beyond10x/ess#228, #299): no further witness sends it without them.
-    if row_set::routes(models.arrangement.format(), command, outcome) {
+    // beyond10x/ess#228, #299): no further witness sends it without them. A refusal over a row the
+    // input names beside a row set (ess/32) keeps the related row's further witnesses.
+    let format = models.arrangement.format();
+    if row_set::routes(format, command, outcome) && !row_set::beside_named(format, command, outcome)
+    {
         return Some((
             id,
             ConformanceScenario::new(purpose(command, outcome), steps, source),
@@ -4129,8 +4189,11 @@ fn run_as(
     // for every branch it decides; further witnesses are the boundaries of its predicates alone.
     let related = related_guard::routes(command, outcome);
     // A command guarded by a row set, or reading a selected row (ess/22, beyond10x/ess#228, #299),
-    // is arranged with the rows its selector selects, for every branch they decide.
-    let rows = row_set::routes(ir.format(), command, outcome);
+    // is arranged with the rows its selector selects, for every branch they decide. A refusal over a
+    // row the input names beside a row set (ess/32, beyond10x/ess#554) is so only in its own
+    // scenario: its further witnesses are the related row's.
+    let rows = row_set::routes(ir.format(), command, outcome)
+        && (witness == Witness::Full || !row_set::beside_named(ir.format(), command, outcome));
     let mut related_at = Distinction::PLAIN;
     // ess/27 (beyond10x/ess#543): the ties of a ranked head no creating input steers, each a gap
     // the scenario stands with.
@@ -4161,7 +4224,10 @@ fn run_as(
         if witness != Witness::Full {
             return Err(row_set::unarranged());
         }
-        let (setup, input, gaps) = row_set::prepare(models, command, outcome, actors)?;
+        let (mut setup, input, gaps) = row_set::prepare(models, command, outcome, actors)?;
+        if row_set::beside_named(ir.format(), command, outcome) {
+            row_set::with_overlaps(models, command, outcome, actors, &mut setup, &input);
+        }
         row_gaps = gaps;
         (setup, input)
     } else if related {
@@ -7500,8 +7566,9 @@ fn reach(
     }
     // Every branch of a command guarded by a related row (ess/18, #211) is decided by that row, which
     // only `related_guard::prepare` arranges: an input chosen here would be sent for a row nobody
-    // arranged, and a correct implementation would answer another branch.
-    if related_guard::uses(command) {
+    // arranged, and a correct implementation would answer another branch. The creating half of
+    // create-or-update is answered at step 2, before the row is read ([`related_guard::routes`]).
+    if related_guard::uses(command) && !existence::creates_unknown(outcome) {
         return Err(related_guard::unarranged());
     }
     let (guards, satisfy) = plain_guards(command, outcome)?;

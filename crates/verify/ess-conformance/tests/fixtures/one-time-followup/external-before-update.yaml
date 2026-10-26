@@ -1,0 +1,65 @@
+format: ess/26
+system: demo
+version: v1
+domain: demo.shop
+summary: Items.
+naming: {wire: items, display: Items}
+types:
+  - {name: demo.shop.ItemId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.shop.Item
+    identity: {name: item_id, type: demo.shop.ItemId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+actors:
+  - {name: demo.shop.Clerk, may: [demo.shop.CreateItem], naming: {display: Clerk}}
+  - {name: demo.shop.Worker, may: [demo.shop.Relabel], naming: {display: Worker}}
+errors:
+  - {name: demo.shop.StoreUnavailable, summary: The store could not be written to.}
+commands:
+  - name: demo.shop.CreateItem
+    naming: {wire: create-item, display: Create item}
+    input:
+      - {name: label, type: String}
+    response:
+      - {name: code, type: String}
+    outcomes:
+      - name: created
+        creates: demo.shop.Item
+        instance: item_id
+        returns: true
+        one_time_response: [code]
+        emits: [demo.shop.ItemCreated]
+        payload:
+          demo.shop.ItemCreated: {item_id: {generated: true}}
+        sets: {label: input.label}
+        summary: An item is created and a one-time code returned.
+  - name: demo.shop.Relabel
+    naming: {wire: relabel, display: Relabel}
+    input:
+      - {name: item_id, type: demo.shop.ItemId}
+    outcomes:
+      - name: store-unavailable
+        external: the store cannot be written to
+        error: demo.shop.StoreUnavailable
+        summary: Nothing changed.
+      - name: relabelled
+        updates: demo.shop.Item
+        instance: item_id
+        emits: [demo.shop.ItemRelabelled]
+        payload:
+          demo.shop.ItemRelabelled: {item_id: input.item_id}
+        sets: {label: "relabelled"}
+        summary: The label changes.
+events:
+  - {name: demo.shop.ItemCreated, fields: [{name: item_id, type: demo.shop.ItemId}]}
+  - {name: demo.shop.ItemRelabelled, fields: [{name: item_id, type: demo.shop.ItemId}]}
+views:
+  - name: demo.shop.ItemRecord
+    source: demo.shop.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: demo.shop.ItemId}
+      - {name: label, type: String}
+    naming: {wire: item-record, display: Item record}

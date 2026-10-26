@@ -51,6 +51,68 @@ fn model_unit_variant_round_trips_natively_and_refuses_the_malformed_shapes() {
     );
 }
 
+#[path = "support/empty_struct.rs"]
+mod empty_struct;
+
+/// The generated decoders of a struct with `fields: []` (ess/32, beyond10x/ess#649).
+const EMPTY_STRUCT_WIRE: &str = r#"package contract_types
+
+import (
+    "encoding/json"
+    "reflect"
+    "testing"
+)
+
+func roundTrips(t *testing.T, text string, decoded any) {
+    if err := json.Unmarshal([]byte(text), decoded); err != nil { t.Fatal(text, err) }
+    raw, err := json.Marshal(decoded)
+    if err != nil { t.Fatal(err) }
+    var want, got any
+    if err := json.Unmarshal([]byte(text), &want); err != nil { t.Fatal(err) }
+    if err := json.Unmarshal(raw, &got); err != nil { t.Fatal(err) }
+    if !reflect.DeepEqual(want, got) { t.Fatalf("%s round-trips as %s", text, raw) }
+}
+
+func TestOpenEmptyStruct(t *testing.T) {
+    roundTrips(t, `{}`, &DemoAckOpen{})
+    roundTrips(t, `{"x":1}`, &DemoAckOpen{})
+    var refused DemoAckOpen
+    if json.Unmarshal([]byte(`"x"`), &refused) == nil { t.Fatal("accepted a string") }
+}
+
+func TestClosedEmptyStruct(t *testing.T) {
+    roundTrips(t, `{}`, &DemoAckClosed{})
+    for _, text := range []string{`{"x":1}`, `"x"`} {
+        var refused DemoAckClosed
+        if json.Unmarshal([]byte(text), &refused) == nil { t.Fatalf("accepted %s", text) }
+    }
+}
+"#;
+
+#[test]
+fn an_open_empty_struct_decodes_any_object() {
+    let result = empty_struct::plan()
+        .go("contract_types", "example.invalid/modeltypes")
+        .unwrap();
+    compile(
+        &result.supporting["go.mod"],
+        &result.declarations,
+        &EMPTY_STRUCT_WIRE.replace("func TestClosedEmptyStruct", "func closedEmptyStruct"),
+    );
+}
+
+#[test]
+fn a_closed_empty_struct_decodes_only_the_empty_object() {
+    let result = empty_struct::plan()
+        .go("contract_types", "example.invalid/modeltypes")
+        .unwrap();
+    compile(
+        &result.supporting["go.mod"],
+        &result.declarations,
+        &EMPTY_STRUCT_WIRE.replace("func TestOpenEmptyStruct", "func openEmptyStruct"),
+    );
+}
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};

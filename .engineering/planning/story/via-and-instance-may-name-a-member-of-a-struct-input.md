@@ -7,11 +7,12 @@ title: 'A when_related via: and an instance: may name a member of a struct input
 summary: 'via: and instance: accept only top-level inputs (ESS-COMMAND-001) (adopter item 3, beyond10x/a2a); gap, needs ess/31.'
 tags:
 - adopter-report
+- ess-0.71.0
 - feature-request
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Need
 

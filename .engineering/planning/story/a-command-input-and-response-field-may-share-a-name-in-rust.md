@@ -8,7 +8,7 @@ summary: Rust synthesis refuses an input and response field of one name, and the
 tags:
 - adopter-report
 - defect
-- ess-0.70.0
+- ess-0.71.0
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
@@ -28,7 +28,7 @@ scope:
   path: crates/generate/ess-synth/src/rust/wire.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/feasibility.rs
-revision: 7
+revision: 8
 ---
 ## Need
 

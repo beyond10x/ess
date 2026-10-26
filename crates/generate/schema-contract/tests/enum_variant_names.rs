@@ -153,3 +153,42 @@ fn a_bundle_enum_keeps_positional_variants() {
         .declarations
         .contains("export const Status"));
 }
+
+/// A lifecycle state's wire name (`ess/32`, beyond10x/ess#639) is the wire value of the
+/// generated state enum's variant, which keeps the declared state's name.
+#[test]
+fn generated_types_spell_a_state_by_its_wire_name() {
+    let source = include_str!("../../ess-gen/tests/fixtures/state-wire.yaml");
+    let plan =
+        Plan::from_model(&model::selection(source, &["jobs.queue.Job.State"])).expect("plan");
+    let rust = plan.rust("jobs-queue").expect("rust").declarations;
+    assert!(
+        rust.contains("#[serde(rename = \"indexing\")]\n    Indexing,"),
+        "Rust decodes `indexing` as `Indexing`:\n{rust}"
+    );
+    assert!(
+        !rust.contains("rename = \"Indexing\""),
+        "Rust refuses `Indexing`:\n{rust}"
+    );
+    let go = plan
+        .go("queue", "example.invalid/queue")
+        .expect("go")
+        .declarations;
+    assert!(
+        go.contains("\tJobsQueueJobStateIndexing JobsQueueJobState = \"indexing\""),
+        "Go spells `Indexing` as `indexing`:\n{go}"
+    );
+    assert!(
+        !go.contains("= \"Indexing\""),
+        "Go refuses `Indexing`:\n{go}"
+    );
+    let typescript = plan.typescript().declarations;
+    assert!(
+        typescript.contains("  Indexing: \"indexing\","),
+        "TypeScript spells `Indexing` as `indexing`:\n{typescript}"
+    );
+    assert!(
+        !typescript.contains("\"Indexing\""),
+        "TypeScript admits no `Indexing` value:\n{typescript}"
+    );
+}

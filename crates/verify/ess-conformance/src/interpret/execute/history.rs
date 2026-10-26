@@ -1,9 +1,9 @@
 //! Private execution values shared by concrete execution and outcome-only history search.
 mod facts;
-mod values;
+mod unrecorded;
 pub(super) use facts::Facts;
-pub(super) use values::{finite, generated, validate, Origin, Value};
-pub(super) type Domains = std::cell::RefCell<BTreeMap<String, values::Feasibility>>;
+pub(super) use unrecorded::{finite, generated, validate, Origin, Value};
+pub(super) type Domains = std::cell::RefCell<BTreeMap<String, unrecorded::Feasibility>>;
 
 use super::{
     DeclaredErrorValue, ErrorRef, EventRef, Instance, Node, ObservedEvent, OutcomeRef,

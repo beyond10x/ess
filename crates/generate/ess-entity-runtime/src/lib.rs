@@ -543,6 +543,11 @@ pub enum LoweringCode {
     /// (ess/27, beyond10x/ess#584): entity-core has no digest or encoding operand, and lowering the
     /// comparison as a read of the fact would decide a different rule.
     FunctionCallUnsupported,
+    /// A lifecycle state declares a wire spelling (ess/32, `states: [{name: Indexing, wire:
+    /// indexing}]`, beyond10x/ess#639): an entity-core lifecycle names its states and nothing
+    /// spells them apart, so a lowered definition would store and answer the declared name where
+    /// the specification promises the wire spelling.
+    StateWireNameUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -1047,6 +1052,20 @@ impl Projector<'_> {
                     .push(BindingRequirement::RelationOwnership {
                         relation: coordinate,
                     });
+            }
+            for state in &entity.lifecycle.states {
+                let wire = entity.lifecycle.wire(state);
+                if entity.lifecycle.naming.contains_key(state) {
+                    self.diagnostic(
+                        LoweringCode::StateWireNameUnsupported,
+                        format!("{name}.lifecycle.states.{state}"),
+                        format!(
+                            "state `{state}` is spelled `{wire}` on the wire, and an Entity \
+                             Runtime lifecycle names its states with nothing to spell them apart; \
+                             a lowered definition would store and answer `{state}`"
+                        ),
+                    );
+                }
             }
             let scales = self.options.scales.get(&name).cloned().unwrap_or_default();
             for (scale, values) in &scales {

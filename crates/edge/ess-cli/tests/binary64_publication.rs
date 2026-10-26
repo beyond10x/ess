@@ -2,13 +2,62 @@
 
 use std::{fs, path::Path, process::Command};
 
+/// A note entity and its command, and a `Rate` type with a `Binary64` field, declared for another
+/// component. `{input}` is the command's further input.
+const NOTES: &str = "format: ess/31
+system: demo
+version: v1
+domain: demo.notes
+summary: A note is added; a rate type holds a finite floating-point figure.
+types:
+  - {name: demo.notes.NoteId, kind: newtype, of: Uuid}
+  - name: demo.notes.Rate
+    kind: struct
+    fields:
+      - {name: per_second, type: Binary64}
+entities:
+  - name: demo.notes.Note
+    identity: {name: note_id, type: demo.notes.NoteId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+events:
+  - name: demo.notes.NoteAdded
+    fields: [{name: note_id, type: demo.notes.NoteId}]
+commands:
+  - name: demo.notes.AddNote
+    input:
+      - {name: label, type: String}
+{input}    outcomes:
+      - name: added
+        creates: demo.notes.Note
+        instance: note_id
+        sets: {label: input.label}
+        emits: [demo.notes.NoteAdded]
+        payload: {demo.notes.NoteAdded: {note_id: {generated: true}}}
+views:
+  - name: demo.notes.Notes
+    source: demo.notes.Note
+    consistency: read_your_writes
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: label, type: String}
+";
+
+/// The `Rate` a command input reaches.
+const REACHED: &str = "      - {name: rate, type: Optional<demo.notes.Rate>}\n";
+
 #[test]
 fn binary64_sparse_model_refuses_every_unsupported_publication_route() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../target/binary64-publication")
         .join(std::process::id().to_string());
     fs::create_dir_all(root.join("spec")).unwrap();
-    fs::write(root.join("spec/system.yaml"), "format: ess/2\nsystem: sample\nversion: v1\ndomains: [sample.data]\ndomain: sample.data\ntypes:\n  - {name: sample.data.Ratio, kind: newtype, of: Binary64}\n").unwrap();
+    fs::write(
+        root.join("spec/system.yaml"),
+        NOTES.replace("{input}", REACHED),
+    )
+    .unwrap();
     let operations: &[(&[&str], bool)] = &[
         (&["synthesize", "--target", "rust"], true),
         (&["synthesize", "--target", "go"], true),
@@ -63,7 +112,7 @@ fn binary64_sparse_model_refuses_every_unsupported_publication_route() {
             .unwrap();
             assert!(!result.status.success(), "{arguments:?}: {combined}");
             assert!(
-                combined.contains("Binary64") && combined.contains("sample.data.Ratio"),
+                combined.contains("Binary64") && combined.contains("demo.notes.Rate"),
                 "located finite refusal: {combined}"
             );
             if arguments[0] == "synthesize" {
@@ -91,4 +140,71 @@ fn binary64_sparse_model_refuses_every_unsupported_publication_route() {
         }
     }
     eprintln!("18 actual CLI refusal executions preserved absent/existing destinations");
+}
+
+/// The adopter's reproduction: nothing reaches `Rate`, so every conformance route admits the model
+/// and `synthesize` notes the position instead of refusing it.
+#[test]
+fn an_unreached_binary64_type_publishes_every_route() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../target/binary64-publication-unreached")
+        .join(std::process::id().to_string());
+    fs::create_dir_all(root.join("spec")).unwrap();
+    fs::write(root.join("spec/system.yaml"), NOTES.replace("{input}", "")).unwrap();
+    let operations: &[(&[&str], &str)] = &[
+        (
+            &["verify", "conform", "synthesize", "--target", "ir"],
+            "--out",
+        ),
+        (
+            &["verify", "conform", "synthesize", "--target", "go"],
+            "--out",
+        ),
+        (
+            &["verify", "conform", "synthesize", "--target", "typescript"],
+            "--out",
+        ),
+        (&["verify", "conform", "web"], "--out"),
+        (
+            &[
+                "verify",
+                "conform",
+                "run",
+                "--target",
+                "interpreted",
+                "--report-format",
+                "2",
+            ],
+            "--report-out",
+        ),
+    ];
+    for (index, (arguments, destination)) in operations.iter().enumerate() {
+        let out = root.join(format!("out-{index}"));
+        let result = Command::new(env!("CARGO_BIN_EXE_ess"))
+            .args(*arguments)
+            .arg("--path")
+            .arg(root.join("spec"))
+            .arg(destination)
+            .arg(&out)
+            .output()
+            .unwrap();
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(result.status.success(), "{arguments:?}: {combined}");
+        assert!(out.exists(), "{arguments:?} wrote nothing: {combined}");
+        assert!(
+            !combined.contains("UnsupportedPrimitive"),
+            "{arguments:?}: {combined}"
+        );
+        if arguments.contains(&"ir") {
+            assert!(
+                combined.contains("types.demo.notes.Rate.fields.per_second"),
+                "{arguments:?} notes the position: {combined}"
+            );
+        }
+    }
+    eprintln!("5 conformance routes admitted an unreached Binary64 type");
 }

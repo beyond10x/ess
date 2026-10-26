@@ -159,6 +159,18 @@ mutable float field that can hold NaN or an old conformance suite that accepts a
 unknown primitive. This bounded support is sufficient for the observed standalone
 model-data and normalization consumer; it does not claim all adapter coverage.
 
+"Selected" means reached. A Binary64 position is reached when its owner is an entity,
+command, event, error or view, or when it sits in a declared type in the type closure of
+an entity (identity and every field), a command's input or response, an event, an error,
+a view's fields, parameters or row shape, an actor's attributes, a binding's delivery
+context, mappings or selection, or a declared conversion
+(`ess_compiler::binary64::reached_uses`). Conformance admission and synthesis refuse only
+reached positions. A position in a type nothing reaches is admitted, because no scenario
+sends or reads it, and synthesis writes a note naming it instead
+(`ess_compiler::binary64::unreached_locations`). Codecs that emit every declared type
+(`ess synthesize --target rust|go|web|clap`) still read the structural inventory
+(`ess_compiler::binary64::locations`) and refuse an unreached position too.
+
 Old authored model and recipe meanings remain unchanged. Freeze the additional
 shared emitted sources required by the new expressions, and measure complete old
 file maps before live edits. Formats 1–4 reject the new operations in all branches.

@@ -519,8 +519,10 @@ fn send_as(scenario: &mut ConformanceScenario, command: &QualifiedName, actor: &
 /// Only a scenario whose send then takes an accepting branch is borrowed: a send the command would
 /// have refused anyway shows nothing about the grant. Among those, one that snapshots the subject
 /// before the send is preferred, so the refusal is shown to have left it as it was; then the one
-/// with fewest steps. `None` where no scenario sends the command into an accepting branch, and the
-/// denied scenario is withheld with [`Note::GrantDeniedUnwitnessed`].
+/// with fewest steps; a template whose denied scenario the suite's admission would refuse is passed
+/// over for the next. `None` where no scenario sends the command into an accepting branch, or none
+/// that gives an admissible one, and the denied scenario is withheld with
+/// [`Note::GrantDeniedUnwitnessed`].
 fn refused_from_template(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -563,15 +565,35 @@ fn refused_from_template(
                 | ScenarioStep::SnapshotView { .. }
         )
     };
-    let (template, at) = suite
+    let mut templates: Vec<_> = suite
         .scenarios
         .iter()
         .filter(|(id, _)| !is_grant(id))
         .filter_map(|(_, scenario)| accepted_send(scenario).map(|at| (scenario, at)))
-        .min_by_key(|(scenario, at)| {
-            let snapshotted = scenario.steps[..*at].iter().any(snapshots);
-            (!snapshotted, scenario.steps.len())
-        })?;
+        .collect();
+    // Stable, so templates alike in both keys keep the suite's order, as the first minimum did.
+    templates.sort_by_key(|(scenario, at)| {
+        let snapshotted = scenario.steps[..*at].iter().any(snapshots);
+        (!snapshotted, scenario.steps.len())
+    });
+    // A template whose kept prefix leaves a retained result or a complete snapshot open — a
+    // replay's `capture_command_result`, whose `expect_replay_result` followed the send — gives a
+    // denied scenario the suite's own admission refuses; the next template is taken instead.
+    templates
+        .into_iter()
+        .map(|(template, at)| denied_from(ir, command, sender, template, at))
+        .find(|denied| crate::replay::validate_steps(&denied.steps).is_ok())
+}
+
+/// The denied scenario `template` gives with its send at `at` sent as `sender`, as
+/// [`refused_from_template`] describes it.
+fn denied_from(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    sender: &ActorRef,
+    template: &ConformanceScenario,
+    at: usize,
+) -> ConformanceScenario {
     // The arrangement as it was, external answers included: a surface that ran the refused send
     // would take the accepting branch the template took.
     let mut steps: Vec<ScenarioStep> = template.steps[..at].to_vec();
@@ -610,11 +632,7 @@ fn refused_from_template(
     source.insert(CommandRef::new(command.name.clone()).into());
     source.insert(sender.clone().into());
     source.extend(not_emitted(ir, &[]).into_iter().map(EssSemanticRef::from));
-    Some(ConformanceScenario::new(
-        purpose(command, sender),
-        steps,
-        source,
-    ))
+    ConformanceScenario::new(purpose(command, sender), steps, source)
 }
 
 /// What a denied scenario proves.

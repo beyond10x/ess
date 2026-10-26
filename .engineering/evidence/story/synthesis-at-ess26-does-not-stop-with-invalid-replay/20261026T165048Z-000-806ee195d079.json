@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T16:50:48Z",
+  "actor": "human:timo",
+  "artifact": "story:synthesis-at-ess26-does-not-stop-with-invalid-replay",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit J: the neutral reporter model synthesizes 13 scenarios / 0 refusals at ess/25, ess/26, ess/30, ess/32 (0.69.2: exit 1 at ess/26 with InvalidReplay); adversary_j_pass1 7/0, one_time_followups 6/0, synthesis byte tables unchanged for every existing model, suite 23/0, retained_replay 42/0/1 ignored, 66 ess-conformance and 12 ess-cli binaries green, task test-xtask 418, clippy and fmt clean",
+    "reference": "6c0dd3290"
+  }
+}

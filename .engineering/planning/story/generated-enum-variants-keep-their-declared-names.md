@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-enum-variants-keep-their-declared-names
 kind: story
-status: active
+status: implemented
 title: Generated enum variants keep their declared names
 summary: 'Adopter report N3: Declared enum variant names are lost in generated Rust (ess#658).'
 tags:
@@ -13,10 +13,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T20:20:12Z", actor: "human:timo", revision: 4, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-23T20:20:12Z", actor: "human:timo", revision: 5, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:33Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Problem
 

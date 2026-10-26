@@ -5,13 +5,15 @@ kind: story
 status: draft
 title: ess-http/1 admits text bodies, route refusals, empty bodies and array views
 summary: 'Adopter reports N21, N26, N27, N29: four answer forms refused by ess-http/1 (ess#673).'
+tags:
+- ess-0.71.0
 refs:
 - provider: github
   reference: beyond10x/ess#673
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Problem
 

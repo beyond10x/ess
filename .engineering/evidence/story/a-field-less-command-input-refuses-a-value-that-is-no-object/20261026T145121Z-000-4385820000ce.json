@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T14:51:21Z",
+  "actor": "human:timo",
+  "artifact": "story:a-field-less-command-input-refuses-a-value-that-is-no-object",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit F bd281f21b: adversary_c_event_wire_2 a_fieldless_command_input_refuses_a_value_that_is_no_object passes: text, null and [1,2] refused at body by the decoder, through handle (input [] kept=0) and as POST (400, nothing published); {} answered 202",
+    "reference": "bd281f21b"
+  }
+}

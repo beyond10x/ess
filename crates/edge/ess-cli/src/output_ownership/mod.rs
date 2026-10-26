@@ -127,7 +127,8 @@ const STALE_SLOT: &str = "is an unpublished checkpoint an interrupted run left b
 const CLEAR_SLOT: &str = "rerun this command without `--check` to remove it";
 pub(crate) const REGENERATE: &str = "regenerate it with `ess generate`";
 /// Generation refuses an owned file whose bytes are not the recorded ones, in every root (ess#484).
-const REENROLL: &str = "regeneration refuses it: move it aside, or delete it if it is generated, \
+pub(crate) const REENROLL: &str =
+    "regeneration refuses it: move it aside, or delete it if it is generated, \
      then remove `.ess-output`, run `ess generate output adopt` once per recorded owner and \
      regenerate";
 /// The record of a root holding such a file: regeneration refuses before it would rewrite it.

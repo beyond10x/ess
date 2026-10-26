@@ -246,3 +246,178 @@ fn a_wrong_state_followup_is_built_in_its_disclosure_cells() {
     assert_denied(&synthesis, "devices.api.RetireDevice");
     assert_all_pass(&ir, &synthesis);
 }
+
+/// An adopter's model, made neutral: a creator with a one-time response, an updater whose first
+/// branch is an external refusal of the existing row, an actor that may not send the updater, and
+/// a `read_your_writes` view of the row. At `ess/26` and later the refusal reads the row back and
+/// requires it unchanged (beyond10x/ess#587), which split the read-back across the denied cell.
+const EXTERNAL_BEFORE_UPDATE: &str =
+    include_str!("fixtures/one-time-followup/external-before-update.yaml");
+
+/// The updater's external refusal, as the fixture declares it.
+const REFUSAL_BRANCH: &str = "      - name: store-unavailable\n        external: the store cannot \
+                              be written to\n        error: demo.shop.StoreUnavailable\n        \
+                              summary: Nothing changed.\n";
+
+/// The last line of the updater's updating branch.
+const UPDATE_END: &str = "        summary: The label changes.\n";
+
+/// The denied cell the adopter's synthesis stopped at.
+const DENIED: &str =
+    "demo.shop.CreateItem/disclosure/created/code/denied/demo.shop.Relabel/as/actor/demo.shop.Clerk";
+
+/// The formats either side of the read-back: the last without it, the first with it, the newest.
+const FORMATS: [&str; 3] = ["ess/25", "ess/26", "ess/32"];
+
+/// `text` with `from` replaced by `to`, which must occur in it.
+fn edited(text: &str, from: &str, to: &str) -> String {
+    assert!(text.contains(from), "the fixture no longer holds {from:?}");
+    text.replace(from, to)
+}
+
+/// The fixture at `format`, with the updater's two branches in declared order or reversed.
+fn external_before_update(format: &str, update_first: bool) -> String {
+    let text = edited(
+        EXTERNAL_BEFORE_UPDATE,
+        "format: ess/26",
+        &format!("format: {format}"),
+    );
+    if update_first {
+        let text = edited(&text, REFUSAL_BRANCH, "");
+        edited(&text, UPDATE_END, &format!("{UPDATE_END}{REFUSAL_BRANCH}"))
+    } else {
+        text
+    }
+}
+
+/// The fixture without one of the four ingredients the adopter found each to be needed, by name.
+fn without_ingredient(text: &str, ingredient: &str) -> String {
+    match ingredient {
+        "one-time response" => edited(text, "        one_time_response: [code]\n", ""),
+        "an actor denied the updater" => edited(
+            text,
+            "may: [demo.shop.CreateItem]",
+            "may: [demo.shop.CreateItem, demo.shop.Relabel]",
+        ),
+        "the external refusal" => edited(text, REFUSAL_BRANCH, ""),
+        "a read_your_writes view" => edited(
+            text,
+            "consistency: read_your_writes",
+            "consistency: eventual",
+        ),
+        other => panic!("no ingredient {other}"),
+    }
+}
+
+/// Every refusal the synthesis made for a scenario its own admission refused.
+fn self_refused(synthesis: &ess_conformance::Synthesis) -> Vec<String> {
+    synthesis
+        .refusals
+        .iter()
+        .map(ToString::to_string)
+        .filter(|text| text.contains("own admission refuses"))
+        .collect()
+}
+
+/// The adopter's model, with its updater's branches in either order, synthesizes at `ess/26` and
+/// later with the denied cell it stopped at; every scenario is admitted, and the model's own
+/// interpreted target passes each. At `ess/25`, before the read-back, it already did.
+#[test]
+fn a_replay_beside_an_ess26_read_back_is_admitted() {
+    let denied: ScenarioId = DENIED.parse().unwrap();
+    for format in FORMATS {
+        for update_first in [false, true] {
+            let ir = model(&external_before_update(format, update_first));
+            let synthesis = ess_conformance::synthesize(&ir);
+            let case = format!("{format}, update first: {update_first}");
+            let scenario = synthesis
+                .suite
+                .scenario(&denied)
+                .unwrap_or_else(|| panic!("{case}: no cell {denied}: {:#?}", synthesis.refusals));
+            let tags: Vec<_> = scenario
+                .steps
+                .iter()
+                .map(|step| serde_json::to_value(step).unwrap()["step"].clone())
+                .collect();
+            let snapshots = tags
+                .iter()
+                .filter(|tag| *tag == "snapshot_complete_subject")
+                .count();
+            let comparisons = tags
+                .iter()
+                .filter(|tag| *tag == "expect_complete_subject_unchanged")
+                .count();
+            assert_eq!(snapshots, comparisons, "{case}: {tags:?}");
+            if let Err(error) = ess_conformance::AdmittedSuite::from_suite(&synthesis.suite) {
+                panic!("{case}: {error}");
+            }
+            assert_eq!(self_refused(&synthesis), Vec::<String>::new(), "{case}");
+            assert_all_pass(&ir, &synthesis);
+        }
+    }
+}
+
+/// Synthesis never writes a suite its own admission refuses, whichever ingredient of the adopter's
+/// model is left out: a scenario it would refuse is withdrawn and refused, naming the scenario and
+/// the step, and the rest of the suite stands.
+#[test]
+fn a_synthesized_suite_never_fails_its_own_admission() {
+    for format in FORMATS {
+        for update_first in [false, true] {
+            for ingredient in [
+                "one-time response",
+                "an actor denied the updater",
+                "the external refusal",
+                "a read_your_writes view",
+            ] {
+                let text = external_before_update(format, update_first);
+                let ir = model(&without_ingredient(&text, ingredient));
+                let synthesis = ess_conformance::synthesize(&ir);
+                let case = format!("{format}, update first: {update_first}, no {ingredient}");
+                if let Err(error) = synthesis.suite.to_canonical_json() {
+                    panic!("{case}: {error}");
+                }
+                assert_eq!(self_refused(&synthesis), Vec::<String>::new(), "{case}");
+            }
+        }
+    }
+    // A scenario whose read-back lost its comparison, as the denied cell's did: withdrawn and
+    // refused with the step that has no comparison, and the suite then admitted.
+    let ir = model(&external_before_update("ess/26", false));
+    let mut synthesis = ess_conformance::synthesize(&ir);
+    let id: ScenarioId = "demo.shop.Relabel/outcome/store-unavailable"
+        .parse()
+        .unwrap();
+    let scenario = synthesis.suite.scenarios.get_mut(&id).unwrap();
+    let snapshot = scenario
+        .steps
+        .iter()
+        .position(|step| matches!(step, ScenarioStep::SnapshotCompleteSubject { .. }))
+        .unwrap_or_else(|| panic!("{id} reads no row back: {:#?}", scenario.steps));
+    scenario
+        .steps
+        .retain(|step| !matches!(step, ScenarioStep::ExpectCompleteSubjectUnchanged { .. }));
+    assert!(synthesis.suite.to_canonical_json().is_err());
+    ess_conformance::synthesize::withdraw_inadmissible(&mut synthesis);
+    assert!(synthesis.suite.scenario(&id).is_none());
+    let refused = self_refused(&synthesis);
+    assert_eq!(refused.len(), 1, "{refused:#?}");
+    for named in [
+        format!("`{id}`"),
+        format!(
+            "step `/scenarios/{}/steps/{snapshot}` (`snapshot_complete_subject`) with InvalidReplay",
+            id.to_string().replace('~', "~0").replace('/', "~1")
+        ),
+        "InvalidReplay".into(),
+        "complete subject snapshot has no comparison".into(),
+    ] {
+        assert!(refused[0].contains(&named), "{named} in {}", refused[0]);
+    }
+    assert!(synthesis
+        .refusals
+        .iter()
+        .any(|refusal| refusal.scenario.as_ref() == Some(&id)));
+    if let Err(error) = synthesis.suite.to_canonical_json() {
+        panic!("{error}");
+    }
+}

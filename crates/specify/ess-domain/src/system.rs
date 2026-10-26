@@ -52,7 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31,
+    27, 28, 29, 30, 31, 32,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -338,6 +338,18 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 32,
+        release: Some("0.70.0"),
+        added: &[
+            "A command may guard on rows its input names, `when_related: {via: input.<field>, exists: false}` or `{via: input.<field>, predicate: …}`, beside a row-set guard, `when_related: {entity, where, exists | count | forall}`: the one precedence rule answers a missing named row first, in declaration order, then every refusal over a present named row or a row set in declaration order, then the accepting branches. A `when_subject` guard beside a row set keeps its `unsupported_construct`, and below `ess/32` so does the pair, its message unchanged and its hint naming `ess/32`. Synthesis witnesses each branch it can arrange on rows the declared commands create and names the branch it cannot, as `ESS-SYNTH-001` does; generated Rust and Go keep the command an obligation, and Entity Runtime lowering refuses it by name (`docs/design/generic-language-features.md` § G4, beyond10x/ess#554).",
+            "A struct may declare `fields: []`, open or closed: open (`undeclared_fields: ignored`), every object is a value and it projects as an object admitting any member; closed, `{}` is its only value. Generated Rust, Go and TypeScript decode it as such. Below `ess/32` an empty struct keeps `empty_declaration` (`ESS-TYPE-007`), its message unchanged and its hint naming `ess/32`; an enum or a union with no variants keeps it at every format (beyond10x/ess#649).",
+            "A lifecycle state may declare its wire spelling, `states: [{name: Indexing, wire: indexing}, Ready]`. The spelling is the wire value of the state's variant of `<Entity>.State`, so JSON Schema, OpenAPI, AsyncAPI and generated Rust, Go and TypeScript spell the state `indexing` and refuse `Indexing`; guards, transitions, `moves:` and conformance suites keep the declared name, and the adapter spells the wire. Two states of one lifecycle spelled alike are refused as `conflicting_declaration`. Below `ess/32` the mapping is refused as `unsupported_format_version` naming `ess/32`, at the state; a lifecycle that spells no state keeps its IR bytes. `ess verify diff` reports a changed spelling as the state enum's `variant_wire_name_changed`, and Entity Runtime lowering refuses a spelled state by name (beyond10x/ess#639).",
+        ],
+        stricter: &[
+            "Two variants of one enum spelled alike on the wire, by name or by declared `wire:`, are refused as `conflicting_declaration`; below `ess/32` such an enum keeps validating (beyond10x/ess#639).",
+        ],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -469,6 +481,11 @@ impl FormatVersion {
     /// The empty list as a `sets:` source, `tags: []`, over a required `List<…>` field, and an
     /// `example:` on an input of `List` type (adopter reports, 2026-10-22).
     pub const V31: Self = Self(31);
+    /// A row set beside rows the input names (`docs/design/generic-language-features.md` § G4):
+    /// a command may guard on both, answered by the one precedence rule (beyond10x/ess#554); a
+    /// struct declaring no fields (beyond10x/ess#649); a lifecycle state's wire spelling, and no
+    /// two enum variants spelled alike (beyond10x/ess#639).
+    pub const V32: Self = Self(32);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

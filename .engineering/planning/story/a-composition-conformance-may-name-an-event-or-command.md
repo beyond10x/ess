@@ -5,13 +5,15 @@ kind: story
 status: draft
 title: A composition conformance may name an event or command
 summary: 'Adopter report N10: compose cannot compare events or commands as types (ess#664).'
+tags:
+- ess-0.71.0
 refs:
 - provider: github
   reference: beyond10x/ess#664
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 ---
 ## Problem
 

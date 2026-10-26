@@ -1563,11 +1563,13 @@ undetermined, so write `defined(org_id)` beside `org_id == input.org_id` where `
 absent. A row-set refusal answers after the input-guarded refusals, `existing_instance:`, and the
 addressed row's existence and held state, before every accepting branch; a row-set branch that
 accepts is taken in declaration order among the accepting branches; the default only where every
-guard before it is decidedly false. In this release a command reads one kind of related row: a
-row-set guard beside an identity-addressed `when_related:` or a `when_subject*` guard is refused as
-`unsupported_construct`. Without a default, the count tests over one selector must answer every
-number of rows, or validate refuses the command as `non_exhaustive_branches`; a branch every count
-of which an earlier branch over the same rows answers is `unreachable_branch`.
+guard before it is decidedly false. A row-set guard beside a `when_subject*` guard is refused as
+`unsupported_construct`; from `ess/32` one may sit beside rows the input names
+([below](#a-row-set-beside-rows-the-input-names)), and below `ess/32` that pair is refused as
+`unsupported_construct` too, its hint naming `ess/32`. Without a default, the count tests over one
+selector must answer every number of rows, or validate refuses the command as
+`non_exhaustive_branches`; a branch every count of which an earlier branch over the same rows
+answers is `unreachable_branch`.
 
 A value may read one field of the one row a selector selects, in `sets:` and `payload:` (see
 [the related value sources](../guides/specify/values-and-views.md)):
@@ -1626,6 +1628,45 @@ structs and is refused as `ESS-COMMAND-002`. Without such an equality, and on a 
 two selectors, synthesis reports
 `ESS-SYNTH-001` naming the branch. Generated Rust and Go keep such a command a hand-written
 obligation, naming the row set; Entity Runtime refuses it as `RowSetUnsupported`.
+
+### A row set beside rows the input names
+
+From `ess/32` a command may read rows its input names, `when_related: {via: input.<field>, …}`,
+and a row set in one decision (beyond10x/ess#554):
+
+```text
+- name: no-source
+  when_related: {via: input.from_port, exists: false}
+  error: wiring.board.SourceNotFound
+- name: no-sink
+  when_related: {via: input.to_port, exists: false}
+  error: wiring.board.SinkNotFound
+- name: source-not-output
+  when_related: {via: input.from_port, predicate: direction != output}
+  error: wiring.board.SourceNotOutput
+- name: sink-not-input
+  when_related: {via: input.to_port, predicate: direction != input}
+  error: wiring.board.SinkNotInput
+- name: source-taken
+  when_related:
+    entity: wiring.board.Wire
+    where: from_port == input.from_port
+    exists: true
+  error: wiring.board.SourceTaken
+- name: connected
+  creates: wiring.board.Wire
+  instance: wire_id
+  sets: {from_port: input.from_port, to_port: input.to_port}
+```
+
+A missing named row answers first, in the order the `exists: false` branches are declared; then
+every refusal over a present named row or over a row set, in declaration order; then the accepting
+branches. So a missing sink is refused before a source facing the wrong way, and a source facing
+the wrong way before a source a wire already leaves. The named rows' predicates must still be
+answered for every row without the row set: a row-set branch is credited with none of their cases,
+so without a default the command is refused as `non_exhaustive_branches` as before. Below
+`ess/32` the pair is refused as `unsupported_construct`, its message unchanged and its hint naming
+`ess/32`. Generated Rust and Go keep the command a hand-written obligation, named.
 
 ### From `ess/27`: a test over each candidate's related rows
 

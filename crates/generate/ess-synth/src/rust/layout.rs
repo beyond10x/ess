@@ -42,6 +42,8 @@ pub struct Layout {
     /// the case where flattening a qualified name lands on an identifier something else already
     /// holds, and the author is the one who knows which of the two should move.
     code_aliases: BTreeMap<QualifiedName, String>,
+    /// The identifier an author wrote for an enum variant under `code:`, by enum and variant name.
+    variant_aliases: BTreeMap<QualifiedName, BTreeMap<String, String>>,
     /// Package name per component, keyed by the component's name.
     component_packages: BTreeMap<ComponentName, String>,
     /// Named structs whose exact optional-self edge needs indirection at every reference site.
@@ -111,6 +113,7 @@ impl Layout {
             owners,
             entity_snapshots,
             code_aliases,
+            variant_aliases: crate::variant_code_aliases(ir),
             component_packages,
             boxed_structs,
             codecs,
@@ -202,6 +205,27 @@ impl Layout {
             return alias.clone();
         }
         name::type_name(declared, self.owner(declared).segments().len())
+    }
+
+    /// The Rust identifier of the variant `label` of the enum or union `declared`, unqualified.
+    ///
+    /// A variant's authored `code:` wins, as a declaration's does in [`Self::type_name`];
+    /// otherwise the identifier is derived from the label ([`name::variant`]). Every site that
+    /// declares, matches or constructs a variant asks here, so the three cannot disagree.
+    pub fn variant(&self, declared: &QualifiedName, label: &str) -> String {
+        self.variant_aliases
+            .get(declared)
+            .and_then(|variants| variants.get(label))
+            .cloned()
+            .unwrap_or_else(|| name::variant(label))
+    }
+
+    /// The `code:` an author wrote on the variant `label` of `declared`, when one was written.
+    pub fn variant_code(&self, declared: &QualifiedName, label: &str) -> Option<&str> {
+        self.variant_aliases
+            .get(declared)
+            .and_then(|variants| variants.get(label))
+            .map(String::as_str)
     }
 
     /// The entity's runtime boundary struct, allocated once for checking and rendering.

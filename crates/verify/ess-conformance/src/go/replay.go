@@ -256,7 +256,7 @@ func (r *run) snapshotCompleteSubject(index int, step Step) bool {
 	if err := shape.admitRow(row); err != nil {
 		return r.fail(index, "complete subject row: %v", err)
 	}
-	if !responseEqual(r.snapshots[step.View].complete, row) {
+	if !exactEqual(r.snapshots[step.View].complete, row) {
 		return r.fail(index, "complete subject changed in %s", step.View)
 	}
 	return true
@@ -461,12 +461,96 @@ func (r replayObservation) validateSchema() error {
 	}
 	return nil
 }
+
+// exactDecimalMajor refuses a Decimal in an exact observer (a retained result or a complete
+// subject) below suite/58, the pair that compares it by numeric value. value is the step's
+// already admitted `capture` or `shape`.
+func exactDecimalMajor(value any, major int) error {
+	if major >= 58 {
+		return nil
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	var schema struct {
+		Fields       []replayField                `json:"fields"`
+		Declarations map[string]replayDeclaration `json:"declarations"`
+	}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		return err
+	}
+	shape := replayObservation{Fields: schema.Fields, Declarations: schema.Declarations}
+	visited := map[string]bool{}
+	for _, field := range shape.Fields {
+		carries, err := shape.carriesDecimal(field.Type, 0, visited)
+		if err != nil {
+			return err
+		}
+		if carries {
+			return fmt.Errorf("a Decimal in an exact observer (a complete subject or a retained result) requires suite/58 or /59")
+		}
+	}
+	return nil
+}
+
+func (r replayObservation) carriesDecimal(source string, depth int, visited map[string]bool) (bool, error) {
+	if depth > 128 {
+		return false, fmt.Errorf("replay type depth limit")
+	}
+	if source == "Decimal" {
+		return true, nil
+	}
+	if inner, ok := accessorOptional(source); ok {
+		return r.carriesDecimal(inner, depth+1, visited)
+	}
+	if inner, ok, err := accessorCollection(source); ok || err != nil {
+		if err != nil {
+			return false, err
+		}
+		return r.carriesDecimal(inner, depth+1, visited)
+	}
+	body, ok := r.Declarations[source]
+	if !ok || visited[source] {
+		return false, nil
+	}
+	visited[source] = true
+	children := []string{}
+	switch body.Kind {
+	case "newtype":
+		children = append(children, body.Of)
+	case "struct":
+		for _, field := range body.Fields {
+			children = append(children, field.Type)
+		}
+	case "union":
+		variants, err := unionVariants(body.Variants)
+		if err != nil {
+			return false, err
+		}
+		for _, child := range variants {
+			if child != nil {
+				children = append(children, *child)
+			}
+		}
+	}
+	for _, child := range children {
+		carries, err := r.carriesDecimal(child, depth+1, visited)
+		if err != nil || carries {
+			return carries, err
+		}
+	}
+	return false, nil
+}
+
 func (r replayObservation) exactType(source string, depth int, visited map[string]bool) error {
 	if depth > 128 {
 		return fmt.Errorf("replay type depth limit")
 	}
-	if source == "Decimal" || source == "Binary64" {
-		return fmt.Errorf("Decimal and Binary64 replay results are unsupported")
+	// A Decimal is compared by numeric value (suite/58, exactDecimalMajor); a Binary64 has no
+	// exact observer contract yet.
+	if source == "Binary64" {
+		return fmt.Errorf("Binary64 replay results are unsupported")
 	}
 	if inner, ok := accessorOptional(source); ok {
 		return r.exactType(inner, depth+1, visited)
@@ -548,10 +632,48 @@ func (r replayObservation) compare(original, retry map[string]Node) error {
 	if err := r.admitResult(retry); err != nil {
 		return err
 	}
-	if !responseEqual(original, retry) {
+	if !exactEqual(original, retry) {
 		return fmt.Errorf("retry differs from retained original response")
 	}
 	return nil
+}
+
+// exactEqual is responseEqual for an exact observer (a retained result or a complete subject): two
+// number tokens compare by their exact numeric value, so `0.1` and `0.10000000000000001` are two
+// values where numberValue's binary64 reading makes them one, and `1.5` and `1.50` stay one. A leaf
+// that is not a pair of tokens is compared as responseEqual compares it.
+func exactEqual(left, right Node) bool {
+	switch value := left.(type) {
+	case []any:
+		other, ok := right.([]any)
+		if !ok || len(value) != len(other) {
+			return false
+		}
+		for i, child := range value {
+			if !exactEqual(child, other[i]) {
+				return false
+			}
+		}
+		return true
+	case map[string]any:
+		other, ok := right.(map[string]any)
+		if !ok || len(value) != len(other) {
+			return false
+		}
+		for key, child := range value {
+			actual, present := other[key]
+			if !present || !exactEqual(child, actual) {
+				return false
+			}
+		}
+		return true
+	}
+	if a, ok := responseNumber(left); ok {
+		if b, ok := responseNumber(right); ok {
+			return a.Cmp(b) == 0
+		}
+	}
+	return responseEqual(left, right)
 }
 
 func admitReplay(value any) error {

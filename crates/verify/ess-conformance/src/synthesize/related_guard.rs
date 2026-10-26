@@ -169,9 +169,16 @@ pub(super) fn uses(command: &ResolvedCommand) -> bool {
 
 /// Whether this strategy arranges the scenario for `outcome`: every branch of a command reading a
 /// related row that the row decides, which is all of them but an injected fault and a replay.
+///
+/// Not the creating half of create-or-update (`unknown_instance:` with `creates:`), which validates
+/// beside a related guard only under the one rule (`ess/27`, ESS-COMMAND-004 before it): an
+/// identity no row carries answers it at step 2, before the related row is read at step 4, so it is
+/// sent as any creation is, and the row its input names left unarranged — a target reading that
+/// row first refuses it (beyond10x/ess#641). A driver storing a row through it does the same.
 pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
     uses(command)
         && outcome.replays.is_none()
+        && !super::existence::creates_unknown(outcome)
         && !matches!(
             outcome.condition,
             ResolvedCondition::External { .. }
@@ -486,6 +493,11 @@ pub(super) type HeldRows =
 /// settled for that row (row 29, 0.69.0). `false` wherever [`present_in`] would refuse on other
 /// grounds, or the row's values are not known. A refusal a left-out value leaves `Unknown` is not passed
 /// over: the interpreter stops on it as undecidable.
+///
+/// From `ess/32` a creator reading several rows through its input is decided the same way where
+/// every one of them is a captured row whose values are known ([`several_present`]): the creating
+/// command of the rows a row set beside those rows selects, sent naming the rows the scenario's own
+/// send names (beyond10x/ess#554).
 pub(super) fn present_for(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -496,18 +508,55 @@ pub(super) fn present_for(
     ),
     input: &BTreeMap<String, Node>,
 ) -> bool {
-    if several(command) || stored::field(command).is_some() {
+    if stored::field(command).is_some() {
         return false;
     }
-    let Some((via, entity)) = reads(command) else {
+    if several(command) {
+        return several_present(ir.format())
+            && present_on(
+                ir,
+                command,
+                bound,
+                (held, rows),
+                input,
+                &self::rows(command),
+            );
+    }
+    let Some((via, entity)) = read(command) else {
         return false;
     };
-    let Some(instance) = bound.get(via) else {
-        return false;
+    present_on(ir, command, bound, (held, rows), input, &[(via, entity)])
+}
+
+/// Whether `format` arranges a creator reading several rows through its input on captured rows
+/// ([`present_for`]): from `ess/32` (beyond10x/ess#554), so no suite below it moves.
+pub(super) fn several_present(format: ess_domain::system::FormatVersion) -> bool {
+    format.major() >= ess_domain::system::FormatVersion::V32.major()
+}
+
+/// [`present_for`] over the rows `read` lists, each the captured row `bound` names through its
+/// `via` with the values `rows` settled for it: every branch reading one of them is an
+/// `exists: false` refusal, which a captured row never takes, or a refusal over its stored fields
+/// those values refute crossed with `input`.
+fn present_on(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    (held, rows): (
+        &BTreeMap<crate::scenario::InstanceName, super::StateName>,
+        &HeldRows,
+    ),
+    input: &BTreeMap<String, Node>,
+    read: &[(&ResolvedRelatedVia, &EntityHandle)],
+) -> bool {
+    let captured = |field: &str| {
+        let (_, entity) = read.iter().find(|(via, _)| via.field() == field)?;
+        let instance = bound.get(field)?;
+        Some((*entity, instance, rows.get(instance)?))
     };
-    let Some(settled) = rows.get(instance) else {
+    if read.iter().any(|(via, _)| captured(via.field()).is_none()) {
         return false;
-    };
+    }
     command
         .outcomes
         .iter()
@@ -518,20 +567,23 @@ pub(super) fn present_for(
                 ..
             } => outcome.error.is_some(),
             ResolvedCondition::Related {
+                via,
                 test: ResolvedRelatedTest::Holds { predicate },
                 input: None,
                 also,
                 ..
             } if also.is_empty() && outcome.error.is_some() => {
-                subject_fact::row_truth_with(
-                    ir,
-                    entity,
-                    settled,
-                    &BTreeSet::new(),
-                    held.get(instance),
-                    predicate,
-                    Some((command, input)),
-                ) == Truth::False
+                captured(via.field()).is_some_and(|(entity, instance, settled)| {
+                    subject_fact::row_truth_with(
+                        ir,
+                        entity,
+                        settled,
+                        &BTreeSet::new(),
+                        held.get(instance),
+                        predicate,
+                        Some((command, input)),
+                    ) == Truth::False
+                })
             }
             ResolvedCondition::Related { .. } => false,
             _ => true,
@@ -548,27 +600,43 @@ pub(super) fn steering_for(
     bound: &BTreeMap<String, crate::scenario::InstanceName>,
     rows: &HeldRows,
 ) -> Vec<Predicate> {
-    let Some((via, entity)) = reads(command) else {
-        return Vec::new();
+    // From `ess/32` each of several rows steers by the refusals over it alone ([`present_for`]).
+    let read: Vec<(&ResolvedRelatedVia, &EntityHandle)> = if several(command) {
+        if !several_present(ir.format()) {
+            return Vec::new();
+        }
+        self::rows(command)
+    } else {
+        let Some(read) = read(command) else {
+            return Vec::new();
+        };
+        vec![read]
     };
-    let Some(settled) = bound.get(via).and_then(|instance| rows.get(instance)) else {
-        return Vec::new();
-    };
-    let refusals: Vec<Predicate> = command
-        .outcomes
-        .iter()
-        .filter(|outcome| outcome.error.is_some())
-        .filter_map(|outcome| match &outcome.condition {
-            ResolvedCondition::Related {
-                test: ResolvedRelatedTest::Holds { predicate },
-                input: None,
-                ..
-            } => Some(predicate.clone()),
-            _ => None,
-        })
-        .collect();
-    let mut steering = subject_fact::grounded(ir, entity, settled, &refusals);
-    steering.extend(subject_fact::input_presence(ir, entity, &refusals));
+    let mut steering = Vec::new();
+    for (via, entity) in read {
+        let Some(settled) = bound
+            .get(via.field())
+            .and_then(|instance| rows.get(instance))
+        else {
+            return Vec::new();
+        };
+        let refusals: Vec<Predicate> = command
+            .outcomes
+            .iter()
+            .filter(|outcome| outcome.error.is_some())
+            .filter_map(|outcome| match &outcome.condition {
+                ResolvedCondition::Related {
+                    via: over,
+                    test: ResolvedRelatedTest::Holds { predicate },
+                    input: None,
+                    ..
+                } if !several(command) || over.field() == via.field() => Some(predicate.clone()),
+                _ => None,
+            })
+            .collect();
+        steering.extend(subject_fact::grounded(ir, entity, settled, &refusals));
+        steering.extend(subject_fact::input_presence(ir, entity, &refusals));
+    }
     steering
 }
 
@@ -611,6 +679,35 @@ fn rows(command: &ResolvedCommand) -> Vec<(&ResolvedRelatedVia, &EntityHandle)> 
 /// arranged beside it so that its guards select nothing ([`beside`]).
 pub(super) fn several(command: &ResolvedCommand) -> bool {
     rows(command).len() > 1
+}
+
+/// The input field naming each row the command's guards read and its entity, in the order first
+/// declared.
+pub(super) fn vias(command: &ResolvedCommand) -> Vec<(&str, &EntityHandle)> {
+    rows(command)
+        .into_iter()
+        .map(|(via, entity)| (via.field(), entity))
+        .collect()
+}
+
+/// Whether `outcome` refuses a missing row its input names, or a present one on its stored fields
+/// alone: the refusals [`named_rows`] arranges a scenario of.
+pub(super) fn named_refusal(outcome: &ResolvedOutcome) -> bool {
+    outcome.error.is_some()
+        && match &outcome.condition {
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Absent,
+                input: None,
+                ..
+            } => true,
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { .. },
+                input: None,
+                also,
+                ..
+            } => also.is_empty(),
+            _ => false,
+        }
 }
 
 /// The row a scenario of `outcome` is arranged around: the one its own guard reads; for a branch
@@ -1026,6 +1123,199 @@ fn beside<'c>(
     Ok(arranged)
 }
 
+/// Every row `command`'s input names, for the scenario of `outcome` arranged around a row set
+/// beside them (ess/32, beyond10x/ess#554): the input field naming it and a row on which no branch
+/// over it answering before `outcome` is selected, or, where `outcome` refuses over that row's
+/// stored fields, one on which its predicate holds and nothing over that row before it does. The
+/// row set's own arrangement follows these rows, and the send names them. Refused where no bounded
+/// arrangement holds such a row, and for a branch over the row that is no such refusal.
+///
+/// Where bit `index` of `later` is set, the `index`th row is first sought among those on which a
+/// refusal over it the precedence order answers after `outcome` holds ([`later_row`]), so a target
+/// answering that refusal first fails the scenario.
+pub(super) fn named_rows<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    later: u8,
+) -> Result<Vec<(&'c str, Arrangement)>, RefusalCause> {
+    let mut named = Vec::new();
+    for (index, (via, entity)) in rows(command).into_iter().enumerate() {
+        if index >= 4 {
+            return Err(unarranged());
+        }
+        let at = block_start(1 + index, Distinction::PLAIN);
+        let row = match &outcome.condition {
+            ResolvedCondition::Related {
+                via: own,
+                test: ResolvedRelatedTest::Holds { predicate },
+                input: None,
+                also,
+                ..
+            } if own.field() == via.field() && also.is_empty() && outcome.error.is_some() => {
+                let _open = opening(ir, command, via.field()).ok_or_else(unarranged)?;
+                let truth = |node: &Arrangement| {
+                    subject_fact::guard_truth_with(
+                        ir,
+                        entity,
+                        &node.settled,
+                        &node.unwritten,
+                        Some(&node.state),
+                        predicate,
+                        None,
+                    ) == Truth::True
+                        && leaves_to(ir, (command, outcome), (via.field(), entity, node), None)
+                            .is_ok_and(|leaves| leaves == Truth::True)
+                };
+                search_rows(
+                    ir,
+                    entity,
+                    actors,
+                    (at, None),
+                    &predicates_over(command, via.field()),
+                    |node| Ok(truth(node)),
+                )
+            }
+            // The missing row is named by an identity no row carries ([`missing_named`]).
+            ResolvedCondition::Related {
+                via: own,
+                test: ResolvedRelatedTest::Absent,
+                input: None,
+                ..
+            } if own.field() == via.field() && outcome.error.is_some() => continue,
+            ResolvedCondition::Related { via: own, .. } if own.field() == via.field() => {
+                return Err(unarranged());
+            }
+            // A row a refusal answered after `outcome` holds on, where `later` asks for one.
+            _ if later & (1 << index) != 0 => Some(
+                later_row(ir, (command, outcome), (via, entity), actors, at)
+                    .ok_or_else(unarranged)?,
+            ),
+            // A row every branch over it passes, where one leaves `outcome` to answer, so the
+            // command creating the row set's rows can be sent naming it too; else one on which
+            // nothing over it answers before `outcome`.
+            _ => command
+                .outcomes
+                .iter()
+                .filter(|accepting| accepting.error.is_none())
+                .find_map(|accepting| {
+                    beside_row(ir, (command, accepting), (via, entity), actors, (at, true))
+                })
+                .filter(|row| {
+                    leaves_to(ir, (command, outcome), (via.field(), entity, row), None)
+                        .is_ok_and(|leaves| leaves == Truth::True)
+                })
+                .or_else(|| beside_row(ir, (command, outcome), (via, entity), actors, (at, true))),
+        };
+        let row = row.ok_or_else(|| beside_refused((command, outcome), (via, entity)))?;
+        named.push((via.field(), row));
+    }
+    Ok(named)
+}
+
+/// A row of `entity`, which `via` of `command` names, on which a refusal over its stored fields
+/// that the precedence plan reads after `outcome` holds, while every refusal over it the plan
+/// reads before `outcome` does not; the first such refusal in declaration order that a bounded
+/// arrangement holds. `None` where there is none.
+fn later_row(
+    ir: &EssIr,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    (via, entity): (&ResolvedRelatedVia, &EntityHandle),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    at: usize,
+) -> Option<Arrangement> {
+    let _open = opening(ir, command, via.field())?;
+    let predicates = predicates_over(command, via.field());
+    let before: BTreeSet<&ess_domain::command::OutcomeName> =
+        super::precedence::answers_before(ir.format(), command, outcome)
+            .into_iter()
+            .map(|branch| &branch.name)
+            .collect();
+    // A refusal over the row's stored fields alone, by its predicate; `None` for any other branch.
+    let over_row = |branch: &'_ ResolvedOutcome| -> Option<Predicate> {
+        match &branch.condition {
+            ResolvedCondition::Related {
+                via: over,
+                test: ResolvedRelatedTest::Holds { predicate },
+                ..
+            } if over.field() == via.field() && branch.error.is_some() => Some(predicate.clone()),
+            _ => None,
+        }
+    };
+    let truth = |node: &Arrangement, predicate: &Predicate| {
+        subject_fact::guard_truth_with(
+            ir,
+            entity,
+            &node.settled,
+            &node.unwritten,
+            Some(&node.state),
+            predicate,
+            None,
+        )
+    };
+    let earlier: Vec<Predicate> = command
+        .outcomes
+        .iter()
+        .filter(|branch| before.contains(&branch.name))
+        .filter_map(over_row)
+        .collect();
+    command
+        .outcomes
+        .iter()
+        .filter(|branch| branch.name != outcome.name && !before.contains(&branch.name))
+        .filter(|branch| {
+            matches!(&branch.condition, ResolvedCondition::Related { input: None, also, .. }
+                if also.is_empty())
+        })
+        .filter_map(over_row)
+        .find_map(|predicate| {
+            search_rows(ir, entity, actors, (at, None), &predicates, |node| {
+                Ok(truth(node, &predicate) == Truth::True
+                    && earlier
+                        .iter()
+                        .all(|earlier| truth(node, earlier) == Truth::False))
+            })
+        })
+}
+
+/// The input field naming the row `outcome` refuses as missing, among those [`named_rows`] leaves
+/// unarranged, where it is such a refusal.
+pub(super) fn missing_named(outcome: &ResolvedOutcome) -> Option<&str> {
+    match &outcome.condition {
+        ResolvedCondition::Related {
+            via,
+            test: ResolvedRelatedTest::Absent,
+            input: None,
+            ..
+        } if outcome.error.is_some() => Some(via.field()),
+        _ => None,
+    }
+}
+
+/// A row of `entity`, which `via` of the creator `command` names, that every branch over it passes
+/// on the way to `creating` ([`beside_row`]), arranged at block `base`: the row a row set's rows are
+/// created naming where the scenario's own send names no row through `via` (ess/32,
+/// beyond10x/ess#554).
+pub(super) fn creator_row(
+    ir: &EssIr,
+    (command, creating): (&ResolvedCommand, &ResolvedOutcome),
+    via: &str,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    base: usize,
+) -> Option<Arrangement> {
+    let (via, entity) = rows(command)
+        .into_iter()
+        .find(|(read, _)| read.field() == via)?;
+    beside_row(
+        ir,
+        (command, creating),
+        (via, entity),
+        actors,
+        (block_start(BESIDE + base, Distinction::PLAIN), true),
+    )
+}
+
 /// The rows arranged beside the one a scenario is arranged around, as the input search for that
 /// row reads them (beyond10x/ess#283): `outcome` is the branch under test in the whole `command`.
 #[derive(Clone, Copy)]
@@ -1146,10 +1436,14 @@ fn absent_branch(command: &ResolvedCommand) -> Option<&ResolvedOutcome> {
 /// Which branch the command selects for this input, with the related row `row` present — or absent,
 /// where it is `None` — if exactly one does.
 ///
-/// A missing row is answered by the `exists: false` branch before any other (the #211 ruling). With
-/// the row present, a predicate it does not decide (a field the arrangement did not determine, or
-/// one it left out that a predicate reading the input compares, which the interpreter stops on as
-/// undecidable, row 29) selects nothing and is not guessed at. A predicate reading no input is
+/// A missing row is answered by the `exists: false` branch: before any other below the one rule
+/// (the #211 ruling), and from it (`ess/27`) after the addressed row's existence and held state,
+/// which are not asked here. An `unknown_instance:` branch, the creating half of create-or-update
+/// included, is witnessed for an identity no row carries without this row ([`routes`]), and a
+/// held-state branch by its own family. With the row present, a predicate it does not decide (a
+/// field the arrangement did not determine, or one it left out that a predicate reading the input
+/// compares, which the interpreter stops on as undecidable, row 29) selects nothing and is not
+/// guessed at. A predicate reading no input is
 /// read as a guard ([`subject_fact::guard_truth_with`]): a member of a field the row leaves out
 /// does not take it (beyond10x/ess#234). A refusal the precedence plan reads before
 /// the others selected is taken before them ([`answering_refusal`]): an input-guarded refusal
@@ -3003,7 +3297,7 @@ fn prepend_beside(setup: &mut Setup, others: &[Beside<'_>]) {
 ///
 /// Only for a refusal, which changes nothing, so every send leaves the scenario as it was. A row
 /// no bounded arrangement selects that way with the scenario's input adds no send.
-fn overlaps(
+pub(super) fn overlaps(
     models: &super::caller::InvocationModels<'_>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,

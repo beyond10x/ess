@@ -137,6 +137,12 @@ pub struct RawSpecFile {
     #[serde(skip)]
     #[schemars(skip)]
     pub(crate) shorthand: crate::shorthand::Written,
+    /// The `from:` each view field of this file wrote, taken out of it by [`Self::parse`] so it is
+    /// refused at its field with the spelling that reads a referenced row (beyond10x/ess#675,
+    /// `crate::view::from`). Never part of the document's typed fields, its schema or its bytes.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub(crate) view_from: crate::view::from::Written,
 }
 
 /// Everything a specification declares, indexed by identity.
@@ -193,6 +199,8 @@ impl RawSpecFile {
         let undeclared_fields = crate::undeclared_fields::Written::take(&mut document)?;
         // So is a struct's `shorthand:` (`ess/27`).
         let shorthand = crate::shorthand::Written::take(&mut document)?;
+        // And a view field's `from:`, which no format admits (beyond10x/ess#675).
+        let view_from = crate::view::from::Written::take(&mut document, text);
         // A file that names its format reads the operand grammar of that format; one that does
         // not reads what its caller set, `ess/22`'s when nobody did (see `parse_all`).
         let format = written_format(&document);
@@ -208,6 +216,7 @@ impl RawSpecFile {
         file.spelled = spelled;
         file.undeclared_fields = undeclared_fields;
         file.shorthand = shorthand;
+        file.view_from = view_from;
         Ok(file)
     }
 
@@ -430,6 +439,12 @@ impl Specification {
         // From `ess/22` a bare word on the right of a comparison may name a field; which one is
         // decided now that the format and every declaration are known (A1).
         errors.extend(specification.resolve_written(&collected.spelled));
+        // A view field's `from:`, with the spelling that reads it, now that every source's
+        // references are known (beyond10x/ess#675).
+        errors.extend(crate::view::from::refusals(
+            &specification,
+            &collected.withheld_views,
+        ));
 
         errors.extend(specification.validate_after(&collected.refused));
         errors.extend(specification.validate_roster(&collected.roster));
@@ -1011,6 +1026,9 @@ struct Collected {
     /// How each authored predicate was written, until the header's format says what its bare
     /// words name (`docs/design/expression-family-source22.md`, A1).
     spelled: crate::expression::lexical::Written,
+    /// The views withheld because a field of theirs wrote `from:`, refused once every source and
+    /// its references are known (beyond10x/ess#675, `crate::view::from`).
+    withheld_views: Vec<crate::view::from::Withheld>,
 }
 
 /// What has been written under one name, converted or not.
@@ -1235,6 +1253,7 @@ impl Collected {
         errors.extend(file.shorthand.refused_outside_types(&file));
         let undeclared_fields = file.undeclared_fields;
         let shorthand = file.shorthand;
+        let view_from = file.view_from;
         for (index, mut raw) in file.types.into_iter().enumerate() {
             // An invariant that does not parse, or a boolean written as a variant, is refused and
             // withheld, not the type: a refused type would make every field declared with it a
@@ -1308,7 +1327,7 @@ impl Collected {
         self.absorb_errors_views_and_actors(
             source,
             owner,
-            (file.errors, file.views, file.actors),
+            (file.errors, (file.views, &view_from), file.actors),
             &mut members,
             errors,
         );
@@ -1348,9 +1367,9 @@ impl Collected {
         &mut self,
         source: &Source,
         owner: Option<&QualifiedName>,
-        (declared_errors, views, actors): (
+        (declared_errors, (views, view_from), actors): (
             Vec<crate::command::RawErrorSpec>,
-            Vec<crate::view::RawViewSpec>,
+            (Vec<crate::view::RawViewSpec>, &crate::view::from::Written),
             Vec<crate::actor::RawActorSpec>,
         ),
         members: &mut DomainMembers,
@@ -1376,26 +1395,32 @@ impl Collected {
                 members.errors.extend(converted);
             }
         }
-        for raw in views {
+        for (index, raw) in views.into_iter().enumerate() {
             let first = self.declare_member("view", &raw.name, source, owner, errors);
             let name = raw.name.clone();
+            // A view a field of which wrote `from:` is withheld whole, as one that does not
+            // convert is, and its `from:` refused once the specification is assembled.
+            let withheld = view_from.withheld(index, &raw, source);
             let converted = match ViewSpec::try_from(raw) {
-                Ok(view) => {
+                Ok(view) if withheld.is_none() => {
                     let converted = view.name.clone();
                     record(first, &mut self.views, view.name.clone(), view);
                     Some(converted)
                 }
-                Err(member_errors) => {
+                outcome => {
                     self.refused.views.insert(name.clone());
                     if let Some(owner) = owner {
                         self.refused
                             .view_domains
                             .insert(name.clone(), owner.clone());
                     }
-                    errors.extend(member_errors);
+                    if let Err(member_errors) = outcome {
+                        errors.extend(member_errors);
+                    }
                     None
                 }
             };
+            self.withheld_views.extend(withheld);
             let claim = Claim::new(source, owner, MemberKind::View);
             if self.write(&name, claim, converted.is_some(), errors) {
                 members.views.extend(converted);

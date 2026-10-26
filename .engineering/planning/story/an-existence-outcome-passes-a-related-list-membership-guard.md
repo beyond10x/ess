@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-existence-outcome-passes-a-related-list-membership-guard
 kind: story
-status: active
+status: implemented
 title: An existence outcome is synthesized beside a related list-membership guard
 summary: A downstream specification's existing_instance outcome is refused with ESS-SYNTH-004 because the steered search finds no related row whose list holds the input chosen first; reproduced on 0.68.0 and the 0.69.0 build.
 tags:
@@ -11,10 +11,11 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-22T23:39:59Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-22T23:39:59Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:28Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"metric_observation":1,"verification":2}}}
 ---
 ## Need
 

@@ -355,9 +355,28 @@ pub struct StateMachine {
     /// The moves that are permitted. Anything not listed is not permitted.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub transitions: Vec<Transition>,
+    /// The wire spelling of each state that declares one, `{name: Indexing, wire: indexing}`
+    /// (`ess/32`, beyond10x/ess#639).
+    ///
+    /// Held beside [`states`](Self::states) rather than in it, so every reader of the declared
+    /// names stays as it is: guards, `moves:`, suites and the interpreter name a state by its
+    /// declared name, and only the variants of the entity's
+    /// [state type](EntitySpec::state_type) carry the spelling, where every projection that honours
+    /// an enum variant's wire spelling reads it. Skipped when empty, so a lifecycle that spells no
+    /// state keeps its IR bytes.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub naming: BTreeMap<StateName, Naming>,
 }
 
 impl StateMachine {
+    /// What `state` is called on the wire: its declared spelling, or its name.
+    pub fn wire<'a>(&'a self, state: &'a StateName) -> &'a str {
+        self.naming
+            .get(state)
+            .and_then(|naming| naming.wire.as_deref())
+            .unwrap_or_else(|| state.as_str())
+    }
+
     /// Transitions that may be taken from `state`.
     pub fn outgoing(&self, state: &StateName) -> Vec<&Transition> {
         self.transitions
@@ -502,7 +521,38 @@ impl StateMachine {
 
         errors.extend(self.validate_transitions(location));
         errors.extend(self.validate_states(location));
+        errors.extend(self.validate_spellings(location));
 
+        errors
+    }
+
+    /// No two states share a wire spelling (`ess/32`, beyond10x/ess#639): a value on the wire
+    /// names one state, or a reader cannot tell which state it holds.
+    ///
+    /// A spelling is only declared from `ess/32`, and two bare names are never one spelling, so the
+    /// rule needs no format of its own; the declared spelling below `ess/32` is refused by
+    /// `primitive_admission` as well.
+    fn validate_spellings(&self, location: &str) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let mut spelled: BTreeMap<&str, &StateName> = BTreeMap::new();
+        for state in &self.states {
+            let wire = self.wire(state);
+            if let Some(first) = spelled.get(wire) {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::ConflictingDeclaration,
+                        format!("{location}.states.{state}"),
+                        format!(
+                            "`{first}` and `{state}` are both spelled `{wire}` on the wire, so a \
+                             value there cannot say which state it is"
+                        ),
+                    )
+                    .with_hint("give each state its own wire spelling"),
+                );
+            } else {
+                spelled.insert(wire, state);
+            }
+        }
         errors
     }
 
@@ -993,7 +1043,13 @@ impl EntitySpec {
                     .states
                     .states
                     .iter()
-                    .map(|state| crate::types::EnumVariant::new(state.to_string()))
+                    .map(|state| {
+                        let mut variant = crate::types::EnumVariant::new(state.to_string());
+                        if let Some(naming) = self.states.naming.get(state) {
+                            variant.naming = naming.clone();
+                        }
+                        variant
+                    })
                     .collect(),
             },
             naming: Naming::default(),
@@ -1838,8 +1894,9 @@ fn names(items: impl Iterator<Item = String>) -> String {
 #[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RawStateMachine {
-    /// Every state the entity can be in.
-    pub states: BTreeSet<StateName>,
+    /// Every state the entity can be in, each a bare name or, from `ess/32`, a name with its wire
+    /// spelling.
+    pub states: BTreeSet<RawState>,
     /// Where a new entity starts.
     pub initial: StateName,
     /// States the entity may rest in forever.
@@ -1850,14 +1907,155 @@ pub struct RawStateMachine {
     pub transitions: Vec<Transition>,
 }
 
+impl RawStateMachine {
+    /// A state written more than once with two different spellings, located under `location`.
+    ///
+    /// A state written twice alike is one state, as it always was; written twice with two
+    /// spellings it is two claims about one state, and keeping either would drop the other
+    /// silently.
+    pub(crate) fn conflicting_spellings(&self, location: &str) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let mut spelled: BTreeMap<&StateName, Option<&str>> = BTreeMap::new();
+        for state in &self.states {
+            let (name, wire) = state.parts();
+            match spelled.get(name) {
+                Some(first) if *first != wire => errors.push(
+                    ValidationError::new(
+                        ValidationCode::ConflictingDeclaration,
+                        format!("{location}.states.{name}"),
+                        format!("`{name}` is declared twice with two different wire spellings"),
+                    )
+                    .with_hint("declare the state once"),
+                ),
+                Some(_) => {}
+                None => {
+                    spelled.insert(name, wire);
+                }
+            }
+        }
+        errors
+    }
+}
+
 impl From<RawStateMachine> for StateMachine {
     fn from(raw: RawStateMachine) -> Self {
+        let mut states = BTreeSet::new();
+        let mut naming = BTreeMap::new();
+        for state in raw.states {
+            match state {
+                RawState::Bare(name) => {
+                    states.insert(name);
+                }
+                RawState::Spelled { name, wire } => {
+                    naming.entry(name.clone()).or_insert_with(|| Naming {
+                        wire: Some(wire),
+                        ..Naming::default()
+                    });
+                    states.insert(name);
+                }
+            }
+        }
         Self {
-            states: raw.states,
+            states,
             initial: raw.initial,
             terminal: raw.terminal,
             transitions: raw.transitions,
+            naming,
         }
+    }
+}
+
+/// A lifecycle state as a document writes it: a bare name, or from `ess/32` a mapping that also
+/// declares its wire spelling, `{name: Indexing, wire: indexing}` (beyond10x/ess#639).
+///
+/// The mapping is read at every format, so a document below `ess/32` is refused at the state as
+/// `unsupported_format_version` naming `ess/32` rather than as a whole-file `invalid type: map`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RawState {
+    /// A state named and nothing else.
+    Bare(StateName),
+    /// A state with the spelling it carries on the wire.
+    Spelled {
+        /// Its declared name, which every guard, transition and suite names it by.
+        name: StateName,
+        /// What it is called on the wire.
+        wire: String,
+    },
+}
+
+impl RawState {
+    /// The declared name, and the wire spelling where one is declared.
+    pub fn parts(&self) -> (&StateName, Option<&str>) {
+        match self {
+            Self::Bare(name) => (name, None),
+            Self::Spelled { name, wire } => (name, Some(wire)),
+        }
+    }
+}
+
+/// A lifecycle state with its wire spelling, `{name: Indexing, wire: indexing}`. `wire:` is
+/// required: a state with nothing to declare beside its name is written as the name.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SpelledState {
+    /// The state's declared name.
+    name: StateName,
+    /// What the state is called on the wire (`ess/32`).
+    wire: String,
+}
+
+impl<'de> serde::Deserialize<'de> for RawState {
+    /// Reads either form.
+    ///
+    /// A visitor rather than `#[serde(untagged)]`, as for an enum variant: an untagged enum
+    /// discards the inner error, so a misspelt key in the mapping would stop being named.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Written;
+
+        impl<'de> serde::de::Visitor<'de> for Written {
+            type Value = RawState;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a state name, or a mapping carrying `name` and `wire`")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                StateName::new(value).map(RawState::Bare).map_err(E::custom)
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let SpelledState { name, wire } =
+                    <SpelledState as serde::Deserialize>::deserialize(
+                        serde::de::value::MapAccessDeserializer::new(map),
+                    )?;
+                Ok(RawState::Spelled { name, wire })
+            }
+        }
+
+        deserializer.deserialize_any(Written)
+    }
+}
+
+impl schemars::JsonSchema for RawState {
+    fn schema_name() -> String {
+        "LifecycleState".to_owned()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        let mut schema = schemars::schema::SchemaObject::default();
+        schema.subschemas().any_of = Some(vec![
+            generator.subschema_for::<StateName>(),
+            generator.subschema_for::<SpelledState>(),
+        ]);
+        schema.metadata().description = Some(
+            "A lifecycle state: a bare name, or from `ess/32` a mapping that also declares its \
+             wire spelling."
+                .to_owned(),
+        );
+        schema.into()
     }
 }
 
@@ -1922,6 +2120,10 @@ impl TryFrom<RawEntitySpec> for EntitySpec {
             raw.invariants,
             |index| invariant_site(&raw.name, index),
             &mut unparsed,
+        );
+        unparsed.extend(
+            raw.states
+                .conflicting_spellings(&format!("entity {}", raw.name)),
         );
         let spec = Self {
             name: raw.name,

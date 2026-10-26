@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T09:27:23Z",
+  "actor": "human:timo",
+  "artifact": "story:a-refused-send-keeps-the-earlier-read-token-for-a-denied-grant",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "fix commit c1fdc2af8 is in tag 0.69.0 (released 2026-10-24, release Gate green, verify-release exit 0); store left the story active; closed 2026-10-26 by the 0.70.0 wave",
+    "reference": "c1fdc2af8"
+  }
+}

@@ -863,7 +863,9 @@ fn unclaimed_external_witnesses_keep_their_bytes() {
 /// a422cac9d, whose row-set refusal now carries the arrangement help). The refusals of
 /// `calendar-windows.yaml` were re-pinned when the creating branch also left rows chosen toward
 /// the stored-field guards of the moves (story seeded-state-reaches-related-rows): the same nine
-/// refusals, `Deploy/frozen` now listed last, the suite unchanged.
+/// refusals, `Deploy/frozen` now listed last, the suite unchanged. The suite and refusals of
+/// `generated-views.yaml` were re-pinned on the 0.70.0 integration branch: a `Decimal` in a
+/// complete subject is observed (suite/58), so its one refusal became a scenario (unit E, 44268b2d6).
 const BASE: &str = include_str!("fixtures/external-beside-held-guard-base.tsv");
 
 fn root() -> PathBuf {

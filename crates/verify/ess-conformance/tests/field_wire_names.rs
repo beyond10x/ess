@@ -71,3 +71,41 @@ fn the_compiled_field_carries_the_wire_name_a_target_spells() {
     assert_eq!(event.fields[0].name, "order_id");
     assert_eq!(event.fields[0].naming.wire.as_deref(), Some("orderId"));
 }
+
+/// A lifecycle state's wire name (`ess/32`, beyond10x/ess#639) is the adapter's to spell: the
+/// suite addresses the state by its declared name, so it keeps the bytes of the bare lifecycle.
+///
+/// All but the two digests of its provenance, which name the specification and the contract it
+/// was synthesized from: the spelling is part of both, so a suite stays bound to the model that
+/// declares it.
+#[test]
+fn a_state_wire_name_leaves_the_suite_bytes_unchanged() {
+    let spelled = include_str!("../../../generate/ess-gen/tests/fixtures/state-wire.yaml");
+    let bare = spelled.replace(
+        "states: [{name: Indexing, wire: indexing}, Ready]",
+        "states: [Indexing, Ready]",
+    );
+    assert_ne!(bare, spelled);
+    let wired = ess_conformance::synthesize::synthesize(&ir(spelled));
+    let plain = ess_conformance::synthesize::synthesize(&ir(&bare));
+    assert!(!wired.suite.scenarios.is_empty());
+    let bytes = wired.suite.to_canonical_json().expect("serialises");
+    let unbound = |json: &str| {
+        let mut value: serde_json::Value = serde_json::from_str(json).expect("a suite is JSON");
+        let provenance = value["provenance"].as_object_mut().expect("a provenance");
+        for digest in ["spec_digest", "contract_digest"] {
+            assert!(provenance.remove(digest).is_some(), "carries `{digest}`");
+        }
+        value.to_string()
+    };
+    assert_eq!(
+        unbound(&bytes),
+        unbound(&plain.suite.to_canonical_json().expect("serialises")),
+        "one suite"
+    );
+    assert!(
+        bytes.contains("\"Indexing\""),
+        "the suite carries the declared state"
+    );
+    assert!(!bytes.contains("\"indexing\""), "and not its wire name");
+}

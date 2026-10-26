@@ -287,6 +287,73 @@ fn writing_the_default_or_nothing_changes_no_byte_of_any_projection() {
     );
 }
 
+/// The model under `ess/32` with `Extension` declaring `fields: []` (beyond10x/ess#649).
+fn empty(record: Option<&str>) -> String {
+    let declared = "{record}    fields:\n      - name: vendor\n        type: String\n";
+    assert!(MODEL.contains(declared), "`Extension` declares `vendor`");
+    MODEL
+        .replace("format: ess/24", "format: ess/32")
+        .replacen(declared, "{record}    fields: []\n", 1)
+        .replace("{command}", "")
+        .replace(
+            "{record}",
+            &record.map_or_else(String::new, |value| {
+                format!("    undeclared_fields: {value}\n")
+            }),
+        )
+}
+
+#[test]
+fn an_empty_struct_projects_as_an_open_or_closed_object() {
+    for (record, open) in [(Some("ignored"), true), (None, false)] {
+        let model = ir(&empty(record));
+        let outputs = outputs(&model);
+
+        let placed = schema(&outputs, "responses/catalog.orders.PlaceOrder.schema.json");
+        let definition = &placed["$defs"]["catalog.orders.Extension"];
+        assert_eq!(definition["type"], json!("object"), "{definition}");
+        assert_eq!(
+            definition["additionalProperties"],
+            json!(open),
+            "{definition}"
+        );
+        assert!(
+            definition["required"].as_array().is_none_or(Vec::is_empty),
+            "nothing is required: {definition}"
+        );
+        let validator = jsonschema::draft202012::new(&placed).expect("the schema compiles");
+        let answer = |extension: Value| json!({"order_ref": "o-1", "extension": extension, "closed": {"note": "n"}});
+        assert!(validator.is_valid(&answer(json!({}))), "`{{}}` is a value");
+        assert_eq!(
+            validator.is_valid(&answer(json!({"x": 1}))),
+            open,
+            "an undeclared member is a value only of the open struct"
+        );
+        assert!(
+            !validator.is_valid(&answer(json!("x"))),
+            "a string is no value"
+        );
+
+        let openapi = yaml(&outputs, "openapi/orders.yaml");
+        let extension = &openapi["components"]["schemas"]["catalog.orders.Extension"];
+        assert_eq!(extension["type"], json!("object"), "{extension}");
+        assert_eq!(
+            extension["additionalProperties"],
+            json!(open),
+            "{extension}"
+        );
+
+        let asyncapi = yaml(&outputs, "asyncapi/orders.yaml");
+        let extension = &asyncapi["components"]["schemas"]["type.catalog.orders.Extension"];
+        assert_eq!(extension["type"], json!("object"), "{extension}");
+        assert_eq!(
+            extension["additionalProperties"],
+            json!(open),
+            "{extension}"
+        );
+    }
+}
+
 /// `shorthand: <field>` on a struct (`ess/27`, beyond10x/ess#594), projected beside
 /// `undeclared_fields:`.
 #[path = "undeclared_fields/shorthand.rs"]

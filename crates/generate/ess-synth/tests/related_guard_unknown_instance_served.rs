@@ -108,6 +108,85 @@ fn unknown_instance_beside_a_related_guard_in_the_generated_go_target() {
     unknown_instance_served(Target::Go);
 }
 
+// ---- create-or-update beside a related-row refusal (beyond10x/ess#641) ----------------------
+
+const BIND_MODEL: &str = include_str!(
+    "../../../verify/ess-conformance/tests/fixtures/create-or-update-beside-related-refusal.yaml"
+);
+
+/// The edit that makes a generated `Bind` answer a missing agent before the seat's existence.
+fn missing_agent_first(target: Target) -> (&'static str, &'static str) {
+    match target {
+        Target::Rust => (
+            "        // The addressed row, read before the branches that select by it.\n        let Some(held) = BindingStorage::get(&self.ports, &input.seat_id) else {",
+            "        if AgentStorage::get(&self.ports, &input.agent_id).is_none() {\n            return Ok(crate::desk::BindOutcome::NoAgent { error: crate::desk::NoAgent });\n        }\n        let Some(held) = BindingStorage::get(&self.ports, &input.seat_id) else {",
+        ),
+        Target::Go => (
+            "\t// The addressed row, read before the branches that select by it.\n\theld, found := b.ports.BindingStorage.Get(input.SeatId)\n",
+            "\tif _, found := b.ports.AgentStorage.Get(input.AgentId); !found {\n\t\treturn desk.BindOutcomeNoAgent{Error: desk.NoAgent{}}, nil\n\t}\n\theld, found := b.ports.BindingStorage.Get(input.SeatId)\n",
+        ),
+        _ => unreachable!("the case emits Rust and Go"),
+    }
+}
+
+/// `Bind` creates a seat no row carries, keeps one bound to the agent sent, refuses an agent no
+/// row carries and otherwise rebinds. The generated behaviour, built with no hand-written code,
+/// passes every scenario the model synthesizes, among them `bound` sent for an unknown seat and an
+/// agent no row carries. A faulty control answering the missing agent before the seat's existence
+/// fails `bound`.
+fn create_or_update_served(target: Target) {
+    let ir = served::model(&served::served(BIND_MODEL, "desk"));
+    let synthesis = ess_synth::synthesize_for(&ir, target).expect("the model synthesizes");
+    assert_eq!(
+        synthesis
+            .plan
+            .disposition_of(CapabilityKind::CommandBehavior, "demo.desk.Bind"),
+        Some(&SynthesisDisposition::Generated),
+        "{target:?}:\n{}",
+        synthesis.plan.to_markdown()
+    );
+    let (root, _) = served::emit(&ir, target, "create-or-update");
+    let binary = served::build(&root, target, "demo", "desk", false);
+    let statuses = served::run(&ir, &binary);
+    served::assert_passes(
+        &format!("{target:?} create-or-update beside a related refusal"),
+        &statuses,
+        &[
+            "Bind/outcome/bound",
+            "Bind/outcome/no-agent",
+            "Bind/outcome/rebound",
+            "Bind/outcome/already-bound",
+        ],
+    );
+    let _ = std::fs::remove_dir_all(&root);
+
+    let (root, _) = served::emit(&ir, target, "create-or-update-faulty");
+    let (from, to) = missing_agent_first(target);
+    served::mutate(&served::behaviour_path(&root, target, "demo"), from, to);
+    let binary = served::build(&root, target, "demo", "desk", false);
+    let statuses = served::run(&ir, &binary);
+    assert_ne!(
+        statuses.get("demo.desk.Bind/outcome/bound"),
+        Some(&ess_conformance::report::Status::Passed),
+        "{target:?}: the target reading the agent first fails `bound`: {statuses:#?}"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_generated_create_or_update_beside_a_related_refusal_passes_every_branch() {
+    create_or_update_served(Target::Rust);
+}
+
+#[test]
+fn a_generated_go_create_or_update_beside_a_related_refusal_passes_every_branch() {
+    assert!(
+        served::go_available(),
+        "Go is required: the generated Go target is unchecked without it"
+    );
+    create_or_update_served(Target::Go);
+}
+
 // ---- the one precedence rule (G4) ----------------------------------------------------------
 
 const RULE: &str =

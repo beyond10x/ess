@@ -51,6 +51,7 @@ use crate::name::{Naming, QualifiedName};
 use crate::types::{Field, Primitive, TypeBody, TypeRef, TypeRegistry, MAX_TYPE_DEPTH};
 
 pub(crate) mod absent;
+pub(crate) mod from;
 mod measure;
 pub mod navigation;
 mod paging;

@@ -5,10 +5,12 @@ kind: story
 status: draft
 title: when_subject reads the addressed row's identity
 summary: 'Adopter report R3: a when_subject predicate on the identity field is refused as ESS-COMMAND-003.'
+tags:
+- ess-0.71.0
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 2
+revision: 3
 ---
 ## Report
 

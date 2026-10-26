@@ -143,6 +143,7 @@ pub mod delivery_context;
 pub mod direct_response;
 pub mod event_multiplicity;
 pub mod evidence;
+pub mod exact_decimal;
 pub mod expression_format;
 pub mod faulty;
 pub mod fixtures;

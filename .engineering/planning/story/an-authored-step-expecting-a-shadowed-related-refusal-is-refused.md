@@ -2,16 +2,17 @@
 format: aep.planning-md/3
 id: story:an-authored-step-expecting-a-shadowed-related-refusal-is-refused
 kind: story
-status: active
+status: implemented
 title: An authored step expecting a related refusal that an earlier one over the same row shadows is refused
 summary: conform author accepts a step the interpreter then fails, because the first declared refusal over one related row answers (row 27, 2026-10-23).
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T04:52:43Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-23T04:52:43Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:23Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Need
 

@@ -5,13 +5,15 @@ kind: story
 status: draft
 title: A view may answer values no row holds
 summary: 'Adopter reports N20, N23: views need a source and stored fields (ess#674); needs an ADR.'
+tags:
+- ess-0.71.0
 refs:
 - provider: github
   reference: beyond10x/ess#674
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 2
 ---
 ## Problem
 

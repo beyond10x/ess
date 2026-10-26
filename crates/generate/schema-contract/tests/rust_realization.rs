@@ -143,6 +143,64 @@ fn the_types_match_the_http_projection() {
     );
 }
 
+#[path = "support/empty_struct.rs"]
+mod empty_struct;
+
+/// The generated decoders of a struct with `fields: []` (ess/32, beyond10x/ess#649).
+const EMPTY_STRUCT_WIRE: &str = r#"
+#[cfg(test)]
+mod empty_struct_wire {
+    use model_types::*;
+    use serde_json::{json, Value};
+
+    fn round_trips<T: serde::de::DeserializeOwned + serde::Serialize>(body: Value) {
+        let decoded: T = serde_json::from_value(body.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&decoded).unwrap(), body);
+    }
+
+    #[test]
+    fn an_open_empty_struct_decodes_any_object() {
+        round_trips::<DemoAckOpen>(json!({}));
+        round_trips::<DemoAckOpen>(json!({"x": 1}));
+        assert!(serde_json::from_value::<DemoAckOpen>(json!("x")).is_err());
+    }
+
+    #[test]
+    fn a_closed_empty_struct_decodes_only_the_empty_object() {
+        round_trips::<DemoAckClosed>(json!({}));
+        assert!(serde_json::from_value::<DemoAckClosed>(json!({"x": 1})).is_err());
+        assert!(serde_json::from_value::<DemoAckClosed>(json!("x")).is_err());
+    }
+}
+"#;
+
+#[test]
+fn an_open_empty_struct_decodes_any_object() {
+    let result = empty_struct::plan().rust("model_types").unwrap();
+    compile(
+        &result.supporting["Cargo.toml"],
+        &result.declarations,
+        EMPTY_STRUCT_WIRE,
+    );
+}
+
+#[test]
+fn a_closed_empty_struct_decodes_only_the_empty_object() {
+    let result = empty_struct::plan().rust("model_types").unwrap();
+    assert!(
+        result
+            .declarations
+            .contains("#[serde(deny_unknown_fields)]\npub struct DemoAckClosed {"),
+        "{}",
+        result.declarations
+    );
+    compile(
+        &result.supporting["Cargo.toml"],
+        &result.declarations,
+        EMPTY_STRUCT_WIRE,
+    );
+}
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
