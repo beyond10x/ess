@@ -170,10 +170,11 @@ pub(super) fn server_crate(
         Artifact::new(
             format!("crates/{package}/src/wire.rs"),
             format!(
-                "{}{}{}",
+                "{}{}{}{}",
                 provenance.commented_for("//", REGENERATE),
                 wire::module(&server),
-                system_event_encoder(&server)
+                system_event_encoder(&server),
+                system_event_decoder(&server)
             ),
         ),
         Artifact::new(
@@ -265,6 +266,60 @@ fn system_event_encoder(server: &Server<'_>) -> String {
         );
     }
     out.push_str("    }\n    out.push('}');\n    out\n}\n");
+    out
+}
+
+/// `decode_system_event`: the inverse of [`system_event_encoder`], so an adapter beside the
+/// server reads a published envelope back into the system's own event type, each payload through
+/// its event's decoder.
+///
+/// An envelope naming an event the system's log does not carry is refused at `event`, naming the
+/// event it carried; the payload is read only once the name is known, so a refusal there names
+/// the payload's own path.
+fn system_event_decoder(server: &Server<'_>) -> String {
+    let system_crate = Layout::crate_ident(server.layout.system_package());
+    let variants = system::system_event_variants(server.ir, server.plan, server.layout);
+    let mut out = format!(
+        "\n/// Reads any event on the system's log back from the envelope [`encode_system_event`] \
+         writes,\n/// `{{\"event\": …, \"payload\": {{…}}}}`: its qualified name selects the \
+         event, and its payload is read\n/// under the wire names that event \
+         declares.\n///\n/// # Errors\n///\n/// [`json::DecodeError`] at `event` when the \
+         envelope names no event this system publishes,\n/// naming the one it carried, and at \
+         the payload's own path when the payload is not that\n/// event's.\npub fn \
+         decode_system_event(value: &json::Value) -> Result<{system_crate}::SystemEvent, \
+         json::DecodeError> {{\n    let event = json::text_at(json::member_at(value, \"\", \
+         \"event\")?, \"event\", \"a qualified event name\")?;\n"
+    );
+    if variants.is_empty() {
+        let _ = write!(
+            out,
+            "    Err(json::DecodeError {{ at: \"event\".to_owned(), expected: {:?}.to_owned(), \
+             found: format!(\"`{{event}}`\") }})\n}}\n",
+            "an event this system publishes, and it publishes none"
+        );
+        return out;
+    }
+    let names: Vec<String> = variants
+        .keys()
+        .map(|event| event.name().to_string())
+        .collect();
+    let expected = wire::variant_list(&names);
+    out.push_str("    Ok(match event {\n");
+    for (event, variant) in &variants {
+        let _ = writeln!(
+            out,
+            "        {:?} => {system_crate}::SystemEvent::{variant}({}(json::member_at(value, \
+             \"\", \"payload\")?, \"payload\")?),",
+            event.name().to_string(),
+            wire::event_decoder_name(server.layout, event.name())
+        );
+    }
+    let _ = write!(
+        out,
+        "        other => {{\n            return Err(json::DecodeError {{ at: \
+         \"event\".to_owned(), expected: {expected:?}.to_owned(), found: \
+         format!(\"`{{other}}`\") }})\n        }}\n    }})\n}}\n"
+    );
     out
 }
 
@@ -835,8 +890,6 @@ fn generic_list(server: &Server<'_>) -> String {
 /// The route match: one arm per path, and one arm for everything else.
 fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
     let ir = server.ir;
-    let system_crate = Layout::crate_ident(server.layout.system_package());
-    let angled = generic_list(server);
 
     let _ = write!(
         out,
@@ -862,13 +915,7 @@ fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
              it is read.\n",
         );
     }
-    let _ = writeln!(
-        out,
-        "pub fn dispatch{angled}(system: &mut {system_crate}::System{angled}, {}request: \
-         &http::Request) -> http::Response",
-        caller_parameter(server, routes)
-    );
-    out.push_str(&where_clause(server));
+    dispatch_entries(out, server, routes);
     out.push_str("{\n    match request.path.as_str() {\n");
     for (method, path, _, _) in table(routes, ir) {
         let _ = writeln!(
@@ -890,12 +937,12 @@ fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
                     Served::Command(handle) if grants => format!(
                         "            if let Err(actor) = admit(caller, {:?}) {{\n                \
                          return not_granted(actor);\n            }}\n            {}(system, \
-                         &request.body)\n        }}\n",
+                         &request.body, taken)\n        }}\n",
                         ir.command(handle).name.to_string(),
                         handler_ident(server.layout, &ir.command(handle).name)
                     ),
                     Served::Command(handle) => format!(
-                        "            {}(system, &request.body)\n        }}\n",
+                        "            {}(system, &request.body, taken)\n        }}\n",
                         handler_ident(server.layout, &ir.command(handle).name)
                     ),
                     // A read-granted view checks the reader first (beyond10x/ess#286).
@@ -915,6 +962,63 @@ fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
         "        other => http::Response::refusal(\n            404,\n            \
          &format!(\"`{other}` is not a path this surface declares; `GET /openapi.json` publishes \
          every one that is\"),\n        ),\n    }\n}\n",
+    );
+}
+
+/// The caller parameter of a function that only hands it on, and the argument that hands it on:
+/// never underscored, because it is always read.
+fn forwarded_caller(server: &Server<'_>) -> (String, &'static str) {
+    if http::checks_grants(server.ir) {
+        (
+            format!("caller: Option<&{}::actor::Caller>, ", server.types),
+            "caller, ",
+        )
+    } else {
+        (String::new(), "")
+    }
+}
+
+/// `dispatch`, whose documentation the caller has just written, `dispatch_with_events`, and the
+/// signature line of the private `route_request` whose `where` clause and body the caller writes
+/// next.
+///
+/// `dispatch` keeps its signature and answers what it answered; it is `dispatch_with_events`
+/// with the events dropped, so the two cannot answer differently. The route match lives in
+/// `route_request`, which pushes what each command takes off the log onto `taken`.
+pub(super) fn dispatch_entries(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
+    let system_crate = Layout::crate_ident(server.layout.system_package());
+    let angled = generic_list(server);
+    let bounds = where_clause(server);
+    let (caller, forwarded) = forwarded_caller(server);
+    let taken = if commands_served(routes) {
+        "taken"
+    } else {
+        "_taken"
+    };
+    let _ = write!(
+        out,
+        "pub fn dispatch{angled}(system: &mut {system_crate}::System{angled}, {caller}request: \
+         &http::Request) -> http::Response\n{bounds}{{\n    dispatch_with_events(system, \
+         {forwarded}request).0\n}}\n\n/// Answers one request as [`dispatch`] does, and hands \
+         back every event published while it\n/// ran, in log order: what the command \
+         published, what the bindings that reacted to it\n/// published in turn, and what a \
+         held-back delivery retried during the call published. An\n/// event already on the \
+         system's log when the call started is not the call's and is never\n/// in the list. \
+         The list is empty where no command ran — a refusal before the port, a view,\n/// a \
+         document or a path no route matches — and holds what was published where \
+         delivering\n/// it failed after the command took effect. An event a component's \
+         port published through a\n/// direct call is in that component's outbox until a pump \
+         collects it, so one no pump has\n/// collected yet is listed as this call's: call \
+         `pump` after calling a port directly.\npub fn \
+         dispatch_with_events{angled}(system: &mut {system_crate}::System{angled}, \
+         {caller}request: &http::Request) -> (http::Response, \
+         Vec<{system_crate}::SystemEvent>)\n{bounds}{{\n    let mut taken = Vec::new();\n    let \
+         answer = route_request(system, {forwarded}request, &mut taken);\n    (answer, \
+         taken)\n}}\n\n/// The route match behind [`dispatch_with_events`]: each command pushes \
+         what it took off the\n/// log onto `taken`.\nfn route_request{angled}(system: &mut \
+         {system_crate}::System{angled}, {}request: &http::Request, {taken}: &mut \
+         Vec<{system_crate}::SystemEvent>) -> http::Response\n{bounds}",
+        caller_parameter(server, routes)
     );
 }
 
@@ -958,8 +1062,6 @@ fn entry_point(
     routes: &[http::Route<'_>],
 ) {
     let ir = server.ir;
-    let system_crate = Layout::crate_ident(server.layout.system_package());
-    let angled = generic_list(server);
     let takes_input = routes.iter().any(|route| match route.serves {
         Served::Command(_) => true,
         Served::View(view) => !ir.view(view).params.is_empty(),
@@ -974,12 +1076,6 @@ fn entry_point(
     } else {
         "a view ignores `input`, as its `GET` route ignores a body"
     };
-    let system = if routes.is_empty() {
-        "_system"
-    } else {
-        "system"
-    };
-    let input = if takes_input { "input" } else { "_input" };
 
     let _ = write!(
         out,
@@ -1017,19 +1113,18 @@ fn entry_point(
          JSON does not spell is not JSON, and is\n/// [`entry::Refused::Undelivered`] for a \
          command, whose effect stands, and [`entry::Refused::Unmet`]\n/// for a view.\n",
     );
-    let _ = writeln!(
-        out,
-        "pub fn handle{angled}({system}: &mut {system_crate}::System{angled}, {}name: &str, \
-         {input}: json::Value) -> Result<json::Value, entry::Refused>",
-        caller_parameter(server, routes)
-    );
-    out.push_str(&where_clause(server));
+    handle_entries(out, server, routes, takes_input);
     if routes.is_empty() {
-        out.push_str("{\n    Err(entry::Refused::Unknown(name.to_owned()))\n}\n");
+        out.push_str("{\n    (Err(entry::Refused::Unknown(name.to_owned())), Vec::new())\n}\n");
         return;
     }
     out.push('{');
     out.push('\n');
+    out.push_str(if commands_served(routes) {
+        "    let mut taken = Vec::new();\n"
+    } else {
+        "    let taken = Vec::new();\n"
+    });
     if takes_input {
         // A value a caller built is held to what intake would have read, after the grant check as
         // the route parses after it, so `handle` refuses what the route refuses and the answer
@@ -1046,10 +1141,54 @@ fn entry_point(
         let _ = writeln!(out, "        {named:?} => {call},");
     }
     out.push_str(
-        "        other => return Err(entry::Refused::Unknown(other.to_owned())),\n    };\n    \
-         let (_, body) = answered?;\n",
+        "        other => return (Err(entry::Refused::Unknown(other.to_owned())), taken),\n    \
+         };\n    let body = match answered {\n        Ok((_, body)) => body,\n        \
+         Err(refused) => return (Err(refused), taken),\n    };\n",
     );
     read_back(out, ir, routes);
+}
+
+/// `handle`, whose documentation the caller has just written, and the documentation and
+/// signature of `handle_with_events`, whose body the caller writes next.
+///
+/// `handle` keeps its signature and answer: it is `handle_with_events` with the events dropped,
+/// so the two cannot answer differently.
+fn handle_entries(
+    out: &mut String,
+    server: &Server<'_>,
+    routes: &[http::Route<'_>],
+    takes_input: bool,
+) {
+    let system_crate = Layout::crate_ident(server.layout.system_package());
+    let angled = generic_list(server);
+    let bounds = where_clause(server);
+    let (caller, forwarded) = forwarded_caller(server);
+    let system = if routes.is_empty() {
+        "_system"
+    } else {
+        "system"
+    };
+    let input = if takes_input { "input" } else { "_input" };
+    let _ = write!(
+        out,
+        "pub fn handle{angled}(system: &mut {system_crate}::System{angled}, {caller}name: &str, \
+         input: json::Value) -> Result<json::Value, entry::Refused>\n{bounds}{{\n    \
+         handle_with_events(system, {forwarded}name, input).0\n}}\n\n/// Runs one command or \
+         view as [`handle`] does, and hands back every event published while it\n/// ran, in \
+         log order: what the command published, what the bindings that reacted to it\n/// \
+         published in turn, and what a held-back delivery retried during the call published. \
+         An\n/// event already on the system's log when the call started is not the call's and \
+         is never\n/// in the list. The list is empty where no command ran — an unknown name, a \
+         refusal before\n/// the port, a view — and holds what was published where delivering \
+         it failed after the\n/// command took effect. An event a component's port published \
+         through a direct call is in\n/// that component's outbox until a pump collects it, so \
+         one no pump has collected yet is\n/// listed as this call's: call `pump` after calling a \
+         port directly.\npub fn \
+         handle_with_events{angled}({system}: &mut {system_crate}::System{angled}, {}name: \
+         &str, {input}: json::Value) -> (Result<json::Value, entry::Refused>, \
+         Vec<{system_crate}::SystemEvent>)\n{bounds}",
+        caller_parameter(server, routes)
+    );
 }
 
 /// `handle`'s arms, sorted by qualified name: each the call answering it, behind its grant check
@@ -1069,7 +1208,7 @@ fn handle_arms(
                     declared.to_string(),
                     format!(
                         "match admit(caller, {:?}) {{\n            Ok(()) => \
-                         checked(&input).and_then(|()| {}(system, &input)),\n            \
+                         checked(&input).and_then(|()| {}(system, &input, &mut taken)),\n            \
                          Err(actor) => \
                          Err(entry::Refused::NotGranted(actor.map(str::to_owned))),\n        }}",
                         declared.to_string(),
@@ -1082,7 +1221,7 @@ fn handle_arms(
                 (
                     declared.to_string(),
                     format!(
-                        "checked(&input).and_then(|()| {}(system, &input))",
+                        "checked(&input).and_then(|()| {}(system, &input, &mut taken))",
                         runner_ident(server.layout, declared)
                     ),
                 )
@@ -1123,7 +1262,8 @@ fn read_back(out: &mut String, ir: &EssIr, routes: &[http::Route<'_>]) {
     };
     let _ = write!(
         out,
-        "    entry::read(&body).map_err(|error| {{\n{refusal}    }})\n}}\n"
+        "    let read = entry::read(&body).map_err(|error| {{\n{refusal}    }});\n    (read, \
+         taken)\n}}\n"
     );
 }
 
@@ -1226,7 +1366,7 @@ fn command_handler(
             out,
             "\n/// `POST` `{}`: reads the declared input, runs the port, answers the declared \
              outcome.\nfn serve_{ident}{angled}(system: &mut {system_crate}::System{angled}, \
-             body: &[u8]) -> http::Response\n",
+             body: &[u8], taken: &mut Vec<{system_crate}::SystemEvent>) -> http::Response\n",
             command.name
         );
         out.push_str(&bounds);
@@ -1235,7 +1375,7 @@ fn command_handler(
         } else {
             READ_OPTIONAL_BODY
         });
-        let _ = write!(out, "    http::answer({run}(system, &value))\n}}\n");
+        let _ = write!(out, "    http::answer({run}(system, &value, taken))\n}}\n");
     }
 
     // The transport-free half, which the route above and `handle` both call.
@@ -1243,15 +1383,20 @@ fn command_handler(
         out,
         "\n/// `{}` from its input as a JSON value: decode, run the port, render the declared \
          outcome.\n///\n/// The one path the `POST` route and [`handle`] share. A decoding \
-         failure is located under\n/// `body`, as the route reports it.\nfn \
-         {run}{angled}(system: &mut {system_crate}::System{angled}, value: &json::Value) -> \
-         Result<(u16, String), entry::Refused>\n",
+         failure is located under\n/// `body`, as the route reports it. Every event published \
+         while the call runs is pushed onto\n/// `taken`, in log order, whatever it answers; \
+         what was on the log before it is taken off\n/// the log but not pushed.\nfn {run}{angled}(system: &mut {system_crate}::System{angled}, value: \
+         &json::Value, taken: &mut Vec<{system_crate}::SystemEvent>) -> Result<(u16, String), \
+         entry::Refused>\n",
         command.name
     );
     out.push_str(&bounds);
     let _ = write!(
         out,
         "{{
+    // What is on the log before this call is not what this call published: it is delivered
+    // and taken with the rest, and never pushed onto `taken`.
+    let before = system.published().len();
     let input = match wire::decode_command_{ident}(value, \"body\") {{
         Ok(input) => input,
         Err(error) => {{
@@ -1274,7 +1419,10 @@ fn command_handler(
 /// What a served command does between its port answering and the answer being rendered: pump, so
 /// every binding that reacts to what it published is delivered first, then take the delivered
 /// events (and the record of what the bindings invoked) off the system, so a long-running server
-/// holds nothing from one request to the next.
+/// holds nothing from one request to the next. The taken events published since the runner
+/// started (it counted the log into `before`) go onto the runner's `taken`, which
+/// `dispatch_with_events` and `handle_with_events` hand to their caller and `dispatch` and
+/// `handle` drop; what was on the log before is taken and dropped, because it is not the call's.
 ///
 /// The answer's `published` is rendered from the outcome, which carries exactly the events the
 /// component's port pushed onto its outbox for this command — the first entries the pump collected
@@ -1297,7 +1445,8 @@ fn settle(server: &Server<'_>) -> String {
     let mut out = String::from(
         "    // Deliver what this command published to every binding that reacts to it, then take \
          it\n    // off the log: a long-running server keeps nothing from one request to the \
-         next.\n    let delivered = system.pump();\n    let _ = system.take_published();\n",
+         next.\n    let delivered = system.pump();\n    \
+         taken.extend(system.take_published().into_iter().skip(before));\n",
     );
     if system::has_deliveries(server.ir, server.plan) {
         out.push_str("    let _ = system.take_invocations();\n");

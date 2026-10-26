@@ -24,7 +24,7 @@ use ess_gen::http::{self, Served};
 use ess_synth::{synthesize_laid_out, OutputLayout, Synthesis, Target};
 
 /// One served component; `ops.core.Opened` invokes `ops.core.Note` through a binding, and a busy
-/// notebook escalates into `ops.core.NoteDropped`.
+/// notebook escalates into `ops.core.NoteDropped`, whose one field declares the wire name `noteId`.
 const MODEL: &str = "format: ess/15
 system: ops
 version: v1
@@ -38,7 +38,7 @@ events:
       - {name: id, type: String}
   - name: ops.core.NoteDropped
     fields:
-      - {name: id, type: String}
+      - {name: id, type: String, naming: {wire: noteId}}
 commands:
   - name: ops.core.Open
     input:
@@ -217,6 +217,251 @@ fn main() {
 }
 "#;
 
+/// The harness for what a command's entry points hand back besides the answer, and for reading a
+/// published event back off the wire (`story:generated-dispatch-and-handle-return-the-emitted-events`,
+/// `story:a-published-event-payload-has-a-generated-decoder`).
+///
+/// It sends [`HARNESS`]'s six `Open`s and one `Note` to two twin systems at once: `plain` through
+/// `dispatch` and `handle`, `taken` through `dispatch_with_events` and `handle_with_events`, and
+/// prints `taken`'s answer as [`HARNESS`] prints it, whether `plain` answered the same, the events
+/// the call handed back as `encode_system_event` writes them, and whether each reads back as
+/// itself through `decode_system_event`. Then the one `Open` sent through each entry to a fresh
+/// system, the refusals, and a few envelopes read with `decode_system_event`.
+const EVENTS_HARNESS: &str = r##"use std::cell::RefCell;
+use std::rc::Rc;
+
+use ops_server::ops_service as surface;
+use ops_server::{entry, http, json, wire};
+use ops_system::SystemEvent;
+use ops_types::behaviour::{Context, ExternalCommand, Generated};
+use ops_types::core;
+use ops_types::obligation::UnmetObligation;
+
+#[derive(Default)]
+struct State {
+    busy: bool,
+    notes: usize,
+    escalated: usize,
+}
+
+#[derive(Clone, Default)]
+struct Desk(Rc<RefCell<State>>);
+
+impl Context for Desk {
+    fn external(&mut self, command: ExternalCommand<'_>, outcome: &'static str) -> bool {
+        let command = command.name();
+        let mut state = self.0.borrow_mut();
+        if command == "ops.core.Note" && outcome == "busy" {
+            state.notes += 1;
+            return state.busy;
+        }
+        false
+    }
+}
+
+impl ops_system::obligations::NoteOnOpenEscalation for Desk {
+    fn note_on_open_escalation(&self, failed: &core::Note) -> Result<core::NoteDropped, UnmetObligation> {
+        self.0.borrow_mut().escalated += 1;
+        Ok(core::NoteDropped { id: failed.id.clone() })
+    }
+}
+
+type System = ops_system::System<Generated<Desk>, Desk>;
+
+fn system(desk: &Desk) -> System {
+    ops_system::System::new(
+        ops_service::OpsService::new(Generated::new(desk.clone())),
+        desk.clone(),
+    )
+}
+
+fn request(routes: &[(String, String, String)], name: &str, body: &str) -> http::Request {
+    let (_, method, path) = routes
+        .iter()
+        .find(|(declared, _, _)| declared == name)
+        .unwrap_or_else(|| panic!("`{name}` is a route"));
+    http::Request {
+        method: method.clone(),
+        path: path.clone(),
+        query: String::new(),
+        headers: Vec::new(),
+        body: body.as_bytes().to_vec(),
+    }
+}
+
+fn kept(system: &mut System) -> usize {
+    system.published().len()
+        + system.invocations().len()
+        + system.ops_service.drain_outbox().len()
+}
+
+fn listed(events: &[SystemEvent]) -> String {
+    let rendered: Vec<String> = events.iter().map(wire::encode_system_event).collect();
+    format!("[{}]", rendered.join(","))
+}
+
+fn round_trip(event: &SystemEvent) -> String {
+    let envelope = wire::encode_system_event(event);
+    match json::parse(&envelope).map(|value| wire::decode_system_event(&value)) {
+        Ok(Ok(read)) if &read == event => "ok".to_owned(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn decoded(envelope: &str) -> String {
+    match wire::decode_system_event(&json::parse(envelope).expect("JSON")) {
+        Ok(event) => format!("read {}", wire::encode_system_event(&event)),
+        Err(error) => format!("refused {error}"),
+    }
+}
+
+fn published(handled: &Result<json::Value, entry::Refused>) -> usize {
+    match handled {
+        Ok(value) => match value.member("published") {
+            Some(json::Value::Array(items)) => items.len(),
+            _ => usize::MAX,
+        },
+        Err(_) => usize::MAX,
+    }
+}
+
+fn main() {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    let routes: Vec<(String, String, String)> = arguments
+        .chunks(3)
+        .map(|row| (row[0].clone(), row[1].clone(), row[2].clone()))
+        .collect();
+    let plain_desk = Desk::default();
+    let mut plain = system(&plain_desk);
+    let desk = Desk::default();
+    let mut taken = system(&desk);
+
+    for round in 0..7 {
+        plain_desk.0.borrow_mut().busy = (4..6).contains(&round);
+        desk.0.borrow_mut().busy = (4..6).contains(&round);
+        let (name, input) = if round < 6 {
+            ("ops.core.Open", format!("{{\"id\":\"t{round}\"}}"))
+        } else {
+            ("ops.core.Note", "{\"id\":\"n\"}".to_owned())
+        };
+        let (answer, same, events) = if round % 2 == 0 {
+            let sent = request(&routes, name, &input);
+            let before = surface::dispatch(&mut plain, &sent);
+            let (answered, events) = surface::dispatch_with_events(&mut taken, &sent);
+            let same = before == answered;
+            (format!("served {} {}", answered.status, answered.body), same, events)
+        } else {
+            let before = surface::handle(&mut plain, name, json::parse(&input).expect("JSON"));
+            let (handled, events) =
+                surface::handle_with_events(&mut taken, name, json::parse(&input).expect("JSON"));
+            let same = before == handled;
+            (format!("handled published={}", published(&handled)), same, events)
+        };
+        let kept = kept(&mut taken);
+        let state = desk.0.borrow();
+        if round < 6 {
+            println!(
+                "open {round} {answer} kept={kept} notes={} escalated={}",
+                state.notes, state.escalated
+            );
+        } else {
+            println!("note {answer} kept={kept}");
+        }
+        println!("same {round} {same}");
+        println!("events {round} {}", listed(&events));
+        for event in &events {
+            println!("round-trip {} {}", event.name(), round_trip(event));
+        }
+    }
+
+    let input = "{\"id\":\"same\"}";
+    let (_, by_dispatch) = surface::dispatch_with_events(
+        &mut system(&Desk::default()),
+        &request(&routes, "ops.core.Open", input),
+    );
+    let (_, by_handle) = surface::handle_with_events(
+        &mut system(&Desk::default()),
+        "ops.core.Open",
+        json::parse(input).expect("JSON"),
+    );
+    println!("entries dispatch={}", listed(&by_dispatch));
+    println!("entries handle={}", listed(&by_handle));
+
+    for body in ["{", "{\"id\":1}", "{}"] {
+        let (answered, events) =
+            surface::dispatch_with_events(&mut taken, &request(&routes, "ops.core.Open", body));
+        println!(
+            "refused served {body} {} events={} kept={}",
+            answered.status,
+            listed(&events),
+            kept(&mut taken)
+        );
+    }
+    for (name, input) in [("ops.core.Open", "{\"id\":1}"), ("ops.core.Nope", "{}")] {
+        let (handled, events) =
+            surface::handle_with_events(&mut taken, name, json::parse(input).expect("JSON"));
+        let refusal = match handled {
+            Err(entry::Refused::Input(_)) => "input",
+            Err(entry::Refused::Unknown(_)) => "unknown",
+            _ => "other",
+        };
+        println!(
+            "refused handled {name} {refusal} events={} kept={}",
+            listed(&events),
+            kept(&mut taken)
+        );
+    }
+
+    for envelope in [
+        r#"{"event":"ops.core.Nope","payload":{}}"#,
+        r#"{"event":"ops.core.Opened","payload":{}}"#,
+        r#"{"event":"ops.core.Opened","payload":{"id":"o"}}"#,
+        r#"{"event":"ops.core.NoteDropped","payload":{"noteId":"d"}}"#,
+        r#"{"event":"ops.core.NoteDropped","payload":{"id":"d"}}"#,
+        r#"{"payload":{"id":"o"}}"#,
+    ] {
+        println!("decode {envelope} {}", decoded(envelope));
+    }
+    let dropped = wire::decode_event_ops_core_note_dropped(
+        &json::parse(r#"{"noteId":"x"}"#).expect("JSON"),
+        "payload",
+    );
+    println!(
+        "event decoder {}",
+        dropped == Ok(core::NoteDropped { id: "x".to_owned() })
+    );
+}
+"##;
+
+/// [`EVENTS_HARNESS`]'s lines in `layout`, built and run once per test binary and layout.
+fn events(layout: OutputLayout) -> &'static [String] {
+    static WORKSPACE: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    static CRATE: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    match layout {
+        OutputLayout::Workspace => {
+            WORKSPACE.get_or_init(|| run_with("events-workspace", layout, EVENTS_HARNESS))
+        }
+        OutputLayout::Crate => {
+            CRATE.get_or_init(|| run_with("events-crate", layout, EVENTS_HARNESS))
+        }
+    }
+}
+
+/// The lines of [`events`] that start with `prefix`, with it removed.
+fn lines_after(layout: OutputLayout, prefix: &str) -> Vec<&'static str> {
+    events(layout)
+        .iter()
+        .filter_map(|line| line.strip_prefix(prefix))
+        .collect()
+}
+
+/// One published envelope, as `encode_system_event` writes it.
+fn envelope(event: &str, payload: &str) -> String {
+    format!("{{\"event\":\"ops.core.{event}\",\"payload\":{payload}}}")
+}
+
+const LAYOUTS: [OutputLayout; 2] = [OutputLayout::Workspace, OutputLayout::Crate];
+
 fn ir() -> EssIr {
     let spec = Specification::assemble([(
         Source::new("spec.yaml"),
@@ -270,9 +515,14 @@ fn cargo(directory: &Path, arguments: &[String]) -> Output {
     output
 }
 
-/// Synthesizes the model in `layout`, builds it and the harness with warnings denied, runs the
+/// Synthesizes the model in `layout`, builds it and [`HARNESS`] with warnings denied, runs the
 /// harness, and answers its output lines.
 fn run(label: &str, layout: OutputLayout) -> Vec<String> {
+    run_with(label, layout, HARNESS)
+}
+
+/// [`run`], with `main` as the harness's `src/main.rs`.
+fn run_with(label: &str, layout: OutputLayout, main: &str) -> Vec<String> {
     let ir = ir();
     let synthesis = synthesize_laid_out(&ir, Target::Rust, layout).expect("the model synthesizes");
     let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
@@ -284,8 +534,7 @@ fn run(label: &str, layout: OutputLayout) -> Vec<String> {
     let (dependencies, source) = match layout {
         OutputLayout::Crate => (
             "ops = { path = \"../ops\", features = [\"server\"] }\n".to_owned(),
-            HARNESS
-                .replace("ops_server::", "ops::server::")
+            main.replace("ops_server::", "ops::server::")
                 .replace("ops_system::", "ops::system::")
                 .replace("ops_service::", "ops::ports::ops_service::")
                 .replace("ops_types::", "ops::"),
@@ -297,7 +546,7 @@ fn run(label: &str, layout: OutputLayout) -> Vec<String> {
                     let _ = writeln!(out, "{name} = {{ path = \"../ops/crates/{name}\" }}");
                     out
                 }),
-            HARNESS.to_owned(),
+            main.to_owned(),
         ),
     };
     std::fs::write(
@@ -450,4 +699,222 @@ fn every_served_answer_validates_against_the_contract_the_server_serves() {
     ] {
         assert!(!validator.is_valid(&wrong), "the contract refuses {wrong}");
     }
+}
+
+/// Every event the fixture publishes — the command's own `Opened`, the binding-cascaded `Noted`
+/// and the escalated `NoteDropped` — reads back as itself from the envelope `encode_system_event`
+/// writes, in both layouts, each built with warnings denied; and the per-event decoder is public.
+#[test]
+fn every_published_event_decodes_back_through_the_generated_wire() {
+    for layout in LAYOUTS {
+        let round_trips = lines_after(layout, "round-trip ");
+        assert_eq!(round_trips.len(), 13, "{layout:?}: {round_trips:?}");
+        for line in &round_trips {
+            assert!(line.ends_with(" ok"), "{layout:?}: {line}");
+        }
+        for event in ["ops.core.Opened", "ops.core.Noted", "ops.core.NoteDropped"] {
+            assert!(
+                round_trips
+                    .iter()
+                    .any(|line| line.starts_with(&format!("{event} "))),
+                "{layout:?}: `{event}` was published and read back: {round_trips:?}"
+            );
+        }
+        assert_eq!(
+            lines_after(layout, "event decoder "),
+            ["true"],
+            "{layout:?}"
+        );
+    }
+}
+
+/// A payload field declaring `naming: {wire: noteId}` is read under that name and refused under
+/// its model name; a field declaring none is read under its model name.
+#[test]
+fn an_event_decoder_reads_declared_wire_names() {
+    for layout in LAYOUTS {
+        let decoded = lines_after(layout, "decode ");
+        for expected in [
+            format!(
+                "{} read {}",
+                envelope("NoteDropped", r#"{"noteId":"d"}"#),
+                envelope("NoteDropped", r#"{"noteId":"d"}"#)
+            ),
+            format!(
+                "{} refused payload.id: expected no member: `id` is sent as `noteId`, found a \
+                 string",
+                envelope("NoteDropped", r#"{"id":"d"}"#)
+            ),
+            format!(
+                "{} read {}",
+                envelope("Opened", r#"{"id":"o"}"#),
+                envelope("Opened", r#"{"id":"o"}"#)
+            ),
+        ] {
+            assert!(
+                decoded.contains(&expected.as_str()),
+                "{layout:?}: {expected}\nnot in {decoded:#?}"
+            );
+        }
+    }
+}
+
+/// An envelope naming an event this system does not publish is refused at `event`, naming the
+/// event it carried; one without `event`, or whose payload lacks a required member, is refused at
+/// that member's path.
+#[test]
+fn an_envelope_naming_an_unpublished_event_is_refused_by_that_name() {
+    for layout in LAYOUTS {
+        let decoded = lines_after(layout, "decode ");
+        let unknown = decoded
+            .iter()
+            .find_map(|line| line.strip_prefix(&format!("{} ", envelope("Nope", "{}"))))
+            .unwrap_or_else(|| panic!("{layout:?}: the harness read `ops.core.Nope`"));
+        assert!(
+            unknown.starts_with("refused event: expected ")
+                && unknown.ends_with("found `ops.core.Nope`"),
+            "{layout:?}: {unknown}"
+        );
+        for expected in [
+            format!(
+                "{} refused payload.id: expected a value, found nothing",
+                envelope("Opened", "{}")
+            ),
+            r#"{"payload":{"id":"o"}} refused event: expected a value, found nothing"#.to_owned(),
+        ] {
+            assert!(
+                decoded.contains(&expected.as_str()),
+                "{layout:?}: {expected}\nnot in {decoded:#?}"
+            );
+        }
+    }
+}
+
+/// `dispatch_with_events` hands back everything the call took off the log in log order — the
+/// command's own event, then what the binding's command published or escalated into — and the
+/// system keeps nothing afterwards (`kept=0` on every answer line).
+#[test]
+fn dispatch_with_events_returns_what_the_command_and_its_bindings_published() {
+    for layout in LAYOUTS {
+        let events = lines_after(layout, "events ");
+        for (round, expected) in [
+            (0, ["Opened", "Noted"]),
+            (2, ["Opened", "Noted"]),
+            (4, ["Opened", "NoteDropped"]),
+        ] {
+            let id = format!("t{round}");
+            let listed: Vec<String> = expected
+                .iter()
+                .map(|event| {
+                    let key = if *event == "NoteDropped" {
+                        "noteId"
+                    } else {
+                        "id"
+                    };
+                    envelope(event, &format!("{{\"{key}\":\"{id}\"}}"))
+                })
+                .collect();
+            assert_eq!(
+                events[round],
+                format!("{round} [{}]", listed.join(",")),
+                "{layout:?}"
+            );
+        }
+        assert_eq!(
+            events[6],
+            format!("6 [{}]", envelope("Noted", r#"{"id":"n"}"#)),
+            "{layout:?}"
+        );
+        for line in events_answers(layout) {
+            assert!(line.contains(" kept=0"), "{layout:?}: {line}");
+        }
+    }
+}
+
+/// `handle_with_events` hands back the events `dispatch_with_events` does: the same `Open` sent
+/// through each to a fresh system takes the same list, and each `handle` round of the twin run
+/// takes its command's own event and the binding's.
+#[test]
+fn handle_with_events_returns_the_same_events_as_dispatch() {
+    for layout in LAYOUTS {
+        let same = format!(
+            "[{},{}]",
+            envelope("Opened", r#"{"id":"same"}"#),
+            envelope("Noted", r#"{"id":"same"}"#)
+        );
+        assert_eq!(
+            lines_after(layout, "entries "),
+            [format!("dispatch={same}"), format!("handle={same}")],
+            "{layout:?}"
+        );
+        let events = lines_after(layout, "events ");
+        for (round, last, key) in [
+            (1, "Noted", "id"),
+            (3, "Noted", "id"),
+            (5, "NoteDropped", "noteId"),
+        ] {
+            assert_eq!(
+                events[round],
+                format!(
+                    "{round} [{},{}]",
+                    envelope("Opened", &format!("{{\"id\":\"t{round}\"}}")),
+                    envelope(last, &format!("{{\"{key}\":\"t{round}\"}}"))
+                ),
+                "{layout:?}"
+            );
+        }
+    }
+}
+
+/// A command refused before its port runs — a body that is no JSON, or not the declared input,
+/// and a name `handle` does not serve — hands back no events and leaves nothing kept.
+#[test]
+fn a_refused_command_returns_no_events() {
+    for layout in LAYOUTS {
+        assert_eq!(
+            lines_after(layout, "refused "),
+            [
+                "served { 400 events=[] kept=0",
+                "served {\"id\":1} 400 events=[] kept=0",
+                "served {} 400 events=[] kept=0",
+                "handled ops.core.Open input events=[] kept=0",
+                "handled ops.core.Nope unknown events=[] kept=0",
+            ],
+            "{layout:?}"
+        );
+    }
+}
+
+/// `dispatch` and `handle` answer what they answered before `*_with_events` existed: the twin
+/// run's answers are [`EXPECTED`] byte for byte and equal to the plain pair's, round by round, and
+/// `serve` still answers each request through `dispatch`.
+#[test]
+fn dispatch_and_handle_keep_their_answer_bytes() {
+    for layout in LAYOUTS {
+        assert_eq!(events_answers(layout), EXPECTED, "{layout:?}");
+        let same = lines_after(layout, "same ");
+        assert_eq!(
+            same,
+            (0..7)
+                .map(|round| format!("{round} true"))
+                .collect::<Vec<_>>(),
+            "{layout:?}"
+        );
+    }
+    let synthesis = synthesize_laid_out(&ir(), Target::Rust, OutputLayout::Workspace)
+        .expect("the model synthesizes");
+    let surface = &synthesis.artifacts["crates/ops-server/src/ops_service.rs"].contents;
+    assert!(
+        surface.contains("(dispatch(system, &request), false)"),
+        "`serve` answers through `dispatch`"
+    );
+}
+
+/// The answer lines of [`events`], as [`HARNESS`] prints them.
+fn events_answers(layout: OutputLayout) -> Vec<&'static str> {
+    events(layout)
+        .iter()
+        .filter(|line| line.starts_with("open ") || line.starts_with("note "))
+        .map(String::as_str)
+        .collect()
 }

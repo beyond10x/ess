@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-row-set-branch-arranges-rows-past-the-creators-predicate-guard
 kind: story
-status: active
+status: implemented
 title: A row-set branch arranges rows past the creator's predicate guard
 summary: A row-set branch whose rows come from a creator guarded by a related predicate is refused with ESS-SYNTH-001 naming the wrong guard (adopter report 2026-10-25, ess 0.69.2).
 tags:
@@ -13,10 +13,11 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 - informed_by: story:a-row-set-branch-arranges-rows-past-the-creators-guard
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T09:18:50Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-26T09:18:50Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-26T12:32:46Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Problem
 

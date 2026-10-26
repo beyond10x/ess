@@ -13,10 +13,12 @@
 //!
 //! # Both directions, and what each is for
 //!
-//! A decoder exists for what enters the system — a command's input, and every type it reaches. An
-//! encoder exists for what leaves it: events on the log, the error a refusal carries, a view's
-//! rows. Every generated named type gets both, because a type can be reached from either side and
-//! a partial pair is a hole the next specification falls into.
+//! A decoder exists for what enters the system — a command's input, and every type it reaches —
+//! and for the events it publishes, which an adapter beside the system reads back off the
+//! envelope a served answer lists them in. An encoder exists for what leaves it: events on the
+//! log, the error a refusal carries, a view's rows. Every generated named type gets both, because
+//! a type can be reached from either side and a partial pair is a hole the next specification
+//! falls into.
 
 use std::fmt::Write as _;
 
@@ -71,6 +73,7 @@ pub(crate) fn module(surface: &dyn Surface) -> String {
     for event in surface.ir().events().values() {
         if surface.presents_event(&event.name) {
             event_encoder(&mut out, surface, event);
+            event_decoder(&mut out, surface, event);
         }
     }
     for error in surface.ir().errors().values() {
@@ -233,6 +236,7 @@ fn type_decoder(
             newtype_body(out, surface, &path, of, declared.body.is_constrained());
         }
         ResolvedBody::Struct { fields, .. } => {
+            model_name_refusals(out, fields);
             let _ = writeln!(out, "    Ok({path} {{");
             for (position, field) in fields.iter().enumerate() {
                 let _ = writeln!(
@@ -316,7 +320,7 @@ fn type_decoder(
 }
 
 /// The set of legal spellings, as one phrase a refusal can carry.
-fn variant_list<T: AsRef<str>>(variants: &[T]) -> String {
+pub(crate) fn variant_list<T: AsRef<str>>(variants: &[T]) -> String {
     format!(
         "one of {}",
         variants
@@ -339,6 +343,44 @@ fn event_encoder(out: &mut String, surface: &dyn Surface, event: &ResolvedEvent)
         &format!("the event `{}`", event.name),
         &event.fields,
     );
+}
+
+/// The name of one event's decoder.
+pub(crate) fn event_decoder_name(layout: &RustLayout, event: &QualifiedName) -> String {
+    format!("decode_event_{}", ident(layout, event))
+}
+
+/// One event's decoder: the inverse of [`event_encoder`], reading each field under the wire name
+/// it declares through the member reader a command's input uses, so a published payload reads
+/// back with the same names, absences and refusals the encoder and the published schema fix.
+fn event_decoder(out: &mut String, surface: &dyn Surface, event: &ResolvedEvent) {
+    let path = surface.path(&event.name);
+    let function = event_decoder_name(surface.layout(), &event.name);
+    let _ = write!(
+        out,
+        "\n/// Reads the event `{}` from JSON, the payload [`encode_event_{}`] writes.\n///\n/// \
+         # Errors\n///\n/// [`json::DecodeError`] naming the path and what the declaration says \
+         belongs there.\npub fn {function}(value: &json::Value, at: &str) -> Result<{path}, \
+         json::DecodeError> {{\n",
+        event.name,
+        ident(surface.layout(), &event.name)
+    );
+    if event.fields.is_empty() {
+        // Every member read below refuses a payload that is no object; with no member to read,
+        // the payload is held to being one here.
+        out.push_str("    json::members_at(value, at, \"an object\")?;\n");
+    }
+    model_name_refusals(out, &event.fields);
+    let _ = writeln!(out, "    Ok({path} {{");
+    for (position, field) in event.fields.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "        {}: {},",
+            name::value_ident(&field.name),
+            decode_member(surface, field, position)
+        );
+    }
+    out.push_str("    })\n}\n");
 }
 
 /// One declared error's encoder.
@@ -462,10 +504,12 @@ fn command_decoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
         "\n/// Reads the input of `{}` from JSON.\n///\n/// # Errors\n///\n/// \
          [`json::DecodeError`] naming the path and what the declaration says belongs \
          there.\npub fn decode_command_{}(value: &json::Value, at: &str) -> Result<{path}, \
-         json::DecodeError> {{\n    Ok({path} {{\n",
+         json::DecodeError> {{\n",
         command.name,
         ident(surface.layout(), &command.name)
     );
+    model_name_refusals(out, &command.input);
+    let _ = writeln!(out, "    Ok({path} {{");
     for (position, field) in command.input.iter().enumerate() {
         let _ = writeln!(
             out,
@@ -801,6 +845,32 @@ fn encode_key(primitive: Primitive, expr: &str) -> String {
         Primitive::Decimal | Primitive::Timestamp | Primitive::Duration | Primitive::Uuid => {
             format!("json::push_text(out, &{expr}.0);")
         }
+    }
+}
+
+/// The statements that refuse a member sent under the model name of a field whose declared wire
+/// name differs, at that member's path, before the record is read.
+///
+/// Without them a required field sent under its model name is refused only as missing, and an
+/// optional one is read as absent with the member silently dropped. A model name that is also
+/// some field's wire name in the same record is that field's member and is never refused.
+fn model_name_refusals(out: &mut String, fields: &[ResolvedField]) {
+    let wires: std::collections::BTreeSet<&str> = fields
+        .iter()
+        .map(ess_gen::schema::wire_field_name)
+        .collect();
+    for field in fields {
+        let wire = ess_gen::schema::wire_field_name(field);
+        let model = field.name.as_str();
+        if wire == model || wires.contains(model) {
+            continue;
+        }
+        let _ = writeln!(
+            out,
+            "    if let Some(found) = value.member({model:?}) {{\n        return \
+             Err(json::DecodeError::of(&json::nested(at, {model:?}), {:?}, found));\n    }}",
+            format!("no member: `{model}` is sent as `{wire}`")
+        );
     }
 }
 

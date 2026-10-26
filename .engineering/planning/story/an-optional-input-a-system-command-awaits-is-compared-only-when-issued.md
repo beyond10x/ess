@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-optional-input-a-system-command-awaits-is-compared-only-when-issued
 kind: story
-status: active
+status: implemented
 title: 'An Optional input copied by sets: is compared with the awaited answer only when the target issued it'
 summary: Conformance errors 12 scenarios when an awaited command's Optional input is absent (adopter item 1, beyond10x/a2a); defect, 0.69.0.
 tags:
@@ -21,10 +21,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/system_issued.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/system_issued_interpreter.rs
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T01:33:11Z", actor: "human:timo", revision: 9, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-23T01:33:11Z", actor: "human:timo", revision: 10, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:24Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Need
 

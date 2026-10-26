@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T09:27:31Z",
+  "actor": "human:timo",
+  "artifact": "story:a-row-arranged-beside-is-created-once-under-its-name",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "fix commit 0cc1bb8e2 is in tag 0.69.0 (released 2026-10-24, release Gate green, verify-release exit 0); store left the story active; closed 2026-10-26 by the 0.70.0 wave",
+    "reference": "0cc1bb8e2"
+  }
+}

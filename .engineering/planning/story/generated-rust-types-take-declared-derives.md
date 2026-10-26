@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-rust-types-take-declared-derives
 kind: story
-status: active
+status: implemented
 title: Generated rust types take declared derives
 summary: 'Adopter report N2: No derive hook on generated Rust types (ess#657).'
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T12:51:24Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-23T12:51:24Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:35Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Problem
 

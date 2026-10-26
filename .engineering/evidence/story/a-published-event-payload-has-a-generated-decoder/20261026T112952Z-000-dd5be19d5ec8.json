@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T11:29:52Z",
+  "actor": "human:timo",
+  "artifact": "story:a-published-event-payload-has-a-generated-decoder",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit C e2517d32f: cargo test -p ess-synth --locked --no-fail-fast 767 passed 0 failed; after the pass-2 disposition served_publication 10, http_binding_rust 48, adversary_c_event_wire 8, adversary_c_event_wire_2 7 passed; clippy -p ess-synth --all-targets -D warnings exit 0; task fmt-check exit 0",
+    "reference": "e2517d32f"
+  }
+}

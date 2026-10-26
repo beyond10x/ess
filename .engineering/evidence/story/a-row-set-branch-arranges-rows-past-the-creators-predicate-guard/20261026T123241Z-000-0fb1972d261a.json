@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T12:32:41Z",
+  "actor": "human:timo",
+  "artifact": "story:a-row-set-branch-arranges-rows-past-the-creators-predicate-guard",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit B 2798e3b25: ess-conformance row_sets 22, adversary_b_creator_predicate_guard 13, adversary_b_creator_predicate_guard_2 18, a_row_set_branch_arranges_rows_past_the_creators_guard 5, synthesis_suite_bytes_table compare 2 passed, 0 failed; clippy -p ess-conformance --all-targets -D warnings exit 0; task fmt-check exit 0; coordinator checked only the two deferred cases left the pass-2 file",
+    "reference": "2798e3b25"
+  }
+}

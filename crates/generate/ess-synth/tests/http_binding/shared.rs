@@ -568,7 +568,37 @@ pub fn parsed<'a>(lines: impl Iterator<Item = &'a str>) -> BTreeMap<String, Answ
 
 /// The Rust server's answers by label, once per test binary.
 pub fn rust_answers() -> &'static BTreeMap<String, Answer> {
-    static ANSWERS: std::sync::OnceLock<BTreeMap<String, Answer>> = std::sync::OnceLock::new();
+    &rust_run().0
+}
+
+/// The events `dispatch_with_events` handed back with each answer of [`rust_answers`], by label,
+/// as a JSON array of the envelopes `encode_system_event` writes.
+pub fn rust_events() -> &'static BTreeMap<String, serde_json::Value> {
+    &rust_run().1
+}
+
+/// [`RUST_HARNESS`] answering through `dispatch_with_events`, which also prints the events each
+/// answer handed back, as `events<TAB>label<TAB>[envelope, …]`.
+fn rust_events_harness() -> String {
+    let dispatch = "let answered = surface::dispatch(&mut system, caller, &request);";
+    assert!(RUST_HARNESS.contains(dispatch), "the harness dispatches");
+    RUST_HARNESS.replace(
+        dispatch,
+        "let (answered, events) = surface::dispatch_with_events(&mut system, caller, &request);\n        \
+         let events: Vec<String> = events.iter().map(shop_server::wire::encode_system_event).collect();\n        \
+         println!(\"events\\t{label}\\t[{}]\", events.join(\",\"));",
+    )
+}
+
+/// [`rust_answers`] and [`rust_events`], from one run of the harness.
+fn rust_run() -> &'static (
+    BTreeMap<String, Answer>,
+    BTreeMap<String, serde_json::Value>,
+) {
+    static ANSWERS: std::sync::OnceLock<(
+        BTreeMap<String, Answer>,
+        BTreeMap<String, serde_json::Value>,
+    )> = std::sync::OnceLock::new();
     ANSWERS.get_or_init(|| {
         let ir = ir();
         let bound = binding(&ir, ROUTES);
@@ -593,7 +623,7 @@ pub fn rust_answers() -> &'static BTreeMap<String, Answer> {
             ),
         )
         .expect("write");
-        std::fs::write(harness.join("src/main.rs"), RUST_HARNESS).expect("write");
+        std::fs::write(harness.join("src/main.rs"), rust_events_harness()).expect("write");
         let requests = root.join("requests.tsv");
         write_requests(&requests);
         let target = root.join("target");
@@ -614,7 +644,20 @@ pub fn rust_answers() -> &'static BTreeMap<String, Answer> {
         let _ = std::fs::remove_dir_all(&root);
         assert!(ran.status.success(), "the harness builds and runs");
         eprintln!("{stdout}");
-        parsed(stdout.lines())
+        let events = stdout
+            .lines()
+            .filter_map(|line| line.strip_prefix("events\t"))
+            .map(|line| {
+                let (label, listed) = line.split_once('\t').expect("label<TAB>events");
+                let listed = serde_json::from_str(listed)
+                    .unwrap_or_else(|error| panic!("`{label}`'s events are JSON ({error})"));
+                (label.to_owned(), listed)
+            })
+            .collect();
+        (
+            parsed(stdout.lines().filter(|line| !line.starts_with("events\t"))),
+            events,
+        )
     })
 }
 

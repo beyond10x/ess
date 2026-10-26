@@ -240,6 +240,31 @@ pub fn encode_event_gatepass_visit_visit_registered(value: &gatepass_types::visi
     out.push('}');
 }
 
+/// Reads the event `gatepass.visit.VisitRegistered` from JSON, the payload [`encode_event_gatepass_visit_visit_registered`] writes.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_event_gatepass_visit_visit_registered(value: &json::Value, at: &str) -> Result<gatepass_types::visit::VisitRegistered, json::DecodeError> {
+    Ok(gatepass_types::visit::VisitRegistered {
+        visit_id: {
+            let at0 = json::nested(at, "visit_id");
+            let member0 = json::member_at(value, at, "visit_id")?;
+            decode_gatepass_visit_visit_id(member0, &at0)?
+        },
+        visitor: {
+            let at1 = json::nested(at, "visitor");
+            let member1 = json::member_at(value, at, "visitor")?;
+            decode_gatepass_visit_visitor_name(member1, &at1)?
+        },
+        building: {
+            let at2 = json::nested(at, "building");
+            let member2 = json::member_at(value, at, "building")?;
+            decode_gatepass_visit_building(member2, &at2)?
+        },
+    })
+}
+
 /// Writes the event `gatepass.visit.VisitorAdmitted` as JSON.
 pub fn encode_event_gatepass_visit_visitor_admitted(value: &gatepass_types::visit::VisitorAdmitted, out: &mut String) {
     out.push('{');
@@ -250,12 +275,47 @@ pub fn encode_event_gatepass_visit_visitor_admitted(value: &gatepass_types::visi
     out.push('}');
 }
 
+/// Reads the event `gatepass.visit.VisitorAdmitted` from JSON, the payload [`encode_event_gatepass_visit_visitor_admitted`] writes.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_event_gatepass_visit_visitor_admitted(value: &json::Value, at: &str) -> Result<gatepass_types::visit::VisitorAdmitted, json::DecodeError> {
+    Ok(gatepass_types::visit::VisitorAdmitted {
+        visit_id: {
+            let at0 = json::nested(at, "visit_id");
+            let member0 = json::member_at(value, at, "visit_id")?;
+            decode_gatepass_visit_visit_id(member0, &at0)?
+        },
+        badge: {
+            let at1 = json::nested(at, "badge");
+            let member1 = json::member_at(value, at, "badge")?;
+            decode_gatepass_visit_badge(member1, &at1)?
+        },
+    })
+}
+
 /// Writes the event `gatepass.visit.VisitorDeparted` as JSON.
 pub fn encode_event_gatepass_visit_visitor_departed(value: &gatepass_types::visit::VisitorDeparted, out: &mut String) {
     out.push('{');
     json::member(out, "visit_id");
     encode_gatepass_visit_visit_id(&value.visit_id, out);
     out.push('}');
+}
+
+/// Reads the event `gatepass.visit.VisitorDeparted` from JSON, the payload [`encode_event_gatepass_visit_visitor_departed`] writes.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_event_gatepass_visit_visitor_departed(value: &json::Value, at: &str) -> Result<gatepass_types::visit::VisitorDeparted, json::DecodeError> {
+    Ok(gatepass_types::visit::VisitorDeparted {
+        visit_id: {
+            let at0 = json::nested(at, "visit_id");
+            let member0 = json::member_at(value, at, "visit_id")?;
+            decode_gatepass_visit_visit_id(member0, &at0)?
+        },
+    })
 }
 
 /// Writes the declared error `gatepass.visit.InvalidVisitLength` as JSON.
@@ -632,4 +692,25 @@ pub fn encode_system_event(value: &gatepass_system::SystemEvent) -> String {
     }
     out.push('}');
     out
+}
+
+/// Reads any event on the system's log back from the envelope [`encode_system_event`] writes,
+/// `{"event": …, "payload": {…}}`: its qualified name selects the event, and its payload is read
+/// under the wire names that event declares.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] at `event` when the envelope names no event this system publishes,
+/// naming the one it carried, and at the payload's own path when the payload is not that
+/// event's.
+pub fn decode_system_event(value: &json::Value) -> Result<gatepass_system::SystemEvent, json::DecodeError> {
+    let event = json::text_at(json::member_at(value, "", "event")?, "event", "a qualified event name")?;
+    Ok(match event {
+        "gatepass.visit.VisitRegistered" => gatepass_system::SystemEvent::VisitRegistered(decode_event_gatepass_visit_visit_registered(json::member_at(value, "", "payload")?, "payload")?),
+        "gatepass.visit.VisitorAdmitted" => gatepass_system::SystemEvent::VisitorAdmitted(decode_event_gatepass_visit_visitor_admitted(json::member_at(value, "", "payload")?, "payload")?),
+        "gatepass.visit.VisitorDeparted" => gatepass_system::SystemEvent::VisitorDeparted(decode_event_gatepass_visit_visitor_departed(json::member_at(value, "", "payload")?, "payload")?),
+        other => {
+            return Err(json::DecodeError { at: "event".to_owned(), expected: "one of `gatepass.visit.VisitRegistered`, `gatepass.visit.VisitorAdmitted`, `gatepass.visit.VisitorDeparted`".to_owned(), found: format!("`{other}`") })
+        }
+    })
 }

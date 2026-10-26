@@ -347,6 +347,53 @@ fn a_route_claiming_openapi_json_or_docs_is_refused_at_synthesis() {
     }
 }
 
+/// The bound `dispatch_with_events` hands back what each call took off the system's log: on every
+/// answer that lists what its command published, exactly that list (the model has no binding, so
+/// nothing cascades); the event of a declared answer that lists none; and nothing for a grant,
+/// input or obligation refusal, a view, a document or a path no route matches.
+#[test]
+fn a_bound_dispatch_with_events_returns_the_taken_events() {
+    let answers = shared::rust_answers();
+    let events = shared::rust_events();
+    assert_eq!(
+        answers.keys().collect::<Vec<_>>(),
+        events.keys().collect::<Vec<_>>(),
+        "every request handed back its events"
+    );
+    let mut listing = 0;
+    for (label, answer) in answers {
+        let body: Option<serde_json::Value> = serde_json::from_str(&answer.body).ok();
+        if let Some(published) = body.as_ref().and_then(|body| body.get("published")) {
+            assert_eq!(&events[label], published, "{label}");
+            listing += 1;
+        }
+    }
+    assert!(listing >= 5, "{listing} answers listed what they published");
+    assert_eq!(
+        events["put"],
+        serde_json::json!([{"event": "shop.items.Put", "payload": {"item_id": "a b", "title": "Lamp"}}])
+    );
+    assert_eq!(
+        events["placed"],
+        serde_json::json!([{"event": "shop.items.Touched", "payload": {"item_id": "i1"}}])
+    );
+    for label in [
+        "not-granted",
+        "not-granted-anonymous",
+        "malformed-json",
+        "form-refuse",
+        "form-twice",
+        "unfinished",
+        "get",
+        "docs",
+        "openapi",
+        "nowhere",
+        "post-on-items",
+    ] {
+        assert_eq!(events[label], serde_json::json!([]), "{label}");
+    }
+}
+
 /// `refusals:` answers `not_granted`, `unfinished` and `malformed` as declared on the routes the
 /// binding names; a route it does not name keeps today's answer.
 #[test]

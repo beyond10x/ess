@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:related-rows-of-one-command-share-their-owner
 kind: story
-status: active
+status: implemented
 title: Related rows of one command share their owner
 summary: 'Adopter report N15: Synthesis builds a second owner for a related row and the wrong branch answers (ess#669).'
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T09:48:33Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-23T09:48:33Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:34Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Problem
 

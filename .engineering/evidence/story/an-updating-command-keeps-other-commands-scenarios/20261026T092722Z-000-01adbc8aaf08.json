@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T09:27:22Z",
+  "actor": "human:timo",
+  "artifact": "story:an-updating-command-keeps-other-commands-scenarios",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "fix commit 524f667a8 is in tag 0.69.0 (released 2026-10-24, release Gate green, verify-release exit 0); store left the story active; closed 2026-10-26 by the 0.70.0 wave",
+    "reference": "524f667a8"
+  }
+}

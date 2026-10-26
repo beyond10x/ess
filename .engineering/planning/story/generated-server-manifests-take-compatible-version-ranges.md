@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-server-manifests-take-compatible-version-ranges
 kind: story
-status: active
+status: implemented
 title: Generated server manifests take compatible version ranges
 summary: 'Follow-up to N5 (ess#660): the generated server, single-binary and normalization manifests still pin exact versions.'
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T11:50:59Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-23T11:51:00Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-26T09:27:33Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Problem
 

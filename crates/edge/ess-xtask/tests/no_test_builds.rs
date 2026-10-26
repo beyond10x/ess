@@ -30,6 +30,8 @@ const ALLOWED: &[&str] = &[
     "crates/generate/ess-publisher/tests/generated.rs",
     "crates/generate/ess-synth/tests/actor_grants.rs",
     "crates/generate/ess-synth/tests/adversary_binding_condition_kleene.rs",
+    "crates/generate/ess-synth/tests/adversary_c_event_wire.rs",
+    "crates/generate/ess-synth/tests/adversary_c_event_wire_2.rs",
     "crates/generate/ess-synth/tests/adversary_e_u5_now_stored_pass1.rs",
     "crates/generate/ess-synth/tests/adversary_e_u7_wire.rs",
     "crates/generate/ess-synth/tests/adversary_e_u9_pass1.rs",

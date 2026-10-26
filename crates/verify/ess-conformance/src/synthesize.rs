@@ -1332,6 +1332,14 @@ impl RefusalCause {
                  names; let a declared command create that related row in a state the creator \
                  accepts, or cover the branch with an authored scenario (ess-scenario/1)"
             }
+            // Rows whose creator refuses its related row on the row's stored fields: the guard
+            // named is what no arranged row and input passed.
+            Self::NoWitness(gap) if gap.reason == row_set::ROWS_REFUSING_CREATOR => {
+                "the command named creates the rows only beside a related row its guard named \
+                 accepts; let a declared command create that related row with stored fields and \
+                 in a state that guard accepts for some input, or cover the branch with an \
+                 authored scenario (ess-scenario/1)"
+            }
             Self::NoWitness(gap) if set_effects::UNARRANGED.contains(&gap.reason) => {
                 "let a command that creates the entity write each field the filter reads from an \
                  input or from a caller attribute (`{caller: <attribute>}`) rather than from a \
