@@ -11,7 +11,7 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T09:19:02Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-10-26T09:19:02Z", actor: "human:timo", revision: 9}
@@ -167,3 +167,7 @@ confidence: medium
 ## Second report: wrong-state scenario
 
 Second adopter report, 2026-10-26: a wrong-state refusal scenario must show the row unchanged through a view from `ess/7` on, and a top-level `Decimal` view field makes it unreplayable. Neutral probe, 0.69.2: `ess/6` 5 scenarios / 0 refusals, `ess/7` and `ess/25` 4 / 1 (ESS-SYNTH-001 `…/state/Closed/refuses/…`, "Decimal and Binary64 replay results are unsupported"). The unit E tree gives 5 / 0 at `ess/25`; the probe joins this story as a regression fixture. Not beyond10x/ess#646, which is Binary64 admission.
+
+## Adopter replay
+
+An adopter review reports, unverified by ess (2026-10-26): on integrate/ess-0700 8a4fdbe32 built locally, a second adopter specification goes from 42 scenarios / 7 refusals to 46 / 3; the 4 Decimal wrong-state refusals are gone.
