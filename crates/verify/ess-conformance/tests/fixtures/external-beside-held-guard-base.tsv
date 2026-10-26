@@ -21,7 +21,7 @@ crates/generate/ess-synth/tests/fixtures/clock-reading.yaml	suite=6b7c43ac8d04ab
 crates/generate/ess-synth/tests/fixtures/conditional-measures-generated.yaml	suite=4779c03dbfb82cc254d3:25685 refusals=b3c848d48cfb9f249ead:518 claimable=
 crates/generate/ess-synth/tests/fixtures/declared-behaviour/system.yaml	ASSEMBLE 0ced721f7f99b4efb204:210
 crates/generate/ess-synth/tests/fixtures/declared-behaviour-kept/head.yaml	suite=606309ce55c3066253f8:11675 refusals=6351d26f2df9eb142024:489 claimable=
-crates/generate/ess-synth/tests/fixtures/generated-views.yaml	suite=d51cd175899fabc318ca:58807 refusals=bfb251ea7183b9cfb016:399 claimable=
+crates/generate/ess-synth/tests/fixtures/generated-views.yaml	suite=f88bb646379f8be8ac10:67900 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/generate/ess-synth/tests/fixtures/served-notes/system.yaml	suite=e7c4197122f7f69497af:17268 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/specify/ess-cli-contract/tests/fixtures/model.yaml	suite=6d7249836f5e2fe6ec40:361 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/specify/ess-cli-contract/tests/fixtures/service-model.yaml	ASSEMBLE c0d5f7c7b0bf143970a8:361

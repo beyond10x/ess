@@ -25,7 +25,9 @@
 //! `one-time-response-values.example.yaml`: a suite states its catalog once (beyond10x/ess#570,
 //! 036d89dae). Refusal digests of `model-types` and `adversary_expression`: value invariants are
 //! observed at wrapped positions, recursive ones refused by name (unit U5, 63a581f88, and the
-//! review fix a422cac9d). IR digests did not move.
+//! review fix a422cac9d). IR digests did not move. On the 0.70.0 integration branch the suite and
+//! refusal digests of `generated-views` are re-pinned to the bytes table: a `Decimal` in a complete
+//! subject is observed (suite/58), so its one refusal became a scenario (unit E, 44268b2d6).
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 

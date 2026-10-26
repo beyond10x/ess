@@ -1218,7 +1218,9 @@ fn recreation(
 
 /// The input a creating branch is sent with: the one that reaches it, or — for a command reading a
 /// related row (ess/18), which only an arrangement of that row reaches — a plain one, which the
-/// creation then sends with the related row arranged for it.
+/// creation then sends with the related row arranged for it. The creating half of create-or-update
+/// is sent the one that reaches it on any command: an identity no row carries answers it before the
+/// related row is read ([`super::related_guard::routes`], beyond10x/ess#641).
 ///
 /// Where no related row and input reach the creating branch, the refusal is the instance the
 /// existence scenario needs, naming the related guards the send cannot pass over — a membership
@@ -1230,7 +1232,7 @@ fn creating_input(
     distinction: Distinction,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
-    if super::related_guard::uses(command) {
+    if super::related_guard::uses(command) && !creates_unknown(outcome) {
         super::related_guard::prepare_at_in(
             &InvocationModels::plain(ir),
             command,

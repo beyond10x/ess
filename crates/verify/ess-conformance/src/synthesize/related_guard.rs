@@ -169,9 +169,16 @@ pub(super) fn uses(command: &ResolvedCommand) -> bool {
 
 /// Whether this strategy arranges the scenario for `outcome`: every branch of a command reading a
 /// related row that the row decides, which is all of them but an injected fault and a replay.
+///
+/// Not the creating half of create-or-update (`unknown_instance:` with `creates:`), which validates
+/// beside a related guard only under the one rule (`ess/27`, ESS-COMMAND-004 before it): an
+/// identity no row carries answers it at step 2, before the related row is read at step 4, so it is
+/// sent as any creation is, and the row its input names left unarranged — a target reading that
+/// row first refuses it (beyond10x/ess#641). A driver storing a row through it does the same.
 pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
     uses(command)
         && outcome.replays.is_none()
+        && !super::existence::creates_unknown(outcome)
         && !matches!(
             outcome.condition,
             ResolvedCondition::External { .. }
@@ -1429,10 +1436,14 @@ fn absent_branch(command: &ResolvedCommand) -> Option<&ResolvedOutcome> {
 /// Which branch the command selects for this input, with the related row `row` present — or absent,
 /// where it is `None` — if exactly one does.
 ///
-/// A missing row is answered by the `exists: false` branch before any other (the #211 ruling). With
-/// the row present, a predicate it does not decide (a field the arrangement did not determine, or
-/// one it left out that a predicate reading the input compares, which the interpreter stops on as
-/// undecidable, row 29) selects nothing and is not guessed at. A predicate reading no input is
+/// A missing row is answered by the `exists: false` branch: before any other below the one rule
+/// (the #211 ruling), and from it (`ess/27`) after the addressed row's existence and held state,
+/// which are not asked here. An `unknown_instance:` branch, the creating half of create-or-update
+/// included, is witnessed for an identity no row carries without this row ([`routes`]), and a
+/// held-state branch by its own family. With the row present, a predicate it does not decide (a
+/// field the arrangement did not determine, or one it left out that a predicate reading the input
+/// compares, which the interpreter stops on as undecidable, row 29) selects nothing and is not
+/// guessed at. A predicate reading no input is
 /// read as a guard ([`subject_fact::guard_truth_with`]): a member of a field the row leaves out
 /// does not take it (beyond10x/ess#234). A refusal the precedence plan reads before
 /// the others selected is taken before them ([`answering_refusal`]): an input-guarded refusal

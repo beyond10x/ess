@@ -1,4 +1,4 @@
-#	models=307	commands=657
+#	models=308	commands=659
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -392,6 +392,9 @@ crates/verify/ess-conformance/tests/fixtures/coalesce-selector.yaml	demo.picking
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	ir=8dd5d71711712bd413e241f86738084c0536bdf60722e70c37d703543faf7a65:19229
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	demo.cases.Complete	held_state: unavailable | default: completed
 crates/verify/ess-conformance/tests/fixtures/conditional-aggregate-measures.yaml	demo.cases.Open	default: opened
+crates/verify/ess-conformance/tests/fixtures/create-or-update-beside-related-refusal.yaml	ir=4da3cf557f04473b5aafb5e493ed09467847ac0c8cc7923738820fa555b0d759:13880
+crates/verify/ess-conformance/tests/fixtures/create-or-update-beside-related-refusal.yaml	demo.desk.AddAgent	default: added
+crates/verify/ess-conformance/tests/fixtures/create-or-update-beside-related-refusal.yaml	demo.desk.Bind	existence: bound | held_state: already-bound | present_related: no-agent | default: rebound
 crates/verify/ess-conformance/tests/fixtures/current-time-guard.yaml	ir=a7cacc358c4e2d309a51d3c8edb6fc0d69b3bdf828396adaf144d5aa2e5ac312:6366
 crates/verify/ess-conformance/tests/fixtures/current-time-guard.yaml	demo.jobs.ScheduleJob	input_refusal: start-in-past | default: scheduled
 crates/verify/ess-conformance/tests/fixtures/declared-behaviour.yaml	ir=33c4473b60a55340621c9d49d4d0a7011dae1447175eb3b612e4faf0e4680181:23496
