@@ -104,3 +104,46 @@ fn presentation_moves_are_reported_apart_from_the_wire_move() {
 fn a_bare_variant_list_that_did_not_move_reports_nothing() {
     assert_eq!(diff(&model(BARE), &model(BARE)).unwrap().changes().len(), 0);
 }
+
+/// A lifecycle state's wire name (`ess/32`, beyond10x/ess#639) changes the wire spelling of
+/// the variant of `<Entity>.State`, and is reported as that variant's change.
+#[test]
+fn a_changed_state_wire_name_is_reported() {
+    let spelled = include_str!("../../../generate/ess-gen/tests/fixtures/state-wire.yaml");
+    let bare = spelled.replace(
+        "states: [{name: Indexing, wire: indexing}, Ready]",
+        "states: [Indexing, Ready]",
+    );
+    assert_ne!(bare, spelled);
+    let compiled = |text: &str| {
+        let spec = Specification::assemble([(
+            Source::new("jobs.yaml"),
+            RawSpecFile::parse(text).unwrap(),
+        )])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+        let mut sources = SourceMap::new();
+        sources.insert("jobs.yaml", text.to_owned());
+        compile(&spec, &sources).unwrap_or_else(|errors| panic!("{errors}"))
+    };
+    for (before, after, expected) in [
+        (bare.as_str(), spelled, ("Indexing", "indexing")),
+        (spelled, bare.as_str(), ("indexing", "Indexing")),
+    ] {
+        let delta = diff(&compiled(before), &compiled(after)).unwrap();
+        assert_eq!(delta.changes().len(), 1, "{:?}", delta.changes());
+        assert!(
+            matches!(
+                &delta.changes()[0],
+                SemanticChange::Type {
+                    subject,
+                    changed: TypeChange::VariantWireNameChanged { variant, before, after },
+                } if subject.name().to_string() == "jobs.queue.Job.State"
+                    && variant == "Indexing"
+                    && before == expected.0
+                    && after == expected.1
+            ),
+            "{:?}",
+            delta.changes()[0]
+        );
+    }
+}

@@ -256,6 +256,15 @@ fn main() {
     let mut pinged = system(&mode);
     let (handled, events) = surface::handle_with_events(&mut pinged, "adv.core.Ping", parse("[1,2]"));
     println!("ping-handled {} {}", refusal(&handled), listed(&events));
+    for (label, text) in [("text", r#""text""#), ("null", "null"), ("list", "[1,2]"), ("object", "{}")] {
+        show(&format!("ping-{label}-decoded"), wire::decode_command_adv_core_ping(&parse(text), "body"));
+        let mut handled_system = system(&mode);
+        let (handled, events) = surface::handle_with_events(&mut handled_system, "adv.core.Ping", parse(text));
+        println!("ping-handle {label} {} {} kept={}", refusal(&handled), listed(&events), kept(&mut handled_system));
+        let mut posted_system = system(&mode);
+        let (answered, events) = surface::dispatch_with_events(&mut posted_system, &request(&routes, "adv.core.Ping", text));
+        println!("ping-post {label} {} {} kept={}", answered.status, listed(&events), kept(&mut posted_system));
+    }
 
     // 3. An event published through a component's own port before the call, still in its
     // outbox, is not published while the call runs.
@@ -468,6 +477,33 @@ fn adversary_c2_a_fieldless_event_refuses_an_array_payload() {
         line("dec bare-array ")
     );
     assert!(line("dec bare-object ").starts_with("read "));
+}
+
+/// story:a-field-less-command-input-refuses-a-value-that-is-no-object: the decoder of a command
+/// input with no fields refuses `"text"`, `null` and an array at `body` and reads `{}`; through
+/// `handle` each of the three is an input refusal that publishes nothing, and a `POST` of one
+/// answers `400` and publishes nothing.
+#[test]
+fn a_fieldless_command_input_refuses_a_value_that_is_no_object() {
+    for label in ["text", "null", "list"] {
+        let decoded = line(&format!("dec ping-{label}-decoded "));
+        assert!(decoded.starts_with("refused body: "), "{label}: {decoded}");
+        assert!(decoded.contains("an object"), "{label}: {decoded}");
+        assert_eq!(
+            line(&format!("ping-handle {label} ")),
+            "input [] kept=0",
+            "{label}"
+        );
+        assert_eq!(
+            line(&format!("ping-post {label} ")),
+            "400 [] kept=0",
+            "{label}"
+        );
+    }
+    assert!(line("dec ping-object-decoded ").starts_with("read "));
+    assert!(line("ping-handle object ").starts_with("answered [{"));
+    let posted = line("ping-post object ");
+    assert!(posted.starts_with("202 [{"), "{posted}");
 }
 
 /// The documented edge: an event a caller published through the component's own port before

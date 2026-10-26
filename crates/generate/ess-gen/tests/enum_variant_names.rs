@@ -51,3 +51,7 @@ fn an_enum_named_by_its_spellings_has_no_annotation() {
     let plain = definition("probe.flow.Plain");
     assert!(plain.get("x-ess-variants").is_none(), "{plain}");
 }
+
+/// A lifecycle state's wire name (`ess/32`, beyond10x/ess#639) in the projections.
+#[path = "enum_variant_names/state_wire.rs"]
+mod state_wire;

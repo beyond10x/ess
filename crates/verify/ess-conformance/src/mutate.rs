@@ -1602,7 +1602,12 @@ fn transition_sites(documents: &[Document], found: &mut Vec<Mutation>) {
         for transition in &machine.transitions {
             let qualified = format!("{name}.{}", transition.name);
             if machine.states.len() >= 2 {
-                if let Some(to) = machine.states.iter().find(|state| **state != transition.to) {
+                if let Some(to) = machine
+                    .states
+                    .iter()
+                    .map(|state| state.parts().0)
+                    .find(|state| **state != transition.to)
+                {
                     found.push(Mutation::TransitionTo {
                         entity: name.clone(),
                         transition: transition.name.clone(),

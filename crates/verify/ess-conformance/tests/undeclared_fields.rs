@@ -1229,3 +1229,6 @@ fn a_literal_naming_an_undeclared_member_is_refused_by_every_reader() {
 
 #[path = "undeclared_fields/shorthand.rs"]
 mod shorthand;
+
+#[path = "undeclared_fields/empty_struct.rs"]
+mod empty_struct;

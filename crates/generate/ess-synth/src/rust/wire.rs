@@ -236,6 +236,11 @@ fn type_decoder(
             newtype_body(out, surface, &path, of, declared.body.is_constrained());
         }
         ResolvedBody::Struct { fields, .. } => {
+            if fields.is_empty() {
+                // A `fields: []` struct (`ess/32`) reads no member, and a member read is what
+                // refuses a value that is no object; it is held to being one here.
+                out.push_str("    json::members_at(value, at, \"an object\")?;\n");
+            }
             model_name_refusals(out, fields);
             let _ = writeln!(out, "    Ok({path} {{");
             for (position, field) in fields.iter().enumerate() {
@@ -508,6 +513,11 @@ fn command_decoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
         command.name,
         ident(surface.layout(), &command.name)
     );
+    if command.input.is_empty() {
+        // As for a field-less event: with no member to read, the input is held to being an
+        // object here.
+        out.push_str("    json::members_at(value, at, \"an object\")?;\n");
+    }
     model_name_refusals(out, &command.input);
     let _ = writeln!(out, "    Ok({path} {{");
     for (position, field) in command.input.iter().enumerate() {
@@ -519,19 +529,6 @@ fn command_decoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
         );
     }
     out.push_str("    })\n}\n");
-    if command.input.is_empty() {
-        let unit = format!(
-            "pub fn decode_command_{}(value: &json::Value, at: &str)",
-            ident(surface.layout(), &command.name)
-        );
-        *out = out.replace(
-            &unit,
-            &format!(
-                "pub fn decode_command_{}(_value: &json::Value, _at: &str)",
-                ident(surface.layout(), &command.name)
-            ),
-        );
-    }
 }
 
 /// One view's declared parameters, read from an object keyed by their wire names: the tuple its

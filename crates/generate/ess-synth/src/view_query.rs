@@ -368,17 +368,27 @@ pub(crate) fn leaf(ir: &EssIr, type_ref: &ResolvedTypeRef) -> Option<Primitive> 
 /// value, text, an identity, an enum or `state` by the text it is rendered as, a `Boolean` false
 /// first.
 fn order(ir: &EssIr, entity: &ResolvedEntity, name: &str) -> Result<(), String> {
-    if let Kind::Enum(ResolvedTypeRef::Declared { name: declared }, _) =
-        resolve(ir, entity, name)?.kind
-    {
+    let resolved = resolve(ir, entity, name)?;
+    // A lifecycle state (`ess/32`) is a variant of `<Entity>.State`, the type at the root, and
+    // respelled as an enum variant is.
+    let (declared, what, named) = match (resolved.kind, resolved.root_type) {
+        (Kind::Enum(ResolvedTypeRef::Declared { name: declared }, _), _) => {
+            (Some(declared), "enum field", "variant")
+        }
+        (Kind::State, ResolvedTypeRef::Declared { name: declared }) => {
+            (Some(declared), "lifecycle", "state")
+        }
+        _ => (None, "", ""),
+    };
+    if let Some(declared) = declared {
         if let ResolvedBody::Enum { variants } = &ir.named_type(&declared).body {
             if variants
                 .iter()
                 .any(|variant| variant.wire() != variant.name)
             {
                 return Err(format!(
-                    "an order over the enum field `{name}`, whose wire spellings are not its \
-                     variant names"
+                    "an order over the {what} `{name}`, whose wire spellings are not its {named} \
+                     names"
                 ));
             }
         }

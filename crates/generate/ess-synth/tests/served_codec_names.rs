@@ -848,3 +848,7 @@ fn go_serves_flattening_commands_of_two_contexts() {
     assert!(ran.status.success(), "the Go harness builds and runs");
     assert_eq!(lines, expected(&ir, false));
 }
+
+/// A lifecycle state's wire name (`ess/32`, beyond10x/ess#639) through the served surface.
+#[path = "served_codec_names/state_wire.rs"]
+mod state_wire;

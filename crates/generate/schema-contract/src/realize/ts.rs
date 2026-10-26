@@ -81,38 +81,7 @@ fn render(node: &Node, plan: &Plan, obligations: &mut BTreeSet<Finding>) -> Stri
             joined(variants, " | ", plan, obligations)
         }
         Shape::Intersection(terms) => joined(terms, " & ", plan, obligations),
-        Shape::Object { fields, additional } => {
-            let mut output = String::from("{\n");
-            let mut known = BTreeSet::new();
-            for (name, field) in fields {
-                let rendered = render(&field.value, plan, obligations);
-                known.insert(rendered.clone());
-                let optional = if field.required { "" } else { "?" };
-                writeln!(
-                    output,
-                    "  {}{optional}: {rendered};",
-                    serde_json::to_string(name).expect("JSON key")
-                )
-                .expect("String write");
-            }
-            output.push('}');
-            if matches!(additional.shape, Shape::Never) {
-                obligations.insert(finding(&node.pointer, "closed_object", "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"));
-                output
-            } else {
-                let extra = render(additional, plan, obligations);
-                if !fields.is_empty() && !matches!(additional.shape, Shape::Json) {
-                    obligations.insert(finding(&node.pointer, "additional_property_index", "TypeScript cannot exclude named keys from a string index; extra keys admit the union of named and additional value types until schema validation"));
-                    known.insert(extra);
-                    format!(
-                        "({output} & {{ [key: string]: {}; }})",
-                        known.into_iter().collect::<Vec<_>>().join(" | ")
-                    )
-                } else {
-                    format!("({output} & {{ [key: string]: {extra}; }})")
-                }
-            }
-        }
+        Shape::Object { fields, additional } => object(node, fields, additional, plan, obligations),
         Shape::Array {
             prefix,
             items,
@@ -144,6 +113,50 @@ fn render(node: &Node, plan: &Plan, obligations: &mut BTreeSet<Finding>) -> Stri
                 slots.push(format!("...({})[]", render(items, plan, obligations)));
             }
             format!("[{}]", slots.join(", "))
+        }
+    }
+}
+
+fn object(
+    node: &Node,
+    fields: &BTreeMap<String, super::Field>,
+    additional: &Node,
+    plan: &Plan,
+    obligations: &mut BTreeSet<Finding>,
+) -> String {
+    let mut output = String::from("{\n");
+    let mut known = BTreeSet::new();
+    for (name, field) in fields {
+        let rendered = render(&field.value, plan, obligations);
+        known.insert(rendered.clone());
+        let optional = if field.required { "" } else { "?" };
+        writeln!(
+            output,
+            "  {}{optional}: {rendered};",
+            serde_json::to_string(name).expect("JSON key")
+        )
+        .expect("String write");
+    }
+    output.push('}');
+    if matches!(additional.shape, Shape::Never) {
+        obligations.insert(finding(&node.pointer, "closed_object", "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"));
+        if fields.is_empty() {
+            // `{}` is every value but `null` and `undefined`, a string, a number and an array
+            // included; an object with no key is the object every key of which is `never`.
+            return "Record<string, never>".to_owned();
+        }
+        output
+    } else {
+        let extra = render(additional, plan, obligations);
+        if !fields.is_empty() && !matches!(additional.shape, Shape::Json) {
+            obligations.insert(finding(&node.pointer, "additional_property_index", "TypeScript cannot exclude named keys from a string index; extra keys admit the union of named and additional value types until schema validation"));
+            known.insert(extra);
+            format!(
+                "({output} & {{ [key: string]: {}; }})",
+                known.into_iter().collect::<Vec<_>>().join(" | ")
+            )
+        } else {
+            format!("({output} & {{ [key: string]: {extra}; }})")
         }
     }
 }

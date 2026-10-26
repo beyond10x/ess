@@ -3574,6 +3574,7 @@ mod tests {
             initial: state(initial),
             terminal: terminal.iter().map(|it| state(it)).collect(),
             transitions,
+            naming: std::collections::BTreeMap::new(),
         }
     }
 
