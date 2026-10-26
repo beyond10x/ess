@@ -149,6 +149,33 @@ pub fn dispatch<PassServiceBehaviors>(system: &mut gatepass_system::System<PassS
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
+    dispatch_with_events(system, caller, request).0
+}
+
+/// Answers one request as [`dispatch`] does, and hands back every event published while it
+/// ran, in log order: what the command published, what the bindings that reacted to it
+/// published in turn, and what a held-back delivery retried during the call published. An
+/// event already on the system's log when the call started is not the call's and is never
+/// in the list. The list is empty where no command ran — a refusal before the port, a view,
+/// a document or a path no route matches — and holds what was published where delivering
+/// it failed after the command took effect. An event a component's port published through a
+/// direct call is in that component's outbox until a pump collects it, so one no pump has
+/// collected yet is listed as this call's: call `pump` after calling a port directly.
+pub fn dispatch_with_events<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, caller: Option<&gatepass_types::actor::Caller>, request: &http::Request) -> (http::Response, Vec<gatepass_system::SystemEvent>)
+where
+    PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
+{
+    let mut taken = Vec::new();
+    let answer = route_request(system, caller, request, &mut taken);
+    (answer, taken)
+}
+
+/// The route match behind [`dispatch_with_events`]: each command pushes what it took off the
+/// log onto `taken`.
+fn route_request<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, caller: Option<&gatepass_types::actor::Caller>, request: &http::Request, taken: &mut Vec<gatepass_system::SystemEvent>) -> http::Response
+where
+    PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
+{
     match request.path.as_str() {
         "/docs" => {
             if request.method != "GET" {
@@ -169,7 +196,7 @@ where
             if let Err(actor) = admit(caller, "gatepass.visit.AdmitVisitor") {
                 return not_granted(actor);
             }
-            serve_gatepass_visit_admit_visitor(system, &request.body)
+            serve_gatepass_visit_admit_visitor(system, &request.body, taken)
         }
         "/visits/commands/register-visit" => {
             if request.method != "POST" {
@@ -178,7 +205,7 @@ where
             if let Err(actor) = admit(caller, "gatepass.visit.RegisterVisit") {
                 return not_granted(actor);
             }
-            serve_gatepass_visit_register_visit(system, &request.body)
+            serve_gatepass_visit_register_visit(system, &request.body, taken)
         }
         "/visits/commands/sign-out-visitor" => {
             if request.method != "POST" {
@@ -187,7 +214,7 @@ where
             if let Err(actor) = admit(caller, "gatepass.visit.SignOutVisitor") {
                 return not_granted(actor);
             }
-            serve_gatepass_visit_sign_out_visitor(system, &request.body)
+            serve_gatepass_visit_sign_out_visitor(system, &request.body, taken)
         }
         "/visits/views/by-id" => {
             if request.method != "GET" {
@@ -235,6 +262,23 @@ pub fn handle<PassServiceBehaviors>(system: &mut gatepass_system::System<PassSer
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
+    handle_with_events(system, caller, name, input).0
+}
+
+/// Runs one command or view as [`handle`] does, and hands back every event published while it
+/// ran, in log order: what the command published, what the bindings that reacted to it
+/// published in turn, and what a held-back delivery retried during the call published. An
+/// event already on the system's log when the call started is not the call's and is never
+/// in the list. The list is empty where no command ran — an unknown name, a refusal before
+/// the port, a view — and holds what was published where delivering it failed after the
+/// command took effect. An event a component's port published through a direct call is in
+/// that component's outbox until a pump collects it, so one no pump has collected yet is
+/// listed as this call's: call `pump` after calling a port directly.
+pub fn handle_with_events<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, caller: Option<&gatepass_types::actor::Caller>, name: &str, input: json::Value) -> (Result<json::Value, entry::Refused>, Vec<gatepass_system::SystemEvent>)
+where
+    PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
+{
+    let mut taken = Vec::new();
     let checked = |input: &json::Value| {
         json::admitted(input).map_err(|expected| {
             entry::Refused::Input(format!("the input is not JSON: expected {expected}"))
@@ -242,23 +286,26 @@ where
     };
     let answered = match name {
         "gatepass.visit.AdmitVisitor" => match admit(caller, "gatepass.visit.AdmitVisitor") {
-            Ok(()) => checked(&input).and_then(|()| run_gatepass_visit_admit_visitor(system, &input)),
+            Ok(()) => checked(&input).and_then(|()| run_gatepass_visit_admit_visitor(system, &input, &mut taken)),
             Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
         },
         "gatepass.visit.ExpectedVisits" => run_gatepass_visit_expected_visits(system),
         "gatepass.visit.RegisterVisit" => match admit(caller, "gatepass.visit.RegisterVisit") {
-            Ok(()) => checked(&input).and_then(|()| run_gatepass_visit_register_visit(system, &input)),
+            Ok(()) => checked(&input).and_then(|()| run_gatepass_visit_register_visit(system, &input, &mut taken)),
             Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
         },
         "gatepass.visit.SignOutVisitor" => match admit(caller, "gatepass.visit.SignOutVisitor") {
-            Ok(()) => checked(&input).and_then(|()| run_gatepass_visit_sign_out_visitor(system, &input)),
+            Ok(()) => checked(&input).and_then(|()| run_gatepass_visit_sign_out_visitor(system, &input, &mut taken)),
             Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
         },
         "gatepass.visit.VisitById" => run_gatepass_visit_visit_by_id(system),
-        other => return Err(entry::Refused::Unknown(other.to_owned())),
+        other => return (Err(entry::Refused::Unknown(other.to_owned())), taken),
     };
-    let (_, body) = answered?;
-    entry::read(&body).map_err(|error| {
+    let body = match answered {
+        Ok((_, body)) => body,
+        Err(refused) => return (Err(refused), taken),
+    };
+    let read = entry::read(&body).map_err(|error| {
         if matches!(name, "gatepass.visit.AdmitVisitor" | "gatepass.visit.RegisterVisit" | "gatepass.visit.SignOutVisitor") {
             entry::Refused::Undelivered(format!(
                 "delivering what the command published: its answer is not JSON this surface reads back: {error}"
@@ -268,7 +315,8 @@ where
                 "unmet obligation: view_query `{name}` answered rows this surface cannot read back: {error}"
             ))
         }
-    })
+    });
+    (read, taken)
 }
 
 /// Nothing, where `caller` may invoke `command`; otherwise the actor the standard refusal names,
@@ -301,7 +349,7 @@ fn not_granted(actor: Option<&str>) -> http::Response {
 }
 
 /// `POST` `gatepass.visit.AdmitVisitor`: reads the declared input, runs the port, answers the declared outcome.
-fn serve_gatepass_visit_admit_visitor<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, body: &[u8]) -> http::Response
+fn serve_gatepass_visit_admit_visitor<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, body: &[u8], taken: &mut Vec<gatepass_system::SystemEvent>) -> http::Response
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
@@ -317,17 +365,22 @@ where
             return http::Response::refusal(400, &format!("the body is not JSON: {error}"));
         }
     };
-    http::answer(run_gatepass_visit_admit_visitor(system, &value))
+    http::answer(run_gatepass_visit_admit_visitor(system, &value, taken))
 }
 
 /// `gatepass.visit.AdmitVisitor` from its input as a JSON value: decode, run the port, render the declared outcome.
 ///
 /// The one path the `POST` route and [`handle`] share. A decoding failure is located under
-/// `body`, as the route reports it.
-fn run_gatepass_visit_admit_visitor<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, value: &json::Value) -> Result<(u16, String), entry::Refused>
+/// `body`, as the route reports it. Every event published while the call runs is pushed onto
+/// `taken`, in log order, whatever it answers; what was on the log before it is taken off
+/// the log but not pushed.
+fn run_gatepass_visit_admit_visitor<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, value: &json::Value, taken: &mut Vec<gatepass_system::SystemEvent>) -> Result<(u16, String), entry::Refused>
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
+    // What is on the log before this call is not what this call published: it is delivered
+    // and taken with the rest, and never pushed onto `taken`.
+    let before = system.published().len();
     let input = match wire::decode_command_gatepass_visit_admit_visitor(value, "body") {
         Ok(input) => input,
         Err(error) => {
@@ -343,7 +396,7 @@ where
     // Deliver what this command published to every binding that reacts to it, then take it
     // off the log: a long-running server keeps nothing from one request to the next.
     let delivered = system.pump();
-    let _ = system.take_published();
+    taken.extend(system.take_published().into_iter().skip(before));
     if let Err(failure) = delivered {
         return Err(entry::Refused::Undelivered(format!("delivering what the command published: {failure}")));
     }
@@ -397,7 +450,7 @@ fn answer_gatepass_visit_admit_visitor(outcome: &gatepass_types::visit::AdmitVis
 }
 
 /// `POST` `gatepass.visit.RegisterVisit`: reads the declared input, runs the port, answers the declared outcome.
-fn serve_gatepass_visit_register_visit<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, body: &[u8]) -> http::Response
+fn serve_gatepass_visit_register_visit<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, body: &[u8], taken: &mut Vec<gatepass_system::SystemEvent>) -> http::Response
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
@@ -413,17 +466,22 @@ where
             return http::Response::refusal(400, &format!("the body is not JSON: {error}"));
         }
     };
-    http::answer(run_gatepass_visit_register_visit(system, &value))
+    http::answer(run_gatepass_visit_register_visit(system, &value, taken))
 }
 
 /// `gatepass.visit.RegisterVisit` from its input as a JSON value: decode, run the port, render the declared outcome.
 ///
 /// The one path the `POST` route and [`handle`] share. A decoding failure is located under
-/// `body`, as the route reports it.
-fn run_gatepass_visit_register_visit<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, value: &json::Value) -> Result<(u16, String), entry::Refused>
+/// `body`, as the route reports it. Every event published while the call runs is pushed onto
+/// `taken`, in log order, whatever it answers; what was on the log before it is taken off
+/// the log but not pushed.
+fn run_gatepass_visit_register_visit<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, value: &json::Value, taken: &mut Vec<gatepass_system::SystemEvent>) -> Result<(u16, String), entry::Refused>
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
+    // What is on the log before this call is not what this call published: it is delivered
+    // and taken with the rest, and never pushed onto `taken`.
+    let before = system.published().len();
     let input = match wire::decode_command_gatepass_visit_register_visit(value, "body") {
         Ok(input) => input,
         Err(error) => {
@@ -439,7 +497,7 @@ where
     // Deliver what this command published to every binding that reacts to it, then take it
     // off the log: a long-running server keeps nothing from one request to the next.
     let delivered = system.pump();
-    let _ = system.take_published();
+    taken.extend(system.take_published().into_iter().skip(before));
     if let Err(failure) = delivered {
         return Err(entry::Refused::Undelivered(format!("delivering what the command published: {failure}")));
     }
@@ -484,7 +542,7 @@ fn answer_gatepass_visit_register_visit(outcome: &gatepass_types::visit::Registe
 }
 
 /// `POST` `gatepass.visit.SignOutVisitor`: reads the declared input, runs the port, answers the declared outcome.
-fn serve_gatepass_visit_sign_out_visitor<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, body: &[u8]) -> http::Response
+fn serve_gatepass_visit_sign_out_visitor<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, body: &[u8], taken: &mut Vec<gatepass_system::SystemEvent>) -> http::Response
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
@@ -500,17 +558,22 @@ where
             return http::Response::refusal(400, &format!("the body is not JSON: {error}"));
         }
     };
-    http::answer(run_gatepass_visit_sign_out_visitor(system, &value))
+    http::answer(run_gatepass_visit_sign_out_visitor(system, &value, taken))
 }
 
 /// `gatepass.visit.SignOutVisitor` from its input as a JSON value: decode, run the port, render the declared outcome.
 ///
 /// The one path the `POST` route and [`handle`] share. A decoding failure is located under
-/// `body`, as the route reports it.
-fn run_gatepass_visit_sign_out_visitor<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, value: &json::Value) -> Result<(u16, String), entry::Refused>
+/// `body`, as the route reports it. Every event published while the call runs is pushed onto
+/// `taken`, in log order, whatever it answers; what was on the log before it is taken off
+/// the log but not pushed.
+fn run_gatepass_visit_sign_out_visitor<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, value: &json::Value, taken: &mut Vec<gatepass_system::SystemEvent>) -> Result<(u16, String), entry::Refused>
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
+    // What is on the log before this call is not what this call published: it is delivered
+    // and taken with the rest, and never pushed onto `taken`.
+    let before = system.published().len();
     let input = match wire::decode_command_gatepass_visit_sign_out_visitor(value, "body") {
         Ok(input) => input,
         Err(error) => {
@@ -526,7 +589,7 @@ where
     // Deliver what this command published to every binding that reacts to it, then take it
     // off the log: a long-running server keeps nothing from one request to the next.
     let delivered = system.pump();
-    let _ = system.take_published();
+    taken.extend(system.take_published().into_iter().skip(before));
     if let Err(failure) = delivered {
         return Err(entry::Refused::Undelivered(format!("delivering what the command published: {failure}")));
     }
