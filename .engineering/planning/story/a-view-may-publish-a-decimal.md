@@ -11,7 +11,7 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T09:19:02Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-10-26T09:19:02Z", actor: "human:timo", revision: 9}
@@ -162,3 +162,7 @@ as the Binary64 story; `declarations_for` (`replay.rs:206-216`) is where
 (inferred).
 
 confidence: medium
+
+## Second report: wrong-state scenario
+
+Second adopter report, 2026-10-26: a wrong-state refusal scenario must show the row unchanged through a view from `ess/7` on, and a top-level `Decimal` view field makes it unreplayable. Neutral probe, 0.69.2: `ess/6` 5 scenarios / 0 refusals, `ess/7` and `ess/25` 4 / 1 (ESS-SYNTH-001 `…/state/Closed/refuses/…`, "Decimal and Binary64 replay results are unsupported"). The unit E tree gives 5 / 0 at `ess/25`; the probe joins this story as a regression fixture. Not beyond10x/ess#646, which is Binary64 admission.
