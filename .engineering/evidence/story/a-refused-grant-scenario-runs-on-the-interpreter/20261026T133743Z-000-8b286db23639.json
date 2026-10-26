@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-26T13:37:43Z",
+  "actor": "human:timo",
+  "artifact": "story:a-refused-grant-scenario-runs-on-the-interpreter",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit D 6e46a5abb: ess-conformance adversary_d_values 4, grant_denied 18 (incl. the lamp model in Go and TypeScript), interpreted_views 9, interpreted_typed_identities 13, earlier interpreted_creation_boundary_identity 5, system_issued_interpreter 14, interpreted_command_execution 18, nested_ordered_heads 9, all passed 0 failed; clippy -p ess-conformance --all-targets -D warnings exit 0; cargo doc -D warnings exit 0; task fmt-check exit 0; task test-xtask exit 0; mutant reapplying the 0.68.0 rule turns 7 of 17 grant cases red",
+    "reference": "6e46a5abb"
+  }
+}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-denied-grant-over-a-command-that-writes-nothing-is-not-an-error
 kind: story
-status: active
+status: implemented
 title: A denied grant over a command that writes nothing is not an error
 summary: 'Adopter report S7: grant/denied over a command that writes nothing errors (ess#655).'
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T09:18:53Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-26T09:18:53Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-26T13:37:59Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:identity-minting-and-view-ordering-are-public
 kind: story
-status: active
+status: implemented
 title: Identity minting and view row ordering are public for consumers
 summary: 'Adopter report row 28: minting and view ordering are private, so consumers copy them.'
 tags:
@@ -10,10 +10,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T09:18:52Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-26T09:18:52Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-26T13:37:59Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 

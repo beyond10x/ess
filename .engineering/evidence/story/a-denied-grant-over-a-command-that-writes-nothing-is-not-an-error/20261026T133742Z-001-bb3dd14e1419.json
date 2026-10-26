@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-26T13:37:42Z",
+  "actor": "human:timo",
+  "artifact": "story:a-denied-grant-over-a-command-that-writes-nothing-is-not-an-error",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-ess-0700-unit-d-pass-1",
+    "review": "review-result:adversary-ess-0700-unit-d-pass-1",
+    "outcome": "fixed"
+  }
+}
