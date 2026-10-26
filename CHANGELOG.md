@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- From `format: ess/32` one command may guard on rows its input names, `when_related: {via: input.<field>, exists: false | predicate: …}`, beside a row-set guard, `when_related: {entity, where, exists | count | forall}`, as an adopter asked (beyond10x/ess#554): "connect two ports that exist and face the right way, unless a wire already leaves the source" is one command. The one precedence rule answers a missing named row first, in declaration order, then every refusal over a present named row or a row set in declaration order, then the accepting branches; the interpreter follows it, synthesis witnesses each branch it can arrange on rows the declared commands create and names the branch it cannot, as `ESS-SYNTH-001` does, and generated Rust and Go keep such a command an obligation, named. Below `ess/32` the pair keeps its `unsupported_construct`, its message unchanged and its hint naming `ess/32`; a `when_subject` guard beside a row set keeps it at every format.
+
 ## [0.69.2] — 2026-10-25
 
 ### Fixed

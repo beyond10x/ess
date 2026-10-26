@@ -3234,8 +3234,11 @@ fn outcome_scenario_noting(
         });
     }
     // A row-set branch is witnessed on the rows its own arrangement selects (ess/22,
-    // beyond10x/ess#228, #299): no further witness sends it without them.
-    if row_set::routes(models.arrangement.format(), command, outcome) {
+    // beyond10x/ess#228, #299): no further witness sends it without them. A refusal over a row the
+    // input names beside a row set (ess/32) keeps the related row's further witnesses.
+    let format = models.arrangement.format();
+    if row_set::routes(format, command, outcome) && !row_set::beside_named(format, command, outcome)
+    {
         return Some((
             id,
             ConformanceScenario::new(purpose(command, outcome), steps, source),
@@ -4129,8 +4132,11 @@ fn run_as(
     // for every branch it decides; further witnesses are the boundaries of its predicates alone.
     let related = related_guard::routes(command, outcome);
     // A command guarded by a row set, or reading a selected row (ess/22, beyond10x/ess#228, #299),
-    // is arranged with the rows its selector selects, for every branch they decide.
-    let rows = row_set::routes(ir.format(), command, outcome);
+    // is arranged with the rows its selector selects, for every branch they decide. A refusal over a
+    // row the input names beside a row set (ess/32, beyond10x/ess#554) is so only in its own
+    // scenario: its further witnesses are the related row's.
+    let rows = row_set::routes(ir.format(), command, outcome)
+        && (witness == Witness::Full || !row_set::beside_named(ir.format(), command, outcome));
     let mut related_at = Distinction::PLAIN;
     // ess/27 (beyond10x/ess#543): the ties of a ranked head no creating input steers, each a gap
     // the scenario stands with.
@@ -4161,7 +4167,10 @@ fn run_as(
         if witness != Witness::Full {
             return Err(row_set::unarranged());
         }
-        let (setup, input, gaps) = row_set::prepare(models, command, outcome, actors)?;
+        let (mut setup, input, gaps) = row_set::prepare(models, command, outcome, actors)?;
+        if row_set::beside_named(ir.format(), command, outcome) {
+            row_set::with_overlaps(models, command, outcome, actors, &mut setup, &input);
+        }
         row_gaps = gaps;
         (setup, input)
     } else if related {
