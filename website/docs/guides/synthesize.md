@@ -183,6 +183,28 @@ schema refuses (the route's `400`), or an unmet obligation (the route's `501`). 
 `handle` call the same decode-run-render function, so a conformance runner or an in-process caller
 gets what the HTTP surface answers without writing its own dispatch table.
 
+`dispatch_with_events` and `handle_with_events` answer exactly what `dispatch` and `handle` answer
+and also return every event published while the call ran, typed as the system crate's
+`SystemEvent`, in log order: the command's own events, what the bindings that reacted to them
+published in turn, and what a held-back delivery retried during the call published. An event that
+was already on the system's log when the call started is not the call's and is not in the list.
+An event a component's port published through a direct call stays in that component's outbox until
+a pump collects it, so one no pump has collected yet is listed as the call's: call `pump` after
+calling a port directly. A call where no command ran (a refusal before the port, an unknown name, a
+view) returns an empty list. `dispatch` and `handle` keep their signatures and drop the list, and
+`serve` still answers through `dispatch`.
+
+The server's `wire` module reads published events back as well as writing them.
+`decode_system_event` reads the envelope `encode_system_event` writes,
+`{"event": <qualified name>, "payload": {…}}`, into a `SystemEvent`. It refuses an envelope naming
+an event the system does not publish, and the refusal names that event. Each event also has its
+own `decode_event_<name>`, which reads every payload field under its declared `naming: {wire:}`
+name and falls back to the model name where none is declared. A field with a declared wire name
+that arrives under its model name is refused at its path rather than read as absent, as command
+input decoders refuse it, and a payload that is not an object is refused. Both are covered by the
+[served publication tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/served_publication.rs).
+The `go` target keeps its codecs and handlers package-private, so it has neither.
+
 ## Generated behaviour, over ports you provide
 
 A command whose every outcome the specification spells out gets a generated behaviour in the Rust

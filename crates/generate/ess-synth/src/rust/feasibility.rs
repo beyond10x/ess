@@ -1030,6 +1030,14 @@ fn wire(
         );
         wire_fields(inventory, owner, fields);
     }
+    for event in ir.events().values() {
+        inventory.symbol(
+            "wire functions",
+            &super::wire::event_decoder_name(layout, &event.name),
+            &event.name.to_string(),
+            "event decoder",
+        );
+    }
     for command in ir
         .commands()
         .values()

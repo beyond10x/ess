@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- The synthesized Rust server's `wire` module decodes published events, as an adopter asked. `decode_system_event` reads the envelope `encode_system_event` writes, `{"event": …, "payload": {…}}`, back into the system's `SystemEvent`. Each event gets its own `decode_event_<name>`, which reads every payload field under its declared wire name and refuses a payload that is not an object. An envelope naming an event the system does not publish is refused, and the refusal names that event. The web bridge's `wire` module gains the same per-event decoders. Existing functions keep their signatures.
+- The synthesized Rust server's surface modules gain `dispatch_with_events` and `handle_with_events`, as an adopter asked. Each answers what `dispatch` and `handle` answer and also returns every typed event published while the call ran, in log order: the command's own events, what its bindings published in turn, and what a held-back delivery retried during the call published. Events already on the system's log when the call started are not the call's and are not returned. A call refused before the command runs returns an empty list. `dispatch`, `handle` and `serve` keep their signatures and answer the same bytes. The Go server has no public dispatch or codecs and is unchanged.
+
+### Changed
+
+- The synthesized Rust server's decoders refuse a field that declares a wire name when it is sent under its model name, at that field's path, instead of reading it as absent. This covers command inputs, the types they and event payloads use, and event payloads; before, an optional field sent that way was silently dropped. View parameters are unchanged.
+
 ## [0.69.2] — 2026-10-25
 
 ### Fixed

@@ -298,6 +298,26 @@ pub fn encode_event_billing_email_delivery_escalated(value: &billing_types::emai
     out.push('}');
 }
 
+/// Reads the event `billing.email.DeliveryEscalated` from JSON, the payload [`encode_event_billing_email_delivery_escalated`] writes.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_event_billing_email_delivery_escalated(value: &json::Value, at: &str) -> Result<billing_types::email::DeliveryEscalated, json::DecodeError> {
+    Ok(billing_types::email::DeliveryEscalated {
+        recipient: {
+            let at0 = json::nested(at, "recipient");
+            let member0 = json::member_at(value, at, "recipient")?;
+            decode_billing_email_email_address(member0, &at0)?
+        },
+        template: {
+            let at1 = json::nested(at, "template");
+            let member1 = json::member_at(value, at, "template")?;
+            decode_billing_email_template_id(member1, &at1)?
+        },
+    })
+}
+
 /// Writes the event `billing.email.EmailSent` as JSON.
 pub fn encode_event_billing_email_email_sent(value: &billing_types::email::EmailSent, out: &mut String) {
     out.push('{');
@@ -308,12 +328,47 @@ pub fn encode_event_billing_email_email_sent(value: &billing_types::email::Email
     out.push('}');
 }
 
+/// Reads the event `billing.email.EmailSent` from JSON, the payload [`encode_event_billing_email_email_sent`] writes.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_event_billing_email_email_sent(value: &json::Value, at: &str) -> Result<billing_types::email::EmailSent, json::DecodeError> {
+    Ok(billing_types::email::EmailSent {
+        message_id: {
+            let at0 = json::nested(at, "message_id");
+            let member0 = json::member_at(value, at, "message_id")?;
+            decode_billing_email_message_id(member0, &at0)?
+        },
+        recipient: {
+            let at1 = json::nested(at, "recipient");
+            let member1 = json::member_at(value, at, "recipient")?;
+            decode_billing_email_email_address(member1, &at1)?
+        },
+    })
+}
+
 /// Writes the event `billing.invoice.InvoiceCancelled` as JSON.
 pub fn encode_event_billing_invoice_invoice_cancelled(value: &billing_types::invoice::InvoiceCancelled, out: &mut String) {
     out.push('{');
     json::member(out, "invoice_id");
     encode_billing_invoice_invoice_id(&value.invoice_id, out);
     out.push('}');
+}
+
+/// Reads the event `billing.invoice.InvoiceCancelled` from JSON, the payload [`encode_event_billing_invoice_invoice_cancelled`] writes.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_event_billing_invoice_invoice_cancelled(value: &json::Value, at: &str) -> Result<billing_types::invoice::InvoiceCancelled, json::DecodeError> {
+    Ok(billing_types::invoice::InvoiceCancelled {
+        invoice_id: {
+            let at0 = json::nested(at, "invoice_id");
+            let member0 = json::member_at(value, at, "invoice_id")?;
+            decode_billing_invoice_invoice_id(member0, &at0)?
+        },
+    })
 }
 
 /// Writes the event `billing.invoice.InvoiceCreated` as JSON.
@@ -330,12 +385,57 @@ pub fn encode_event_billing_invoice_invoice_created(value: &billing_types::invoi
     out.push('}');
 }
 
+/// Reads the event `billing.invoice.InvoiceCreated` from JSON, the payload [`encode_event_billing_invoice_invoice_created`] writes.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_event_billing_invoice_invoice_created(value: &json::Value, at: &str) -> Result<billing_types::invoice::InvoiceCreated, json::DecodeError> {
+    Ok(billing_types::invoice::InvoiceCreated {
+        invoice_id: {
+            let at0 = json::nested(at, "invoice_id");
+            let member0 = json::member_at(value, at, "invoice_id")?;
+            decode_billing_invoice_invoice_id(member0, &at0)?
+        },
+        account_id: {
+            let at1 = json::nested(at, "account_id");
+            let member1 = json::member_at(value, at, "account_id")?;
+            decode_billing_invoice_account_id(member1, &at1)?
+        },
+        customer_email: {
+            let at2 = json::nested(at, "customer_email");
+            let member2 = json::member_at(value, at, "customer_email")?;
+            decode_billing_invoice_email(member2, &at2)?
+        },
+        amount: {
+            let at3 = json::nested(at, "amount");
+            let member3 = json::member_at(value, at, "amount")?;
+            decode_billing_invoice_money(member3, &at3)?
+        },
+    })
+}
+
 /// Writes the event `billing.invoice.InvoiceIssued` as JSON.
 pub fn encode_event_billing_invoice_invoice_issued(value: &billing_types::invoice::InvoiceIssued, out: &mut String) {
     out.push('{');
     json::member(out, "invoice_id");
     encode_billing_invoice_invoice_id(&value.invoice_id, out);
     out.push('}');
+}
+
+/// Reads the event `billing.invoice.InvoiceIssued` from JSON, the payload [`encode_event_billing_invoice_invoice_issued`] writes.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_event_billing_invoice_invoice_issued(value: &json::Value, at: &str) -> Result<billing_types::invoice::InvoiceIssued, json::DecodeError> {
+    Ok(billing_types::invoice::InvoiceIssued {
+        invoice_id: {
+            let at0 = json::nested(at, "invoice_id");
+            let member0 = json::member_at(value, at, "invoice_id")?;
+            decode_billing_invoice_invoice_id(member0, &at0)?
+        },
+    })
 }
 
 /// Writes the event `billing.invoice.InvoicePaid` as JSON.
@@ -346,6 +446,26 @@ pub fn encode_event_billing_invoice_invoice_paid(value: &billing_types::invoice:
     json::member(out, "amount");
     encode_billing_invoice_money(&value.amount, out);
     out.push('}');
+}
+
+/// Reads the event `billing.invoice.InvoicePaid` from JSON, the payload [`encode_event_billing_invoice_invoice_paid`] writes.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_event_billing_invoice_invoice_paid(value: &json::Value, at: &str) -> Result<billing_types::invoice::InvoicePaid, json::DecodeError> {
+    Ok(billing_types::invoice::InvoicePaid {
+        invoice_id: {
+            let at0 = json::nested(at, "invoice_id");
+            let member0 = json::member_at(value, at, "invoice_id")?;
+            decode_billing_invoice_invoice_id(member0, &at0)?
+        },
+        amount: {
+            let at1 = json::nested(at, "amount");
+            let member1 = json::member_at(value, at, "amount")?;
+            decode_billing_invoice_money(member1, &at1)?
+        },
+    })
 }
 
 /// Writes the declared error `billing.email.Undeliverable` as JSON.

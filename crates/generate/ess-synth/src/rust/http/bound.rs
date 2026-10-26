@@ -607,8 +607,6 @@ pub fn single(rows: &str, empty: u16) -> Response {
 /// row answers, in its body and in `Allow`; one no row matches is `404`.
 pub(super) fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
     let ir = server.ir;
-    let system_crate = Layout::crate_ident(server.layout.system_package());
-    let angled = generic_list(server);
     let grants = http::checks_grants(ir);
 
     out.push_str(
@@ -625,13 +623,7 @@ pub(super) fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Ro
              Every command\n/// checks its grant before it runs.\n",
         );
     }
-    let _ = writeln!(
-        out,
-        "pub fn dispatch{angled}(system: &mut {system_crate}::System{angled}, {}request: \
-         &http::Request) -> http::Response",
-        super::caller_parameter(server, routes)
-    );
-    out.push_str(&where_clause(server));
+    super::dispatch_entries(out, server, routes);
     out.push_str("{\n    let mut allowed: Vec<&str> = Vec::new();\n");
     for (method, path, _, _) in table(routes, ir) {
         let route = routes
@@ -703,13 +695,13 @@ fn answer_call(
             if declared {
                 let _ = writeln!(
                     call,
-                    "            return {}(system, request, {path});",
+                    "            return {}(system, request, {path}, taken);",
                     bound_ident(layout, &command.name)
                 );
             } else {
                 let _ = writeln!(
                     call,
-                    "            return {}(system, &request.body);",
+                    "            return {}(system, &request.body, taken);",
                     handler_ident(layout, &command.name)
                 );
             }
@@ -868,10 +860,10 @@ fn command(
         out,
         "\n/// `{}` `{}`: `{}`, read and answered as its `ess-http/1` binding declares.\nfn \
          {}{angled}(system: &mut {system_crate}::System{angled}, request: &http::Request, \
-         {path}: &[String]) -> http::Response\n{}{{\n    let read = || -> Result<json::Value, \
+         {path}: &[String], taken: &mut Vec<{system_crate}::SystemEvent>) -> http::Response\n{}{{\n    let read = || -> Result<json::Value, \
          String> {{\n        let value = {read};\n        http::with_path(value, {}, {at:?})\n    \
          }};\n    let value = match read() {{\n        Ok(value) => value,\n        Err(detail) => \
-         return refusal_malformed(&detail),\n    }};\n    match {run}(system, &value) {{\n        \
+         return refusal_malformed(&detail),\n    }};\n    match {run}(system, &value, taken) {{\n        \
          Ok((status, envelope)) => {answer},\n        Err(refused) => refused_bound(&refused),\n    \
          }}\n}}\n",
         route.method.as_str(),
