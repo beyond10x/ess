@@ -251,3 +251,161 @@ fn interpreter_answers_the_declared_default_row_for_an_unstored_identity() {
     assert_eq!(rows[0]["id"], stored);
     assert_eq!(rows[0]["level"], Node::Number(Number::new(3.0).unwrap()));
 }
+
+/// A view ranked by a `Timestamp` descending, ties broken by a newtype over `Integer`.
+const RANKED: &str = r"format: ess/16
+system: ranked
+version: v1
+domain: ranked.api
+types:
+  - {name: ranked.api.Rank, kind: newtype, of: Integer}
+entities:
+  - name: ranked.api.Entry
+    identity: {name: id, type: Uuid}
+    fields: [{name: stamp, type: Timestamp}, {name: rank, type: ranked.api.Rank}]
+    lifecycle: {initial: Stored, states: [Stored], terminal: [Stored], transitions: []}
+events:
+  - name: ranked.api.Stored
+    fields: [{name: id, type: Uuid}]
+commands:
+  - name: ranked.api.Store
+    input: [{name: stamp, type: Timestamp}, {name: rank, type: ranked.api.Rank}]
+    outcomes:
+      - name: stored
+        creates: ranked.api.Entry
+        instance: id
+        sets: {stamp: input.stamp, rank: input.rank}
+        emits: [ranked.api.Stored]
+        payload: {ranked.api.Stored: {id: {generated: true}}}
+views:
+  - name: ranked.api.Entries
+    source: ranked.api.Entry
+    consistency: read_your_writes
+    order_by: [stamp desc, rank]
+    fields: [{name: id, type: Uuid}, {name: stamp, type: Timestamp}, {name: rank, type: ranked.api.Rank}]
+";
+
+fn ranked_row(id: &str, stamp: &str, rank: i64) -> ess_conformance::target::ViewRow {
+    use ess_primitives::node::Node;
+    std::collections::BTreeMap::from([
+        ("id".to_owned(), Node::Text(id.into())),
+        ("stamp".to_owned(), Node::Text(stamp.into())),
+        ("rank".to_owned(), Node::Number(rank.into())),
+    ])
+}
+
+/// A consumer ordering rows it holds calls the interpreter's own ordering and gets the order the
+/// interpreted target answers the view in: instants, not spellings, for the `Timestamp`, and the
+/// number under the newtype for the tie-break.
+#[test]
+fn a_consumer_orders_view_rows_as_the_interpreter_answers_them() {
+    use ess_conformance::interpret::values::order_view_rows;
+    use ess_conformance::target::{
+        ConformanceTarget, Deadline, SemanticCommandRequest, SemanticViewRequest,
+    };
+    use ess_primitives::{
+        consistency::QueryConsistency, ids::CorrelationId, node::Node, time::Timestamp,
+    };
+    use std::collections::BTreeMap;
+    let spec = Specification::assemble([(
+        Source::new("ranked.yaml"),
+        RawSpecFile::parse(RANKED).unwrap(),
+    )])
+    .unwrap();
+    let ir = compile(&spec, &SourceMap::new()).unwrap();
+    let target = Interpreted::for_model(ir.clone());
+    let correlation = CorrelationId::new("ranked").unwrap();
+    // Two instants, each spelled twice, and ranks whose text order is not their numeric order.
+    let stored = [
+        ("2026-01-05T09:00:00Z", 10_i64),
+        ("2026-01-05T11:00:00+02:00", 9),
+        ("2026-01-05T10:00:00Z", 100),
+        ("2026-01-05T09:00:00Z", 2),
+        ("2026-01-05T12:00:00+02:00", 20),
+        ("2026-01-05T09:00:00Z", 1000),
+    ];
+    for (stamp, rank) in stored {
+        target
+            .execute_command(SemanticCommandRequest {
+                command: "ranked.api.Store".parse().unwrap(),
+                actor: None,
+                caller: None,
+                input: BTreeMap::from([
+                    ("stamp".into(), Node::Text(stamp.into())),
+                    ("rank".into(), Node::Number(rank.into())),
+                ]),
+                correlation: correlation.clone(),
+            })
+            .unwrap();
+    }
+    let answered = target
+        .query_view(SemanticViewRequest {
+            view: "ranked.api.Entries".parse().unwrap(),
+            params: BTreeMap::new(),
+            consistency: QueryConsistency::Current,
+            correlation,
+            deadline: Deadline::at(Timestamp::from_epoch_millis(0)),
+        })
+        .unwrap()
+        .rows;
+    assert_eq!(answered.len(), stored.len());
+    let ranks: Vec<_> = answered.iter().map(|row| row["rank"].clone()).collect();
+    assert_eq!(
+        ranks,
+        [20, 100, 2, 9, 10, 1000].map(|rank: i64| Node::Number(rank.into())),
+        "the interpreter's own answer: {answered:#?}"
+    );
+    let view = &ir.views()[&"ranked.api.Entries"
+        .parse::<ess_domain::name::QualifiedName>()
+        .unwrap()];
+    for shift in 0..answered.len() {
+        let mut shuffled = answered.clone();
+        shuffled.reverse();
+        shuffled.rotate_left(shift);
+        order_view_rows(&ir, view, &mut shuffled);
+        assert_eq!(shuffled, answered, "rotated by {shift}");
+    }
+}
+
+/// Ties on every `order_by` key are left where the caller put them: the order is a stable sort.
+#[test]
+fn rows_tied_on_every_order_key_keep_the_callers_order() {
+    use ess_conformance::interpret::values::order_view_rows;
+    let spec = Specification::assemble([(
+        Source::new("ranked.yaml"),
+        RawSpecFile::parse(RANKED).unwrap(),
+    )])
+    .unwrap();
+    let ir = compile(&spec, &SourceMap::new()).unwrap();
+    let view = &ir.views()[&"ranked.api.Entries"
+        .parse::<ess_domain::name::QualifiedName>()
+        .unwrap()];
+    let tied = |id: &str| ranked_row(id, "2026-01-05T09:00:00Z", 5);
+    // The same instant spelled another way ties too.
+    let respelled = ranked_row("d", "2026-01-05T11:00:00+02:00", 5);
+    let first = ranked_row("first", "2026-01-06T00:00:00Z", 1);
+    let last = ranked_row("last", "2026-01-05T09:00:00Z", 6);
+    for order in [["a", "b", "c"], ["c", "a", "b"], ["b", "c", "a"]] {
+        let mut rows = vec![
+            last.clone(),
+            tied(order[0]),
+            respelled.clone(),
+            tied(order[1]),
+            first.clone(),
+            tied(order[2]),
+        ];
+        order_view_rows(&ir, view, &mut rows);
+        assert_eq!(
+            rows,
+            [
+                first.clone(),
+                tied(order[0]),
+                respelled.clone(),
+                tied(order[1]),
+                tied(order[2]),
+                last.clone(),
+            ],
+            "{order:?}"
+        );
+    }
+}

@@ -47,13 +47,13 @@
 //! the store already holds is never replaced by creation.
 
 pub(super) mod caller;
+mod determined;
 mod existence;
 pub(crate) mod history;
 mod related;
 mod row_set;
 mod set_effects;
 mod subject;
-mod values;
 use caller::Invocation;
 use history::{Context, Row, State, Transition, Value};
 
@@ -70,7 +70,6 @@ use ess_domain::command::precedence::Phase;
 use ess_domain::command::OutcomeName;
 use ess_domain::entity::StateName;
 use ess_domain::name::QualifiedName;
-use ess_domain::types::Primitive;
 use ess_primitives::facts::Number;
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Predicate, Truth};
@@ -1947,7 +1946,7 @@ fn declared_error(
         return Ok(None);
     };
     let mut error = history::Error::new(ErrorRef::from(handle));
-    let reads = values::Reads {
+    let reads = determined::Reads {
         original: store,
         before: held,
         outcome,
@@ -1992,7 +1991,7 @@ fn error_value(
     ir: &EssIr,
     field: &ResolvedPayloadField,
     input: &Context<'_>,
-    reads: values::Reads<'_>,
+    reads: determined::Reads<'_>,
     location: &[String],
 ) -> Result<Option<Value>, Undetermined> {
     let mut path = location.to_vec();
@@ -2034,7 +2033,7 @@ fn error_value(
         ResolvedPayloadValue::SubjectField {
             field: read,
             type_ref,
-        } => values::subject(
+        } => determined::subject(
             ir,
             read,
             type_ref,
@@ -2126,8 +2125,8 @@ impl Work<'_> {
             location: self.location.clone(),
         }
     }
-    fn reads(&self) -> values::Reads<'_> {
-        values::Reads {
+    fn reads(&self) -> determined::Reads<'_> {
+        determined::Reads {
             original: self.original,
             before: self.before.as_ref(),
             outcome: self.outcome,
@@ -2249,7 +2248,7 @@ fn take(
         outcome,
         next: store.clone(),
         supply: Supply::of(generated),
-        before: values::selected_subject(ir, spec, outcome, store, input),
+        before: determined::selected_subject(ir, spec, outcome, store, input),
         response: None,
         operation: input.operation,
         location: Vec::new(),
@@ -2594,7 +2593,7 @@ fn related_head(
     let reader = row_set::Reader::new(ir, work.command, work.original, input)?
         .with_published(&work.published);
     let (key, row) = reader.head(selection, order_by, *ties)?;
-    values::selected(ir, field, ir.entity(&selection.entity), key, row)
+    determined::selected(ir, field, ir.entity(&selection.entity), key, row)
 }
 
 #[allow(
@@ -2609,7 +2608,8 @@ fn value_at(
 ) -> Result<Option<Value>, Undetermined> {
     match &field.value {
         ResolvedPayloadValue::ResponseField { .. } => {
-            values::response(ir, field, work.response.as_ref()).map(|value| value.map(Value::Known))
+            determined::response(ir, field, work.response.as_ref())
+                .map(|value| value.map(Value::Known))
         }
         ResolvedPayloadValue::RelatedField { .. } | ResolvedPayloadValue::RelatedState { .. } => {
             work.reads().related(ir, field, input)
@@ -2623,7 +2623,7 @@ fn value_at(
             let reader = row_set::Reader::new(ir, work.command, work.original, input)?
                 .with_published(&work.published);
             let (key, row) = reader.one(selection)?;
-            values::selected(ir, field, ir.entity(&selection.entity), key, row)
+            determined::selected(ir, field, ir.entity(&selection.entity), key, row)
         }
         // The first row the selector selects by the order, in the same store (ess/27,
         // beyond10x/ess#543); none supplies no value.
@@ -2631,7 +2631,7 @@ fn value_at(
         // ess/25 (beyond10x/ess#531): `emit` holds the changed row one occurrence is for as the
         // row before the outcome.
         ResolvedPayloadValue::SubjectState { .. } | ResolvedPayloadValue::ChangedState { .. } => {
-            values::held_state(work.before.as_ref())
+            determined::held_state(work.before.as_ref())
         }
         ResolvedPayloadValue::SubjectField {
             field: read,
@@ -2640,7 +2640,7 @@ fn value_at(
         | ResolvedPayloadValue::ChangedField {
             field: read,
             type_ref,
-        } => values::subject(
+        } => determined::subject(
             ir,
             read,
             type_ref,
@@ -2651,9 +2651,9 @@ fn value_at(
         // ess/27 (beyond10x/ess#560): the shared evaluator over the invocation's input and the row
         // as it was before the outcome; absent leaves the field absent.
         ResolvedPayloadValue::Expression { expr, .. } => {
-            values::expression(expr, input, work.before.as_ref())
+            determined::expression(expr, input, work.before.as_ref())
         }
-        ResolvedPayloadValue::Increment { by } => values::increment(
+        ResolvedPayloadValue::Increment { by } => determined::increment(
             ir,
             field,
             by,
@@ -2662,7 +2662,7 @@ fn value_at(
             work.operation.is_some(),
         )
         .map(Some),
-        ResolvedPayloadValue::Append { field: element, .. } => values::append(
+        ResolvedPayloadValue::Append { field: element, .. } => determined::append(
             ir,
             field,
             input.get(element),
@@ -2823,7 +2823,8 @@ fn mint(
 }
 
 /// A value of `target` drawn from a counter, in the shape its declared type takes: `None` for an
-/// optional type. [`mint`] and [`Store::mint`] both draw this way, so one counter yields one value.
+/// optional type, which advances no counter. [`mint`] and [`Store::mint`] both draw this way, so one
+/// counter yields one value; the value is the public [`super::values::mint`] of the tick drawn.
 fn minted(
     ir: &EssIr,
     target: &ResolvedTypeRef,
@@ -2832,29 +2833,7 @@ fn minted(
     if target.is_optional() {
         return Ok(None);
     }
-    let no_value = || Undetermined::NoValue {
-        what: format!("a value of `{target}`"),
-    };
-    if let Representation::Primitive(Primitive::Uuid) = representation(ir, target) {
-        Ok(Some(Node::Text(format!(
-            "00000000-0000-4000-8000-{:012}",
-            tick()
-        ))))
-    } else {
-        let field = ess_compiler::ir::ResolvedField {
-            name: "generated".into(),
-            type_ref: target.clone(),
-            naming: ess_domain::name::Naming::default(),
-        };
-        let distinction = usize::try_from(tick()).map_err(|_| no_value())?;
-        crate::witness::fields(
-            ir,
-            &[field],
-            crate::witness::Distinction::further(distinction),
-        )
-        .map(|mut values| values.remove("generated"))
-        .map_err(|_| no_value())
-    }
+    super::values::mint(ir, target, tick())
 }
 
 impl Store {
@@ -2874,35 +2853,6 @@ impl Store {
             what: format!("a value of `{target}`"),
         })
     }
-}
-
-/// What a field's type is underneath every newtype, where no newtype on the way constrains it.
-enum Representation {
-    Primitive(Primitive),
-    Enum,
-    Other,
-}
-
-fn representation(ir: &EssIr, target: &ResolvedTypeRef) -> Representation {
-    let mut current = target.required();
-    // Bounded by the IR's own type depth: a newtype chain is a chain of declared handles.
-    for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
-        match current {
-            ResolvedTypeRef::Primitive { name } => return Representation::Primitive(*name),
-            ResolvedTypeRef::Declared { name } => {
-                let declared = ir.named_type(name);
-                match &declared.body {
-                    ResolvedBody::Newtype { of, .. } if !declared.body.is_constrained() => {
-                        current = of.required();
-                    }
-                    ResolvedBody::Enum { .. } => return Representation::Enum,
-                    _ => return Representation::Other,
-                }
-            }
-            _ => return Representation::Other,
-        }
-    }
-    Representation::Other
 }
 
 /// The type a mint into `target` draws: its required type where the mint is present (ess/27,

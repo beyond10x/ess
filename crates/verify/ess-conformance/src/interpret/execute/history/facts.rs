@@ -166,7 +166,7 @@ fn project(
         } => {
             // Only facts identical throughout an exhaustively validated domain are guaranteed.
             // This is a universal proof, never selection of the feasibility witness.
-            if super::values::allows_absence(ir, declared, 0) {
+            if super::unrecorded::allows_absence(ir, declared, 0) {
                 return Ok(());
             }
             if let ResolvedTypeRef::Declared { name } = declared {
@@ -201,7 +201,7 @@ fn project(
             }
             let values = domain
                 .clone()
-                .or_else(|| super::values::finite(ir, declared, 0));
+                .or_else(|| super::unrecorded::finite(ir, declared, 0));
             let Some(values) = values else {
                 return Ok(());
             };
@@ -294,7 +294,7 @@ fn at(ir: &EssIr, value: &Value, path: &[String], depth: usize) -> Option<Value>
     if depth > ess_domain::types::MAX_TYPE_DEPTH {
         return None;
     }
-    if matches!(value, Value::Unknown { declared, .. } if super::values::only_absent(ir, declared, depth))
+    if matches!(value, Value::Unknown { declared, .. } if super::unrecorded::only_absent(ir, declared, depth))
     {
         return Some(Value::Absent);
     }
