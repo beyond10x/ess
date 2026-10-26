@@ -2,7 +2,7 @@ schema: b10x-change/v1
 id: ess/rows-the-input-names-beside-a-row-set-0.70.0
 repository: ess
 publishedAt: 2026-10-26T00:00:00Z
-title: A command guards named rows beside a row set, states carry wire spellings, and conformance replays no longer stop with InvalidReplay
+title: Named rows beside a row set, state wire spellings, and replays that no longer stop with InvalidReplay
 summary: >-
   Format `ess/32` lets one command guard on rows its input names beside a row-set guard, a struct
   declare `fields: []` and a lifecycle state declare its wire spelling. A view may publish a

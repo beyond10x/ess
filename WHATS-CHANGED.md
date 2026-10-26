@@ -6,7 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
-| [0.70.0](#a-command-guards-named-rows-beside-a-row-set-states-carry-wire-spellings-and-conformance-replays-no-longer-stop-with-invalidreplay) | A command guards named rows beside a row set, states carry wire spellings, and conformance replays no longer stop with InvalidReplay | capability | notable |
+| [0.70.0](#named-rows-beside-a-row-set-state-wire-spellings-and-replays-that-no-longer-stop-with-invalidreplay) | Named rows beside a row set, state wire spellings, and replays that no longer stop with InvalidReplay | capability | notable |
 | [0.69.2](#an-external-branch-that-copies-an-optional-input-keeps-naming-the-row-its-arrangement-created) | An external branch that copies an optional input keeps naming the row its arrangement created | capability | notable |
 | [0.69.1](#synthesis-takes-the-time-it-took-in-0680-again-where-related-rows-reach-their-state-through-a-guarded-move) | Synthesis takes the time it took in 0.68.0 again where related rows reach their state through a guarded move | capability | notable |
 | [0.69.0](#lists-can-be-filled-or-appended-to-absent-members-sent-as-null-and-ess-generate-types-writes-body-types) | Lists can be filled or appended to, absent members sent as null, and ess generate types writes body types | capability | notable |
@@ -84,7 +84,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 ## 0.70.0 — 2026-10-26
 
-### A command guards named rows beside a row set, states carry wire spellings, and conformance replays no longer stop with InvalidReplay
+### Named rows beside a row set, state wire spellings, and replays that no longer stop with InvalidReplay
 
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.70.0)
 

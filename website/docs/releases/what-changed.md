@@ -11,7 +11,7 @@ This page is generated from the change records kept in the repository. A release
 
 ## 0.70.0 — 2026-10-26
 
-### A command guards named rows beside a row set, states carry wire spellings, and conformance replays no longer stop with InvalidReplay
+### Named rows beside a row set, state wire spellings, and replays that no longer stop with InvalidReplay
 
 capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/named-rows-beside-a-row-set) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.70.0)
 
