@@ -1,0 +1,70 @@
+domain: demo.y
+summary: Tickets held by a holder, a reconcile that reads them, and a handover every issue sets off.
+types:
+  - {name: demo.y.TicketId, kind: newtype, of: Uuid}
+  - {name: demo.y.Holder, kind: newtype, of: String}
+entities:
+  - name: demo.y.Ticket
+    identity: {name: ticket_id, type: demo.y.TicketId}
+    fields:
+      - {name: holder, type: demo.y.Holder}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: demo.y.Issued
+    fields:
+      - {name: ticket_id, type: demo.y.TicketId}
+      - {name: successor, type: demo.y.Holder}
+  - name: demo.y.HandedOver
+    fields:
+      - {name: ticket_id, type: demo.y.TicketId}
+  - name: demo.y.Kept
+    fields:
+      - {name: holder, type: demo.y.Holder}
+  - name: demo.y.Dropped
+    fields:
+      - {name: holder, type: demo.y.Holder}
+errors:
+  - {name: demo.y.StoreDown, summary: The ticket store cannot be written to.}
+actors:
+  - name: demo.y.Clerk
+    may: [demo.y.Issue, demo.y.Reconcile, demo.y.HandOver]
+commands:
+  - name: demo.y.Issue
+    input:
+      - {name: holder, type: demo.y.Holder}
+      - {name: successor, type: demo.y.Holder}
+    outcomes:
+      - {name: store-down, external: the ticket store cannot be written to, error: demo.y.StoreDown}
+      - name: issued
+        creates: demo.y.Ticket
+        instance: ticket_id
+        emits: [demo.y.Issued]
+        payload:
+          demo.y.Issued: {ticket_id: {generated: true}, successor: input.successor}
+        sets: {holder: input.holder}
+  - name: demo.y.Reconcile
+    input:
+      - {name: holder, type: demo.y.Holder}
+    outcomes:
+      - name: kept
+        when_related: {entity: demo.y.Ticket, where: holder == input.holder, exists: true}
+        emits: [demo.y.Kept]
+        payload:
+          demo.y.Kept: {holder: input.holder}
+      - name: dropped
+        emits: [demo.y.Dropped]
+        payload:
+          demo.y.Dropped: {holder: input.holder}
+  - name: demo.y.HandOver
+    input:
+      - {name: ticket_id, type: demo.y.TicketId}
+      - {name: holder, type: demo.y.Holder}
+    outcomes:
+      - name: handed-over
+        updates: demo.y.Ticket
+        instance: ticket_id
+        sets: {holder: input.holder}
+        emits: [demo.y.HandedOver]
+        payload:
+          demo.y.HandedOver: {ticket_id: input.ticket_id}
+bindings: [{id: hand-over-on-issued, when: {event: demo.y.Issued}, invoke: {command: demo.y.HandOver}, mapping: {ticket_id: event.ticket_id, holder: event.successor}, delivery: at_least_once, on_failure: retry}]
