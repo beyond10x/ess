@@ -429,7 +429,9 @@ pub(super) fn reads(command: &ResolvedCommand) -> Option<(&str, &EntityHandle)> 
 /// input guard beside it). A captured row exists, so no such branch answers, and every other branch
 /// is selected as it would be without the guard: a creator sent with a captured row in that input
 /// is decided by the rest of its input alone (a downstream adopter's report of 2026-10-20, an
-/// `affects:` row whose creating command refuses a missing related row).
+/// `affects:` row whose creating command refuses a missing related row). That holds whatever the
+/// branch answers with: one emitting an event instead of naming an error is passed over the same
+/// way, as a captured row never takes it either.
 ///
 /// A branch testing the row's stored fields (`predicate:`, no input guard beside it) is passed
 /// over the same way where `held` gives the state the arrangement holds the captured row in and
@@ -471,7 +473,7 @@ pub(super) fn present_in(
                 test: ResolvedRelatedTest::Absent,
                 input: None,
                 ..
-            } => outcome.error.is_some(),
+            } => true,
             ResolvedCondition::Related {
                 test: ResolvedRelatedTest::Holds { predicate },
                 input: None,
@@ -536,8 +538,8 @@ pub(super) fn several_present(format: ess_domain::system::FormatVersion) -> bool
 
 /// [`present_for`] over the rows `read` lists, each the captured row `bound` names through its
 /// `via` with the values `rows` settled for it: every branch reading one of them is an
-/// `exists: false` refusal, which a captured row never takes, or a refusal over its stored fields
-/// those values refute crossed with `input`.
+/// `exists: false` branch, which a captured row never takes whether it emits or names an error, or
+/// a refusal over its stored fields those values refute crossed with `input`.
 fn present_on(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -565,7 +567,7 @@ fn present_on(
                 test: ResolvedRelatedTest::Absent,
                 input: None,
                 ..
-            } => outcome.error.is_some(),
+            } => true,
             ResolvedCondition::Related {
                 via,
                 test: ResolvedRelatedTest::Holds { predicate },
