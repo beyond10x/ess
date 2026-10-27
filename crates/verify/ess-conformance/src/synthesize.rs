@@ -1604,6 +1604,7 @@ crate::authored::diagnostic_catalogue! {
             gap:
                 BindingGap::NothingPublishes { .. }
                 | BindingGap::BranchUndecided { .. }
+                | BindingGap::BranchSetUnarranged { .. }
                 | BindingGap::NothingPublished { .. }
                 | BindingGap::NothingMapped { .. }
                 | BindingGap::NoForcibleFailure { .. }
@@ -2030,6 +2031,18 @@ pub enum BindingGap {
         /// The branches a scenario cannot choose between, in declaration order.
         branches: Vec<OutcomeName>,
     },
+    /// [`BranchUndecided`](Self::BranchUndecided), where set guards alone decide the branch
+    /// (`when_related: {entity:, where:, …}`) and no rows they select can be arranged before the
+    /// trigger for the input the event fills (a downstream adopter's report of 2026-10-26). Its
+    /// help never asks to declare the default branch `external:`, which fails validation.
+    BranchSetUnarranged {
+        /// The invoked command.
+        command: CommandRef,
+        /// The branches a scenario cannot choose between, in declaration order.
+        branches: Vec<OutcomeName>,
+        /// The first set guard: its entity and its `where:`.
+        guard: String,
+    },
     /// The branch the binding reaches publishes nothing.
     ///
     /// §16 proves a flow through the event the invoked command publishes. A branch that emits none
@@ -2213,6 +2226,11 @@ impl BindingGap {
                 "leave the invoked command one branch an input does not choose, or declare the \
                  others `external:` so a scenario can force them"
             }
+            Self::BranchSetUnarranged { .. } => {
+                "let the trigger copy every input the set guard's `where:` reads from an input of \
+                 its own, unconverted, so a scenario can arrange the rows it selects before the \
+                 trigger; or cover the binding with an authored scenario (ess-scenario/1)"
+            }
             Self::NothingPublished { .. } => {
                 "emit an event from the branch the binding reaches; a flow with no consequence is a \
                  flow nothing can observe"
@@ -2305,6 +2323,21 @@ impl fmt::Display for BindingGap {
             Self::BranchUndecided { command, branches } => write!(
                 f,
                 "invokes `{command}`, whose branch is decided by an input the event fills: {}",
+                branches
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Self::BranchSetUnarranged {
+                command,
+                branches,
+                guard,
+            } => write!(
+                f,
+                "invokes `{command}`, whose branch is decided by the rows its set guard selects, \
+                 {guard}: {}; no row it selects can be arranged before the trigger for the value \
+                 the event fills",
                 branches
                     .iter()
                     .map(ToString::to_string)

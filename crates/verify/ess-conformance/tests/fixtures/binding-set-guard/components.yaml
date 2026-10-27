@@ -1,0 +1,16 @@
+components:
+  - component: svc
+    owns:
+      domains: [demo.a]
+    accepts:
+      commands: [demo.a.OpenSeat, demo.a.Check]
+bindings:
+  - id: check-on-seat-opened
+    when:
+      event: demo.a.SeatOpened
+    invoke:
+      command: demo.a.Check
+    mapping:
+      holder_id: event.holder_id
+    delivery: at_least_once
+    on_failure: retry

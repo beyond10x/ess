@@ -1378,6 +1378,21 @@ pub(super) fn walk(ir: &EssIr, steps: &[ScenarioStep], check: bool) -> Result<Ro
     Ok(rows)
 }
 
+/// Whether the rows `steps` leave take `command`, sent `supplied` right after them, to `expected`:
+/// every send among the steps decided again ([`walk`]), then this one ([`consistent`]). A binding's
+/// invocation is such a send, made once its trigger has run (a downstream adopter's report of
+/// 2026-10-26).
+pub(super) fn decided_after(
+    ir: &EssIr,
+    steps: &[ScenarioStep],
+    command: &ResolvedCommand,
+    expected: &ResolvedOutcome,
+    supplied: &BTreeMap<String, ScenarioValue>,
+) -> Result<(), String> {
+    let rows = walk(ir, steps, true)?;
+    consistent(ir, command, expected, supplied, &rows)
+}
+
 /// The entities whose rows a binding may change: every entity a branch of a command some binding
 /// invokes creates, moves, updates or deletes, as its subject, its `instances:` or an `affects:`
 /// entry. A binding runs when the transport delivers, which a scenario's steps do not follow, so
