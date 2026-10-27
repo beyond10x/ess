@@ -35,7 +35,12 @@
 //! The claims are about every stored row: the count and the unchanged rows hold on a target no
 //! other scenario writes to at the same time, which is what §8 requires of a shared one.
 
-use ess_compiler::ir::{ResolvedAffect, ResolvedPerRowEvent, ResolvedSetSubject, ResolvedTypeRef};
+use std::borrow::Cow;
+
+use ess_compiler::ir::{
+    ResolvedAffect, ResolvedPayloadValue, ResolvedPerRowEvent, ResolvedRelatedVia,
+    ResolvedSetSubject, ResolvedTypeRef,
+};
 use ess_domain::view::Consistency;
 use ess_primitives::facts::{FactPath, FactValue, Number};
 use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
@@ -274,16 +279,30 @@ pub(super) const UNWRITTEN: &str = "a filter reads and no declared command write
 
 /// Every reason a row of a filter could not be arranged for, which no input type repairs: a set
 /// effect's, and a row-set branch's selector (`when_related:`, review 2026-10-19).
-pub(super) const UNARRANGED: [&str; 4] = [
+pub(super) const UNARRANGED: [&str; 6] = [
     NO_MATCHING,
     NO_MISS,
     NO_PUBLISHED,
     super::row_set::ROWS_UNARRANGED,
+    NO_RELATED,
+    UNCHANGED,
 ];
 
 /// Too few rows the filter selects.
 const NO_MATCHING: &str =
     "has no three rows the filter selects that the arranging commands can produce";
+
+/// Too few rows the filter selects, where the command creating them reads a related row through
+/// the input it sets a filtered field from, and no such row was arranged for the rows to name.
+pub(super) const NO_RELATED: &str = "has no three rows the filter selects that the arranging \
+     commands can produce: the command creating them reads a related row through the input it \
+     sets the filtered field from, and no arrangement left a related row for the rows and the \
+     send to name";
+
+/// Three rows the filter selects, but none holding a value the effect changes.
+pub(super) const UNCHANGED: &str = "has rows the filter selects, but the arranging commands \
+     leave every one of them already holding what the effect writes, under every input tried, so \
+     no row it changes can be told from one it skips";
 
 /// A moving entry whose changed rows rest only where the move arrives, and which writes nothing.
 pub(super) const ARRIVES_ONLY: &str = "is moved by its entry only from the state the move \
@@ -539,9 +558,54 @@ struct Selection<'a> {
     /// The values the arrangement settled for a captured instance of `symbols`, where it knows
     /// them: a creator refusing that row on a comparison with its own input is decided on them.
     rows: super::related_guard::HeldRows,
+    /// The values the rows' creator copies from the captured related row a row's field names,
+    /// read from what [`Self::rows`] holds for that row. Empty but where the rows are created
+    /// naming a related row arranged for them ([`Link`]).
+    copies: Vec<Copied>,
+}
+
+/// A field a row's creator fills from the related row another field of the row names
+/// (`{related: {via: input.<x>, field: <read>}}` beside `<named_by>: input.<x>`).
+#[derive(Clone)]
+struct Copied {
+    named_by: String,
+    target: String,
+    read: String,
 }
 
 impl Selection<'_> {
+    /// `row` with every value [`Self::copies`] names filled from the related row it names, where
+    /// [`Self::rows`] holds that row's value.
+    fn copied<'r>(&self, row: &'r Arrangement) -> Cow<'r, Arrangement> {
+        if self.copies.is_empty() {
+            return Cow::Borrowed(row);
+        }
+        let mut filled = row.clone();
+        for copy in &self.copies {
+            let Some(ScenarioValue::Instance { instance }) =
+                row.settled.get(&copy.named_by).map(|held| &held.value)
+            else {
+                continue;
+            };
+            let Some(value) = self
+                .rows
+                .get(instance)
+                .and_then(|related| related.get(&copy.read))
+                .filter(|value| value.value.as_literal().is_some())
+            else {
+                continue;
+            };
+            if filled
+                .settled
+                .get(&copy.target)
+                .is_none_or(|held| held.value.as_literal().is_none())
+            {
+                filled.settled.insert(copy.target.clone(), value.clone());
+            }
+        }
+        Cow::Owned(filled)
+    }
+
     fn truth_of(&self, predicate: &Predicate, row: &Arrangement) -> Truth {
         match predicate {
             Predicate::All(children) => {
@@ -704,41 +768,84 @@ impl Selection<'_> {
         // another path, or none, is taken. Sending the command under test is otherwise allowed:
         // a branch of it that changes only the row it names is accounted for like any other act.
         let accept = |row: &Arrangement| {
+            let row = self.copied(row);
+            let row = row.as_ref();
             self.truth_of(goal, row) == Truth::True
                 && rests(&row.state)
                 && (!visible || visibly_changed(self.ir, self.sets, self.supplied, &row.settled))
                 && !reaches_other_rows(self.ir, &row.steps)
         };
         let distinction = next(self.ir, self.entity, taken);
-        if self.symbolic(goal) {
-            let bound = self.bindings(goal, true)?;
-            let steering = self.steering(steer).unwrap_or(Predicate::Always);
-            return arrange_toward_held(
-                self.ir,
-                self.entity,
-                &steering,
-                actors,
-                distinction,
-                &bound,
-                (&self.held, &self.rows),
-                &accept,
-            );
-        }
-        arrange_toward_filter(self.ir, self.entity, steer, actors, distinction, &accept).or_else(
-            || {
-                // A filter over the state alone steers no creating input; the plain search over
-                // the same filter still offers every witness it knows.
-                arrange_toward_filter(
+        let found = |steer: &Predicate, fallback: &Predicate| {
+            if self.symbolic(goal) {
+                let bound = self.bindings(goal, true)?;
+                let steering = self.steering(steer).unwrap_or(Predicate::Always);
+                return arrange_toward_held(
                     self.ir,
                     self.entity,
-                    &Predicate::Always,
+                    &steering,
                     actors,
                     distinction,
+                    &bound,
+                    (&self.held, &self.rows),
                     &accept,
+                );
+            }
+            arrange_toward_filter(self.ir, self.entity, steer, actors, distinction, &accept)
+                .or_else(|| {
+                    // A filter over the state alone steers no creating input; the plain search
+                    // over the same filter still offers every witness it knows.
+                    arrange_toward_filter(
+                        self.ir,
+                        self.entity,
+                        fallback,
+                        actors,
+                        distinction,
+                        &accept,
+                    )
+                })
+        };
+        found(steer, &Predicate::Always)
+            .or_else(|| {
+                // A creator writing a field the effect writes from its own input leaves each row
+                // the value its distinction gives, which may be the written one: the search is
+                // steered once more toward rows holding another value in every such field.
+                let changing = visible.then(|| self.changing()).flatten()?;
+                found(
+                    &Predicate::All(vec![steer.clone(), changing.clone()]),
+                    &changing,
                 )
-            },
+            })
+            .map(|row| self.copied(&row).into_owned())
+    }
+
+    /// A row of the entity holding, in every field the effect writes a known value into, another
+    /// value ([`differing`]). `None` where the effect writes no known value.
+    fn changing(&self) -> Option<Predicate> {
+        let written = settled(self.ir, self.sets, self.supplied, &BTreeMap::new());
+        differing(
+            written
+                .iter()
+                .filter_map(|(field, held)| Some((field.as_str(), held.value.as_literal()?))),
         )
     }
+}
+
+/// The predicate over a row that holds, in each `(field, value)` given, a value other than `value`.
+/// `None` where none is given, or no value is a literal a predicate can compare with.
+fn differing<'v>(fields: impl IntoIterator<Item = (&'v str, &'v Node)>) -> Option<Predicate> {
+    let conjuncts: Vec<Predicate> = fields
+        .into_iter()
+        .filter_map(|(field, value)| {
+            Some(Predicate::Not(Box::new(Predicate::Compare {
+                left: Operand::Fact(FactPath::from_segments(field.split('.').map(str::to_owned))),
+                op: CompareOp::Eq,
+                right: Operand::Literal(fact_value(value)?),
+                kind: ess_primitives::predicate::CompareKind::default(),
+            })))
+        })
+        .collect();
+    (!conjuncts.is_empty()).then_some(Predicate::All(conjuncts))
 }
 
 /// One row `set`'s filter selects when `command` is sent `input`, resting in a state `rests`
@@ -777,6 +884,7 @@ pub(super) fn selected_row(
         other: None,
         held: BTreeMap::new(),
         rows: BTreeMap::new(),
+        copies: Vec::new(),
     };
     selection.row(actors, taken, rests, false)
 }
@@ -1262,6 +1370,328 @@ fn changed_row(
     super::with_held_state(ir, &before, entity, Some(&row.state))
 }
 
+/// How many further inputs a branch whose `sets:` reads its input is tried under, where its plain
+/// input arranges no rows: the rows' creator may leave each of them holding the value the plain
+/// input writes (a literal, or the creator's own plain input), which a further input does not.
+const VARIED: usize = 4;
+
+/// A conjunct `<field> == input.<input>` of a set update's filter, where a command creating the
+/// filtered rows sets `<field>` from an input naming a row of `entity` it reads: through a
+/// `when_related:` guard, or by copying that row's fields into the new row (`copies`, each the
+/// row's field and the related row's field it is copied from). The rows are created naming a
+/// related row arranged first, and the update is sent naming it, so the creator finds the row
+/// and the copied values are known.
+struct Link {
+    field: String,
+    input: String,
+    entity: EntityHandle,
+    copies: Vec<(String, String)>,
+}
+
+/// Every conjunct `predicate` holds through `all:`.
+fn conjoined<'p>(predicate: &'p Predicate, out: &mut Vec<&'p Predicate>) {
+    match predicate {
+        Predicate::All(children) => {
+            for child in children {
+                conjoined(child, out);
+            }
+        }
+        other => out.push(other),
+    }
+}
+
+/// The [`Link`] of each conjunct of `set`'s filter that has one, by the first creating branch of
+/// its entity that gives one.
+fn links(ir: &EssIr, set: &ResolvedSetSubject) -> Vec<Link> {
+    let declared = ir.entity(&set.entity);
+    let all = ir.drivers();
+    let creators: Vec<_> = all
+        .get(&set.entity)
+        .into_iter()
+        .flatten()
+        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .collect();
+    let pair = |row: &FactPath, sent: &FactPath| -> Option<(String, String)> {
+        let [field] = row.segments() else {
+            return None;
+        };
+        let [namespace, input] = sent.segments() else {
+            return None;
+        };
+        (namespace == ess_domain::command::subject_fact::INPUT_NAMESPACE
+            && declared
+                .fields
+                .iter()
+                .any(|declared| declared.name == *field))
+        .then(|| (field.clone(), input.clone()))
+    };
+    let mut conjuncts = Vec::new();
+    conjoined(&set.filter, &mut conjuncts);
+    conjuncts
+        .into_iter()
+        .filter_map(|conjunct| {
+            let Predicate::Compare {
+                left: Operand::Fact(left),
+                op: CompareOp::Eq,
+                right: Operand::Fact(right),
+                ..
+            } = conjunct
+            else {
+                return None;
+            };
+            let (field, input) = pair(left, right).or_else(|| pair(right, left))?;
+            creators.iter().find_map(|creator| {
+                link_of(set, (creator.command, creator.outcome), (&field, &input))
+            })
+        })
+        .collect()
+}
+
+/// The [`Link`] `creator` gives the conjunct comparing the row's `field` with the update's `input`.
+fn link_of(
+    set: &ResolvedSetSubject,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    (field, input): (&str, &str),
+) -> Option<Link> {
+    let via = super::related::set_from_input(outcome, field)?;
+    let copied: Vec<(&EntityHandle, &str, &str)> = outcome
+        .sets
+        .iter()
+        .filter(|set| set.conversion.is_none() && !set.target.contains('.'))
+        .filter_map(|set| match &set.value {
+            ResolvedPayloadValue::RelatedField {
+                via: ResolvedRelatedVia::Input { field: named, .. },
+                through,
+                entity,
+                field: read,
+                ..
+            } if named == via && through.is_empty() => {
+                Some((entity, set.target.as_str(), read.as_str()))
+            }
+            _ => None,
+        })
+        .collect();
+    let entity = copied
+        .first()
+        .map(|(entity, ..)| (*entity).clone())
+        .or_else(|| {
+            super::related_guard::reads(command)
+                .filter(|(read, _)| *read == via)
+                .map(|(_, entity)| entity.clone())
+        })?;
+    (entity != set.entity).then(|| Link {
+        field: field.to_owned(),
+        input: input.to_owned(),
+        copies: copied
+            .iter()
+            .filter(|(copied_from, ..)| **copied_from == entity)
+            .map(|(_, target, read)| ((*target).to_owned(), (*read).to_owned()))
+            .collect(),
+        entity,
+    })
+}
+
+/// Two related rows of `link`, the one the rows and the send name and the one the rows a
+/// conjunct leaves out name: each the plain row in its lifecycle's initial state where it holds,
+/// in every field the creator copies, a value other than the one `written` gives the field it is
+/// copied into, so a selected row the update changes shows it; otherwise the first row arranged
+/// toward such values; otherwise the plain row. `None` where no related row can be arranged.
+fn related_rows(
+    ir: &EssIr,
+    link: &Link,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    written: &BTreeMap<String, Determined>,
+) -> Option<Vec<Arrangement>> {
+    let entity = &link.entity;
+    let initial = ir.entity(entity).lifecycle.initial.clone();
+    let held: Vec<(&str, &Node)> = link
+        .copies
+        .iter()
+        .filter_map(|(target, read)| {
+            Some((read.as_str(), written.get(target)?.value.as_literal()?))
+        })
+        .collect();
+    let changes = |row: &Arrangement| {
+        held.iter().all(|(read, value)| {
+            row.settled
+                .get(*read)
+                .and_then(|held| held.value.as_literal())
+                .is_some_and(|held| held != *value)
+        })
+    };
+    let steer = differing(held.iter().copied()).unwrap_or(Predicate::Always);
+    let mut taken = BTreeSet::new();
+    let mut rows = Vec::with_capacity(2);
+    for _ in 0..2 {
+        let distinction = next(ir, entity, &mut taken);
+        let row = match super::arrange(ir, entity, &initial, actors, distinction, &[]).ok() {
+            Some(plain) if changes(&plain) => plain,
+            plain => arrange_toward_filter(ir, entity, &steer, actors, distinction, &changes)
+                .or(plain)?,
+        };
+        rows.push(row);
+    }
+    Some(rows)
+}
+
+/// The rows `set`'s filter is witnessed on when `command` is sent `input`, beside the related rows
+/// `link` arranges first where it is given, and the input as the command is then sent.
+struct Arranged<'s> {
+    rows: Rows,
+    to: Option<&'s StateName>,
+    related: Vec<Arrangement>,
+    supplied: BTreeMap<String, ScenarioValue>,
+}
+
+/// What `arrange` finds on the selection of `set`'s rows under `input`: where `link` is given,
+/// with its related rows arranged first ([`related_rows`]), the update sent naming the first and
+/// the rows a conjunct leaves out naming the second. Answers the related rows and the input as
+/// the command is then sent beside what it found.
+#[allow(clippy::type_complexity)]
+fn under<T>(
+    ir: &EssIr,
+    (command, outcome, set): (&ResolvedCommand, &ResolvedOutcome, &ResolvedSetSubject),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (input, link): (&BTreeMap<String, Node>, Option<&Link>),
+    arrange: &dyn Fn(&Selection<'_>) -> Result<T, &'static str>,
+) -> Result<(T, Vec<Arrangement>, BTreeMap<String, ScenarioValue>), &'static str> {
+    let mut literals = input.clone();
+    let mut bound = BTreeMap::new();
+    let mut symbols = BTreeMap::new();
+    let mut other = None;
+    let mut held = BTreeMap::new();
+    let mut rows: super::related_guard::HeldRows = BTreeMap::new();
+    let mut copies = Vec::new();
+    let mut related = Vec::new();
+    if let Some(link) = link {
+        let plain = supply(ir, command, input, None, None, &BTreeMap::new());
+        let written = settled(ir, outcome, &plain, &BTreeMap::new());
+        related = related_rows(ir, link, actors, &written).ok_or(NO_RELATED)?;
+        literals.remove(&link.input);
+        bound.insert(link.input.clone(), related[0].instance.clone());
+        symbols.insert(
+            FactPath::from_segments([
+                ess_domain::command::subject_fact::INPUT_NAMESPACE.to_owned(),
+                link.input.clone(),
+            ]),
+            related[0].instance.clone(),
+        );
+        other = Some(related[1].instance.clone());
+        for row in &related {
+            held.insert(row.instance.clone(), row.state.clone());
+            rows.insert(row.instance.clone(), row.settled.clone());
+        }
+        copies = link
+            .copies
+            .iter()
+            .map(|(target, read)| Copied {
+                named_by: link.field.clone(),
+                target: target.clone(),
+                read: read.clone(),
+            })
+            .collect();
+    }
+    let supplied = supply(ir, command, input, None, None, &bound);
+    let found = {
+        let selection = Selection {
+            ir,
+            command,
+            entity: &set.entity,
+            filter: set.filter.clone(),
+            closed: written_in(&set.filter, &|path| input_value(path, &literals)),
+            input: &literals,
+            supplied: &supplied,
+            sets: outcome,
+            symbols,
+            other,
+            held,
+            rows,
+            copies,
+        };
+        arrange(&selection)?
+    };
+    Ok((found, related, supplied))
+}
+
+/// The rows the `instances:` scenario of `outcome` is witnessed on, sent the `plain` input first.
+///
+/// Where that arranges none, the rows are tried once more for each [`Link`] of the filter, created
+/// naming a related row arranged first; and where the branch's `sets:` reads its input, under up
+/// to [`VARIED`] further inputs, each plain and then for each link. The first that arranges the
+/// rows is taken. Where none does, the refusal is the plain input's, unless it found too few
+/// selected rows: then it names the related row no arrangement left ([`NO_RELATED`]), or, where
+/// some input leaves three selected rows that no row of them would change, that ([`UNCHANGED`]).
+fn arranged_rows<'s>(
+    ir: &EssIr,
+    (command, outcome, set): (&ResolvedCommand, &ResolvedOutcome, &'s ResolvedSetSubject),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    plain: BTreeMap<String, Node>,
+) -> Result<Arranged<'s>, &'static str> {
+    let subject = (command, outcome, set);
+    let rows = |input: &BTreeMap<String, Node>, link: Option<&Link>| {
+        under(ir, subject, actors, (input, link), &|selection| {
+            set_rows(selection, actors, set)
+        })
+        .map(|((rows, to), related, supplied)| Arranged {
+            rows,
+            to,
+            related,
+            supplied,
+        })
+    };
+    let first = match rows(&plain, None) {
+        Ok(arranged) => return Ok(arranged),
+        Err(reason) => reason,
+    };
+    let links = links(ir, set);
+    let writes_input = outcome
+        .sets
+        .iter()
+        .any(|field| matches!(field.value, ResolvedPayloadValue::InputField { .. }));
+    let mut inputs = vec![plain];
+    for further in (1..=VARIED).filter(|_| writes_input) {
+        if let Ok(input) = reach(ir, command, outcome, Distinction::further(further)) {
+            if !inputs.contains(&input) {
+                inputs.push(input);
+            }
+        }
+    }
+    let mut unrelated = false;
+    for (index, input) in inputs.iter().enumerate() {
+        let plain = (index > 0).then_some(None);
+        for link in plain.into_iter().chain(links.iter().map(Some)) {
+            match rows(input, link) {
+                Ok(arranged) => return Ok(arranged),
+                Err(NO_RELATED) => unrelated = true,
+                Err(_) => {}
+            }
+        }
+    }
+    if first != NO_MATCHING {
+        return Err(first);
+    }
+    if unrelated {
+        return Err(NO_RELATED);
+    }
+    let selects = |selection: &Selection<'_>| {
+        let mut taken = BTreeSet::new();
+        (0..MATCHING)
+            .all(|_| {
+                selection
+                    .row(actors, &mut taken, &|_| true, false)
+                    .is_some()
+            })
+            .then_some(())
+            .ok_or(NO_MATCHING)
+    };
+    let unchanged = inputs.iter().any(|input| {
+        std::iter::once(None)
+            .chain(links.iter().map(Some))
+            .any(|link| under(ir, subject, actors, (input, link), &selects).is_ok())
+    });
+    Err(if unchanged { UNCHANGED } else { first })
+}
+
 /// The `instances:` scenario.
 fn set_scenario(
     models: &InvocationModels<'_>,
@@ -1281,27 +1711,21 @@ fn set_scenario(
         observed(ir, entity, at(), (moves, &outcome.sets))?
     };
     let input = reach(ir, command, outcome, Distinction::PLAIN)?;
-    let supplied = supply(ir, command, &input, None, None, &BTreeMap::new());
-    let selection = Selection {
-        ir,
-        command,
-        entity,
-        filter: set.filter.clone(),
-        closed: written_in(&set.filter, &|path| input_value(path, &input)),
-        input: &input,
-        supplied: &supplied,
-        sets: outcome,
-        symbols: BTreeMap::new(),
-        other: None,
-        held: BTreeMap::new(),
-        rows: BTreeMap::new(),
-    };
-    let (arranged, to) = set_rows(&selection, actors, set)
+    let Arranged {
+        rows: arranged,
+        to,
+        related,
+        supplied,
+    } = arranged_rows(ir, (command, outcome, set), actors, input)
         .map_err(|reason| unarranged(ir, entity, &set.filter, at(), reason))?;
 
     let mut steps = Vec::new();
     let mut source: BTreeSet<EssSemanticRef> = BTreeSet::new();
-    for row in arranged.changed.iter().chain(&arranged.kept) {
+    for row in related
+        .iter()
+        .chain(&arranged.changed)
+        .chain(&arranged.kept)
+    {
         steps.extend(row.steps.iter().cloned());
         source.extend(row.source.iter().cloned());
     }
@@ -1417,6 +1841,7 @@ fn combined(
             other: other.cloned(),
             held: BTreeMap::new(),
             rows: BTreeMap::new(),
+            copies: Vec::new(),
         })
         .collect();
     let mut out = Vec::with_capacity(entries.len());
@@ -1972,6 +2397,7 @@ fn affects_segment_on(
             other: other.clone(),
             held: held.clone(),
             rows: rows.clone(),
+            copies: Vec::new(),
         };
         let rows = match affect_rows(&selection, actors, taken, affect) {
             Ok(rows) => rows,
@@ -2774,6 +3200,7 @@ fn unpublished_segment(
         other: None,
         held: BTreeMap::new(),
         rows: BTreeMap::new(),
+        copies: Vec::new(),
     };
     let (from, to) = match &set.effect {
         ResolvedEffect::Moves { transition } => (Some(&transition.from), Some(&transition.to)),

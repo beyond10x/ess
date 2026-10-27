@@ -1,0 +1,105 @@
+format: ess/25
+system: demo
+version: v1
+domain: demo.z
+summary: Parents and children.
+naming: {wire: z, display: Z}
+types:
+  - {name: demo.z.ParentId, kind: newtype, of: Uuid}
+  - {name: demo.z.ChildId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.z.Parent
+    identity: {name: parent_id, type: demo.z.ParentId}
+    fields:
+      - {name: flag, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.z.Child
+    identity: {name: child_id, type: demo.z.ChildId}
+    fields:
+      - {name: parent_id, type: demo.z.ParentId}
+      - {name: flag, type: Boolean}
+    relations:
+      - {name: parent, kind: references, target: demo.z.Parent, cardinality: one, via: parent_id}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+actors:
+  - {name: demo.z.Clerk, may: [demo.z.CreateParent, demo.z.AddChild, demo.z.SyncFlag], naming: {display: Clerk}}
+errors:
+  - {name: demo.z.ParentNotFound, summary: No such parent.}
+  - {name: demo.z.AlreadyAdded, summary: Already added.}
+  - {name: demo.z.StoreUnavailable, summary: The store could not be written to.}
+commands:
+  - name: demo.z.CreateParent
+    naming: {wire: create-parent, display: Create parent}
+    input:
+      - {name: flag, type: Boolean}
+    outcomes:
+      - name: created
+        creates: demo.z.Parent
+        instance: parent_id
+        emits: [demo.z.ParentCreated]
+        payload:
+          demo.z.ParentCreated: {parent_id: {generated: true}}
+        sets: {flag: input.flag}
+        summary: A parent is created.
+  - name: demo.z.AddChild
+    naming: {wire: add-child, display: Add child}
+    input:
+      - {name: parent_id, type: demo.z.ParentId}
+    outcomes:
+      - name: added
+        creates: demo.z.Child
+        instance: child_id
+        emits: [demo.z.ChildAdded]
+        payload:
+          demo.z.ChildAdded: {child_id: {generated: true}}
+        sets:
+          parent_id: input.parent_id
+          flag: {related: {via: input.parent_id, field: flag}}
+        summary: A child is added.
+      - name: parent-not-found
+        when_related: {via: input.parent_id, exists: false}
+        error: demo.z.ParentNotFound
+        summary: No parent, nothing added.
+      - name: already-added
+        external: the child exists already
+        error: demo.z.AlreadyAdded
+        summary: Nothing added.
+  - name: demo.z.SyncFlag
+    naming: {wire: sync-flag, display: Sync flag}
+    input:
+      - {name: parent_id, type: demo.z.ParentId}
+      - {name: flag, type: Boolean}
+    outcomes:
+      - name: store-unavailable
+        external: the store cannot be written to
+        error: demo.z.StoreUnavailable
+        summary: Nothing changed.
+      - name: synced
+        updates: demo.z.Child
+        instances:
+          where: parent_id == input.parent_id
+        emits:
+          - {event: demo.z.FlagChanged, each: changed, when_state: Active}
+        payload:
+          demo.z.FlagChanged:
+            child_id: {changed: child_id}
+            flag: input.flag
+        sets: {flag: input.flag}
+        summary: Every child of the parent carries the flag.
+events:
+  - {name: demo.z.ParentCreated, fields: [{name: parent_id, type: demo.z.ParentId}]}
+  - {name: demo.z.ChildAdded, fields: [{name: child_id, type: demo.z.ChildId}]}
+  - name: demo.z.FlagChanged
+    fields:
+      - {name: child_id, type: demo.z.ChildId}
+      - {name: flag, type: Boolean}
+views:
+  - name: demo.z.ChildRecord
+    source: demo.z.Child
+    consistency: read_your_writes
+    fields:
+      - {name: child_id, type: demo.z.ChildId}
+      - {name: state, type: demo.z.Child.State}
+      - {name: parent_id, type: demo.z.ParentId}
+      - {name: flag, type: Boolean}
+    naming: {wire: child-record, display: Child record}
