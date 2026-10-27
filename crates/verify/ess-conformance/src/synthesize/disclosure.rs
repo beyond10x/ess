@@ -81,9 +81,9 @@ pub(super) fn augment(ir: &EssIr, synthesis: &mut Synthesis) {
                         } else if matches!(aspect, Aspect::Rotation) {
                             let repeated = scenario.clone();
                             if let Err(reason) =
-                                super::caller::append_independent(ir, &mut scenario, &repeated)
+                                super::caller::append_followup(ir, &mut scenario, &repeated)
                             {
-                                synthesis.refusals.push(refusal(&id, reason));
+                                synthesis.refusals.push(refusal(&id, &reason));
                                 continue;
                             }
                         }
@@ -536,16 +536,16 @@ fn followups(
                 }
                 if let Some(followup) = reached(
                     ir,
-                    readings,
+                    (readings, &synthesis.suite),
                     (command, branch),
                     &assigned,
                     &id,
                     &mut synthesis.refusals,
                 ) {
                     if let Err(reason) =
-                        super::caller::append_independent(ir, &mut scenario, &followup)
+                        super::caller::append_followup(ir, &mut scenario, &followup)
                     {
-                        synthesis.refusals.push(refusal(&id, reason));
+                        synthesis.refusals.push(refusal(&id, &reason));
                         continue;
                     }
                     insert(ir, synthesis, id, scenario);
@@ -658,8 +658,8 @@ fn read_cells(
         }
         scenario.steps.push(read.clone());
         let rotated = scenario.steps.len();
-        if let Err(reason) = super::caller::append_independent(ir, &mut scenario, &rotation) {
-            synthesis.refusals.push(refusal(&id, reason));
+        if let Err(reason) = super::caller::append_followup(ir, &mut scenario, &rotation) {
+            synthesis.refusals.push(refusal(&id, &reason));
             continue;
         }
         if let Some(reader) = actor {
@@ -715,10 +715,24 @@ fn read_rotation_as_granted(
     }
 }
 
+/// [`reached_as`], where it witnesses a set effect of `branch`; else the branch's own scenario in
+/// `suite` where that one does ([`super::caller::witnessing_followup`]).
+fn reached(
+    ir: &EssIr,
+    (readings, suite): (Option<&Readings>, &crate::ConformanceSuite),
+    (command, branch): (&ResolvedCommand, &ResolvedOutcome),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+) -> Option<ConformanceScenario> {
+    reached_as(ir, readings, (command, branch), actors, id, refusals)
+        .map(|followup| super::caller::witnessing_followup(ir, suite, (command, branch), followup))
+}
+
 /// The follow-up `branch` of `command`, sent as `actors` assigns, built as the ordinary suite
 /// reaches it ([`super::reached_branch`]): from the model itself, and else under each caller
 /// reading of [`Readings`] in turn. Where none reaches it, the model's own refusals.
-fn reached(
+fn reached_as(
     ir: &EssIr,
     readings: Option<&Readings>,
     (command, branch): (&ResolvedCommand, &ResolvedOutcome),
@@ -872,8 +886,8 @@ fn denied_cell(
     denied
         .source
         .insert(CommandRef::new(command.name.clone()).into());
-    if let Err(reason) = super::caller::append_independent(ir, &mut scenario, &denied) {
-        synthesis.refusals.push(refusal(&id, reason));
+    if let Err(reason) = super::caller::append_followup(ir, &mut scenario, &denied) {
+        synthesis.refusals.push(refusal(&id, &reason));
         return;
     }
     insert(ir, synthesis, id, scenario);

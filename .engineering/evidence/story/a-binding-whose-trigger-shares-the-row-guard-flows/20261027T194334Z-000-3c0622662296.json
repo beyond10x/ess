@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-27T19:43:34Z",
+  "actor": "human:timo",
+  "artifact": "story:a-binding-whose-trigger-shares-the-row-guard-flows",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "binding_trigger_shares_row_guard passed on a51d2e119; adversary_0720_pass1 5 passed on e2f35c133 (merged cbd83c332); reduced reproduction 6/3 -> 8/1 (refusal cell stays by acceptance), interpreted 8/8",
+    "reference": "commit:cbd83c332"
+  }
+}

@@ -37,10 +37,11 @@ use ess_compiler::ir::{
     ResolvedSubject,
 };
 use ess_domain::command::caller_value::CALLER_NAMESPACE;
+use ess_domain::command::subject_fact::INPUT_NAMESPACE;
 use ess_domain::name::QualifiedName;
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::node::Node;
-use ess_primitives::predicate::{Operand, Predicate};
+use ess_primitives::predicate::{CompareOp, Operand, Predicate};
 
 use super::{grant, synthesize_plain, Focus, Note, Synthesis};
 use crate::scenario::{
@@ -926,6 +927,23 @@ pub(super) fn append_independent(
     append_independent_about(ir, (None, scenario), again)
 }
 
+/// [`append_independent`] for a disclosure cell: where a set effect of `again` would select a row
+/// the origin's run left ([`shared_selection`]), the refusal names its filter, not the origin
+/// state.
+pub(super) fn append_followup(
+    ir: &EssIr,
+    scenario: &mut ConformanceScenario,
+    again: &ConformanceScenario,
+) -> Result<(), String> {
+    let appended = append_independent(ir, scenario, again);
+    appended.map_err(|reason| match reason {
+        UNCOMPOSED => {
+            shared_selection(ir, &scenario.steps, &again.steps).unwrap_or_else(|| reason.to_owned())
+        }
+        _ => reason.to_owned(),
+    })
+}
+
 /// [`append_independent`] for the scenario `id` names, where given: the fresh values must keep its
 /// command under test on the branch the first run took (beyond10x/ess#672).
 fn append_independent_about(
@@ -945,7 +963,7 @@ fn append_independent_about(
     append(ir, (id, scenario), again, &mut identities)
         .map_err(|_| "the follow-up arrangement exhausted its fresh identity witnesses")?;
     if scenario.steps.len() == before {
-        return Err("the follow-up assertions cannot compose with the retained origin state");
+        return Err(UNCOMPOSED);
     }
     scenario.source.extend(again.source.iter().cloned());
     Ok(())
@@ -974,7 +992,12 @@ fn append(
                 )
             })
     };
-    if once(&scenario.steps) || once(&again.steps) || reads_every_row(ir, &again.steps) {
+    // A set effect selecting only rows `again` arranges reads none of the first run's rows.
+    if once(&scenario.steps)
+        || once(&again.steps)
+        || observes_every_row(ir, &again.steps)
+        || shared_selection(ir, &scenario.steps, &again.steps).is_some()
+    {
         return Ok(());
     }
     // The branches selection tries up to the one under test, which it reaches only past every
@@ -1005,10 +1028,59 @@ fn append(
     let Some(value) = recaptured(ir, value) else {
         return Ok(());
     };
-    if let Ok(steps) = serde_json::from_value::<Vec<ScenarioStep>>(value) {
+    if let Ok(mut steps) = serde_json::from_value::<Vec<ScenarioStep>>(value) {
+        cumulative(&scenario.steps, &mut steps);
         scenario.steps.extend(steps);
     }
     Ok(())
+}
+
+/// A run's exact counts, appended after the `first` run's steps, counted over both runs.
+///
+/// An invocation count (`expect_invocation` with `count:`) and a publication count are read over
+/// every invocation or publication under the scenario's correlation, the first run's included: a
+/// second run expecting its own one invocation observes two. Each count is raised by the last one
+/// the first run expects of the same binding, command and input filter, or of the same event,
+/// which that run observed for its whole window.
+fn cumulative(first: &[ScenarioStep], steps: &mut [ScenarioStep]) {
+    for step in steps {
+        let earlier = match &*step {
+            ScenarioStep::ExpectInvocation {
+                binding,
+                command,
+                input,
+                count: Some(_),
+            } => first.iter().rev().find_map(|prior| match prior {
+                ScenarioStep::ExpectInvocation {
+                    binding: by,
+                    command: invoked,
+                    input: with,
+                    count: Some(count),
+                } if by == binding && invoked == command && with == input => Some(*count),
+                _ => None,
+            }),
+            ScenarioStep::ExpectPublicationCount { event, .. } => {
+                first.iter().rev().find_map(|prior| match prior {
+                    ScenarioStep::ExpectPublicationCount {
+                        event: published,
+                        count,
+                    } if published == event => Some(*count),
+                    _ => None,
+                })
+            }
+            _ => None,
+        };
+        let Some(earlier) = earlier else {
+            continue;
+        };
+        if let ScenarioStep::ExpectInvocation {
+            count: Some(count), ..
+        }
+        | ScenarioStep::ExpectPublicationCount { count, .. } = step
+        {
+            *count = count.saturating_add(earlier.get());
+        }
+    }
 }
 
 /// Whether `steps` establish a row by setup: its literal identity can be established only once in a
@@ -1102,16 +1174,248 @@ pub(super) fn under_test(id: &ScenarioId) -> Option<String> {
 /// group), or a view expectation that counts, ranks or positions rows. Appended after the first run, such an expectation would be
 /// read over both runs' rows and its absolute figures would be the first run's plus its own.
 pub(super) fn reads_every_row(ir: &EssIr, steps: &[ScenarioStep]) -> bool {
-    steps.iter().any(|step| {
-        if let ScenarioStep::ExpectOutcome { outcome } = step {
-            return ir.commands().values().any(|command| {
-                command.name.to_string() == outcome.command.to_string()
-                    && command.outcomes.iter().any(|branch| {
-                        branch.name == outcome.outcome
-                            && (branch.instances.is_some() || !branch.affects.is_empty())
-                    })
+    steps.iter().any(|step| set_effect(ir, step).is_some()) || observes_every_row(ir, steps)
+}
+
+/// The detail that refuses to compose a disclosure cell whose follow-up assertions were not
+/// appended for a reason no other refusal names.
+const UNCOMPOSED: &str = "the follow-up assertions cannot compose with the retained origin state";
+
+/// The command and the branch with a set effect, `instances:` or `affects:`, that `step` expects.
+fn set_effect<'a>(
+    ir: &'a EssIr,
+    step: &ScenarioStep,
+) -> Option<(&'a ResolvedCommand, &'a ResolvedOutcome)> {
+    let ScenarioStep::ExpectOutcome { outcome } = step else {
+        return None;
+    };
+    ir.commands()
+        .values()
+        .filter(|command| command.name.to_string() == outcome.command.to_string())
+        .find_map(|command| {
+            command
+                .outcomes
+                .iter()
+                .find(|branch| {
+                    branch.name == outcome.outcome
+                        && (branch.instances.is_some() || !branch.affects.is_empty())
+                })
+                .map(|branch| (command, branch))
+        })
+}
+
+/// The set effect `again` takes whose filter may select a row `first` left, as a refusal names
+/// it; `None` where every set effect `again` takes selects only rows `again` arranges.
+///
+/// An `instances:` filter selects only the rows of the run that sends it where it pins a stored
+/// field to an input (`owner == input.owner`, alone or as one conjunct of an `and`) and every send
+/// of its command in `again` carries, for one such input, a literal that `first` carries nowhere:
+/// no row `first` left can hold that value. An `affects:` filter, and an `instances:` filter that
+/// pins nothing so, reads every row of its entity.
+fn shared_selection(ir: &EssIr, first: &[ScenarioStep], again: &[ScenarioStep]) -> Option<String> {
+    let first = serde_json::to_value(first).ok();
+    again.iter().find_map(|step| {
+        let (command, branch) = set_effect(ir, step)?;
+        let named = format!("{}/{}", command.name, branch.name);
+        let Some(subject) = branch
+            .instances
+            .as_ref()
+            .filter(|_| branch.affects.is_empty())
+        else {
+            return Some(format!(
+                "the set effect of `{named}` selects rows by `affects:`, which reads every row \
+                 of its entity, so it would also select the rows the origin's run left"
+            ));
+        };
+        let pinned = pinned_inputs(&subject.filter);
+        let own = !pinned.is_empty()
+            && again.iter().all(|send| match send {
+                ScenarioStep::ExecuteCommand {
+                    command: sent,
+                    input,
+                    ..
+                } if sent.to_string() == command.name.to_string() => pinned.iter().any(|name| {
+                    matches!(
+                        input.get(*name),
+                        Some(ScenarioValue::Literal { value })
+                            if serde_json::to_value(value)
+                                .is_ok_and(|value| {
+                                    first.as_ref().is_some_and(|first| !carries(first, &value))
+                                })
+                    )
+                }),
+                ScenarioStep::ExecuteCommandWithoutInput { command: sent, .. } => {
+                    sent.to_string() != command.name.to_string()
+                }
+                _ => true,
             });
+        if !own {
+            return Some(format!(
+                "the set effect of `{named}` selects `instances: {{where: {}}}`, which pins no \
+                 stored field to a value only the follow-up's run sends, so it would also select \
+                 the rows the origin's run left",
+                subject.filter
+            ));
         }
+        (!changes_rows(ir, again, command, branch)).then(|| {
+            format!(
+                "the set effect of `{named}` selects `instances: {{where: {}}}`, and the \
+                 follow-up's run arranges no row it selects, so the run would witness no row it \
+                 changes",
+                subject.filter
+            )
+        })
+    })
+}
+
+/// Whether the run `steps` witnesses the set effect (`instances:`) of `branch`: a send of
+/// `command` expecting `branch` finds a row its filter selects among the rows the steps before it
+/// leave ([`super::row_set::changed_states`]), and every send after which an event it publishes
+/// once per changed row is expected finds one resting where that event is published. A run that
+/// selects no row publishes no per-row event, so a run expecting one would fail every target
+/// honouring the specification.
+fn changes_rows(
+    ir: &EssIr,
+    steps: &[ScenarioStep],
+    command: &ResolvedCommand,
+    branch: &ResolvedOutcome,
+) -> bool {
+    let Some(set) = &branch.instances else {
+        return false;
+    };
+    let mut witnessed = false;
+    for (at, step) in steps.iter().enumerate() {
+        let ScenarioStep::ExecuteCommand {
+            command: named,
+            input,
+            ..
+        } = step
+        else {
+            continue;
+        };
+        let expected = matches!(
+            steps.get(at + 1),
+            Some(ScenarioStep::ExpectOutcome { outcome }) if outcome.outcome == branch.name
+        );
+        if named.to_string() != command.name.to_string() || !expected {
+            continue;
+        }
+        // Rows an earlier step changed unfollowed, such as an earlier set effect, are none known.
+        let states = super::row_set::changed_states(ir, &steps[..at], command, branch, input)
+            .unwrap_or_default();
+        witnessed |= !states.is_empty();
+        let answered = steps[at + 1..].iter().take_while(|step| {
+            !matches!(
+                step,
+                ScenarioStep::ExecuteCommand { .. }
+                    | ScenarioStep::ExecuteCommandWithoutInput { .. }
+            )
+        });
+        for step in answered {
+            let (ScenarioStep::ExpectEvent { event, .. }
+            | ScenarioStep::ExpectEventValues { event, .. }
+            | ScenarioStep::EventuallyEvent { event, .. }) = step
+            else {
+                continue;
+            };
+            let Some(per_row) = set
+                .events
+                .iter()
+                .find(|entry| EventRef::from(&entry.event) == *event)
+            else {
+                continue;
+            };
+            let published = states.iter().any(|state| {
+                per_row.when_state.is_empty()
+                    || per_row.when_state.iter().any(|held| held == state.as_str())
+            });
+            if !published {
+                return false;
+            }
+        }
+    }
+    witnessed
+}
+
+/// `followup`, the run a disclosure cell appends for `branch` of `command`, where it witnesses the
+/// branch's set effect ([`changes_rows`]); else the branch's own scenario in `suite`, which arranges
+/// the rows its filter selects before it sends the command, where that one does. A follow-up that
+/// selects no row it arranged witnesses nothing the effect does (a downstream adopter's report of
+/// 2026-10-26). A branch with no set effect keeps its follow-up.
+pub(super) fn witnessing_followup(
+    ir: &EssIr,
+    suite: &crate::ConformanceSuite,
+    (command, branch): (&ResolvedCommand, &ResolvedOutcome),
+    followup: ConformanceScenario,
+) -> ConformanceScenario {
+    if branch.instances.is_none() || changes_rows(ir, &followup.steps, command, branch) {
+        return followup;
+    }
+    let id = ScenarioId::Outcome {
+        outcome: crate::scenario::OutcomeRef::new(
+            crate::scenario::CommandRef::new(command.name.clone()),
+            branch.name.clone(),
+        ),
+    };
+    suite
+        .scenario(&id)
+        .filter(|own| changes_rows(ir, &own.steps, command, branch))
+        .cloned()
+        .unwrap_or(followup)
+}
+
+/// The inputs `filter` pins a stored field to: each `<field> == input.<name>`, either way round,
+/// that is the filter or one conjunct of it.
+fn pinned_inputs(filter: &Predicate) -> Vec<&str> {
+    fn input(operand: &Operand) -> Option<&str> {
+        match operand {
+            Operand::Fact(path) => match path.segments() {
+                [root, name] if root == INPUT_NAMESPACE => Some(name.as_str()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    let conjuncts = match filter {
+        Predicate::All(children) => children.as_slice(),
+        other => std::slice::from_ref(other),
+    };
+    let stored =
+        |operand: &Operand| matches!(operand, Operand::Fact(path) if path.segments().len() == 1);
+    conjuncts
+        .iter()
+        .filter_map(|conjunct| match conjunct {
+            Predicate::Compare {
+                left,
+                op: CompareOp::Eq,
+                right,
+                ..
+            } if stored(left) => input(right),
+            Predicate::Compare {
+                left,
+                op: CompareOp::Eq,
+                right,
+                ..
+            } if stored(right) => input(left),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Whether `value` is `within` or any value nested in it.
+fn carries(within: &serde_json::Value, value: &serde_json::Value) -> bool {
+    within == value
+        || match within {
+            serde_json::Value::Array(items) => items.iter().any(|item| carries(item, value)),
+            serde_json::Value::Object(fields) => fields.values().any(|field| carries(field, value)),
+            _ => false,
+        }
+}
+
+/// Whether a run's view expectations observe all matching rows: an aggregate view, or an
+/// expectation that counts, ranks or positions rows ([`reads_every_row`] without set effects).
+fn observes_every_row(ir: &EssIr, steps: &[ScenarioStep]) -> bool {
+    steps.iter().any(|step| {
         let (ScenarioStep::ExpectView {
             view, expectation, ..
         }

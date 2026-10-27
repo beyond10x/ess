@@ -1,0 +1,30 @@
+domain: demo.w.keys
+entities:
+  - name: demo.w.keys.Key
+    identity: {name: key_id, type: Uuid}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+commands:
+  - name: demo.w.keys.Issue
+    input:
+      - {name: label, type: String}
+    response:
+      - {name: secret, type: String}
+    outcomes:
+      - name: issued
+        creates: demo.w.keys.Key
+        instance: key_id
+        sets: {label: input.label}
+        returns: true
+        one_time_response: [secret]
+        emits: [demo.w.keys.Issued]
+        payload:
+          demo.w.keys.Issued: {key_id: {generated: true}}
+events:
+  - name: demo.w.keys.Issued
+    fields:
+      - {name: key_id, type: Uuid}

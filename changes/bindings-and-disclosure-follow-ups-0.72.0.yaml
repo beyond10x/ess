@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/bindings-and-disclosure-follow-ups-0.72.0
+repository: ess
+publishedAt: 2026-10-27T00:00:00Z
+title: Bindings past related and set guards, and fresh-input disclosure follow-ups, get their scenarios
+summary: >-
+  Synthesis now arranges the related row or the selected rows a binding's invoked command reads
+  through a `when_related:` guard, where the command updates the trigger's row, chooses its branch
+  by a set guard, or shares the trigger's guard. A one-time response's follow-up whose set effect
+  is pinned to a fresh input composes after the disclosure.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.72.0
+  version: 0.72.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

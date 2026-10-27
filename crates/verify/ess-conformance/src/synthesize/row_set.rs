@@ -1378,6 +1378,61 @@ pub(super) fn walk(ir: &EssIr, steps: &[ScenarioStep], check: bool) -> Result<Ro
     Ok(rows)
 }
 
+/// Whether the rows `steps` leave take `command`, sent `supplied` right after them, to `expected`:
+/// every send among the steps decided again ([`walk`]), then this one ([`consistent`]). A binding's
+/// invocation is such a send, made once its trigger has run (a downstream adopter's report of
+/// 2026-10-26).
+pub(super) fn decided_after(
+    ir: &EssIr,
+    steps: &[ScenarioStep],
+    command: &ResolvedCommand,
+    expected: &ResolvedOutcome,
+    supplied: &BTreeMap<String, ScenarioValue>,
+) -> Result<(), String> {
+    let rows = walk(ir, steps, true)?;
+    consistent(ir, command, expected, supplied, &rows)
+}
+
+/// The states of the rows `steps` leave that the set effect (`instances:`) of `outcome` changes
+/// when `command` is sent `supplied` right after them: each row of its entity its filter decidedly
+/// selects, resting where the effect acts on it. `None` where the steps leave that entity's rows
+/// unfollowed, or the branch has no set effect. A follow-up appended after another run selects
+/// only these rows (`caller::shared_selection`), so they are all it can witness.
+pub(super) fn changed_states(
+    ir: &EssIr,
+    steps: &[ScenarioStep],
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    supplied: &BTreeMap<String, ScenarioValue>,
+) -> Option<Vec<StateName>> {
+    let set = outcome.instances.as_ref()?;
+    let rows = walk(ir, steps, false).ok()?;
+    let input = literals(supplied);
+    let changed = rows
+        .of(&set.entity)
+        .ok()?
+        .into_iter()
+        .filter(|row| match &set.effect {
+            ResolvedEffect::Moves { transition } => transition.from.contains(&row.state),
+            _ => true,
+        })
+        .filter(|row| {
+            let filter = instances_decided(&set.filter, &row.settled, supplied);
+            subject_fact::row_truth_with(
+                ir,
+                &row.entity,
+                &row.settled,
+                &row.unwritten,
+                Some(&row.state),
+                &filter,
+                Some((command, &input)),
+            ) == Truth::True
+        })
+        .map(|row| row.state.clone())
+        .collect();
+    Some(changed)
+}
+
 /// The entities whose rows a binding may change: every entity a branch of a command some binding
 /// invokes creates, moves, updates or deletes, as its subject, its `instances:` or an `affects:`
 /// entry. A binding runs when the transport delivers, which a scenario's steps do not follow, so

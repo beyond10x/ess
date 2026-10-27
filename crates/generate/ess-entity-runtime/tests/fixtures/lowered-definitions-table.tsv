@@ -1,4 +1,4 @@
-#	models=366	lines=504
+#	models=376	lines=518
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -132,7 +132,11 @@ crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml	components
 crates/verify/ess-conformance/tests/fixtures/binding-condition-selected.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/binding-refusal-policy-swapped-caller/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/binding-set-guard/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/binding-trigger-shares-row-guard/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/caller-key-unique-across-callers.yaml	components=0
@@ -282,6 +286,7 @@ crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	component
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	vault-lib	REFUSED	bccabb45b72adc4e53e56a40e11f47886c7a6388102c64b527ae8406928bd29d:563
 crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/set-effect-fresh-input/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-related-value.yaml	components=0
@@ -424,9 +429,18 @@ system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.stock.I
 system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.stock.Item	create	added
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion	components=1
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion	svc	REFUSED	d053a7473eb8d8d2d467e4ffa10c7c366cd58a202c6cc6642e456f2462638059:716
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command	svc	REFUSED	96ca0cc49cfc1c977a6a80aa86ba7ef542d0e2666d3d401df66d9fb49def753d:955
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-refusal-policy-swapped-caller	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-refusal-policy-swapped-caller	svc	REFUSED	131dbbbf7068e8fa65580822c13dac14815e0305d324f2bb0a4618a8218e1b5d:973
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-set-guard	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-set-guard	svc	REFUSED	c785056ad6591345dcb7b378524c1c9af0984e7b7f602fa809b57165bd05d728:557
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-trigger-shares-row-guard	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-trigger-shares-row-guard	svc	REFUSED	f2aec6c4daa44d94d1d36a58eec9bef80c5e2f66e3051bfc774aeee2bad7cd88:750
 system-dir:crates/verify/ess-conformance/tests/fixtures/recursive-fixtures	components=0
 system-dir:crates/verify/ess-conformance/tests/fixtures/related-owner	components=0
 system-dir:crates/verify/ess-conformance/tests/fixtures/relation-via-identity	components=0
+system-dir:crates/verify/ess-conformance/tests/fixtures/set-effect-fresh-input	components=0
 system-dir:docs/design/models/authored-discovery	components=0
 system-dir:docs/design/models/entity-runtime-lowering	components=0
 system-dir:docs/design/models/service-contract	components=0

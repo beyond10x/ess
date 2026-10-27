@@ -1,0 +1,18 @@
+components:
+  - component: svc
+    owns:
+      domains: [demo.x]
+    accepts:
+      commands: [demo.x.DefineGroup, demo.x.Enrol, demo.x.Grant]
+bindings:
+  - id: grant-on-enrolled
+    when:
+      event: demo.x.Enrolled
+    invoke:
+      command: demo.x.Grant
+    mapping:
+      group_id: event.group_id
+    delivery: at_least_once
+    on_failure:
+      drop: [group-missing]
+      retry: {except: [group-missing]}

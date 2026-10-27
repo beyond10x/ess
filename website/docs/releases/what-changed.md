@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.72.0 — 2026-10-27
+
+### Bindings past related and set guards, and fresh-input disclosure follow-ups, get their scenarios
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.72.0)
+
+Synthesis now arranges the related row or the selected rows a binding's invoked command reads through a `when_related:` guard, where the command updates the trigger's row, chooses its branch by a set guard, or shares the trigger's guard. A one-time response's follow-up whose set effect is pinned to a fresh input composes after the disclosure.
+
 ## 0.71.0 — 2026-10-27
 
 ### Set updates, affects rows and converted binding inputs get the scenarios synthesis used to refuse
