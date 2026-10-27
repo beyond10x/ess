@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-set-effect-bound-to-a-fresh-input-composes-after-a-disclosure
 kind: story
-status: active
+status: implemented
 title: A set effect bound to a fresh input composes after a one-time-response disclosure
 summary: ESS-SYNTH-001 refuses the disclosure cell before an instances-where follow-up; 9 / 1, 11 / 0 with instance:.
 tags:
@@ -11,10 +11,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-27T14:44:58Z", actor: "human:timo", revision: 2, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 - {from: "proposed", to: "active", at: "2026-10-27T14:44:58Z", actor: "human:timo", revision: 3, executor: "agent:b10x-chef-orchestrator-ess-0720"}
+- {from: "active", to: "implemented", at: "2026-10-27T19:43:32Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 ---
 ## Problem
 

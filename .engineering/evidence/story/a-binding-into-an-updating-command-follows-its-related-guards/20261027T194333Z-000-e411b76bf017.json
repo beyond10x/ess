@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-27T19:43:33Z",
+  "actor": "human:timo",
+  "artifact": "story:a-binding-into-an-updating-command-follows-its-related-guards",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "binding_into_updating_command 2 passed on ec43bd310; adversary_0720_pass1 5 passed on e2f35c133 (merged cbd83c332); reduced reproduction 8/4 -> 11/0, interpreted 11/11",
+    "reference": "commit:cbd83c332"
+  }
+}
