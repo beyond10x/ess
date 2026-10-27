@@ -915,6 +915,162 @@ pub(super) fn selected_row(
     selection.row(actors, taken, rests, false)
 }
 
+/// [`selected_row`], where each input of `named` carries the identity of a row arranged before
+/// the one selected rather than a literal: the row a binding's trigger acts on, or one arranged for
+/// a creator that reads it (a downstream adopter's report of 2026-10-26). The selected row is
+/// created naming that row in the field the filter compares with the input. `held` and `rows` give
+/// each named row's state and settled values where the arrangement knows them: a creator refusing
+/// a missing row is decided on the first, and one copying a field of the named row
+/// (`{related:}`) on the second. `None` where the filter reads an input neither `input` nor
+/// `named` holds, or no arranging command produces such a row.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn selected_row_naming(
+    ir: &EssIr,
+    (command, outcome, set): (&ResolvedCommand, &ResolvedOutcome, &ResolvedSetSubject),
+    (input, named): (&BTreeMap<String, Node>, &BTreeMap<String, InstanceName>),
+    (held, rows): (
+        &BTreeMap<InstanceName, StateName>,
+        &super::related_guard::HeldRows,
+    ),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    rests: &dyn Fn(&StateName) -> bool,
+    taken: &mut BTreeSet<InstanceName>,
+) -> Option<Arrangement> {
+    let namespace = ess_domain::command::subject_fact::INPUT_NAMESPACE;
+    let closed = written_in(&set.filter, &|path| input_value(path, input));
+    let unread = closed
+        .fact_paths()
+        .iter()
+        .any(|path| match path.segments() {
+            [root, field] if root == namespace => !named.contains_key(field),
+            [root, ..] => root == namespace,
+            [] => false,
+        });
+    if unread {
+        return None;
+    }
+    let symbols = named
+        .iter()
+        .map(|(field, instance)| {
+            (
+                FactPath::from_segments([namespace.to_owned(), field.clone()]),
+                instance.clone(),
+            )
+        })
+        .collect();
+    let copies = links(ir, set)
+        .into_iter()
+        .filter(|link| named.contains_key(&link.input))
+        .flat_map(|link| {
+            link.copies
+                .into_iter()
+                .map(move |(creator, target, read)| Copied {
+                    creator,
+                    named_by: link.field.clone(),
+                    target,
+                    read,
+                })
+        })
+        .collect();
+    let mut supplied = supply(ir, command, input, None, None, &BTreeMap::new());
+    for (field, instance) in named {
+        supplied.insert(field.clone(), ScenarioValue::instance(instance.clone()));
+    }
+    let selection = Selection {
+        ir,
+        command,
+        entity: &set.entity,
+        filter: set.filter.clone(),
+        closed,
+        input,
+        supplied: &supplied,
+        sets: outcome,
+        symbols,
+        other: None,
+        held: held.clone(),
+        rows: rows.clone(),
+        copies,
+        vary: false,
+    };
+    selection.row(actors, taken, rests, false)
+}
+
+/// A key of `set`'s filter that names a row of another entity a creating command of its rows
+/// reads ([`Link`]): the filter's input compared with the key, that entity, and the first creating
+/// command reading the row with its input naming it.
+pub(super) struct RelatedKey {
+    pub(super) input: String,
+    pub(super) entity: EntityHandle,
+    pub(super) creator: CommandRef,
+    pub(super) via: String,
+}
+
+/// Every [`RelatedKey`] of `set`'s filter, in conjunct order.
+pub(super) fn related_keys(ir: &EssIr, set: &ResolvedSetSubject) -> Vec<RelatedKey> {
+    links(ir, set)
+        .into_iter()
+        .map(|link| RelatedKey {
+            input: link.input,
+            entity: link.entity,
+            creator: link.creator.0,
+            via: link.creator.1,
+        })
+        .collect()
+}
+
+/// A row of `entity` in its lifecycle's initial state, named apart from every instance in `taken`,
+/// which the row's name joins: the related row a [`RelatedKey`] needs arranged first.
+pub(super) fn related_row(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    taken: &mut BTreeSet<InstanceName>,
+) -> Option<Arrangement> {
+    let initial = ir.entity(entity).lifecycle.initial.clone();
+    let plain = instance_name(&ir.entity(entity).name, Distinction::PLAIN);
+    let distinction = if taken.insert(plain) {
+        Distinction::PLAIN
+    } else {
+        next(ir, entity, taken)
+    };
+    super::arrange(ir, entity, &initial, actors, distinction, &[]).ok()
+}
+
+/// Whether a command creating `set`'s rows writes every field its filter compares with an input
+/// from an input of its own, unconverted.
+pub(super) fn keys_written(ir: &EssIr, set: &ResolvedSetSubject) -> bool {
+    fn key<'p>(row: &'p FactPath, sent: &FactPath) -> Option<&'p str> {
+        match (row.segments(), sent.segments()) {
+            ([field], [head, _]) if head == ess_domain::command::subject_fact::INPUT_NAMESPACE => {
+                Some(field.as_str())
+            }
+            _ => None,
+        }
+    }
+    let mut conjuncts = Vec::new();
+    conjoined(&set.filter, &mut conjuncts);
+    let keys: Vec<&str> = conjuncts
+        .into_iter()
+        .filter_map(|conjunct| match conjunct {
+            Predicate::Compare {
+                left: Operand::Fact(left),
+                right: Operand::Fact(right),
+                ..
+            } => key(left, right).or_else(|| key(right, left)),
+            _ => None,
+        })
+        .collect();
+    let all = ir.drivers();
+    all.get(&set.entity)
+        .into_iter()
+        .flatten()
+        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .any(|creator| {
+            keys.iter()
+                .all(|key| super::related::set_from_input(creator.outcome, key).is_some())
+        })
+}
+
 /// The rows a set effect is witnessed on: those it must change, and those it must leave.
 struct Rows {
     changed: Vec<Arrangement>,
@@ -1416,6 +1572,8 @@ struct Link {
     input: String,
     entity: EntityHandle,
     copies: Vec<(OutcomeRef, String, String)>,
+    /// The first creating command giving the link, and its input naming the related row.
+    creator: (CommandRef, String),
 }
 
 /// Every conjunct `predicate` holds through `all:`.
@@ -1530,6 +1688,7 @@ fn link_of(
             })
             .collect(),
         entity,
+        creator: (CommandRef::new(command.name.clone()), via.to_owned()),
     })
 }
 

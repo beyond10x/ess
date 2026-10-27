@@ -854,6 +854,7 @@ crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	demo.shelf.Open
 crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	demo.shelf.Restock	existence: unknown-book | present_related: refused | default: restocked
 crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	demo.shelf.Shelve	present_related: refused | accepting: added | default: replaced
 crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	demo.shelf.Unshelve	present_related: refused | default: removed
+crates/verify/ess-conformance/tests/fixtures/set-effect-binding-causes/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-effect-fresh-input/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	ir=41530db9c552f3a75b69d278511841906742a40441746b2050f33ca41e9ccbcb:15632
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.ExpireEntry	held_state: not-queued | default: expired

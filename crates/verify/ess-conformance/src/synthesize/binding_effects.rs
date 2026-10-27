@@ -38,7 +38,7 @@ use ess_primitives::node::Node;
 use super::{
     accepting_component, admits_held_state, arrange_first, captured, clipped, forced_eligibility,
     instance_name, paging, payload_shape, reachable_branch, Arrangement, BindingGap, Built,
-    Distinction, Refusal, RefusalCause, Run, Unreachable,
+    ChangedRowCause, Distinction, Refusal, RefusalCause, Run, Unreachable,
 };
 use crate::scenario::{
     ActorRef, BindingRef, CommandRef, EntityRef, EssSemanticRef, EventRef, InstanceName,
@@ -1919,12 +1919,21 @@ fn keeps_branch_sent(
 /// per-row event's `when_state:` publishes it (a downstream adopter's report of 2026-10-20): with
 /// no such row the honest system publishes nothing, and a flow waiting for the event cannot pass.
 ///
-/// The row is arranged against the input the bound invocation will carry: every input the filter
-/// reads is mapped unconverted from an event field the trigger fills unconverted from an input it
-/// is sent as a literal, or mapped from a literal. Where that does not hold, or no arranging
-/// command produces such a row, the branch is the gap [`BindingGap::ChangedRowUnarranged`], so the
-/// flow and delivery scenarios are refused by name rather than filed unpassable. `None` for a
-/// branch publishing no per-row event, which keeps the arrangement it had.
+/// The row is arranged against the input the bound invocation will carry ([`per_row_input`]):
+/// every input the filter reads is mapped from a literal, or unconverted from an event field the
+/// trigger publishes a literal in or fills unconverted from an input it is sent. Two shapes of a
+/// filter key naming another entity's row are arranged too (a downstream adopter's report of
+/// 2026-10-26):
+///
+/// | shape | what is arranged |
+/// |---|---|
+/// | the trigger is sent naming a row its own arrangement made, such as the row it acts on | the selected row, created naming that row |
+/// | a command creating the rows reads the row the key names (`exists: false`, `{related:}`) | that row first, the selected row naming it, and the trigger sent naming it where that keeps its branch ([`keeps_branch_sent`]) |
+///
+/// Where none of that gives a row, the branch is the gap [`BindingGap::ChangedRowUnarranged`],
+/// naming the one condition that stopped it ([`ChangedRowCause`]), so the flow and delivery
+/// scenarios are refused by name rather than filed unpassable. `None` for a branch publishing no
+/// per-row event, which keeps the arrangement it had.
 fn per_row_decided<'a>(
     ir: &'a EssIr,
     binding: &'a ResolvedBinding,
@@ -1933,85 +1942,306 @@ fn per_row_decided<'a>(
     trigger: &Run,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Option<Prepared<'a>> {
+    use super::set_effects;
+
     let set = reached.instances.as_ref()?;
     if set.events.is_empty() {
         return None;
     }
-    let unarranged = || BindingGap::ChangedRowUnarranged {
-        outcome: OutcomeRef::new(CommandRef::new(invoked.name.clone()), reached.name.clone()),
-        entity: EntityRef::from(&set.entity),
+    let refused = |cause: ChangedRowCause| Prepared {
+        setup: trigger.setup.clone(),
+        invoke: trigger.invoke.clone(),
+        capture: Vec::new(),
+        reached: Err(BindingGap::ChangedRowUnarranged {
+            outcome: OutcomeRef::new(CommandRef::new(invoked.name.clone()), reached.name.clone()),
+            entity: EntityRef::from(&set.entity),
+            cause: Box::new(cause),
+        }),
+        row: None,
+        source: BTreeSet::new(),
     };
-    let arranged = per_row_input(ir, binding, published_by, trigger).and_then(|input| {
-        let movable = |state: &StateName| match &set.effect {
-            ResolvedEffect::Moves { transition } => transition.from.contains(state),
-            _ => true,
+    let movable = |state: &StateName| match &set.effect {
+        ResolvedEffect::Moves { transition } => transition.from.contains(state),
+        _ => true,
+    };
+    let rests = |state: &StateName| {
+        movable(state)
+            && set.events.iter().any(|entry| {
+                entry.when_state.is_empty()
+                    || entry.when_state.iter().any(|held| held == state.as_str())
+            })
+    };
+    let Some(carried) = per_row_input(ir, binding, published_by, trigger) else {
+        return Some(refused(ChangedRowCause::Uncreated {
+            written: set_effects::keys_written(ir, set),
+        }));
+    };
+    let before = captured(trigger);
+    let arranged =
+        |steps: &[&[ScenarioStep]], invoke: Vec<ScenarioStep>, sources: &[&Arrangement]| {
+            let mut setup = trigger.setup.clone();
+            for part in steps {
+                setup.extend(part.iter().cloned());
+            }
+            let mut source: BTreeSet<EssSemanticRef> = sources
+                .iter()
+                .flat_map(|row| row.source.iter().cloned())
+                .collect();
+            source.insert(EntityRef::from(&set.entity).into());
+            Prepared {
+                setup,
+                invoke,
+                capture: Vec::new(),
+                reached: Ok(reached),
+                row: None,
+                source,
+            }
         };
-        let rests = |state: &StateName| {
-            movable(state)
-                && set.events.iter().any(|entry| {
-                    entry.when_state.is_empty()
-                        || entry.when_state.iter().any(|held| held == state.as_str())
-                })
-        };
-        let mut taken = captured(trigger);
-        let before = taken.clone();
-        let row = super::set_effects::selected_row(
+
+    // The input as the trigger sends it: literals alone, or naming rows the trigger's arrangement
+    // made, each in the state that arrangement leaves it in where it is the trigger's own row.
+    let mut taken = before.clone();
+    let row = if carried.named.is_empty() {
+        set_effects::selected_row(
             ir,
             (invoked, reached, set),
-            &input,
+            &carried.literals,
             actors,
             &rests,
             &mut taken,
-        )?;
-        let collides = row.steps.iter().any(|step| {
-            matches!(step, ScenarioStep::CaptureInstance { instance, .. } if before.contains(instance))
-        });
-        (!collides).then_some(row)
-    });
-    let Some(row) = arranged else {
-        return Some(Prepared {
-            setup: trigger.setup.clone(),
-            invoke: trigger.invoke.clone(),
-            capture: Vec::new(),
-            reached: Err(unarranged()),
-            row: None,
-            source: BTreeSet::new(),
-        });
+        )
+    } else {
+        let held = carried.held(trigger);
+        set_effects::selected_row_naming(
+            ir,
+            (invoked, reached, set),
+            (&carried.literals, &carried.named),
+            (&held, &BTreeMap::new()),
+            actors,
+            &rests,
+            &mut taken,
+        )
     };
-    let mut setup = trigger.setup.clone();
-    setup.extend(row.steps.iter().cloned());
-    let mut source = row.source.clone();
-    source.insert(EntityRef::from(&set.entity).into());
-    Some(Prepared {
-        setup,
-        invoke: trigger.invoke.clone(),
-        capture: Vec::new(),
-        reached: Ok(reached),
-        row: None,
-        source,
+    if let Some(row) = row.filter(|row| fits(row, &before)) {
+        return Some(arranged(&[&row.steps], trigger.invoke.clone(), &[&row]));
+    }
+
+    // A creator reading the row the key names: that row first, the trigger sent naming it.
+    match related_per_row(
+        ir,
+        (invoked, reached, set),
+        published_by,
+        trigger,
+        &carried,
+        actors,
+        &rests,
+    ) {
+        Ok((related, row, invoke)) => Some(arranged(
+            &[&related.steps, &row.steps],
+            invoke,
+            &[&related, &row],
+        )),
+        Err(guarded) => Some(refused(changed_row_cause(
+            ir, set, trigger, &carried, guarded,
+        ))),
+    }
+}
+
+/// [`per_row_decided`] where a command creating the rows reads the row of another entity the
+/// filter's key names: that row arranged first, the selected row created naming it, and the
+/// trigger's invocation sent naming it in place of the literal it was sent. `Err` with the
+/// trigger's command and its input where a guard of the trigger reading that input stopped a key
+/// ([`keeps_branch_sent`]), `Err(None)` where no key gives a row otherwise.
+#[allow(clippy::type_complexity)]
+fn related_per_row(
+    ir: &EssIr,
+    (invoked, reached, set): (
+        &ResolvedCommand,
+        &ResolvedOutcome,
+        &ess_compiler::ir::ResolvedSetSubject,
+    ),
+    published_by: &ResolvedOutcome,
+    trigger: &Run,
+    carried: &Carried,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    rests: &dyn Fn(&StateName) -> bool,
+) -> Result<(Arrangement, Arrangement, Vec<ScenarioStep>), Option<(CommandRef, String)>> {
+    use super::set_effects;
+
+    let before = captured(trigger);
+    let Some(publisher) = command_of(ir, published_by) else {
+        return Err(None);
+    };
+    let mut guarded = None;
+    for key in set_effects::related_keys(ir, set) {
+        let Some(from) = carried.sent.get(&key.input) else {
+            continue;
+        };
+        if !keeps_branch_sent(publisher, from, Some(&key.entity), false) {
+            guarded.get_or_insert_with(|| (CommandRef::new(publisher.name.clone()), from.clone()));
+            continue;
+        }
+        let mut taken = before.clone();
+        let Some(related) = set_effects::related_row(ir, &key.entity, actors, &mut taken)
+            .filter(|related| fits(related, &before))
+        else {
+            continue;
+        };
+        // Every input the trigger fills from the same input of its own names the related row.
+        let mut literals = carried.literals.clone();
+        let mut named = carried.named.clone();
+        for (input, sent_from) in &carried.sent {
+            if sent_from == from {
+                literals.remove(input);
+                named.insert(input.clone(), related.instance.clone());
+            }
+        }
+        let held = [(related.instance.clone(), related.state.clone())].into();
+        let rows = [(related.instance.clone(), related.settled.clone())].into();
+        let Some(row) = set_effects::selected_row_naming(
+            ir,
+            (invoked, reached, set),
+            (&literals, &named),
+            (&held, &rows),
+            actors,
+            rests,
+            &mut taken,
+        )
+        .filter(|row| fits(row, &before)) else {
+            continue;
+        };
+        let mut invoke = trigger.invoke.clone();
+        let renamed = invoke.iter_mut().rev().find_map(|step| match step {
+            ScenarioStep::ExecuteCommand { command, input, .. }
+                if command.name() == &publisher.name && input.contains_key(from) =>
+            {
+                input.insert(
+                    from.clone(),
+                    ScenarioValue::instance(related.instance.clone()),
+                );
+                Some(())
+            }
+            _ => None,
+        });
+        if renamed.is_some() {
+            return Ok((related, row, invoke));
+        }
+    }
+    Err(guarded)
+}
+
+/// What stopped [`per_row_decided`]: first an input the filter reads that no scenario chooses,
+/// then a row the trigger names, then a row a creator reads, where `guarded` names the trigger's
+/// guard that stopped it; otherwise that no arranging command leaves a selected row.
+fn changed_row_cause(
+    ir: &EssIr,
+    set: &ess_compiler::ir::ResolvedSetSubject,
+    trigger: &Run,
+    carried: &Carried,
+    guarded: Option<(CommandRef, String)>,
+) -> ChangedRowCause {
+    use super::set_effects;
+
+    let unchosen = super::row_set::input_reads(&set.filter).find(|input| {
+        !carried.literals.contains_key(*input) && !carried.named.contains_key(*input)
+    });
+    if let Some(input) = unchosen {
+        return ChangedRowCause::Unchosen {
+            input: input.to_owned(),
+        };
+    }
+    let named = carried.named.values().find_map(|instance| {
+        trigger.steps().into_iter().find_map(|step| match step {
+            ScenarioStep::CaptureInstance {
+                instance: captured,
+                entity,
+                ..
+            } if captured == *instance => Some((instance, entity)),
+            _ => None,
+        })
+    });
+    if let Some((instance, entity)) = named {
+        return ChangedRowCause::NamedRow {
+            entity,
+            acts_on: trigger.instance.as_ref() == Some(instance),
+        };
+    }
+    let keys = set_effects::related_keys(ir, set);
+    match keys
+        .into_iter()
+        .find(|key| carried.sent.contains_key(&key.input))
+    {
+        Some(key) => ChangedRowCause::RelatedRow {
+            creator: key.creator,
+            entity: EntityRef::from(&key.entity),
+            via: key.via,
+            trigger: guarded,
+        },
+        None => ChangedRowCause::Uncreated {
+            written: set_effects::keys_written(ir, set),
+        },
+    }
+}
+
+/// Whether `row`'s arrangement captures no instance `before` holds: the trigger's own arrangement
+/// already names it, and a second capture under that name would be another row.
+fn fits(row: &Arrangement, before: &BTreeSet<InstanceName>) -> bool {
+    !row.steps.iter().any(|step| {
+        matches!(step, ScenarioStep::CaptureInstance { instance, .. } if before.contains(instance))
     })
 }
 
-/// The input the bound invocation carries, where the scenario chose it: each input mapped from a
-/// literal, or unconverted from an event field the trigger fills unconverted from an input it is
-/// sent as a literal. Inputs filled any other way are left out; `None` where the binding has no
-/// event.
+impl Carried {
+    /// The state each named row rests in while the selected row is created, where the trigger's
+    /// arrangement says: the trigger's own row, in the state its arrangement left it in.
+    fn held(&self, trigger: &Run) -> BTreeMap<InstanceName, StateName> {
+        self.named
+            .values()
+            .filter(|instance| trigger.instance.as_ref() == Some(*instance))
+            .filter_map(|instance| Some((instance.clone(), trigger.before.clone()?)))
+            .collect()
+    }
+}
+
+/// What the bound invocation of a per-row set effect carries, where the scenario chose it.
+struct Carried {
+    /// Each input whose value is known: mapped from a literal, or unconverted from an event field
+    /// the trigger publishes a literal in or fills unconverted from an input it is sent as a
+    /// literal.
+    literals: BTreeMap<String, Node>,
+    /// Each input filled unconverted from an input the trigger is sent naming a row its own
+    /// arrangement captured: that row.
+    named: BTreeMap<String, InstanceName>,
+    /// For each input of `literals` filled from an input the trigger is sent, that input.
+    sent: BTreeMap<String, String>,
+}
+
+/// The input the bound invocation carries, where the scenario chose it ([`Carried`]). Inputs
+/// filled any other way are left out; `None` where the binding has no event.
 fn per_row_input(
     ir: &EssIr,
     binding: &ResolvedBinding,
     published_by: &ResolvedOutcome,
     trigger: &Run,
-) -> Option<BTreeMap<String, Node>> {
+) -> Option<Carried> {
     let event = binding.cause.event()?;
     let sent = trigger.invoke.iter().rev().find_map(|step| match step {
         ScenarioStep::ExecuteCommand { input, .. } => Some(input),
         _ => None,
     })?;
-    let mut input = BTreeMap::new();
+    let arranged = captured(trigger);
+    let mut carried = Carried {
+        literals: BTreeMap::new(),
+        named: BTreeMap::new(),
+        sent: BTreeMap::new(),
+    };
     for mapped in &binding.mapping {
-        let value = match (&mapped.value, &mapped.conversion) {
+        let target = &mapped.target;
+        match (&mapped.value, &mapped.conversion) {
             (ResolvedMappingValue::Literal { value }, _) => {
-                crate::input::mapping_literal(ir, &mapped.target_type, value)
+                if let Some(value) = crate::input::mapping_literal(ir, &mapped.target_type, value) {
+                    carried.literals.insert(target.clone(), value);
+                }
             }
             (ResolvedMappingValue::EventField { field, .. }, None) => {
                 match payload_source(published_by, event, field) {
@@ -2019,20 +2249,32 @@ fn per_row_input(
                         if !ess_domain::command::input_path::is_path(from) =>
                     {
                         match sent.get(from) {
-                            Some(ScenarioValue::Literal { value }) => Some(value.clone()),
-                            _ => None,
+                            Some(ScenarioValue::Literal { value }) => {
+                                carried.literals.insert(target.clone(), value.clone());
+                                carried.sent.insert(target.clone(), from.clone());
+                            }
+                            Some(ScenarioValue::Instance { instance })
+                                if arranged.contains(instance) =>
+                            {
+                                carried.named.insert(target.clone(), instance.clone());
+                            }
+                            _ => {}
                         }
                     }
-                    _ => None,
+                    Some((ResolvedPayloadValue::Literal { value }, false)) => {
+                        if let Some(value) =
+                            crate::input::mapping_literal(ir, &mapped.target_type, value)
+                        {
+                            carried.literals.insert(target.clone(), value);
+                        }
+                    }
+                    _ => {}
                 }
             }
-            _ => None,
-        };
-        if let Some(value) = value {
-            input.insert(mapped.target.clone(), value);
+            _ => {}
         }
     }
-    Some(input)
+    Some(carried)
 }
 
 /// The trigger's invocation sent naming a related row no row carries, so that the bound invocation
