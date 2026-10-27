@@ -1,4 +1,4 @@
-#	models=67	lines=81
+#	models=68	lines=82
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	suite=5 83258f8aee44f1c66a730f7d9a9245cd6fc1a51718a2f25a53a4e819e7975520:10202	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	rules	suite=5 370232c7ced707b90b7bffff39cf370202474cf971319bcc314bdb945b5abf5c:22834	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	rules	suite=3 d6f554bab5f2e6d2e21ae3d24a390942b72cebaf6d753007ba763d2894d9a569:6257	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
