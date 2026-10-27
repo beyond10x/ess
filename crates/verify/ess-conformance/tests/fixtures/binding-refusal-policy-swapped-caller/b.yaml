@@ -1,0 +1,42 @@
+domain: demo.b
+types:
+  - {name: demo.b.GrantId, kind: newtype, of: String}
+  - {name: demo.b.Id, kind: newtype, of: Uuid}
+  - {name: demo.b.AccountRef, kind: newtype, of: Uuid}
+entities:
+  - {name: demo.b.Key, identity: {name: key_id, type: demo.b.Id}, fields: [{name: secret_hash, type: String}], lifecycle: {initial: Active, states: [Active], terminal: [Active]}}
+  - {name: demo.b.Grant, identity: {name: grant_id, type: demo.b.GrantId}, fields: [{name: account, type: demo.b.AccountRef}], lifecycle: {initial: Active, states: [Active], terminal: [Active]}}
+  - {name: demo.b.Ticket, identity: {name: ticket_id, type: demo.b.Id}, fields: [{name: grant_id, type: demo.b.GrantId}], lifecycle: {initial: Active, states: [Active], terminal: [Active]}}
+commands:
+  - name: demo.b.IssueKey
+    input: []
+    response: [{name: secret, type: String}]
+    outcomes:
+      - {name: issued, creates: demo.b.Key, instance: key_id, returns: true, one_time_response: [secret], emits: [demo.b.KeyIssued], payload: {demo.b.KeyIssued: {key_id: {generated: true}}}, sets: {secret_hash: {generated: true}}}
+  - name: demo.b.DefineGrant
+    input: []
+    outcomes:
+      - {name: defined, creates: demo.b.Grant, instance: grant_id, emits: [demo.b.GrantDefined], payload: {demo.b.GrantDefined: {grant_id: {generated: true}}}, sets: {account: {caller: account_id}}}
+  - name: demo.b.OpenTicket
+    input: [{name: grant_id, type: demo.b.GrantId}]
+    outcomes:
+      - {name: no-grant, when_related: {via: input.grant_id, exists: false}, error: demo.b.Missing}
+      - {name: opened, creates: demo.b.Ticket, instance: ticket_id, emits: [demo.b.TicketOpened], payload: {demo.b.TicketOpened: {ticket_id: {generated: true}}}, sets: {grant_id: input.grant_id}}
+  - name: demo.b.MoveTicket
+    input: [{name: ticket_id, type: demo.b.Id}, {name: grant_id, type: demo.b.GrantId}]
+    outcomes:
+      - {name: moved, updates: demo.b.Ticket, instance: ticket_id, emits: [demo.b.TicketMoved], payload: {demo.b.TicketMoved: {ticket_id: input.ticket_id, grant_id: input.grant_id}}, sets: {grant_id: input.grant_id}}
+  - name: demo.b.Refresh
+    input: [{name: ticket_id, type: demo.b.Id}, {name: grant_id, type: demo.b.GrantId}]
+    outcomes:
+      - {name: grant-missing, when_related: {via: input.grant_id, exists: false}, error: demo.b.Missing}
+      - {name: refreshed, updates: demo.b.Ticket, instance: ticket_id, emits: [demo.b.Refreshed], payload: {demo.b.Refreshed: {ticket_id: input.ticket_id}}, sets: {grant_id: input.grant_id}}
+errors: [{name: demo.b.Missing}]
+events:
+  - {name: demo.b.KeyIssued, fields: [{name: key_id, type: demo.b.Id}]}
+  - {name: demo.b.GrantDefined, fields: [{name: grant_id, type: demo.b.GrantId}]}
+  - {name: demo.b.TicketOpened, fields: [{name: ticket_id, type: demo.b.Id}]}
+  - {name: demo.b.TicketMoved, fields: [{name: ticket_id, type: demo.b.Id}, {name: grant_id, type: demo.b.GrantId}]}
+  - {name: demo.b.Refreshed, fields: [{name: ticket_id, type: demo.b.Id}]}
+actors:
+  - {name: demo.b.Clerk, attributes: [{name: account_id, type: demo.b.AccountRef}], may: [demo.b.IssueKey, demo.b.DefineGrant, demo.b.OpenTicket, demo.b.MoveTicket, demo.b.Refresh]}
