@@ -1265,11 +1265,14 @@ fn answer(
         {
             payload.insert(field.target.clone(), Node::Number(Number::from(changed)));
         }
-        steps.push(ScenarioStep::ExpectEvent {
-            event: event.clone(),
+        let identities =
+            super::determined_identities(ir, outcome, event, supplied, &BTreeMap::new(), None);
+        steps.push(super::expect_event_step(
+            event,
             payload,
-            shape: crate::response::event_shape(ir, event, outcome),
-        });
+            identities,
+            crate::response::event_shape(ir, event, outcome),
+        ));
         source.insert(event.clone().into());
     }
     let observations =

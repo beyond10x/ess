@@ -1,4 +1,4 @@
-#	models=308	commands=659
+#	models=320	commands=694
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -190,6 +190,20 @@ crates/specify/ess-service-contract/tests/fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-control-fixtures/system.yaml	ASSEMBLE
 crates/specify/ess-service-contract/tests/selection-conversion-fixtures/system.yaml	ASSEMBLE
 crates/ui/ess-ui-check/tests/fixtures/model/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	ir=91f7a59a3f68896dd4a5c06336882417f0d0912f3734023d87309584f6aeac2d:13316
+crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	demo.w.CreateMember	default: created
+crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	demo.w.OpenTicket	related_row: walk-in | default: opened
+crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	demo.w.ResetMember	default: reset
+crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-refuses-the-related-row-it-names.yaml	ir=991370a6be78132ecd9a8775f1f8b805a29c4ec79f1227b3f06c29f25bded8c3:17080
+crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-refuses-the-related-row-it-names.yaml	demo.depot.AddParcel	present_related: no-shelf | default: added
+crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-refuses-the-related-row-it-names.yaml	demo.depot.OpenShelf	default: opened
+crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-refuses-the-related-row-it-names.yaml	demo.depot.RelabelShelf	present_related: unknown-shelf, shelf-locked | default: relabelled
+crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-refuses-the-related-row-it-names.yaml	demo.depot.UnlockShelf	default: unlocked
+crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-second-creator-copies-another-field.yaml	ir=578c8d62f75a138a950d6b030d14ef005f826d15a422bbc2a021e6c0d3475a8a:15888
+crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-second-creator-copies-another-field.yaml	demo.z.AddChild	default: added
+crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-second-creator-copies-another-field.yaml	demo.z.AddMirror	default: added
+crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-second-creator-copies-another-field.yaml	demo.z.CreateParent	default: created
+crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-second-creator-copies-another-field.yaml	demo.z.SyncFlag	default: synced
 crates/verify/ess-conformance/tests/fixtures/adversary-273-tree.yaml	ir=d31dabe80b5d4e697cfa6dc4453281967139defbe6f53e4b80805f1447d07eb3:10402
 crates/verify/ess-conformance/tests/fixtures/adversary-273-tree.yaml	tree.tickets.CloseTicket	held_state: wrong-state | default: closed
 crates/verify/ess-conformance/tests/fixtures/adversary-273-tree.yaml	tree.tickets.OpenTicket	default: opened
@@ -219,6 +233,14 @@ crates/verify/ess-conformance/tests/fixtures/adversary-u14/lockers.yaml	depots.b
 crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	ir=b737ee9077b02ce4dd8d03fe056a427c41be58ca9b020313b8e54412f16ad641:9670
 crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	demo.team.FormTeam	existence: already-formed | default: formed
 crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	demo.team.NameSuccessor	existence: no-such-team | present_related: successor-is-a-team | default: named
+crates/verify/ess-conformance/tests/fixtures/affects-past-emitting-not-found.yaml	ir=c4eb0b99eed36be84958fc2326e852ccca66814cccf7f427ab972b7636ce4a5f:10888
+crates/verify/ess-conformance/tests/fixtures/affects-past-emitting-not-found.yaml	demo.w.CreateMember	default: created
+crates/verify/ess-conformance/tests/fixtures/affects-past-emitting-not-found.yaml	demo.w.OpenTicket	related_row: not-found | default: opened
+crates/verify/ess-conformance/tests/fixtures/affects-past-emitting-not-found.yaml	demo.w.ResetMember	default: reset
+crates/verify/ess-conformance/tests/fixtures/affects-past-erroring-not-found.yaml	ir=0c6461bfdb1cd5318a9b5c8c82412398e9fa76f712834658dbabb96bdf7ad506:10893
+crates/verify/ess-conformance/tests/fixtures/affects-past-erroring-not-found.yaml	demo.w.CreateMember	default: created
+crates/verify/ess-conformance/tests/fixtures/affects-past-erroring-not-found.yaml	demo.w.OpenTicket	related_row: not-found | default: opened
+crates/verify/ess-conformance/tests/fixtures/affects-past-erroring-not-found.yaml	demo.w.ResetMember	default: reset
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	ir=890b366c1c870d26d464af41990ebd44b6abea74f3649e8115e9b593db7e7943:20930
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Cancel	held_state: wrong-state | default: cancelled
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Drop	held_state: wrong-state | default: dropped
@@ -307,6 +329,7 @@ crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	ir=55b03bf14
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.messages.LogMessage	default: logged
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.messages.MessageEvent	accepting: unavailable | default: messaged
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.messages.ReceiveMessage	default: received
+crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	ir=e40145284e7b85a5f309ab433ddc336fd87a70ca4c1259c4e752244be7993b77:19800
 crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	selection.core.Receive	default: received
 crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	ir=c70108e884d461d0b5d57218c577ecd3f1001f142e78d6d7ba8c8204025c96ea:19560
@@ -821,6 +844,30 @@ crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.ParkCall	held_state: not-waiting | default: parked
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.QueueEntry	default: queued
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.StartCall	default: started
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	ir=fdc9f69c28ee3339cf2a2c2d20111d1e8a2fd0a597480d06af0135490f6674a7:15639
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	demo.z.AddChild	related_row: parent-not-found | accepting: already-added | default: added
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	demo.z.CreateParent	default: created
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	demo.z.SyncFlag	accepting: store-unavailable | default: synced
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-related-value.yaml	ir=3b8de584ee64a6a26af7e5457cacb99fb4f1e78ac58e2de90f9ab6c622f8e51d:11399
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-related-value.yaml	demo.z.AddChild	default: added
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-related-value.yaml	demo.z.CreateParent	default: created
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-related-value.yaml	demo.z.SyncFlag	default: synced
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-refuses-missing-related-row.yaml	ir=c3f77bdb9a27ff0413a455894ae0a8e169dc77b9b79f858904d2cfa558fbbc0d:14066
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-refuses-missing-related-row.yaml	demo.depot.AddParcel	present_related: no-shelf | default: added
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-refuses-missing-related-row.yaml	demo.depot.CheckShelf	present_related: empty | default: holds-parcels
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-refuses-missing-related-row.yaml	demo.depot.OpenShelf	default: opened
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-refuses-missing-related-row.yaml	demo.depot.RelabelShelf	default: relabelled
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-without-related-refusal.yaml	ir=5e510bdc9dd26efed748aa95165f4e98a1dfc6c6e09a2a8d4d9a567bc6f33303:13531
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-without-related-refusal.yaml	demo.depot.AddParcel	default: added
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-without-related-refusal.yaml	demo.depot.CheckShelf	present_related: empty | default: holds-parcels
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-without-related-refusal.yaml	demo.depot.OpenShelf	default: opened
+crates/verify/ess-conformance/tests/fixtures/set-update-creator-without-related-refusal.yaml	demo.depot.RelabelShelf	default: relabelled
+crates/verify/ess-conformance/tests/fixtures/set-update-written-input-against-creator-input.yaml	ir=2f9dc04a78e04c07ff7775f2eff518b434473e8c3d32db81dbda8726a9899449:9060
+crates/verify/ess-conformance/tests/fixtures/set-update-written-input-against-creator-input.yaml	demo.z.AddChild	default: added
+crates/verify/ess-conformance/tests/fixtures/set-update-written-input-against-creator-input.yaml	demo.z.SyncFlag	default: synced
+crates/verify/ess-conformance/tests/fixtures/set-update-written-input-against-literal-creator.yaml	ir=4ecec70d3ac29529790c77cc84c7952f4575cf58e307d302f06113090b48f785:8762
+crates/verify/ess-conformance/tests/fixtures/set-update-written-input-against-literal-creator.yaml	demo.z.AddChild	default: added
+crates/verify/ess-conformance/tests/fixtures/set-update-written-input-against-literal-creator.yaml	demo.z.SyncFlag	default: synced
 crates/verify/ess-conformance/tests/fixtures/state-in-subject-predicate.yaml	ir=93ad22bc62ea70588000c392dcd758719c9df355395b5ef9beef80d9824bb5f4:11608
 crates/verify/ess-conformance/tests/fixtures/state-in-subject-predicate.yaml	demo.shop.MarkReady	default: readied
 crates/verify/ess-conformance/tests/fixtures/state-in-subject-predicate.yaml	demo.shop.PlaceOrder	default: placed
