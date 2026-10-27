@@ -558,30 +558,55 @@ struct Selection<'a> {
     /// The values the arrangement settled for a captured instance of `symbols`, where it knows
     /// them: a creator refusing that row on a comparison with its own input is decided on them.
     rows: super::related_guard::HeldRows,
-    /// The values the rows' creator copies from the captured related row a row's field names,
+    /// The values the rows' creators copy from the captured related row a row's field names,
     /// read from what [`Self::rows`] holds for that row. Empty but where the rows are created
     /// naming a related row arranged for them ([`Link`]).
     copies: Vec<Copied>,
+    /// Whether a visible row the plain search does not find is searched once more, toward rows
+    /// holding another value in every field the effect writes ([`Self::changing`]). Set only where
+    /// [`arranged_rows`] tries again after the plain search found no rows, so a selection that
+    /// search already witnesses keeps its arrangement.
+    vary: bool,
 }
 
 /// A field a row's creator fills from the related row another field of the row names
-/// (`{related: {via: input.<x>, field: <read>}}` beside `<named_by>: input.<x>`).
+/// (`{related: {via: input.<x>, field: <read>}}` beside `<named_by>: input.<x>`), and the branch
+/// creating the row that does. Another creator of the rows may copy another field, or none.
 #[derive(Clone)]
 struct Copied {
+    creator: OutcomeRef,
     named_by: String,
     target: String,
     read: String,
 }
 
+/// The branch the act creating `row` took: the outcome the act before the step capturing the row
+/// expects. `None` where the steps do not say.
+fn creator(row: &Arrangement) -> Option<&OutcomeRef> {
+    let captured = row.steps.iter().position(|step| {
+        matches!(step, ScenarioStep::CaptureInstance { instance, .. } if *instance == row.instance)
+    })?;
+    let created = row.steps[..captured]
+        .iter()
+        .rposition(|step| matches!(step, ScenarioStep::ExecuteCommand { .. }))?;
+    match row.steps.get(created + 1) {
+        Some(ScenarioStep::ExpectOutcome { outcome }) => Some(outcome),
+        _ => None,
+    }
+}
+
 impl Selection<'_> {
-    /// `row` with every value [`Self::copies`] names filled from the related row it names, where
-    /// [`Self::rows`] holds that row's value.
+    /// `row` with every value [`Self::copies`] names for the branch that created it filled from
+    /// the related row it names, where [`Self::rows`] holds that row's value.
     fn copied<'r>(&self, row: &'r Arrangement) -> Cow<'r, Arrangement> {
         if self.copies.is_empty() {
             return Cow::Borrowed(row);
         }
+        let Some(made_by) = creator(row) else {
+            return Cow::Borrowed(row);
+        };
         let mut filled = row.clone();
-        for copy in &self.copies {
+        for copy in self.copies.iter().filter(|copy| copy.creator == *made_by) {
             let Some(ScenarioValue::Instance { instance }) =
                 row.settled.get(&copy.named_by).map(|held| &held.value)
             else {
@@ -810,7 +835,7 @@ impl Selection<'_> {
                 // A creator writing a field the effect writes from its own input leaves each row
                 // the value its distinction gives, which may be the written one: the search is
                 // steered once more toward rows holding another value in every such field.
-                let changing = visible.then(|| self.changing()).flatten()?;
+                let changing = (self.vary && visible).then(|| self.changing()).flatten()?;
                 found(
                     &Predicate::All(vec![steer.clone(), changing.clone()]),
                     &changing,
@@ -885,6 +910,7 @@ pub(super) fn selected_row(
         held: BTreeMap::new(),
         rows: BTreeMap::new(),
         copies: Vec::new(),
+        vary: false,
     };
     selection.row(actors, taken, rests, false)
 }
@@ -1378,14 +1404,15 @@ const VARIED: usize = 4;
 /// A conjunct `<field> == input.<input>` of a set update's filter, where a command creating the
 /// filtered rows sets `<field>` from an input naming a row of `entity` it reads: through a
 /// `when_related:` guard, or by copying that row's fields into the new row (`copies`, each the
-/// row's field and the related row's field it is copied from). The rows are created naming a
-/// related row arranged first, and the update is sent naming it, so the creator finds the row
-/// and the copied values are known.
+/// creating branch, the row's field and the related row's field that branch copies it from). The
+/// rows are created naming a related row arranged first, and the update is sent naming it, so the
+/// creator finds the row and the copied values are known. Each creator's copies hold only for the
+/// rows it creates: two creators may copy different fields into the same one.
 struct Link {
     field: String,
     input: String,
     entity: EntityHandle,
-    copies: Vec<(String, String)>,
+    copies: Vec<(OutcomeRef, String, String)>,
 }
 
 /// Every conjunct `predicate` holds through `all:`.
@@ -1401,7 +1428,8 @@ fn conjoined<'p>(predicate: &'p Predicate, out: &mut Vec<&'p Predicate>) {
 }
 
 /// The [`Link`] of each conjunct of `set`'s filter that has one, by the first creating branch of
-/// its entity that gives one.
+/// its entity that gives one, with the copies of every creating branch whose link names a row of
+/// the same related entity.
 fn links(ir: &EssIr, set: &ResolvedSetSubject) -> Vec<Link> {
     let declared = ir.entity(&set.entity);
     let all = ir.drivers();
@@ -1440,9 +1468,14 @@ fn links(ir: &EssIr, set: &ResolvedSetSubject) -> Vec<Link> {
                 return None;
             };
             let (field, input) = pair(left, right).or_else(|| pair(right, left))?;
-            creators.iter().find_map(|creator| {
+            let mut given = creators.iter().filter_map(|creator| {
                 link_of(set, (creator.command, creator.outcome), (&field, &input))
-            })
+            });
+            let mut link = given.next()?;
+            for further in given.filter(|further| further.entity == link.entity) {
+                link.copies.extend(further.copies);
+            }
+            Some(link)
         })
         .collect()
 }
@@ -1485,7 +1518,13 @@ fn link_of(
         copies: copied
             .iter()
             .filter(|(copied_from, ..)| **copied_from == entity)
-            .map(|(_, target, read)| ((*target).to_owned(), (*read).to_owned()))
+            .map(|(_, target, read)| {
+                (
+                    OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()),
+                    (*target).to_owned(),
+                    (*read).to_owned(),
+                )
+            })
             .collect(),
         entity,
     })
@@ -1493,7 +1532,7 @@ fn link_of(
 
 /// Two related rows of `link`, the one the rows and the send name and the one the rows a
 /// conjunct leaves out name: each the plain row in its lifecycle's initial state where it holds,
-/// in every field the creator copies, a value other than the one `written` gives the field it is
+/// in every field a creator copies, a value other than the one `written` gives the field it is
 /// copied into, so a selected row the update changes shows it; otherwise the first row arranged
 /// toward such values; otherwise the plain row. `None` where no related row can be arranged.
 fn related_rows(
@@ -1507,7 +1546,7 @@ fn related_rows(
     let held: Vec<(&str, &Node)> = link
         .copies
         .iter()
-        .filter_map(|(target, read)| {
+        .filter_map(|(_, target, read)| {
             Some((read.as_str(), written.get(target)?.value.as_literal()?))
         })
         .collect();
@@ -1545,14 +1584,14 @@ struct Arranged<'s> {
 
 /// What `arrange` finds on the selection of `set`'s rows under `input`: where `link` is given,
 /// with its related rows arranged first ([`related_rows`]), the update sent naming the first and
-/// the rows a conjunct leaves out naming the second. Answers the related rows and the input as
-/// the command is then sent beside what it found.
+/// the rows a conjunct leaves out naming the second, and with `vary` as [`Selection::vary`].
+/// Answers the related rows and the input as the command is then sent beside what it found.
 #[allow(clippy::type_complexity)]
 fn under<T>(
     ir: &EssIr,
     (command, outcome, set): (&ResolvedCommand, &ResolvedOutcome, &ResolvedSetSubject),
     actors: &BTreeMap<QualifiedName, ActorRef>,
-    (input, link): (&BTreeMap<String, Node>, Option<&Link>),
+    (input, link, vary): (&BTreeMap<String, Node>, Option<&Link>, bool),
     arrange: &dyn Fn(&Selection<'_>) -> Result<T, &'static str>,
 ) -> Result<(T, Vec<Arrangement>, BTreeMap<String, ScenarioValue>), &'static str> {
     let mut literals = input.clone();
@@ -1584,7 +1623,8 @@ fn under<T>(
         copies = link
             .copies
             .iter()
-            .map(|(target, read)| Copied {
+            .map(|(creator, target, read)| Copied {
+                creator: creator.clone(),
                 named_by: link.field.clone(),
                 target: target.clone(),
                 read: read.clone(),
@@ -1607,6 +1647,7 @@ fn under<T>(
             held,
             rows,
             copies,
+            vary,
         };
         arrange(&selection)?
     };
@@ -1615,12 +1656,15 @@ fn under<T>(
 
 /// The rows the `instances:` scenario of `outcome` is witnessed on, sent the `plain` input first.
 ///
-/// Where that arranges none, the rows are tried once more for each [`Link`] of the filter, created
-/// naming a related row arranged first; and where the branch's `sets:` reads its input, under up
-/// to [`VARIED`] further inputs, each plain and then for each link. The first that arranges the
-/// rows is taken. Where none does, the refusal is the plain input's, unless it found too few
-/// selected rows: then it names the related row no arrangement left ([`NO_RELATED`]), or, where
-/// some input leaves three selected rows that no row of them would change, that ([`UNCHANGED`]).
+/// Where that arranges none, the plain input is tried once more with each visible row the search
+/// does not find steered toward rows the effect changes ([`Selection::vary`]); then, steered the
+/// same way, for each [`Link`] of the filter, created naming a related row arranged first; and
+/// where the branch's `sets:` reads its input, under up to [`VARIED`] further inputs, each plain
+/// and then for each link. The first that arranges the rows is taken. Where none does, the refusal
+/// is the plain input's, unless it found too few selected rows: then it is the reason of the first
+/// further try that found them, or it names the related row no arrangement left
+/// ([`NO_RELATED`]), or, where some input leaves three selected rows each already holding every
+/// value the effect writes, that ([`UNCHANGED`]).
 fn arranged_rows<'s>(
     ir: &EssIr,
     (command, outcome, set): (&ResolvedCommand, &ResolvedOutcome, &'s ResolvedSetSubject),
@@ -1628,8 +1672,8 @@ fn arranged_rows<'s>(
     plain: BTreeMap<String, Node>,
 ) -> Result<Arranged<'s>, &'static str> {
     let subject = (command, outcome, set);
-    let rows = |input: &BTreeMap<String, Node>, link: Option<&Link>| {
-        under(ir, subject, actors, (input, link), &|selection| {
+    let rows = |input: &BTreeMap<String, Node>, link: Option<&Link>, vary: bool| {
+        under(ir, subject, actors, (input, link, vary), &|selection| {
             set_rows(selection, actors, set)
         })
         .map(|((rows, to), related, supplied)| Arranged {
@@ -1639,7 +1683,10 @@ fn arranged_rows<'s>(
             supplied,
         })
     };
-    let first = match rows(&plain, None) {
+    if let Ok(arranged) = rows(&plain, None, false) {
+        return Ok(arranged);
+    }
+    let first = match rows(&plain, None, true) {
         Ok(arranged) => return Ok(arranged),
         Err(reason) => reason,
     };
@@ -1657,29 +1704,56 @@ fn arranged_rows<'s>(
         }
     }
     let mut unrelated = false;
+    // The reason of the first further try that found the rows the filter selects and failed past
+    // them: a related row named, or another input sent, may select rows and still find no row
+    // a conjunct leaves out, which is its obstacle and not the plain input's.
+    let mut own = None;
     for (index, input) in inputs.iter().enumerate() {
         let plain = (index > 0).then_some(None);
         for link in plain.into_iter().chain(links.iter().map(Some)) {
-            match rows(input, link) {
+            match rows(input, link, true) {
                 Ok(arranged) => return Ok(arranged),
                 Err(NO_RELATED) => unrelated = true,
-                Err(_) => {}
+                Err(NO_MATCHING) => {}
+                Err(reason) => {
+                    own.get_or_insert(reason);
+                }
             }
         }
     }
     if first != NO_MATCHING {
         return Err(first);
     }
+    if let Some(reason) = own {
+        return Err(reason);
+    }
     if unrelated {
         return Err(NO_RELATED);
     }
+    let movable = |state: &StateName| match &set.effect {
+        ResolvedEffect::Moves { transition } => transition.from.contains(state),
+        _ => true,
+    };
+    // Three rows the filter selects, each resting where the effect acts on it and holding, in
+    // every field the effect writes, the value it writes: only then does no row change.
     let selects = |selection: &Selection<'_>| {
         let mut taken = BTreeSet::new();
+        let holds_written = |row: &Arrangement| {
+            let written = settled(ir, outcome, selection.supplied, &row.settled);
+            !written.is_empty()
+                && written.iter().all(|(field, written)| {
+                    written.value.as_literal().is_some()
+                        && row
+                            .settled
+                            .get(field)
+                            .is_some_and(|held| held.value == written.value)
+                })
+        };
         (0..MATCHING)
             .all(|_| {
                 selection
-                    .row(actors, &mut taken, &|_| true, false)
-                    .is_some()
+                    .row(actors, &mut taken, &movable, false)
+                    .is_some_and(|row| holds_written(&row))
             })
             .then_some(())
             .ok_or(NO_MATCHING)
@@ -1687,7 +1761,7 @@ fn arranged_rows<'s>(
     let unchanged = inputs.iter().any(|input| {
         std::iter::once(None)
             .chain(links.iter().map(Some))
-            .any(|link| under(ir, subject, actors, (input, link), &selects).is_ok())
+            .any(|link| under(ir, subject, actors, (input, link, false), &selects).is_ok())
     });
     Err(if unchanged { UNCHANGED } else { first })
 }
@@ -1842,6 +1916,7 @@ fn combined(
             held: BTreeMap::new(),
             rows: BTreeMap::new(),
             copies: Vec::new(),
+            vary: false,
         })
         .collect();
     let mut out = Vec::with_capacity(entries.len());
@@ -2398,6 +2473,7 @@ fn affects_segment_on(
             held: held.clone(),
             rows: rows.clone(),
             copies: Vec::new(),
+            vary: false,
         };
         let rows = match affect_rows(&selection, actors, taken, affect) {
             Ok(rows) => rows,
@@ -3201,6 +3277,7 @@ fn unpublished_segment(
         held: BTreeMap::new(),
         rows: BTreeMap::new(),
         copies: Vec::new(),
+        vary: false,
     };
     let (from, to) = match &set.effect {
         ResolvedEffect::Moves { transition } => (Some(&transition.from), Some(&transition.to)),
