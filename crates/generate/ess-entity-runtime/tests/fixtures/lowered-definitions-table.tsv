@@ -1,4 +1,4 @@
-#	models=376	lines=518
+#	models=378	lines=521
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -248,6 +248,7 @@ crates/verify/ess-conformance/tests/fixtures/orders-without-a-view.yaml	orders-s
 crates/verify/ess-conformance/tests/fixtures/owned-subject.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/period-bounded-views.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/predicate-refusal-policy-arranged-row/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/recursive-fixtures/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/refusal-pair-overlap.yaml	components=1
@@ -437,6 +438,8 @@ system-dir:crates/verify/ess-conformance/tests/fixtures/binding-set-guard	compon
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-set-guard	svc	REFUSED	c785056ad6591345dcb7b378524c1c9af0984e7b7f602fa809b57165bd05d728:557
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-trigger-shares-row-guard	components=1
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-trigger-shares-row-guard	svc	REFUSED	f2aec6c4daa44d94d1d36a58eec9bef80c5e2f66e3051bfc774aeee2bad7cd88:750
+system-dir:crates/verify/ess-conformance/tests/fixtures/predicate-refusal-policy-arranged-row	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/predicate-refusal-policy-arranged-row	svc	REFUSED	9e084f9f47b1fc62c01affbbe5eeab805330fff3785c58d7e37e14450fa6250a:1070
 system-dir:crates/verify/ess-conformance/tests/fixtures/recursive-fixtures	components=0
 system-dir:crates/verify/ess-conformance/tests/fixtures/related-owner	components=0
 system-dir:crates/verify/ess-conformance/tests/fixtures/relation-via-identity	components=0
