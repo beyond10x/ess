@@ -6,7 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
-| [0.72.0](#bindings-past-related-and-set-guards-and-disclosure-follow-ups-with-a-fresh-set-effect-get-the-scenarios-synthesis-used-to-refuse) | Bindings past related and set guards, and disclosure follow-ups with a fresh set effect, get the scenarios synthesis used to refuse | capability | notable |
+| [0.72.0](#bindings-past-related-and-set-guards-and-fresh-input-disclosure-follow-ups-get-their-scenarios) | Bindings past related and set guards, and fresh-input disclosure follow-ups, get their scenarios | capability | notable |
 | [0.71.0](#set-updates-affects-rows-and-converted-binding-inputs-get-the-scenarios-synthesis-used-to-refuse) | Set updates, affects rows and converted binding inputs get the scenarios synthesis used to refuse | capability | notable |
 | [0.70.0](#named-rows-beside-a-row-set-state-wire-spellings-and-replays-that-no-longer-stop-with-invalidreplay) | Named rows beside a row set, state wire spellings, and replays that no longer stop with InvalidReplay | capability | notable |
 | [0.69.2](#an-external-branch-that-copies-an-optional-input-keeps-naming-the-row-its-arrangement-created) | An external branch that copies an optional input keeps naming the row its arrangement created | capability | notable |
@@ -86,7 +86,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 ## 0.72.0 — 2026-10-27
 
-### Bindings past related and set guards, and disclosure follow-ups with a fresh set effect, get the scenarios synthesis used to refuse
+### Bindings past related and set guards, and fresh-input disclosure follow-ups, get their scenarios
 
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.72.0)
 

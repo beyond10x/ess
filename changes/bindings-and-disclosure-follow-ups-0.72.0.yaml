@@ -2,7 +2,7 @@ schema: b10x-change/v1
 id: ess/bindings-and-disclosure-follow-ups-0.72.0
 repository: ess
 publishedAt: 2026-10-27T00:00:00Z
-title: Bindings past related and set guards, and disclosure follow-ups with a fresh set effect, get the scenarios synthesis used to refuse
+title: Bindings past related and set guards, and fresh-input disclosure follow-ups, get their scenarios
 summary: >-
   Synthesis now arranges the related row or the selected rows a binding's invoked command reads
   through a `when_related:` guard, where the command updates the trigger's row, chooses its branch

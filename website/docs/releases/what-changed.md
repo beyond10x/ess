@@ -11,7 +11,7 @@ This page is generated from the change records kept in the repository. A release
 
 ## 0.72.0 — 2026-10-27
 
-### Bindings past related and set guards, and disclosure follow-ups with a fresh set effect, get the scenarios synthesis used to refuse
+### Bindings past related and set guards, and fresh-input disclosure follow-ups, get their scenarios
 
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.72.0)
 
