@@ -1,4 +1,4 @@
-#	models=325	commands=694
+#	models=327	commands=700
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -241,6 +241,10 @@ crates/verify/ess-conformance/tests/fixtures/affects-past-erroring-not-found.yam
 crates/verify/ess-conformance/tests/fixtures/affects-past-erroring-not-found.yaml	demo.w.CreateMember	default: created
 crates/verify/ess-conformance/tests/fixtures/affects-past-erroring-not-found.yaml	demo.w.OpenTicket	related_row: not-found | default: opened
 crates/verify/ess-conformance/tests/fixtures/affects-past-erroring-not-found.yaml	demo.w.ResetMember	default: reset
+crates/verify/ess-conformance/tests/fixtures/affects-past-predicate-guard.yaml	ir=5eb51d45cc4b71f0ac50d5ea913a8af4bc7682d495bee2858065fdba606da0de:12403
+crates/verify/ess-conformance/tests/fixtures/affects-past-predicate-guard.yaml	demo.v.CreateMember	default: created
+crates/verify/ess-conformance/tests/fixtures/affects-past-predicate-guard.yaml	demo.v.OpenTicket	present_related: not-found | accepting: linked | default: opened
+crates/verify/ess-conformance/tests/fixtures/affects-past-predicate-guard.yaml	demo.v.ResetMember	default: reset
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	ir=890b366c1c870d26d464af41990ebd44b6abea74f3649e8115e9b593db7e7943:20930
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Cancel	held_state: wrong-state | default: cancelled
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Drop	held_state: wrong-state | default: dropped
@@ -248,6 +252,10 @@ crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.fe
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Play	held_state: wrong-state | default: played
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Post	default: posted
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Sweep	default: swept
+crates/verify/ess-conformance/tests/fixtures/affects-without-predicate-guard.yaml	ir=0016cf2607b5ba4fe2fdb4dd46031a41b810273501dea96873314fe290f88c89:11793
+crates/verify/ess-conformance/tests/fixtures/affects-without-predicate-guard.yaml	demo.v.CreateMember	default: created
+crates/verify/ess-conformance/tests/fixtures/affects-without-predicate-guard.yaml	demo.v.OpenTicket	present_related: not-found | default: opened
+crates/verify/ess-conformance/tests/fixtures/affects-without-predicate-guard.yaml	demo.v.ResetMember	default: reset
 crates/verify/ess-conformance/tests/fixtures/aggregate-copied-group-parameter.yaml	ir=d581148ce3b8124b063000431cd6524cbb9e6d211209d875b5ff76bccdabc67f:10865
 crates/verify/ess-conformance/tests/fixtures/aggregate-copied-group-parameter.yaml	demo.work.OpenDepot	default: opened
 crates/verify/ess-conformance/tests/fixtures/aggregate-copied-group-parameter.yaml	demo.work.OpenItem	default: opened

@@ -1,4 +1,4 @@
-#	models=376	lines=518
+#	models=378	lines=520
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -108,7 +108,9 @@ crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-es
 crates/verify/ess-conformance/tests/fixtures/adversary-w1-1-identity-selector-ess22.yaml	team-service	REFUSED	3bb7512bb1109eb749075c3e868b8674f2cd584d86524683c047720bc21a46da:1161
 crates/verify/ess-conformance/tests/fixtures/affects-past-emitting-not-found.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/affects-past-erroring-not-found.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/affects-past-predicate-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/affects-without-predicate-guard.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/aggregate-copied-group-parameter.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/aggregate-group-parameter.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/aggregate-group-selection-copied.yaml	components=0

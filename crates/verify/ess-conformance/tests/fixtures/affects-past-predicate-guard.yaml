@@ -1,0 +1,123 @@
+format: ess/32
+system: demo
+version: v1
+domain: demo.v
+summary: Rows a reset deletes, created only behind a not-found branch and a branch over the member's kind.
+
+types:
+  - name: demo.v.MemberId
+    kind: newtype
+    of: Uuid
+  - name: demo.v.TicketId
+    kind: newtype
+    of: String
+  - name: demo.v.Kind
+    kind: enum
+    variants: [Plain, Linked]
+
+entities:
+  - name: demo.v.Member
+    identity:
+      name: member_id
+      type: demo.v.MemberId
+    fields:
+      - name: kind
+        type: demo.v.Kind
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+
+  - name: demo.v.Ticket
+    identity:
+      name: ticket_id
+      type: demo.v.TicketId
+    fields:
+      - name: member_id
+        type: demo.v.MemberId
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+
+actors:
+  - name: demo.v.Admin
+    may: [demo.v.CreateMember, demo.v.OpenTicket, demo.v.ResetMember]
+
+commands:
+  - name: demo.v.CreateMember
+    input:
+      - name: kind
+        type: demo.v.Kind
+    outcomes:
+      - name: created
+        creates: demo.v.Member
+        instance: member_id
+        emits: [demo.v.MemberEvent]
+        payload:
+          demo.v.MemberEvent:
+            member_id: {generated: true}
+        sets:
+          kind: input.kind
+
+  - name: demo.v.OpenTicket
+    input:
+      - name: member_id
+        type: demo.v.MemberId
+    outcomes:
+      - name: not-found
+        when_related: {via: input.member_id, exists: false}
+        emits: [demo.v.Missed]
+      - name: linked
+        when_related: {via: input.member_id, predicate: kind == Linked}
+        emits: [demo.v.Missed]
+      - name: opened
+        creates: demo.v.Ticket
+        instance: ticket_id
+        emits: [demo.v.TicketOpened]
+        payload:
+          demo.v.TicketOpened:
+            ticket_id: {generated: true}
+        sets:
+          member_id: input.member_id
+
+  - name: demo.v.ResetMember
+    input:
+      - name: member_id
+        type: demo.v.MemberId
+    outcomes:
+      - name: reset
+        updates: demo.v.Member
+        instance: member_id
+        emits: [demo.v.MemberEvent]
+        payload:
+          demo.v.MemberEvent:
+            member_id: input.member_id
+        affects:
+          - entity: demo.v.Ticket
+            where: member_id == input.member_id
+            deletes: demo.v.Ticket
+
+events:
+  - name: demo.v.Missed
+    fields: []
+  - name: demo.v.MemberEvent
+    fields:
+      - name: member_id
+        type: demo.v.MemberId
+  - name: demo.v.TicketOpened
+    fields:
+      - name: ticket_id
+        type: demo.v.TicketId
+
+views:
+  - name: demo.v.TicketRecord
+    source: demo.v.Ticket
+    consistency: read_your_writes
+    fields:
+      - name: ticket_id
+        type: demo.v.TicketId
+      - name: state
+        type: demo.v.Ticket.State
+      - name: member_id
+        type: demo.v.MemberId

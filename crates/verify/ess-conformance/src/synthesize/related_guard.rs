@@ -539,7 +539,8 @@ pub(super) fn several_present(format: ess_domain::system::FormatVersion) -> bool
 /// [`present_for`] over the rows `read` lists, each the captured row `bound` names through its
 /// `via` with the values `rows` settled for it: every branch reading one of them is an
 /// `exists: false` branch, which a captured row never takes whether it emits or names an error, or
-/// a refusal over its stored fields those values refute crossed with `input`.
+/// a branch over its stored fields those values refute crossed with `input`, which is passed over
+/// the same way whether it emits or names an error (`kind == Linked` on a member settled `Plain`).
 fn present_on(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -574,7 +575,7 @@ fn present_on(
                 input: None,
                 also,
                 ..
-            } if also.is_empty() && outcome.error.is_some() => {
+            } if also.is_empty() => {
                 captured(via.field()).is_some_and(|(entity, instance, settled)| {
                     subject_fact::row_truth_with(
                         ir,
