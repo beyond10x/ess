@@ -1028,10 +1028,59 @@ fn append(
     let Some(value) = recaptured(ir, value) else {
         return Ok(());
     };
-    if let Ok(steps) = serde_json::from_value::<Vec<ScenarioStep>>(value) {
+    if let Ok(mut steps) = serde_json::from_value::<Vec<ScenarioStep>>(value) {
+        cumulative(&scenario.steps, &mut steps);
         scenario.steps.extend(steps);
     }
     Ok(())
+}
+
+/// A run's exact counts, appended after the `first` run's steps, counted over both runs.
+///
+/// An invocation count (`expect_invocation` with `count:`) and a publication count are read over
+/// every invocation or publication under the scenario's correlation, the first run's included: a
+/// second run expecting its own one invocation observes two. Each count is raised by the last one
+/// the first run expects of the same binding, command and input filter, or of the same event,
+/// which that run observed for its whole window.
+fn cumulative(first: &[ScenarioStep], steps: &mut [ScenarioStep]) {
+    for step in steps {
+        let earlier = match &*step {
+            ScenarioStep::ExpectInvocation {
+                binding,
+                command,
+                input,
+                count: Some(_),
+            } => first.iter().rev().find_map(|prior| match prior {
+                ScenarioStep::ExpectInvocation {
+                    binding: by,
+                    command: invoked,
+                    input: with,
+                    count: Some(count),
+                } if by == binding && invoked == command && with == input => Some(*count),
+                _ => None,
+            }),
+            ScenarioStep::ExpectPublicationCount { event, .. } => {
+                first.iter().rev().find_map(|prior| match prior {
+                    ScenarioStep::ExpectPublicationCount {
+                        event: published,
+                        count,
+                    } if published == event => Some(*count),
+                    _ => None,
+                })
+            }
+            _ => None,
+        };
+        let Some(earlier) = earlier else {
+            continue;
+        };
+        if let ScenarioStep::ExpectInvocation {
+            count: Some(count), ..
+        }
+        | ScenarioStep::ExpectPublicationCount { count, .. } = step
+        {
+            *count = count.saturating_add(earlier.get());
+        }
+    }
 }
 
 /// Whether `steps` establish a row by setup: its literal identity can be established only once in a

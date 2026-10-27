@@ -1,0 +1,9 @@
+components:
+  - {component: svc, owns: {domains: [demo.b]}, accepts: {commands: [demo.b.IssueKey, demo.b.DefineGrant, demo.b.OpenTicket, demo.b.MoveTicket, demo.b.Refresh]}}
+bindings:
+  - id: refresh-on-ticket-moved
+    when: {event: demo.b.TicketMoved}
+    invoke: {command: demo.b.Refresh}
+    mapping: {ticket_id: event.ticket_id, grant_id: event.grant_id}
+    delivery: at_least_once
+    on_failure: {drop: [grant-missing], retry: {except: [grant-missing]}}
