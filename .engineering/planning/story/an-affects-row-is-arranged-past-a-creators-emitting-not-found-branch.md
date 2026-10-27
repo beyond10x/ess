@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-affects-row-is-arranged-past-a-creators-emitting-not-found-branch
 kind: story
-status: active
+status: implemented
 title: An affects row is arranged past a creator's emitting not-found branch
 summary: 'Adopter batch 2d N: affects over Ticket is refused when the creator''s exists false branch emits an event instead of naming an error'
 tags:
@@ -10,10 +10,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T21:52:54Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-26T21:52:55Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-27T11:23:16Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:b10x-chef-orchestrator-ess-0710"}
 ---
 ## Problem
 

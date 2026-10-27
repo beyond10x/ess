@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-set-update-arranges-rows-whose-filtered-value-the-creator-copies-from-a-related-row
 kind: story
-status: active
+status: implemented
 title: A set update arranges rows whose value the creator copies from a related row
 summary: 'Adopter batch 2c K: a creator copying flag from the related row leaves SyncFlag/synced refused as ESS-SYNTH-001 no three rows'
 tags:
@@ -10,10 +10,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T21:52:52Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-26T21:52:53Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-27T11:23:13Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:b10x-chef-orchestrator-ess-0710"}
 ---
 ## Problem
 

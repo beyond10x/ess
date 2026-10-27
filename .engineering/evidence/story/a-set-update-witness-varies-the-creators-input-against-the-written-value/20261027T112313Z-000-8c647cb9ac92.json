@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-27T11:23:13Z",
+  "actor": "human:timo",
+  "artifact": "story:a-set-update-witness-varies-the-creators-input-against-the-written-value",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "set_update_creator_constraints 7, adversary_0710_pass1 11 passed on cfd392c507 (merged 8d1f7e2d57); a moving set update the base witnessed keeps its bytes",
+    "reference": "commit:8d1f7e2d57"
+  }
+}

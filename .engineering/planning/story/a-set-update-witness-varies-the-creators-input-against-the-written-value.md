@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-set-update-witness-varies-the-creators-input-against-the-written-value
 kind: story
-status: active
+status: implemented
 title: A set update witness varies the creator's input against the written value
 summary: 'Adopter batch 2c M: creator and set update both write input.flag, synthesis sends true to both, no row changes, refused'
 tags:
@@ -10,10 +10,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-26T21:52:54Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-26T21:52:54Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-27T11:23:14Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:b10x-chef-orchestrator-ess-0710"}
 ---
 ## Problem
 

@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-27T11:23:11Z",
+  "actor": "human:timo",
+  "artifact": "story:a-set-update-arranges-rows-whose-filtered-value-the-creator-copies-from-a-related-row",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "set_update_creator_constraints 7, adversary_0710_pass1 11 passed on cfd392c507 (merged 8d1f7e2d57); suite-bytes tables add rows, move none; the reported models synthesize with 0 refusals",
+    "reference": "commit:8d1f7e2d57"
+  }
+}
