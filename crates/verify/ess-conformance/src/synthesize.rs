@@ -1353,6 +1353,21 @@ impl RefusalCause {
                  in a state that guard accepts for some input, or cover the branch with an \
                  authored scenario (ess-scenario/1)"
             }
+            // A set effect's rows whose creator reads the related row the filtered field names:
+            // the filter already reads an input, the related row is what is missing.
+            Self::NoWitness(gap) if gap.reason == set_effects::NO_RELATED => {
+                "the command creating the rows reads the related row the input it sets the \
+                 filtered field from names; let a declared command create that related row in a \
+                 state the creator accepts, or cover the branch with an authored scenario \
+                 (ess-scenario/1)"
+            }
+            // A set effect's rows that already hold what it writes: the filter is met, the value
+            // the effect changes is what is missing.
+            Self::NoWitness(gap) if gap.reason == set_effects::UNCHANGED => {
+                "every row the filter selects already holds what the effect writes; let the \
+                 effect write a field from its input, or let a command creating the rows write \
+                 that field from an input, so an arranged row can hold another value"
+            }
             Self::NoWitness(gap) if set_effects::UNARRANGED.contains(&gap.reason) => {
                 "let a command that creates the entity write each field the filter reads from an \
                  input or from a caller attribute (`{caller: <attribute>}`) rather than from a \

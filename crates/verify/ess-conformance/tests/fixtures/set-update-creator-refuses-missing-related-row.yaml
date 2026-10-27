@@ -1,0 +1,86 @@
+format: ess/29
+system: demo
+version: v1
+domain: demo.depot
+summary: A parcel is added only to a shelf that exists; a check asks whether a shelf holds any parcel.
+types:
+  - {name: demo.depot.ShelfId, kind: newtype, of: Uuid}
+  - {name: demo.depot.ParcelId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.depot.Shelf
+    identity: {name: shelf_id, type: demo.depot.ShelfId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.depot.Parcel
+    identity: {name: parcel_id, type: demo.depot.ParcelId}
+    fields:
+      - {name: shelf_id, type: demo.depot.ShelfId}
+      - {name: name, type: String}
+    lifecycle: {initial: Waiting, states: [Waiting], terminal: [Waiting]}
+errors:
+  - {name: demo.depot.NoSuchShelf, summary: No shelf carries this identity., fields: []}
+  - {name: demo.depot.Empty, summary: The shelf holds no parcel., fields: []}
+events:
+  - name: demo.depot.ShelfOpened
+    fields: [{name: shelf_id, type: demo.depot.ShelfId}]
+  - name: demo.depot.ParcelAdded
+    fields: [{name: parcel_id, type: demo.depot.ParcelId}]
+actors:
+  - name: demo.depot.Clerk
+    may: [demo.depot.OpenShelf, demo.depot.AddParcel, demo.depot.CheckShelf, demo.depot.RelabelShelf]
+commands:
+  - name: demo.depot.OpenShelf
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: demo.depot.Shelf
+        instance: shelf_id
+        emits: [demo.depot.ShelfOpened]
+        payload: {demo.depot.ShelfOpened: {shelf_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: demo.depot.AddParcel
+    input:
+      - {name: shelf_id, type: demo.depot.ShelfId}
+      - {name: name, type: String}
+    outcomes:
+      - name: no-shelf
+        when_related: {via: input.shelf_id, exists: false}
+        error: demo.depot.NoSuchShelf
+      - name: added
+        creates: demo.depot.Parcel
+        instance: parcel_id
+        emits: [demo.depot.ParcelAdded]
+        payload: {demo.depot.ParcelAdded: {parcel_id: {generated: true}}}
+        sets: {shelf_id: input.shelf_id, name: input.name}
+  - name: demo.depot.CheckShelf
+    input:
+      - {name: shelf_id, type: demo.depot.ShelfId}
+    outcomes:
+      - name: empty
+        when_related:
+          entity: demo.depot.Parcel
+          where: "shelf_id == input.shelf_id"
+          exists: false
+        error: demo.depot.Empty
+      - {name: holds-parcels, accepts: nothing}
+  - name: demo.depot.RelabelShelf
+    input:
+      - {name: shelf_id, type: demo.depot.ShelfId}
+      - {name: name, type: String}
+    outcomes:
+      - name: relabelled
+        updates: demo.depot.Parcel
+        instances: {where: shelf_id == input.shelf_id}
+        emits: [demo.depot.ShelfOpened]
+        payload: {demo.depot.ShelfOpened: {shelf_id: input.shelf_id}}
+        sets: {name: input.name}
+views:
+  - name: demo.depot.Parcels
+    source: demo.depot.Parcel
+    consistency: read_your_writes
+    fields:
+      - {name: parcel_id, type: demo.depot.ParcelId}
+      - {name: shelf_id, type: demo.depot.ShelfId}
+      - {name: name, type: String}
