@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-binding-whose-trigger-shares-the-row-guard-flows
 kind: story
-status: draft
+status: active
 title: A binding whose trigger shares the invoked row guard still flows
 summary: ESS-SYNTH-010 refuses flow and delivery when the trigger carries the same exists:false guard as the invoked command; 6 / 3, 8 / 0 without it.
 tags:
@@ -11,7 +11,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-27T14:45:00Z", actor: "human:timo", revision: 2, executor: "agent:b10x-chef-orchestrator-ess-0720"}
+- {from: "proposed", to: "active", at: "2026-10-27T14:45:00Z", actor: "human:timo", revision: 3, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 ---
 ## Problem
 

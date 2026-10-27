@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-binding-arranges-the-row-a-set-guard-selects
 kind: story
-status: draft
+status: active
 title: A binding arranges the row a set guard of its invoked command selects
 summary: ESS-SYNTH-010 refuses a binding whose invoked command branches on a set guard, and its help leads to ESS-COMMAND-005; 5 / 3, 8 / 0 with external.
 tags:
@@ -11,7 +11,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-27T14:44:59Z", actor: "human:timo", revision: 2, executor: "agent:b10x-chef-orchestrator-ess-0720"}
+- {from: "proposed", to: "active", at: "2026-10-27T14:44:59Z", actor: "human:timo", revision: 3, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 ---
 ## Problem
 
