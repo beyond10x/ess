@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.72.0] — 2026-10-27
+
+### Fixed
+
+- A one-time response's disclosure cell now composes a follow-up whose set effect selects rows by a stored field pinned to an input, `instances: {where: <field> == input.<x>}`, when the follow-up sends a value for that input that the origin's run never sent and arranges a row the effect selects, as an adopter reported against 0.69.2. Before, the cell was refused as ESS-SYNTH-001, "the follow-up assertions cannot compose with the retained origin state". A set effect that could still select the origin's rows, or whose run arranges no row it selects, stays refused, and the refusal now names its filter.
+- A binding whose invoked command updates the row the trigger acted on and chooses its branch by a `when_related:` guard over another row now gets its flow, mapping, delivery and refusal scenarios, as an adopter reported against 0.69.2. Synthesis arranges the related row before the trigger and sends the trigger naming it where the trigger keeps its branch, as it already did where the command acts on no row of its own. Before, they were refused as ESS-SYNTH-010, "an input the event fills". Where the guard still cannot be followed, the refusal names the guarded branches, the related row and its input.
+- A binding whose invoked command chooses its branch by a set guard, `when_related: {entity:, where:, exists: true}` beside a default branch, now gets its flow, delivery and failure scenarios, as an adopter reported against 0.69.2. Synthesis arranges the rows the guard selects before the trigger, as it already did for a `via:` guard. Before, they were refused as ESS-SYNTH-010 with help asking to declare the default branch `external:`, which validation refuses with ESS-COMMAND-005. Where no such row can be arranged, the refusal now names the set guard, and its help asks for the trigger to copy the input the guard reads, or for an authored scenario.
+- A binding whose trigger refuses the same missing related row as the invoked command, `when_related: {via: input.<f>, exists: false}` on both, now gets its `binding/flow` and `binding/delivery` scenarios, as an adopter reported against 0.69.2. Synthesis creates the related row, then sends the trigger naming it. Before, both were refused as ESS-SYNTH-010. The `binding/refusal/<missing>` cell stays refused: no trigger event reaches it, and the refusal names the trigger's guard as the reason.
+
 ## [0.71.0] — 2026-10-27
 
 ### Fixed
