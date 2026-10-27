@@ -81,9 +81,9 @@ pub(super) fn augment(ir: &EssIr, synthesis: &mut Synthesis) {
                         } else if matches!(aspect, Aspect::Rotation) {
                             let repeated = scenario.clone();
                             if let Err(reason) =
-                                super::caller::append_independent(ir, &mut scenario, &repeated)
+                                super::caller::append_followup(ir, &mut scenario, &repeated)
                             {
-                                synthesis.refusals.push(refusal(&id, reason));
+                                synthesis.refusals.push(refusal(&id, &reason));
                                 continue;
                             }
                         }
@@ -543,9 +543,9 @@ fn followups(
                     &mut synthesis.refusals,
                 ) {
                     if let Err(reason) =
-                        super::caller::append_independent(ir, &mut scenario, &followup)
+                        super::caller::append_followup(ir, &mut scenario, &followup)
                     {
-                        synthesis.refusals.push(refusal(&id, reason));
+                        synthesis.refusals.push(refusal(&id, &reason));
                         continue;
                     }
                     insert(ir, synthesis, id, scenario);
@@ -658,8 +658,8 @@ fn read_cells(
         }
         scenario.steps.push(read.clone());
         let rotated = scenario.steps.len();
-        if let Err(reason) = super::caller::append_independent(ir, &mut scenario, &rotation) {
-            synthesis.refusals.push(refusal(&id, reason));
+        if let Err(reason) = super::caller::append_followup(ir, &mut scenario, &rotation) {
+            synthesis.refusals.push(refusal(&id, &reason));
             continue;
         }
         if let Some(reader) = actor {
@@ -872,8 +872,8 @@ fn denied_cell(
     denied
         .source
         .insert(CommandRef::new(command.name.clone()).into());
-    if let Err(reason) = super::caller::append_independent(ir, &mut scenario, &denied) {
-        synthesis.refusals.push(refusal(&id, reason));
+    if let Err(reason) = super::caller::append_followup(ir, &mut scenario, &denied) {
+        synthesis.refusals.push(refusal(&id, &reason));
         return;
     }
     insert(ir, synthesis, id, scenario);
