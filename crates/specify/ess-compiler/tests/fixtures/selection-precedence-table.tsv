@@ -730,6 +730,7 @@ crates/verify/ess-conformance/tests/fixtures/period-bounded-views.yaml	demo.ledg
 crates/verify/ess-conformance/tests/fixtures/period-bounded-views.yaml	demo.ledger.ResolveIncident	held_state: wrong-state | default: resolved
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	ir=a72e2b9589365db395dd0b717d7122a2b48082857d07d87ae657595c9b4d58d2:4387
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	fixturetest.session.Open	default: opened
+crates/verify/ess-conformance/tests/fixtures/predicate-refusal-policy-arranged-row/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/recursive-fixtures/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	ir=e2ab0a03303fd11f4809302a67dab7ae3a001f500f48905f96f2d67ae43c4836:15131
 crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	demo.secrets.Configure	held_state: not-pending | default: configured

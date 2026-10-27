@@ -1487,6 +1487,43 @@ fn related_decided<'a>(
     }
     let (via, entity) = related_guard::reads(invoked)?;
     let accepting = accepting_branch(ir, invoked, via, entity)?;
+    let (setup, invoke, source) = related_arranged(
+        ir,
+        binding,
+        invoked,
+        (via, entity, accepting),
+        published_by,
+        trigger,
+        actors,
+    )?;
+    Some(Prepared {
+        setup,
+        invoke,
+        capture: Vec::new(),
+        reached: Ok(accepting),
+        row: None,
+        source,
+    })
+}
+
+/// The arrangement of [`related_decided`] selecting `branch`: the related row of `entity` read
+/// through `via` arranged before the trigger so that `branch` is selected, and the trigger sent
+/// naming it; the setup, the trigger's invocation and what the row rests on.
+#[allow(clippy::type_complexity)]
+fn related_arranged(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    invoked: &ResolvedCommand,
+    (via, entity, branch): (&str, &EntityHandle, &ResolvedOutcome),
+    published_by: &ResolvedOutcome,
+    trigger: &Run,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Option<(
+    Vec<ScenarioStep>,
+    Vec<ScenarioStep>,
+    BTreeSet<EssSemanticRef>,
+)> {
+    use super::related_guard;
 
     // The identity reaches the invocation unchanged from an input of the trigger's caller, across
     // no conversion or one that hands it on as it is.
@@ -1523,9 +1560,8 @@ fn related_decided<'a>(
     let arranged = std::iter::once(distinction)
         .chain(further)
         .find_map(|distinction| {
-            let (arranged, _) = related_guard::prepare_at_in(
-                &models, invoked, accepting, actors, distinction, None,
-            )
+            let (arranged, _) =
+                related_guard::prepare_at_in(&models, invoked, branch, actors, distinction, None)
             .ok()?;
             let collides = arranged.steps.iter().any(|step| {
                 matches!(step, ScenarioStep::CaptureInstance { instance, .. } if taken.contains(instance))
@@ -1562,14 +1598,75 @@ fn related_decided<'a>(
         setup.extend(arranged.steps);
         (setup, invoke)
     };
-    Some(Prepared {
-        setup,
-        invoke,
-        capture: Vec::new(),
-        reached: Ok(accepting),
-        row: None,
-        source: arranged.source,
-    })
+    Some((setup, invoke, arranged.source))
+}
+
+/// The trigger of a binding whose failure policy is selected per refusal, sent naming a related
+/// row arranged so that `refusal`, a `when_related: {via: input.<f>, predicate: …}` branch with an
+/// error, is selected: the honest system answers it on every attempt, as it answers an
+/// `exists: false` refusal for a trigger naming no row ([`related_missing`]), so no injection is
+/// needed. The row is arranged as [`related_decided`] arranges one for the accepting branch, under
+/// the same conditions; an invoked command acting on the trigger's own row is read as its guards
+/// read it there ([`read_on_row`]). The setup, the trigger's invocation and what the row rests on;
+/// `None` where any of that does not hold, or no row the predicate refuses can be arranged, so the
+/// refusal keeps its gap.
+#[allow(clippy::type_complexity)]
+pub(super) fn related_refused(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    invoked: &ResolvedCommand,
+    published_by: &ResolvedOutcome,
+    refusal: &ResolvedOutcome,
+    trigger: &Run,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Option<(
+    Vec<ScenarioStep>,
+    Vec<ScenarioStep>,
+    BTreeSet<EssSemanticRef>,
+)> {
+    use super::related_guard;
+    use ess_compiler::ir::ResolvedRelatedTest;
+
+    if refusal.error.is_none() || refusal.test_strategy == TestStrategy::InjectFault {
+        return None;
+    }
+    let read = read_on_row(ir, binding, invoked, published_by, trigger)?;
+    let invoked = read.as_ref().unwrap_or(invoked);
+    if !related_guard::uses(invoked)
+        || related_guard::several(invoked)
+        || related_guard::stored::field(invoked).is_some()
+    {
+        return None;
+    }
+    let refusal = invoked
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.name == refusal.name)?;
+    let (via, entity) = related_guard::reads(invoked)?;
+    let ResolvedCondition::Related {
+        via: through,
+        test: ResolvedRelatedTest::Holds { .. },
+        input: None,
+        also,
+        ..
+    } = &refusal.condition
+    else {
+        return None;
+    };
+    // Every branch is decided by that one row alone, as for the accepting branch.
+    if through.field() != via || !also.is_empty() {
+        return None;
+    }
+    accepting_branch(ir, invoked, via, entity)?;
+    related_arranged(
+        ir,
+        binding,
+        invoked,
+        (via, entity, refusal),
+        published_by,
+        trigger,
+        actors,
+    )
 }
 
 /// [`related_decided`] where the invoked command acts on the trigger's own row, resting in `held`

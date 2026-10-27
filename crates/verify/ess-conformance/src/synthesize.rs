@@ -1613,6 +1613,7 @@ crate::authored::diagnostic_catalogue! {
                 | BindingGap::RetriedUnforcible { .. }
                 | BindingGap::FinalUnforcible { .. }
                 | BindingGap::RefusalUnforcible { .. }
+                | BindingGap::RelatedRefusalUnarranged { .. }
                 | BindingGap::ArrangementSetsOff { .. }
                 | BindingGap::DestinationIdentityUnavailable { .. }
                 | BindingGap::DestinationIneligible { .. }
@@ -2106,6 +2107,14 @@ pub enum BindingGap {
         /// The refusal.
         outcome: OutcomeRef,
     },
+    /// [`RefusalUnforcible`](Self::RefusalUnforcible), where the refusal is a predicate over a
+    /// related row (`when_related: {via: input.<f>, predicate: …}`): a scenario answers it through
+    /// a row the predicate refuses, arranged before the trigger and named in it, and no such row
+    /// can be arranged. A named coverage limitation; the refusal is not one to declare `external:`.
+    RelatedRefusalUnarranged {
+        /// The refusal.
+        outcome: OutcomeRef,
+    },
     /// Every command that publishes the binding's event needs an arrangement that publishes it
     /// too, so the binding would be invoked before the counted attempts begin.
     ArrangementSetsOff {
@@ -2237,6 +2246,7 @@ pub struct ConvertedInput {
 
 impl BindingGap {
     /// What would have to change.
+    #[allow(clippy::too_many_lines)] // Keep every binding gap's hint in one exhaustive match.
     fn hint(&self) -> &'static str {
         match self {
             Self::AccessorObservation { .. } => {
@@ -2284,6 +2294,12 @@ impl BindingGap {
             Self::RefusalUnforcible { .. } => {
                 "declare the refusal `external:`, which is what lets a scenario force it, or cover \
                  its policy with an authored scenario (ess-scenario/1)"
+            }
+            Self::RelatedRefusalUnarranged { .. } => {
+                "cover its policy with an authored scenario (ess-scenario/1) that arranges a row \
+                 the refusal's `when_related:` predicate refuses; synthesis arranges one itself \
+                 where a command creating the row takes each field the predicate reads as input, \
+                 and the trigger copies the row's identity unconverted from an input of its own"
             }
             Self::ArrangementSetsOff { .. } => {
                 "let some command publish the event without an arrangement that publishes it first; \
@@ -2402,6 +2418,11 @@ impl fmt::Display for BindingGap {
                 f,
                 "selects its failure policy per refusal, and the refusal `{outcome}` cannot be \
                  forced"
+            ),
+            Self::RelatedRefusalUnarranged { outcome } => write!(
+                f,
+                "selects its failure policy per refusal, and no row the predicate of the refusal \
+                 `{outcome}` refuses can be arranged before the trigger"
             ),
             Self::ArrangementSetsOff { event } => write!(
                 f,

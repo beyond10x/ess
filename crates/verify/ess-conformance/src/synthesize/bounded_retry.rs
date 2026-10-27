@@ -197,7 +197,7 @@ pub(super) fn clean_trigger(
 /// Any branch counts at every hop, and every binding on an emitted event is followed whatever its
 /// selection or failure policy, so the answer errs towards "sets off". Each command is visited
 /// once, so a cycle of bindings terminates.
-fn reaches(ir: &EssIr, start: &QualifiedName, event: &EventHandle) -> bool {
+pub(super) fn reaches(ir: &EssIr, start: &QualifiedName, event: &EventHandle) -> bool {
     let mut visited = BTreeSet::new();
     let mut pending = vec![start.clone()];
     while let Some(name) = pending.pop() {

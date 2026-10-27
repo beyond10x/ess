@@ -382,7 +382,7 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
     let model = crate::SuiteProvenance::of(ir);
     whole.suite.provenance.spec_digest = model.spec_digest;
     whole.suite.provenance.contract_digest = model.contract_digest;
-    whole.suite.select_fresh_format();
+    whole.suite.select_fresh_format_for(ir);
     whole
 }
 

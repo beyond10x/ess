@@ -7,7 +7,9 @@
 //! ([`ExpectNoPublication`](crate::ScenarioStep::ExpectNoPublication): the escalation is the
 //! binding's, so the last command's direct events cannot show it). A `when_related: {via:
 //! input.<f>, exists: false}` refusal is answered rather than forced, on every attempt, where the
-//! trigger can be sent naming a row no row carries ([`super::binding_effects::related_missing`]).
+//! trigger can be sent naming a row no row carries ([`super::binding_effects::related_missing`]),
+//! and a `when_related: {via: input.<f>, predicate: …}` refusal where a row the predicate refuses
+//! can be arranged before the trigger ([`super::binding_effects::related_refused`]).
 //! An unforceable refusal is refused by name, a coverage limitation and never a fabricated result. The untyped fallback is no
 //! declared refusal and no suite can force one; the runtime controls witness it.
 //!
@@ -155,10 +157,18 @@ fn witness(
         },
         _ => None,
     };
-    let forced_ref = match (forced, &answered) {
-        (Ok(forced_ref), _) => forced_ref,
-        (Err(_), Some(_)) => OutcomeRef::new(command.clone(), outcome.clone()),
-        (Err(gap), None) => return Err(gap),
+    let arranged = match (&forced, &alternative, &answered) {
+        (Err(_), None, None) => {
+            refused_row(ir, binding, invoked, outcome, published_by, trigger, actors)
+        }
+        _ => None,
+    };
+    let forced_ref = match (forced, &answered, &arranged) {
+        (Ok(forced_ref), _, _) => forced_ref,
+        (Err(_), Some(_), _) | (Err(_), None, Some(_)) => {
+            OutcomeRef::new(command.clone(), outcome.clone())
+        }
+        (Err(gap), None, None) => return Err(gap),
     };
     let (answered, publisher) = match answered {
         Some((invoke, publisher)) => (Some(invoke), publisher),
@@ -180,14 +190,22 @@ fn witness(
     if let Some((_, extra)) = &alternative {
         source.extend(extra.iter().cloned());
     }
+    if let Some((_, _, rests_on)) = &arranged {
+        source.extend(rests_on.iter().cloned());
+    }
     let Owed {
         times,
         invocations,
         after,
         text,
     } = owed(ir, binding, policy, outcome, action, invoked, &mut source);
-    let mut steps = trigger.setup.clone();
+    let mut steps = match &arranged {
+        Some((setup, _, _)) => setup.clone(),
+        None => trigger.setup.clone(),
+    };
     if let Some(invoke) = answered {
+        steps.extend(invoke);
+    } else if let Some((_, invoke, _)) = arranged {
         steps.extend(invoke);
     } else {
         steps.push(super::bounded_retry::force(forced_ref, times));
@@ -246,21 +264,84 @@ fn unguarded_publisher(
     })
 }
 
+/// A predicate refusal over a related row, answered on every attempt as a missing row is: a row the
+/// predicate refuses arranged before the trigger, and the trigger sent naming it, as that refusal's
+/// own scenario arranges one ([`super::binding_effects::related_refused`]). The setup, the
+/// trigger's invocation and what the row rests on; `None` where no such row can be arranged, or
+/// where arranging it sets the binding off before the counted attempts.
+#[allow(clippy::type_complexity)]
+fn refused_row(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    invoked: &ResolvedCommand,
+    outcome: &ess_domain::command::OutcomeName,
+    published_by: &ResolvedOutcome,
+    trigger: &Run,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Option<(
+    Vec<ScenarioStep>,
+    Vec<ScenarioStep>,
+    BTreeSet<EssSemanticRef>,
+)> {
+    let refusal = invoked
+        .outcomes
+        .iter()
+        .find(|candidate| &candidate.name == outcome)?;
+    super::binding_effects::related_refused(
+        ir,
+        binding,
+        invoked,
+        published_by,
+        refusal,
+        trigger,
+        actors,
+    )
+    .filter(|(setup, _, _)| !sets_off(ir, binding, setup))
+}
+
+/// Whether executing a step of `setup` can publish the binding's event, so the binding would be
+/// invoked before the counted attempts begin.
+fn sets_off(ir: &EssIr, binding: &ResolvedBinding, setup: &[ScenarioStep]) -> bool {
+    let Some(event) = binding.cause.event() else {
+        return false;
+    };
+    setup.iter().any(|step| match step {
+        ScenarioStep::ExecuteCommand { command, .. }
+        | ScenarioStep::ExecuteCommandWithoutInput { command, .. } => {
+            super::bounded_retry::reaches(ir, command.name(), event)
+        }
+        _ => false,
+    })
+}
+
 /// The refusal as a scenario forces it: an `external:` branch whose eligibility needs no
-/// observation of the mapped input, or the gap that names why not.
+/// observation of the mapped input, or the gap that names why not. A predicate refusal over a
+/// related row that is not `external:` is [`BindingGap::RelatedRefusalUnarranged`]: a scenario
+/// answers it through an arranged row, where one can be arranged, and never by injection.
 fn forcible(
     format: ess_domain::system::FormatVersion,
     invoked: &ResolvedCommand,
     outcome: &ess_domain::command::OutcomeName,
 ) -> Result<OutcomeRef, BindingGap> {
+    use ess_compiler::ir::{ResolvedCondition, ResolvedRelatedTest};
+
     let forced_ref = OutcomeRef::new(CommandRef::new(invoked.name.clone()), outcome.clone());
-    let forced = invoked
+    let declared = invoked
         .outcomes
         .iter()
-        .find(|candidate| &candidate.name == outcome)
+        .find(|candidate| &candidate.name == outcome);
+    let forced = declared
         .filter(|candidate| candidate.test_strategy == TestStrategy::InjectFault)
-        .ok_or_else(|| BindingGap::RefusalUnforcible {
-            outcome: forced_ref.clone(),
+        .ok_or_else(|| match declared.map(|refusal| &refusal.condition) {
+            Some(ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Holds { .. },
+                ..
+            }) => BindingGap::RelatedRefusalUnarranged {
+                outcome: forced_ref.clone(),
+            },
+            _ => BindingGap::RefusalUnforcible {
+                outcome: forced_ref.clone(),
+            },
         })?;
     if let Some(gap) = super::forced_eligibility(format, invoked, forced) {
         return Err(gap);
