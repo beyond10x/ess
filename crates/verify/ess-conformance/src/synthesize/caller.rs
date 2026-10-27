@@ -1200,15 +1200,119 @@ fn shared_selection(ir: &EssIr, first: &[ScenarioStep], again: &[ScenarioStep]) 
                 }
                 _ => true,
             });
-        (!own).then(|| {
-            format!(
+        if !own {
+            return Some(format!(
                 "the set effect of `{named}` selects `instances: {{where: {}}}`, which pins no \
                  stored field to a value only the follow-up's run sends, so it would also select \
                  the rows the origin's run left",
                 subject.filter
+            ));
+        }
+        (!changes_rows(ir, again, command, branch)).then(|| {
+            format!(
+                "the set effect of `{named}` selects `instances: {{where: {}}}`, and the \
+                 follow-up's run arranges no row it selects, so the run would witness no row it \
+                 changes",
+                subject.filter
             )
         })
     })
+}
+
+/// Whether the run `steps` witnesses the set effect (`instances:`) of `branch`: a send of
+/// `command` expecting `branch` finds a row its filter selects among the rows the steps before it
+/// leave ([`super::row_set::changed_states`]), and every send after which an event it publishes
+/// once per changed row is expected finds one resting where that event is published. A run that
+/// selects no row publishes no per-row event, so a run expecting one would fail every target
+/// honouring the specification.
+fn changes_rows(
+    ir: &EssIr,
+    steps: &[ScenarioStep],
+    command: &ResolvedCommand,
+    branch: &ResolvedOutcome,
+) -> bool {
+    let Some(set) = &branch.instances else {
+        return false;
+    };
+    let mut witnessed = false;
+    for (at, step) in steps.iter().enumerate() {
+        let ScenarioStep::ExecuteCommand {
+            command: named,
+            input,
+            ..
+        } = step
+        else {
+            continue;
+        };
+        let expected = matches!(
+            steps.get(at + 1),
+            Some(ScenarioStep::ExpectOutcome { outcome }) if outcome.outcome == branch.name
+        );
+        if named.to_string() != command.name.to_string() || !expected {
+            continue;
+        }
+        // Rows an earlier step changed unfollowed, such as an earlier set effect, are none known.
+        let states = super::row_set::changed_states(ir, &steps[..at], command, branch, input)
+            .unwrap_or_default();
+        witnessed |= !states.is_empty();
+        let answered = steps[at + 1..].iter().take_while(|step| {
+            !matches!(
+                step,
+                ScenarioStep::ExecuteCommand { .. }
+                    | ScenarioStep::ExecuteCommandWithoutInput { .. }
+            )
+        });
+        for step in answered {
+            let (ScenarioStep::ExpectEvent { event, .. }
+            | ScenarioStep::ExpectEventValues { event, .. }
+            | ScenarioStep::EventuallyEvent { event, .. }) = step
+            else {
+                continue;
+            };
+            let Some(per_row) = set
+                .events
+                .iter()
+                .find(|entry| EventRef::from(&entry.event) == *event)
+            else {
+                continue;
+            };
+            let published = states.iter().any(|state| {
+                per_row.when_state.is_empty()
+                    || per_row.when_state.iter().any(|held| held == state.as_str())
+            });
+            if !published {
+                return false;
+            }
+        }
+    }
+    witnessed
+}
+
+/// `followup`, the run a disclosure cell appends for `branch` of `command`, where it witnesses the
+/// branch's set effect ([`changes_rows`]); else the branch's own scenario in `suite`, which arranges
+/// the rows its filter selects before it sends the command, where that one does. A follow-up that
+/// selects no row it arranged witnesses nothing the effect does (a downstream adopter's report of
+/// 2026-10-26). A branch with no set effect keeps its follow-up.
+pub(super) fn witnessing_followup(
+    ir: &EssIr,
+    suite: &crate::ConformanceSuite,
+    (command, branch): (&ResolvedCommand, &ResolvedOutcome),
+    followup: ConformanceScenario,
+) -> ConformanceScenario {
+    if branch.instances.is_none() || changes_rows(ir, &followup.steps, command, branch) {
+        return followup;
+    }
+    let id = ScenarioId::Outcome {
+        outcome: crate::scenario::OutcomeRef::new(
+            crate::scenario::CommandRef::new(command.name.clone()),
+            branch.name.clone(),
+        ),
+    };
+    suite
+        .scenario(&id)
+        .filter(|own| changes_rows(ir, &own.steps, command, branch))
+        .cloned()
+        .unwrap_or(followup)
 }
 
 /// The inputs `filter` pins a stored field to: each `<field> == input.<name>`, either way round,

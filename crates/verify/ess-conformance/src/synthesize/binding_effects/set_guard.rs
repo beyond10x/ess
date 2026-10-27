@@ -10,9 +10,12 @@
 //! ([`row_set::prepare`](super::super::row_set::prepare)), the trigger is sent the input they
 //! were arranged against, and the branch is decided again over the rows the arrangement and the
 //! trigger leave ([`row_set::decided_after`](super::super::row_set::decided_after)), so a trigger
-//! that changes them is followed, never assumed away.
+//! that changes them is followed, never assumed away. A literal replaces what the trigger sent only
+//! where the trigger keeps its branch for it; an identity the trigger names from its own
+//! arrangement is kept, and the rows are arranged naming it instead.
 //!
-//! The accepting branch is the first, in declaration order, the rows so arranged decide. Where
+//! The accepting branch is the first, in declaration order, the rows so arranged decide; where none
+//! is, the first the trigger alone decides, its own steps leaving the rows the guard selects. Where
 //! none is, the binding is refused as [`BindingGap::BranchSetUnarranged`], naming the set guard,
 //! with a remedy the specification can follow: the help of [`BindingGap::BranchUndecided`] asks
 //! to declare the other branches `external:`, which a default branch cannot be.
@@ -29,7 +32,7 @@ use ess_primitives::node::Node;
 
 use super::super::{captured, row_set, BindingGap, Run};
 use super::{command_of, mapped_unchanged, payload_followed, Prepared};
-use crate::scenario::{ActorRef, CommandRef, ScenarioStep, ScenarioValue};
+use crate::scenario::{ActorRef, CommandRef, InstanceName, ScenarioStep, ScenarioValue};
 
 /// The selections whose set guards decide `invoked`'s branch, where they alone decide it: every
 /// branch it takes unforced is the default or a set guard with no input guard of its own, at least
@@ -77,13 +80,13 @@ pub(super) fn decided<'a>(
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Option<Prepared<'a>> {
     let selections = guards(invoked)?;
+    let accepting = || {
+        invoked.outcomes.iter().filter(|outcome| {
+            outcome.error.is_none() && outcome.test_strategy != TestStrategy::InjectFault
+        })
+    };
     let arranged = read_through(ir, binding, published_by, &selections).and_then(|read| {
-        invoked
-            .outcomes
-            .iter()
-            .filter(|outcome| {
-                outcome.error.is_none() && outcome.test_strategy != TestStrategy::InjectFault
-            })
+        accepting()
             .find_map(|accepting| {
                 arranged_for(
                     ir,
@@ -93,6 +96,11 @@ pub(super) fn decided<'a>(
                     trigger,
                     actors,
                 )
+            })
+            .or_else(|| {
+                accepting().find_map(|accepting| {
+                    alone(ir, (invoked, accepting), published_by, &read, trigger)
+                })
             })
     });
     Some(arranged.unwrap_or_else(|| Prepared {
@@ -185,6 +193,8 @@ fn arranged_for<'a>(
         .collect();
     let mut supplied = BTreeMap::new();
     let mut steered: BTreeMap<&str, &Node> = BTreeMap::new();
+    let mut arranged = setup.steps;
+    let bound_before = captured_in(&trigger.setup);
     for (field, from) in read {
         let value = input.get(*field)?;
         // Two inputs filled from one input of the trigger carry one value.
@@ -194,8 +204,23 @@ fn arranged_for<'a>(
         {
             return None;
         }
+        match sent.get(from) {
+            // An identity the trigger names, captured by its own arrangement, is never replaced: a
+            // guard of the trigger may read the row it names. The rows are arranged naming it.
+            Some(named @ ScenarioValue::Instance { instance }) => {
+                if !bound_before.contains(instance) {
+                    return None;
+                }
+                arranged = naming(&arranged, value, named)?;
+                supplied.insert((*field).to_owned(), named.clone());
+                continue;
+            }
+            Some(other) if other.as_literal().is_none() => return None,
+            _ => {}
+        }
         if literals.get(from) != Some(value) {
-            if !super::super::keeps_branch(ir, publisher, &literals, from, value) {
+            let input_kept = super::super::keeps_branch(ir, publisher, &literals, from, value);
+            if !input_kept || !super::keeps_branch_sent(publisher, from, None, input_kept) {
                 return None;
             }
             literals.insert(from.clone(), value.clone());
@@ -205,7 +230,7 @@ fn arranged_for<'a>(
     }
 
     let mut before = trigger.setup.clone();
-    before.extend(setup.steps);
+    before.extend(arranged);
     let mut steps = before.clone();
     steps.extend(invoke.iter().cloned());
     row_set::decided_after(ir, &steps, invoked, accepting, &supplied).ok()?;
@@ -217,6 +242,103 @@ fn arranged_for<'a>(
         row: None,
         source: setup.source,
     })
+}
+
+/// The trigger as it is, where the rows its own arrangement and its send leave take the invocation
+/// to `accepting`, sent the values the trigger sends: a trigger that itself creates the row a set
+/// guard selects needs no row arranged before it (a downstream adopter's report of 2026-10-26).
+fn alone<'a>(
+    ir: &EssIr,
+    (invoked, accepting): (&ResolvedCommand, &'a ResolvedOutcome),
+    published_by: &ResolvedOutcome,
+    read: &[(&str, String)],
+    trigger: &Run,
+) -> Option<Prepared<'a>> {
+    let publisher = command_of(ir, published_by)?;
+    let sent = trigger.invoke.iter().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand { command, input, .. }
+            if command.name() == &publisher.name =>
+        {
+            Some(input)
+        }
+        _ => None,
+    })?;
+    let supplied = read
+        .iter()
+        .map(|(field, from)| Some(((*field).to_owned(), sent.get(from)?.clone())))
+        .collect::<Option<BTreeMap<_, _>>>()?;
+    let mut steps = trigger.setup.clone();
+    steps.extend(trigger.invoke.iter().cloned());
+    row_set::decided_after(ir, &steps, invoked, accepting, &supplied).ok()?;
+    Some(Prepared {
+        setup: trigger.setup.clone(),
+        invoke: trigger.invoke.clone(),
+        capture: Vec::new(),
+        reached: Ok(accepting),
+        row: None,
+        source: BTreeSet::new(),
+    })
+}
+
+/// Every instance `steps` capture.
+fn captured_in(steps: &[ScenarioStep]) -> BTreeSet<&InstanceName> {
+    steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::CaptureInstance { instance, .. } => Some(instance),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `steps` with every send of the literal `value` sending `named` instead, so the rows they arrange
+/// hold the identity the trigger names; `None` where a step carries `value` any other way, such as
+/// an expected payload, which would still read the literal.
+fn naming(
+    steps: &[ScenarioStep],
+    value: &Node,
+    named: &ScenarioValue,
+) -> Option<Vec<ScenarioStep>> {
+    let literal = serde_json::to_value(ScenarioValue::literal(value.clone())).ok()?;
+    let raw = serde_json::to_value(value).ok()?;
+    let named = serde_json::to_value(named).ok()?;
+    let mut written = serde_json::to_value(steps).ok()?;
+    replace(&mut written, &literal, &named);
+    if carries(&written, &raw) {
+        return None;
+    }
+    serde_json::from_value(written).ok()
+}
+
+/// `within` with every value equal to `from`, at any depth, replaced by `to`.
+fn replace(within: &mut serde_json::Value, from: &serde_json::Value, to: &serde_json::Value) {
+    if within == from {
+        within.clone_from(to);
+        return;
+    }
+    match within {
+        serde_json::Value::Array(items) => {
+            for item in items {
+                replace(item, from, to);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            for field in fields.values_mut() {
+                replace(field, from, to);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Whether `value` is `within` or any value nested in it.
+fn carries(within: &serde_json::Value, value: &serde_json::Value) -> bool {
+    within == value
+        || match within {
+            serde_json::Value::Array(items) => items.iter().any(|item| carries(item, value)),
+            serde_json::Value::Object(fields) => fields.values().any(|field| carries(field, value)),
+            _ => false,
+        }
 }
 
 /// [`BindingGap::BranchSetUnarranged`] for `invoked`, naming its first set guard.
