@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.71.0](#set-updates-affects-rows-and-converted-binding-inputs-get-the-scenarios-synthesis-used-to-refuse) | Set updates, affects rows and converted binding inputs get the scenarios synthesis used to refuse | capability | notable |
 | [0.70.0](#named-rows-beside-a-row-set-state-wire-spellings-and-replays-that-no-longer-stop-with-invalidreplay) | Named rows beside a row set, state wire spellings, and replays that no longer stop with InvalidReplay | capability | notable |
 | [0.69.2](#an-external-branch-that-copies-an-optional-input-keeps-naming-the-row-its-arrangement-created) | An external branch that copies an optional input keeps naming the row its arrangement created | capability | notable |
 | [0.69.1](#synthesis-takes-the-time-it-took-in-0680-again-where-related-rows-reach-their-state-through-a-guarded-move) | Synthesis takes the time it took in 0.68.0 again where related rows reach their state through a guarded move | capability | notable |
@@ -81,6 +82,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.71.0 — 2026-10-27
+
+### Set updates, affects rows and converted binding inputs get the scenarios synthesis used to refuse
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.71.0)
+
+Synthesis now arranges the rows of a set update whose creator copies from, or refuses a missing, related row, and rows the update changes where both write one input. `affects:` rows are arranged past an emitting not-found branch, and a binding input filled across a plain newtype conversion arranges its related row.
 
 ## 0.70.0 — 2026-10-26
 
