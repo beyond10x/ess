@@ -241,6 +241,68 @@ fn converted(
     }
 }
 
+/// `gap` as [`BindingGap::BranchRelated`] where what leaves the branch undecided is the one related
+/// row `invoked`'s guards read through an input: every branch the row's state does not decide is a
+/// `when_related:` guard over that row with no input guard beside it, or the default. Returned as
+/// it was otherwise.
+fn related_gap(invoked: &ResolvedCommand, gap: BindingGap) -> BindingGap {
+    use ess_compiler::ir::ResolvedRelatedVia;
+
+    let BindingGap::BranchUndecided { command, branches } = gap else {
+        return gap;
+    };
+    let undecided = || BindingGap::BranchUndecided {
+        command: command.clone(),
+        branches: branches.clone(),
+    };
+    if !super::related_guard::uses(invoked) || super::related_guard::several(invoked) {
+        return undecided();
+    }
+    let mut row = None;
+    let mut guarded = Vec::new();
+    for outcome in &invoked.outcomes {
+        match &outcome.condition {
+            _ if outcome.test_strategy == TestStrategy::InjectFault => {}
+            ResolvedCondition::Related {
+                via: ResolvedRelatedVia::Input { field, .. },
+                entity,
+                input: None,
+                also,
+                ..
+            } if also.is_empty() => {
+                row = Some((entity, field));
+                guarded.push(outcome.name.clone());
+            }
+            ResolvedCondition::External { .. }
+            | ResolvedCondition::ExternalWhen { .. }
+            | ResolvedCondition::ExternalSubject { .. }
+            | ResolvedCondition::WrongState
+            | ResolvedCondition::UnknownInstance
+            | ResolvedCondition::ExistingInstance
+            | ResolvedCondition::InputAbsent
+            | ResolvedCondition::Otherwise
+            | ResolvedCondition::SubjectState {
+                predicate: None, ..
+            }
+            | ResolvedCondition::StateChange {
+                predicate: None, ..
+            } => {}
+            _ => return undecided(),
+        }
+    }
+    let Some((entity, input)) = row else {
+        return undecided();
+    };
+    BindingGap::BranchRelated {
+        command,
+        related: Box::new(super::RelatedGuards {
+            entity: EntityRef::from(entity),
+            input: input.clone(),
+            guarded,
+        }),
+    }
+}
+
 /// For [`converted`]: the invoked command's input the related row is read through, and the source
 /// and target types of the first conversion on its way from the trigger that does not
 /// [cross unchanged](crosses_unchanged).
@@ -547,6 +609,20 @@ fn settle_from<'a>(
     first: Vec<&'a ResolvedBinding>,
     state: &StateName,
 ) -> Settled<'a> {
+    settle_deciding(ir, first, state, None)
+}
+
+/// [`settle_from`], with `decided` the branch one binding of `first` takes on its delivery where
+/// the row's state does not decide it and a related row arranged before the trigger does
+/// ([`related_on_row`]). A binding the state leaves undecided otherwise, guarded on a related row,
+/// is named with that row ([`related_gap`]).
+fn settle_deciding<'a>(
+    ir: &'a EssIr,
+    first: Vec<&'a ResolvedBinding>,
+    state: &StateName,
+    decided: Option<(&ResolvedBinding, &'a ResolvedOutcome)>,
+) -> Settled<'a> {
+    let mut decided = decided;
     let mut state = state.clone();
     let mut next = first;
     let mut chain: Vec<Link<'a>> = Vec::new();
@@ -566,17 +642,23 @@ fn settle_from<'a>(
                     ),
                 };
             }
-            match bound_branch(ir.command(&binding.command), &state) {
+            let invoked = ir.command(&binding.command);
+            match bound_branch(invoked, &state) {
                 Ok(Reached::Refused) => {}
                 Ok(Reached::Accepted(branch)) => acting.push((binding, branch)),
-                Err(gap) => {
-                    return Settled::Unsettled {
-                        binding: BindingRef::new(binding.name.clone()),
-                        why: format!("on a row in `{state}`, it {gap}"),
+                Err(gap) => match decided.filter(|(chosen, _)| chosen.name == binding.name) {
+                    Some((_, branch)) => acting.push((binding, branch)),
+                    None => {
+                        return Settled::Unsettled {
+                            binding: BindingRef::new(binding.name.clone()),
+                            why: format!("on a row in `{state}`, it {}", related_gap(invoked, gap)),
+                        }
                     }
-                }
+                },
             }
         }
+        // Only the first delivery reads the related row the scenario arranged.
+        decided = None;
         let (binding, branch) = match acting.as_slice() {
             [] => return Settled::Rests { state, chain },
             [one] => *one,
@@ -943,18 +1025,21 @@ fn entity_name(ir: &EssIr, entity: &EntityHandle) -> QualifiedName {
 /// Carries the run of a branch under test to where the bindings it sets off on its own row leave
 /// that row, so its view expectations describe the row at rest. `true` where the row moves on, and
 /// every read of it has to be eventual; a rest that cannot be named is refused under `id` and
-/// leaves the run with no state to read.
+/// leaves the run with no state to read. A binding whose branch on the row a related row decides,
+/// rather than the row's state, has that related row arranged in the run first ([`related_run`]).
 pub(super) fn settle_run(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
     run: &mut Run,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
     id: &ScenarioId,
     refusals: &mut Vec<Refusal>,
 ) -> bool {
     let Some(state) = run.after.clone() else {
         return false;
     };
-    match settle(ir, outcome, &state) {
+    let decided = related_run(ir, outcome, &state, actors, run);
+    match settle_deciding(ir, same_row(ir, outcome), &state, decided) {
         Settled::Rests { chain, .. } if chain.is_empty() => false,
         Settled::Rests { state, chain } => {
             for link in &chain {
@@ -995,7 +1080,8 @@ pub(super) fn settle_run(
 /// the step creating the trigger's row, was sent is replaced by it, and so is every value the run
 /// determined from that literal. A retry selected per refusal counts where any refusal retries
 /// unbounded. A run already naming a row, a bounded or non-retrying policy, and a binding whose
-/// invocation needs no row keep the run as it was.
+/// invocation needs no row keep the run as it was. A binding on the branch's own row is arranged
+/// where that row's rest is settled instead ([`settle_run`]).
 pub(super) fn arrange_retried(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
@@ -1013,6 +1099,10 @@ pub(super) fn arrange_retried(
                 .cause
                 .event()
                 .is_some_and(|event| outcome.emits.contains(event))
+            && !matches!(
+                destination(ir, binding, outcome),
+                Destination::SameRow { .. }
+            )
     });
     for binding in retried {
         let invoked = ir.command(&binding.command);
@@ -1022,30 +1112,69 @@ pub(super) fn arrange_retried(
         if prepared.reached.is_err() || !prepared.capture.is_empty() {
             continue;
         }
-        let renamed = renamed(
-            run.setup.iter().chain(&run.invoke),
-            prepared.setup.iter().chain(&prepared.invoke),
-        );
-        if renamed.is_empty() {
-            continue;
-        }
-        run.setup = prepared.setup;
-        run.invoke = prepared.invoke;
-        run.source.extend(prepared.source);
-        let rename = |value: &mut ScenarioValue| {
-            if let Some((_, named)) = renamed.iter().find(|(literal, _)| literal == value) {
-                *value = named.clone();
-            }
-        };
-        run.input.values_mut().for_each(rename);
-        for determined in run
-            .settled
-            .values_mut()
-            .chain(run.before_settled.values_mut())
-        {
-            rename(&mut determined.value);
-        }
+        adopt(run, prepared.setup, prepared.invoke, prepared.source);
     }
+}
+
+/// The run with `setup` and `invoke` in place of its own, where they send as an instance a value
+/// the run sent as a literal; every value the run determined from such a literal is renamed with
+/// it. `false`, and the run as it was, where they rename nothing.
+fn adopt(
+    run: &mut Run,
+    setup: Vec<ScenarioStep>,
+    invoke: Vec<ScenarioStep>,
+    source: BTreeSet<EssSemanticRef>,
+) -> bool {
+    let renamed = renamed(
+        run.setup.iter().chain(&run.invoke),
+        setup.iter().chain(&invoke),
+    );
+    if renamed.is_empty() {
+        return false;
+    }
+    run.setup = setup;
+    run.invoke = invoke;
+    run.source.extend(source);
+    let rename = |value: &mut ScenarioValue| {
+        if let Some((_, named)) = renamed.iter().find(|(literal, _)| literal == value) {
+            *value = named.clone();
+        }
+    };
+    run.input.values_mut().for_each(rename);
+    for determined in run
+        .settled
+        .values_mut()
+        .chain(run.before_settled.values_mut())
+    {
+        rename(&mut determined.value);
+    }
+    true
+}
+
+/// The branch a binding `outcome` sets off on its own row takes there, where the row's state in
+/// `held` does not decide it and the related row its invoked command's guards read does
+/// ([`related_on_row`]): that row arranged in `run` before the branch under test, and the trigger
+/// sent naming it in place of the literal it was sent. The first such binding, in name order;
+/// `None` where there is none, or where the run already names a row there, and the run is kept.
+fn related_run<'a>(
+    ir: &'a EssIr,
+    outcome: &'a ResolvedOutcome,
+    held: &StateName,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    run: &mut Run,
+) -> Option<(&'a ResolvedBinding, &'a ResolvedOutcome)> {
+    if outcome.error.is_some() {
+        return None;
+    }
+    same_row(ir, outcome).into_iter().find_map(|binding| {
+        let invoked = ir.command(&binding.command);
+        if binding.condition.is_some() || bound_branch(invoked, held).is_ok() {
+            return None;
+        }
+        let prepared = related_on_row(ir, binding, invoked, outcome, held, run, actors)?;
+        let reached = prepared.reached.clone().ok()?;
+        adopt(run, prepared.setup, prepared.invoke, prepared.source).then_some((binding, reached))
+    })
 }
 
 /// Whether `binding` may retry a refusal without bound: the universal `retry` with no count, or a
@@ -1296,9 +1425,14 @@ pub(super) fn prepare<'a>(
                 why,
             })
         }
-        Destination::SameRow { entity } => {
-            same_row_destination(ir, invoked, published_by, entity, trigger)
-        }
+        Destination::SameRow { entity } => same_row_destination(
+            ir,
+            (binding, invoked),
+            published_by,
+            entity,
+            trigger,
+            actors,
+        ),
         Destination::TriggerInput { entity, field } => {
             arranged_destination(ir, invoked, published_by, entity, &field, trigger, actors)
         }
@@ -1412,6 +1546,94 @@ fn related_decided<'a>(
         row: None,
         source: arranged.source,
     })
+}
+
+/// [`related_decided`] where the invoked command acts on the trigger's own row, resting in `held`
+/// (a downstream adopter's report of 2026-10-26): the command `updates:` the row the trigger acted
+/// on, and its branches are `when_related:` guards over another row. That row decides the branch,
+/// not the trigger's row, so the command is read as its guards read it, with the trigger's row
+/// left out ([`rowless`]); the related row is arranged before the trigger so its accepting branch
+/// is selected, and the trigger is sent naming it. `None` where the guards cannot be followed so,
+/// or where the accepting branch does not run from `held`.
+fn related_on_row<'a>(
+    ir: &'a EssIr,
+    binding: &'a ResolvedBinding,
+    invoked: &'a ResolvedCommand,
+    published_by: &'a ResolvedOutcome,
+    held: &StateName,
+    trigger: &Run,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Option<Prepared<'a>> {
+    let read = rowless(invoked, held)?;
+    let decided = related_decided(ir, binding, &read, published_by, trigger, actors)?;
+    let name = decided.reached.as_ref().ok()?.name.clone();
+    let reached = invoked
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.name == name)?;
+    Some(Prepared {
+        setup: decided.setup,
+        invoke: decided.invoke,
+        capture: decided.capture,
+        reached: Ok(reached),
+        row: None,
+        source: decided.source,
+    })
+}
+
+/// `invoked` as its related guards read it on the trigger's own row resting in `held`: each
+/// branch's subject and the `sets:` writing it left out, and the branches that row's existence or
+/// state answers (`unknown_instance:`, `wrong_state:`) with them, which a row that exists and that
+/// every branch runs from never takes. `None` where a branch moves the row from a state other than
+/// `held`.
+fn rowless(invoked: &ResolvedCommand, held: &StateName) -> Option<ResolvedCommand> {
+    if !invoked
+        .outcomes
+        .iter()
+        .all(|outcome| moves_from(outcome, held))
+    {
+        return None;
+    }
+    let mut read = invoked.clone();
+    read.outcomes.retain(|outcome| {
+        !matches!(
+            outcome.condition,
+            ResolvedCondition::UnknownInstance | ResolvedCondition::WrongState
+        )
+    });
+    for outcome in &mut read.outcomes {
+        outcome.subject = None;
+        outcome.sets.clear();
+    }
+    Some(read)
+}
+
+/// For [`related_missing`]: `Some(None)` where `invoked` acts on no existing row, so it is read as
+/// it is; `Some(Some(_))`, [`rowless`], where it acts on the row the trigger acted on and left in
+/// place; `None` where it acts on any other row.
+#[allow(clippy::option_option)]
+fn read_on_row(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    invoked: &ResolvedCommand,
+    published_by: &ResolvedOutcome,
+    trigger: &Run,
+) -> Option<Option<ResolvedCommand>> {
+    if addressed(invoked).is_none() {
+        return Some(None);
+    }
+    let deletes = published_by
+        .subject
+        .as_ref()
+        .is_some_and(|subject| matches!(subject.effect, ResolvedEffect::Deletes));
+    let same = matches!(
+        destination(ir, binding, published_by),
+        Destination::SameRow { .. }
+    );
+    if deletes || !same {
+        return None;
+    }
+    rowless(invoked, trigger.after.as_ref()?).map(Some)
 }
 
 /// The branch of `invoked` [`related_decided`] arranges: the default where it accepts, else the
@@ -1605,6 +1827,9 @@ fn per_row_input(
 /// adopter's report of 2026-10-22). The same where the trigger's publishing branch acts on that
 /// related row, named by that input, and its command refuses a row no record carries
 /// (`unknown_instance:`).
+///
+/// An invoked command acting on the trigger's own row is read as its guards read it there
+/// ([`read_on_row`]), as [`related_on_row`] reads it for the accepting branch.
 pub(super) fn related_missing(
     ir: &EssIr,
     binding: &ResolvedBinding,
@@ -1617,12 +1842,18 @@ pub(super) fn related_missing(
     use ess_compiler::ir::{ResolvedRelatedTest, ResolvedRelatedVia};
 
     if refusal.error.is_none()
-        || addressed(invoked).is_some()
         || related_guard::several(invoked)
         || related_guard::stored::field(invoked).is_some()
     {
         return None;
     }
+    // A command acting on the trigger's own row is read as its guards read it there.
+    let read = read_on_row(ir, binding, invoked, published_by, trigger)?;
+    let invoked = read.as_ref().unwrap_or(invoked);
+    let refusal = invoked
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.name == refusal.name)?;
     let ResolvedCondition::Related {
         via: via @ ResolvedRelatedVia::Input { .. },
         entity: related,
@@ -1713,12 +1944,15 @@ pub(super) fn related_missing(
 
 /// [`prepare`] where the destination is the trigger's own row: its state is where the trigger
 /// leaves it, and it is named by the trigger's arrangement or captured from the trigger's event.
+/// Where a related row rather than that state decides the branch, the related row is arranged
+/// before the trigger ([`related_on_row`]).
 fn same_row_destination<'a>(
     ir: &'a EssIr,
-    invoked: &'a ResolvedCommand,
+    (binding, invoked): (&'a ResolvedBinding, &'a ResolvedCommand),
     published_by: &'a ResolvedOutcome,
     entity: &'a EntityHandle,
     trigger: &Run,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<Prepared<'a>, BindingGap> {
     let command = || CommandRef::new(invoked.name.clone());
     let held = trigger
@@ -1729,12 +1963,33 @@ fn same_row_destination<'a>(
             input: field_name(invoked),
             why: "the trigger leaves no row the scenario can name",
         })?;
-    let Reached::Accepted(reached) = bound_branch(invoked, &held)? else {
-        return Err(BindingGap::DestinationIneligible {
-            command: command(),
-            state: held,
-        });
+    let (reached, related) = match bound_branch(invoked, &held) {
+        Ok(Reached::Accepted(reached)) => (reached, None),
+        Ok(Reached::Refused) => {
+            return Err(BindingGap::DestinationIneligible {
+                command: command(),
+                state: held,
+            })
+        }
+        Err(gap) => {
+            let related =
+                related_on_row(ir, binding, invoked, published_by, &held, trigger, actors)
+                    .ok_or_else(|| related_gap(invoked, gap))?;
+            (related.reached.clone()?, Some(related))
+        }
     };
+    // The related row decides the binding's first delivery to the row, not the row's state.
+    let decided = related.is_some().then_some((binding, reached));
+    let (setup, invoke, source) = related.map_or_else(
+        || {
+            (
+                trigger.setup.clone(),
+                trigger.invoke.clone(),
+                BTreeSet::new(),
+            )
+        },
+        |related| (related.setup, related.invoke, related.source),
+    );
     let (identity, capture) = match (&trigger.instance, published_by.subject.as_ref()) {
         (Some(instance), _) => (ScenarioValue::instance(instance.clone()), Vec::new()),
         (None, Some(subject)) => {
@@ -1759,11 +2014,11 @@ fn same_row_destination<'a>(
         (None, None) => unreachable!("a same-row destination is a subject's row"),
     };
     Ok(Prepared {
-        setup: trigger.setup.clone(),
-        invoke: trigger.invoke.clone(),
+        setup,
+        invoke,
         capture,
         reached: Ok(reached),
-        row: Some(row(
+        row: Some(row_deciding(
             ir,
             published_by,
             entity,
@@ -1771,8 +2026,9 @@ fn same_row_destination<'a>(
             held,
             fan_out(ir, published_by, &Destination::SameRow { entity }),
             trigger_changes(published_by),
+            decided,
         )),
-        source: BTreeSet::new(),
+        source,
     })
 }
 
@@ -2283,7 +2539,32 @@ fn row<'a>(
     fan: Vec<&'a ResolvedBinding>,
     before_trigger: Result<(), &'static str>,
 ) -> Row<'a> {
-    let (settled, unsettled) = match settle_from(ir, fan.clone(), &start) {
+    row_deciding(
+        ir,
+        published_by,
+        entity,
+        identity,
+        start,
+        fan,
+        before_trigger,
+        None,
+    )
+}
+
+/// [`row`], with `decided` the branch a binding of the fan takes on its first delivery where a
+/// related row arranged before the trigger decides it ([`settle_deciding`]).
+#[allow(clippy::too_many_arguments)]
+fn row_deciding<'a>(
+    ir: &'a EssIr,
+    published_by: &'a ResolvedOutcome,
+    entity: &'a EntityHandle,
+    identity: ScenarioValue,
+    start: StateName,
+    fan: Vec<&'a ResolvedBinding>,
+    before_trigger: Result<(), &'static str>,
+    decided: Option<(&ResolvedBinding, &'a ResolvedOutcome)>,
+) -> Row<'a> {
+    let (settled, unsettled) = match settle_deciding(ir, fan.clone(), &start, decided) {
         Settled::Rests { state, .. } => (state_view(ir, entity).map(|_| state), None),
         Settled::Unsettled { binding, why } => (
             None,

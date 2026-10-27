@@ -1621,7 +1621,8 @@ crate::authored::diagnostic_catalogue! {
                 | BindingGap::ConditionUnarranged { .. }
                 | BindingGap::ChangedRowUnarranged { .. }
                 | BindingGap::RelatedRowNeededByTrigger { .. }
-                | BindingGap::BranchConverted { .. },
+                | BindingGap::BranchConverted { .. }
+                | BindingGap::BranchRelated { .. },
             ..
         } => 10,
             "A binding clause has nothing a scenario could observe.",
@@ -2185,6 +2186,29 @@ pub enum BindingGap {
         /// boxed so the gap stays small beside the other refusal causes.
         conversion: Box<ConvertedInput>,
     },
+    /// [`BranchUndecided`](Self::BranchUndecided), where what decides the branch is the row of
+    /// another entity the invoked command's `when_related:` guards read through one of its inputs,
+    /// and no such row can be arranged before the trigger and named in it: the input is not filled
+    /// unconverted from an input of the trigger's caller, or a guard reads more than that row (a
+    /// downstream adopter's report of 2026-10-26). The event is not what decides it.
+    BranchRelated {
+        /// The invoked command.
+        command: CommandRef,
+        /// The row and the guards reading it, boxed so the gap stays small beside the other
+        /// refusal causes.
+        related: Box<RelatedGuards>,
+    },
+}
+
+/// The related row of a [`BindingGap::BranchRelated`] and the branches whose guards read it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelatedGuards {
+    /// The related row's entity.
+    pub entity: EntityRef,
+    /// The invoked command's input naming the row.
+    pub input: String,
+    /// The branches whose `when_related:` guards read it, in declaration order.
+    pub guarded: Vec<OutcomeName>,
 }
 
 /// The input of a [`BindingGap::BranchConverted`] and the declared conversion it is filled across.
@@ -2286,6 +2310,12 @@ impl BindingGap {
                 "let the conversion join two newtypes over one representation that declare no \
                  alphabet, prefix or invariant, so the value crosses as it is sent; or leave the \
                  invoked command one branch an input does not choose"
+            }
+            Self::BranchRelated { .. } => {
+                "let the trigger copy the related row's identity unconverted from an input of its \
+                 own, and the binding map it unconverted into the guarded input, with every guard \
+                 reading that row's stored fields alone; or cover the binding with an authored \
+                 scenario (ess-scenario/1)"
             }
         }
     }
@@ -2411,6 +2441,20 @@ impl fmt::Display for BindingGap {
                 conversion.input,
                 conversion.from,
                 conversion.to,
+            ),
+            Self::BranchRelated { command, related } => write!(
+                f,
+                "invokes `{command}`, whose branch is decided by the `when_related:` guards of {} \
+                 over the `{}` row its input `{}` names, and no such row can be arranged before the \
+                 trigger and named in it",
+                related
+                    .guarded
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                related.entity,
+                related.input,
             ),
         }
     }
@@ -3915,7 +3959,7 @@ fn exercise_run_in(
     // The row at rest once the bindings this branch sets off on it have run, read eventually
     // (beyond10x/ess#266): never the state a binding is about to move it out of.
     let mut run = run;
-    let moving = binding_effects::settle_run(ir, outcome, &mut run, id, refusals);
+    let moving = binding_effects::settle_run(ir, outcome, &mut run, actors, id, refusals);
     let mut views = view_expectations(ir, command, outcome, &run, actors, id, refusals);
     if moving {
         views.asserted = binding_effects::eventually(std::mem::take(&mut views.asserted));

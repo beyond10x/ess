@@ -1,4 +1,4 @@
-#	models=366	lines=504
+#	models=368	lines=507
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -132,6 +132,7 @@ crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml	components
 crates/verify/ess-conformance/tests/fixtures/binding-condition-selected.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	components=0
@@ -424,6 +425,8 @@ system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.stock.I
 system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.stock.Item	create	added
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion	components=1
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion	svc	REFUSED	d053a7473eb8d8d2d467e4ffa10c7c366cd58a202c6cc6642e456f2462638059:716
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command	svc	REFUSED	96ca0cc49cfc1c977a6a80aa86ba7ef542d0e2666d3d401df66d9fb49def753d:955
 system-dir:crates/verify/ess-conformance/tests/fixtures/recursive-fixtures	components=0
 system-dir:crates/verify/ess-conformance/tests/fixtures/related-owner	components=0
 system-dir:crates/verify/ess-conformance/tests/fixtures/relation-via-identity	components=0
