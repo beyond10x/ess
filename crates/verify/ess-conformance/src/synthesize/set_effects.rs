@@ -2276,17 +2276,68 @@ fn affects_segment(
         built => return built,
     };
     let steer = creators_reading_subject(models.arrangement, outcome);
-    if steer.is_empty() {
-        return Err(cause);
+    // A subject the presence steering alone leaves taking a creator's branch over its stored
+    // fields is searched for once more refuting those branches too ([`creators_refusing_subject`]).
+    let refuting = creators_refusing_subject(models.arrangement, outcome);
+    let mut tries = Vec::new();
+    if !steer.is_empty() {
+        tries.push(steer.clone());
     }
-    let mut again = taken.clone();
-    match affects_segment_on(models, command, outcome, actors, &mut again, &steer) {
-        Ok(built) => {
+    if !refuting.is_empty() {
+        tries.push(steer.into_iter().chain(refuting).collect());
+    }
+    for steer in tries {
+        let mut again = taken.clone();
+        if let Ok(built) = affects_segment_on(models, command, outcome, actors, &mut again, &steer)
+        {
             *taken = again;
-            Ok(built)
+            return Ok(built);
         }
-        Err(_) => Err(cause),
     }
+    Err(cause)
+}
+
+/// `not p` for every `when_related:` branch over `outcome`'s subject's entity, beside a branch
+/// creating an entry's entity, whose predicate `p` reads only the subject row's stored fields
+/// (no input guard beside it, no comparison with the input): a subject row on which `p` holds
+/// takes that branch, so no row of the entry is created for it. `kind == Linked` in front of
+/// `OpenTicket/opened` leaves a ticket only for a member created with another `kind`.
+fn creators_refusing_subject(ir: &EssIr, outcome: &ResolvedOutcome) -> Vec<Predicate> {
+    let Some(subject) = &outcome.subject else {
+        return Vec::new();
+    };
+    let all = ir.drivers();
+    let mut refuting = Vec::new();
+    for affect in &outcome.affects {
+        for creator in all.get(&affect.entity).map_or(&[][..], Vec::as_slice) {
+            if !matches!(creator.effect, ResolvedEffect::Creates) {
+                continue;
+            }
+            for branch in &creator.command.outcomes {
+                if branch.name == creator.outcome.name {
+                    continue;
+                }
+                if let ess_compiler::ir::ResolvedCondition::Related {
+                    entity,
+                    test: ess_compiler::ir::ResolvedRelatedTest::Holds { predicate },
+                    input: None,
+                    also,
+                    ..
+                } = &branch.condition
+                {
+                    let refuted = Predicate::Not(Box::new(predicate.clone()));
+                    if *entity == subject.entity
+                        && also.is_empty()
+                        && !subject_fact::reads_input(ir, entity, predicate)
+                        && !refuting.contains(&refuted)
+                    {
+                        refuting.push(refuted);
+                    }
+                }
+            }
+        }
+    }
+    refuting
 }
 
 /// `defined(f)` for every stored field `f` of `outcome`'s subject that a creator of an entry's
