@@ -1,0 +1,6 @@
+format: ess/25
+system: demo
+version: v1
+domains:
+  - demo.w.keys
+  - demo.w.seats

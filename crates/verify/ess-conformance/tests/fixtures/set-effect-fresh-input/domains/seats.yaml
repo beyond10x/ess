@@ -1,0 +1,49 @@
+domain: demo.w.seats
+entities:
+  - name: demo.w.seats.Seat
+    identity: {name: seat_id, type: Uuid}
+    fields:
+      - {name: owner, type: Uuid}
+    lifecycle:
+      initial: Held
+      states: [Held, Parked]
+      terminal: [Parked]
+      transitions:
+        - {name: park, from: [Held, Parked], to: Parked}
+commands:
+  - name: demo.w.seats.Grant
+    input:
+      - {name: owner, type: Uuid}
+    outcomes:
+      - name: granted
+        creates: demo.w.seats.Seat
+        instance: seat_id
+        sets: {owner: input.owner}
+        emits: [demo.w.seats.Granted]
+        payload:
+          demo.w.seats.Granted: {seat_id: {generated: true}}
+  - name: demo.w.seats.Park
+    input:
+      - {name: owner, type: Uuid}
+    outcomes:
+      - name: parked
+        moves: demo.w.seats.Seat.park
+        instances: {where: owner == input.owner}
+        emits: [demo.w.seats.Parked]
+        payload:
+          demo.w.seats.Parked: {owner: input.owner}
+events:
+  - name: demo.w.seats.Granted
+    fields:
+      - {name: seat_id, type: Uuid}
+  - name: demo.w.seats.Parked
+    fields:
+      - {name: owner, type: Uuid}
+views:
+  - name: demo.w.seats.Seats
+    source: demo.w.seats.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: seat_id, type: Uuid}
+      - {name: state, type: demo.w.seats.Seat.State}
+      - {name: owner, type: Uuid}

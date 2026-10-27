@@ -1,4 +1,4 @@
-#	models=372	lines=513
+#	models=374	lines=515
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -285,6 +285,7 @@ crates/verify/ess-conformance/tests/fixtures/row-set-related-copy.yaml	component
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/row-set-struct-identity.yaml	vault-lib	REFUSED	bccabb45b72adc4e53e56a40e11f47886c7a6388102c64b527ae8406928bd29d:563
 crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/set-effect-fresh-input/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-related-value.yaml	components=0
@@ -436,6 +437,7 @@ system-dir:crates/verify/ess-conformance/tests/fixtures/binding-trigger-shares-r
 system-dir:crates/verify/ess-conformance/tests/fixtures/recursive-fixtures	components=0
 system-dir:crates/verify/ess-conformance/tests/fixtures/related-owner	components=0
 system-dir:crates/verify/ess-conformance/tests/fixtures/relation-via-identity	components=0
+system-dir:crates/verify/ess-conformance/tests/fixtures/set-effect-fresh-input	components=0
 system-dir:docs/design/models/authored-discovery	components=0
 system-dir:docs/design/models/entity-runtime-lowering	components=0
 system-dir:docs/design/models/service-contract	components=0
