@@ -1,4 +1,4 @@
-#	models=322	commands=694
+#	models=323	commands=694
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -330,6 +330,7 @@ crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.message
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.messages.MessageEvent	accepting: unavailable | default: messaged
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.messages.ReceiveMessage	default: received
 crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	ir=e40145284e7b85a5f309ab433ddc336fd87a70ca4c1259c4e752244be7993b77:19800
 crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	selection.core.Receive	default: received
 crates/verify/ess-conformance/tests/fixtures/binding-set-guard/system.yaml	ASSEMBLE

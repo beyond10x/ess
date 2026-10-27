@@ -1,0 +1,81 @@
+domain: demo.b
+types:
+  - {name: demo.b.GrantId, kind: newtype, of: String}
+  - {name: demo.b.TicketId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.b.Grant
+    identity: {name: grant_id, type: demo.b.GrantId}
+    fields:
+      - {name: flag, type: Boolean}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.b.Ticket
+    identity: {name: ticket_id, type: demo.b.TicketId}
+    fields:
+      - {name: grant_id, type: demo.b.GrantId}
+      - {name: flag, type: Boolean}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+commands:
+  - name: demo.b.DefineGrant
+    input:
+      - {name: flag, type: Boolean}
+    outcomes:
+      - name: defined
+        creates: demo.b.Grant
+        instance: grant_id
+        emits: [demo.b.GrantDefined]
+        payload: {demo.b.GrantDefined: {grant_id: {generated: true}}}
+        sets: {flag: input.flag}
+  - name: demo.b.OpenTicket
+    input:
+      - {name: grant_id, type: demo.b.GrantId}
+    outcomes:
+      - name: opened
+        creates: demo.b.Ticket
+        instance: ticket_id
+        emits: [demo.b.TicketOpened]
+        payload: {demo.b.TicketOpened: {ticket_id: {generated: true}}}
+        sets: {grant_id: input.grant_id, flag: false}
+  - name: demo.b.MoveTicket
+    input:
+      - {name: ticket_id, type: demo.b.TicketId}
+      - {name: grant_id, type: demo.b.GrantId}
+    outcomes:
+      - name: moved
+        updates: demo.b.Ticket
+        instance: ticket_id
+        emits: [demo.b.TicketMoved]
+        payload: {demo.b.TicketMoved: {ticket_id: input.ticket_id, grant_id: input.grant_id}}
+        sets: {grant_id: input.grant_id}
+      - {name: not-found, unknown_instance: true, error: demo.b.Missing}
+  - name: demo.b.Refresh
+    input:
+      - {name: ticket_id, type: demo.b.TicketId}
+      - {name: grant_id, type: demo.b.GrantId}
+    outcomes:
+      - name: grant-missing
+        when_related: {via: input.grant_id, exists: false}
+        error: demo.b.Missing
+      - name: flagged
+        when_related: {via: input.grant_id, predicate: flag == true}
+        updates: demo.b.Ticket
+        instance: ticket_id
+        emits: [demo.b.Refreshed]
+        payload: {demo.b.Refreshed: {ticket_id: input.ticket_id}}
+        sets: {flag: true}
+      - name: unflagged
+        updates: demo.b.Ticket
+        instance: ticket_id
+        emits: [demo.b.Refreshed]
+        payload: {demo.b.Refreshed: {ticket_id: input.ticket_id}}
+        sets: {flag: false}
+errors:
+  - name: demo.b.Missing
+events:
+  - name: demo.b.GrantDefined
+    fields: [{name: grant_id, type: demo.b.GrantId}]
+  - name: demo.b.TicketOpened
+    fields: [{name: ticket_id, type: demo.b.TicketId}]
+  - name: demo.b.TicketMoved
+    fields: [{name: ticket_id, type: demo.b.TicketId}, {name: grant_id, type: demo.b.GrantId}]
+  - name: demo.b.Refreshed
+    fields: [{name: ticket_id, type: demo.b.TicketId}]
