@@ -568,6 +568,7 @@ pub(super) fn affects_segment(
         held: BTreeMap::new(),
         rows: BTreeMap::new(),
         copies: Vec::new(),
+        vary: false,
     };
     let rows = pinned_rows(&selection, actors, taken, affect.moves.as_ref())
         .map_err(|reason| gap(at(), affect.entity.to_string(), reason))?;
@@ -737,6 +738,7 @@ pub(super) fn set_scenario(
         held: BTreeMap::new(),
         rows: BTreeMap::new(),
         copies: Vec::new(),
+        vary: false,
     };
     let rows = pinned_rows(&selection, actors, &mut BTreeSet::new(), moves)
         .map_err(|reason| gap(at(), entity.to_string(), reason))?;

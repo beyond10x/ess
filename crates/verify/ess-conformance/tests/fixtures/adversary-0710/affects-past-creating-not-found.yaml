@@ -1,0 +1,124 @@
+format: ess/25
+system: demo
+version: v1
+domain: demo.w
+summary: Rows a reset deletes, created by a walk-in branch for a missing member and by the default for a present one.
+
+types:
+  - name: demo.w.MemberId
+    kind: newtype
+    of: Uuid
+  - name: demo.w.TicketId
+    kind: newtype
+    of: String
+
+entities:
+  - name: demo.w.Member
+    identity:
+      name: member_id
+      type: demo.w.MemberId
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+
+  - name: demo.w.Ticket
+    identity:
+      name: ticket_id
+      type: demo.w.TicketId
+    fields:
+      - name: member_id
+        type: demo.w.MemberId
+      - name: walk_in
+        type: Boolean
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+
+actors:
+  - name: demo.w.Admin
+    may: [demo.w.CreateMember, demo.w.OpenTicket, demo.w.ResetMember]
+
+commands:
+  - name: demo.w.CreateMember
+    outcomes:
+      - name: created
+        creates: demo.w.Member
+        instance: member_id
+        emits: [demo.w.MemberEvent]
+        payload:
+          demo.w.MemberEvent:
+            member_id: {generated: true}
+
+  - name: demo.w.OpenTicket
+    input:
+      - name: member_id
+        type: demo.w.MemberId
+    outcomes:
+      - name: walk-in
+        when_related: {via: input.member_id, exists: false}
+        creates: demo.w.Ticket
+        instance: ticket_id
+        emits: [demo.w.WalkInOpened]
+        payload:
+          demo.w.WalkInOpened:
+            ticket_id: {generated: true}
+        sets:
+          member_id: input.member_id
+          walk_in: true
+      - name: opened
+        creates: demo.w.Ticket
+        instance: ticket_id
+        emits: [demo.w.TicketOpened]
+        payload:
+          demo.w.TicketOpened:
+            ticket_id: {generated: true}
+        sets:
+          member_id: input.member_id
+          walk_in: false
+
+  - name: demo.w.ResetMember
+    input:
+      - name: member_id
+        type: demo.w.MemberId
+    outcomes:
+      - name: reset
+        updates: demo.w.Member
+        instance: member_id
+        emits: [demo.w.MemberEvent]
+        payload:
+          demo.w.MemberEvent:
+            member_id: input.member_id
+        affects:
+          - entity: demo.w.Ticket
+            where: member_id == input.member_id
+            deletes: demo.w.Ticket
+
+events:
+  - name: demo.w.WalkInOpened
+    fields:
+      - name: ticket_id
+        type: demo.w.TicketId
+  - name: demo.w.MemberEvent
+    fields:
+      - name: member_id
+        type: demo.w.MemberId
+  - name: demo.w.TicketOpened
+    fields:
+      - name: ticket_id
+        type: demo.w.TicketId
+
+views:
+  - name: demo.w.TicketRecord
+    source: demo.w.Ticket
+    consistency: read_your_writes
+    fields:
+      - name: ticket_id
+        type: demo.w.TicketId
+      - name: state
+        type: demo.w.Ticket.State
+      - name: member_id
+        type: demo.w.MemberId
+      - name: walk_in
+        type: Boolean
