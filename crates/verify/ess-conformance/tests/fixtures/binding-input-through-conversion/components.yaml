@@ -1,0 +1,22 @@
+conversions:
+  - from: demo.x.GroupRef
+    to: demo.x.GroupId
+    because: A member's group reference names a group.
+components:
+  - component: svc
+    owns:
+      domains: [demo.x]
+    accepts:
+      commands: [demo.x.DefineGroup, demo.x.CreateMember, demo.x.Enrol]
+bindings:
+  - id: enrol-on-member-created
+    when:
+      event: demo.x.MemberCreated
+    invoke:
+      command: demo.x.Enrol
+    mapping:
+      group_id: event.group_ref
+    delivery: at_least_once
+    on_failure:
+      drop: [group-missing]
+      retry: {except: [group-missing]}
