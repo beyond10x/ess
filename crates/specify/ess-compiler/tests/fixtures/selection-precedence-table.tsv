@@ -1,4 +1,4 @@
-#	models=320	commands=694
+#	models=321	commands=694
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -332,6 +332,7 @@ crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.message
 crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	ir=e40145284e7b85a5f309ab433ddc336fd87a70ca4c1259c4e752244be7993b77:19800
 crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	selection.core.Receive	default: received
+crates/verify/ess-conformance/tests/fixtures/binding-set-guard/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	ir=c70108e884d461d0b5d57218c577ecd3f1001f142e78d6d7ba8c8204025c96ea:19560
 crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	demo.releases.Deploy	input_refusal: frozen | existence: unknown-release-to-deploy | held_state: deployed, not-deployable | default: too-early
 crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	demo.releases.Maintain	accepting: allowed | default: outside-maintenance

@@ -1,0 +1,52 @@
+domain: demo.a
+types:
+  - {name: demo.a.SeatId, kind: newtype, of: Uuid}
+  - {name: demo.a.HolderId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.a.Seat
+    identity: {name: seat_id, type: demo.a.SeatId}
+    fields:
+      - {name: holder_id, type: demo.a.HolderId}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+commands:
+  - name: demo.a.OpenSeat
+    input:
+      - {name: holder_id, type: demo.a.HolderId}
+    outcomes:
+      - name: opened
+        creates: demo.a.Seat
+        instance: seat_id
+        emits: [demo.a.SeatOpened]
+        payload:
+          demo.a.SeatOpened: {seat_id: {generated: true}, holder_id: input.holder_id}
+        sets:
+          holder_id: input.holder_id
+  - name: demo.a.Check
+    input:
+      - {name: holder_id, type: demo.a.HolderId}
+    outcomes:
+      - name: unavailable
+        external: the store cannot be written to
+        error: demo.a.Unavailable
+      - name: kept
+        when_related: {entity: demo.a.Seat, where: holder_id == input.holder_id, exists: true}
+        emits: [demo.a.Kept]
+        payload:
+          demo.a.Kept: {holder_id: input.holder_id}
+      - name: dropped
+        emits: [demo.a.Dropped]
+        payload:
+          demo.a.Dropped: {holder_id: input.holder_id}
+errors:
+  - name: demo.a.Unavailable
+events:
+  - name: demo.a.SeatOpened
+    fields:
+      - {name: seat_id, type: demo.a.SeatId}
+      - {name: holder_id, type: demo.a.HolderId}
+  - name: demo.a.Kept
+    fields:
+      - {name: holder_id, type: demo.a.HolderId}
+  - name: demo.a.Dropped
+    fields:
+      - {name: holder_id, type: demo.a.HolderId}

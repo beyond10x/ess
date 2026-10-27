@@ -46,6 +46,8 @@ use crate::scenario::{
 };
 use ess_domain::name::QualifiedName;
 
+mod set_guard;
+
 /// How long a chain of bindings may run on one row before it is called unsettled.
 const CHAIN_LIMIT: usize = 32;
 
@@ -1262,6 +1264,11 @@ pub(super) fn prepare<'a>(
             if reached.is_err() {
                 if let Some(prepared) =
                     related_decided(ir, binding, invoked, published_by, trigger, actors)
+                {
+                    return Ok(prepared);
+                }
+                if let Some(prepared) =
+                    set_guard::decided(ir, binding, invoked, published_by, trigger, actors)
                 {
                     return Ok(prepared);
                 }
