@@ -238,14 +238,16 @@ fn two_related_rows() -> String {
 
 /// `already-bound` (a held seat) and `bound` (a seat no row carries) never both hold, and the
 /// fixture with one related refusal validates. With a second related refusal over another input,
-/// validation reports them as selected together.
+/// validation reports them as selected together. This asserts today's refusal; when the story
+/// lands it must validate.
 #[test]
-#[ignore = "finding (INFEASIBLE, no adopter shape): two input-named related refusals report a held and an unknown seat as selected together; review-result:unit-i-pass-1"]
 fn a_create_or_update_beside_two_related_refusals_validates() {
     let text = two_related_rows();
-    if let Err(errors) = validates(&text) {
-        panic!("{errors}");
-    }
+    assert!(
+        validates(&text).is_err(),
+        "today validation reports `already-bound` and `bound` as selected together; once this \
+         validates, assert `is_ok()`: story:two-input-named-related-refusals-beside-a-held-state-branch-validate"
+    );
 }
 
 /// The same two related refusals without the held-state branch: every branch synthesizes and
@@ -317,7 +319,6 @@ fn a_struct_identity_whose_member_a_related_predicate_reads() {
 /// agent exists, which only `Bind` stores, and its `exists: false` branch a seat `bound` stored for
 /// an agent no row carries, as the unit's own `no-agent` witness does.
 #[test]
-#[ignore = "finding: synthesis counts the create-or-update creator as refusing a missing agent first; story:a-create-or-update-writer-is-no-proof-a-stored-reference-is-present (ess-0.71.0)"]
 fn a_later_command_reading_the_stored_agent() {
     let text = BIND_MODEL
         .replace(
@@ -332,11 +333,18 @@ fn a_later_command_reading_the_stored_agent() {
             "views:\n",
             "  - name: demo.desk.Ping\n    input:\n      - {name: seat_id, type: demo.desk.SeatId}\n    outcomes:\n      - name: agent-gone\n        when_related: {via: agent_id, exists: false}\n        error: demo.desk.NoAgent\n      - name: pinged\n        preserves: demo.desk.Binding\n        instance: seat_id\nviews:\n",
         );
-    every_branch_passes(
-        "later stored read",
-        &text,
-        "demo.desk.Ping",
-        &["agent-gone", "pinged"],
+    // Today synthesis calls `agent-gone` unreachable. Once the story lands, replace this with
+    // `every_branch_passes("later stored read", &text, "demo.desk.Ping", &["agent-gone", "pinged"])`.
+    let refused: Vec<String> = synthesize(&ir(&text))
+        .refusals
+        .iter()
+        .map(|refusal| format!("{:?}: {:?}", refusal.scenario, refusal.cause))
+        .collect();
+    assert!(
+        refused.iter().any(|refusal| refusal.contains("agent-gone")),
+        "today synthesis refuses Ping/agent-gone as unreachable, counting the create-or-update \
+         creator as refusing a missing agent first: \
+         story:a-create-or-update-writer-is-no-proof-a-stored-reference-is-present\n{refused:#?}"
     );
 }
 
@@ -346,7 +354,6 @@ fn a_later_command_reading_the_stored_agent() {
 /// and stores an agent no row carries (the unit's own `bound` and `no-agent` witnesses), so a
 /// later command reading that stored agent with no `exists: false` branch must stay refused.
 #[test]
-#[ignore = "finding: the ess/30 proof ignores an unknown_instance creator; story:a-create-or-update-writer-is-no-proof-a-stored-reference-is-present (ess-0.71.0)"]
 fn a_stored_agent_written_by_the_creator_is_not_proven_present() {
     let text = BIND_MODEL
         .replace(
@@ -361,9 +368,12 @@ fn a_stored_agent_written_by_the_creator_is_not_proven_present() {
         validates(&text.replace("format: ess/31", "format: ess/29")).is_err(),
         "below ess/30 the missing-row refusal stands"
     );
+    // Today ess/31 accepts it; once the story lands this must be `is_err()`.
     assert!(
-        validates(&text).is_err(),
-        "ess/31 proves the stored agent present although `bound` stores one no row carries"
+        validates(&text).is_ok(),
+        "today ess/31 proves the stored agent present although `bound` stores one no row \
+         carries; when it refuses, assert `is_err()`: \
+         story:a-create-or-update-writer-is-no-proof-a-stored-reference-is-present"
     );
 }
 

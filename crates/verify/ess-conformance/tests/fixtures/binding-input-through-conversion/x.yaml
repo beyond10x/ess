@@ -1,0 +1,49 @@
+domain: demo.x
+types:
+  - {name: demo.x.GroupId, kind: newtype, of: String}
+  - {name: demo.x.GroupRef, kind: newtype, of: String}
+entities:
+  - name: demo.x.Group
+    identity: {name: group_id, type: demo.x.GroupId}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+commands:
+  - name: demo.x.DefineGroup
+    input: []
+    outcomes:
+      - name: defined
+        creates: demo.x.Group
+        instance: group_id
+        emits: [demo.x.GroupDefined]
+        payload:
+          demo.x.GroupDefined: {group_id: {generated: true}}
+  - name: demo.x.CreateMember
+    input:
+      - {name: group_ref, type: demo.x.GroupRef}
+    outcomes:
+      - name: created
+        emits: [demo.x.MemberCreated]
+        payload:
+          demo.x.MemberCreated: {group_ref: input.group_ref}
+  - name: demo.x.Enrol
+    input:
+      - {name: group_id, type: demo.x.GroupId}
+    outcomes:
+      - name: group-missing
+        when_related: {via: input.group_id, exists: false}
+        error: demo.x.GroupMissing
+      - name: enrolled
+        emits: [demo.x.Enrolled]
+        payload:
+          demo.x.Enrolled: {group_id: input.group_id}
+errors:
+  - name: demo.x.GroupMissing
+events:
+  - name: demo.x.GroupDefined
+    fields:
+      - {name: group_id, type: demo.x.GroupId}
+  - name: demo.x.MemberCreated
+    fields:
+      - {name: group_ref, type: demo.x.GroupRef}
+  - name: demo.x.Enrolled
+    fields:
+      - {name: group_id, type: demo.x.GroupId}

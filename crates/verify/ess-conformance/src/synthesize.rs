@@ -1353,6 +1353,21 @@ impl RefusalCause {
                  in a state that guard accepts for some input, or cover the branch with an \
                  authored scenario (ess-scenario/1)"
             }
+            // A set effect's rows whose creator reads the related row the filtered field names:
+            // the filter already reads an input, the related row is what is missing.
+            Self::NoWitness(gap) if gap.reason == set_effects::NO_RELATED => {
+                "the command creating the rows reads the related row the input it sets the \
+                 filtered field from names; let a declared command create that related row in a \
+                 state the creator accepts, or cover the branch with an authored scenario \
+                 (ess-scenario/1)"
+            }
+            // A set effect's rows that already hold what it writes: the filter is met, the value
+            // the effect changes is what is missing.
+            Self::NoWitness(gap) if gap.reason == set_effects::UNCHANGED => {
+                "every row the filter selects already holds what the effect writes; let the \
+                 effect write a field from its input, or let a command creating the rows write \
+                 that field from an input, so an arranged row can hold another value"
+            }
             Self::NoWitness(gap) if set_effects::UNARRANGED.contains(&gap.reason) => {
                 "let a command that creates the entity write each field the filter reads from an \
                  input or from a caller attribute (`{caller: <attribute>}`) rather than from a \
@@ -1605,7 +1620,8 @@ crate::authored::diagnostic_catalogue! {
                 | BindingGap::EffectUnsettled { .. }
                 | BindingGap::ConditionUnarranged { .. }
                 | BindingGap::ChangedRowUnarranged { .. }
-                | BindingGap::RelatedRowNeededByTrigger { .. },
+                | BindingGap::RelatedRowNeededByTrigger { .. }
+                | BindingGap::BranchConverted { .. },
             ..
         } => 10,
             "A binding clause has nothing a scenario could observe.",
@@ -2154,6 +2170,32 @@ pub enum BindingGap {
         /// The first publisher's command, which refuses the missing row before it publishes.
         trigger: CommandRef,
     },
+    /// [`BranchUndecided`](Self::BranchUndecided), where the input the invoked command reads its
+    /// related row through is filled across a declared conversion that does not hand the value on
+    /// as it was sent: what it makes of the value is the implementation's, so no row arranged
+    /// before the trigger is the one the invocation names (a downstream adopter's report of
+    /// 2026-10-26). A conversion between two newtypes wrapping one representation, neither held to
+    /// more than it, is followed instead, and the row is arranged.
+    BranchConverted {
+        /// The invoked command.
+        command: CommandRef,
+        /// The branches a scenario cannot choose between, in declaration order.
+        branches: Vec<OutcomeName>,
+        /// The input the related row is read through and the conversion it is filled across,
+        /// boxed so the gap stays small beside the other refusal causes.
+        conversion: Box<ConvertedInput>,
+    },
+}
+
+/// The input of a [`BindingGap::BranchConverted`] and the declared conversion it is filled across.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConvertedInput {
+    /// The invoked command's input the related row is read through.
+    pub input: String,
+    /// The declared conversion's source type.
+    pub from: String,
+    /// Its target type.
+    pub to: String,
 }
 
 impl BindingGap {
@@ -2240,12 +2282,18 @@ impl BindingGap {
                  declare the refusal `external:` so a scenario can force it, or cover its policy \
                  with an authored scenario (ess-scenario/1)"
             }
+            Self::BranchConverted { .. } => {
+                "let the conversion join two newtypes over one representation that declare no \
+                 alphabet, prefix or invariant, so the value crosses as it is sent; or leave the \
+                 invoked command one branch an input does not choose"
+            }
         }
     }
 }
 
 impl fmt::Display for BindingGap {
     /// Reads as the tail of "`<binding>` …".
+    #[allow(clippy::too_many_lines)] // Keep every binding gap's wording in one exhaustive match.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::AccessorObservation { reason } => {
@@ -2345,6 +2393,24 @@ impl fmt::Display for BindingGap {
                  missing related row, and every publisher of its event, `{trigger}` first, refuses \
                  that missing row itself before it publishes, so the absent-row case cannot be \
                  arranged"
+            ),
+            Self::BranchConverted {
+                command,
+                branches,
+                conversion,
+            } => write!(
+                f,
+                "invokes `{command}`, whose branch is decided by an input the event fills: {}; \
+                 `{}` is filled through the declared conversion `{}` -> `{}`, which may change the \
+                 value, so no row arranged before the trigger is the one it names",
+                branches
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                conversion.input,
+                conversion.from,
+                conversion.to,
             ),
         }
     }

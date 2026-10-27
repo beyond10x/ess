@@ -2703,12 +2703,13 @@ fn adversary_e_decimal_spellings_of_one_value_replay_equal() {
 /// `docs/design/retained-command-results.md` and the CHANGELOG: "the Rust reader compares exactly
 /// within its exact decimal range". Each pair is two different decimals whose digits fit an `i128`
 /// at a scale under 256 (`ess_primitives::facts::Number`'s exact range), so the retry changed the
-/// retained result and must fail. The TypeScript runner fails each (`compareExact`).
+/// retained result and must fail. The TypeScript runner fails each (`compareExact`). Today the Rust
+/// runner reads each pair through binary64 and replays it as one value; this asserts that state
+/// until the story lands, then every pair must fail.
 #[test]
-#[ignore = "finding: Rust reads a Decimal through binary64 before the runner sees it; story:a-rust-runner-compares-a-decimal-by-exact-value (ess-0.71.0)"]
 fn adversary_e_two_decimals_inside_the_exact_range_replay_unequal() {
     let admitted = adversary_e_decimal_suite();
-    let mut equal = Vec::new();
+    let mut unequal = Vec::new();
     for (original, retry) in [
         ("0.1", "0.10000000000000001"),
         ("1", "1.0000000000000000001"),
@@ -2718,13 +2719,15 @@ fn adversary_e_two_decimals_inside_the_exact_range_replay_unequal() {
         ),
     ] {
         let actual = adversary_e_retry(&admitted, original, retry);
-        if actual != Status::Failed {
-            equal.push(format!("{original} then {retry}: {actual:?}"));
+        if actual == Status::Failed {
+            unequal.push(format!("{original} then {retry}: {actual:?}"));
         }
     }
     assert!(
-        equal.is_empty(),
-        "different decimals replayed as one value: {equal:#?}"
+        unequal.is_empty(),
+        "today Rust reads a Decimal through binary64 and replays these pairs as one value; once \
+         a pair fails, assert that every pair fails: \
+         story:a-rust-runner-compares-a-decimal-by-exact-value\n{unequal:#?}"
     );
 }
 

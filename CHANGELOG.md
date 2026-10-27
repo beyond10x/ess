@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.71.0] — 2026-10-27
+
+### Fixed
+
+- A set update whose filter compares a field with an input, `instances: {where: <field> == input.<x>}`, now gets its scenario when the command creating those rows copies a value from the related row that input names, `{related: {via: input.<x>, field: …}}`, or refuses when that related row is missing, `when_related: {via: input.<x>, exists: false}`, as two adopters reported against 0.69.2. Synthesis creates the related rows first and the selected rows naming them, and sends the update naming one. Before, it was refused as ESS-SYNTH-001, "no three rows the filter selects", with help asking for the filtered field to be written from an input, which it already was. Where no related row can be created, the refusal now says so in its own words and help. A model whose rows are arranged without a related row keeps its suite bytes.
+- A set update that writes a field its rows' creator also writes from an input now gets its scenario, as an adopter reported against 0.69.2. Both commands were sent the same value, so no selected row changed and the update was refused as ESS-SYNTH-001; synthesis now arranges rows holding a value the update changes, trying further inputs where the update writes from its input. Where every selected row would still hold the written value, the refusal says so.
+- A deleting command whose `affects:` rows are created only by a command with a not-found branch, `when_related: {via: input.<field>, exists: false}`, that emits an event instead of naming an error now gets its scenario, as an adopter reported against 0.69.2. Synthesis creates the related row and opens the rows naming it, as it already did where the branch named an error; a row that exists never takes that branch, whatever it answers with. Before, the command was refused as ESS-SYNTH-001, "created only by …, which no arrangement takes". A model whose not-found branch names an error keeps its suite bytes.
+- A binding whose invoked command reads a related row through an input the binding fills across a declared conversion now gets its flow, mapping, delivery and refusal scenarios where the conversion joins two newtypes over one representation and neither declares an alphabet, prefix or invariant, as an adopter reported against 0.69.2. Synthesis creates the row and sends its identity through the conversion, as it does where the event carries the input's own type. Before, those scenarios were refused as ESS-SYNTH-010. Where the conversion may change the value, the ESS-SYNTH-010 refusal now names the conversion, and its help says how to make it one synthesis can follow.
+
 ## [0.70.0] — 2026-10-26
 
 ### Added

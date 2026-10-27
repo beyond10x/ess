@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-converted-binding-input-arranges-the-related-row
 kind: story
-status: draft
+status: implemented
 title: A binding input reached through a declared conversion arranges the related row
 summary: ESS-SYNTH-010 refuses a binding whose event field converts to the input a when_related guard reads; 5 scenarios / 3 refusals, 8 / 0 without the conversion.
 tags:
@@ -11,7 +11,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-26T21:52:55Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-26T21:52:55Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-27T11:23:18Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:b10x-chef-orchestrator-ess-0710"}
 ---
 ## Problem
 

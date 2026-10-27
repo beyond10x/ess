@@ -1,0 +1,73 @@
+format: ess/25
+system: demo
+version: v1
+domain: demo.z
+summary: Children copy a flag from their parent.
+naming: {wire: z, display: Z}
+types:
+  - {name: demo.z.ParentId, kind: newtype, of: Uuid}
+  - {name: demo.z.ChildId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.z.Parent
+    identity: {name: parent_id, type: demo.z.ParentId}
+    fields:
+      - {name: flag, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.z.Child
+    identity: {name: child_id, type: demo.z.ChildId}
+    fields:
+      - {name: parent_id, type: demo.z.ParentId}
+      - {name: flag, type: Boolean}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+actors:
+  - {name: demo.z.Clerk, may: [demo.z.CreateParent, demo.z.AddChild, demo.z.SyncFlag], naming: {display: Clerk}}
+commands:
+  - name: demo.z.CreateParent
+    naming: {wire: create-parent, display: Create parent}
+    input: []
+    outcomes:
+      - name: created
+        creates: demo.z.Parent
+        instance: parent_id
+        emits: [demo.z.Created]
+        payload: {demo.z.Created: {parent_id: {generated: true}}}
+        sets: {flag: false}
+        summary: A parent is created.
+  - name: demo.z.AddChild
+    naming: {wire: add-child, display: Add child}
+    input:
+      - {name: parent_id, type: demo.z.ParentId}
+    outcomes:
+      - name: added
+        creates: demo.z.Child
+        instance: child_id
+        emits: [demo.z.Added]
+        payload: {demo.z.Added: {child_id: {generated: true}}}
+        sets: {parent_id: input.parent_id, flag: {related: {via: input.parent_id, field: flag}}}
+        summary: A child is added with its parent's flag.
+  - name: demo.z.SyncFlag
+    naming: {wire: sync-flag, display: Sync flag}
+    input:
+      - {name: parent_id, type: demo.z.ParentId}
+    outcomes:
+      - name: synced
+        updates: demo.z.Child
+        instances: {where: parent_id == input.parent_id}
+        emits: [demo.z.Done]
+        payload: {demo.z.Done: {}}
+        sets: {flag: true}
+        summary: Every child of the parent carries the flag.
+events:
+  - {name: demo.z.Created, fields: [{name: parent_id, type: demo.z.ParentId}]}
+  - {name: demo.z.Added, fields: [{name: child_id, type: demo.z.ChildId}]}
+  - {name: demo.z.Done, fields: []}
+views:
+  - name: demo.z.ChildRecord
+    source: demo.z.Child
+    consistency: read_your_writes
+    fields:
+      - {name: child_id, type: demo.z.ChildId}
+      - {name: state, type: demo.z.Child.State}
+      - {name: parent_id, type: demo.z.ParentId}
+      - {name: flag, type: Boolean}
+    naming: {wire: child-record, display: Child record}

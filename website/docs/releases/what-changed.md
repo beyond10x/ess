@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.71.0 — 2026-10-27
+
+### Set updates, affects rows and converted binding inputs get the scenarios synthesis used to refuse
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.71.0)
+
+Synthesis now arranges the rows of a set update whose creator copies from, or refuses a missing, related row, and rows the update changes where both write one input. `affects:` rows are arranged past an emitting not-found branch, and a binding input filled across a plain newtype conversion arranges its related row.
+
 ## 0.70.0 — 2026-10-26
 
 ### Named rows beside a row set, state wire spellings, and replays that no longer stop with InvalidReplay

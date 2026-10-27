@@ -25,9 +25,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
-    Driver, EntityHandle, EssIr, ResolvedBinding, ResolvedCommand, ResolvedCondition,
+    Driver, EntityHandle, EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedCondition,
     ResolvedEffect, ResolvedFailure, ResolvedInstance, ResolvedMappingValue, ResolvedOutcome,
-    ResolvedPayloadValue, ResolvedRefusalAction, ResolvedView,
+    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRefusalAction, ResolvedTypeRef,
+    ResolvedView,
 };
 use ess_domain::command::TestStrategy;
 use ess_domain::entity::{EntitySpec, StateName};
@@ -115,13 +116,168 @@ fn payload_source<'a>(
     event: &ess_compiler::ir::EventHandle,
     field: &str,
 ) -> Option<(&'a ResolvedPayloadValue, bool)> {
+    payload_declared(trigger, event, field)
+        .map(|declared| (&declared.value, declared.conversion.is_some()))
+}
+
+/// The trigger's declaration of its event field `field` of `event`.
+fn payload_declared<'a>(
+    trigger: &'a ResolvedOutcome,
+    event: &ess_compiler::ir::EventHandle,
+    field: &str,
+) -> Option<&'a ResolvedPayloadField> {
     trigger
         .payload
         .iter()
         .filter(|payload| &payload.event == event)
         .flat_map(|payload| &payload.fields)
         .find(|declared| declared.target == field)
-        .map(|declared| (&declared.value, declared.conversion.is_some()))
+}
+
+/// Whether a value of type `from` arrives as `to` exactly as it was sent: no conversion, or the
+/// declared conversion `conversion` between two newtypes wrapping one representation, neither
+/// held to more than it (no alphabet, prefix or invariant). Such a conversion has nothing to
+/// compute, so an identity a scenario arranges and sends as the one type is the identity the other
+/// names, which is what the interpreter does with it too. Any other conversion is the
+/// implementation's to compute.
+fn crosses_unchanged(
+    ir: &EssIr,
+    from: &ResolvedTypeRef,
+    to: &ResolvedTypeRef,
+    conversion: Option<&str>,
+) -> bool {
+    let Some(named) = conversion else {
+        return true;
+    };
+    let declared = ir.conversions().iter().any(|candidate| {
+        candidate.from == *from && candidate.to == *to && candidate.because == named
+    });
+    let (ResolvedTypeRef::Declared { name: source }, ResolvedTypeRef::Declared { name: target }) =
+        (from, to)
+    else {
+        return false;
+    };
+    let (source, target) = (&ir.named_type(source).body, &ir.named_type(target).body);
+    declared
+        && !source.is_constrained()
+        && !target.is_constrained()
+        && matches!(
+            (source, target),
+            (ResolvedBody::Newtype { of: wrapped, .. }, ResolvedBody::Newtype { of: wraps, .. })
+                if wrapped == wraps
+        )
+}
+
+/// [`payload_source`], with the bool saying whether the value changes on the way into the event:
+/// a conversion from an input that [`crosses_unchanged`] does not.
+fn payload_followed<'a>(
+    ir: &EssIr,
+    trigger: &'a ResolvedOutcome,
+    event: &ess_compiler::ir::EventHandle,
+    field: &str,
+) -> Option<(&'a ResolvedPayloadValue, bool)> {
+    payload_declared(trigger, event, field).map(|declared| {
+        let changed = match &declared.value {
+            ResolvedPayloadValue::InputField { type_ref, .. } => !crosses_unchanged(
+                ir,
+                type_ref,
+                &declared.target_type,
+                declared.conversion.as_deref(),
+            ),
+            _ => declared.conversion.is_some(),
+        };
+        (&declared.value, changed)
+    })
+}
+
+/// The event field the binding fills `input` from, where the value crosses into it unchanged
+/// ([`crosses_unchanged`]).
+fn mapped_unchanged<'a>(ir: &EssIr, binding: &'a ResolvedBinding, input: &str) -> Option<&'a str> {
+    let mapped = binding
+        .mapping
+        .iter()
+        .find(|mapped| mapped.target == input)?;
+    match &mapped.value {
+        ResolvedMappingValue::EventField { field, type_ref }
+            if crosses_unchanged(
+                ir,
+                type_ref,
+                &mapped.target_type,
+                mapped.conversion.as_deref(),
+            ) =>
+        {
+            Some(field.as_str())
+        }
+        _ => None,
+    }
+}
+
+/// The declared conversion that keeps [`related_decided`] from naming the related row: on the way
+/// from the trigger's input into the event, or from the event into the invoked command's input
+/// the row is read through, the first that does not [cross unchanged](crosses_unchanged). `gap`
+/// becomes [`BindingGap::BranchConverted`] naming it, and is returned as it was where there is
+/// none.
+fn converted(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    invoked: &ResolvedCommand,
+    published_by: &ResolvedOutcome,
+    gap: BindingGap,
+) -> BindingGap {
+    let BindingGap::BranchUndecided { command, branches } = gap else {
+        return gap;
+    };
+    match unfollowed(ir, binding, invoked, published_by) {
+        Some((input, from, to)) => BindingGap::BranchConverted {
+            command,
+            branches,
+            conversion: Box::new(super::ConvertedInput {
+                input: input.to_owned(),
+                from: from.to_string(),
+                to: to.to_string(),
+            }),
+        },
+        None => BindingGap::BranchUndecided { command, branches },
+    }
+}
+
+/// For [`converted`]: the invoked command's input the related row is read through, and the source
+/// and target types of the first conversion on its way from the trigger that does not
+/// [cross unchanged](crosses_unchanged).
+fn unfollowed<'a>(
+    ir: &EssIr,
+    binding: &'a ResolvedBinding,
+    invoked: &'a ResolvedCommand,
+    published_by: &'a ResolvedOutcome,
+) -> Option<(&'a str, &'a ResolvedTypeRef, &'a ResolvedTypeRef)> {
+    let (via, _) = super::related_guard::reads(invoked)?;
+    let event = binding.cause.event()?;
+    let mapped = binding.mapping.iter().find(|mapped| mapped.target == via)?;
+    let ResolvedMappingValue::EventField { field, type_ref } = &mapped.value else {
+        return None;
+    };
+    if !crosses_unchanged(
+        ir,
+        type_ref,
+        &mapped.target_type,
+        mapped.conversion.as_deref(),
+    ) {
+        return Some((via, type_ref, &mapped.target_type));
+    }
+    let declared = payload_declared(published_by, event, field)?;
+    match &declared.value {
+        ResolvedPayloadValue::InputField { type_ref, .. }
+            if !crosses_unchanged(
+                ir,
+                type_ref,
+                &declared.target_type,
+                declared.conversion.as_deref(),
+            ) =>
+        {
+            Some((via, type_ref, &declared.target_type))
+        }
+        _ => None,
+    }
 }
 
 /// The row `binding` addresses when `trigger` publishes its event.
@@ -1110,6 +1266,8 @@ pub(super) fn prepare<'a>(
                     return Ok(prepared);
                 }
             }
+            // A conversion that stopped the related row's arrangement is named in the gap.
+            let reached = reached.map_err(|gap| converted(ir, binding, invoked, published_by, gap));
             if let Ok(branch) = reached {
                 if let Some(prepared) = per_row_decided(
                     ir,
@@ -1156,14 +1314,17 @@ pub(super) fn prepare<'a>(
 /// The invoked command acts on no existing row of its own, and every branch it can take
 /// unforced is decided by one related row alone: an `exists: false` branch, a predicate over the
 /// row's stored fields that reads no input, or the default. The input naming the row is mapped
-/// unconverted from an event field the trigger fills unconverted from an input of its own. Then
-/// the row is a value the scenario chooses rather than one the upstream implementation does: it is
-/// arranged through its creating command so the accepting branch is selected, as that branch's own
-/// scenario arranges it, and the trigger is sent naming it.
+/// from an event field the trigger fills from an input of its own, each step unconverted or across
+/// a declared conversion that hands the value on as it is ([`crosses_unchanged`], a downstream
+/// adopter's report of 2026-10-26). Then the row is a value the scenario chooses rather than one
+/// the upstream implementation does: it is arranged through its creating command so the accepting
+/// branch is selected, as that branch's own scenario arranges it, and the trigger is sent naming
+/// it.
 ///
 /// The accepting branch is the default where it accepts, else the first predicate branch that
 /// does. `None` where any of that does not hold, so the binding keeps the
-/// [`BindingGap::BranchUndecided`] it had, and a model without such a guard keeps its suite bytes.
+/// [`BindingGap::BranchUndecided`] it had — [`BindingGap::BranchConverted`] where a conversion
+/// stopped it ([`converted`]) — and a model without such a guard keeps its suite bytes.
 fn related_decided<'a>(
     ir: &'a EssIr,
     binding: &'a ResolvedBinding,
@@ -1183,15 +1344,12 @@ fn related_decided<'a>(
     let (via, entity) = related_guard::reads(invoked)?;
     let accepting = accepting_branch(ir, invoked, via, entity)?;
 
-    // The identity reaches the invocation unchanged from an input of the trigger's caller.
+    // The identity reaches the invocation unchanged from an input of the trigger's caller, across
+    // no conversion or one that hands it on as it is.
     let event = binding.cause.event()?;
-    let mapped = binding.mapping.iter().find(|mapped| mapped.target == via)?;
-    let field = match (&mapped.value, &mapped.conversion) {
-        (ResolvedMappingValue::EventField { field, .. }, None) => field.as_str(),
-        _ => return None,
-    };
+    let field = mapped_unchanged(ir, binding, via)?;
     // Sent in the trigger's own input, or stored on the trigger's row by the step creating it.
-    let (from, stored) = match payload_source(published_by, event, field)? {
+    let (from, stored) = match payload_followed(ir, published_by, event, field)? {
         (ResolvedPayloadValue::InputField { field: from, .. }, false)
             if !ess_domain::command::input_path::is_path(from) =>
         {
@@ -1436,7 +1594,8 @@ fn per_row_input(
 /// As [`related_decided`] requires for the accepting branch: the invoked command acts on no
 /// existing row of its own, and every branch it can take unforced reads the one related row the
 /// refusal reads, through no input guard, or is the default; the input naming the row is mapped
-/// unconverted from an event field the trigger fills unconverted from an input of its own. `refusal`
+/// from an event field the trigger fills from an input of its own, each step unconverted or across
+/// a conversion that [crosses unchanged](crosses_unchanged). `refusal`
 /// is the first `exists: false` branch declared, so no other one answers before it. `None` where
 /// any of that does not hold, so the refusal keeps the gap it had.
 ///
@@ -1502,12 +1661,8 @@ pub(super) fn related_missing(
     }
 
     let event = binding.cause.event()?;
-    let mapped = binding.mapping.iter().find(|mapped| mapped.target == via)?;
-    let field = match (&mapped.value, &mapped.conversion) {
-        (ResolvedMappingValue::EventField { field, .. }, None) => field.as_str(),
-        _ => return None,
-    };
-    let from = match payload_source(published_by, event, field)? {
+    let field = mapped_unchanged(ir, binding, via)?;
+    let from = match payload_followed(ir, published_by, event, field)? {
         (ResolvedPayloadValue::InputField { field: from, .. }, false)
             if !ess_domain::command::input_path::is_path(from) =>
         {

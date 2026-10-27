@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-27T12:37:55Z",
+  "actor": "human:timo",
+  "artifact": "story:an-affects-row-is-arranged-past-a-creators-emitting-not-found-branch",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "adopter replay of 91a845fe26: the reduced reproduction clears (3 passed 1 refused -> 4 passed 0 refused); the full specification still refuses its affects: outcome, deferred to story:affects-witness-with-the-adopters-remaining-condition",
+    "reference": "commit:91a845fe26"
+  }
+}

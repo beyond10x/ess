@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/set-updates-affects-and-converted-bindings-0.71.0
+repository: ess
+publishedAt: 2026-10-27T00:00:00Z
+title: Set updates, affects rows and converted binding inputs get the scenarios synthesis used to refuse
+summary: >-
+  Synthesis now arranges the rows of a set update whose creator copies from, or refuses a missing,
+  related row, and rows the update changes where both write one input. `affects:` rows are arranged
+  past an emitting not-found branch, and a binding input filled across a plain newtype conversion
+  arranges its related row.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.71.0
+  version: 0.71.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]
