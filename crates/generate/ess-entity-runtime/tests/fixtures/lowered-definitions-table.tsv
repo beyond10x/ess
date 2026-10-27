@@ -135,6 +135,8 @@ crates/verify/ess-conformance/tests/fixtures/binding-condition-selected.yaml	com
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/binding-no-step-triggers/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/binding-no-step-triggers-published/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-refusal-policy-swapped-caller/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-set-guard/system.yaml	ASSEMBLE
@@ -433,6 +435,8 @@ system-dir:crates/verify/ess-conformance/tests/fixtures/binding-input-through-co
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion	svc	REFUSED	d053a7473eb8d8d2d467e4ffa10c7c366cd58a202c6cc6642e456f2462638059:716
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command	components=1
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command	svc	REFUSED	96ca0cc49cfc1c977a6a80aa86ba7ef542d0e2666d3d401df66d9fb49def753d:955
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-no-step-triggers	components=0
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-no-step-triggers-published	components=0
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-refusal-policy-swapped-caller	components=1
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-refusal-policy-swapped-caller	svc	REFUSED	131dbbbf7068e8fa65580822c13dac14815e0305d324f2bb0a4618a8218e1b5d:973
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-set-guard	components=1

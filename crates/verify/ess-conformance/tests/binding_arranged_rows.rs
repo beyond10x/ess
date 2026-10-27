@@ -993,14 +993,18 @@ fn an_unrelated_binding_leaves_a_row_set_guard_witnessed() {
 
 #[test]
 fn a_binding_writing_the_guarded_entity_keeps_the_refusal_and_says_why() {
-    // The binding now opens a task whenever a ping is published: rows of the selector's entity
-    // appear when the transport delivers, which no arrangement follows.
+    // The binding now closes every task an arrangement opens: rows of the selector's entity change
+    // when the transport delivers, which no arrangement follows. A binding no step of the
+    // arrangement sets off leaves the guard witnessed
+    // (`tests/a_binding_no_step_triggers_leaves_the_row_set_arrangeable.rs`).
     let text = rewrite(
         ROW_SET,
-        "    invoke: {command: demo.queue.Pong}
+        "    when: {event: demo.queue.Pinged}
+    invoke: {command: demo.queue.Pong}
     mapping: {note: event.note}",
-        "    invoke: {command: demo.queue.OpenTask}
-    mapping: {assignee: event.note}",
+        "    when: {event: demo.queue.TaskOpened}
+    invoke: {command: demo.queue.CloseTask}
+    mapping: {task_id: event.task_id}",
     );
     let synthesis = synthesize(&model(&text));
     let busy = refused_as(&synthesis, "demo.queue.ReleaseAssignee/outcome/busy");

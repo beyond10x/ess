@@ -44,6 +44,8 @@ use ess_compiler::ir::{
     ResolvedInstance, ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue,
     ResolvedPublishedRead, ResolvedRowSelection, ResolvedTypeRef, RowMember, Selected,
 };
+use ess_compiler::ir::{EventHandle, ResolvedBinding};
+use ess_domain::binding::BindingName;
 use ess_domain::command::ordered_head::Ties;
 use ess_domain::command::published_operand;
 use ess_domain::command::OutcomeName;
@@ -1317,10 +1319,9 @@ fn read_value(ir: &EssIr, read: &ReadRow<'_>) -> Option<ScenarioValue> {
 /// The rows `steps` leave, deciding again every send of a row-set command among them where `check`
 /// is set: the first whose required branch the rows do not decide is the error.
 pub(super) fn walk(ir: &EssIr, steps: &[ScenarioStep], check: bool) -> Result<Rows, String> {
-    let mut rows = Rows {
-        opaque: bound_writes(ir),
-        ..Rows::default()
-    };
+    let mut rows = Rows::default();
+    let mut so_far = SetOff::default();
+    set_off(ir, [], &mut so_far, &mut rows);
     for (at, step) in steps.iter().enumerate() {
         match step {
             ScenarioStep::ExecuteCommand {
@@ -1348,6 +1349,8 @@ pub(super) fn walk(ir: &EssIr, steps: &[ScenarioStep], check: bool) -> Result<Ro
                     {
                         rows.all_opaque = true;
                     }
+                    let emitted = command.outcomes.iter().flat_map(|outcome| &outcome.emits);
+                    set_off(ir, emitted, &mut so_far, &mut rows);
                     continue;
                 };
                 if check {
@@ -1368,6 +1371,7 @@ pub(super) fn walk(ir: &EssIr, steps: &[ScenarioStep], check: bool) -> Result<Ro
                         _ => None,
                     });
                 apply(ir, command, expected, input, captured, &mut rows);
+                set_off(ir, &expected.emits, &mut so_far, &mut rows);
             }
             ScenarioStep::EstablishEntity { .. }
             | ScenarioStep::DeliverEvent { .. }
@@ -1433,30 +1437,79 @@ pub(super) fn changed_states(
     Some(changed)
 }
 
-/// The entities whose rows a binding may change: every entity a branch of a command some binding
-/// invokes creates, moves, updates or deletes, as its subject, its `instances:` or an `affects:`
-/// entry. A binding runs when the transport delivers, which a scenario's steps do not follow, so
-/// those rows are not the steps' to decide; every other entity's are, whatever bindings the model
-/// declares (a downstream adopter's report of 2026-10-20: any binding at all made every row-set
-/// guard opaque).
-fn bound_writes(ir: &EssIr) -> BTreeSet<EntityHandle> {
-    let mut written = BTreeSet::new();
-    for binding in ir.bindings().values() {
-        for outcome in &ir.command(&binding.command).outcomes {
-            if outcome.error.is_some() {
+/// The bindings the steps so far have set off, and the events they have published.
+#[derive(Default)]
+struct SetOff<'ir> {
+    published: BTreeSet<&'ir EventHandle>,
+    fired: BTreeSet<&'ir BindingName>,
+}
+
+/// What a step publishing `emitted` sets off: every binding whose trigger is among the events the
+/// steps have published, every binding a host poll sets off whatever the steps do, and every
+/// binding an event those may publish sets off in turn. From that step on, the rows each one's
+/// invoked command writes ([`bound_writes`]) are not the steps' to decide; a binding no step sets
+/// off leaves them so (a downstream adopter's report of 2026-10-26: any binding writing the
+/// selector's entity made its guard opaque, whatever the scenario sent).
+fn set_off<'ir>(
+    ir: &'ir EssIr,
+    emitted: impl IntoIterator<Item = &'ir EventHandle>,
+    so_far: &mut SetOff<'ir>,
+    rows: &mut Rows,
+) {
+    so_far.published.extend(emitted);
+    loop {
+        let mut more = false;
+        for (name, binding) in ir.bindings() {
+            if so_far.fired.contains(name)
+                || binding
+                    .cause
+                    .event()
+                    .is_some_and(|trigger| !so_far.published.contains(trigger))
+            {
                 continue;
             }
-            if let Some(subject) = &outcome.subject {
-                if !matches!(subject.effect, ResolvedEffect::Preserves) || !outcome.sets.is_empty()
-                {
-                    written.insert(subject.entity.clone());
-                }
-            }
-            if let Some(set) = &outcome.instances {
-                written.insert(set.entity.clone());
-            }
-            written.extend(outcome.affects.iter().map(|affect| affect.entity.clone()));
+            so_far.fired.insert(name);
+            rows.opaque.extend(bound_writes(ir, binding));
+            let outcomes = &ir.command(&binding.command).outcomes;
+            so_far
+                .published
+                .extend(outcomes.iter().flat_map(|outcome| &outcome.emits));
+            so_far.published.extend(binding.escalation.as_ref());
+            so_far.published.extend(
+                binding
+                    .refusal_policy
+                    .as_ref()
+                    .and_then(|policy| policy.escalation()),
+            );
+            more = true;
         }
+        if !more {
+            return;
+        }
+    }
+}
+
+/// The entities whose rows `binding` may change: every entity a branch of the command it invokes
+/// creates, moves, updates or deletes, as its subject, its `instances:` or an `affects:` entry. A
+/// binding runs when the transport delivers, which a scenario's steps do not follow, so those rows
+/// are not the steps' to decide once it is set off ([`set_off`]); every other entity's are, whatever
+/// bindings the model declares (a downstream adopter's report of 2026-10-20: any binding at all
+/// made every row-set guard opaque).
+fn bound_writes(ir: &EssIr, binding: &ResolvedBinding) -> BTreeSet<EntityHandle> {
+    let mut written = BTreeSet::new();
+    for outcome in &ir.command(&binding.command).outcomes {
+        if outcome.error.is_some() {
+            continue;
+        }
+        if let Some(subject) = &outcome.subject {
+            if !matches!(subject.effect, ResolvedEffect::Preserves) || !outcome.sets.is_empty() {
+                written.insert(subject.entity.clone());
+            }
+        }
+        if let Some(set) = &outcome.instances {
+            written.insert(set.entity.clone());
+        }
+        written.extend(outcome.affects.iter().map(|affect| affect.entity.clone()));
     }
     written
 }
