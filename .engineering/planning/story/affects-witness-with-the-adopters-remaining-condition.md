@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:affects-witness-with-the-adopters-remaining-condition
 kind: story
-status: draft
+status: active
 title: An affects witness holds under the adopter's remaining condition
 summary: 'Follow-up to the 0.71.0 not-found-branch fix: the full adopter specification still refuses its affects: outcome; the reduced reproduction dropped a condition.'
 tags:
@@ -10,7 +10,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-27T22:48:07Z", actor: "human:timo", revision: 3, executor: "agent:b10x-chef-orchestrator-ess-0720"}
+- {from: "proposed", to: "active", at: "2026-10-27T22:48:07Z", actor: "human:timo", revision: 4, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 ---
 ## Problem
 

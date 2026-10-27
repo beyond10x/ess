@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-set-effect-binding-refusal-names-each-cause
 kind: story
-status: draft
+status: active
 title: A set-effect binding refusal names each of its causes
 summary: ESS-SYNTH-010 on a per-row set effect keyed by another entity row names none of four independent causes; 7 / 3, 9 / 0 only with all four removed.
 tags:
@@ -11,7 +11,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-27T22:48:05Z", actor: "human:timo", revision: 2, executor: "agent:b10x-chef-orchestrator-ess-0720"}
+- {from: "proposed", to: "active", at: "2026-10-27T22:48:06Z", actor: "human:timo", revision: 3, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 ---
 ## Problem
 

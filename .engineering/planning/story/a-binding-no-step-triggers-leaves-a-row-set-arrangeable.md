@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-binding-no-step-triggers-leaves-a-row-set-arrangeable
 kind: story
-status: draft
+status: active
 title: A binding no step triggers leaves a row-set guard arrangeable
 summary: 'ESS-SYNTH-001: any binding writing the selector entity makes a row-set guard opaque model-wide; 7 / 2, 5 / 0 without bindings.'
 tags:
@@ -11,7 +11,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-27T22:48:06Z", actor: "human:timo", revision: 2, executor: "agent:b10x-chef-orchestrator-ess-0720"}
+- {from: "proposed", to: "active", at: "2026-10-27T22:48:06Z", actor: "human:timo", revision: 3, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 ---
 ## Problem
 
