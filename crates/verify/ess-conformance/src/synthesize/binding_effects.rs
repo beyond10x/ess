@@ -1461,7 +1461,9 @@ pub(super) fn prepare<'a>(
 /// the upstream implementation does: it is arranged through its creating command so the accepting
 /// branch is selected, as that branch's own scenario arranges it, and the trigger is sent naming
 /// it. A trigger that refuses that same row missing before it publishes ([`refuses_only_missing`])
-/// is sent naming the row arranged here, which exists, so it still publishes.
+/// is sent naming the row arranged here, which exists, so it still publishes. A command whose other
+/// guards read the input it is sent the row through may answer otherwise for that row
+/// ([`keeps_branch_sent`]), and is not sent so.
 ///
 /// The accepting branch is the default where it accepts, else the first predicate branch that
 /// does. `None` where any of that does not hold, so the binding keeps the
@@ -1491,18 +1493,22 @@ fn related_decided<'a>(
     let event = binding.cause.event()?;
     let field = mapped_unchanged(ir, binding, via)?;
     // Sent in the trigger's own input, or stored on the trigger's row by the step creating it.
-    let (from, stored) = match payload_followed(ir, published_by, event, field)? {
+    let (from, stored, sender) = match payload_followed(ir, published_by, event, field)? {
         (ResolvedPayloadValue::InputField { field: from, .. }, false)
             if !ess_domain::command::input_path::is_path(from) =>
         {
-            (from.clone(), None)
+            (from.clone(), None, command_of(ir, published_by)?)
         }
         (ResolvedPayloadValue::SubjectField { field: stored, .. }, false) => {
-            let (sent, _, from) = stored_creation(ir, published_by, stored, trigger)?;
-            (from, Some(sent))
+            let (sent, creator, from) = stored_creation(ir, published_by, stored, trigger)?;
+            (from, Some(sent), creator)
         }
         _ => return None,
     };
+    // The command sent naming the arranged row in place of what it was sent keeps its branch.
+    if !keeps_branch_sent(sender, &from, Some(entity), false) {
+        return None;
+    }
 
     let (_, distinction) = unused_name(ir, entity, trigger);
     let models = super::caller::InvocationModels::plain(ir);
@@ -1510,9 +1516,7 @@ fn related_decided<'a>(
     // A trigger that refuses the same missing row before it publishes is arranged around rows of
     // that entity itself, at the plain distinction: the related row is arranged past them, at the
     // first further distinction naming none of them (a downstream adopter's report of 2026-10-26).
-    let past = stored.is_none()
-        && command_of(ir, published_by)
-            .is_some_and(|publisher| refuses_only_missing(publisher, &from));
+    let past = stored.is_none() && refuses_only_missing(sender, &from, entity);
     let further = (1..=taken.len() + 1)
         .map(Distinction::further)
         .filter(|_| past);
@@ -1708,11 +1712,13 @@ fn accepting_branch<'a>(
     accepting
 }
 
-/// Whether `publisher` reads the related row its input `from` names, and only to refuse it missing
-/// (`when_related: {via: input.<from>, exists: false}` with an error, reading no further row): it
-/// publishes only while that row exists, whichever row it is, so [`related_decided`] may point it at
-/// the row arranged for the invoked command.
-fn refuses_only_missing(publisher: &ResolvedCommand, from: &str) -> bool {
+/// Whether `publisher` reads the related row of `entity` its input `from` names, and only to refuse
+/// it missing (`when_related: {via: input.<from>, exists: false}` with an error, reading no further
+/// row): it publishes only while a row of `entity` carries that identity, whichever row it is, so
+/// [`related_decided`] may point it at the row of `entity` arranged for the invoked command. A guard
+/// reading a row of another entity through that input is no such refusal: the row arranged is not
+/// one it reads.
+fn refuses_only_missing(publisher: &ResolvedCommand, from: &str, entity: &EntityHandle) -> bool {
     use ess_compiler::ir::{ResolvedRelatedTest, ResolvedRelatedVia};
 
     let mut reads = publisher
@@ -1721,19 +1727,94 @@ fn refuses_only_missing(publisher: &ResolvedCommand, from: &str) -> bool {
         .filter_map(|outcome| match &outcome.condition {
             ResolvedCondition::Related {
                 via: ResolvedRelatedVia::Input { field, .. },
+                entity: read,
                 test,
                 also,
                 ..
-            } if field == from => Some((outcome, test, also)),
+            } if field == from => Some((outcome, read, test, also)),
             _ => None,
         })
         .peekable();
     reads.peek().is_some()
-        && reads.all(|(outcome, test, also)| {
-            matches!(test, ResolvedRelatedTest::Absent)
+        && reads.all(|(outcome, read, test, also)| {
+            read == entity
+                && matches!(test, ResolvedRelatedTest::Absent)
                 && also.is_empty()
                 && outcome.error.is_some()
         })
+}
+
+/// Whether the trigger's command `publisher` still takes the branch its own scenario takes when
+/// its input `from` is sent another value: one naming an existing row of `entity` (`Some`), or one
+/// naming no row (`None`). That holds where no guard reads `from` but an `exists: false` refusal
+/// over `entity`, which the existing row passes ([`refuses_only_missing`]), and, where
+/// `input_kept`, an input guard deciding the new value as it decides the old one
+/// ([`super::keeps_branch`]); and where no branch acts on the row `from` names. A guard comparing
+/// `input.<from>` with a stored field of its subject or of a related row, a set guard's filter
+/// reading it, or a related row of another entity read through it may answer otherwise for the new
+/// value, so the binding keeps the gap it had rather than a scenario sending the trigger down
+/// another branch (a downstream adopter's report of 2026-10-26).
+fn keeps_branch_sent(
+    publisher: &ResolvedCommand,
+    from: &str,
+    entity: Option<&EntityHandle>,
+    input_kept: bool,
+) -> bool {
+    use ess_compiler::ir::{ResolvedRelatedTest, ResolvedRelatedVia};
+    use ess_primitives::predicate::Predicate;
+
+    let reads =
+        |predicate: &Predicate| super::row_set::input_reads(predicate).any(|read| read == from);
+    let input_guard = |predicate: Option<&Predicate>| input_kept || !predicate.is_some_and(reads);
+    let through = |via: &ResolvedRelatedVia| matches!(via, ResolvedRelatedVia::Input { field, .. } if field == from);
+    publisher.outcomes.iter().all(|outcome| {
+        let acts_on = outcome.subject.as_ref().is_some_and(|subject| {
+            matches!(&subject.instance, ResolvedInstance::Supplied { field } if field.name == from)
+        });
+        !acts_on
+            && match &outcome.condition {
+                ResolvedCondition::Related {
+                    via,
+                    entity: read,
+                    test,
+                    input,
+                    also,
+                } => {
+                    let row = if through(via) {
+                        entity == Some(read)
+                            && matches!(test, ResolvedRelatedTest::Absent)
+                            && also.is_empty()
+                            && outcome.error.is_some()
+                    } else {
+                        !matches!(test, ResolvedRelatedTest::Holds { predicate } if reads(predicate))
+                            && also
+                                .iter()
+                                .all(|also| !through(&also.via) && !reads(&also.predicate))
+                    };
+                    row && input_guard(input.as_ref())
+                }
+                ResolvedCondition::RelatedSet {
+                    selection, input, ..
+                } => !reads(&selection.filter) && input_guard(input.as_ref()),
+                ResolvedCondition::SubjectPredicate { predicate, input }
+                | ResolvedCondition::ExternalSubject {
+                    predicate, input, ..
+                } => !reads(predicate) && input_guard(input.as_ref()),
+                ResolvedCondition::When { predicate }
+                | ResolvedCondition::ExternalWhen { predicate, .. } => input_guard(Some(predicate)),
+                ResolvedCondition::SubjectField { predicate, .. }
+                | ResolvedCondition::SubjectState { predicate, .. }
+                | ResolvedCondition::StateChange { predicate, .. } => {
+                    input_guard(predicate.as_ref())
+                }
+                ResolvedCondition::Otherwise
+                | ResolvedCondition::External { .. }
+                | ResolvedCondition::WrongState
+                | ResolvedCondition::UnknownInstance
+                | ResolvedCondition::InputAbsent
+                | ResolvedCondition::ExistingInstance => true,
+            }
+    })
 }
 
 /// The trigger of a binding whose invocation reaches a set effect publishing an event once per row
@@ -1877,7 +1958,8 @@ fn per_row_input(
 /// (`unknown_instance:`).
 ///
 /// An invoked command acting on the trigger's own row is read as its guards read it there
-/// ([`read_on_row`]), as [`related_on_row`] reads it for the accepting branch.
+/// ([`read_on_row`]), as [`related_on_row`] reads it for the accepting branch. The trigger is sent
+/// naming no row only where that keeps its branch ([`keeps_branch_sent`]); else `None`.
 pub(super) fn related_missing(
     ir: &EssIr,
     binding: &ResolvedBinding,
@@ -1979,15 +2061,33 @@ pub(super) fn related_missing(
         }));
     }
     let fresh = super::fresh_identity(ir, invoked, via, None).ok()?;
+    sent_naming_no_row(ir, publisher, &from, fresh, trigger).map(Ok)
+}
+
+/// The trigger's invocation with its input `from` sent `fresh`, an identity no row carries, where
+/// the trigger keeps the branch its own scenario takes for it ([`keeps_branch_sent`]).
+fn sent_naming_no_row(
+    ir: &EssIr,
+    publisher: &ResolvedCommand,
+    from: &str,
+    fresh: Node,
+    trigger: &Run,
+) -> Option<Vec<ScenarioStep>> {
     let mut invoke = trigger.invoke.clone();
-    invoke.iter_mut().rev().find_map(|step| match step {
-        ScenarioStep::ExecuteCommand { input, .. } if input.contains_key(&from) => {
-            input.insert(from.clone(), ScenarioValue::literal(fresh.clone()));
-            Some(())
-        }
+    let sent = invoke.iter_mut().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand { input, .. } if input.contains_key(from) => Some(input),
         _ => None,
     })?;
-    Some(Ok(invoke))
+    let literals: BTreeMap<String, Node> = sent
+        .iter()
+        .filter_map(|(field, value)| Some((field.clone(), value.as_literal()?.clone())))
+        .collect();
+    let input_kept = super::keeps_branch(ir, publisher, &literals, from, &fresh);
+    if !keeps_branch_sent(publisher, from, None, input_kept) {
+        return None;
+    }
+    sent.insert(from.to_owned(), ScenarioValue::literal(fresh));
+    Some(invoke)
 }
 
 /// [`prepare`] where the destination is the trigger's own row: its state is where the trigger

@@ -536,7 +536,7 @@ fn followups(
                 }
                 if let Some(followup) = reached(
                     ir,
-                    readings,
+                    (readings, &synthesis.suite),
                     (command, branch),
                     &assigned,
                     &id,
@@ -715,10 +715,24 @@ fn read_rotation_as_granted(
     }
 }
 
+/// [`reached_as`], where it witnesses a set effect of `branch`; else the branch's own scenario in
+/// `suite` where that one does ([`super::caller::witnessing_followup`]).
+fn reached(
+    ir: &EssIr,
+    (readings, suite): (Option<&Readings>, &crate::ConformanceSuite),
+    (command, branch): (&ResolvedCommand, &ResolvedOutcome),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+) -> Option<ConformanceScenario> {
+    reached_as(ir, readings, (command, branch), actors, id, refusals)
+        .map(|followup| super::caller::witnessing_followup(ir, suite, (command, branch), followup))
+}
+
 /// The follow-up `branch` of `command`, sent as `actors` assigns, built as the ordinary suite
 /// reaches it ([`super::reached_branch`]): from the model itself, and else under each caller
 /// reading of [`Readings`] in turn. Where none reaches it, the model's own refusals.
-fn reached(
+fn reached_as(
     ir: &EssIr,
     readings: Option<&Readings>,
     (command, branch): (&ResolvedCommand, &ResolvedOutcome),
