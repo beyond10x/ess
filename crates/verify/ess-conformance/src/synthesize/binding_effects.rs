@@ -1319,7 +1319,8 @@ pub(super) fn prepare<'a>(
 /// adopter's report of 2026-10-26). Then the row is a value the scenario chooses rather than one
 /// the upstream implementation does: it is arranged through its creating command so the accepting
 /// branch is selected, as that branch's own scenario arranges it, and the trigger is sent naming
-/// it.
+/// it. A trigger that refuses that same row missing before it publishes ([`refuses_only_missing`])
+/// is sent naming the row arranged here, which exists, so it still publishes.
 ///
 /// The accepting branch is the default where it accepts, else the first predicate branch that
 /// does. `None` where any of that does not hold, so the binding keeps the
@@ -1364,22 +1365,34 @@ fn related_decided<'a>(
 
     let (_, distinction) = unused_name(ir, entity, trigger);
     let models = super::caller::InvocationModels::plain(ir);
-    let (arranged, _) =
-        related_guard::prepare_at_in(&models, invoked, accepting, actors, distinction, None)
+    let taken = captured(trigger);
+    // A trigger that refuses the same missing row before it publishes is arranged around rows of
+    // that entity itself, at the plain distinction: the related row is arranged past them, at the
+    // first further distinction naming none of them (a downstream adopter's report of 2026-10-26).
+    let past = stored.is_none()
+        && command_of(ir, published_by)
+            .is_some_and(|publisher| refuses_only_missing(publisher, &from));
+    let further = (1..=taken.len() + 1)
+        .map(Distinction::further)
+        .filter(|_| past);
+    let arranged = std::iter::once(distinction)
+        .chain(further)
+        .find_map(|distinction| {
+            let (arranged, _) = related_guard::prepare_at_in(
+                &models, invoked, accepting, actors, distinction, None,
+            )
             .ok()?;
+            let collides = arranged.steps.iter().any(|step| {
+                matches!(step, ScenarioStep::CaptureInstance { instance, .. } if taken.contains(instance))
+            });
+            (!collides).then_some(arranged)
+        })?;
     // Only the related row is the scenario's to choose: anything else the branch's own
     // arrangement binds is a value the event fills.
     if arranged.instance.is_some() || arranged.bound.keys().any(|bound| bound != via) {
         return None;
     }
     let row = arranged.bound.get(via)?.clone();
-    let taken = captured(trigger);
-    let collides = arranged.steps.iter().any(|step| {
-        matches!(step, ScenarioStep::CaptureInstance { instance, .. } if taken.contains(instance))
-    });
-    if collides {
-        return None;
-    }
     let (setup, invoke) = if let Some(sent) = stored {
         // The row first, then the trigger's arrangement creating its own row naming it.
         let mut created = trigger.setup.clone();
@@ -1464,6 +1477,34 @@ fn accepting_branch<'a>(
         }
     }
     accepting
+}
+
+/// Whether `publisher` reads the related row its input `from` names, and only to refuse it missing
+/// (`when_related: {via: input.<from>, exists: false}` with an error, reading no further row): it
+/// publishes only while that row exists, whichever row it is, so [`related_decided`] may point it at
+/// the row arranged for the invoked command.
+fn refuses_only_missing(publisher: &ResolvedCommand, from: &str) -> bool {
+    use ess_compiler::ir::{ResolvedRelatedTest, ResolvedRelatedVia};
+
+    let mut reads = publisher
+        .outcomes
+        .iter()
+        .filter_map(|outcome| match &outcome.condition {
+            ResolvedCondition::Related {
+                via: ResolvedRelatedVia::Input { field, .. },
+                test,
+                also,
+                ..
+            } if field == from => Some((outcome, test, also)),
+            _ => None,
+        })
+        .peekable();
+    reads.peek().is_some()
+        && reads.all(|(outcome, test, also)| {
+            matches!(test, ResolvedRelatedTest::Absent)
+                && also.is_empty()
+                && outcome.error.is_some()
+        })
 }
 
 /// The trigger of a binding whose invocation reaches a set effect publishing an event once per row
