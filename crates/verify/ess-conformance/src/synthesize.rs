@@ -2173,6 +2173,9 @@ pub enum BindingGap {
         outcome: OutcomeRef,
         /// The entity whose rows it changes.
         entity: EntityRef,
+        /// What stops the arrangement, boxed so the gap stays small beside the other refusal
+        /// causes (a downstream adopter's report of 2026-10-26).
+        cause: Box<ChangedRowCause>,
     },
     /// The selected refusal answers a missing related row, and every command that publishes the
     /// binding's event refuses that same missing row itself: each publishes only while the row
@@ -2222,6 +2225,92 @@ pub struct RelatedGuards {
     pub input: String,
     /// The branches whose `when_related:` guards read it, in declaration order.
     pub guarded: Vec<OutcomeName>,
+}
+
+/// What stops a [`BindingGap::ChangedRowUnarranged`]: why no row the set effect's filter selects
+/// can be arranged before the trigger (a downstream adopter's report of 2026-10-26). Each names
+/// the one condition that does not hold, so the help asks only for that one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChangedRowCause {
+    /// The binding fills `input`, which the filter reads, from a value no scenario chooses before
+    /// the trigger: neither a literal, nor an input the trigger is sent or a literal it publishes,
+    /// carried unconverted.
+    Unchosen {
+        /// The invoked command's input.
+        input: String,
+    },
+    /// The trigger names, in the value the filter's key is filled from, a row of `entity` its own
+    /// arrangement made — the row it acts on where `acts_on` — and no command creating the rows can
+    /// be sent naming that row.
+    NamedRow {
+        /// The named row's entity.
+        entity: EntityRef,
+        /// Whether it is the row the trigger acts on.
+        acts_on: bool,
+    },
+    /// The command `creator` creating the rows reads the row of `entity` its input `via` names, so
+    /// a selected row needs that row arranged first and the trigger sent naming it. Where
+    /// `trigger` is given, a guard of that command reads its input the key is copied from, or the
+    /// row it names, so it cannot be sent naming another; otherwise no row so arranged gives a
+    /// selected row.
+    RelatedRow {
+        /// The creating command.
+        creator: CommandRef,
+        /// The related row's entity.
+        entity: EntityRef,
+        /// The creating command's input naming it.
+        via: String,
+        /// The trigger's command and its input the key is copied from, where a guard of it stops it.
+        trigger: Option<(CommandRef, String)>,
+    },
+    /// No arranging command leaves a row the filter selects resting where the per-row event is
+    /// published for it; `written` where a creating command does write each key the filter
+    /// compares with an input from an input of its own.
+    Uncreated {
+        /// Whether a creating command writes every key from its input.
+        written: bool,
+    },
+}
+
+impl ChangedRowCause {
+    /// What would have to change: the one condition the cause names.
+    fn hint(&self) -> &'static str {
+        match self {
+            Self::Unchosen { .. } => {
+                "let the trigger copy each input the filter reads from an input of its own, \
+                 unconverted, or publish a literal for it; or cover the binding with an \
+                 authored scenario (ess-scenario/1)"
+            }
+            Self::NamedRow { .. } => {
+                "let a command creating the entity write the key from an input none of its \
+                 guards reads but to refuse a missing row (`exists: false`), so a scenario can \
+                 create the row naming the one the trigger names; or cover the binding with an \
+                 authored scenario (ess-scenario/1)"
+            }
+            Self::RelatedRow {
+                trigger: Some(_), ..
+            } => {
+                "let the trigger's guards read the input it copies the key from only to refuse \
+                 a missing row (`exists: false`), so a scenario can arrange that row first and \
+                 send the trigger naming it; or cover the binding with an authored scenario \
+                 (ess-scenario/1)"
+            }
+            Self::RelatedRow { trigger: None, .. } => {
+                "let a command creating the related row leave it where the command creating \
+                 the entity accepts it, in its state and in every field its guards read; or \
+                 cover the binding with an authored scenario (ess-scenario/1)"
+            }
+            Self::Uncreated { written: false } => {
+                "let a command that creates the entity write each field the filter reads from \
+                 an input; or cover the binding with an authored scenario (ess-scenario/1)"
+            }
+            Self::Uncreated { written: true } => {
+                "let a command creating the entity, or one moving it, leave a row the filter \
+                 selects in a state the per-row event's `when_state:` admits; or cover the \
+                 binding with an authored scenario (ess-scenario/1)"
+            }
+        }
+    }
 }
 
 /// The input of a [`BindingGap::BranchConverted`] and the declared conversion it is filled across.
@@ -2314,11 +2403,7 @@ impl BindingGap {
                  does not guard on, or cover the condition with an authored scenario \
                  (ess-scenario/1)"
             }
-            Self::ChangedRowUnarranged { .. } => {
-                "let the trigger copy every input the filter reads from an input of its own, and \
-                 a command that creates the entity write each field the filter reads from an \
-                 input; or cover the binding with an authored scenario (ess-scenario/1)"
-            }
+            Self::ChangedRowUnarranged { cause, .. } => cause.hint(),
             Self::RelatedRowNeededByTrigger { .. } => {
                 "add a command that publishes the event without first refusing the missing row, \
                  declare the refusal `external:` so a scenario can force it, or cover its policy \
@@ -2445,11 +2530,67 @@ impl fmt::Display for BindingGap {
                     "invokes only when its event-payload condition holds, and {why}"
                 )
             }
-            Self::ChangedRowUnarranged { outcome, entity } => write!(
-                f,
-                "invokes `{outcome}`, which publishes an event once per `{entity}` it changes, and \
-                 no row its filter selects can be arranged before the trigger"
-            ),
+            Self::ChangedRowUnarranged {
+                outcome,
+                entity,
+                cause,
+            } => {
+                write!(
+                    f,
+                    "invokes `{outcome}`, which publishes an event once per `{entity}` it changes, \
+                     and no row its filter selects can be arranged before the trigger: "
+                )?;
+                match cause.as_ref() {
+                    ChangedRowCause::Unchosen { input } => write!(
+                        f,
+                        "the event fills `{input}` from a value no scenario chooses before the \
+                         trigger"
+                    ),
+                    ChangedRowCause::NamedRow {
+                        entity: named,
+                        acts_on: true,
+                    } => write!(
+                        f,
+                        "the trigger acts on the `{named}` row the key names, and no command \
+                         creating `{entity}` can be sent naming it"
+                    ),
+                    ChangedRowCause::NamedRow {
+                        entity: named,
+                        acts_on: false,
+                    } => write!(
+                        f,
+                        "the trigger is sent naming the `{named}` row its own arrangement made, \
+                         and no command creating `{entity}` can be sent naming it"
+                    ),
+                    ChangedRowCause::RelatedRow {
+                        creator,
+                        entity: related,
+                        via,
+                        trigger: Some((trigger, sent)),
+                    } => write!(
+                        f,
+                        "`{creator}` reads the `{related}` row `input.{via}` names, and a guard of \
+                         `{trigger}` reads its input `{sent}` or the row it names, so it cannot be \
+                         sent naming one arranged first"
+                    ),
+                    ChangedRowCause::RelatedRow {
+                        creator,
+                        entity: related,
+                        via,
+                        trigger: None,
+                    } => write!(
+                        f,
+                        "`{creator}` reads the `{related}` row `input.{via}` names, and no \
+                         `{entity}` can be created naming a `{related}` row arranged before the \
+                         trigger"
+                    ),
+                    ChangedRowCause::Uncreated { .. } => write!(
+                        f,
+                        "no arranging command leaves a `{entity}` it selects resting where the \
+                         event is published for it"
+                    ),
+                }
+            }
             Self::RelatedRowNeededByTrigger { refusal, trigger } => write!(
                 f,
                 "selects its failure policy per refusal, and the refusal `{refusal}` answers a \
