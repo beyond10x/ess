@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.74.0 — 2026-10-28
+
+### Synthesis seeds work on caller models, and a binding tries every publisher of its trigger
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.74.0)
+
+A synthesis seed is admitted for a model whose actors declare caller attributes, and the seed row gives the seeded run its caller. A binding is witnessed through any branch that publishes its trigger, including one that publishes per changed row. A refusal names a state that only a set move reaches.
+
 ## 0.73.0 — 2026-10-28
 
 ### Set-effect bindings, row sets, predicate refusal policies and affects rows past predicates get their scenarios

@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.74.0](#synthesis-seeds-work-on-caller-models-and-a-binding-tries-every-publisher-of-its-trigger) | Synthesis seeds work on caller models, and a binding tries every publisher of its trigger | capability | notable |
 | [0.73.0](#set-effect-bindings-row-sets-predicate-refusal-policies-and-affects-rows-past-predicates-get-their-scenarios) | Set-effect bindings, row sets, predicate refusal policies and affects rows past predicates get their scenarios | capability | notable |
 | [0.72.0](#bindings-past-related-and-set-guards-and-fresh-input-disclosure-follow-ups-get-their-scenarios) | Bindings past related and set guards, and fresh-input disclosure follow-ups, get their scenarios | capability | notable |
 | [0.71.0](#set-updates-affects-rows-and-converted-binding-inputs-get-the-scenarios-synthesis-used-to-refuse) | Set updates, affects rows and converted binding inputs get the scenarios synthesis used to refuse | capability | notable |
@@ -84,6 +85,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.74.0 — 2026-10-28
+
+### Synthesis seeds work on caller models, and a binding tries every publisher of its trigger
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.74.0)
+
+A synthesis seed is admitted for a model whose actors declare caller attributes, and the seed row gives the seeded run its caller. A binding is witnessed through any branch that publishes its trigger, including one that publishes per changed row. A refusal names a state that only a set move reaches.
 
 ## 0.73.0 — 2026-10-28
 
