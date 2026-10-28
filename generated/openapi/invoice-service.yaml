@@ -714,6 +714,7 @@ x-ess-entities:
         contentEncoding: base64
       reminder_count:
         type: integer
+        minimum: 0
       state:
         $ref: '#/x-ess-entities/billing.invoice.Invoice.State'
     required:
@@ -730,6 +731,9 @@ x-ess-entities:
     - reminder_count
     - state
     additionalProperties: false
+    x-ess-invariants:
+    - total.amount >= 0
+    - reminder_count >= 0
   billing.invoice.Invoice.State:
     title: State
     x-ess-name: billing.invoice.Invoice.State

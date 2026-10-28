@@ -347,6 +347,32 @@ fn alphabet_pattern(object: &Map<String, Value>) -> bool {
     }
 }
 
+/// Whether an `allOf` entry holds a `contains` and its count bounds and nothing else: what a model
+/// list publishes for a `distinct:` key (beyond10x/ess#686).
+fn bounded_contains(entry: &Value) -> bool {
+    entry.as_object().is_some_and(|entry| {
+        entry.contains_key("contains")
+            && entry.keys().all(|keyword| {
+                matches!(keyword.as_str(), "contains" | "minContains" | "maxContains")
+            })
+    })
+}
+
+/// Whether a model string schema's `minLength` or `maxLength` is exactly the bound its
+/// [`TextConstraint`] reads from `x-ess-invariants` (beyond10x/ess#685).
+fn enforced_length(object: &Map<String, Value>, keyword: &str) -> bool {
+    let Some(constraint) = TextConstraint::read(object) else {
+        return false;
+    };
+    let declared = if keyword == "minLength" {
+        constraint.minimum
+    } else {
+        constraint.maximum
+    };
+    let published = object.get(keyword).and_then(Value::as_i64);
+    declared.is_some() && declared == published
+}
+
 /// `value.count <op> <integer>`, or the same with the literal on the left, as the comparison of
 /// the count with the literal.
 fn length_comparison(statement: &str) -> Option<(ess_primitives::predicate::CompareOp, i64)> {
@@ -1009,6 +1035,17 @@ impl Plan {
 }
 
 impl Builder {
+    /// Whether a model string schema's `pattern`, `minLength` or `maxLength` only repeats a
+    /// constraint an annotation beside it already carries as an obligation.
+    fn restates(&self, object: &Map<String, Value>, keyword: &str) -> bool {
+        self.model
+            && if keyword == "pattern" {
+                alphabet_pattern(object)
+            } else {
+                enforced_length(object, keyword)
+            }
+    }
+
     fn definition(&mut self, schema: &Value, pointer: &str) -> Node {
         self.collect_patterns(schema, pointer);
         self.node(schema, pointer)
@@ -1220,10 +1257,10 @@ impl Builder {
                         },
                     ));
                 }
-                // A model newtype's alphabet is projected twice, as `x-ess-alphabet` and as the
-                // pattern derived from it (beyond10x/ess#592). The `model_alphabet` obligation is
-                // that constraint, so the pattern adds none; a prefix in it still does.
-                "pattern" if self.model && alphabet_pattern(object) => {}
+                // An alphabet and `value.count` bounds are projected twice, as an annotation and as
+                // `pattern` (beyond10x/ess#592) or `minLength`/`maxLength` (beyond10x/ess#685). The
+                // annotation's obligation is that constraint; a prefix in a pattern adds one.
+                "pattern" | "minLength" | "maxLength" if self.restates(object, keyword) => {}
                 "pattern" => {
                     if object[keyword].is_string() {
                         self.obligations.insert(finding(
@@ -1393,6 +1430,18 @@ impl Builder {
         ] {
             if let Some(values) = object.get(keyword).and_then(Value::as_array) {
                 let location = path(pointer, keyword);
+                // A model list's `distinct:` key, one bounded `contains` per variant
+                // (beyond10x/ess#686): it shapes no value, so the list stays the list rather than
+                // an intersection Rust and Go refuse, and the bound is one runtime obligation.
+                if keyword == "allOf" && self.model && values.iter().all(bounded_contains) {
+                    self.obligations.insert(finding(
+                        &location,
+                        "contains",
+                        "validate that each variant of the distinct key appears at most once \
+                         against the source schema at runtime",
+                    ));
+                    continue;
+                }
                 let variants = values
                     .iter()
                     .enumerate()

@@ -224,6 +224,14 @@ Basic Multilingual Plane stays an annotation, since no class reads it alike with
 `u` flag. Generated code documents an alphabet and does not enforce it, and Entity Runtime refuses
 both an alphabet and a text length by name.
 
+A `.count` bound against an integer literal is published as `minLength` and `maxLength`, which count
+the same Unicode scalar values. It applies to a `String` newtype through `value.count`, and to a
+`String` field of a struct or an entity, including an `Optional` one, through `<field>.count`:
+`value.count == 64` publishes both keywords as 64, and `value.count: {gte: 1, lte: 10}` publishes
+`minLength: 1` and `maxLength: 10`, as the two comparisons written apart do. `utf8_bytes`, `!=`
+and the `.count` of a field typed by a newtype stay in `x-ess-invariants` only; the newtype's own
+definition carries its bounds.
+
 ### Say what a text starts with
 
 A `String` newtype whose every value starts with fixed text says so with `prefix:`. It needs
