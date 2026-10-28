@@ -181,6 +181,13 @@ jobs:
           key: test-workspace
           save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
 
+      - name: Free runner disk
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache \
+            /usr/local/.ghcup /usr/lib/jvm /usr/share/swift /usr/local/share/powershell \
+            /usr/local/share/chromium /usr/local/julia* /opt/microsoft /opt/google /opt/az
+          df -h /
+
       - name: Fetch locked dependencies
         run: cargo fetch --locked
 
