@@ -560,6 +560,7 @@ version = "0.75.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
+ "ess-primitives",
  "ess-yaml",
  "serde",
  "serde_json",

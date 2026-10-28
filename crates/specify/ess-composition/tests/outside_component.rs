@@ -125,7 +125,7 @@ fn the_refusal_suggests_an_owner() {
     );
     assert!(
         detail.contains(
-            "component `auditor` owns it: select it, or add `demo.audit` to `relay`'s `owns`"
+            "component `auditor` exports it: select it, or add `demo.audit` to `relay`'s `owns`"
         ),
         "{detail}"
     );

@@ -48,6 +48,7 @@ use ess_compiler::EssIr;
 use ess_domain::entity::Invariant;
 use ess_domain::name::QualifiedName;
 use ess_domain::types::{EnumVariant, Presence, Primitive, TypeRef};
+use ess_primitives::predicate::Predicate;
 
 use crate::{
     Admission, CommandPart, CompositionCode, CompositionDiagnostic, CompositionSpec,
@@ -379,9 +380,10 @@ impl Comparison<'_> {
         }
     }
 
-    /// Two invariant lists, compared by parsed predicate so spelling does not matter. Exact ends
-    /// must state the same conditions; a reader may omit the owner's, since that rejects nothing
-    /// the owner sends, but may not add one the owner lacks.
+    /// Two invariant lists, compared as sets of conditions: each invariant's parsed predicate,
+    /// split at its conjunctions, so neither spelling, order nor grouping into invariants
+    /// matters. Exact ends must state the same conditions; a reader may omit the owner's, since
+    /// that rejects nothing the owner sends, but may not add one the owner lacks.
     fn invariants(
         &mut self,
         path: &str,
@@ -391,25 +393,22 @@ impl Comparison<'_> {
         if !self.constraints {
             return;
         }
-        let missing = |from: &[Invariant], within: &[Invariant]| -> Vec<String> {
+        let (mine, theirs) = (conditions(mine), conditions(theirs));
+        let missing = |from: &[(&Predicate, String)], within: &[(&Predicate, String)]| {
             from.iter()
-                .filter(|invariant| {
-                    !within
-                        .iter()
-                        .any(|other| other.predicate == invariant.predicate)
-                })
-                .map(|invariant| invariant.statement.clone())
-                .collect()
+                .filter(|(condition, _)| !within.iter().any(|(other, _)| other == condition))
+                .map(|(_, statement)| statement.clone())
+                .collect::<Vec<_>>()
         };
         if !self.reader {
-            for statement in missing(theirs, mine) {
+            for statement in missing(&theirs, &mine) {
                 self.drifts.push(format!(
                     "{}: invariant `{statement}` in `{imported}` and not in `{local}`",
                     at(path)
                 ));
             }
         }
-        for statement in missing(mine, theirs) {
+        for statement in missing(&mine, &theirs) {
             self.drifts.push(format!(
                 "{}: invariant `{statement}` in `{local}` and not in `{imported}`",
                 at(path)
@@ -417,9 +416,10 @@ impl Comparison<'_> {
         }
     }
 
-    /// A newtype's `alphabet` or `prefix`. Exact ends must agree. A reader rejects nothing the
-    /// owner sends when it states none, or when its alphabet holds every character of the
-    /// owner's, or its prefix starts the owner's.
+    /// A newtype's `alphabet` or `prefix`. Exact ends must agree: an alphabet as a set of
+    /// characters, a prefix as text. A reader rejects nothing the owner sends when it states none,
+    /// or when its alphabet holds every character of the owner's, or its prefix starts the
+    /// owner's.
     fn text_constraint(
         &mut self,
         path: &str,
@@ -429,6 +429,12 @@ impl Comparison<'_> {
     ) {
         if !self.constraints || mine == theirs {
             return;
+        }
+        if let ("alphabet", Some(mine), Some(theirs)) = (what, mine, theirs) {
+            let characters = |text: &str| text.chars().collect::<BTreeSet<char>>();
+            if characters(mine) == characters(theirs) {
+                return;
+            }
         }
         if self.reader {
             let reads_all = match (what, mine, theirs) {
@@ -875,6 +881,43 @@ fn join(path: &str, name: &str) -> String {
         name.to_owned()
     } else {
         format!("{path}.{name}")
+    }
+}
+
+/// The conditions a list of invariants states, once each: every invariant's predicate split at
+/// its conjunctions, without the ones that always hold. Each keeps the text a drift names it by,
+/// the author's statement when the invariant is a single condition.
+fn conditions(invariants: &[Invariant]) -> Vec<(&Predicate, String)> {
+    let mut stated: Vec<(&Predicate, String)> = Vec::new();
+    for invariant in invariants {
+        let mut conjuncts = Vec::new();
+        conjoined(&invariant.predicate, &mut conjuncts);
+        let whole = !matches!(invariant.predicate, Predicate::All(_));
+        for conjunct in conjuncts {
+            if stated.iter().any(|(seen, _)| *seen == conjunct) {
+                continue;
+            }
+            let text = if whole {
+                invariant.statement.clone()
+            } else {
+                conjunct.to_string()
+            };
+            stated.push((conjunct, text));
+        }
+    }
+    stated
+}
+
+/// Every conjunct of `predicate`, nested conjunctions flattened.
+fn conjoined<'p>(predicate: &'p Predicate, into: &mut Vec<&'p Predicate>) {
+    match predicate {
+        Predicate::All(children) => {
+            for child in children {
+                conjoined(child, into);
+            }
+        }
+        other if other.is_trivially_true() => {}
+        other => into.push(other),
     }
 }
 

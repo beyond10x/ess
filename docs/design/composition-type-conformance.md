@@ -156,10 +156,12 @@ that drops the owner's `value != "x"`, widens its `alphabet` or gives an enum va
 `handled_by` still conforms. Under `ess-composition/5` a conformance also compares, at every level
 the comparison reaches:
 
-- newtype `alphabet` and `prefix`: equal, or both absent;
-- newtype and struct `invariants`: the same conditions, compared by parsed predicate, so
-  `value>=1` and `value >= 1` agree; a payload has none, so a struct type with an invariant against
-  a payload is drift;
+- newtype `alphabet`: the same set of characters, in any order, or both absent; `prefix`: equal, or
+  both absent;
+- newtype and struct `invariants`: the same conditions, compared by parsed predicate and split at
+  conjunctions, so `value>=1` and `value >= 1` agree, and so do an `all:` invariant and its
+  conditions written as separate invariants in any order; a payload has none, so a struct type with
+  an invariant against a payload is drift;
 - enum variant attributes (`ess/23`): the same declared attributes with conforming types, and the
   same value on each variant, matched by name.
 

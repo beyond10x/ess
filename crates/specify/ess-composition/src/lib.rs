@@ -495,8 +495,12 @@ impl RawTypeBinding {
 }
 
 impl<'de> serde::Deserialize<'de> for RawTypeBinding {
-    /// Reads the six keys by hand so an unknown one is refused as it was before `/5` named any
-    /// payload key: ``unknown field `x`, expected `service` or `type` ``.
+    /// Reads the six keys by hand so that an end the derived `{service, type}` reader refused
+    /// before `/5` is refused with the same message, at the same path and line: an unknown key
+    /// (``unknown field `x`, expected `service` or `type` ``, under every format, since the reader
+    /// does not know the document's), a missing `service`, and an end naming neither `type` nor a
+    /// payload key (``missing field `type` ``). Whether the format reads a payload key is decided
+    /// after the document is read.
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct Keys;
 
@@ -533,13 +537,18 @@ impl<'de> serde::Deserialize<'de> for RawTypeBinding {
                         "command" => once(&mut raw.command, "command", &mut map)?,
                         "part" => once(&mut raw.part, "part", &mut map)?,
                         other => {
-                            return Err(serde::de::Error::custom(format_args!(
-                                "unknown field `{other}`, expected `service` or `type` (from \
-                                 {PAYLOAD_COMPOSITION_FORMAT} also `event`, `error`, `command` \
-                                 or `part`)"
-                            )))
+                            return Err(serde::de::Error::unknown_field(
+                                other,
+                                &["service", "type"],
+                            ))
                         }
                     }
+                }
+                if raw.service.is_none() {
+                    return Err(serde::de::Error::missing_field("service"));
+                }
+                if raw.declared.is_none() && raw.payload_key().is_none() {
+                    return Err(serde::de::Error::missing_field("type"));
                 }
                 Ok(raw)
             }
@@ -789,7 +798,7 @@ impl RawConformance {
 }
 
 /// One end read as `format` reads it: before [`PAYLOAD_COMPOSITION_FORMAT`] only `service` and
-/// `type` are fields, and a missing `type` is a missing field.
+/// `type` are fields, so a payload key is refused as the unknown field it was.
 fn bind(raw: RawTypeBinding, format: &str) -> Result<TypeBinding, ReadRefusal> {
     if format != PAYLOAD_COMPOSITION_FORMAT {
         if let Some(key) = raw.payload_key() {
@@ -797,9 +806,6 @@ fn bind(raw: RawTypeBinding, format: &str) -> Result<TypeBinding, ReadRefusal> {
                 key,
                 format: format.to_owned(),
             });
-        }
-        if raw.declared.is_none() {
-            return Err(ReadRefusal::End("missing field `type`".to_owned()));
         }
     }
     TypeBinding::try_from(raw).map_err(ReadRefusal::End)
@@ -1139,7 +1145,8 @@ impl CompositionCode {
                       component.",
             repair: "Select a component the detail names, or widen the selected one by the \
                      name's kind: add a type's or view's domain to its `owns`, or a command to \
-                     its `accepts`. An event is exported by a component that publishes it or \
+                     its `accepts`. Under `ess-composition/1` a type is exported only where the \
+                     component's commands, events, errors or views reach it. An event is exported by a component that publishes it or \
                      accepts a command that emits it, an error by one that accepts a command \
                      that raises it.",
         },
@@ -2131,7 +2138,13 @@ impl<'ir> Admission<'_, 'ir> {
                 "service `{service}` resolves `{semantic}`, but selected component `{}` does not \
                  export it{hint}{}",
                 resolved.component,
-                outside_remedy(ir, service, &resolved.component, semantic)
+                outside_remedy(
+                    ir,
+                    service,
+                    &resolved.component,
+                    semantic,
+                    self.owner_declared
+                )
             ),
         ));
         None
@@ -2146,15 +2159,26 @@ fn outside_remedy(
     service: &ServiceKey,
     selected: &ComponentRef,
     semantic: &EssSemanticRef,
+    owner_declared: bool,
 ) -> String {
-    let others = Others { ir, selected };
+    let others = Others {
+        ir,
+        selected,
+        owner_declared,
+    };
     // The name as written, the domain that declares it, and the remedy for its kind.
     let located = match semantic {
         EssSemanticRef::Type { name } => ir
             .domains()
             .values()
             .find(|domain| domain.types.iter().any(|found| found.name() == name.name()))
-            .map(|domain| (name.to_string(), &domain.name, others.owned(&domain.name))),
+            .map(|domain| {
+                (
+                    name.to_string(),
+                    &domain.name,
+                    others.typed(semantic, &domain.name),
+                )
+            }),
         EssSemanticRef::View { name } => ir.views().get(name.name()).map(|view| {
             (
                 name.to_string(),
@@ -2209,6 +2233,9 @@ fn outside_remedy(
 struct Others<'a> {
     ir: &'a EssIr,
     selected: &'a ComponentRef,
+    /// Whether a type declared in an owned domain is exported: false only under
+    /// `ess-composition/1`.
+    owner_declared: bool,
 }
 
 impl Others<'_> {
@@ -2220,6 +2247,34 @@ impl Others<'_> {
             .filter(|(name, component)| *name != self.selected.name() && exports(component))
             .map(|(name, _)| name.to_string())
             .collect()
+    }
+
+    /// A type in `domain`: the components that export it under the document's format, and,
+    /// from `ess-composition/2`, adding the domain to the selected component's `owns`. Under
+    /// `ess-composition/1` an owned domain exports only the types the surface reaches, so no
+    /// `owns` edit is offered there.
+    fn typed(&self, reference: &EssSemanticRef, domain: &QualifiedName) -> String {
+        let selected = self.selected;
+        let exporters = self.matching(|component| {
+            surface(
+                self.ir,
+                &ComponentRef::new(component.name.clone()),
+                component,
+            )
+            .exports(reference, self.owner_declared)
+        });
+        match (exporters.is_empty(), self.owner_declared) {
+            (false, true) => format!(
+                "; {}, or add `{domain}` to `{selected}`'s `owns`",
+                select(&exporters, "exports it", "export it")
+            ),
+            (false, false) => format!("; {}", select(&exporters, "exports it", "export it")),
+            (true, true) => self.owned(domain),
+            (true, false) => String::from(
+                "; no component exports it under ess-composition/1, where a type is exported \
+                 only when the component's commands, events, errors or views reach it",
+            ),
+        }
     }
 
     /// A type or view in `domain`: the components that own the domain, or adding it to the
@@ -2486,7 +2541,11 @@ fn resolved_service(
         ));
         return None;
     };
+    Some(surface(ir, &imported.component, component))
+}
 
+/// What one component of `ir` exports: its outer surface, and the types it reaches.
+fn surface(ir: &EssIr, name: &ComponentRef, component: &ResolvedComponent) -> ResolvedService {
     let commands: BTreeSet<_> = component.accepts.iter().map(CommandRef::from).collect();
     let mut queries = BTreeSet::new();
     for domain in &component.owns {
@@ -2525,18 +2584,18 @@ fn resolved_service(
         .flat_map(|domain| ir.domain(domain).types.iter().map(DeclaredTypeRef::from))
         .collect();
 
-    Some(ResolvedService {
+    ResolvedService {
         system: ir.system().clone(),
         version: *ir.version(),
         source_digest: SourceDigest::of(ir),
-        component: imported.component.clone(),
+        component: name.clone(),
         commands,
         queries,
         events,
         errors,
         types,
         declared_types,
-    })
+    }
 }
 
 fn collect_field_types(
