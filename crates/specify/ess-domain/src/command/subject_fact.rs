@@ -14,6 +14,7 @@ use crate::{
     types::{TypeBody, TypeRef, TypeRegistry},
 };
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 /// The repair named beside the refusal of a stored-field guard and a lifecycle-state guard in one
@@ -182,9 +183,9 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
             // Reported by `validate_shape`, under the key the author wrote.
             continue;
         };
-        // A predicate reading a root the row does not store already carries its one refusal: the
-        // prover declines on it, so a coverage refusal would only repeat the cause.
-        let mut unreadable = false;
+        // The roots a predicate reads that the row does not store, each already carrying its one
+        // refusal: a coverage decline on one of them would only repeat the cause.
+        let mut unreadable = BTreeSet::new();
         for outcome in &command.outcomes {
             if !outcome.condition.reads_subject_fact() {
                 continue;
@@ -219,12 +220,15 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 }
                 OutcomeCondition::SubjectPredicate { predicate, .. }
                 | OutcomeCondition::ExternalSubject { predicate, .. } => {
-                    let checked = check(command, entity, types, predicate, &site);
-                    unreadable |= checked
-                        .as_slice()
-                        .iter()
-                        .any(|error| error.code == ValidationCode::UnobservableFact);
-                    errors.extend(checked);
+                    errors.extend(check(
+                        command,
+                        entity,
+                        types,
+                        predicate,
+                        &site,
+                        &subject.instance,
+                        &mut unreadable,
+                    ));
                     if reads_state(predicate) && admits_state(types) {
                         errors.extend(state_moves(outcome, entity, predicate, &site));
                     }
@@ -249,15 +253,13 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
             continue;
         }
         let shared = share_one_subject(command, common, types, &mut errors);
-        if unreadable {
-            continue;
-        }
         if let (true, Some(entity)) = (shared, spec.entities().get(&common.entity)) {
             errors.extend(validate_partition(
                 command,
                 entity,
                 types,
                 Composition::of(command, spec.system().format),
+                &unreadable,
             ));
         }
     }
@@ -488,6 +490,8 @@ fn check(
     types: &TypeRegistry,
     predicate: &ess_primitives::predicate::Predicate,
     site: &ess_primitives::error::ConstructRef,
+    instance: &str,
+    unreadable: &mut BTreeSet<String>,
 ) -> ValidationErrors {
     let owner = site.render();
     let mut errors = ValidationErrors::new();
@@ -534,6 +538,14 @@ fn check(
         if let Some(refused) = error.path.as_ref().and_then(|path| {
             super::published_operand::guard_refusal(types, path, error.segment.as_deref(), site)
         }) {
+            if refused.code == ValidationCode::UnobservableFact {
+                unreadable.insert(
+                    error
+                        .path
+                        .as_ref()
+                        .map_or_else(String::new, |path| path.namespace().to_owned()),
+                );
+            }
             errors.push(refused);
             continue;
         }
@@ -555,7 +567,7 @@ fn check(
                 diagnostic.hint = Some(if entity.identity.name == path.namespace() {
                     // The identity selects the row, so every predicate over it is constant on the
                     // rows `when_subject:` reads; "the row is stored" is the existence step.
-                    identity_hint(path.namespace())
+                    identity_hint(path.namespace(), instance)
                 } else {
                     format!(
                         "stored fields: {}; the input is read as `input.<field>` (ess/15) or in \
@@ -565,18 +577,26 @@ fn check(
                 });
             }
         }
+        if diagnostic.code == ValidationCode::UnobservableFact {
+            unreadable.insert(
+                error
+                    .path
+                    .as_ref()
+                    .map_or_else(String::new, |path| path.namespace().to_owned()),
+            );
+        }
         errors.push(diagnostic);
     }
     errors
 }
 
 /// The repair named when a `when_subject` predicate reads the identity that addresses the row: on
-/// every row the predicate reads, the identity equals the input that selected it and is defined,
-/// so a test of "the row is stored" is the existence step, not a predicate.
-fn identity_hint(identity: &str) -> String {
+/// every row the predicate reads, the identity equals the input `instance` that selected it and is
+/// defined, so a test of "the row is stored" is the existence step, not a predicate.
+fn identity_hint(identity: &str, instance: &str) -> String {
     format!(
         "`{identity}` is the identity that addresses this row, so on every row `when_subject:` \
-         reads it equals `input.{identity}` and is defined; answer an identity no row carries with \
+         reads it equals `input.{instance}` and is defined; answer an identity no row carries with \
          an `unknown_instance: true` branch and drop `when_subject:` from the update"
     )
 }
@@ -596,6 +616,7 @@ fn validate_partition(
     entity: &EntitySpec,
     types: &TypeRegistry,
     composition: Composition,
+    unreadable: &BTreeSet<String>,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let one_rule = composition.reads_one_rule();
@@ -634,16 +655,35 @@ fn validate_partition(
             input: outcome.condition.predicate(),
         })
         .collect();
+    // A branch reading a root the row does not store already carries its refusal, and the proof
+    // would only decline on it again. The other branches are still proved, so a decline with a
+    // cause of its own — an open guard beside it — is reported; their cases are not, since a
+    // partition without the refused branch says nothing about the command's.
+    let refused = !unreadable.is_empty();
+    let proved: Vec<_> = guards
+        .iter()
+        .filter(|guard| {
+            !unreadable.contains("")
+                && guard.fields.is_none_or(|predicate| {
+                    predicate
+                        .fact_paths()
+                        .iter()
+                        .all(|path| !unreadable.contains(path.namespace()))
+                })
+        })
+        .cloned()
+        .collect();
     let default = command.default_outcome();
     let readable = readable_fields(entity, admits_state(types));
     // Booleans are proved only where no default answers the rest: the enum-only proof otherwise.
     let cases = finite::field_coverage(
         &DomainEnvironment::new(types, &readable),
         &DomainEnvironment::new(types, &command.input),
-        &guards,
+        if refused { &proved } else { &guards },
         default.is_none(),
     );
     let cases = match cases {
+        Ok(_) if refused => return errors,
         Ok(cases) => cases,
         Err(declined) => {
             if default.is_none() {
