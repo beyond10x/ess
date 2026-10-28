@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: approval-record:websocket-upgrade-is-a-sibling-binding
 kind: approval-record
-status: approved
+status: superseded
 title: A WebSocket upgrade is a sibling ess-websocket/1 binding (operator, 2026-10-28)
 summary: 'Option A for the WebSocket half of #650; ADR amendment 2 accepted'
 refs:
@@ -12,9 +12,10 @@ relations:
 - decides: decision-blocker:websocket-upgrade-binding-form
 - decides: story:http-binding-carries-transport-framing
 - informed_by: architecture-decision-record:transport-and-idl-compile-targets
-revision: 2
+revision: 3
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-28T10:44:16Z", actor: "human:timo", revision: 2, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
+- {from: "approved", to: "superseded", at: "2026-10-28T10:47:35Z", actor: "human:timo", revision: 3, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
 ## Decision
 

@@ -15,7 +15,7 @@ relations:
 - blocks: story:an-event-channel-may-be-bound-to-server-sent-events
 - blocks: story:a-response-stream-follows-one-row-until-a-terminal-state
 - blocks: story:an-authored-scenario-claims-a-binding-error-code
-revision: 4
+revision: 5
 transitions:
 - {from: "proposed", to: "accepted", at: "2026-10-23T19:36:17Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
@@ -105,7 +105,16 @@ Effect: no change beyond what § 6 decides for the stream itself; the bound adds
 reference and one synthesized scenario per bounded stream. Without a bound every artifact keeps its
 bytes.
 
-## Amendment 2 (accepted, 2026-10-28): a WebSocket upgrade is a sibling binding
+## Amendment 2 (accepted 2026-10-28, withdrawn the same day): a WebSocket upgrade is a sibling binding
+
+Withdrawn 2026-10-28, the same day, by the operator: "Actually, I think we also kind of need B. Or I
+mean, we might even need A, B, and C. [...] I think still the most important is a generic transport
+one, yeah, because I mean this is about messages being exchanged, and there should be a way to
+express that completely independent of whether you are using a WebSocket or JSON RPC or whatever.
+[...] we shouldn't restrict us to one or the other option." The direction is proposed in
+`architecture-decision-record:messages-are-exchanged-independent-of-the-wire`; nothing below is
+built, and `ess-websocket/1` returns there as one binding of three. The text below is kept as it was
+accepted.
 
 Status: accepted 2026-10-28 by the operator: "option A for the ESS WebSocket one." Recorded in
 `approval-record:websocket-upgrade-is-a-sibling-binding`, which clears
