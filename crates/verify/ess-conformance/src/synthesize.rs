@@ -2334,6 +2334,9 @@ pub enum ChangedRowCause {
         /// Whether a creating command writes every key from its input.
         written: bool,
     },
+    /// A row the filter selects can be arranged in some state, and every state the branch's move
+    /// starts from is reached only by a set move: those states and moves, the one cause.
+    SetMoveOnly(SetMoveOnly),
 }
 
 impl ChangedRowCause {
@@ -2373,6 +2376,7 @@ impl ChangedRowCause {
                  selects in a state the per-row event's `when_state:` admits; or cover the \
                  binding with an authored scenario (ess-scenario/1)"
             }
+            Self::SetMoveOnly(_) => SET_MOVE_ONLY_HELP,
         }
     }
 }
@@ -2676,6 +2680,11 @@ impl fmt::Display for BindingGap {
                         f,
                         "no arranging command leaves a `{entity}` it selects resting where the \
                          event is published for it"
+                    ),
+                    ChangedRowCause::SetMoveOnly(only) => write!(
+                        f,
+                        "`{}`, which synthesis does not take to arrange a row for another scenario",
+                        only.described(&entity.to_string())
                     ),
                 }
             }
