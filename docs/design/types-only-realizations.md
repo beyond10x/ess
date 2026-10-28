@@ -105,6 +105,18 @@ publish them under `x-ess-invariants` and carry the same keywords on its fields'
 properties. A command input, an event or a view row that carries a value the
 entity also holds is not the entity and gains nothing.
 
+A `Binary64` field, or a newtype of `Binary64` through `value`, takes the same
+reader (beyond10x/ess#687): `>` publishes `exclusiveMinimum`, `>=` `minimum`, `<`
+`exclusiveMaximum`, `<=` `maximum`, and `==` both `minimum` and `maximum`, the
+tightest bound of each keyword winning, and an integral bound written as an
+integer token. Only a literal that is the shortest decimal of its own binary64 is
+lowered: `v < 9007199254740993` would be read by a binary64 validator as
+`v < 2^53` and refuse `2^53`, which the model admits, so it stays an annotation.
+The realizer reports the new keywords as runtime obligations like any other bound,
+and the finite-binary64 obligation stays. The reader takes a literal on the left
+as its mirror (`0 < x` is `x > 0`) for every type it lowers; no authored spelling
+writes one today.
+
 A newtype of `Integer` gets the same keywords on its own definition from invariants
 over its wrapped value, `value` (`ess_domain::types` `VALUE`): `value == 2` publishes
 `const: 2`, `value >= 0` and `value < 1000` publish `minimum: 0` and `maximum: 999`.

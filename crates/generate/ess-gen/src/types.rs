@@ -28,6 +28,7 @@
 //! | `String` | `{"type": "string"}` | the same |
 //! | `Boolean` | `{"type": "boolean"}` | the same |
 //! | `Integer` | `{"type": "integer"}`, plus `minimum`/`maximum`/`const` a field's invariants state | the same; no width beyond the bounds the author wrote |
+//! | `Binary64` | `{"type": "number"}`, plus `minimum`/`exclusiveMinimum`/`maximum`/`exclusiveMaximum` a field's invariants state with a literal that is its own shortest spelling | the same; finiteness and signed zero stay a realizer's obligation |
 //! | `Decimal` | `{"type": "string", "format": "decimal", "pattern": …}` | an exact decimal string, checked by the pattern |
 //! | `Timestamp` | `{"type": "string", "format": "date-time"}` | any string |
 //! | `Duration` | `{"type": "string", "format": "duration"}` | any string |
@@ -261,12 +262,22 @@ pub(crate) struct Node {
     /// How bytes are carried.
     #[serde(rename = "contentEncoding", skip_serializing_if = "Option::is_none")]
     pub(crate) content_encoding: Option<&'static str>,
-    /// The smallest integer this node accepts, from an invariant on the field (beyond10x/ess#394).
+    /// The smallest number this node accepts, from an invariant on the field (beyond10x/ess#394,
+    /// beyond10x/ess#687).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) minimum: Option<i64>,
-    /// The largest integer this node accepts, from an invariant on the field (beyond10x/ess#394).
+    pub(crate) minimum: Option<Bound>,
+    /// The number every value this node accepts is greater than: a `Binary64` field's `>`
+    /// (beyond10x/ess#687). An `Integer`'s `>` is a `minimum` one higher.
+    #[serde(rename = "exclusiveMinimum", skip_serializing_if = "Option::is_none")]
+    pub(crate) exclusive_minimum: Option<Bound>,
+    /// The largest number this node accepts, from an invariant on the field (beyond10x/ess#394,
+    /// beyond10x/ess#687).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) maximum: Option<i64>,
+    pub(crate) maximum: Option<Bound>,
+    /// The number every value this node accepts is less than: a `Binary64` field's `<`
+    /// (beyond10x/ess#687).
+    #[serde(rename = "exclusiveMaximum", skip_serializing_if = "Option::is_none")]
+    pub(crate) exclusive_maximum: Option<Bound>,
     /// The one value this node accepts — a union's tag, an outcome's name, an integer an invariant
     /// fixes.
     #[serde(rename = "const", skip_serializing_if = "Option::is_none")]
@@ -439,6 +450,27 @@ pub(crate) enum Constant {
     Text(String),
     /// An integer constant.
     Integer(i64),
+}
+
+/// The value of a numeric bound keyword: an integer token when the bound is an integer an `i64`
+/// holds, so an `Integer` bound keeps the bytes it always had (`"minimum": 1`, never `1.0`), and
+/// the binary64 it is otherwise (beyond10x/ess#687).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct Bound(ess_primitives::Number);
+
+impl From<i64> for Bound {
+    fn from(value: i64) -> Self {
+        Self(ess_primitives::Number::from(value))
+    }
+}
+
+impl serde::Serialize for Bound {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0.as_i64() {
+            Some(integer) => serializer.serialize_i64(integer),
+            None => serializer.serialize_f64(self.0.get()),
+        }
+    }
 }
 
 /// What an object permits beyond the properties it declares.
@@ -891,7 +923,7 @@ pub(crate) fn body(ir: &EssIr, declared: &ResolvedType) -> Node {
                     .or(wrapped.pattern.clone()),
                 ..wrapped
             };
-            newtype_integer_bounds(&mut node, of, invariants);
+            newtype_bounds(&mut node, of, invariants);
             node
         }
         // Open where the struct declares `undeclared_fields: ignored` (`ess/24`), and so at every
@@ -902,7 +934,7 @@ pub(crate) fn body(ir: &EssIr, declared: &ResolvedType) -> Node {
                 additional: Some(Additional::of(ir.undeclared_fields(&declared.name))),
                 ..object(fields)
             };
-            integer_bounds(&mut node, fields, invariants);
+            field_bounds(&mut node, fields, invariants);
             // A struct with a shorthand (`ess/27`) is either its one field's value or the object:
             // the two differ by JSON type, a scalar against an object, so exactly one branch matches.
             if let Some(short) = ir
@@ -1002,59 +1034,52 @@ pub(crate) fn content_key(tag: &str) -> &'static str {
     }
 }
 
-/// The integer bounds a struct's or an entity's invariants state about its own fields, as `minimum`,
-/// `maximum` and `const` on those fields' properties (beyond10x/ess#394, beyond10x/ess#688).
+/// The bounds a struct's or an entity's invariants state about its own fields, as keywords on those
+/// fields' properties (beyond10x/ess#394, beyond10x/ess#687, beyond10x/ess#688).
 ///
 /// Only the shape a JSON Schema keyword says exactly is lowered: one comparison of a top-level
-/// `Integer` field (required or `Optional`) with an integer literal on its right, `>=`, `>`, `<=`, `<`
-/// or `==`. Anything else — `!=`, a dotted path, two fields, a `Decimal`, a disjunction — stays an
-/// annotation in `x-ess-invariants` only, which is still published beside the keywords. `==` on a
-/// field that may be absent or `null` becomes `minimum` and `maximum` rather than `const`, because
-/// `const` would refuse the `null` the field admits and the numeric keywords ignore it.
-fn integer_bounds(node: &mut Node, fields: &[ResolvedField], invariants: &[Invariant]) {
+/// field (required or `Optional`) with a numeric literal, `>=`, `>`, `<=`, `<` or `==`, as
+/// [`comparison`] reads it. Anything else — `!=`, a dotted path, two fields, a `Decimal`, a
+/// disjunction — stays an annotation in `x-ess-invariants` only, which is still published beside
+/// the keywords. [`apply_bound`] says what each field type takes.
+fn field_bounds(node: &mut Node, fields: &[ResolvedField], invariants: &[Invariant]) {
     for invariant in invariants {
-        let Some((segment, op, value)) = integer_comparison(invariant) else {
+        let Some((path, op, value)) = comparison(invariant) else {
             continue;
         };
-        let Some(field) = fields.iter().find(|field| field.name == segment) else {
+        let [segment] = path else {
             continue;
         };
-        if !is_integer(&field.type_ref) {
+        let Some(field) = fields.iter().find(|field| &field.name == segment) else {
             continue;
-        }
-        let may_be_missing = field.type_ref.is_optional();
+        };
         if let Some(property) = node.properties.get_mut(wire_name(field)) {
-            apply_bound(property, op, value, may_be_missing);
+            apply_bound(property, &field.type_ref, op, value);
         }
     }
 }
 
-/// The same lowering for a newtype of `Integer`, whose invariants read the wrapped value as `value`
+/// The same lowering for a newtype, whose invariants read the wrapped value as `value`
 /// (`ess_domain::types` `VALUE`): the keywords go on the newtype's own definition.
-fn newtype_integer_bounds(node: &mut Node, of: &ResolvedTypeRef, invariants: &[Invariant]) {
-    if !is_integer(of) {
-        return;
-    }
+fn newtype_bounds(node: &mut Node, of: &ResolvedTypeRef, invariants: &[Invariant]) {
     for invariant in invariants {
-        if let Some(("value", op, value)) = integer_comparison(invariant) {
-            apply_bound(node, op, value, of.is_optional());
+        if let Some((path, op, value)) = comparison(invariant) {
+            if path == ["value"] {
+                apply_bound(node, of, op, value);
+            }
         }
     }
 }
 
-fn is_integer(reference: &ResolvedTypeRef) -> bool {
-    matches!(
-        reference.required(),
-        ResolvedTypeRef::Primitive {
-            name: Primitive::Integer
-        }
-    )
-}
-
-/// `field <op> <integer>`, with a single-segment field path.
-fn integer_comparison(
+/// `<path> <op> <number>`, the path's segments as written. A number on the left is read as its
+/// mirror: `0 < x` is `x > 0`, for every field type this lowers.
+fn comparison(
     invariant: &Invariant,
-) -> Option<(&str, ess_primitives::predicate::CompareOp, i64)> {
+) -> Option<(
+    &[String],
+    ess_primitives::predicate::CompareOp,
+    ess_primitives::Number,
+)> {
     use ess_primitives::predicate::{Operand, Predicate};
     use ess_primitives::FactValue;
 
@@ -1064,17 +1089,80 @@ fn integer_comparison(
     else {
         return None;
     };
-    let (Operand::Fact(path), Operand::Literal(FactValue::Number(number))) = (left, right) else {
-        return None;
-    };
-    let [segment] = path.segments() else {
-        return None;
-    };
-    Some((segment.as_str(), *op, number.as_i64()?))
+    match (left, right) {
+        (Operand::Fact(path), Operand::Literal(FactValue::Number(number))) => {
+            Some((path.segments(), *op, *number))
+        }
+        (Operand::Literal(FactValue::Number(number)), Operand::Fact(path)) => {
+            Some((path.segments(), mirror(*op), *number))
+        }
+        _ => None,
+    }
 }
 
-/// Tightens `node` by one comparison; the tighter of two bounds wins.
+/// The operator that says the same with its operands swapped.
+fn mirror(op: ess_primitives::predicate::CompareOp) -> ess_primitives::predicate::CompareOp {
+    use ess_primitives::predicate::CompareOp;
+
+    match op {
+        CompareOp::Lt => CompareOp::Gt,
+        CompareOp::Le => CompareOp::Ge,
+        CompareOp::Gt => CompareOp::Lt,
+        CompareOp::Ge => CompareOp::Le,
+        CompareOp::Eq | CompareOp::Ne => op,
+    }
+}
+
+/// Tightens `node`, the schema of a value of type `of`, by one comparison with `value`.
+///
+/// * An `Integer` takes an integer literal: `>` and `<` become `minimum` and `maximum` one step
+///   in, and `==` becomes `const` — or `minimum` and `maximum` where the value may be absent or
+///   `null`, because `const` would refuse the `null` it admits and the numeric keywords ignore it.
+/// * A `Binary64` takes a literal that is the shortest spelling of its own binary64 (`0.1`, `1`,
+///   not `9007199254740993`, which a validator reading numbers as binary64 compares as `2^53`):
+///   `>` and `<` become `exclusiveMinimum` and `exclusiveMaximum`, and `==` becomes `minimum` and
+///   `maximum`. The `model_binary64` obligation of a types-only realization still stands.
+/// * Every other type, and every other literal, publishes nothing.
 fn apply_bound(
+    node: &mut Node,
+    of: &ResolvedTypeRef,
+    op: ess_primitives::predicate::CompareOp,
+    value: ess_primitives::Number,
+) {
+    let ResolvedTypeRef::Primitive { name } = of.required() else {
+        return;
+    };
+    match name {
+        Primitive::Integer => {
+            if let Some(integer) = value.as_i64() {
+                apply_integer_bound(node, op, integer, of.is_optional());
+            }
+        }
+        Primitive::Binary64 if is_shortest_spelling(value) => {
+            apply_binary64_bound(node, op, Bound(value));
+        }
+        _ => {}
+    }
+}
+
+/// Whether `value` is the canonical decimal of its own binary64, so the bound a validator reads
+/// is the number the model compares with.
+fn is_shortest_spelling(value: ess_primitives::Number) -> bool {
+    ess_primitives::Number::new(value.get()).is_ok_and(|canonical| canonical == value)
+}
+
+/// Tightens a lower bound to `bound`; the higher of the two wins.
+fn raise(slot: &mut Option<Bound>, bound: Bound) {
+    *slot = Some(slot.map_or(bound, |at| at.max(bound)));
+}
+
+/// Tightens an upper bound to `bound`; the lower of the two wins.
+fn lower(slot: &mut Option<Bound>, bound: Bound) {
+    *slot = Some(slot.map_or(bound, |at| at.min(bound)));
+}
+
+/// One `Integer` comparison; the tighter of two bounds wins.
+fn apply_integer_bound(
     node: &mut Node,
     op: ess_primitives::predicate::CompareOp,
     value: i64,
@@ -1082,36 +1170,51 @@ fn apply_bound(
 ) {
     use ess_primitives::predicate::CompareOp;
 
-    let raise = |current: Option<i64>, bound: i64| Some(current.map_or(bound, |c| c.max(bound)));
-    let lower = |current: Option<i64>, bound: i64| Some(current.map_or(bound, |c| c.min(bound)));
     match op {
-        CompareOp::Ge => node.minimum = raise(node.minimum, value),
+        CompareOp::Ge => raise(&mut node.minimum, value.into()),
         CompareOp::Gt => {
             if let Some(bound) = value.checked_add(1) {
-                node.minimum = raise(node.minimum, bound);
+                raise(&mut node.minimum, bound.into());
             }
         }
-        CompareOp::Le => node.maximum = lower(node.maximum, value),
+        CompareOp::Le => lower(&mut node.maximum, value.into()),
         CompareOp::Lt => {
             if let Some(bound) = value.checked_sub(1) {
-                node.maximum = lower(node.maximum, bound);
+                lower(&mut node.maximum, bound.into());
             }
         }
         CompareOp::Eq if may_be_missing => {
-            node.minimum = raise(node.minimum, value);
-            node.maximum = lower(node.maximum, value);
+            raise(&mut node.minimum, value.into());
+            lower(&mut node.maximum, value.into());
         }
         CompareOp::Eq => {
             // Invariants are conjunctive. Preserve the first equality and intersect
             // conflicting equalities as bounds, so later comparisons cannot erase them.
             if let Some(Constant::Integer(previous)) = node.constant {
                 if previous != value {
-                    node.minimum = raise(node.minimum, previous.max(value));
-                    node.maximum = lower(node.maximum, previous.min(value));
+                    raise(&mut node.minimum, previous.max(value).into());
+                    lower(&mut node.maximum, previous.min(value).into());
                 }
             } else {
                 node.constant = Some(Constant::Integer(value));
             }
+        }
+        CompareOp::Ne => {}
+    }
+}
+
+/// One `Binary64` comparison; the tightest bound of each keyword wins.
+fn apply_binary64_bound(node: &mut Node, op: ess_primitives::predicate::CompareOp, bound: Bound) {
+    use ess_primitives::predicate::CompareOp;
+
+    match op {
+        CompareOp::Ge => raise(&mut node.minimum, bound),
+        CompareOp::Gt => raise(&mut node.exclusive_minimum, bound),
+        CompareOp::Le => lower(&mut node.maximum, bound),
+        CompareOp::Lt => lower(&mut node.exclusive_maximum, bound),
+        CompareOp::Eq => {
+            raise(&mut node.minimum, bound);
+            lower(&mut node.maximum, bound);
         }
         CompareOp::Ne => {}
     }
@@ -1312,7 +1415,7 @@ impl<'a> Message<'a> {
 /// The schema for one message's payload.
 ///
 /// An entity's invariants are published verbatim and lowered onto its fields' properties by the
-/// same reader a struct's go through ([`integer_bounds`]), so an entity and a struct holding the
+/// same reader a struct's go through ([`field_bounds`]), so an entity and a struct holding the
 /// same fields under the same invariants publish the same keywords (beyond10x/ess#688).
 pub(crate) fn message(carried: &Message<'_>) -> Node {
     let mut node = Node {
@@ -1324,7 +1427,7 @@ pub(crate) fn message(carried: &Message<'_>) -> Node {
         invariants: statements(carried.invariants),
         ..object_annotated(carried.fields, &carried.relations, carried.examples)
     };
-    integer_bounds(&mut node, carried.fields, carried.invariants);
+    field_bounds(&mut node, carried.fields, carried.invariants);
     node
 }
 
@@ -1753,5 +1856,48 @@ mod tests {
         // qualified name, so a pointer spelt any other way resolves to nothing in its own document.
         let key = name.to_string();
         assert_eq!(pointer(&name), format!("#/$defs/{key}"));
+    }
+
+    /// A literal on the left is read as its mirror, `0 < value` as `value > 0`, for `Binary64` and
+    /// `Integer` alike (beyond10x/ess#687). No authored spelling puts a literal there today — the
+    /// expression parser and `{compare: …}` both take a fact path on the left — so the predicate
+    /// is built here.
+    #[test]
+    fn a_literal_on_the_left_lowers_as_its_mirror() {
+        use ess_primitives::predicate::{CompareKind, CompareOp, Operand, Predicate};
+        use ess_primitives::{FactPath, FactValue, Number};
+
+        let mirrored = |literal: i64, op: CompareOp| Invariant {
+            statement: format!("{literal} {} value", op.as_str()),
+            predicate: Predicate::Compare {
+                left: Operand::Literal(FactValue::Number(Number::from(literal))),
+                op,
+                right: Operand::Fact(FactPath::new("value").expect("a path")),
+                kind: CompareKind::Value,
+            },
+        };
+        let published = |of: Primitive, invariants: &[Invariant]| {
+            let mut node = primitive(of);
+            newtype_bounds(
+                &mut node,
+                &ResolvedTypeRef::Primitive { name: of },
+                invariants,
+            );
+            serde_json::to_value(&node).expect("a node serialises")
+        };
+        assert_eq!(
+            published(
+                Primitive::Binary64,
+                &[mirrored(0, CompareOp::Lt), mirrored(1, CompareOp::Ge)]
+            ),
+            serde_json::json!({"type": "number", "exclusiveMinimum": 0, "maximum": 1})
+        );
+        assert_eq!(
+            published(
+                Primitive::Integer,
+                &[mirrored(0, CompareOp::Le), mirrored(10, CompareOp::Gt)]
+            ),
+            serde_json::json!({"type": "integer", "minimum": 0, "maximum": 9})
+        );
     }
 }

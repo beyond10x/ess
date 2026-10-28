@@ -606,3 +606,76 @@ fn unknown_members_are_decoded_and_not_encoded() {
         );
     }
 }
+
+/// A `Binary64` newtype bounded by its invariants (beyond10x/ess#687): the projection publishes
+/// `exclusiveMinimum` and `maximum` on its definition.
+const RATES: &str = r"format: ess/20
+system: probe
+version: v1
+domains: [probe.sensor]
+domain: probe.sensor
+types:
+  - name: probe.sensor.Rate
+    kind: newtype
+    of: Binary64
+    invariants: [value > 0, value <= 1]
+  - name: probe.sensor.Reading
+    kind: struct
+    fields:
+      - {name: rate, type: probe.sensor.Rate}
+";
+
+/// The rules a realization's report leaves on one definition: every obligation whose pointer is
+/// the definition's own keyword.
+fn definition_obligations(report: &schema_contract::realize::Report, name: &str) -> Vec<String> {
+    let report = serde_json::to_value(report).expect("report");
+    report["obligations"]
+        .as_array()
+        .expect("obligations")
+        .iter()
+        .filter(|item| {
+            let pointer = item["pointer"].as_str().unwrap_or_default();
+            pointer.contains(&format!("/{name}"))
+        })
+        .map(|item| item["rule"].as_str().unwrap_or_default().to_owned())
+        .collect()
+}
+
+/// `ess generate types` realizes a bounded `Binary64` newtype in Rust, Go and TypeScript without a
+/// refusal; the new keywords are runtime obligations on every target.
+#[test]
+fn issue_687_a_bounded_binary64_realizes_with_its_bounds_as_obligations() {
+    let selection = model::selection(RATES, &["probe.sensor.Reading"]);
+    let definitions: serde_json::Value = serde_json::from_str(&selection.to_json()).expect("JSON");
+    let rate = &definitions["$defs"]["probe.sensor.Rate"];
+    assert_eq!(rate["exclusiveMinimum"], serde_json::json!(0), "{rate:#}");
+    assert_eq!(rate["maximum"], serde_json::json!(1), "{rate:#}");
+
+    let plan = Plan::from_model(&selection).expect("plan");
+    let reports = [
+        ("typescript", plan.typescript().report),
+        ("rust", plan.rust("probe-sensor").expect("rust").report),
+        (
+            "go",
+            plan.go("sensor", "example.invalid/sensor")
+                .expect("go")
+                .report,
+        ),
+    ];
+    for (target, report) in &reports {
+        let rules = definition_obligations(report, "probe.sensor.Rate");
+        for rule in ["exclusiveMinimum", "maximum"] {
+            assert!(
+                rules.iter().any(|found| found == rule),
+                "{target}: no `{rule}` obligation on the Rate definition: {rules:?}"
+            );
+        }
+    }
+    // The bounds do not discharge the finite-binary64 contract: TypeScript, which has no codec of
+    // its own for it, still reports `model_binary64`.
+    let typescript = definition_obligations(&reports[0].1, "probe.sensor.Rate");
+    assert!(
+        typescript.iter().any(|found| found == "model_binary64"),
+        "{typescript:?}"
+    );
+}
