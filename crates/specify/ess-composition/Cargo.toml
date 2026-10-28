@@ -11,6 +11,7 @@ authors.workspace = true
 [dependencies]
 ess-compiler.workspace = true
 ess-domain.workspace = true
+ess-primitives.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ess-yaml.workspace = true
