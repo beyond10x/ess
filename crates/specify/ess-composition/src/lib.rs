@@ -41,7 +41,9 @@ use std::fmt;
 use std::fmt::Write as _;
 use std::str::FromStr;
 
-use ess_compiler::ir::{ResolvedBody, ResolvedField, ResolvedTypeRef, TypeHandle};
+use ess_compiler::ir::{
+    ResolvedBody, ResolvedComponent, ResolvedField, ResolvedTypeRef, TypeHandle,
+};
 use ess_compiler::refs::{
     CommandRef, ComponentRef, DeclaredTypeRef, ErrorRef, EssSemanticRef, EventRef, ViewRef,
 };
@@ -771,8 +773,11 @@ impl CompositionCode {
             key: Self::ReferenceOutsideComponent,
             meaning: "A name exists in the imported specification but is outside the selected \
                       component.",
-            repair: "Refer only to what the selected component exposes, or select the component \
-                     that owns it.",
+            repair: "Select a component the detail names, or widen the selected one by the \
+                     name's kind: add a type's or view's domain to its `owns`, or a command to \
+                     its `accepts`. An event is exported by a component that publishes it or \
+                     accepts a command that emits it, an error by one that accepts a command \
+                     that raises it.",
         },
         ess_compiler::diagnostic::CatalogueEntry {
             key: Self::TypeConformanceDrift,
@@ -1738,12 +1743,208 @@ impl<'ir> Admission<'_, 'ir> {
             Some(service.clone()),
             format!(
                 "service `{service}` resolves `{semantic}`, but selected component `{}` does not \
-                 export it{hint}",
-                resolved.component
+                 export it{hint}{}",
+                resolved.component,
+                outside_remedy(ir, service, &resolved.component, semantic)
             ),
         ));
         None
     }
+}
+
+/// Where a name refused as outside the selected component is declared, and the remedy its kind
+/// takes: the other components that export it, and how the selected one would. Empty for a kind
+/// no component exports by name.
+fn outside_remedy(
+    ir: &EssIr,
+    service: &ServiceKey,
+    selected: &ComponentRef,
+    semantic: &EssSemanticRef,
+) -> String {
+    let others = Others { ir, selected };
+    // The name as written, the domain that declares it, and the remedy for its kind.
+    let located = match semantic {
+        EssSemanticRef::Type { name } => ir
+            .domains()
+            .values()
+            .find(|domain| domain.types.iter().any(|found| found.name() == name.name()))
+            .map(|domain| (name.to_string(), &domain.name, others.owned(&domain.name))),
+        EssSemanticRef::View { name } => ir.views().get(name.name()).map(|view| {
+            (
+                name.to_string(),
+                view.domain.name(),
+                others.owned(view.domain.name()),
+            )
+        }),
+        EssSemanticRef::Command { name } => ir.commands().get(name.name()).map(|command| {
+            (
+                name.to_string(),
+                command.domain.name(),
+                others.accepted(name.name(), "it", "it"),
+            )
+        }),
+        EssSemanticRef::Outcome { name } => {
+            let command_name = format!("`{}`", name.command);
+            ir.commands().get(name.command.name()).map(|command| {
+                (
+                    name.to_string(),
+                    command.domain.name(),
+                    others.accepted(name.command.name(), &command_name, &command_name),
+                )
+            })
+        }
+        EssSemanticRef::Event { name } => ir.events().get(name.name()).map(|event| {
+            (
+                name.to_string(),
+                event.domain.name(),
+                others.published(name.name()),
+            )
+        }),
+        EssSemanticRef::Error { name } => ir.errors().get(name.name()).map(|error| {
+            (
+                name.to_string(),
+                error.domain.name(),
+                others.raised(name.name()),
+            )
+        }),
+        EssSemanticRef::Component { .. }
+        | EssSemanticRef::Domain { .. }
+        | EssSemanticRef::Entity { .. }
+        | EssSemanticRef::Actor { .. }
+        | EssSemanticRef::Transition { .. }
+        | EssSemanticRef::Binding { .. } => None,
+    };
+    located.map_or_else(String::new, |(name, domain, remedy)| {
+        format!("; `{name}` is in domain `{domain}` of service `{service}`{remedy}")
+    })
+}
+
+/// The components of one model other than the selected one, read for a refusal's remedy.
+struct Others<'a> {
+    ir: &'a EssIr,
+    selected: &'a ComponentRef,
+}
+
+impl Others<'_> {
+    /// Every component but the selected one, in name order, for which `exports` holds.
+    fn matching(&self, exports: impl Fn(&ResolvedComponent) -> bool) -> Vec<String> {
+        self.ir
+            .components()
+            .iter()
+            .filter(|(name, component)| *name != self.selected.name() && exports(component))
+            .map(|(name, _)| name.to_string())
+            .collect()
+    }
+
+    /// A type or view in `domain`: the components that own the domain, or adding it to the
+    /// selected component's `owns`. Empty when the selected component owns it already (a type
+    /// under `ess-composition/1`, which the format hint answers).
+    fn owned(&self, domain: &QualifiedName) -> String {
+        let owns = |component: &ResolvedComponent| {
+            component.owns.iter().any(|found| found.name() == domain)
+        };
+        let selected = self.selected;
+        if self.ir.components().get(selected.name()).is_some_and(owns) {
+            return String::new();
+        }
+        let owners = self.matching(owns);
+        if owners.is_empty() {
+            format!("; no component owns `{domain}`: add it to `{selected}`'s `owns`")
+        } else {
+            format!(
+                "; {}, or add `{domain}` to `{selected}`'s `owns`",
+                select(&owners, "owns it", "own it")
+            )
+        }
+    }
+
+    /// A command, named `subject` in the remedy and `object` after `accepts`: the components
+    /// that accept it, or adding it to the selected component's `accepts`.
+    fn accepted(&self, command: &QualifiedName, subject: &str, object: &str) -> String {
+        let selected = self.selected;
+        let accepting = self.matching(|component| {
+            component
+                .accepts
+                .iter()
+                .any(|found| found.name() == command)
+        });
+        if accepting.is_empty() {
+            format!("; no component accepts {object}: add {subject} to `{selected}`'s `accepts`")
+        } else {
+            format!(
+                "; {}, or add {subject} to `{selected}`'s `accepts`",
+                select(
+                    &accepting,
+                    &format!("accepts {object}"),
+                    &format!("accept {object}")
+                )
+            )
+        }
+    }
+
+    /// An event: the components that publish it or accept a command that emits it.
+    fn published(&self, event: &QualifiedName) -> String {
+        let publishing = self.matching(|component| {
+            component
+                .publishes
+                .iter()
+                .any(|found| found.name() == event)
+                || component.accepts.iter().any(|command| {
+                    self.ir
+                        .command(command)
+                        .emits()
+                        .any(|found| found.name() == event)
+                })
+        });
+        if publishing.is_empty() {
+            "; no component publishes it or accepts a command that emits it".to_owned()
+        } else {
+            format!(
+                "; {}",
+                select(
+                    &publishing,
+                    "publishes it or accepts a command that emits it",
+                    "publish it or accept a command that emits it"
+                )
+            )
+        }
+    }
+
+    /// An error: the components that accept a command raising it.
+    fn raised(&self, error: &QualifiedName) -> String {
+        let raising = self.matching(|component| {
+            component.accepts.iter().any(|command| {
+                self.ir
+                    .command(command)
+                    .errors()
+                    .any(|found| found.name() == error)
+            })
+        });
+        if raising.is_empty() {
+            "; no component accepts a command that raises it".to_owned()
+        } else {
+            format!(
+                "; {}",
+                select(
+                    &raising,
+                    "accepts a command that raises it",
+                    "accept a command that raises it"
+                )
+            )
+        }
+    }
+}
+
+/// `component `a` <one>: select it`, or `components `a`, `b` <many>: select one`.
+fn select(components: &[String], one: &str, many: &str) -> String {
+    if let [only] = components {
+        return format!("component `{only}` {one}: select it");
+    }
+    let listed: Vec<_> = components
+        .iter()
+        .map(|component| format!("`{component}`"))
+        .collect();
+    format!("components {} {many}: select one", listed.join(", "))
 }
 
 fn collect_registry<'a>(

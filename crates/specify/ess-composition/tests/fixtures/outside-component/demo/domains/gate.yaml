@@ -1,0 +1,35 @@
+domain: demo.gate
+
+types:
+  - name: demo.gate.Channel
+    kind: newtype
+    of: String
+
+  # Declared in a domain `relay` owns and reached by no command, event or view.
+  - name: demo.gate.Unused
+    kind: newtype
+    of: String
+
+actors:
+  - name: demo.gate.Client
+    may:
+      - demo.gate.Admit
+
+commands:
+  - name: demo.gate.Admit
+    input:
+      - name: channel
+        type: demo.gate.Channel
+    outcomes:
+      - name: admitted
+        emits:
+          - demo.gate.Admitted
+        payload:
+          demo.gate.Admitted:
+            channel: input.channel
+
+events:
+  - name: demo.gate.Admitted
+    fields:
+      - name: channel
+        type: demo.gate.Channel

@@ -1,0 +1,43 @@
+domain: demo.audit
+
+# Owned and accepted by `auditor`, not by `relay`.
+types:
+  - name: demo.audit.Entry
+    kind: newtype
+    of: String
+
+errors:
+  - name: demo.audit.Rejected
+    summary: The entry was refused.
+
+actors:
+  - name: demo.audit.Auditor
+    may:
+      - demo.audit.Record
+
+commands:
+  - name: demo.audit.Record
+    input:
+      - name: entry
+        type: demo.audit.Entry
+    outcomes:
+      - name: recorded
+        emits:
+          - demo.audit.Recorded
+        payload:
+          demo.audit.Recorded:
+            entry: input.entry
+      - name: rejected
+        external: the store refuses the entry
+        error: demo.audit.Rejected
+
+events:
+  - name: demo.audit.Recorded
+    fields:
+      - name: entry
+        type: demo.audit.Entry
+  # Published by `auditor`; no command emits it.
+  - name: demo.audit.Flagged
+    fields:
+      - name: entry
+        type: demo.audit.Entry
