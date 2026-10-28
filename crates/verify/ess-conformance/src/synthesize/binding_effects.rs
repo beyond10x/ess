@@ -3434,7 +3434,7 @@ pub(super) fn trigger_run(
     let Some(entry) = set.events.iter().find(|entry| &entry.event == event) else {
         return Ok(run);
     };
-    let unarranged = || RefusalCause::BindingUnobservable {
+    let unarranged = |set_move_only| RefusalCause::BindingUnobservable {
         binding: BindingRef::new(binding.name.clone()),
         gap: BindingGap::TriggerRowUnarranged {
             outcome: OutcomeRef::new(
@@ -3442,6 +3442,7 @@ pub(super) fn trigger_run(
                 published_by.name.clone(),
             ),
             entity: EntityRef::from(&set.entity),
+            set_move_only,
         },
     };
     let rests = |state: &StateName| {
@@ -3458,7 +3459,7 @@ pub(super) fn trigger_run(
         ScenarioStep::ExecuteCommand { input, .. } => Some(input),
         _ => None,
     }) else {
-        return Err(unarranged());
+        return Err(unarranged(None));
     };
     let mut literals = BTreeMap::new();
     let mut named = BTreeMap::new();
@@ -3473,36 +3474,46 @@ pub(super) fn trigger_run(
             _ => {}
         }
     }
-    let mut taken = before.clone();
-    let row = if named.is_empty() {
-        set_effects::selected_row(
-            ir,
-            (publisher, published_by, set),
-            &literals,
-            actors,
-            &rests,
-            &mut taken,
-        )
-    } else {
-        let held: BTreeMap<InstanceName, StateName> = run
-            .instance
-            .iter()
-            .filter(|instance| named.values().any(|name| name == *instance))
-            .filter_map(|instance| Some((instance.clone(), run.before.clone()?)))
-            .collect();
-        set_effects::selected_row_naming(
-            ir,
-            (publisher, published_by, set),
-            (&literals, &named),
-            (&held, &BTreeMap::new()),
-            actors,
-            &rests,
-            &mut taken,
-        )
+    let held: BTreeMap<InstanceName, StateName> = run
+        .instance
+        .iter()
+        .filter(|instance| named.values().any(|name| name == *instance))
+        .filter_map(|instance| Some((instance.clone(), run.before.clone()?)))
+        .collect();
+    let selected = |rests: &dyn Fn(&StateName) -> bool| {
+        let mut taken = before.clone();
+        let row = if named.is_empty() {
+            set_effects::selected_row(
+                ir,
+                (publisher, published_by, set),
+                &literals,
+                actors,
+                rests,
+                &mut taken,
+            )
+        } else {
+            set_effects::selected_row_naming(
+                ir,
+                (publisher, published_by, set),
+                (&literals, &named),
+                (&held, &BTreeMap::new()),
+                actors,
+                rests,
+                &mut taken,
+            )
+        };
+        row.filter(|row| fits(row, &before))
     };
-    let row = row
-        .filter(|row| fits(row, &before))
-        .ok_or_else(unarranged)?;
+    // Where no row rests where the move starts, but one the filter selects can be arranged in some
+    // state, and every state the move starts from is reached only by a set move: that state is
+    // the cause, and the refusal names it rather than the filter's keys.
+    let row = selected(&rests).ok_or_else(|| {
+        unarranged(
+            set_effects::set_move_only_states(ir, &set.entity, &set.effect)
+                .filter(|_| selected(&|_| true).is_some())
+                .map(Box::new),
+        )
+    })?;
     run.setup.extend(row.steps);
     run.source.extend(row.source);
     run.source.insert(EntityRef::from(&set.entity).into());

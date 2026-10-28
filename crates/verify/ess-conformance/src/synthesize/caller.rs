@@ -297,10 +297,33 @@ impl Callers {
     /// [`of`](Self::of), with `first` carrying every value the admitted seed rows imply
     /// ([`implied`]). Where one is `second`'s, `second` carries the value `first` was drawn, so
     /// the two callers still differ.
+    ///
+    /// Two actors declaring one attribute at one type are drawn one value, so the value a seed
+    /// implies for one is carried by every other actor drawn the same, unless the seed implies
+    /// another for it: the actor sending the seeded scenario's command need not be the one that
+    /// may write the field.
     fn seeded(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Option<Self> {
         let mut callers = Self::of(ir)?;
+        let drawn = callers.first.clone();
         // A contradiction is refused before synthesis (`AdmittedSeeds::bound_to`).
-        for ((actor, attribute), (value, _)) in implied(ir, seeds).unwrap_or_default() {
+        let implied = implied(ir, seeds).unwrap_or_default();
+        let mut carried: BTreeMap<(String, String), Node> = BTreeMap::new();
+        for ((actor, attribute), (value, _)) in &implied {
+            let Some(was) = drawn.get(actor).and_then(|values| values.get(attribute)) else {
+                continue;
+            };
+            for (other, values) in &drawn {
+                if values.get(attribute) == Some(was)
+                    && !implied.contains_key(&(other.clone(), attribute.clone()))
+                {
+                    carried
+                        .entry((other.clone(), attribute.clone()))
+                        .or_insert_with(|| value.clone());
+                }
+            }
+            carried.insert((actor.clone(), attribute.clone()), value.clone());
+        }
+        for ((actor, attribute), value) in carried {
             let Some(first) = callers.first.get_mut(&actor) else {
                 continue;
             };
@@ -323,7 +346,9 @@ type Implied = BTreeMap<(String, String), (Node, String)>;
 ///
 /// A row holding a field an outcome sets from a caller attribute (`account: {caller: account_id}`)
 /// reads as one that caller made, so each actor that may send that command carries the row's value
-/// of the attribute. Empty without seeds or caller attributes.
+/// of the attribute: where no other branch writes the field from anything but a literal, and the
+/// row holds none of those literals ([`caller_sourced`]). Empty without seeds or caller
+/// attributes.
 ///
 /// # Errors
 ///
@@ -343,11 +368,20 @@ pub(super) fn implied(
     for row in seeds.rows() {
         let selection = format!("{}#{}", row.source.as_str(), row.instance);
         let entity = row.entity.to_string();
-        for ((of, field), readers) in &sourced {
+        for ((of, field), sourced) in &sourced {
             if *of != entity {
                 continue;
             }
-            for (attribute, actor) in readers {
+            // A value another branch writes as a literal is one a row holds whoever made it.
+            if row
+                .fields
+                .get(field)
+                .and_then(literal_text)
+                .is_some_and(|text| sourced.literals.contains(&text))
+            {
+                continue;
+            }
+            for (attribute, actor) in &sourced.readers {
                 let refused = |detail: String| SeedAdmissionError::CallerContradiction {
                     selection: selection.clone(),
                     entity: entity.clone(),
@@ -387,10 +421,31 @@ pub(super) fn implied(
     Ok(implied)
 }
 
-/// Every stored field an outcome sets from a caller attribute, by entity and field: each attribute
-/// it is set from, with each actor that declares it and may send that command.
-fn caller_sourced(ir: &EssIr) -> BTreeMap<(String, String), BTreeSet<(String, String)>> {
-    let mut sourced: BTreeMap<(String, String), BTreeSet<(String, String)>> = BTreeMap::new();
+/// A stored field an outcome sets from a caller attribute ([`caller_sourced`]).
+#[derive(Default)]
+struct Sourced {
+    /// Each attribute it is set from, with each actor that declares it and may send that command.
+    readers: BTreeSet<(String, String)>,
+    /// The literals other branches write into it: a row holding one implies no caller.
+    literals: BTreeSet<String>,
+}
+
+/// What a branch writing a stored field leaves in it, where it is not a caller attribute.
+enum OtherWrite {
+    /// One literal.
+    Literal(String),
+    /// Any value: an input, a generated value, another field, a computation.
+    Any,
+}
+
+/// Every stored field only a caller-writing branch gives a value no other branch can, by entity
+/// and field: each field an outcome sets from a caller attribute that no branch writes from
+/// anything but a caller attribute or a literal.
+/// A field a creator also writes from its input holds values any caller can create, so a row
+/// holding one implies no caller and contradicts none.
+fn caller_sourced(ir: &EssIr) -> BTreeMap<(String, String), Sourced> {
+    let mut sourced: BTreeMap<(String, String), Sourced> = BTreeMap::new();
+    let others = other_writes(ir);
     for command in ir.commands().values() {
         for outcome in &command.outcomes {
             let Some(subject) = &outcome.subject else {
@@ -401,6 +456,13 @@ fn caller_sourced(ir: &EssIr) -> BTreeMap<(String, String), BTreeSet<(String, St
                 let ResolvedPayloadValue::CallerAttribute { attribute, .. } = &field.value else {
                     continue;
                 };
+                let written =
+                    others.get(&(entity.clone(), first_segment(&field.target).to_owned()));
+                if written.is_some_and(|written| {
+                    written.iter().any(|write| matches!(write, OtherWrite::Any))
+                }) {
+                    continue;
+                }
                 for actor in ir.actors().values() {
                     if actor
                         .may
@@ -411,16 +473,96 @@ fn caller_sourced(ir: &EssIr) -> BTreeMap<(String, String), BTreeSet<(String, St
                             .iter()
                             .any(|declared| declared.name == *attribute)
                     {
-                        sourced
+                        let entry = sourced
                             .entry((entity.clone(), field.target.clone()))
-                            .or_default()
+                            .or_default();
+                        entry
+                            .readers
                             .insert((attribute.clone(), actor.name.to_string()));
+                        entry
+                            .literals
+                            .extend(written.into_iter().flatten().filter_map(
+                                |write| match write {
+                                    OtherWrite::Literal(text) => Some(text.clone()),
+                                    OtherWrite::Any => None,
+                                },
+                            ));
                     }
                 }
             }
         }
     }
     sourced
+}
+
+/// Every write of a stored field that is not from a caller attribute, by entity and field (its
+/// first segment): an outcome's `sets:` on its subject or on the rows of its set effect, an
+/// `affects:` entry's `sets:` and its `each:` reads. A branch keeping the field as it was is no
+/// write.
+fn other_writes(ir: &EssIr) -> BTreeMap<(String, String), Vec<OtherWrite>> {
+    fn written(field: &ResolvedPayloadField) -> Option<OtherWrite> {
+        match &field.value {
+            ResolvedPayloadValue::CallerAttribute { .. } => None,
+            ResolvedPayloadValue::SubjectField { field: kept, .. }
+                if kept == first_segment(&field.target) =>
+            {
+                None
+            }
+            ResolvedPayloadValue::Literal { value } => Some(OtherWrite::Literal(value.clone())),
+            _ => Some(OtherWrite::Any),
+        }
+    }
+    let mut others: BTreeMap<(String, String), Vec<OtherWrite>> = BTreeMap::new();
+    let mut note = |entity: &str, target: &str, write: OtherWrite| {
+        others
+            .entry((entity.to_owned(), first_segment(target).to_owned()))
+            .or_default()
+            .push(write);
+    };
+    for command in ir.commands().values() {
+        for outcome in &command.outcomes {
+            let entity = outcome
+                .subject
+                .as_ref()
+                .map(|subject| &subject.entity)
+                .or_else(|| outcome.instances.as_ref().map(|set| &set.entity));
+            if let Some(entity) = entity {
+                let entity = EntityRef::from(entity).to_string();
+                for field in &outcome.sets {
+                    if let Some(write) = written(field) {
+                        note(&entity, &field.target, write);
+                    }
+                }
+            }
+            for affect in &outcome.affects {
+                let entity = EntityRef::from(&affect.entity).to_string();
+                for field in &affect.sets {
+                    if let Some(write) = written(field) {
+                        note(&entity, &field.target, write);
+                    }
+                }
+                for read in affect.each.iter().flat_map(|each| &each.reads) {
+                    note(&entity, &read.target, OtherWrite::Any);
+                }
+            }
+        }
+    }
+    others
+}
+
+/// The field a `sets:` target names: its first segment.
+fn first_segment(target: &str) -> &str {
+    target.split('.').next().unwrap_or(target)
+}
+
+/// A scalar row value as the literal a branch writes it with ([`write_value`]).
+fn literal_text(node: &Node) -> Option<String> {
+    match node {
+        Node::Text(text) => Some(text.clone()),
+        Node::Number(number) => Some(number.to_string()),
+        Node::Bool(flag) => Some(flag.to_string()),
+        Node::Null | Node::Seq(_) | Node::Map(_) => None,
+    }
 }
 
 /// The suite for a model whose actors carry attributes (see the module documentation).

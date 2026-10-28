@@ -1,0 +1,16 @@
+components:
+  - component: svc
+    owns:
+      domains: [demo.z]
+    accepts:
+      commands: [demo.z.AddChild, demo.z.Park, demo.z.Resume, demo.z.Note]
+bindings:
+  - id: note-on-resumed
+    when:
+      event: demo.z.Resumed
+    invoke:
+      command: demo.z.Note
+    mapping:
+      child_id: event.child_id
+    delivery: at_least_once
+    on_failure: retry
