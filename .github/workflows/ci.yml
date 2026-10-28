@@ -509,7 +509,7 @@ jobs:
 
       # Every target, tests included: a test only a newer compiler accepts fails here as well.
       - name: Check the workspace on the declared rust-version
-        run: cargo check --workspace --all-targets --locked
+        run: cargo +${{ steps.msrv.outputs.toolchain }} check --workspace --all-targets --locked
 
   gate:
     name: Gate

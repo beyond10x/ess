@@ -3940,9 +3940,12 @@ fn the_msrv_job_checks_every_target_on_the_declared_rust_version() {
     let check = steps
         .iter()
         .position(|step| {
-            text(&step["run"]).trim() == "cargo check --workspace --all-targets --locked"
+            text(&step["run"]).trim()
+                == "cargo +${{ steps.msrv.outputs.toolchain }} check --workspace --all-targets --locked"
         })
-        .expect("the msrv job runs `cargo check --workspace --all-targets --locked`");
+        .expect(
+            "the msrv job runs `cargo +${{ steps.msrv.outputs.toolchain }} check --workspace --all-targets --locked`",
+        );
     assert!(
         read < install && install < check,
         "the msrv job does not read, install and then check, in that order"
