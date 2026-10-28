@@ -353,8 +353,9 @@ pub enum Note {
     CrossCallerUnswapped {
         /// The retained scenario.
         scenario: ScenarioId,
-        /// The concrete arrangement or observation restriction.
-        reason: &'static str,
+        /// The concrete arrangement or observation restriction; for a seeded scenario, the seed
+        /// rows it establishes by setup.
+        reason: String,
     },
     /// The ordinary witness remains, but no source-authorized mixed caller witness composes.
     CrossCallerUnwitnessed {

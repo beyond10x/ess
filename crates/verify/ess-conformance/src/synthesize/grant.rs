@@ -263,7 +263,7 @@ pub(super) fn cross_caller(ir: &EssIr, suite: &mut ConformanceSuite, notes: &mut
             if let Err(reason) = super::caller::append_independent(ir, scenario, &reversed) {
                 notes.push(Note::CrossCallerUnswapped {
                     scenario: id.clone(),
-                    reason,
+                    reason: reason.to_owned(),
                 });
             }
             continue;
@@ -295,13 +295,14 @@ pub(super) fn cross_caller(ir: &EssIr, suite: &mut ConformanceSuite, notes: &mut
             if let Err(reason) = super::caller::append_independent(ir, scenario, &reversed) {
                 notes.push(Note::CrossCallerUnswapped {
                     scenario: id.clone(),
-                    reason,
+                    reason: reason.to_owned(),
                 });
             }
         } else {
             notes.push(Note::CrossCallerUnswapped {
                 scenario: id.clone(),
-                reason: "the declared grants do not permit the reversed caller assignment",
+                reason: "the declared grants do not permit the reversed caller assignment"
+                    .to_owned(),
             });
         }
     }
