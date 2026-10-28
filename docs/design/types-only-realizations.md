@@ -112,6 +112,12 @@ tightest bound of each keyword winning, and an integral bound written as an
 integer token. Only a literal that is the shortest decimal of its own binary64 is
 lowered: `v < 9007199254740993` would be read by a binary64 validator as
 `v < 2^53` and refuse `2^53`, which the model admits, so it stays an annotation.
+The model decodes a payload number to the nearest binary64 before comparing, and a
+validator compares an integer token exactly, so from `2^53` on a bound is published as
+the integer at the edge of what rounds into range: `v <= 2^53` publishes
+`maximum: 9007199254740993`, which rounds to `2^53`. Past `2^65`, or where the edge
+is wider than 64 bits, the bound itself is published, since a validator reads an
+integer token that wide as a binary64 too.
 The realizer reports the new keywords as runtime obligations like any other bound,
 and the finite-binary64 obligation stays. The reader takes a literal on the left
 as its mirror (`0 < x` is `x > 0`) for every type it lowers; no authored spelling
@@ -128,9 +134,13 @@ already enforces a newtype's `value.count` from `x-ess-invariants`, so a `minLen
 `maxLength` equal to that bound adds no obligation, as an alphabet's own `pattern` adds
 none; a struct field's length keyword stays a runtime obligation.
 
-A `distinct:` invariant over a top-level `List` field, or a `List` newtype's `value`, whose
-elements are never `null`, is asserted where a keyword says it exactly (beyond10x/ess#686).
-Without `by` it publishes `uniqueItems: true`. With `by` reaching an enum or a `Boolean`
+A `distinct:` invariant over a top-level `List` field, or a `List` newtype's `value`, is
+asserted where a keyword says it exactly (beyond10x/ess#686). Without `by` it publishes
+`uniqueItems: true`. Where an element may be `null`, through newtypes too, the model reads
+each `null` as an unknown key, so the list carries `anyOf: [{uniqueItems: true},
+{contains: {type: null}, minContains: 2}]` in its `allOf` instead: exact for a list with
+fewer than two `null`s, unchecked for the rest, and a `by` key over such elements stays an
+annotation. With `by` reaching an enum or a `Boolean`
 through required struct members, the list carries an `allOf` of one `contains` per variant,
 each with `minContains: 0` and `maxContains: 1`. The `contains` requires an object holding
 the key path and ends in the variant's wire spelling, so an element without the key, which

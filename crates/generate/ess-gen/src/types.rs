@@ -482,8 +482,9 @@ pub(crate) enum Constant {
 }
 
 /// The value of a numeric bound keyword: an integer token when the bound is an integer an `i64`
-/// holds, so an `Integer` bound keeps the bytes it always had (`"minimum": 1`, never `1.0`), and
-/// the binary64 it is otherwise (beyond10x/ess#687).
+/// holds, so an `Integer` bound keeps the bytes it always had (`"minimum": 1`, never `1.0`), or a
+/// `u64` holds, for the edge of a large `Binary64` bound ([`rounding_edge`]), and the binary64 it is
+/// otherwise (beyond10x/ess#687).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Bound(ess_primitives::Number);
 
@@ -497,7 +498,10 @@ impl serde::Serialize for Bound {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.0.as_i64() {
             Some(integer) => serializer.serialize_i64(integer),
-            None => serializer.serialize_f64(self.0.get()),
+            None => match self.0.exact_text().parse::<u64>() {
+                Ok(integer) => serializer.serialize_u64(integer),
+                Err(_) => serializer.serialize_f64(self.0.get()),
+            },
         }
     }
 }
@@ -1183,7 +1187,8 @@ fn mirror(op: ess_primitives::predicate::CompareOp) -> ess_primitives::predicate
 /// * A `Binary64` takes a literal that is the shortest spelling of its own binary64 (`0.1`, `1`,
 ///   not `9007199254740993`, which a validator reading numbers as binary64 compares as `2^53`):
 ///   `>` and `<` become `exclusiveMinimum` and `exclusiveMaximum`, and `==` becomes `minimum` and
-///   `maximum`. The `model_binary64` obligation of a types-only realization still stands.
+///   `maximum`. From `2^53` on, each keyword holds the integer at the edge of what rounds into
+///   range ([`apply_binary64_bound`]). The `model_binary64` obligation of a types-only realization still stands.
 /// * Every other type, and every other literal, publishes nothing.
 fn apply_bound(
     node: &mut Node,
@@ -1201,7 +1206,7 @@ fn apply_bound(
             }
         }
         Primitive::Binary64 if is_shortest_spelling(value) => {
-            apply_binary64_bound(node, op, Bound(value));
+            apply_binary64_bound(node, op, value);
         }
         _ => {}
     }
@@ -1266,20 +1271,94 @@ fn apply_integer_bound(
 }
 
 /// One `Binary64` comparison; the tightest bound of each keyword wins.
-fn apply_binary64_bound(node: &mut Node, op: ess_primitives::predicate::CompareOp, bound: Bound) {
+///
+/// The model decodes a payload number to the nearest binary64 before it compares, and a validator
+/// compares an integer token exactly. From `2^53` on the two part: `9007199254740993` is `2^53` to
+/// the model, so `<= 2^53` admits it, and a validator given `maximum: 2^53` refuses it. Each
+/// keyword is therefore given the integer at the edge of what rounds into range
+/// ([`rounding_edge`]), which no binary64 lies between and the bound, so a binary64 payload is
+/// compared alike either way.
+fn apply_binary64_bound(
+    node: &mut Node,
+    op: ess_primitives::predicate::CompareOp,
+    value: ess_primitives::Number,
+) {
     use ess_primitives::predicate::CompareOp;
 
+    let first = || rounding_edge(value, false);
+    let last = || rounding_edge(value, true);
     match op {
-        CompareOp::Ge => raise(&mut node.minimum, bound),
-        CompareOp::Gt => raise(&mut node.exclusive_minimum, bound),
-        CompareOp::Le => lower(&mut node.maximum, bound),
-        CompareOp::Lt => lower(&mut node.exclusive_maximum, bound),
+        CompareOp::Ge => raise(&mut node.minimum, first()),
+        CompareOp::Gt => raise(&mut node.exclusive_minimum, last()),
+        CompareOp::Le => lower(&mut node.maximum, last()),
+        CompareOp::Lt => lower(&mut node.exclusive_maximum, first()),
         CompareOp::Eq => {
-            raise(&mut node.minimum, bound);
-            lower(&mut node.maximum, bound);
+            raise(&mut node.minimum, first());
+            lower(&mut node.maximum, last());
         }
         CompareOp::Ne => {}
     }
+}
+
+/// `2^53`: below it every integer is a binary64, so an integer token rounds to itself.
+const EXACT_INTEGERS: f64 = 9_007_199_254_740_992.0;
+
+/// `2^65`: past it, every integer token that rounds near a bound is wider than 64 bits, and a
+/// validator reads such a token as a binary64, as the model does.
+const WIDE_INTEGERS: f64 = 36_893_488_147_419_103_232.0;
+
+/// The binary64 next to `binary`, a finite non-zero value short of the largest, above it (`up`)
+/// or below it.
+fn neighbour(binary: f64, up: bool) -> f64 {
+    let bits = binary.to_bits();
+    f64::from_bits(if up == (binary > 0.0) {
+        bits + 1
+    } else {
+        bits - 1
+    })
+}
+
+/// The bound a validator comparing integer tokens exactly is given for the binary64 `value`: the
+/// last integer that rounds to `value` or below (`last`), or the first that rounds to it or above.
+///
+/// Below `2^53` that is `value` itself, and so it is where the magnitude is past `2^65`, or where
+/// the edge would not fit the 64-bit integer token a validator compares exactly.
+fn rounding_edge(value: ess_primitives::Number, last: bool) -> Bound {
+    let binary = value.get();
+    if !(EXACT_INTEGERS..=WIDE_INTEGERS).contains(&binary.abs()) {
+        return Bound(value);
+    }
+    // Integral and at most `2^66` in magnitude here, so every conversion below is exact; `as f64`
+    // rounds to nearest, ties to even, as decoding a payload does.
+    #[allow(clippy::cast_possible_truncation)]
+    let exact = binary as i128;
+    #[allow(clippy::cast_precision_loss)]
+    let rounds = |integer: i128| integer as f64;
+    #[allow(clippy::cast_possible_truncation)]
+    let mut edge = if last {
+        exact + (neighbour(binary, true) as i128 - exact) / 2
+    } else {
+        exact - (exact - neighbour(binary, false) as i128) / 2
+    };
+    if last {
+        while rounds(edge) > binary {
+            edge -= 1;
+        }
+        while rounds(edge + 1) <= binary {
+            edge += 1;
+        }
+    } else {
+        while rounds(edge) < binary {
+            edge += 1;
+        }
+        while rounds(edge - 1) >= binary {
+            edge -= 1;
+        }
+    }
+    if i64::try_from(edge).is_err() && u64::try_from(edge).is_err() {
+        return Bound(value);
+    }
+    ess_primitives::Number::decimal_literal(&edge.to_string()).map_or(Bound(value), Bound)
 }
 
 /// Tightens `node`, the schema of a value of type `of`, by one comparison of the value's `.count`
@@ -1392,7 +1471,9 @@ fn distincts(invariant: &Invariant) -> Vec<&ess_primitives::predicate::Distinct>
 /// equal elements, for every key type: a JSON value equal to another is the same key under the
 /// model's equality, which is never finer. It is complete for `Boolean`, `Integer`, `String`,
 /// `Uuid` and an enum; two spellings of one `Decimal` or one instant pass it where the model
-/// refuses them. An `Optional` element is left alone, since the model reads `null` as unknown.
+/// refuses them. Where an element may be `null`, `Optional` itself or through newtypes, the model
+/// reads a `null` as an unknown key, so two `null`s refuse nothing: the list then carries
+/// [`unique_or_nulls`] instead, and a `by` key is left alone.
 fn apply_distinct(
     ir: &EssIr,
     node: &mut Node,
@@ -1404,9 +1485,7 @@ fn apply_distinct(
     let ResolvedTypeRef::List { of: element } = of.required() else {
         return;
     };
-    if element.is_optional() {
-        return;
-    }
+    let nullable = may_be_null(ir, element);
     let Some(kind) = distinct.key_kind else {
         return;
     };
@@ -1418,7 +1497,14 @@ fn apply_distinct(
         },
     };
     if members.is_empty() {
-        node.unique_items = Some(true);
+        if nullable {
+            node.all_of.push(unique_or_nulls());
+        } else {
+            node.unique_items = Some(true);
+        }
+        return;
+    }
+    if nullable {
         return;
     }
     let Some((wires, leaf)) = key_path(ir, element, members) else {
@@ -1431,6 +1517,43 @@ fn apply_distinct(
     };
     node.all_of
         .extend(values.into_iter().map(|value| at_most_once(&wires, value)));
+}
+
+/// `uniqueItems` for a list whose elements may be `null`, where it would refuse two `null`s the
+/// model reads as unknown keys: the list is unique, or it holds at least two `null`s and is not
+/// checked. Exact for every list with fewer than two `null`s; sound for the rest.
+fn unique_or_nulls() -> Node {
+    Node {
+        any_of: vec![
+            Node {
+                unique_items: Some(true),
+                ..Node::default()
+            },
+            Node {
+                contains: Some(Box::new(Node::null())),
+                min_contains: Some(2),
+                ..Node::default()
+            },
+        ],
+        ..Node::default()
+    }
+}
+
+/// Whether a value of type `of` may be `null`: an `Optional`, or a newtype that wraps one at any
+/// depth.
+fn may_be_null(ir: &EssIr, of: &ResolvedTypeRef) -> bool {
+    let mut current = of;
+    for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+        match current {
+            ResolvedTypeRef::Optional { .. } => return true,
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, .. } => current = of,
+                _ => return false,
+            },
+            _ => return false,
+        }
+    }
+    false
 }
 
 /// The wire names of `members` read from a value of type `element`, and the type the last one
