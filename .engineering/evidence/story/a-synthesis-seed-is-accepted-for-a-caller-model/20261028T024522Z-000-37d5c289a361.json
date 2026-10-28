@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-28T02:45:22Z",
+  "actor": "human:timo",
+  "artifact": "story:a-synthesis-seed-is-accepted-for-a-caller-model",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "a_synthesis_seed_is_accepted_for_a_caller_model 4 passed and synthesis_seeds 20 passed on 02194e732; adversary_0740_pass1 9 passed; adopter seed on the caller model refused (caller-model) -> 10/0, interpreted 10/10",
+    "reference": "commit:02194e732"
+  }
+}
