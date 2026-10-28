@@ -3862,3 +3862,134 @@ fn a_release_backfill_dispatched_from_main_saves_no_compile_cache() {
         "a release backfill dispatched from main saves these compile caches: {saving:?}"
     );
 }
+
+/// Runs the `msrv` job's `Read the declared rust-version` step in `directory` the way Actions
+/// does, returning its exit status, the `toolchain` it wrote, if any, and its log.
+fn run_msrv_read_step(case: &Path, directory: &Path) -> (bool, Option<String>, String) {
+    let ci = yaml(".github/workflows/ci.yml");
+    let step = ci["jobs"]["msrv"]["steps"]
+        .as_sequence()
+        .into_iter()
+        .flatten()
+        .find(|step| text(&step["id"]) == "msrv")
+        .expect("the msrv job has a step `msrv` that reads the declared rust-version");
+    let script = case.join("read-rust-version.sh");
+    fs::write(&script, text(&step["run"])).unwrap();
+    let output_file = case.join("github-output");
+    fs::write(&output_file, "").unwrap();
+    let output = isolated("bash", directory)
+        .args(["--noprofile", "--norc", "-eo", "pipefail"])
+        .arg(&script)
+        .env("GITHUB_OUTPUT", &output_file)
+        .output()
+        .unwrap();
+    let log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let written = fs::read_to_string(&output_file).unwrap();
+    let toolchain = written
+        .lines()
+        .find_map(|line| line.strip_prefix("toolchain="))
+        .map(str::to_owned);
+    (output.status.success(), toolchain, log)
+}
+
+/// The workspace declares a `rust-version`, and downstream repositories compile ESS with exactly
+/// that compiler. Nothing checked it, so a line only newer compilers accept shipped (E0716 in
+/// `ess-conformance` on 1.85). The `msrv` job checks every target on that compiler on every pull
+/// request, reads the version from `Cargo.toml` instead of naming it a second time, and `Gate`
+/// carries its result (`the_gate_check_aggregates_every_lane_and_cannot_be_skipped`).
+#[test]
+fn the_msrv_job_checks_every_target_on_the_declared_rust_version() {
+    let manifest: toml_lines::Manifest =
+        toml_lines::parse(&fs::read_to_string(workspace_root().join("Cargo.toml")).unwrap());
+    let declared = manifest
+        .get("workspace.package", "rust-version")
+        .expect("the workspace declares a rust-version")
+        .trim_matches('"')
+        .to_owned();
+
+    let ci = yaml(".github/workflows/ci.yml");
+    let job = &ci["jobs"]["msrv"];
+    assert!(job.is_mapping(), "ci.yml has no `msrv` job");
+    assert!(
+        job["if"].is_null(),
+        "the msrv job does not run on every pull request: if `{}`",
+        text(&job["if"])
+    );
+    let source = ess_yaml::to_string(job).unwrap();
+    assert!(
+        !source.contains(&declared),
+        "the msrv job names the declared rust-version `{declared}` a second time"
+    );
+
+    let steps: Vec<&Value> = job["steps"].as_sequence().into_iter().flatten().collect();
+    let read = steps
+        .iter()
+        .position(|step| text(&step["id"]) == "msrv")
+        .expect("the msrv job reads the declared rust-version");
+    let (install, toolchain) = step_using(job, "dtolnay/rust-toolchain")
+        .expect("the msrv job installs its toolchain with dtolnay/rust-toolchain");
+    assert_eq!(
+        text(&toolchain["with"]["toolchain"]),
+        "${{ steps.msrv.outputs.toolchain }}",
+        "the msrv job installs a toolchain other than the one it read"
+    );
+    let check = steps
+        .iter()
+        .position(|step| {
+            text(&step["run"]).trim() == "cargo check --workspace --all-targets --locked"
+        })
+        .expect("the msrv job runs `cargo check --workspace --all-targets --locked`");
+    assert!(
+        read < install && install < check,
+        "the msrv job does not read, install and then check, in that order"
+    );
+
+    // The step itself, against this workspace and against fixtures.
+    let case = Scratch::new("msrv");
+    let (ok, written, log) = run_msrv_read_step(&case.0, &workspace_root());
+    assert!(ok, "the read step failed on this workspace: {log}");
+    let expected = if declared.split('.').count() == 2 {
+        format!("{declared}.0")
+    } else {
+        declared.clone()
+    };
+    assert_eq!(written.as_deref(), Some(expected.as_str()), "{log}");
+
+    for (index, (manifest, expected)) in [
+        (
+            "[workspace.package]\nversion = \"9.9.9\"\nrust-version = \"1.90.1\"\n",
+            Some("1.90.1"),
+        ),
+        (
+            "[workspace.package]\nversion = \"9.9.9\"\nrust-version = \"1.91\"\n",
+            Some("1.91.0"),
+        ),
+        ("[workspace.package]\nversion = \"9.9.9\"\n", None),
+        (
+            "[workspace.package]\nrust-version = \"1.90\"\n[package]\nrust-version = \"1.91\"\n",
+            None,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let directory = case.0.join(format!("fixture-{index}"));
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("Cargo.toml"), manifest).unwrap();
+        let (ok, written, log) = run_msrv_read_step(&case.0, &directory);
+        match expected {
+            Some(expected) => {
+                assert!(ok, "the read step failed on {manifest:?}: {log}");
+                assert_eq!(written.as_deref(), Some(expected), "{manifest:?}: {log}");
+            }
+            None => assert!(
+                !ok && written.is_none(),
+                "the read step chose a toolchain from {manifest:?}: {written:?} {log}"
+            ),
+        }
+    }
+}

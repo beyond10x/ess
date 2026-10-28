@@ -80,6 +80,14 @@ the checkout's own `target/`, because test binaries bake `CARGO_BIN_EXE_*` and
 shards leave a partition unrun, or when `Gate` misses a job. Local `task test` still runs
 `cargo test` over everything.
 
+**The `msrv` job holds the declared `rust-version`.** Downstream repositories compile ESS with the
+`rust-version` in `Cargo.toml`, so on every pull request `msrv` reads it from there (`1.85` installs
+`1.85.0`) and runs `cargo check --workspace --all-targets --locked` on it, and `Gate` carries the
+result. A line only a newer rustc accepts fails it, and so does a `Cargo.lock` entry whose own
+`rust-version` is newer. Reproduce it with `cargo +<rust-version>.0 check --workspace --all-targets
+--locked`. `ci_lanes.rs` (`the_msrv_job_checks_every_target_on_the_declared_rust_version`) fails
+when the job names the version a second time or checks less than every target.
+
 **A pull request from an ordinary branch runs the feature-off build on number semantics only.**
 With `FEATURE_OFF` set to `number-semantics` (a `pull_request` run whose head is not a `queue/`
 branch of this repository, and a `merge_group` run), the feature-off archive keeps every feature-off package except
