@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-28T00:10:14Z",
+  "actor": "human:timo",
+  "artifact": "story:a-binding-no-step-triggers-leaves-a-row-set-arrangeable",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "a_binding_no_step_triggers_leaves_the_row_set_arrangeable 2 passed on 43bb3e0e9; adversary_0730_pass1 6 passed on 3daa68993; reduced reproduction 7/2 -> 9/0, interpreted 9/9",
+    "reference": "commit:3daa68993"
+  }
+}

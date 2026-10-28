@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-28T00:10:13Z",
+  "actor": "human:timo",
+  "artifact": "story:a-set-effect-binding-refusal-names-each-cause",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "a_set_effect_binding_refusal_names_each_cause passed on 55e38665a; adversary_0730_pass1 6 passed on 3daa68993; reduced reproduction 7/3 -> 10/0, interpreted 10/10",
+    "reference": "commit:3daa68993"
+  }
+}

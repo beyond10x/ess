@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-28T00:10:15Z",
+  "actor": "human:timo",
+  "artifact": "story:affects-witness-with-the-adopters-remaining-condition",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "affects_past_emitting_not_found 5 passed on 417c64125; adversary_0730_pass1 6 passed on 3daa68993; reduced reproduction 4/1 -> 5/0, interpreted 5/5",
+    "reference": "commit:3daa68993"
+  }
+}

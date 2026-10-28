@@ -1,0 +1,6 @@
+format: ess/25
+system: demo
+version: v1
+summary: A row-set guard over an entity that an untriggerable binding writes.
+domains:
+  - demo.y

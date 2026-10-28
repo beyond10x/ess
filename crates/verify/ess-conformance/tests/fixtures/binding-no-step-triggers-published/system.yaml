@@ -1,0 +1,6 @@
+format: ess/25
+system: demo
+version: v1
+summary: A row-set guard over an entity that a binding its creator sets off hands over.
+domains:
+  - demo.y

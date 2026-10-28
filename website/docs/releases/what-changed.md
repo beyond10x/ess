@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.73.0 — 2026-10-28
+
+### Set-effect bindings, row sets, predicate refusal policies and affects rows past predicates get their scenarios
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.73.0)
+
+Synthesis arranges the rows a binding into a per-row set effect needs, keeps a row set followable until a step sets its binding off, witnesses a predicate refusal policy through an arranged row, and arranges an affects row past a creator's predicate guard. A caller model keeps its binding refusal scenarios.
+
 ## 0.72.0 — 2026-10-27
 
 ### Bindings past related and set guards, and fresh-input disclosure follow-ups, get their scenarios

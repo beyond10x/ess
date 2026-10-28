@@ -1,4 +1,4 @@
-#	models=325	commands=694
+#	models=331	commands=700
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -241,6 +241,10 @@ crates/verify/ess-conformance/tests/fixtures/affects-past-erroring-not-found.yam
 crates/verify/ess-conformance/tests/fixtures/affects-past-erroring-not-found.yaml	demo.w.CreateMember	default: created
 crates/verify/ess-conformance/tests/fixtures/affects-past-erroring-not-found.yaml	demo.w.OpenTicket	related_row: not-found | default: opened
 crates/verify/ess-conformance/tests/fixtures/affects-past-erroring-not-found.yaml	demo.w.ResetMember	default: reset
+crates/verify/ess-conformance/tests/fixtures/affects-past-predicate-guard.yaml	ir=5eb51d45cc4b71f0ac50d5ea913a8af4bc7682d495bee2858065fdba606da0de:12403
+crates/verify/ess-conformance/tests/fixtures/affects-past-predicate-guard.yaml	demo.v.CreateMember	default: created
+crates/verify/ess-conformance/tests/fixtures/affects-past-predicate-guard.yaml	demo.v.OpenTicket	present_related: not-found | accepting: linked | default: opened
+crates/verify/ess-conformance/tests/fixtures/affects-past-predicate-guard.yaml	demo.v.ResetMember	default: reset
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	ir=890b366c1c870d26d464af41990ebd44b6abea74f3649e8115e9b593db7e7943:20930
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Cancel	held_state: wrong-state | default: cancelled
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Drop	held_state: wrong-state | default: dropped
@@ -248,6 +252,10 @@ crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.fe
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Play	held_state: wrong-state | default: played
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Post	default: posted
 crates/verify/ess-conformance/tests/fixtures/affects-where-state.yaml	cascade.feed.Sweep	default: swept
+crates/verify/ess-conformance/tests/fixtures/affects-without-predicate-guard.yaml	ir=0016cf2607b5ba4fe2fdb4dd46031a41b810273501dea96873314fe290f88c89:11793
+crates/verify/ess-conformance/tests/fixtures/affects-without-predicate-guard.yaml	demo.v.CreateMember	default: created
+crates/verify/ess-conformance/tests/fixtures/affects-without-predicate-guard.yaml	demo.v.OpenTicket	present_related: not-found | default: opened
+crates/verify/ess-conformance/tests/fixtures/affects-without-predicate-guard.yaml	demo.v.ResetMember	default: reset
 crates/verify/ess-conformance/tests/fixtures/aggregate-copied-group-parameter.yaml	ir=d581148ce3b8124b063000431cd6524cbb9e6d211209d875b5ff76bccdabc67f:10865
 crates/verify/ess-conformance/tests/fixtures/aggregate-copied-group-parameter.yaml	demo.work.OpenDepot	default: opened
 crates/verify/ess-conformance/tests/fixtures/aggregate-copied-group-parameter.yaml	demo.work.OpenItem	default: opened
@@ -331,6 +339,8 @@ crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.message
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.messages.ReceiveMessage	default: received
 crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/binding-no-step-triggers/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/binding-no-step-triggers-published/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-refusal-policy-swapped-caller/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	ir=e40145284e7b85a5f309ab433ddc336fd87a70ca4c1259c4e752244be7993b77:19800
 crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	selection.core.Receive	default: received
@@ -720,6 +730,7 @@ crates/verify/ess-conformance/tests/fixtures/period-bounded-views.yaml	demo.ledg
 crates/verify/ess-conformance/tests/fixtures/period-bounded-views.yaml	demo.ledger.ResolveIncident	held_state: wrong-state | default: resolved
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	ir=a72e2b9589365db395dd0b717d7122a2b48082857d07d87ae657595c9b4d58d2:4387
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	fixturetest.session.Open	default: opened
+crates/verify/ess-conformance/tests/fixtures/predicate-refusal-policy-arranged-row/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/recursive-fixtures/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	ir=e2ab0a03303fd11f4809302a67dab7ae3a001f500f48905f96f2d67ae43c4836:15131
 crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	demo.secrets.Configure	held_state: not-pending | default: configured
@@ -843,6 +854,7 @@ crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	demo.shelf.Open
 crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	demo.shelf.Restock	existence: unknown-book | present_related: refused | default: restocked
 crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	demo.shelf.Shelve	present_related: refused | accepting: added | default: replaced
 crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	demo.shelf.Unshelve	present_related: refused | default: removed
+crates/verify/ess-conformance/tests/fixtures/set-effect-binding-causes/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-effect-fresh-input/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	ir=41530db9c552f3a75b69d278511841906742a40441746b2050f33ca41e9ccbcb:15632
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.ExpireEntry	held_state: not-queued | default: expired

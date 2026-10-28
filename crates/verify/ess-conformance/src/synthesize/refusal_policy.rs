@@ -7,7 +7,9 @@
 //! ([`ExpectNoPublication`](crate::ScenarioStep::ExpectNoPublication): the escalation is the
 //! binding's, so the last command's direct events cannot show it). A `when_related: {via:
 //! input.<f>, exists: false}` refusal is answered rather than forced, on every attempt, where the
-//! trigger can be sent naming a row no row carries ([`super::binding_effects::related_missing`]).
+//! trigger can be sent naming a row no row carries ([`super::binding_effects::related_missing`]),
+//! and a `when_related: {via: input.<f>, predicate: …}` refusal where a row the predicate refuses
+//! can be arranged before the trigger ([`super::binding_effects::related_refused`]).
 //! An unforceable refusal is refused by name, a coverage limitation and never a fabricated result. The untyped fallback is no
 //! declared refusal and no suite can force one; the runtime controls witness it.
 //!
@@ -155,10 +157,20 @@ fn witness(
         },
         _ => None,
     };
-    let forced_ref = match (forced, &answered) {
-        (Ok(forced_ref), _) => forced_ref,
-        (Err(_), Some(_)) => OutcomeRef::new(command.clone(), outcome.clone()),
-        (Err(gap), None) => return Err(gap),
+    let tried = matches!((&forced, &alternative, &answered), (Err(_), None, None));
+    let arranged = if tried {
+        refused_row(ir, binding, invoked, outcome, published_by, trigger, actors)
+    } else {
+        None
+    };
+    let forced_ref = match (forced, &answered, &arranged) {
+        (Ok(forced_ref), _, _) => forced_ref,
+        (Err(_), Some(_), _) | (Err(_), None, Some(_)) => {
+            OutcomeRef::new(command.clone(), outcome.clone())
+        }
+        // Only an arrangement tried and refused says no row the predicate refuses can be arranged.
+        (Err(gap), None, None) if tried => return Err(unarranged(invoked, outcome).unwrap_or(gap)),
+        (Err(gap), None, None) => return Err(gap),
     };
     let (answered, publisher) = match answered {
         Some((invoke, publisher)) => (Some(invoke), publisher),
@@ -180,14 +192,22 @@ fn witness(
     if let Some((_, extra)) = &alternative {
         source.extend(extra.iter().cloned());
     }
+    if let Some((_, _, rests_on)) = &arranged {
+        source.extend(rests_on.iter().cloned());
+    }
     let Owed {
         times,
         invocations,
         after,
         text,
     } = owed(ir, binding, policy, outcome, action, invoked, &mut source);
-    let mut steps = trigger.setup.clone();
+    let mut steps = match &arranged {
+        Some((setup, _, _)) => setup.clone(),
+        None => trigger.setup.clone(),
+    };
     if let Some(invoke) = answered {
+        steps.extend(invoke);
+    } else if let Some((_, invoke, _)) = arranged {
         steps.extend(invoke);
     } else {
         steps.push(super::bounded_retry::force(forced_ref, times));
@@ -246,6 +266,132 @@ fn unguarded_publisher(
     })
 }
 
+/// A predicate refusal over a related row, answered on every attempt as a missing row is: a row the
+/// predicate refuses arranged before the trigger, and the trigger sent naming it, as that refusal's
+/// own scenario arranges one ([`super::binding_effects::related_refused`]). The setup, the
+/// trigger's invocation and what the row rests on; `None` where no such row can be arranged, where
+/// arranging it sets the binding off before the counted attempts, or where a step sets off another
+/// binding that changes rows of the refused row's entity ([`rewritten`]): that binding may write
+/// the row back before the trigger, and the honest system then answers otherwise.
+#[allow(clippy::type_complexity)]
+fn refused_row(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    invoked: &ResolvedCommand,
+    outcome: &ess_domain::command::OutcomeName,
+    published_by: &ResolvedOutcome,
+    trigger: &Run,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Option<(
+    Vec<ScenarioStep>,
+    Vec<ScenarioStep>,
+    BTreeSet<EssSemanticRef>,
+)> {
+    use ess_compiler::ir::ResolvedCondition;
+
+    let refusal = invoked
+        .outcomes
+        .iter()
+        .find(|candidate| &candidate.name == outcome)?;
+    let ResolvedCondition::Related { entity, .. } = &refusal.condition else {
+        return None;
+    };
+    super::binding_effects::related_refused(
+        ir,
+        binding,
+        invoked,
+        published_by,
+        refusal,
+        trigger,
+        actors,
+    )
+    .filter(|(setup, invoke, _)| {
+        !sets_off(ir, binding, setup)
+            && !setup
+                .iter()
+                .chain(invoke)
+                .any(|step| rewritten(ir, binding, step, entity))
+    })
+}
+
+/// Whether executing a step of `setup` can publish the binding's event, so the binding would be
+/// invoked before the counted attempts begin.
+fn sets_off(ir: &EssIr, binding: &ResolvedBinding, setup: &[ScenarioStep]) -> bool {
+    let Some(event) = binding.cause.event() else {
+        return false;
+    };
+    setup.iter().any(|step| match step {
+        ScenarioStep::ExecuteCommand { command, .. }
+        | ScenarioStep::ExecuteCommandWithoutInput { command, .. } => {
+            super::bounded_retry::reaches(ir, command.name(), event)
+        }
+        _ => false,
+    })
+}
+
+/// Whether executing `step` can set off a binding other than `binding` that invokes a command, or
+/// sets off one further on, with a branch changing rows of `entity`: its subject, the rows of a set
+/// effect, or an `affects:` entry. The step's own command is the arrangement and is not counted.
+/// Read as [`super::bounded_retry::reaches`] reads a chain: every branch at every hop, so the
+/// answer errs towards "rewritten", and each command is visited once.
+fn rewritten(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    step: &ScenarioStep,
+    entity: &ess_compiler::ir::EntityHandle,
+) -> bool {
+    let start = match step {
+        ScenarioStep::ExecuteCommand { command, .. }
+        | ScenarioStep::ExecuteCommandWithoutInput { command, .. } => command.name(),
+        _ => return false,
+    };
+    let changes = |outcome: &ResolvedOutcome| {
+        outcome
+            .subject
+            .as_ref()
+            .is_some_and(|subject| &subject.entity == entity)
+            || outcome
+                .instances
+                .as_ref()
+                .is_some_and(|set| &set.entity == entity)
+            || outcome
+                .affects
+                .iter()
+                .any(|affect| &affect.entity == entity)
+    };
+    let set_off = |command: &ResolvedCommand| -> Vec<QualifiedName> {
+        let emitted: BTreeSet<&EventHandle> = command
+            .outcomes
+            .iter()
+            .flat_map(|outcome| outcome.emits.iter())
+            .collect();
+        ir.bindings()
+            .values()
+            .filter(|other| other.name != binding.name)
+            .filter(|other| other.cause.event().is_some_and(|on| emitted.contains(on)))
+            .map(|other| other.command.name().clone())
+            .collect()
+    };
+    let Some(first) = ir.commands().get(start) else {
+        return false;
+    };
+    let mut visited = BTreeSet::from([start.clone()]);
+    let mut pending = set_off(first);
+    while let Some(name) = pending.pop() {
+        if !visited.insert(name.clone()) {
+            continue;
+        }
+        let Some(command) = ir.commands().get(&name) else {
+            continue;
+        };
+        if command.outcomes.iter().any(changes) {
+            return true;
+        }
+        pending.extend(set_off(command));
+    }
+    false
+}
+
 /// The refusal as a scenario forces it: an `external:` branch whose eligibility needs no
 /// observation of the mapped input, or the gap that names why not.
 fn forcible(
@@ -266,6 +412,35 @@ fn forcible(
         return Err(gap);
     }
     Ok(forced_ref)
+}
+
+/// [`BindingGap::RelatedRefusalUnarranged`] for a predicate refusal over a related row that is not
+/// `external:`: a scenario answers it through an arranged row, and never by injection. Named only
+/// where [`refused_row`] was tried and arranged none; an unbounded retry ([`retried`]) never tries
+/// one, and keeps [`BindingGap::RefusalUnforcible`].
+fn unarranged(
+    invoked: &ResolvedCommand,
+    outcome: &ess_domain::command::OutcomeName,
+) -> Option<BindingGap> {
+    use ess_compiler::ir::{ResolvedCondition, ResolvedRelatedTest};
+
+    invoked
+        .outcomes
+        .iter()
+        .find(|candidate| &candidate.name == outcome)
+        .filter(|refusal| refusal.test_strategy != TestStrategy::InjectFault)
+        .filter(|refusal| {
+            matches!(
+                &refusal.condition,
+                ResolvedCondition::Related {
+                    test: ResolvedRelatedTest::Holds { .. },
+                    ..
+                }
+            )
+        })
+        .map(|_| BindingGap::RelatedRefusalUnarranged {
+            outcome: OutcomeRef::new(CommandRef::new(invoked.name.clone()), outcome.clone()),
+        })
 }
 
 /// An unbounded retry of one refusal, witnessed as the universal `retry` is (§18,

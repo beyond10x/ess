@@ -1,0 +1,77 @@
+domain: demo.c
+types:
+  - {name: demo.c.GrantId, kind: newtype, of: String}
+  - {name: demo.c.TicketId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.c.Grant
+    identity: {name: grant_id, type: demo.c.GrantId}
+    fields:
+      - {name: flag, type: Boolean}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.c.Ticket
+    identity: {name: ticket_id, type: demo.c.TicketId}
+    fields:
+      - {name: grant_id, type: demo.c.GrantId}
+      - {name: flag, type: Boolean}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+commands:
+  - name: demo.c.DefineGrant
+    input: []
+    outcomes:
+      - name: defined
+        creates: demo.c.Grant
+        instance: grant_id
+        emits: [demo.c.GrantDefined]
+        payload: {demo.c.GrantDefined: {grant_id: {generated: true}}}
+        sets: {flag: false}
+  - name: demo.c.SetFlag
+    input:
+      - {name: grant_id, type: demo.c.GrantId}
+      - {name: flag, type: Boolean}
+    outcomes:
+      - {name: blocked, when: grant_id != "g-1", error: demo.c.Missing}
+      - name: set
+        emits: [demo.c.FlagSet]
+        payload: {demo.c.FlagSet: {grant_id: input.grant_id, flag: input.flag}}
+  - name: demo.c.OpenTicket
+    input:
+      - {name: grant_id, type: demo.c.GrantId}
+    outcomes:
+      - {name: no-grant, when_related: {via: input.grant_id, exists: false}, error: demo.c.Missing}
+      - name: opened
+        creates: demo.c.Ticket
+        instance: ticket_id
+        emits: [demo.c.TicketOpened]
+        payload: {demo.c.TicketOpened: {ticket_id: {generated: true}}}
+        sets: {grant_id: input.grant_id, flag: false}
+  - name: demo.c.SyncAll
+    input:
+      - {name: grant_id, type: demo.c.GrantId}
+      - {name: flag, type: Boolean}
+    outcomes:
+      - {name: unavailable, external: the store cannot be written to, error: demo.c.Missing}
+      - name: synced
+        updates: demo.c.Ticket
+        instances: {where: grant_id == input.grant_id}
+        emits: [{event: demo.c.TicketSynced, each: changed}]
+        payload: {demo.c.TicketSynced: {ticket_id: {changed: ticket_id}}}
+        sets: {flag: input.flag}
+errors:
+  - name: demo.c.Missing
+events:
+  - name: demo.c.GrantDefined
+    fields: [{name: grant_id, type: demo.c.GrantId}]
+  - name: demo.c.FlagSet
+    fields: [{name: grant_id, type: demo.c.GrantId}, {name: flag, type: Boolean}]
+  - name: demo.c.TicketOpened
+    fields: [{name: ticket_id, type: demo.c.TicketId}]
+  - name: demo.c.TicketSynced
+    fields: [{name: ticket_id, type: demo.c.TicketId}]
+views:
+  - name: demo.c.Tickets
+    source: demo.c.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: demo.c.TicketId}
+      - {name: state, type: demo.c.Ticket.State}
+      - {name: flag, type: Boolean}
