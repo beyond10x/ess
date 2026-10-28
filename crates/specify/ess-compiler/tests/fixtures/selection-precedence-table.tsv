@@ -1,4 +1,4 @@
-#	models=338	commands=703
+#	models=340	commands=711
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -867,6 +867,16 @@ crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.ParkCall	held_state: not-waiting | default: parked
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.QueueEntry	default: queued
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.StartCall	default: started
+crates/verify/ess-conformance/tests/fixtures/set-move-only-affects.yaml	ir=bce6b0417c396e85836166bda089db623cb883a79dbae9ddd0433c7b11b2416f:17244
+crates/verify/ess-conformance/tests/fixtures/set-move-only-affects.yaml	demo.g.AddChild	default: added
+crates/verify/ess-conformance/tests/fixtures/set-move-only-affects.yaml	demo.g.AddGroup	default: added
+crates/verify/ess-conformance/tests/fixtures/set-move-only-affects.yaml	demo.g.Clear	held_state: wrong-state | default: cleared
+crates/verify/ess-conformance/tests/fixtures/set-move-only-affects.yaml	demo.g.Park	default: parked
+crates/verify/ess-conformance/tests/fixtures/set-move-only-changed-row.yaml	ir=f3ffd221487db870ecb535d1fa0d451e8d3dc9d6c4455004b25c8be30dc48c68:12388
+crates/verify/ess-conformance/tests/fixtures/set-move-only-changed-row.yaml	demo.z.AddChild	default: added
+crates/verify/ess-conformance/tests/fixtures/set-move-only-changed-row.yaml	demo.z.Park	default: parked
+crates/verify/ess-conformance/tests/fixtures/set-move-only-changed-row.yaml	demo.z.Poke	default: poked
+crates/verify/ess-conformance/tests/fixtures/set-move-only-changed-row.yaml	demo.z.Resume	default: resumed
 crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	ir=a218176b41b1eab305d47254933e7f0a9c4fb83eca9b0bda04b73aab1ebaa512:9598
 crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	demo.z.AddChild	default: added
 crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	demo.z.Park	default: parked

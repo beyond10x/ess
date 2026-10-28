@@ -2848,11 +2848,11 @@ fn affects_segment_on(
                     .unwrap_or_else(|| gap(at(index), affect.entity.to_string(), NO_MATCHING)));
             }
             Err(reason) => {
-                return Err(unarranged(
-                    ir,
-                    &affect.entity,
-                    &selection.filter,
-                    at(index),
+                return Err(entry_unarranged(
+                    &selection,
+                    actors,
+                    taken,
+                    (affect, at(index)),
                     reason,
                 ))
             }
@@ -2907,6 +2907,42 @@ fn affects_segment_on(
         )?;
     }
     Ok((steps, source))
+}
+
+/// The refusal for the `affects:` entry `affect` at `at` whose rows were not arranged, for
+/// `reason`, where its filter selects a row in some state: [`unarranged`]'s, or, where the filter
+/// selects [`MATCHING`] rows in some state and every state the entry's move starts from is reached
+/// only by a set move, [`set_move_only`], as [`set_unarranged`] names it for `instances:`. No row
+/// rests where such a move starts, so the rows are refused as too few ([`NO_MATCHING`]) or, for an
+/// entry writing nothing, as resting only where the move arrives ([`ARRIVES_ONLY`]); the state is
+/// the cause of both.
+fn entry_unarranged(
+    selection: &Selection<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    taken: &BTreeSet<InstanceName>,
+    (affect, at): (&ResolvedAffect, String),
+    reason: &'static str,
+) -> RefusalCause {
+    let ir = selection.ir;
+    match unarranged(ir, &affect.entity, &selection.filter, at.clone(), reason) {
+        RefusalCause::NoWitness(gap) if [NO_MATCHING, ARRIVES_ONLY].contains(&gap.reason) => affect
+            .moves
+            .clone()
+            .and_then(|transition| {
+                set_move_only(
+                    ir,
+                    &affect.entity,
+                    &ResolvedEffect::Moves { transition },
+                    at,
+                )
+            })
+            .filter(|_| {
+                let mut held = taken.clone();
+                (0..MATCHING).all(|_| selection.row(actors, &mut held, &|_| true, false).is_some())
+            })
+            .unwrap_or(RefusalCause::NoWitness(gap)),
+        other => other,
+    }
 }
 
 /// The one `each:` entry of a branch (ess/23, beyond10x/ess#459) and the two lists its scenario

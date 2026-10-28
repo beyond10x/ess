@@ -2057,8 +2057,11 @@ fn per_row_decided<'a>(
             invoke,
             &[&related, &row],
         )),
-        Err(guarded) => Some(refused(changed_row_cause(
-            ir, set, trigger, &carried, guarded,
+        Err(guarded) => Some(refused(unarranged_cause(
+            ir,
+            (invoked, reached, set),
+            (published_by, trigger, &carried, actors),
+            guarded,
         ))),
     }
 }
@@ -2144,6 +2147,74 @@ fn related_per_row(
         }
     }
     Err(guarded)
+}
+
+/// What stopped [`per_row_decided`]: [`ChangedRowCause::SetMoveOnly`] where every state the invoked
+/// branch's set move starts from is reached only by a set move
+/// ([`set_effects::set_move_only_states`]) and a row its filter selects can be arranged for the
+/// input the trigger carries in some state, as [`per_row_decided`] arranges one: the state is then
+/// all that keeps the row from the trigger, and the refusal names it as the `instances:` refusal
+/// does. Otherwise the cause [`changed_row_cause`] names.
+///
+/// [`set_effects::set_move_only_states`]: super::set_effects::set_move_only_states
+fn unarranged_cause(
+    ir: &EssIr,
+    (invoked, reached, set): (
+        &ResolvedCommand,
+        &ResolvedOutcome,
+        &ess_compiler::ir::ResolvedSetSubject,
+    ),
+    (published_by, trigger, carried, actors): (
+        &ResolvedOutcome,
+        &Run,
+        &Carried,
+        &BTreeMap<QualifiedName, ActorRef>,
+    ),
+    guarded: Option<(CommandRef, String)>,
+) -> ChangedRowCause {
+    use super::set_effects;
+
+    let anywhere = |_: &StateName| true;
+    let before = captured(trigger);
+    let selected = || {
+        let mut taken = before.clone();
+        let row = if carried.named.is_empty() {
+            set_effects::selected_row(
+                ir,
+                (invoked, reached, set),
+                &carried.literals,
+                actors,
+                &anywhere,
+                &mut taken,
+            )
+        } else {
+            let held = carried.held(trigger);
+            set_effects::selected_row_naming(
+                ir,
+                (invoked, reached, set),
+                (&carried.literals, &carried.named),
+                (&held, &BTreeMap::new()),
+                actors,
+                &anywhere,
+                &mut taken,
+            )
+        };
+        row.is_some_and(|row| fits(&row, &before))
+            || related_per_row(
+                ir,
+                (invoked, reached, set),
+                published_by,
+                trigger,
+                carried,
+                actors,
+                &anywhere,
+            )
+            .is_ok()
+    };
+    match set_effects::set_move_only_states(ir, &set.entity, &set.effect) {
+        Some(only) if selected() => ChangedRowCause::SetMoveOnly(only),
+        _ => changed_row_cause(ir, set, trigger, carried, guarded),
+    }
 }
 
 /// What stopped [`per_row_decided`]: first an input the filter reads that no scenario chooses,
