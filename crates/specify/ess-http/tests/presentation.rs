@@ -404,6 +404,9 @@ fn a_server_url_outside_the_rule_is_refused() {
         "https://api.example.test/v2?tenant=a",
         "https://api.example.test/v2#top",
         "https://user:secret@api.example.test/v2",
+        "https://[::1/v2",
+        "https://[::1]x/v2",
+        "https://[]:8443/v2",
     ] {
         let keys = format!(
             "servers:

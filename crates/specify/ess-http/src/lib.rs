@@ -1668,8 +1668,9 @@ pub struct Server {
     pub description: Option<String>,
 }
 
-/// Why `url` is no server URL: neither absolute `http(s)://` with a host nor `/`-rooted, or
-/// holding whitespace, `{`, `}`, `?`, `#` or userinfo.
+/// Why `url` is no server URL: neither absolute `http(s)://` with a host (the authority before any
+/// `:port`, an IPv6 literal bracketed) nor `/`-rooted, or holding whitespace, `{`, `}`, `?`, `#` or
+/// userinfo.
 fn server_url_reason(url: &str) -> Option<String> {
     if let Some(found) = url
         .chars()
@@ -1690,16 +1691,27 @@ fn server_url_reason(url: &str) -> Option<String> {
         .or_else(|| url.strip_prefix("http://"));
     match authority {
         Some(rest) => {
-            let host = rest.split('/').next().unwrap_or_default();
-            if host.is_empty() {
-                Some(format!("`{url}` names no host"))
-            } else if host.contains('@') {
-                Some(format!(
+            let authority = rest.split('/').next().unwrap_or_default();
+            if authority.contains('@') {
+                return Some(format!(
                     "`{url}` holds userinfo; a server URL carries no credentials"
-                ))
-            } else {
-                None
+                ));
             }
+            // The host is the authority before any `:port`; an IPv6 literal is bracketed and
+            // holds colons of its own.
+            let host = match authority.strip_prefix('[') {
+                Some(literal) => match literal.split_once(']') {
+                    Some((inside, after)) if after.is_empty() || after.starts_with(':') => inside,
+                    _ => {
+                        return Some(format!(
+                            "`{url}` opens an IP literal with `[` and does not close it before \
+                             the port or the path"
+                        ))
+                    }
+                },
+                None => authority.split(':').next().unwrap_or_default(),
+            };
+            host.is_empty().then(|| format!("`{url}` names no host"))
         }
         None if url.starts_with('/') && !url.starts_with("//") => None,
         None => Some(format!(
