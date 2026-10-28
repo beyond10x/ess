@@ -2939,8 +2939,8 @@ pub fn creations_made<R>(run: impl FnOnce() -> R) -> (R, u64) {
 /// # Errors
 ///
 /// [`SeedAdmissionError::WrongModel`] for seeds compiled against another model, and
-/// [`SeedAdmissionError::CallerModel`] for a model whose actors carry caller attributes, which is
-/// refused rather than synthesized without its seeds.
+/// [`SeedAdmissionError::CallerContradiction`] for rows of a caller model that no one caller the
+/// seeded run is sent as could have made.
 pub fn synthesize_with_seeds(
     ir: &EssIr,
     seeds: &AdmittedSeeds,
@@ -2975,9 +2975,9 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     let _remembered = made::remember(ir);
     // ess/16 (#168): a model whose actors carry attributes is synthesized once per caller
     // assignment, each read with the caller's values written in (`caller::synthesize`). Seeds are
-    // refused for such a model before this point (`AdmittedSeeds::bound_to`).
+    // offered in the reading that sends every command as the caller their rows imply.
     let mut synthesis = if caller::uses(ir) {
-        caller::synthesize(ir)
+        caller::synthesize(ir, seeds)
     } else {
         synthesize_invocations(&caller::InvocationModels::seeded(ir, seeds), Focus::Whole)
     };

@@ -83,6 +83,12 @@ there, with its error, events and resulting state. A successful ordinary witness
 and a seed that answers no unmet obligation adds nothing. A row that needs an owner or a related row,
 or whose identity the scenario already uses, is not applied, and the refusal says so.
 
+Seeds work for a model whose actors carry caller attributes. Where a seed row holds a field a
+command sets from the caller (`account: {caller: account_id}`), the seeded scenarios are sent as a
+caller carrying the row's value, so the row reads as one that caller made. Rows that would need two
+values of one attribute, or a caller-set field left absent or null, are refused with
+`caller-contradiction` and the field named.
+
 A request with seeds writes suite `ess-conformance/42` (`/43` with `--suite-format 5`), or `/44`
 (`/45`) where an act also claims one event more than once, and records in its provenance which
 files were read, the exact rows admitted, and where each row was used. A target needs the entity
