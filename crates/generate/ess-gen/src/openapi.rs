@@ -36,6 +36,7 @@
 //! | which commands? | the ones the component `accepts` | §5 |
 //! | a command no component accepts | appears in no document at all | no component answers for it; naming one would be inventing an owner |
 //! | a component that accepts nothing | still gets a document, with `paths: {}` | a missing file is indistinguishable from a generator that broke |
+//! | a component not declared `reached_by: network` | still gets a document with its command paths, and its first paragraph says no request reaches them | the paths document what its in-process or command-line callers invoke; only a network document carries `info.x-ess-reached-by: network`, which is how a reader selects the served ones |
 //! | method | always `POST` | a command changes state; the model declares no command safe and describes no resource to `PUT` or `DELETE` |
 //! | path | `/{domain wire name}/commands/{command wire name}` | both are declared wire names; the `commands` segment is what stops the path pretending to be a resource |
 //! | two commands claiming one path | *both* move to `/commands/{qualified name}` | qualified names are unique by construction, so the fallback cannot collide in turn |
@@ -520,11 +521,25 @@ fn description(
     binding: Option<&http::Binding>,
 ) -> String {
     let mut text = format!(
-        "The HTTP surface of `{}`, one of the components of `{}` {}.\n\n",
+        "The HTTP surface of `{}`, one of the components of `{}` {}.",
         component.name,
         ir.system(),
         ir.version()
     );
+    // beyond10x/ess#651: only a network component's document is the surface its callers reach;
+    // every other one keeps its command paths as documentation, and says so where a reader starts.
+    text.push_str(match component.reached_by {
+        Reach::Network => "",
+        Reach::InProcess => {
+            " It is not declared `reached_by: network`: its callers are deployed with it, so these \
+             paths describe its commands and no request reaches them."
+        }
+        Reach::CommandLine => {
+            " It is not declared `reached_by: network`: its callers reach it through its command \
+             line, so these paths describe its commands and no request reaches them."
+        }
+    });
+    text.push_str("\n\n");
     text.push_str(
         "Every path here is one semantic command, so the method is always POST and the path is the \
          command's wire name under its domain's: a command is not a resource, and this document \

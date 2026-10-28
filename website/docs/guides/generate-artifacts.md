@@ -24,7 +24,7 @@ openapi/invoice-service.yaml — 21077 byte(s)
 | `docs` | Markdown with Mermaid diagrams (lifecycles as state diagrams, bindings as flowcharts) | the cheapest completeness check: a construct with no rendering is a hole in a page a person reads |
 | `site` | HTML pages, navigation, CSS and a locally bundled Mermaid renderer | a browsable projection of the same documentation model |
 | `schema` | JSON Schema for command inputs, messages, named types, and entities | the type system projected without losing its distinctions — newtypes stay separate definitions |
-| `openapi` | one OpenAPI 3.1 document per component | the specification *is* the HTTP contract, not a document beside it |
+| `openapi` | one OpenAPI 3.1 document per component | the specification *is* the HTTP contract, not a document beside it. Only a `reached_by: network` component's document is a surface callers reach: it carries `info.x-ess-reached-by: network`, and every other document says in its first paragraph that no request reaches its paths. Select the served documents by that key |
 | `asyncapi` | one AsyncAPI 3.0 document per component | the same for messaging, including what happens when a binding fails |
 
 Omit `--kind` and all five are produced together. The CLI prints the exact artifact inventory; it
