@@ -1624,7 +1624,8 @@ crate::authored::diagnostic_catalogue! {
                 | BindingGap::ChangedRowUnarranged { .. }
                 | BindingGap::RelatedRowNeededByTrigger { .. }
                 | BindingGap::BranchConverted { .. }
-                | BindingGap::BranchRelated { .. },
+                | BindingGap::BranchRelated { .. }
+                | BindingGap::TriggerRowUnarranged { .. },
             ..
         } => 10,
             "A binding clause has nothing a scenario could observe.",
@@ -2223,6 +2224,17 @@ pub enum BindingGap {
         /// refusal causes.
         related: Box<RelatedGuards>,
     },
+    /// The publishing branch the binding's trigger would take publishes its event once per row
+    /// its set effect changes (`each: changed`), and no row its filter selects, resting where the
+    /// event is published for it, can be arranged before the trigger: the honest system publishes
+    /// no occurrence, so no scenario waiting for one is filed (a downstream adopter's report of
+    /// 2026-10-26). Named only where no other publishing branch gives a trigger.
+    TriggerRowUnarranged {
+        /// The publishing branch.
+        outcome: OutcomeRef,
+        /// The entity whose changed rows it publishes the event for.
+        entity: EntityRef,
+    },
 }
 
 /// The related row of a [`BindingGap::BranchRelated`] and the branches whose guards read it.
@@ -2435,6 +2447,11 @@ impl BindingGap {
                  own, and the binding map it unconverted into the guarded input, with every guard \
                  reading that row's stored fields alone; or cover the binding with an authored \
                  scenario (ess-scenario/1)"
+            }
+            Self::TriggerRowUnarranged { .. } => {
+                "let a command creating the entity write each key the filter compares with an \
+                 input from an input of its own, or add a publisher of the event that is not a \
+                 set effect; or cover the binding with an authored scenario (ess-scenario/1)"
             }
         }
     }
@@ -2650,6 +2667,12 @@ impl fmt::Display for BindingGap {
                     .join(", "),
                 related.entity,
                 related.input,
+            ),
+            Self::TriggerRowUnarranged { outcome, entity } => write!(
+                f,
+                "is set off by `{outcome}`, which publishes its event once per `{entity}` row it \
+                 changes, and no row its filter selects can be arranged before the trigger, so \
+                 the trigger publishes no occurrence"
             ),
         }
     }
@@ -17785,7 +17808,8 @@ fn bindings(
         }
         let subject = BindingRef::new(binding.name.clone());
         let event_handle = binding.cause.event().expect("event cause");
-        let Some((publisher, published_by)) = publisher(ir, event_handle) else {
+        let publishing = publishers(ir, event_handle);
+        if publishing.is_empty() {
             refusals.push(Refusal {
                 subject: subject.clone().into(),
                 scenario: None,
@@ -17799,22 +17823,55 @@ fn bindings(
                 },
             });
             continue;
-        };
-        match run(ir, publisher, published_by, actors) {
-            Ok(run) => {
-                let trigger = binding_condition::Trigger {
-                    publisher,
-                    published_by,
-                    run,
+        }
+        // Each publishing branch in turn, until one witnesses every aspect; else the one leaving
+        // the fewest refused, the earlier on a tie.
+        let mut chosen: Option<(ConformanceSuite, Vec<Refusal>)> = None;
+        let mut first_failure = None;
+        for (publisher, published_by) in publishing {
+            let run =
+                match binding_effects::trigger_run(ir, binding, publisher, published_by, actors) {
+                    Ok(run) => run,
+                    Err(cause) => {
+                        first_failure.get_or_insert(cause);
+                        continue;
+                    }
                 };
-                binding_aspects(ir, binding, &trigger, actors, suite, refusals);
+            let trigger = binding_condition::Trigger {
+                publisher,
+                published_by,
+                run,
+            };
+            let mut tried = ConformanceSuite {
+                provenance: suite.provenance.clone(),
+                scenarios: BTreeMap::new(),
+            };
+            let mut refused = Vec::new();
+            binding_aspects(ir, binding, &trigger, actors, &mut tried, &mut refused);
+            let witnessed = refused.is_empty();
+            if chosen
+                .as_ref()
+                .is_none_or(|(_, fewest)| refused.len() < fewest.len())
+            {
+                chosen = Some((tried, refused));
             }
-            Err(cause) => refusals.push(Refusal {
+            if witnessed {
+                break;
+            }
+        }
+        match chosen {
+            Some((tried, refused)) => {
+                refusals.extend(refused);
+                for (id, scenario) in tried.scenarios {
+                    insert(suite, id, scenario, refusals);
+                }
+            }
+            None => refusals.push(Refusal {
                 subject: subject.into(),
                 scenario: None,
                 stands: false,
                 caused_by: None,
-                cause,
+                cause: first_failure.expect("a publishing branch either runs or fails"),
             }),
         }
     }
@@ -18507,22 +18564,28 @@ fn publishes(
     Ok(published)
 }
 
-/// The command outcome that publishes an event, in name order, or nothing where none does.
+/// Every command outcome that publishes an event: commands in name order, each command's branches
+/// in declaration order; empty where none does.
 ///
-/// The first in the model's own order, so the choice is a function of the specification and moves
-/// only when the specification does (§37). Where two branches publish one event, either would make
-/// the binding fire; taking the lower-named one keeps the suite stable when a third is added.
-fn publisher<'ir>(
+/// The model's own order, so the trigger a binding is witnessed through is a function of the
+/// specification and moves only when the specification does (§37). Every branch is a candidate:
+/// one that fills an event field from a value no scenario chooses may leave the binding's branch
+/// undecided where another publisher of the same event decides it (a downstream adopter's report
+/// of 2026-10-26), so the first in name order alone made the suite depend on a command's name.
+fn publishers<'ir>(
     ir: &'ir EssIr,
     event: &ess_compiler::ir::EventHandle,
-) -> Option<(&'ir ResolvedCommand, &'ir ResolvedOutcome)> {
-    ir.commands().values().find_map(|command| {
-        command
-            .outcomes
-            .iter()
-            .find(|outcome| outcome.emits.contains(event))
-            .map(|outcome| (command, outcome))
-    })
+) -> Vec<(&'ir ResolvedCommand, &'ir ResolvedOutcome)> {
+    ir.commands()
+        .values()
+        .flat_map(|command| {
+            command
+                .outcomes
+                .iter()
+                .filter(|outcome| outcome.emits.contains(event))
+                .map(move |outcome| (command, outcome))
+        })
+        .collect()
 }
 
 /// Everything a binding scenario's result rests on before its own aspect adds to it.

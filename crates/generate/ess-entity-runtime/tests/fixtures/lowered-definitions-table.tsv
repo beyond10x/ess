@@ -1,4 +1,4 @@
-#	models=386	lines=530
+#	models=390	lines=536
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -133,6 +133,8 @@ crates/verify/ess-conformance/tests/fixtures/beside-row-once.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-arrangement.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-condition-selected.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/binding-every-publisher/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/binding-every-publisher-renamed/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-no-step-triggers/system.yaml	ASSEMBLE
@@ -433,6 +435,10 @@ system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.audit.E
 system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.audit.Entry	create	recorded
 system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.stock.Item	definition=725e4586268c9587e1311f7c3323d207fa1528309e4d7e18ea68d927330e6dbe:2073
 system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.stock.Item	create	added
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-every-publisher	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-every-publisher	svc	REFUSED	b2742302c0fcb12e63cfd50bb81d9c297ce97fc4333103311e1bc0dc765c7dce:982
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-every-publisher-renamed	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-every-publisher-renamed	svc	REFUSED	3dcb639d2ab799e42ae34d41ab354a1880705c1c00c1fbe5a0642609a68673e7:980
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion	components=1
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion	svc	REFUSED	d053a7473eb8d8d2d467e4ffa10c7c366cd58a202c6cc6642e456f2462638059:716
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command	components=1

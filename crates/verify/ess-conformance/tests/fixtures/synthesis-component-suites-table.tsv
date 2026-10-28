@@ -1,4 +1,4 @@
-#	models=68	lines=82
+#	models=70	lines=84
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	suite=5 83258f8aee44f1c66a730f7d9a9245cd6fc1a51718a2f25a53a4e819e7975520:10202	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	rules	suite=5 370232c7ced707b90b7bffff39cf370202474cf971319bcc314bdb945b5abf5c:22834	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	rules	suite=3 d6f554bab5f2e6d2e21ae3d24a390942b72cebaf6d753007ba763d2894d9a569:6257	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
@@ -60,6 +60,8 @@ system-dir:crates/specify/ess-service-contract/tests/fixtures	local-service	suit
 system-dir:crates/specify/ess-service-contract/tests/selection-conversion-control-fixtures	selection-control-service	suite=1 44ec7e64d92ce63946a018e6e453d1b095002573401ee6cfe53fc6425558a030:1572	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 system-dir:crates/specify/ess-service-contract/tests/selection-conversion-fixtures	selection-service	suite=1 0e7ab015a93f9b449068f3a35cc1e271a860700da5c4900608fa6e50fc8a54db:1919	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	suite=2 a660c451403c8bcc2bc7e10932f42bb61358c2ec6395ff4b853a30203055a38e:4288	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-every-publisher	svc	suite=9 e575055ec6d35dccf41a3490d8ab8596d7e4f1d9fc94bccc9bf430b6509411b0:27762	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
+system-dir:crates/verify/ess-conformance/tests/fixtures/binding-every-publisher-renamed	svc	suite=9 cc36deabb7361634f846e1d2a6f8af26cf39649df3878a0270e15ff3a8fcc1df:27740	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion	svc	suite=8 c36a90cfcb9c3ab45c6187d446eb414e930d2bf6ceebe4236fd25f1e69aeb129:25826	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command	svc	suite=11 12304ff171de413bcc3dc8d71562a8e251e85d79cb3b89c98c8f777cf2495ce2:47016	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-refusal-policy-swapped-caller	svc	suite=21 d266ed1fdbbbf7dabe640865c6e6e176c9f5e557937142f0a106f45aa49feab1:134886	outside=0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855:0

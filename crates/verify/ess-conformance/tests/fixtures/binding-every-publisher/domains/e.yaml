@@ -1,0 +1,72 @@
+domain: demo.e
+types:
+  - {name: demo.e.GrantId, kind: newtype, of: String}
+  - {name: demo.e.TicketId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.e.Grant
+    identity: {name: grant_id, type: demo.e.GrantId}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.e.Ticket
+    identity: {name: ticket_id, type: demo.e.TicketId}
+    fields:
+      - {name: grant_id, type: demo.e.GrantId}
+      - {name: flag, type: Boolean}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+commands:
+  - name: demo.e.DefineGrant
+    input: []
+    outcomes:
+      - name: defined
+        creates: demo.e.Grant
+        instance: grant_id
+        emits: [demo.e.GrantDefined]
+        payload: {demo.e.GrantDefined: {grant_id: {generated: true}}}
+  - name: demo.e.OpenTicket
+    input:
+      - {name: grant_id, type: demo.e.GrantId}
+    outcomes:
+      - name: opened
+        creates: demo.e.Ticket
+        instance: ticket_id
+        emits: [demo.e.TicketOpened]
+        payload: {demo.e.TicketOpened: {ticket_id: {generated: true}}}
+        sets: {grant_id: input.grant_id, flag: false}
+  - name: demo.e.Touch
+    input:
+      - {name: grant_id, type: demo.e.GrantId}
+    outcomes:
+      - name: touched
+        emits: [demo.e.Changed]
+        payload: {demo.e.Changed: {grant_id: input.grant_id}}
+  - name: demo.e.SyncAll
+    input:
+      - {name: grant_id, type: demo.e.GrantId}
+      - {name: flag, type: Boolean}
+    outcomes:
+      - name: synced
+        updates: demo.e.Ticket
+        instances: {where: grant_id == input.grant_id}
+        emits: [{event: demo.e.Changed, each: changed}]
+        payload: {demo.e.Changed: {grant_id: {changed: grant_id}}}
+        sets: {flag: input.flag}
+  - name: demo.e.Give
+    input:
+      - {name: grant_id, type: demo.e.GrantId}
+    outcomes:
+      - name: missing
+        when_related: {via: input.grant_id, exists: false}
+        error: demo.e.Missing
+      - name: given
+        emits: [demo.e.Given]
+        payload: {demo.e.Given: {grant_id: input.grant_id}}
+errors:
+  - name: demo.e.Missing
+events:
+  - name: demo.e.GrantDefined
+    fields: [{name: grant_id, type: demo.e.GrantId}]
+  - name: demo.e.TicketOpened
+    fields: [{name: ticket_id, type: demo.e.TicketId}]
+  - name: demo.e.Changed
+    fields: [{name: grant_id, type: demo.e.GrantId}]
+  - name: demo.e.Given
+    fields: [{name: grant_id, type: demo.e.GrantId}]
