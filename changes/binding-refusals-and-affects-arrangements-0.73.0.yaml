@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/binding-refusals-and-affects-arrangements-0.73.0
+repository: ess
+publishedAt: 2026-10-28T00:00:00Z
+title: Set-effect bindings, row sets, predicate refusal policies and affects rows past predicates get their scenarios
+summary: >-
+  Synthesis arranges the rows a binding into a per-row set effect needs, keeps a row set
+  followable until a step sets its binding off, witnesses a predicate refusal policy through an
+  arranged row, and arranges an affects row past a creator's predicate guard. A caller model keeps
+  its binding refusal scenarios.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.73.0
+  version: 0.73.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

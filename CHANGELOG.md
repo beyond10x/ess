@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.73.0] — 2026-10-28
+
+### Fixed
+
+- A binding into a set effect that publishes once per changed row, `each: changed`, whose filter key names another entity's row now gets its flow, delivery and failure scenarios, as an adopter reported against 0.69.2. That covers four cases: the trigger addresses that row, the creating command refuses it missing (`exists: false`), the creating command copies a field of it (`{related:}`), or the trigger publishes a literal for the value written. Synthesis arranges the row in each case. Before, they were refused as ESS-SYNTH-010, "no row its filter selects can be arranged before the trigger", with help asking for conditions that already held. A refusal that remains names the one condition that stops it, and its help asks only for that.
+- A row-set guard, `when_related: {entity:, where:, exists:}`, over an entity a binding writes is no longer refused as ESS-SYNTH-001, "a step of the scenario changes rows of the selector's entity", when no step of the scenario sets that binding off, as an adopter reported against 0.69.2. Rows become unfollowed only from the step that publishes the binding's trigger, directly or through a chain of bindings, or from the start for a periodic binding.
+- A per-refusal failure policy on a predicate refusal, `when_related: {via: input.<f>, predicate: …}`, is now witnessed, as an adopter reported against 0.69.2. Synthesis arranges a row the predicate refuses before the trigger, as it already did for a missing row under `exists: false`. Before, it was refused as ESS-SYNTH-010, "cannot be forced". An arrangement is not used where one of its steps sets off another binding that changes the refused row's entity. Where no such row can be arranged, the refusal's help points to an authored scenario and no longer suggests declaring the refusal `external:`. An unbounded `retry` of a predicate refusal keeps the refusal "cannot be forced".
+- A model whose actors carry caller attributes no longer withdraws its binding refusal scenarios as ESS-SYNTH-001, "requires suite/36 or /37": the caller pass now chooses the suite format from the model, as the origin pass does.
+- A deleting command's `affects:` rows are now arranged past a creator branch guarded by a predicate over the related row's stored fields, `when_related: {via: input.<f>, predicate: …}`, whether that branch emits an event or names an error, as an adopter reported against 0.71.0. Synthesis arranges the related row with a value that refutes the predicate. Before, the command was refused as ESS-SYNTH-001, "created only by `<Creator>/<branch>`, which no arrangement takes". Models that synthesized before keep their suites.
+- A binding's trigger guarded on its own input by a bare path, such as `when: grant_id != "g-1"`, is now kept on its branch when synthesis re-sends it naming an arranged row. Before, the guard was not counted as a read of that input.
+
 ## [0.72.0] — 2026-10-27
 
 ### Fixed
