@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/seed-set-move-limit-and-msrv-0.75.0
+repository: ess
+publishedAt: 2026-10-28T00:00:00Z
+title: A seed says it does not serve a set move's filter, and the workspace compiles on rust 1.85
+summary: >-
+  A set-move refusal names the selected seed rows that synthesis does not apply and points to an
+  authored scenario. Every refusal a set-move-only state causes names that state. A seeded
+  caller-model scenario notes the swapped-caller run it skips. The workspace compiles on its
+  declared rust-version 1.85, and CI checks it.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.75.0
+  version: 0.75.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

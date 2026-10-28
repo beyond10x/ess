@@ -1,0 +1,118 @@
+format: ess/25
+system: demo
+version: v1
+domain: demo.g
+summary: Children parked by group and released when their group is closed.
+naming: {wire: g, display: G}
+types:
+  - {name: demo.g.GroupId, kind: newtype, of: Uuid}
+  - {name: demo.g.ChildId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.g.Group
+    identity: {name: group_id, type: demo.g.GroupId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+  - name: demo.g.Child
+    identity: {name: child_id, type: demo.g.ChildId}
+    fields:
+      - {name: group_id, type: demo.g.GroupId}
+      - {name: note, type: String}
+    lifecycle:
+      initial: Held
+      states: [Held, Parked, Released]
+      terminal: [Released]
+      transitions:
+        - {name: park, from: [Held], to: Parked}
+        - {name: release, from: [Parked], to: Released}
+actors:
+  - {name: demo.g.Clerk, may: [demo.g.AddGroup, demo.g.AddChild, demo.g.Park, demo.g.Clear], naming: {display: Clerk}}
+commands:
+  - name: demo.g.AddGroup
+    naming: {wire: add-group, display: Add group}
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: added
+        creates: demo.g.Group
+        instance: group_id
+        emits: [demo.g.GroupAdded]
+        payload:
+          demo.g.GroupAdded: {group_id: {generated: true}}
+        sets: {label: input.label}
+        summary: A group is added.
+  - name: demo.g.AddChild
+    naming: {wire: add-child, display: Add child}
+    input:
+      - {name: group_id, type: demo.g.GroupId}
+      - {name: note, type: String}
+    outcomes:
+      - name: added
+        creates: demo.g.Child
+        instance: child_id
+        emits: [demo.g.ChildAdded]
+        payload:
+          demo.g.ChildAdded: {child_id: {generated: true}}
+        sets: {group_id: input.group_id, note: input.note}
+        summary: A child is added to a group.
+  - name: demo.g.Park
+    naming: {wire: park, display: Park}
+    input:
+      - {name: group_id, type: demo.g.GroupId}
+    outcomes:
+      - name: parked
+        moves: demo.g.Child.park
+        instances:
+          where: group_id == input.group_id
+        emits: [demo.g.Parked]
+        payload:
+          demo.g.Parked: {group_id: input.group_id}
+        summary: Every held child of the group is parked.
+  - name: demo.g.Clear
+    naming: {wire: clear, display: Clear}
+    input:
+      - {name: group_id, type: demo.g.GroupId}
+      - {name: note, type: String}
+    outcomes:
+      - name: cleared
+        moves: demo.g.Group.close
+        instance: group_id
+        affects:
+          - entity: demo.g.Child
+            where: group_id == subject.group_id
+            moves: demo.g.Child.release
+            sets: {note: input.note}
+        emits: [demo.g.Cleared]
+        payload:
+          demo.g.Cleared: {group_id: input.group_id}
+        summary: The group is closed and every parked child of it is released.
+      - {name: wrong-state, wrong_state: true, error: demo.g.WrongState}
+errors:
+  - {name: demo.g.WrongState, summary: The group is not open., fields: []}
+events:
+  - {name: demo.g.GroupAdded, fields: [{name: group_id, type: demo.g.GroupId}]}
+  - {name: demo.g.ChildAdded, fields: [{name: child_id, type: demo.g.ChildId}]}
+  - {name: demo.g.Parked, fields: [{name: group_id, type: demo.g.GroupId}]}
+  - {name: demo.g.Cleared, fields: [{name: group_id, type: demo.g.GroupId}]}
+views:
+  - name: demo.g.GroupRecord
+    source: demo.g.Group
+    consistency: read_your_writes
+    fields:
+      - {name: group_id, type: demo.g.GroupId}
+      - {name: label, type: String}
+    naming: {wire: group-record, display: Group record}
+  - name: demo.g.ChildRecord
+    source: demo.g.Child
+    consistency: read_your_writes
+    fields:
+      - {name: child_id, type: demo.g.ChildId}
+      - {name: state, type: demo.g.Child.State}
+      - {name: group_id, type: demo.g.GroupId}
+      - {name: note, type: String}
+    naming: {wire: child-record, display: Child record}

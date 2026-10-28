@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.75.0] — 2026-10-28
+
+### Changed
+
+- In the `ess-conformance` library, `Note::CrossCallerUnswapped`'s `reason` is now a `String` and the variant has a new field `mixed: bool`, and `ChangedRowCause` has a new variant `SetMoveOnly`.
+
+### Fixed
+
+- The workspace compiles on its declared `rust-version` (1.85) again, as an adopter's MSRV job reported against 0.72.0. Two borrows in `ess-conformance` only rustc 1.88 accepted are now bound to locals, and `Cargo.lock` holds instability 0.3.10 and darling 0.20.11, which ratatui reaches, instead of releases that need rustc 1.88. A new `msrv` CI job checks every target with the toolchain `rust-version` names, and `Gate` needs it. `Cargo.lock` does not travel with the crates: a consumer on rustc 1.85 that resolves its own lock may need the same two pins (`cargo update -p instability --precise 0.3.10` and `cargo update -p darling --precise 0.20.11`).
+- `ess verify conform synthesize --synthesis-seed` now says when a seed cannot serve a refusal of a set move's filter (`instances:` or an `affects:` entry), as an adopter reported against 0.74.0. The refusal is still ESS-SYNTH-001 and keeps its cause. It now names each selected seed row of the filtered entity and says that seeds do not serve a set move's filter, and its help points to an authored scenario (`ess-scenario/1`). Before, a seeded run printed the unseeded refusal and recorded the seed as selected and never applied. The `--synthesis-seed` help names the two obligations a seed serves. Without such a seed row the refusal keeps its text, and suite bytes change only in the refusal message.
+- A per-row binding refusal (`ChangedRowUnarranged`) and an `affects:` entry refusal now name a state that only a set move reaches, with the same help as the `instances:` refusal of 0.74.0. Before, they gave the remedy for a filter key that no input writes. A refusal whose filter is unmet in every state keeps its text. Codes, occurrence counts and synthesized suites are unchanged.
+- A seeded scenario on a model whose actors carry caller attributes now carries a `CrossCallerUnswapped` note when it is not run again with the callers swapped or reversed. The note names the seed rows it establishes and the rows that fix the caller of its seeded run. A seeded scenario sent as one caller is noted as running once without that run, not as retaining a mixed-caller witness. Suite bytes are unchanged.
+
 ## [0.74.0] — 2026-10-28
 
 ### Changed

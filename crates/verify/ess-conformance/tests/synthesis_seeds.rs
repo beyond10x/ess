@@ -1008,9 +1008,9 @@ fn a_seeded_scenario_names_its_skipped_reversed_caller_run() {
         .notes
         .iter()
         .filter_map(|note| match note {
-            Note::CrossCallerUnswapped { scenario, reason } if reason.contains("setup") => {
-                Some(scenario.to_string())
-            }
+            Note::CrossCallerUnswapped {
+                scenario, reason, ..
+            } if reason.contains("setup") => Some(scenario.to_string()),
             _ => None,
         })
         .collect();

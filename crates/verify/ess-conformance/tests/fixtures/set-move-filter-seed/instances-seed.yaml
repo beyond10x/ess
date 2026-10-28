@@ -1,0 +1,21 @@
+type: ess-scenario/4
+domain: demo.s
+scenario: parked
+summary: A parked row offered as a synthesis seed.
+
+arrange:
+  - instance: parked-cap
+    entity: demo.s.Cap
+    setup:
+      identity: 00000000-0000-4000-8000-000000000a01
+      fields: {owner: 00000000-0000-4000-8000-000000000b01}
+      state: Parked
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    actor: demo.s.Clerk
+    command: demo.s.Resume
+    input: {owner: 00000000-0000-4000-8000-000000000b01}
+    outcome: resumed
+    events:
+      - event: demo.s.Resumed
+        payload: {owner: 00000000-0000-4000-8000-000000000b01}
