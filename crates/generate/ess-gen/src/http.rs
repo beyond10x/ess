@@ -24,8 +24,9 @@
 //!
 //! No pagination, no cursor, no ordering, no filter parameter: a view's filter is declared in the
 //! model and its rows are what the projection holds. No `servers`, because the model still has no
-//! URL. No path version, because `info.version` is the only version the model has. The two segments
-//! a route is built from — the domain's wire name and the construct's — are both declared, and the
+//! URL; only an `ess-http/1` binding states them, per `reached_by: network` component. No path
+//! version, because `info.version` is the only version the model has. The two segments a route
+//! is built from — the domain's wire name and the construct's — are both declared, and the
 //! `commands`/`views` segment between them is what stops a path from reading as a resource.
 
 use ess_compiler::ir::{
