@@ -106,8 +106,20 @@ pub enum SeedAdmissionError {
     },
     /// The seeds were compiled against another model.
     WrongModel,
-    /// The model's actors carry caller attributes, which seeded synthesis does not support.
-    CallerModel,
+    /// A row holds a field an outcome sets from a caller attribute with a value the one caller the
+    /// seeded run is sent as cannot carry beside the other rows'.
+    CallerContradiction {
+        /// The selection, as `source#instance`.
+        selection: String,
+        /// The declared entity.
+        entity: String,
+        /// The caller-sourced field.
+        field: String,
+        /// The caller attribute that sets it.
+        attribute: String,
+        /// Why no caller carries the row's value.
+        detail: String,
+    },
     /// Authored-only coverage acquisition generates nothing a seed could serve.
     AuthoredOnly,
     /// The component asked for is not declared.
@@ -128,7 +140,7 @@ impl SeedAdmissionError {
             Self::InstanceWithoutSetup { .. } => "instance-without-setup",
             Self::DuplicateIdentity { .. } => "duplicate-identity",
             Self::WrongModel => "wrong-model",
-            Self::CallerModel => "caller-model",
+            Self::CallerContradiction { .. } => "caller-contradiction",
             Self::AuthoredOnly => "authored-only",
             Self::UnknownComponent(_) => "unknown-component",
         }
@@ -174,10 +186,17 @@ impl fmt::Display for SeedAdmissionError {
                 "`{first}` and `{second}` both establish one `{entity}` identity"
             ),
             Self::WrongModel => write!(f, "the seeds were compiled against another model"),
-            Self::CallerModel => write!(
+            Self::CallerContradiction {
+                selection,
+                entity,
+                field,
+                attribute,
+                detail,
+            } => write!(
                 f,
-                "the model's actors carry caller attributes; seeded synthesis of a caller \
-                 assignment is not supported"
+                "`{selection}` field `{field}` of `{entity}` is set from the caller's \
+                 `{attribute}`, and {detail}; the seeded run is sent as one caller, whose \
+                 `{attribute}` the row's `{field}` gives"
             ),
             Self::AuthoredOnly => write!(
                 f,
@@ -256,8 +275,8 @@ impl AdmittedSeeds {
         &self.rows
     }
 
-    /// Refuse a nonempty set compiled against another model, or for a model this capability does
-    /// not synthesize.
+    /// Refuse a nonempty set compiled against another model, or whose rows contradict the one
+    /// caller a caller model's seeded run is sent as ([`super::caller::implied`]).
     pub(crate) fn bound_to(&self, ir: &EssIr) -> Result<(), SeedAdmissionError> {
         if self.is_empty() {
             return Ok(());
@@ -266,9 +285,7 @@ impl AdmittedSeeds {
         if self.binding.as_ref() != Some(&(provenance.spec_digest, provenance.contract_digest)) {
             return Err(SeedAdmissionError::WrongModel);
         }
-        if super::caller::uses(ir) {
-            return Err(SeedAdmissionError::CallerModel);
-        }
+        super::caller::implied(ir, self)?;
         Ok(())
     }
 

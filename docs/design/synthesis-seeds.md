@@ -78,9 +78,18 @@ coverage_build::build_with_seeds(ir, authored_sources, scope, origins, &Admitted
 Existing `synthesize`, `synthesize_for` and `coverage_build::build` keep their signatures and
 delegate with an empty set. There is no mutable global or thread-local seed catalogue: the admitted
 set travels in the immutable invocation context of the search. A model whose actors carry caller
-attributes is synthesized per caller assignment; seeded synthesis of such a model is refused by name
-rather than run seed-free. Selecting authored-only coverage while supplying seeds is a contradiction
-and is refused.
+attributes is synthesized per caller assignment, and the seeds are offered in the reading that
+sends every command as the first caller. A seed row holding a field an outcome sets from a caller
+attribute (`account: {caller: account_id}`) implies that caller's value of the attribute: the first
+caller carries the row's value, so the row reads as one that caller made and a guard comparing the
+field with the caller selects as it would for such a row. The mixed readings, whose scenarios
+replace the first reading's where they cross callers, are offered the seeds too, so a seeded row is
+not lost to one. The runs appended to a scenario (swapped, reversed) and the arranged-callers
+reading are seed-free, and a scenario establishing a row by setup is not run again for the swapped
+callers. A row whose caller-sourced field holds no value a caller carries (absent, null
+or not a scalar), or two such fields implying two values of one attribute, contradicts the one
+assignment and is refused as `caller-contradiction`, naming the field. Selecting authored-only
+coverage while supplying seeds is a contradiction and is refused.
 
 ## Arrangement and obligation
 
@@ -170,6 +179,6 @@ browser depiction is not evidence that a backend accepted setup.
 
 ## Not in this design
 
-Arbitrary multi-row snapshot seeding, related or owned-parent seed joins, seeds for caller-attribute
-models, and a reusable seed-group key in authored documents. Each would need its own minimal
+Arbitrary multi-row snapshot seeding, related or owned-parent seed joins, seed rows sent as more
+than one caller in one request, and a reusable seed-group key in authored documents. Each would need its own minimal
 reproduction and format decision.

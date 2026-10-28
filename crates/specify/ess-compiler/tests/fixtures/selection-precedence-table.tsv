@@ -358,8 +358,12 @@ crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	ir=1
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	demo.ledger.CommitTransaction	held_state: wrong-state | accepting: invalid-reference, malformed-reference, delete-target-missing | default: committed
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	demo.ledger.PrepareBatch	default: prepared
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	demo.ledger.ReviewTransaction	held_state: not-reviewable | accepting: flagged | default: held
+crates/verify/ess-conformance/tests/fixtures/caller-binding-refusal/attr/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/caller-binding-refusal/plain/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/caller-key-unique-across-callers.yaml	ir=328505cc98c48ad1707bc4f5e74cd54f26dda488b976dcdd8c60435db8a670a2:9222
 crates/verify/ess-conformance/tests/fixtures/caller-key-unique-across-callers.yaml	repro.names.TakeName	present_related: taken | default: took
+crates/verify/ess-conformance/tests/fixtures/caller-model-seed/attr/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/caller-model-seed/plain/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/caller-struct-identity.yaml	ir=56f60d673823ca2ea0d4e35e6e9ef58dbc50b1652db15ae13a4ecf3d4a285c24:6381
 crates/verify/ess-conformance/tests/fixtures/caller-struct-identity.yaml	demo.box.OpenBox	existence: exists | default: opened
 crates/verify/ess-conformance/tests/fixtures/caller-swap-command-under-test.yaml	ir=c7c77159f852902bbc7e3419be89be860f0096c1a4f71f17621420ab41d17b56:21800

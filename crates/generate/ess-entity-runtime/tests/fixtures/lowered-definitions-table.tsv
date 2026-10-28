@@ -145,7 +145,11 @@ crates/verify/ess-conformance/tests/fixtures/binding-set-guard/system.yaml	ASSEM
 crates/verify/ess-conformance/tests/fixtures/binding-trigger-shares-row-guard/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/caller-binding-refusal/attr/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/caller-binding-refusal/plain/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/caller-key-unique-across-callers.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/caller-model-seed/attr/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/caller-model-seed/plain/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/caller-struct-identity.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/caller-swap-command-under-test.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/caller-swap-related-tie.yaml	components=0
@@ -451,6 +455,14 @@ system-dir:crates/verify/ess-conformance/tests/fixtures/binding-set-guard	compon
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-set-guard	svc	REFUSED	c785056ad6591345dcb7b378524c1c9af0984e7b7f602fa809b57165bd05d728:557
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-trigger-shares-row-guard	components=1
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-trigger-shares-row-guard	svc	REFUSED	f2aec6c4daa44d94d1d36a58eec9bef80c5e2f66e3051bfc774aeee2bad7cd88:750
+system-dir:crates/verify/ess-conformance/tests/fixtures/caller-binding-refusal/attr	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/caller-binding-refusal/attr	svc	REFUSED	89e86a92b4a88095d5a9c10485757a768b49a09c0a4981c71065403ccdadec35:1286
+system-dir:crates/verify/ess-conformance/tests/fixtures/caller-binding-refusal/plain	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/caller-binding-refusal/plain	svc	REFUSED	9e084f9f47b1fc62c01affbbe5eeab805330fff3785c58d7e37e14450fa6250a:1070
+system-dir:crates/verify/ess-conformance/tests/fixtures/caller-model-seed/attr	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/caller-model-seed/attr	svc	REFUSED	5c37f1e3cc700a54d36bfc25d1052c2d29e4901b1746b323f8531f9e0263a8ce:776
+system-dir:crates/verify/ess-conformance/tests/fixtures/caller-model-seed/plain	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/caller-model-seed/plain	svc	REFUSED	c2ec73ca7d377aa0c4996c557b15b389e09f26fba2ae84d12b208618f8610a4e:324
 system-dir:crates/verify/ess-conformance/tests/fixtures/predicate-refusal-policy-arranged-row	components=1
 system-dir:crates/verify/ess-conformance/tests/fixtures/predicate-refusal-policy-arranged-row	svc	REFUSED	9e084f9f47b1fc62c01affbbe5eeab805330fff3785c58d7e37e14450fa6250a:1070
 system-dir:crates/verify/ess-conformance/tests/fixtures/recursive-fixtures	components=0

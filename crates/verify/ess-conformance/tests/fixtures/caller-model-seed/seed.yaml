@@ -1,0 +1,33 @@
+type: ess-scenario/4
+domain: demo.s
+scenario: flagged-grant
+summary: A flagged grant row an account holds, offered as a synthesis seed.
+
+arrange:
+  - instance: flagged
+    entity: demo.s.Grant
+    setup:
+      identity: g-1
+      fields:
+        flag: true
+        account: a-1
+      state: Active
+  - instance: other-account
+    entity: demo.s.Grant
+    setup:
+      identity: g-2
+      fields:
+        flag: true
+        account: a-2
+      state: Active
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    actor: demo.s.Clerk
+    command: demo.s.Touch
+    input:
+      grant_id: g-1
+    outcome: touched
+    events:
+      - event: demo.s.Touched
+        payload:
+          grant_id: g-1

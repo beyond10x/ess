@@ -484,11 +484,11 @@ fn a_related_row_set_no_arrangement_satisfies_is_not_told_to_drop_an_input() {
 
 // ---- 3. seeds and caller attributes -------------------------------------------------------------
 
-/// A seed is matched against the caller values one assignment writes in, which an author cannot
-/// know, and a scenario establishing it is never run again for the swapped callers: the refusal
-/// stands.
+/// A seed row holding a field its creator sets from the caller implies that caller: the seeded
+/// reading sends the creator as a holder carrying the row's `owner` as its `user_id`, so the row
+/// reads as one that holder made.
 #[test]
-fn a_seed_for_a_caller_attribute_model_is_still_refused() {
+fn a_seed_for_a_caller_attribute_model_is_sent_as_the_caller_its_row_implies() {
     let model = ir(TOKENS);
     let source = authored::Source::new(
         "held.yaml",
@@ -516,8 +516,14 @@ assert:
         }],
     )
     .unwrap_or_else(|error| panic!("{error}"));
-    assert_eq!(
-        synthesize_with_seeds(&model, &seeds).unwrap_err().code(),
-        "caller-model"
-    );
+    let synthesis = synthesize_with_seeds(&model, &seeds).unwrap_or_else(|error| panic!("{error}"));
+    let owner = Node::Text("00000000-0000-4000-8000-00000000b002".to_owned());
+    let issued_as_owner = synthesis.suite.scenarios.values().any(|scenario| {
+        scenario.steps.iter().any(|step| {
+            matches!(step, ScenarioStep::ExecuteCommand { command, caller, .. }
+                if command.to_string() == "keys.tokens.IssueToken"
+                    && caller.get("user_id") == Some(&owner))
+        })
+    });
+    assert!(issued_as_owner, "{:#?}", synthesis.suite.scenarios.keys());
 }

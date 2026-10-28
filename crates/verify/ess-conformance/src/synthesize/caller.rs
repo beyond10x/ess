@@ -43,10 +43,10 @@ use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand, Predicate};
 
-use super::{grant, synthesize_plain, Focus, Note, Synthesis};
+use super::{grant, synthesize_plain, Focus, Note, SeedAdmissionError, Synthesis};
 use crate::scenario::{
-    ConformanceScenario, EventRef, InstanceName, ScenarioId, ScenarioStep, ScenarioValue,
-    ViewExpectation,
+    ConformanceScenario, EntityRef, EventRef, InstanceName, ScenarioId, ScenarioStep,
+    ScenarioValue, ViewExpectation,
 };
 use crate::witness::{candidates, Distinction, MAX_CANDIDATES};
 
@@ -293,16 +293,150 @@ impl Callers {
         }
         values
     }
+
+    /// [`of`](Self::of), with `first` carrying every value the admitted seed rows imply
+    /// ([`implied`]). Where one is `second`'s, `second` carries the value `first` was drawn, so
+    /// the two callers still differ.
+    fn seeded(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Option<Self> {
+        let mut callers = Self::of(ir)?;
+        // A contradiction is refused before synthesis (`AdmittedSeeds::bound_to`).
+        for ((actor, attribute), (value, _)) in implied(ir, seeds).unwrap_or_default() {
+            let Some(first) = callers.first.get_mut(&actor) else {
+                continue;
+            };
+            let drawn = first.insert(attribute.clone(), value.clone());
+            if let (Some(second), Some(drawn)) = (callers.second.get_mut(&actor), drawn) {
+                if second.get(&attribute) == Some(&value) {
+                    second.insert(attribute, drawn);
+                }
+            }
+        }
+        Some(callers)
+    }
+}
+
+/// The caller values seed rows imply, by actor and attribute: each value with the selection, as
+/// `source#instance`, that implies it.
+type Implied = BTreeMap<(String, String), (Node, String)>;
+
+/// What the admitted seed rows say about the caller the seeded reading sends every command as.
+///
+/// A row holding a field an outcome sets from a caller attribute (`account: {caller: account_id}`)
+/// reads as one that caller made, so each actor that may send that command carries the row's value
+/// of the attribute. Empty without seeds or caller attributes.
+///
+/// # Errors
+///
+/// [`SeedAdmissionError::CallerContradiction`] for a row whose such field holds no value a caller
+/// carries (absent, null or not a scalar), or a value another row or field implies differently:
+/// one reading is sent as one caller.
+pub(super) fn implied(
+    ir: &EssIr,
+    seeds: &super::AdmittedSeeds,
+) -> Result<Implied, SeedAdmissionError> {
+    let mut implied = Implied::new();
+    if seeds.is_empty() || !uses(ir) {
+        return Ok(implied);
+    }
+    let sourced = caller_sourced(ir);
+    let shown = |value: &Node| serde_json::to_string(value).unwrap_or_default();
+    for row in seeds.rows() {
+        let selection = format!("{}#{}", row.source.as_str(), row.instance);
+        let entity = row.entity.to_string();
+        for ((of, field), readers) in &sourced {
+            if *of != entity {
+                continue;
+            }
+            for (attribute, actor) in readers {
+                let refused = |detail: String| SeedAdmissionError::CallerContradiction {
+                    selection: selection.clone(),
+                    entity: entity.clone(),
+                    field: field.clone(),
+                    attribute: attribute.clone(),
+                    detail,
+                };
+                let value = match row.fields.get(field) {
+                    Some(value) if caller_fact(value).is_some() => value,
+                    Some(value) => {
+                        return Err(refused(format!(
+                            "it holds `{}`, which no caller carries",
+                            shown(value)
+                        )))
+                    }
+                    None => return Err(refused("it holds no value a caller carries".to_owned())),
+                };
+                match implied.get(&(actor.clone(), attribute.clone())) {
+                    Some((held, by)) if held != value => {
+                        return Err(refused(format!(
+                            "it holds `{}` where `{by}` gives that caller `{}`",
+                            shown(value),
+                            shown(held)
+                        )))
+                    }
+                    Some(_) => {}
+                    None => {
+                        implied.insert(
+                            (actor.clone(), attribute.clone()),
+                            (value.clone(), selection.clone()),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    Ok(implied)
+}
+
+/// Every stored field an outcome sets from a caller attribute, by entity and field: each attribute
+/// it is set from, with each actor that declares it and may send that command.
+fn caller_sourced(ir: &EssIr) -> BTreeMap<(String, String), BTreeSet<(String, String)>> {
+    let mut sourced: BTreeMap<(String, String), BTreeSet<(String, String)>> = BTreeMap::new();
+    for command in ir.commands().values() {
+        for outcome in &command.outcomes {
+            let Some(subject) = &outcome.subject else {
+                continue;
+            };
+            let entity = EntityRef::from(&subject.entity).to_string();
+            for field in &outcome.sets {
+                let ResolvedPayloadValue::CallerAttribute { attribute, .. } = &field.value else {
+                    continue;
+                };
+                for actor in ir.actors().values() {
+                    if actor
+                        .may
+                        .iter()
+                        .any(|granted| granted.name() == &command.name)
+                        && actor
+                            .attributes
+                            .iter()
+                            .any(|declared| declared.name == *attribute)
+                    {
+                        sourced
+                            .entry((entity.clone(), field.target.clone()))
+                            .or_default()
+                            .insert((attribute.clone(), actor.name.to_string()));
+                    }
+                }
+            }
+        }
+    }
+    sourced
 }
 
 /// The suite for a model whose actors carry attributes (see the module documentation).
-pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
-    let Some(callers) = Callers::of(ir) else {
-        return synthesize_plain(ir, Focus::Whole);
+///
+/// Admitted seeds are offered in the reading that sends every command as `first`, whose values are
+/// the ones the seed rows imply ([`implied`]), and in the mixed readings whose scenarios replace
+/// that reading's, so a seeded row is not lost to one; the runs appended to a scenario (swapped,
+/// reversed) and the arranged-callers reading are seed-free, and a scenario establishing a row by
+/// setup is never run again for the swapped callers.
+pub(super) fn synthesize(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Synthesis {
+    let Some(callers) = Callers::seeded(ir, seeds) else {
+        return super::synthesize_invocations(&InvocationModels::seeded(ir, seeds), Focus::Whole);
     };
     let reading = reading(ir, &callers);
     let rotated = grant::rotated(ir);
-    let mut whole = run(ir, &callers, &|_| Who::First, Focus::Whole);
+    let mut whole = run_seeded(ir, &callers, &|_| Who::First, Focus::Whole, seeds);
     let swapped = run(ir, &callers, &|_| Who::Second, Focus::Whole);
     let mut identities = Identities::of(ir, whole.suite.scenarios.values());
     // The model read with one command sent as `second` and every other as `first`, by command:
@@ -350,7 +484,7 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
             }
         };
         let back = |name: &QualifiedName| sent(name).other();
-        let (other, back) = about_command(ir, &callers, (&sent, &back), command, &rotated);
+        let (other, back) = about_command(ir, (&callers, seeds), (&sent, &back), command, &rotated);
         for (id, mut scenario) in other.suite.scenarios {
             if !about(&id, command) {
                 continue;
@@ -374,7 +508,7 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
             whole.suite.scenarios.insert(id, scenario);
         }
     }
-    cross_single_command(ir, &callers, &mut whole);
+    cross_single_command(ir, (&callers, seeds), &mut whole);
     arranged_by_callers(ir, &callers, &reading, &mut identities, &mut whole);
     // Every reading above is synthesized from a rewritten copy of the model, whose digests are not
     // the model's; the suite names the model it came from, the one a target and an adapter digest
@@ -387,7 +521,11 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
 }
 
 /// Upserts and duplicate-identity controls arrange and act with the same command name.
-fn cross_single_command(ir: &EssIr, callers: &Callers, whole: &mut Synthesis) {
+fn cross_single_command(
+    ir: &EssIr,
+    (callers, seeds): (&Callers, &super::AdmittedSeeds),
+    whole: &mut Synthesis,
+) {
     let first = ir.with_commands_rewritten(|command| {
         written(
             ir,
@@ -406,7 +544,7 @@ fn cross_single_command(ir: &EssIr, callers: &Callers, whole: &mut Synthesis) {
         arrangement: &first,
         acting: &second,
         credentials: Some((ir, callers, Who::First)),
-        seeds: &super::seeds::EMPTY,
+        seeds,
     };
     let backward = InvocationModels {
         arrangement: &second,
@@ -514,7 +652,7 @@ type Assignment<'a> = &'a dyn Fn(&QualifiedName) -> Who;
 /// kept scenario sending one is read from the whole runs, as before.
 fn about_command(
     ir: &EssIr,
-    callers: &Callers,
+    (callers, seeds): (&Callers, &super::AdmittedSeeds),
     (sent, back): (Assignment<'_>, Assignment<'_>),
     command: &QualifiedName,
     rotated: &BTreeSet<QualifiedName>,
@@ -522,12 +660,12 @@ fn about_command(
     #[cfg(test)]
     if tests::UNFOCUSED.get() {
         return (
-            run(ir, callers, sent, Focus::Whole),
+            run_seeded(ir, callers, sent, Focus::Whole, seeds),
             run(ir, callers, back, Focus::Whole),
         );
     }
     let focus = Focus::About(command);
-    let other = run(ir, callers, sent, focus);
+    let other = run_seeded(ir, callers, sent, focus, seeds);
     let back_run = run(ir, callers, back, focus);
     let turned = [&other, &back_run].iter().any(|synthesis| {
         synthesis
@@ -538,7 +676,7 @@ fn about_command(
     });
     if turned {
         return (
-            run(ir, callers, sent, Focus::Whole),
+            run_seeded(ir, callers, sent, Focus::Whole, seeds),
             run(ir, callers, back, Focus::Whole),
         );
     }
@@ -553,6 +691,17 @@ fn run(
     who: &dyn Fn(&QualifiedName) -> Who,
     focus: Focus<'_>,
 ) -> Synthesis {
+    run_seeded(ir, callers, who, focus, &super::seeds::EMPTY)
+}
+
+/// [`run`], offering `seeds` where ordinary arrangement leaves a row unmet.
+fn run_seeded(
+    ir: &EssIr,
+    callers: &Callers,
+    who: &dyn Fn(&QualifiedName) -> Who,
+    focus: Focus<'_>,
+    seeds: &super::AdmittedSeeds,
+) -> Synthesis {
     #[cfg(test)]
     if focus.is_whole() {
         tests::WHOLE.set(tests::WHOLE.get() + 1);
@@ -564,7 +713,8 @@ fn run(
             &callers.for_command(ir, who(&command.name), &command.name),
         )
     });
-    let mut synthesis = synthesize_plain(&written, focus);
+    let mut synthesis =
+        super::synthesize_invocations(&InvocationModels::seeded(&written, seeds), focus);
     for scenario in synthesis.suite.scenarios.values_mut() {
         for step in &mut scenario.steps {
             mark(ir, callers, who, step);
