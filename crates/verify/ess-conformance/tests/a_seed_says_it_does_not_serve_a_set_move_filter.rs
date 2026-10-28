@@ -81,14 +81,16 @@ const RESUMED_UNSEEDED: &str = "refusal[ESS-SYNTH-001]: outcome demo.s.Resume/re
      scenario; declare a single-row transition into the state (a branch moving the one instance \
      its `instance:` names there), or cover the branch with an authored scenario (ess-scenario/1)";
 
-/// The `affects:` refusal without a seed, as 0.74.0 printed it.
+/// The `affects:` refusal without a seed. It names the state only a set move reaches, as an
+/// `affects:` entry refusal does from 0.75.0 on (`every_set_move_only_refusal_names_the_state`).
 const CLOSED_UNSEEDED: &str = "refusal[ESS-SYNTH-001]: outcome demo.s.Close/closed has no \
      scenario `demo.s.Close/outcome/closed`\n  no witness: `closed.affects[0]` is `demo.s.Cap`, \
-     which is moved by its entry only from the state the move arrives in, as far as the arranging \
-     commands reach, and the entry writes no field, so a target that skips the move reads the \
-     same\n  help: let a command leave the rows in a `from` state of the move other than the one \
-     it arrives in, or let the entry write a field (`sets:`) a view publishes, so a target that \
-     skips the move reads differently";
+     whose move starts only in `Parked`, a state reached only by the set move \
+     `demo.s.Park/parked`, which synthesis does not take to arrange a row for another scenario: a \
+     state only a set move reaches is not arranged, so there are no three rows the filter selects \
+     that the arranging commands can produce\n  help: a set move arranges no row for another \
+     scenario; declare a single-row transition into the state (a branch moving the one instance \
+     its `instance:` names there), or cover the branch with an authored scenario (ess-scenario/1)";
 
 /// The canonical JSON of the reproduction's seeded suite, taken at the base before the refusal
 /// named its seed: the refusal text is not part of the ordinary suite.
