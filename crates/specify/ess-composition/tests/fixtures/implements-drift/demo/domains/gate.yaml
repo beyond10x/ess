@@ -1,0 +1,65 @@
+domain: demo.gate
+
+types:
+  - name: demo.gate.Channel
+    kind: newtype
+    of: String
+
+actors:
+  - name: demo.gate.Client
+    may:
+      - demo.gate.Answer
+      - demo.gate.NoNote
+      - demo.gate.NoChannel
+
+commands:
+  # Accepts every input the contract's caller sends.
+  - name: demo.gate.Answer
+    input:
+      - name: channel
+        type: demo.gate.Channel
+      - name: note
+        type: Optional<String>
+    outcomes:
+      - name: answered
+        emits:
+          - demo.gate.Answered
+        payload:
+          demo.gate.Answered:
+            channel: input.channel
+
+  # Lacks the contract's `Optional` input `note`.
+  - name: demo.gate.NoNote
+    input:
+      - name: channel
+        type: demo.gate.Channel
+    outcomes:
+      - name: answered
+        emits:
+          - demo.gate.Answered
+        payload:
+          demo.gate.Answered:
+            channel: input.channel
+
+  # Lacks the contract's required input `channel`.
+  - name: demo.gate.NoChannel
+    input:
+      - name: note
+        type: Optional<String>
+    outcomes:
+      - name: noted
+        emits:
+          - demo.gate.Noted
+        payload:
+          demo.gate.Noted:
+            note: input.note
+
+events:
+  - name: demo.gate.Answered
+    fields:
+      - name: channel
+        type: demo.gate.Channel
+  - name: demo.gate.Noted
+    fields:
+      - name: note
+        type: Optional<String>

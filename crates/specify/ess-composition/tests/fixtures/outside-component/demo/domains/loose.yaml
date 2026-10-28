@@ -1,0 +1,7 @@
+domain: demo.loose
+
+# No component owns this domain.
+types:
+  - name: demo.loose.Note
+    kind: newtype
+    of: String

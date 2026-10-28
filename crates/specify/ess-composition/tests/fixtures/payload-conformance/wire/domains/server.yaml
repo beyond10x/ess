@@ -1,0 +1,63 @@
+domain: wire.server
+
+types:
+  - name: wire.server.Channel
+    kind: newtype
+    of: String
+
+errors:
+  - name: wire.server.Refused
+    fields:
+      - name: reason
+        type: String
+
+actors:
+  - name: wire.server.Client
+    may:
+      - wire.server.Subscribe
+      - wire.server.Ask
+
+commands:
+  # No `response:`.
+  - name: wire.server.Subscribe
+    input:
+      - name: channel
+        type: wire.server.Channel
+    outcomes:
+      - name: subscribed
+        emits:
+          - wire.server.Subscribed
+        payload:
+          wire.server.Subscribed:
+            channel: input.channel
+      - name: refused
+        external: the channel is closed
+        error: wire.server.Refused
+
+  - name: wire.server.Ask
+    input:
+      - name: channel
+        type: wire.server.Channel
+    response:
+      - name: channel
+        type: wire.server.Channel
+    outcomes:
+      - name: answered
+        returns: true
+        emits:
+          - wire.server.Subscribed
+        payload:
+          wire.server.Subscribed:
+            channel: input.channel
+
+events:
+  - name: wire.server.Subscribed
+    fields:
+      - name: channel
+        type: wire.server.Channel
+  - name: wire.server.Listed
+    fields:
+      - name: channel
+        type: wire.server.Channel
+      - name: count
+        type: Integer

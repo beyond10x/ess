@@ -815,7 +815,7 @@ Generated maps for the earlier formats stay byte-identical at the same generator
 | `infra-drift/` | [0.33.0][r33] | `/2` is the namespace topology profile. `/3` is the full-scan comparison with one meaning changed: a Secret's `changed_keys` is always empty, so an empty list means the value is unknown, where under `/1` it meant not rotated. Serialize-only; `/1` documents already written keep their meaning. |
 | `ess-observed-bindings-report/` | [0.32.0][r32], [0.33.0][r33] | `ess-observed-bindings-report/1` and `ess-observed-bindings/1` were introduced in [0.21.0][r21]. `ess-observed-bindings-report/2` adds `OBS-BIND-008`: a container or native sidecar in a bound workload that no binding names is a violation. Same fields, new semantics; a document satisfied under `/1` can be violated under `/2`, so a `/1` reader must reject `/2`. The authored `ess-observed-bindings/1` input keeps its version and fields; it now claims the bound workload runs nothing else. `/3` adds each binding's `acknowledged` list, so a satisfied `OBS-BIND-008` no longer means every entry is bound; a `/2` reader must reject `/3`. |
 | `ess-observed-bindings/` | [0.33.0][r33] | `ess-observed-bindings/2` adds optional `foreign_containers`: per bound workload, containers this realization does not build, each with a `name` and a nonempty `reason`. `OBS-BIND-008` accounts for them without a binding; one running a declared image or artifact locator, or its `@sha256:` digest under another name, violates it, one naming no observed container or native sidecar leaves it unknown (plain init containers are not recorded), and one naming a bound container is refused. `/1` is read unchanged, acknowledges nothing and keeps its binding digest; a `/1` document carrying the key, even empty, is refused. An older reader refuses `/2`. The report moves to `ess-observed-bindings-report/3`, which adds each binding's `acknowledged` list; a satisfied `OBS-BIND-008` there no longer means every entry is bound, so a `/2` reader must reject `/3`. |
-| `ess-composition/` | [0.38.0][r38], [0.40.0][r40] | `/2` lets a reference name any type the selected component's owned domains declare, and adds `conformances`: an assertion that a consumer's local type has an imported component type's shape, checked field by field, where the consumer may treat a required value as optional and nothing else may differ (`type_conformance_drift`). The client plan is unchanged. The earlier format keeps its meaning and bytes and refuses the key, even empty; an older reader refuses `/2`. `/3`, added in [0.40.0][r40], adds `reader: true` on a `conformances` entry. `/4` adds `roles`, described below. |
+| `ess-composition/` | [0.38.0][r38], [0.40.0][r40] | `/2` lets a reference name any type the selected component's owned domains declare, and adds `conformances`: an assertion that a consumer's local type has an imported component type's shape, checked field by field, where the consumer may treat a required value as optional and nothing else may differ (`type_conformance_drift`). The client plan is unchanged. The earlier format keeps its meaning and bytes and refuses the key, even empty; an older reader refuses `/2`. `/3`, added in [0.40.0][r40], adds `reader: true` on a `conformances` entry. `/4` adds `roles` and `/5` payload conformance ends and value-constraint comparison, described below. |
 
 `ess-composition/3`, introduced in [0.40.0][r40]. A `conformances` entry may carry `reader: true`: the consumer's
 type only reads the imported one, so it may also read a newtype as what it wraps, an enum as
@@ -839,6 +839,18 @@ components' `accepts` surfaces. The compiled composition lists the roles in docu
 each end with the digest it was checked at. Refusals: `unknown_role_service`, `conflicting_role`,
 `role_input_drift`. Earlier formats keep their meaning and bytes, and refuse `roles`, even empty,
 as an unknown field; an older reader refuses `/4`.
+
+`ess-composition/5`, unreleased. A `conformances` end may name an event, an error or a command's
+input or response: exactly one of `type`, `event`, `error` or `command`, and a `command` end
+carries `part: input` or `part: response`. A payload end is compared as a struct with the
+payload's fields, against another payload or a struct type, by the same field rules, `reader:
+true` included; it must be on its selected component's surface. `reader` and `roles` stay
+admitted. Earlier formats keep their meaning and bytes, and refuse the new keys as unknown fields
+naming `/5`; an older reader refuses `/5`. Under `/5` a conformance also compares value
+constraints and variant attributes: newtype `alphabet` and `prefix`, newtype and struct invariants
+(by parsed predicate) and enum variant attributes must agree, a reader admitting a wider alphabet,
+a shorter prefix, and a subset of the invariants and attributes; earlier formats compare none of
+it.
 
 ## `ess-history/` — recorded concurrent histories
 

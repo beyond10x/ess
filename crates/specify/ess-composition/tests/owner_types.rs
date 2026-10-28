@@ -8,8 +8,9 @@ use ess_compiler::{compile as compile_service, EssIr};
 use ess_composition::{
     compile, CompiledService, CompositionCode, CompositionDiagnostic, CompositionDiagnostics,
     CompositionRef, CompositionSpec, EssCompositionIr, ServiceImportSpec, ServiceKey, TypeBinding,
-    TypeConformance, COMPOSITION_FORMAT, CONFORMANCE_COMPOSITION_FORMAT, READER_COMPOSITION_FORMAT,
-    ROLE_COMPOSITION_FORMAT, SUPPORTED_COMPOSITION_FORMATS,
+    TypeConformance, COMPOSITION_FORMAT, CONFORMANCE_COMPOSITION_FORMAT,
+    PAYLOAD_COMPOSITION_FORMAT, READER_COMPOSITION_FORMAT, ROLE_COMPOSITION_FORMAT,
+    SUPPORTED_COMPOSITION_FORMATS,
 };
 use ess_domain::component::ComponentName;
 use ess_domain::name::QualifiedName;
@@ -170,11 +171,12 @@ fn drift(local: &str) -> String {
 
 #[test]
 fn the_composition_format_admits_every_version() {
-    assert_eq!(SUPPORTED_COMPOSITION_FORMATS, &[1, 2, 3, 4]);
+    assert_eq!(SUPPORTED_COMPOSITION_FORMATS, &[1, 2, 3, 4, 5]);
     assert_eq!(COMPOSITION_FORMAT, "ess-composition/1");
     assert_eq!(CONFORMANCE_COMPOSITION_FORMAT, "ess-composition/2");
     assert_eq!(READER_COMPOSITION_FORMAT, "ess-composition/3");
     assert_eq!(ROLE_COMPOSITION_FORMAT, "ess-composition/4");
+    assert_eq!(PAYLOAD_COMPOSITION_FORMAT, "ess-composition/5");
 }
 
 #[test]
