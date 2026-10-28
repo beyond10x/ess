@@ -3914,6 +3914,17 @@ fn the_msrv_job_checks_every_target_on_the_declared_rust_version() {
     let ci = yaml(".github/workflows/ci.yml");
     let job = &ci["jobs"]["msrv"];
     assert!(job.is_mapping(), "ci.yml has no `msrv` job");
+    // The workflow-wide lld flag reaches the linker through gcc only on newer toolchains; on the
+    // declared one gcc finds no `ld` (the 0.75.0 queue run), so the job links with the system one.
+    assert_eq!(
+        text(&job["env"]["CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS"]),
+        "",
+        "the msrv job inherits the workflow's lld flag, which the declared toolchain cannot link with"
+    );
+    assert!(
+        !job["env"]["CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS"].is_null(),
+        "the msrv job does not clear the workflow's lld flag"
+    );
     assert!(
         job["if"].is_null(),
         "the msrv job does not run on every pull request: if `{}`",

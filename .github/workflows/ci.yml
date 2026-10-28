@@ -476,6 +476,10 @@ jobs:
     name: Minimum supported Rust
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The workflow links the Linux host with lld, which gcc finds only through newer toolchains;
+    # this job links with the system linker, so the declared toolchain is the only variable.
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: ""
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
