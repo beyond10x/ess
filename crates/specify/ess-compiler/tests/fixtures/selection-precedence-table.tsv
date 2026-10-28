@@ -1,4 +1,4 @@
-#	models=346	commands=711
+#	models=354	commands=711
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -151,10 +151,18 @@ crates/specify/ess-compiler/tests/fixtures/union-unit-variants.yaml	demo.work.Re
 crates/specify/ess-compiler/tests/fixtures/upsert-by-existence.yaml	ir=16e0e8a162258108356148cc847d14271f6d3c27e9239ee4fe9e94f719c8a5c0:14349
 crates/specify/ess-compiler/tests/fixtures/upsert-by-existence.yaml	demo.items.BookSlot	existence: already-booked | default: booked
 crates/specify/ess-compiler/tests/fixtures/upsert-by-existence.yaml	demo.items.PutItem	existence: created | default: updated
+crates/specify/ess-composition/tests/fixtures/constraint-conformance/demo/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/constraint-conformance/wire/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/contract-role/demo/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/contract-role/wire/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/implements-drift/demo/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/implements-drift/wire/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/outside-component/demo/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/outside-component/wire/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/owner-consumer/consumer/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/owner-consumer/owner/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/payload-conformance/demo/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/payload-conformance/wire/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/two-components/system.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/binding-selection.yaml	ir=e40145284e7b85a5f309ab433ddc336fd87a70ca4c1259c4e752244be7993b77:19800
 crates/specify/ess-domain/tests/fixtures/binding-selection.yaml	selection.core.Receive	default: received
