@@ -36,11 +36,12 @@
 //! | which commands? | the ones the component `accepts` | §5 |
 //! | a command no component accepts | appears in no document at all | no component answers for it; naming one would be inventing an owner |
 //! | a component that accepts nothing | still gets a document, with `paths: {}` | a missing file is indistinguishable from a generator that broke |
+//! | a component not declared `reached_by: network` | still gets a document with its command paths, and its first paragraph says no request reaches them | the paths document what its in-process or command-line callers invoke; only a network document carries `info.x-ess-reached-by: network`, which is how a reader selects the served ones |
 //! | method | always `POST` | a command changes state; the model declares no command safe and describes no resource to `PUT` or `DELETE` |
 //! | path | `/{domain wire name}/commands/{command wire name}` | both are declared wire names; the `commands` segment is what stops the path pretending to be a resource |
 //! | two commands claiming one path | *both* move to `/commands/{qualified name}` | qualified names are unique by construction, so the fallback cannot collide in turn |
 //! | a command with no `naming.wire` | its qualified name's last segment, verbatim — `SendEmail`, capitals and all | [`Naming::wire_or`](ess_domain::name::Naming::wire_or). A generator inventing its own kebab-casing would disagree with every other projection about what this command is called on the wire |
-//! | `operationId` | the command's qualified name, verbatim | unique already; any prettifying transformation trades that guarantee for cosmetics |
+//! | `operationId` | the command's qualified name, verbatim, unless an `ess-http/1` binding gives the route an `operation_id` | unique already; any prettifying transformation trades that guarantee for cosmetics. A binding's id is the protocol's, and compiling it refuses one that is not unique (`ESS-HTTP-032`) |
 //! | request body | the command's `input`, `required` when any input field is | |
 //! | an outcome with no `error` | `202` | below |
 //! | an outcome declaring `returns: true`, from `ess/22` | `200`, with the command's response under `response` | `202` claims the request was queued; this branch was carried out and answered in the same response (beyond10x/ess#424). Below `ess/22` it keeps `202` and its body |
@@ -160,7 +161,7 @@
 //!
 //! | omitted | why |
 //! |---|---|
-//! | `servers` | the model has no URL for a component; `topology` describes replicas and resources, not addresses |
+//! | `servers` | the model has no URL for a component; `topology` describes replicas and resources, not addresses. Only an `ess-http/1` binding's `servers` for a `reached_by: network` component put them in its document |
 //! | `security`, `securitySchemes` | the model states no authentication. See below: `may:` has landed, and it answers a different question |
 //! | a version in the path | `info.version` carries the specification's version, which is the only version the model has. A path prefix would invent an API version that can disagree with it |
 //! | pagination, filtering, sorting | commands, not collections. A view *is* in the IR — its fields, its filter, its consistency — but nothing in the model says how one is *read*: no path, no page size, no cursor, no ordering. Exposing one would invent a query surface, and §6's `exposures:` is where that decision belongs. A view is rendered by the documentation projection and by no path here |
@@ -479,6 +480,10 @@ fn document(
             reached_by: (component.reached_by == Reach::Network)
                 .then(|| component.reached_by.as_str()),
         },
+        servers: binding
+            .and_then(|binding| binding.ir().servers().get(component.name.as_str()))
+            .cloned()
+            .unwrap_or_default(),
         tags: tags(ir, component),
         paths: paths(ir, component, binding),
         components: Components {
@@ -516,11 +521,25 @@ fn description(
     binding: Option<&http::Binding>,
 ) -> String {
     let mut text = format!(
-        "The HTTP surface of `{}`, one of the components of `{}` {}.\n\n",
+        "The HTTP surface of `{}`, one of the components of `{}` {}.",
         component.name,
         ir.system(),
         ir.version()
     );
+    // beyond10x/ess#651: only a network component's document is the surface its callers reach;
+    // every other one keeps its command paths as documentation, and says so where a reader starts.
+    text.push_str(match component.reached_by {
+        Reach::Network => "",
+        Reach::InProcess => {
+            " It is not declared `reached_by: network`: its callers are deployed with it, so these \
+             paths describe its commands and no request reaches them."
+        }
+        Reach::CommandLine => {
+            " It is not declared `reached_by: network`: its callers reach it through its command \
+             line, so these paths describe its commands and no request reaches them."
+        }
+    });
+    text.push_str("\n\n");
     text.push_str(
         "Every path here is one semantic command, so the method is always POST and the path is the \
          command's wire name under its domain's: a command is not a resource, and this document \
@@ -760,7 +779,9 @@ fn operation(
     }
     parameters.extend(idempotency(ir, command));
     Operation {
-        id: command.name.to_string(),
+        id: declared
+            .and_then(|route| route.operation_id.clone())
+            .unwrap_or_else(|| command.name.to_string()),
         route_source: declared.map(|_| ROUTE_SOURCE),
         periodic: ir
             .bindings()
@@ -939,7 +960,9 @@ fn query(
         }
     };
     Operation {
-        id: view.name.to_string(),
+        id: declared
+            .and_then(|route| route.operation_id.clone())
+            .unwrap_or_else(|| view.name.to_string()),
         route_source: declared.map(|_| ROUTE_SOURCE),
         periodic: Vec::new(),
         summary: Some(view.naming.display_or(&view.name).to_owned()),
@@ -2784,6 +2807,10 @@ struct Document {
     )]
     one_time_response: Vec<crate::one_time_response::Policy>,
     info: Info,
+    /// The base URLs an `ess-http/1` binding declares for this component, in the order written, so
+    /// the first is the default. Absent without them: the model has no URL for a component.
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    servers: Vec<ess_http::Server>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tags: Vec<Tag>,
     paths: BTreeMap<String, PathItem>,

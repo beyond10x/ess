@@ -55,7 +55,7 @@ identity a name selects:
 | **Entrypoint prerequisite** | `ess-realization` `RuntimeRequirement` | Declared OS, architecture, filesystem, network, cgroup, environment-variable or credential-source requirements. Compilation does not verify their availability. |
 | **Declared interface reach and CLI contract** | `ess-domain` `Reach` and `RawCommandLineSurface`, retained by `ess-compiler` | Where callers reach a logical component and its optional CLI binary/group layout. Command words and flags derive from model names and input fields. |
 | **Invocation and attachment** | `ess-realization` `EntryPointSpec` and `Invocation` | One argv or HTTP(S) URL invocation per entrypoint, with attachment, interaction, availability and support metadata. |
-| **Derived HTTP contract** | `ess-gen` HTTP `routes`, consumed by OpenAPI and HTTP synthesis | POST command routes and, for network-reached components, GET view routes. A projected contract alone establishes no listener, deployed URL or public availability. |
+| **Derived HTTP contract** | `ess-gen` HTTP `routes`, consumed by OpenAPI and HTTP synthesis | POST command routes and, for network-reached components, GET view routes. Every component's OpenAPI document keeps its command routes; only a network-reached component's carries `info.x-ess-reached-by: network`, and every other one says in its description that no request reaches its paths. A projected contract alone establishes no listener, deployed URL or public availability. |
 
 A deliverable can implement several logical components. Its descriptor identity, their component
 names, a composition alias and a stack service key therefore need not coincide. See

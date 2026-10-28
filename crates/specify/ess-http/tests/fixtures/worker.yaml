@@ -1,0 +1,21 @@
+# A second file of the `catalog.yaml` system: one component that declares no `reached_by`, so its
+# callers are deployed with it and no request reaches its paths.
+domain: catalog.work
+commands:
+  - name: catalog.work.Sweep
+    input:
+      - {name: reason, type: String}
+    outcomes:
+      - name: swept
+        emits: [catalog.work.Swept]
+        payload:
+          catalog.work.Swept: {reason: input.reason}
+events:
+  - name: catalog.work.Swept
+    fields:
+      - {name: reason, type: String}
+components:
+  - component: items-worker
+    owns: {domains: [catalog.work]}
+    accepts: {commands: [catalog.work.Sweep]}
+    publishes: {events: [catalog.work.Swept]}
