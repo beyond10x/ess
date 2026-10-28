@@ -1,0 +1,74 @@
+domain: demo.s
+types:
+  - {name: demo.s.Id, kind: newtype, of: Uuid}
+  - {name: demo.s.OwnerId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.s.Owner
+    identity: {name: owner_id, type: demo.s.OwnerId}
+    fields: [{name: label, type: String}]
+    lifecycle:
+      initial: Active
+      states: [Active, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Active], to: Closed}
+  - name: demo.s.Cap
+    identity: {name: cap_id, type: demo.s.Id}
+    fields: [{name: owner, type: demo.s.OwnerId}]
+    lifecycle:
+      initial: Held
+      states: [Held, Parked]
+      terminal: []
+      transitions:
+        - {name: park, from: [Held], to: Parked}
+        - {name: reset, from: [Held, Parked], to: Held}
+commands:
+  - name: demo.s.Enrol
+    input: [{name: label, type: String}]
+    outcomes:
+      - {name: enrolled, creates: demo.s.Owner, instance: owner_id, emits: [demo.s.Enrolled], payload: {demo.s.Enrolled: {owner_id: {generated: true}}}, sets: {label: input.label}}
+  - name: demo.s.Open
+    input: [{name: owner, type: demo.s.OwnerId}]
+    outcomes:
+      - {name: missing, when_related: {via: input.owner, exists: false}, error: demo.s.WrongState}
+      - {name: taken, when_related: {via: input.owner, predicate: state == Active}, error: demo.s.WrongState}
+      - {name: opened, creates: demo.s.Cap, instance: cap_id, emits: [demo.s.Opened], payload: {demo.s.Opened: {cap_id: {generated: true}}}, sets: {owner: input.owner}}
+  - name: demo.s.Park
+    input: [{name: owner, type: demo.s.OwnerId}]
+    outcomes:
+      - {name: parked, moves: demo.s.Cap.park, instances: {where: owner == input.owner}, emits: [demo.s.Parked], payload: {demo.s.Parked: {owner: input.owner}}}
+  - name: demo.s.Close
+    input: [{name: owner_id, type: demo.s.OwnerId}]
+    outcomes:
+      - name: closed
+        moves: demo.s.Owner.close
+        instance: owner_id
+        emits: [demo.s.Closed]
+        payload: {demo.s.Closed: {owner_id: input.owner_id}}
+        affects:
+          - {entity: demo.s.Cap, where: owner == input.owner_id, moves: demo.s.Cap.reset}
+      - {name: wrong-state, wrong_state: true, error: demo.s.WrongState}
+errors:
+  - {name: demo.s.WrongState, summary: The owner is closed., fields: []}
+events:
+  - {name: demo.s.Enrolled, fields: [{name: owner_id, type: demo.s.OwnerId}]}
+  - {name: demo.s.Opened, fields: [{name: cap_id, type: demo.s.Id}]}
+  - {name: demo.s.Parked, fields: [{name: owner, type: demo.s.OwnerId}]}
+  - {name: demo.s.Closed, fields: [{name: owner_id, type: demo.s.OwnerId}]}
+actors:
+  - {name: demo.s.Clerk, may: [demo.s.Enrol, demo.s.Open, demo.s.Park, demo.s.Close]}
+views:
+  - name: demo.s.OwnerState
+    source: demo.s.Owner
+    consistency: read_your_writes
+    fields:
+      - {name: owner_id, type: demo.s.OwnerId}
+      - {name: state, type: demo.s.Owner.State}
+      - {name: label, type: String}
+  - name: demo.s.CapState
+    source: demo.s.Cap
+    consistency: read_your_writes
+    fields:
+      - {name: cap_id, type: demo.s.Id}
+      - {name: state, type: demo.s.Cap.State}
+      - {name: owner, type: demo.s.OwnerId}

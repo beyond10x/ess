@@ -1,0 +1,21 @@
+type: ess-scenario/4
+domain: demo.s
+scenario: flagged
+summary: A flagged parked row offered as a synthesis seed.
+
+arrange:
+  - instance: flagged-cap
+    entity: demo.s.Cap
+    setup:
+      identity: 00000000-0000-4000-8000-000000000a01
+      fields: {owner: 00000000-0000-4000-8000-000000000b01, flag: true}
+      state: Parked
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    actor: demo.s.Clerk
+    command: demo.s.Inspect
+    input: {cap_id: 00000000-0000-4000-8000-000000000a01}
+    outcome: inspected
+    events:
+      - event: demo.s.Inspected
+        payload: {cap_id: 00000000-0000-4000-8000-000000000a01}

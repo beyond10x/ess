@@ -349,10 +349,14 @@ pub enum Note {
         /// Its declared type.
         type_ref: String,
     },
-    /// The mixed-caller scenario is retained, but its reversed-role counterpart cannot compose.
+    /// The scenario is retained, but its reversed-role counterpart cannot compose: a mixed-caller
+    /// scenario's, or a seeded one's, whose seed rows fix the caller.
     CrossCallerUnswapped {
         /// The retained scenario.
         scenario: ScenarioId,
+        /// Whether the retained scenario is a mixed-caller witness, sending commands as two
+        /// callers. A seeded scenario sent as one caller is not, and its note does not say so.
+        mixed: bool,
         /// The concrete arrangement or observation restriction; for a seeded scenario, the seed
         /// rows it establishes by setup.
         reason: String,
@@ -523,8 +527,10 @@ impl fmt::Display for Note {
                  give it an identity no other scenario sends, so a target that answers one caller \
                  by name is not failed by it"
             ),
-            Self::CrossCallerUnswapped { scenario, reason } => write!(f,
+            Self::CrossCallerUnswapped { scenario, mixed: true, reason } => write!(f,
                 "`{scenario}` retains its mixed-caller witness without an appended reversed-role run: {reason}"),
+            Self::CrossCallerUnswapped { scenario, mixed: false, reason } => write!(f,
+                "`{scenario}` runs once, without an appended swapped- or reversed-caller run: {reason}"),
             Self::CrossCallerUnwitnessed { scenario, reason } => write!(f,
                 "`{scenario}` retains its ordinary witness without a mixed-caller same-row witness: {reason}"),
             Self::UnaccompaniedRelatedCopy { scenario, fields } => {

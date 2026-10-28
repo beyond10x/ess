@@ -212,9 +212,9 @@ fn keeps_branch_checks_the_command_under_test() {
             Note::UnswappedCallers {
                 scenario, input, ..
             } => Some((scenario.to_string(), input.clone())),
-            Note::CrossCallerUnswapped { scenario, reason } => {
-                Some((scenario.to_string(), reason.clone()))
-            }
+            Note::CrossCallerUnswapped {
+                scenario, reason, ..
+            } => Some((scenario.to_string(), reason.clone())),
             _ => None,
         })
         .collect();

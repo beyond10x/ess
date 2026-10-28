@@ -135,9 +135,10 @@ pub(super) fn set_effects(
 /// Why a selected seed row of a set effect's filtered entity is not applied: a seed serves the
 /// primary witness of a branch reading its stored subject row and one side of a stored counter's
 /// limit (`docs/design/synthesis-seeds.md` § Arrangement and obligation), and a filter needs
-/// several rows it selects.
-pub(super) const SEEDS_UNSERVED: &str = "synthesis does not apply: seeds do not serve a set \
-     move's filter, nor any other set effect's";
+/// several rows it selects. The same run may apply the row to another branch, so the text is
+/// about this filter only.
+pub(super) const SEEDS_UNSERVED: &str = "synthesis does not apply to this filter: seeds do not \
+     serve a set move's filter, nor any other set effect's";
 
 /// The reasons the rows a set effect's filter selects could not be arranged as its scenario
 /// needs them: the causes a seed row of the filtered entity could be mistaken to answer.
@@ -162,7 +163,21 @@ fn seeds_unserved(
     if !UNARRANGED.contains(&unarranged.reason) && !ROWS_REASONS.contains(&unarranged.reason) {
         return cause;
     }
-    let entity = if unarranged.path == format!("{}.instances", outcome.name) {
+    let entity = if unarranged.reason == UNWRITTEN {
+        // [`unwritten`] places its gap at the field (`<entity>.<field>`), not at the filter: the
+        // filtered entity is the one of this outcome's whose name prefixes it.
+        let ir = models.arrangement;
+        outcome
+            .instances
+            .iter()
+            .map(|set| &set.entity)
+            .chain(outcome.affects.iter().map(|affect| &affect.entity))
+            .find(|entity| {
+                unarranged
+                    .path
+                    .starts_with(&format!("{}.", ir.entity(entity).name))
+            })
+    } else if unarranged.path == format!("{}.instances", outcome.name) {
         outcome.instances.as_ref().map(|set| &set.entity)
     } else {
         unarranged

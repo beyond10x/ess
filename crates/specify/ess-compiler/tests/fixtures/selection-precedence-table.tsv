@@ -1,4 +1,4 @@
-#	models=342	commands=711
+#	models=346	commands=711
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -204,6 +204,10 @@ crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-second-cr
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-second-creator-copies-another-field.yaml	demo.z.AddMirror	default: added
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-second-creator-copies-another-field.yaml	demo.z.CreateParent	default: created
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-second-creator-copies-another-field.yaml	demo.z.SyncFlag	default: synced
+crates/verify/ess-conformance/tests/fixtures/adversary-0750/applied-elsewhere/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/adversary-0750/arrives-only/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/adversary-0750/undriven/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/adversary-0750/unwritten/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/adversary-273-tree.yaml	ir=d31dabe80b5d4e697cfa6dc4453281967139defbe6f53e4b80805f1447d07eb3:10402
 crates/verify/ess-conformance/tests/fixtures/adversary-273-tree.yaml	tree.tickets.CloseTicket	held_state: wrong-state | default: closed
 crates/verify/ess-conformance/tests/fixtures/adversary-273-tree.yaml	tree.tickets.OpenTicket	default: opened

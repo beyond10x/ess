@@ -1,0 +1,42 @@
+domain: demo.s
+types:
+  - {name: demo.s.Id, kind: newtype, of: Uuid}
+  - {name: demo.s.OwnerRef, kind: newtype, of: Uuid}
+entities:
+  - name: demo.s.Cap
+    identity: {name: cap_id, type: demo.s.Id}
+    fields: [{name: owner, type: demo.s.OwnerRef}]
+    lifecycle:
+      initial: Held
+      states: [Held, Parked]
+      terminal: []
+      transitions:
+        - {name: park, from: [Held], to: Parked}
+        - {name: resume, from: [Parked], to: Held}
+commands:
+  - name: demo.s.Open
+    input: [{name: owner, type: demo.s.OwnerRef}]
+    outcomes:
+      - {name: opened, creates: demo.s.Cap, instance: cap_id, emits: [demo.s.Opened], payload: {demo.s.Opened: {cap_id: {generated: true}}}}
+  - name: demo.s.Park
+    input: [{name: owner, type: demo.s.OwnerRef}]
+    outcomes:
+      - {name: parked, moves: demo.s.Cap.park, instances: {where: owner == input.owner}, emits: [demo.s.Parked], payload: {demo.s.Parked: {owner: input.owner}}}
+  - name: demo.s.Resume
+    input: [{name: owner, type: demo.s.OwnerRef}]
+    outcomes:
+      - {name: resumed, moves: demo.s.Cap.resume, instances: {where: owner == input.owner}, emits: [demo.s.Resumed], payload: {demo.s.Resumed: {owner: input.owner}}}
+events:
+  - {name: demo.s.Opened, fields: [{name: cap_id, type: demo.s.Id}]}
+  - {name: demo.s.Parked, fields: [{name: owner, type: demo.s.OwnerRef}]}
+  - {name: demo.s.Resumed, fields: [{name: owner, type: demo.s.OwnerRef}]}
+actors:
+  - {name: demo.s.Clerk, may: [demo.s.Open, demo.s.Park, demo.s.Resume]}
+views:
+  - name: demo.s.CapState
+    source: demo.s.Cap
+    consistency: read_your_writes
+    fields:
+      - {name: cap_id, type: demo.s.Id}
+      - {name: state, type: demo.s.Cap.State}
+      - {name: owner, type: demo.s.OwnerRef}

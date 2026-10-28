@@ -723,8 +723,11 @@ fn seeded_unswapped(
              swapped callers{caller}",
             listed(&established)
         );
+        // A seeded scenario sent as one caller is no mixed-caller witness, and its note says so.
+        let mixed = whole.suite.scenarios.get(&id).is_some_and(crosses_callers);
         whole.notes.push(Note::CrossCallerUnswapped {
             scenario: id,
+            mixed,
             reason,
         });
     }
@@ -803,11 +806,12 @@ fn cross_single_command(
                 {
                     whole.notes.push(Note::CrossCallerUnswapped {
                         scenario: id.clone(),
+                        mixed: true,
                         reason: reason.to_owned(),
                     });
                 }
             } else {
-                whole.notes.push(Note::CrossCallerUnswapped { scenario: id.clone(), reason: "the reversed caller interpretation cannot arrange this source-selected outcome".to_owned() });
+                whole.notes.push(Note::CrossCallerUnswapped { scenario: id.clone(), mixed: true, reason: "the reversed caller interpretation cannot arrange this source-selected outcome".to_owned() });
             }
             whole
                 .refusals
