@@ -5,7 +5,7 @@ kind: approval-record
 status: approved
 title: Open-issue batch 1 runs as one wave and one pull request
 summary: Operator request of 2026-10-28, approved under the grant by the orchestrator
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-28T10:43:03Z", actor: "human:timo", revision: 2, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
@@ -54,3 +54,15 @@ A wave holds at most four units (the orchestrator's process rule), so the issues
 batches 1-3 of `docs/plan/wave-ess-issues-1.md` § Batches, one pull request each: batch 1 is U1-U4
 (#685 #686 #687 #688, #643 #644, #664 #665 #671 and the #666 fixture, #651 #653). This record
 authorises the same commits for each of the three batches.
+
+## Gate (D171)
+
+Decided by the coordinator as D171 (2026-10-28), under the operator rule of the same day: units run only targeted tests, and one local gate runs once every unit is on `integration/ess-issues-1`, before the pull request is opened with auto-merge.
+
+The local gate is:
+- the whole test set (`--lib` plus every `--test` without required features) of each touched library crate: `ess-http`, `ess-gen`, `schema-contract`, `ess-composition`, `ess-domain`;
+- named lanes for `ess-conformance`, `ess-cli`, `ess-synth`, `ess-compiler` and `ess-entity-runtime`, including the four table tests (`synthesis_suite_bytes_table` and its three siblings, `selection_precedence_table`, `lowered_definitions_table`, `adversary_273_pass1`);
+- every step of `task projection-check` (`cargo xtask generate --check`, `schema --check`, `whats-changed --check`, `docs`, `cli-reference --check`, `diagnostics --check`, `format-history --check`, `site-data --check`, `admonitions`);
+- `cargo clippy -p <crate> --all-targets --locked -- -D warnings` for each of the nine touched crates, and `cargo fmt --check` for them.
+
+The literal `task check` is not run locally: it builds every test binary (about 92 GiB for `ess-conformance` alone), which this machine cannot hold, and `AGENTS.md` gives the full gate to CI. CI runs it on the pull request before the auto-merge lands.
