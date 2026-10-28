@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-28T02:45:21Z",
+  "actor": "human:timo",
+  "artifact": "story:a-binding-tries-every-publisher-of-its-trigger",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "a_binding_tries_every_publisher_of_its_trigger 2 passed on 650e26efc; adversary_0740_pass1 9 passed on 02194e732; reduced reproduction 6/4 with 1 failing interpreted -> 9/1, interpreted 9/9",
+    "reference": "commit:02194e732"
+  }
+}

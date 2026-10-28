@@ -1,0 +1,70 @@
+domain: demo.s
+types:
+  - {name: demo.s.GrantId, kind: newtype, of: String}
+  - {name: demo.s.AccountRef, kind: newtype, of: String}
+entities:
+  - name: demo.s.Grant
+    identity: {name: grant_id, type: demo.s.GrantId}
+    fields:
+      - {name: flag, type: Boolean}
+      - {name: account, type: demo.s.AccountRef}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+commands:
+  - name: demo.s.DefineGrant
+    input:
+      - {name: account, type: demo.s.AccountRef}
+    outcomes:
+      - name: defined
+        creates: demo.s.Grant
+        instance: grant_id
+        emits: [demo.s.GrantDefined]
+        payload: {demo.s.GrantDefined: {grant_id: {generated: true}}}
+        sets: {flag: 'false', account: input.account}
+  - name: demo.s.Claim
+    input:
+      - {name: grant_id, type: demo.s.GrantId}
+    outcomes:
+      - name: claimed
+        updates: demo.s.Grant
+        instance: grant_id
+        emits: [demo.s.Claimed]
+        payload: {demo.s.Claimed: {grant_id: input.grant_id}}
+        sets: {account: {caller: account_id}}
+  - name: demo.s.Touch
+    input:
+      - {name: grant_id, type: demo.s.GrantId}
+    outcomes:
+      - name: touched
+        emits: [demo.s.Touched]
+        payload: {demo.s.Touched: {grant_id: input.grant_id}}
+  - name: demo.s.Use
+    input:
+      - {name: grant_id, type: demo.s.GrantId}
+    outcomes:
+      - name: foreign
+        when_subject: {predicate: account != caller.account_id}
+        error: demo.s.Refused
+      - name: unflagged
+        when_subject: {predicate: flag == false}
+        error: demo.s.Refused
+      - name: used
+        updates: demo.s.Grant
+        instance: grant_id
+        emits: [demo.s.Used]
+        payload: {demo.s.Used: {grant_id: input.grant_id}}
+errors:
+  - name: demo.s.Refused
+events:
+  - name: demo.s.GrantDefined
+    fields: [{name: grant_id, type: demo.s.GrantId}]
+  - name: demo.s.Claimed
+    fields: [{name: grant_id, type: demo.s.GrantId}]
+  - name: demo.s.Touched
+    fields: [{name: grant_id, type: demo.s.GrantId}]
+  - name: demo.s.Used
+    fields: [{name: grant_id, type: demo.s.GrantId}]
+actors:
+  - name: demo.s.Clerk
+    attributes:
+      - {name: account_id, type: demo.s.AccountRef}
+    may: [demo.s.DefineGrant, demo.s.Claim, demo.s.Touch, demo.s.Use]

@@ -335,6 +335,130 @@ fn undriven(ir: &EssIr, entity: &EntityHandle, at: String) -> Option<RefusalCaus
     Some(gap(at, type_ref, UNDRIVEN))
 }
 
+/// Too few rows the filter selects, where the move starts only in states set moves alone reach.
+pub(super) const SET_MOVE_ONLY: &str = "synthesis does not take to arrange a row for another \
+     scenario: a state only a set move reaches is not arranged, so there are no three rows the \
+     filter selects that the arranging commands can produce";
+
+/// The refusal for a set move `effect` over `entity` at `at`, where every state it starts from
+/// is reached by a set move (`instances:` or an `affects:` entry) and by no creating or
+/// single-row moving branch: a set move is no driver of an arrangement
+/// (`docs/design/set-effects-over-filtered-instances.md`), so no row rests there. It names those
+/// states and the set moves reaching them. `None` for any other effect, or where a declared
+/// single-row branch reaches a state the move starts from, or no set move reaches one.
+///
+/// The states and moves are model text and [`WitnessGap::reason`] is `'static`, so they ride in
+/// the rendered type, as [`undriven`]'s creators do.
+fn set_move_only(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    effect: &ResolvedEffect,
+    at: String,
+) -> Option<RefusalCause> {
+    let only = set_move_only_states(ir, entity, effect)?;
+    Some(gap(at, only.described(&entity.to_string()), SET_MOVE_ONLY))
+}
+
+/// The states a set move `effect` over `entity` starts from, where each is reached by a set move
+/// and by no creating or single-row moving branch, with those set moves ([`set_move_only`]).
+pub(super) fn set_move_only_states(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    effect: &ResolvedEffect,
+) -> Option<super::SetMoveOnly> {
+    let transition = effect.transition()?;
+    let drivers = ir.drivers_of(entity);
+    let mut arranged: BTreeSet<&StateName> = BTreeSet::new();
+    if drivers
+        .iter()
+        .any(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+    {
+        arranged.insert(&ir.entity(entity).lifecycle.initial);
+    }
+    loop {
+        let before = arranged.len();
+        for moved in drivers
+            .iter()
+            .filter_map(|driver| driver.effect.transition())
+        {
+            if moved.from.iter().any(|state| arranged.contains(state)) {
+                arranged.insert(&moved.to);
+            }
+        }
+        if arranged.len() == before {
+            break;
+        }
+    }
+    if transition.from.iter().any(|state| arranged.contains(state)) {
+        return None;
+    }
+    let mut reached: BTreeSet<&StateName> = BTreeSet::new();
+    let mut moves: BTreeSet<String> = BTreeSet::new();
+    for command in ir.commands().values() {
+        for outcome in &command.outcomes {
+            let set = outcome
+                .instances
+                .as_ref()
+                .filter(|set| set.entity == *entity)
+                .and_then(|set| set.effect.transition());
+            let affects = outcome
+                .affects
+                .iter()
+                .filter(|affect| affect.entity == *entity)
+                .filter_map(|affect| affect.moves.as_ref());
+            for moved in set.into_iter().chain(affects) {
+                if transition.from.contains(&moved.to) {
+                    reached.insert(&moved.to);
+                    moves.insert(format!("{}/{}", command.name, outcome.name));
+                }
+            }
+        }
+    }
+    if transition.from.iter().any(|state| !reached.contains(state)) {
+        return None;
+    }
+    Some(super::SetMoveOnly {
+        states: transition
+            .from
+            .iter()
+            .map(|state| state.as_str().to_owned())
+            .collect(),
+        moves: moves.into_iter().collect(),
+    })
+}
+
+/// Whether the filter of `set` selects [`MATCHING`] rows the arranging commands can produce for
+/// `input` where the rows may rest in any state: then the state the move starts from is all that
+/// keeps them from it, and a refusal naming that state ([`set_move_only`]) names the whole cause.
+/// Where the filter is unmet in every state, its own cause stands, and the refusal keeps naming it.
+fn filter_met_in_any_state(
+    ir: &EssIr,
+    subject: (&ResolvedCommand, &ResolvedOutcome, &ResolvedSetSubject),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    input: &BTreeMap<String, Node>,
+) -> bool {
+    let anywhere = |_: &StateName| true;
+    let links = links(ir, subject.2);
+    [false, true].into_iter().any(|vary| {
+        std::iter::once(None)
+            .chain(links.iter().map(Some))
+            .any(|link| {
+                under(ir, subject, actors, (input, link, vary), &|selection| {
+                    let mut taken = BTreeSet::new();
+                    (0..MATCHING)
+                        .all(|_| {
+                            selection
+                                .row(actors, &mut taken, &anywhere, false)
+                                .is_some()
+                        })
+                        .then_some(())
+                        .ok_or(NO_MATCHING)
+                })
+                .is_ok()
+            })
+    })
+}
+
 /// No row leaving one conjunct out.
 const NO_MISS: &str = "has no row leaving out exactly one conjunct of the filter that the \
      arranging commands can produce";
@@ -1928,6 +2052,27 @@ fn arranged_rows<'s>(
     Err(if unchanged { UNCHANGED } else { first })
 }
 
+/// The refusal for the `instances:` scenario whose rows were not arranged, sent `input` first, for
+/// `reason`: [`unarranged`]'s, or, for too few rows the filter selects where the filter selects
+/// them in some state and the move starts only where set moves alone reach, [`set_move_only`].
+fn set_unarranged(
+    ir: &EssIr,
+    (command, outcome, set): (&ResolvedCommand, &ResolvedOutcome, &ResolvedSetSubject),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    input: &BTreeMap<String, Node>,
+    reason: &'static str,
+) -> RefusalCause {
+    let at = || format!("{}.instances", outcome.name);
+    match unarranged(ir, &set.entity, &set.filter, at(), reason) {
+        RefusalCause::NoWitness(gap) if gap.reason == NO_MATCHING => {
+            set_move_only(ir, &set.entity, &set.effect, at())
+                .filter(|_| filter_met_in_any_state(ir, (command, outcome, set), actors, input))
+                .unwrap_or(RefusalCause::NoWitness(gap))
+        }
+        other => other,
+    }
+}
+
 /// The `instances:` scenario.
 fn set_scenario(
     models: &InvocationModels<'_>,
@@ -1947,13 +2092,14 @@ fn set_scenario(
         observed(ir, entity, at(), (moves, &outcome.sets))?
     };
     let input = reach(ir, command, outcome, Distinction::PLAIN)?;
+    let tried = input.clone();
     let Arranged {
         rows: arranged,
         to,
         related,
         supplied,
     } = arranged_rows(ir, (command, outcome, set), actors, input)
-        .map_err(|reason| unarranged(ir, entity, &set.filter, at(), reason))?;
+        .map_err(|reason| set_unarranged(ir, (command, outcome, set), actors, &tried, reason))?;
 
     let mut steps = Vec::new();
     let mut source: BTreeSet<EssSemanticRef> = BTreeSet::new();

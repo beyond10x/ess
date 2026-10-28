@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.74.0] — 2026-10-28
+
+### Changed
+
+- `ess verify conform synthesize --synthesis-seed` now admits seeds for a model whose actors declare caller attributes, as an adopter reported against 0.69.2. Before, every such seed was refused as `caller-model`.
+  - A seed row field that only a caller-attribute branch writes gives the seeded run its caller. Every actor that declares that attribute gets the same caller.
+  - A field that another branch writes from an input implies no caller. Rows holding different values of such a field are admitted.
+  - A row that needs two values of one attribute, or leaves such a field empty, is refused as `caller-contradiction`, and the refusal names the field.
+  - In the `ess-conformance` library, `SeedAdmissionError::CallerModel` is replaced by `SeedAdmissionError::CallerContradiction`.
+
+### Fixed
+
+- A binding whose trigger event two commands publish now gets its flow, delivery and refusal scenarios when either publisher can witness it, as an adopter reported against 0.69.2. Synthesis tries every publishing branch, commands in name order and branches in declaration order, and uses the first that witnesses the binding. Before, it used only the lowest-named command, so renaming a command could turn those scenarios into ESS-SYNTH-010 refusals.
+- A binding whose trigger publishes its event once per changed row now gets a selected row arranged before the trigger. Before, its synthesized mapping scenario failed the interpreted target with "the command published no events". Where no such row can be arranged, the binding is refused as ESS-SYNTH-010, and the refusal names the trigger's row. Where those rows can rest only in a state a set move reaches, the refusal names that state and the set move.
+- A set move (`instances:`) whose rows can rest only in a state that another set move reaches is still refused as ESS-SYNTH-001. The refusal now names that state and the set move, and its help suggests a single-row transition into the state or an authored scenario. It does this only where the filter selects rows in some state; otherwise the refusal keeps the filter's own cause. Synthesized suites are unchanged.
+- A model whose acting actor declares a caller attribute keeps its binding refusal scenario, as an adopter reported against 0.69.2. The 0.73.0 caller-pass format fix answers it, and a named case now pins it.
+
 ## [0.73.0] — 2026-10-28
 
 ### Fixed

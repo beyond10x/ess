@@ -1,4 +1,4 @@
-#	models=331	commands=700
+#	models=338	commands=703
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -337,6 +337,8 @@ crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	ir=55b03bf14
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.messages.LogMessage	default: logged
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.messages.MessageEvent	accepting: unavailable | default: messaged
 crates/verify/ess-conformance/tests/fixtures/binding-condition.yaml	demo.messages.ReceiveMessage	default: received
+crates/verify/ess-conformance/tests/fixtures/binding-every-publisher/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/binding-every-publisher-renamed/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-input-through-conversion/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-into-updating-command/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-no-step-triggers/system.yaml	ASSEMBLE
@@ -356,8 +358,12 @@ crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	ir=1
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	demo.ledger.CommitTransaction	held_state: wrong-state | accepting: invalid-reference, malformed-reference, delete-target-missing | default: committed
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	demo.ledger.PrepareBatch	default: prepared
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	demo.ledger.ReviewTransaction	held_state: not-reviewable | accepting: flagged | default: held
+crates/verify/ess-conformance/tests/fixtures/caller-binding-refusal/attr/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/caller-binding-refusal/plain/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/caller-key-unique-across-callers.yaml	ir=328505cc98c48ad1707bc4f5e74cd54f26dda488b976dcdd8c60435db8a670a2:9222
 crates/verify/ess-conformance/tests/fixtures/caller-key-unique-across-callers.yaml	repro.names.TakeName	present_related: taken | default: took
+crates/verify/ess-conformance/tests/fixtures/caller-model-seed/attr/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/caller-model-seed/plain/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/caller-struct-identity.yaml	ir=56f60d673823ca2ea0d4e35e6e9ef58dbc50b1652db15ae13a4ecf3d4a285c24:6381
 crates/verify/ess-conformance/tests/fixtures/caller-struct-identity.yaml	demo.box.OpenBox	existence: exists | default: opened
 crates/verify/ess-conformance/tests/fixtures/caller-swap-command-under-test.yaml	ir=c7c77159f852902bbc7e3419be89be860f0096c1a4f71f17621420ab41d17b56:21800
@@ -861,6 +867,10 @@ crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.ParkCall	held_state: not-waiting | default: parked
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.QueueEntry	default: queued
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.StartCall	default: started
+crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	ir=a218176b41b1eab305d47254933e7f0a9c4fb83eca9b0bda04b73aab1ebaa512:9598
+crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	demo.z.AddChild	default: added
+crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	demo.z.Park	default: parked
+crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	demo.z.Resume	default: resumed
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	ir=fdc9f69c28ee3339cf2a2c2d20111d1e8a2fd0a597480d06af0135490f6674a7:15639
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	demo.z.AddChild	related_row: parent-not-found | accepting: already-added | default: added
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	demo.z.CreateParent	default: created

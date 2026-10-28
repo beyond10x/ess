@@ -1,0 +1,5 @@
+format: ess/32
+system: demo
+version: v1
+domains:
+  - demo.d

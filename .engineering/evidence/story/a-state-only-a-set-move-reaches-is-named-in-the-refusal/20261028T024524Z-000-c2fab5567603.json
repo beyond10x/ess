@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-28T02:45:24Z",
+  "actor": "human:timo",
+  "artifact": "story:a-state-only-a-set-move-reaches-is-named-in-the-refusal",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "a_state_only_a_set_move_reaches_is_named_in_the_refusal 2 passed on 1a539079a; adversary_0740_pass1 9 passed on 02194e732; reduced reproduction 2/1 with the refusal naming the state and the set move, interpreted 2/2",
+    "reference": "commit:02194e732"
+  }
+}

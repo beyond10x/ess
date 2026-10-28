@@ -1,0 +1,16 @@
+components:
+  - component: svc
+    owns:
+      domains: [demo.desk]
+    accepts:
+      commands: [demo.desk.SitDown, demo.desk.Take, demo.desk.CloseAll, demo.desk.Log]
+bindings:
+  - id: log-on-left
+    when:
+      event: demo.desk.Left
+    invoke:
+      command: demo.desk.Log
+    mapping:
+      user_id: event.user_id
+    delivery: at_least_once
+    on_failure: retry

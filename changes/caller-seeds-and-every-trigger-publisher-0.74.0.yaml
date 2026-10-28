@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/caller-seeds-and-every-trigger-publisher-0.74.0
+repository: ess
+publishedAt: 2026-10-28T00:00:00Z
+title: Synthesis seeds work on caller models, and a binding tries every publisher of its trigger
+summary: >-
+  A synthesis seed is admitted for a model whose actors declare caller attributes, and the seed
+  row gives the seeded run its caller. A binding is witnessed through any branch that publishes
+  its trigger, including one that publishes per changed row. A refusal names a state that only a
+  set move reaches.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.74.0
+  version: 0.74.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

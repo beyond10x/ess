@@ -221,7 +221,8 @@ pub use scenario::{
     ScenarioPurpose, ScenarioStep, ScenarioValue, SuiteProvenance, ViewExpectation,
 };
 pub use synthesize::{
-    synthesize, BindingGap, InstanceNeed, Refusal, RefusalCause, Synthesis, Unreachable,
+    synthesize, BindingGap, InstanceNeed, Refusal, RefusalCause, SetMoveOnly, Synthesis,
+    Unreachable,
 };
 pub use target::{
     ConformanceTarget, Deadline, DeclaredErrorValue, ElapsedObservation, ElapsedObservationRequest,

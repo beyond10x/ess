@@ -1,0 +1,18 @@
+components:
+  - component: svc
+    owns:
+      domains: [demo.e]
+    accepts:
+      commands: [demo.e.DefineGrant, demo.e.OpenTicket, demo.e.Bump, demo.e.SyncAll, demo.e.Give]
+bindings:
+  - id: give-on-changed
+    when:
+      event: demo.e.Changed
+    invoke:
+      command: demo.e.Give
+    mapping:
+      grant_id: event.grant_id
+    delivery: at_least_once
+    on_failure:
+      drop: [missing]
+      retry: {except: [missing]}

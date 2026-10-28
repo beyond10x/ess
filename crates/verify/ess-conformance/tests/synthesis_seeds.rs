@@ -543,7 +543,7 @@ fn seeds_compiled_for_another_model_are_refused() {
 }
 
 #[test]
-fn a_caller_attribute_model_is_refused_rather_than_synthesized_without_its_seeds() {
+fn a_caller_attribute_model_is_synthesized_with_its_seeds() {
     let with_callers = format!(
         "{COUNTER}actors:
   - name: counter.model.Operator
@@ -554,10 +554,18 @@ fn a_caller_attribute_model_is_refused_rather_than_synthesized_without_its_seeds
     );
     let ir = ir_of(&with_callers);
     let seeds = admitted(&ir, &issue_selections());
-    assert_eq!(
-        synthesize_with_seeds(&ir, &seeds).unwrap_err().code(),
-        "caller-model"
-    );
+    let synthesis = synthesize_with_seeds(&ir, &seeds).unwrap_or_else(|error| panic!("{error}"));
+    let uses = |synthesis: &ess_conformance::Synthesis| -> Vec<(String, String)> {
+        let record = synthesis.suite.provenance.synthesis_seeds.as_ref().unwrap();
+        record
+            .applications
+            .iter()
+            .map(|use_| (use_.instance.to_string(), use_.scenario.to_string()))
+            .collect()
+    };
+    // No row field is set from the caller, so the seeds serve what they serve without the actor.
+    assert_eq!(uses(&synthesis), uses(&seeded(&ir_of(COUNTER))));
+    assert_eq!(uses(&synthesis).len(), 2);
 }
 
 #[test]

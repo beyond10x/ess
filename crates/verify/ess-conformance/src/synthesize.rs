@@ -1368,6 +1368,10 @@ impl RefusalCause {
                  effect write a field from its input, or let a command creating the rows write \
                  that field from an input, so an arranged row can hold another value"
             }
+            // A set move's rows resting only where set moves take them: the filter is met in some
+            // state (`set_effects::filter_met_in_any_state`), the state no arrangement reaches is
+            // what is missing.
+            Self::NoWitness(gap) if gap.reason == set_effects::SET_MOVE_ONLY => SET_MOVE_ONLY_HELP,
             Self::NoWitness(gap) if set_effects::UNARRANGED.contains(&gap.reason) => {
                 "let a command that creates the entity write each field the filter reads from an \
                  input or from a caller attribute (`{caller: <attribute>}`) rather than from a \
@@ -1624,7 +1628,8 @@ crate::authored::diagnostic_catalogue! {
                 | BindingGap::ChangedRowUnarranged { .. }
                 | BindingGap::RelatedRowNeededByTrigger { .. }
                 | BindingGap::BranchConverted { .. }
-                | BindingGap::BranchRelated { .. },
+                | BindingGap::BranchRelated { .. }
+                | BindingGap::TriggerRowUnarranged { .. },
             ..
         } => 10,
             "A binding clause has nothing a scenario could observe.",
@@ -2223,7 +2228,57 @@ pub enum BindingGap {
         /// refusal causes.
         related: Box<RelatedGuards>,
     },
+    /// The publishing branch the binding's trigger would take publishes its event once per row
+    /// its set effect changes (`each: changed`), and no row its filter selects, resting where the
+    /// event is published for it, can be arranged before the trigger: the honest system publishes
+    /// no occurrence, so no scenario waiting for one is filed (a downstream adopter's report of
+    /// 2026-10-26). Named only where no other publishing branch gives a trigger.
+    TriggerRowUnarranged {
+        /// The publishing branch.
+        outcome: OutcomeRef,
+        /// The entity whose changed rows it publishes the event for.
+        entity: EntityRef,
+        /// Where a row the filter selects can be arranged in some state, and every state the
+        /// branch's move starts from is reached only by a set move: those states and moves, the
+        /// one cause.
+        set_move_only: Option<Box<SetMoveOnly>>,
+    },
 }
+
+/// The states a set move starts from where each is reached by a set move (`instances:` or an
+/// `affects:` entry) and by no creating or single-row moving branch, and the set moves reaching
+/// them: a set move is no driver of an arrangement
+/// (`docs/design/set-effects-over-filtered-instances.md`), so no row rests there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SetMoveOnly {
+    /// The states the move starts from, in declaration order.
+    pub states: Vec<String>,
+    /// The set moves reaching them, as `<command>/<outcome>`, in name order.
+    pub moves: Vec<String>,
+}
+
+impl SetMoveOnly {
+    /// `entity`, the states and the moves as a refusal quotes them: the text between its first
+    /// and last backtick.
+    fn described(&self, entity: &str) -> String {
+        format!(
+            "{entity}`, whose move starts only in `{}`, {} reached only by the set move{} `{}",
+            self.states.join("`, `"),
+            if self.states.len() == 1 {
+                "a state"
+            } else {
+                "states"
+            },
+            if self.moves.len() == 1 { "" } else { "s" },
+            self.moves.join("`, `"),
+        )
+    }
+}
+
+/// What a refusal naming a state only a set move reaches asks for.
+const SET_MOVE_ONLY_HELP: &str = "a set move arranges no row for another scenario; declare a \
+     single-row transition into the state (a branch moving the one instance its `instance:` names \
+     there), or cover the branch with an authored scenario (ess-scenario/1)";
 
 /// The related row of a [`BindingGap::BranchRelated`] and the branches whose guards read it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2435,6 +2490,18 @@ impl BindingGap {
                  own, and the binding map it unconverted into the guarded input, with every guard \
                  reading that row's stored fields alone; or cover the binding with an authored \
                  scenario (ess-scenario/1)"
+            }
+            Self::TriggerRowUnarranged {
+                set_move_only: Some(_),
+                ..
+            } => SET_MOVE_ONLY_HELP,
+            Self::TriggerRowUnarranged {
+                set_move_only: None,
+                ..
+            } => {
+                "let a command creating the entity write each key the filter compares with an \
+                 input from an input of its own, or add a publisher of the event that is not a \
+                 set effect; or cover the binding with an authored scenario (ess-scenario/1)"
             }
         }
     }
@@ -2650,6 +2717,28 @@ impl fmt::Display for BindingGap {
                     .join(", "),
                 related.entity,
                 related.input,
+            ),
+            Self::TriggerRowUnarranged {
+                outcome,
+                entity,
+                set_move_only: None,
+            } => write!(
+                f,
+                "is set off by `{outcome}`, which publishes its event once per `{entity}` row it \
+                 changes, and no row its filter selects can be arranged before the trigger, so \
+                 the trigger publishes no occurrence"
+            ),
+            Self::TriggerRowUnarranged {
+                outcome,
+                entity,
+                set_move_only: Some(only),
+            } => write!(
+                f,
+                "is set off by `{outcome}`, which publishes its event once per `{entity}` row it \
+                 changes, and no row its filter selects can be arranged before the trigger: `{}`, \
+                 which synthesis does not take to arrange a row for another scenario, so the \
+                 trigger publishes no occurrence",
+                only.described(&entity.to_string())
             ),
         }
     }
@@ -2939,8 +3028,8 @@ pub fn creations_made<R>(run: impl FnOnce() -> R) -> (R, u64) {
 /// # Errors
 ///
 /// [`SeedAdmissionError::WrongModel`] for seeds compiled against another model, and
-/// [`SeedAdmissionError::CallerModel`] for a model whose actors carry caller attributes, which is
-/// refused rather than synthesized without its seeds.
+/// [`SeedAdmissionError::CallerContradiction`] for rows of a caller model that no one caller the
+/// seeded run is sent as could have made.
 pub fn synthesize_with_seeds(
     ir: &EssIr,
     seeds: &AdmittedSeeds,
@@ -2975,9 +3064,9 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     let _remembered = made::remember(ir);
     // ess/16 (#168): a model whose actors carry attributes is synthesized once per caller
     // assignment, each read with the caller's values written in (`caller::synthesize`). Seeds are
-    // refused for such a model before this point (`AdmittedSeeds::bound_to`).
+    // offered in the reading that sends every command as the caller their rows imply.
     let mut synthesis = if caller::uses(ir) {
-        caller::synthesize(ir)
+        caller::synthesize(ir, seeds)
     } else {
         synthesize_invocations(&caller::InvocationModels::seeded(ir, seeds), Focus::Whole)
     };
@@ -17785,7 +17874,8 @@ fn bindings(
         }
         let subject = BindingRef::new(binding.name.clone());
         let event_handle = binding.cause.event().expect("event cause");
-        let Some((publisher, published_by)) = publisher(ir, event_handle) else {
+        let publishing = publishers(ir, event_handle);
+        if publishing.is_empty() {
             refusals.push(Refusal {
                 subject: subject.clone().into(),
                 scenario: None,
@@ -17799,22 +17889,55 @@ fn bindings(
                 },
             });
             continue;
-        };
-        match run(ir, publisher, published_by, actors) {
-            Ok(run) => {
-                let trigger = binding_condition::Trigger {
-                    publisher,
-                    published_by,
-                    run,
+        }
+        // Each publishing branch in turn, until one witnesses every aspect; else the one leaving
+        // the fewest refused, the earlier on a tie.
+        let mut chosen: Option<(ConformanceSuite, Vec<Refusal>)> = None;
+        let mut first_failure = None;
+        for (publisher, published_by) in publishing {
+            let run =
+                match binding_effects::trigger_run(ir, binding, publisher, published_by, actors) {
+                    Ok(run) => run,
+                    Err(cause) => {
+                        first_failure.get_or_insert(cause);
+                        continue;
+                    }
                 };
-                binding_aspects(ir, binding, &trigger, actors, suite, refusals);
+            let trigger = binding_condition::Trigger {
+                publisher,
+                published_by,
+                run,
+            };
+            let mut tried = ConformanceSuite {
+                provenance: suite.provenance.clone(),
+                scenarios: BTreeMap::new(),
+            };
+            let mut refused = Vec::new();
+            binding_aspects(ir, binding, &trigger, actors, &mut tried, &mut refused);
+            let witnessed = refused.is_empty();
+            if chosen
+                .as_ref()
+                .is_none_or(|(_, fewest)| refused.len() < fewest.len())
+            {
+                chosen = Some((tried, refused));
             }
-            Err(cause) => refusals.push(Refusal {
+            if witnessed {
+                break;
+            }
+        }
+        match chosen {
+            Some((tried, refused)) => {
+                refusals.extend(refused);
+                for (id, scenario) in tried.scenarios {
+                    insert(suite, id, scenario, refusals);
+                }
+            }
+            None => refusals.push(Refusal {
                 subject: subject.into(),
                 scenario: None,
                 stands: false,
                 caused_by: None,
-                cause,
+                cause: first_failure.expect("a publishing branch either runs or fails"),
             }),
         }
     }
@@ -18507,22 +18630,28 @@ fn publishes(
     Ok(published)
 }
 
-/// The command outcome that publishes an event, in name order, or nothing where none does.
+/// Every command outcome that publishes an event: commands in name order, each command's branches
+/// in declaration order; empty where none does.
 ///
-/// The first in the model's own order, so the choice is a function of the specification and moves
-/// only when the specification does (§37). Where two branches publish one event, either would make
-/// the binding fire; taking the lower-named one keeps the suite stable when a third is added.
-fn publisher<'ir>(
+/// The model's own order, so the trigger a binding is witnessed through is a function of the
+/// specification and moves only when the specification does (§37). Every branch is a candidate:
+/// one that fills an event field from a value no scenario chooses may leave the binding's branch
+/// undecided where another publisher of the same event decides it (a downstream adopter's report
+/// of 2026-10-26), so the first in name order alone made the suite depend on a command's name.
+fn publishers<'ir>(
     ir: &'ir EssIr,
     event: &ess_compiler::ir::EventHandle,
-) -> Option<(&'ir ResolvedCommand, &'ir ResolvedOutcome)> {
-    ir.commands().values().find_map(|command| {
-        command
-            .outcomes
-            .iter()
-            .find(|outcome| outcome.emits.contains(event))
-            .map(|outcome| (command, outcome))
-    })
+) -> Vec<(&'ir ResolvedCommand, &'ir ResolvedOutcome)> {
+    ir.commands()
+        .values()
+        .flat_map(|command| {
+            command
+                .outcomes
+                .iter()
+                .filter(|outcome| outcome.emits.contains(event))
+                .map(move |outcome| (command, outcome))
+        })
+        .collect()
 }
 
 /// Everything a binding scenario's result rests on before its own aspect adds to it.

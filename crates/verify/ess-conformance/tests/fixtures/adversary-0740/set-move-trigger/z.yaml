@@ -1,0 +1,71 @@
+domain: demo.z
+types:
+  - {name: demo.z.Key, kind: newtype, of: Uuid}
+  - {name: demo.z.ChildId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.z.Child
+    identity: {name: child_id, type: demo.z.ChildId}
+    fields:
+      - {name: key, type: demo.z.Key}
+    lifecycle:
+      initial: Held
+      states: [Held, Parked]
+      terminal: []
+      transitions:
+        - {name: park, from: [Held], to: Parked}
+        - {name: resume, from: [Parked], to: Held}
+commands:
+  - name: demo.z.AddChild
+    input:
+      - {name: key, type: demo.z.Key}
+    outcomes:
+      - name: added
+        creates: demo.z.Child
+        instance: child_id
+        emits: [demo.z.ChildAdded]
+        payload:
+          demo.z.ChildAdded: {child_id: {generated: true}}
+        sets: {key: input.key}
+  - name: demo.z.Park
+    input:
+      - {name: key, type: demo.z.Key}
+    outcomes:
+      - name: parked
+        moves: demo.z.Child.park
+        instances:
+          where: key == input.key
+        emits: [demo.z.Moved]
+        payload:
+          demo.z.Moved: {key: input.key}
+  - name: demo.z.Resume
+    input:
+      - {name: key, type: demo.z.Key}
+    outcomes:
+      - name: resumed
+        moves: demo.z.Child.resume
+        instances:
+          where: key == input.key
+        emits: [{event: demo.z.Resumed, each: changed}]
+        payload:
+          demo.z.Resumed: {child_id: {changed: child_id}}
+  - name: demo.z.Note
+    input:
+      - {name: child_id, type: demo.z.ChildId}
+    outcomes:
+      - name: noted
+        emits: [demo.z.Noted]
+        payload:
+          demo.z.Noted: {child_id: input.child_id}
+events:
+  - {name: demo.z.ChildAdded, fields: [{name: child_id, type: demo.z.ChildId}]}
+  - {name: demo.z.Moved, fields: [{name: key, type: demo.z.Key}]}
+  - {name: demo.z.Resumed, fields: [{name: child_id, type: demo.z.ChildId}]}
+  - {name: demo.z.Noted, fields: [{name: child_id, type: demo.z.ChildId}]}
+views:
+  - name: demo.z.ChildRecord
+    source: demo.z.Child
+    consistency: read_your_writes
+    fields:
+      - {name: child_id, type: demo.z.ChildId}
+      - {name: state, type: demo.z.Child.State}
+      - {name: key, type: demo.z.Key}

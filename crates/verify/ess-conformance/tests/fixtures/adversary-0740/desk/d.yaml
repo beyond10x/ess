@@ -1,0 +1,75 @@
+domain: demo.desk
+types:
+  - {name: demo.desk.UserId, kind: newtype, of: String}
+  - {name: demo.desk.Team, kind: newtype, of: String}
+entities:
+  - name: demo.desk.Seat
+    identity: {name: user_id, type: demo.desk.UserId}
+    fields:
+      - {name: team, type: demo.desk.Team}
+    lifecycle:
+      initial: Open
+      states: [Open, Busy, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: take, from: [Open], to: Busy}
+        - {name: close, from: [Open, Busy], to: Closed}
+events:
+  - name: demo.desk.SeatOpened
+    fields: [{name: user_id, type: demo.desk.UserId}]
+  - name: demo.desk.Taken
+    fields: [{name: user_id, type: demo.desk.UserId}]
+  - name: demo.desk.Left
+    fields: [{name: user_id, type: demo.desk.UserId}]
+  - name: demo.desk.Logged
+    fields: [{name: user_id, type: demo.desk.UserId}]
+errors:
+  - name: demo.desk.NotOpen
+commands:
+  - name: demo.desk.SitDown
+    input:
+      - {name: user_id, type: demo.desk.UserId}
+      - {name: team, type: demo.desk.Team}
+    outcomes:
+      - name: seated
+        creates: demo.desk.Seat
+        instance: user_id
+        emits: [demo.desk.SeatOpened]
+        payload: {demo.desk.SeatOpened: {user_id: input.user_id}}
+        sets: {team: input.team}
+  - name: demo.desk.Take
+    input:
+      - {name: user_id, type: demo.desk.UserId}
+    outcomes:
+      - name: taken
+        moves: demo.desk.Seat.take
+        instance: user_id
+        emits: [demo.desk.Taken]
+        payload: {demo.desk.Taken: {user_id: input.user_id}}
+      - {name: not-open, wrong_state: true, error: demo.desk.NotOpen}
+  - name: demo.desk.CloseAll
+    input:
+      - {name: team, type: demo.desk.Team}
+    outcomes:
+      - name: closed-all
+        moves: demo.desk.Seat.close
+        instances: {where: team == input.team}
+        emits:
+          - {event: demo.desk.Left, each: changed, when_state: Busy}
+        payload:
+          demo.desk.Left: {user_id: {changed: user_id}}
+  - name: demo.desk.Log
+    input:
+      - {name: user_id, type: demo.desk.UserId}
+    outcomes:
+      - name: logged
+        emits: [demo.desk.Logged]
+        payload: {demo.desk.Logged: {user_id: input.user_id}}
+views:
+  - name: demo.desk.Seats
+    source: demo.desk.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: user_id, type: demo.desk.UserId}
+      - {name: team, type: demo.desk.Team}
+      - {name: state, type: demo.desk.Seat.State}

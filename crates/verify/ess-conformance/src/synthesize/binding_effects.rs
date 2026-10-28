@@ -3401,3 +3401,121 @@ pub(super) fn mapped_input(
         })
         .collect()
 }
+
+// ---- a trigger publishing once per changed row ---------------------------------------------------
+
+/// The trigger of `binding` through the branch `published_by` of `publisher`: the branch's run
+/// ([`super::run`]) and, where the branch publishes the binding's event once per row its set
+/// effect changes (`each: changed`), one row its filter selects for the input the trigger is sent
+/// arranged first, resting where the event is published for it (a downstream adopter's report of
+/// 2026-10-26). Without that row the honest system publishes no occurrence, and every scenario
+/// waiting for one fails a target that honours the specification.
+///
+/// The row is arranged as [`per_row_decided`] arranges one for the invoked command's set effect:
+/// from the literals the trigger is sent, or naming the rows its own arrangement made. Where none
+/// can be arranged, [`BindingGap::TriggerRowUnarranged`]. A branch publishing the event once,
+/// whatever it changes, keeps the run it had.
+pub(super) fn trigger_run(
+    ir: &EssIr,
+    binding: &ResolvedBinding,
+    publisher: &ResolvedCommand,
+    published_by: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<Run, RefusalCause> {
+    use super::set_effects;
+
+    let mut run = super::run(ir, publisher, published_by, actors)?;
+    let Some(event) = binding.cause.event() else {
+        return Ok(run);
+    };
+    let Some(set) = published_by.instances.as_ref() else {
+        return Ok(run);
+    };
+    let Some(entry) = set.events.iter().find(|entry| &entry.event == event) else {
+        return Ok(run);
+    };
+    let unarranged = |set_move_only| RefusalCause::BindingUnobservable {
+        binding: BindingRef::new(binding.name.clone()),
+        gap: BindingGap::TriggerRowUnarranged {
+            outcome: OutcomeRef::new(
+                CommandRef::new(publisher.name.clone()),
+                published_by.name.clone(),
+            ),
+            entity: EntityRef::from(&set.entity),
+            set_move_only,
+        },
+    };
+    let rests = |state: &StateName| {
+        let movable = match &set.effect {
+            ResolvedEffect::Moves { transition } => transition.from.contains(state),
+            _ => true,
+        };
+        movable
+            && (entry.when_state.is_empty()
+                || entry.when_state.iter().any(|held| held == state.as_str()))
+    };
+    let before = captured(&run);
+    let Some(invocation) = run.invoke.iter().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand { input, .. } => Some(input),
+        _ => None,
+    }) else {
+        return Err(unarranged(None));
+    };
+    let mut literals = BTreeMap::new();
+    let mut named = BTreeMap::new();
+    for (field, value) in invocation {
+        match value {
+            ScenarioValue::Literal { value } => {
+                literals.insert(field.clone(), value.clone());
+            }
+            ScenarioValue::Instance { instance } if before.contains(instance) => {
+                named.insert(field.clone(), instance.clone());
+            }
+            _ => {}
+        }
+    }
+    let held: BTreeMap<InstanceName, StateName> = run
+        .instance
+        .iter()
+        .filter(|instance| named.values().any(|name| name == *instance))
+        .filter_map(|instance| Some((instance.clone(), run.before.clone()?)))
+        .collect();
+    let selected = |rests: &dyn Fn(&StateName) -> bool| {
+        let mut taken = before.clone();
+        let row = if named.is_empty() {
+            set_effects::selected_row(
+                ir,
+                (publisher, published_by, set),
+                &literals,
+                actors,
+                rests,
+                &mut taken,
+            )
+        } else {
+            set_effects::selected_row_naming(
+                ir,
+                (publisher, published_by, set),
+                (&literals, &named),
+                (&held, &BTreeMap::new()),
+                actors,
+                rests,
+                &mut taken,
+            )
+        };
+        row.filter(|row| fits(row, &before))
+    };
+    // Where no row rests where the move starts, but one the filter selects can be arranged in some
+    // state, and every state the move starts from is reached only by a set move: that state is
+    // the cause, and the refusal names it rather than the filter's keys.
+    let row = selected(&rests).ok_or_else(|| {
+        unarranged(
+            set_effects::set_move_only_states(ir, &set.entity, &set.effect)
+                .filter(|_| selected(&|_| true).is_some())
+                .map(Box::new),
+        )
+    })?;
+    run.setup.extend(row.steps);
+    run.source.extend(row.source);
+    run.source.insert(EntityRef::from(&set.entity).into());
+    Ok(run)
+}
