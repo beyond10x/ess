@@ -1,0 +1,2 @@
+components:
+  - {component: svc, owns: {domains: [demo.s]}, accepts: {commands: [demo.s.Open, demo.s.Park, demo.s.Resume]}}

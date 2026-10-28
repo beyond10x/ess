@@ -100,7 +100,9 @@ pub(super) fn set_effects(
                 };
                 match built {
                     Ok(scenario) => insert(suite, id.clone(), scenario, refusals),
-                    Err(cause) => refusals.push(Refusal::about(&id, cause)),
+                    Err(cause) => {
+                        refusals.push(Refusal::about(&id, seeds_unserved(models, outcome, cause)));
+                    }
                 }
             }
             if outcome.affects.is_empty() {
@@ -122,12 +124,76 @@ pub(super) fn set_effects(
                 }
                 Err(cause) => {
                     suite.scenarios.remove(&id);
-                    refusals.push(Refusal::about(&id, cause));
+                    refusals.push(Refusal::about(&id, seeds_unserved(models, outcome, cause)));
                 }
             }
         }
         refused_writes_none(models.arrangement, command, suite);
     }
+}
+
+/// Why a selected seed row of a set effect's filtered entity is not applied: a seed serves the
+/// primary witness of a branch reading its stored subject row and one side of a stored counter's
+/// limit (`docs/design/synthesis-seeds.md` § Arrangement and obligation), and a filter needs
+/// several rows it selects.
+pub(super) const SEEDS_UNSERVED: &str = "synthesis does not apply: seeds do not serve a set \
+     move's filter, nor any other set effect's";
+
+/// The reasons the rows a set effect's filter selects could not be arranged as its scenario
+/// needs them: the causes a seed row of the filtered entity could be mistaken to answer.
+const ROWS_REASONS: [&str; 4] = [UNWRITTEN, SET_MOVE_ONLY, UNDRIVEN, ARRIVES_ONLY];
+
+/// `cause`, naming each selected seed row of the filtered entity, where it refuses the rows of
+/// `outcome`'s `instances:` subject or of one of its `affects:` entries ([`ROWS_REASONS`],
+/// [`UNARRANGED`]) and a seed row of that entity was selected: it keeps the cause, then says the
+/// seeds do not serve the filter ([`SEEDS_UNSERVED`]). Any other cause, or a run selecting no such
+/// row, is returned as it is.
+///
+/// The rows are request text and [`WitnessGap::reason`] is `'static`, so they ride in the
+/// rendered type behind the cause, as [`undriven`]'s creators do.
+fn seeds_unserved(
+    models: &InvocationModels<'_>,
+    outcome: &ResolvedOutcome,
+    cause: RefusalCause,
+) -> RefusalCause {
+    let RefusalCause::NoWitness(unarranged) = &cause else {
+        return cause;
+    };
+    if !UNARRANGED.contains(&unarranged.reason) && !ROWS_REASONS.contains(&unarranged.reason) {
+        return cause;
+    }
+    let entity = if unarranged.path == format!("{}.instances", outcome.name) {
+        outcome.instances.as_ref().map(|set| &set.entity)
+    } else {
+        unarranged
+            .path
+            .strip_prefix(&format!("{}.affects[", outcome.name))
+            .and_then(|rest| rest.split_once(']'))
+            .and_then(|(index, _)| index.parse::<usize>().ok())
+            .and_then(|index| outcome.affects.get(index))
+            .map(|affect| &affect.entity)
+    };
+    let Some(entity) = entity.map(EntityRef::from) else {
+        return cause;
+    };
+    let rows: BTreeSet<String> = models
+        .seeds
+        .rows()
+        .iter()
+        .filter(|seed| seed.entity == entity)
+        .map(|seed| format!("{}#{}", seed.source.as_str(), seed.instance))
+        .collect();
+    if rows.is_empty() {
+        return cause;
+    }
+    let type_ref = format!(
+        "{}`, which {}; the selected seed row{} `{}",
+        unarranged.type_ref,
+        unarranged.reason,
+        if rows.len() == 1 { "" } else { "s" },
+        rows.into_iter().collect::<Vec<_>>().join("`, `"),
+    );
+    gap(unarranged.path.clone(), type_ref, SEEDS_UNSERVED)
 }
 
 /// Every instance name a list of steps captured.

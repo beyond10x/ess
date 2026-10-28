@@ -663,8 +663,11 @@ enum ConformCommand {
         /// A seed supplies only that nominated initial row: never the document's timeline,
         /// assertions or any state its timeline reaches, and it appends no authored scenario
         /// (`--scenarios` does that, independently). Ordinary arrangement is tried first; a row is
-        /// established only for a generated obligation no bounded arrangement reaches, and the
-        /// real command and assertions follow it. Any seed selects suite/42 (or /43 with
+        /// established only where no bounded arrangement reaches one of the two obligations a seed
+        /// serves: the primary witness of a branch that reads its stored subject row, and one side
+        /// of a stored counter's limit. The real command and assertions follow it. A set move's
+        /// filter (`instances:` or an `affects:` entry) is not one of them: its refusal names the
+        /// seed rows of the filtered entity. Any seed selects suite/42 (or /43 with
         /// `--suite-format 5`), suite/44 (/45) where an act also claims one event more than once,
         /// suite/46 (/47) where a response reaches a constrained String newtype, suite/48 (/49)
         /// where a response or a struct it reaches ignores undeclared fields, suite/50 (/51) where a

@@ -1277,6 +1277,15 @@ impl RefusalCause {
     #[allow(clippy::too_many_lines)]
     pub fn hint(&self) -> &'static str {
         match self {
+            // A seed row of a set effect's filtered entity, which no seed serves: the rows the
+            // filter selects are what is missing, and the cause before the seed rows says why.
+            Self::NoWitness(gap) if gap.reason == set_effects::SEEDS_UNSERVED => {
+                "a seed serves only the primary witness of a branch that reads its stored subject \
+                 row and one side of a stored counter's limit, and a set move's filter selects \
+                 several rows, so the seed rows named are not applied; repair the cause named \
+                 before them, as the same run without seeds asks, or cover the branch with an \
+                 authored scenario (ess-scenario/1)"
+            }
             // A struct a target may answer in its short form (beyond10x/ess#594).
             Self::NoWitness(gap) if gap.reason == shorthand::OBSERVED => {
                 "no runner decodes a struct's short form yet: keep the struct out of what a \

@@ -877,6 +877,8 @@ crates/verify/ess-conformance/tests/fixtures/set-move-only-changed-row.yaml	demo
 crates/verify/ess-conformance/tests/fixtures/set-move-only-changed-row.yaml	demo.z.Park	default: parked
 crates/verify/ess-conformance/tests/fixtures/set-move-only-changed-row.yaml	demo.z.Poke	default: poked
 crates/verify/ess-conformance/tests/fixtures/set-move-only-changed-row.yaml	demo.z.Resume	default: resumed
+crates/verify/ess-conformance/tests/fixtures/set-move-filter-seed/affects/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/set-move-filter-seed/instances/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	ir=a218176b41b1eab305d47254933e7f0a9c4fb83eca9b0bda04b73aab1ebaa512:9598
 crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	demo.z.AddChild	default: added
 crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	demo.z.Park	default: parked

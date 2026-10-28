@@ -101,6 +101,14 @@ obligation whose ordinary attempt was unmet:
 - one side of a stored counter's limit that the bounded search did not reach, including a side whose
   nearest value lies past the search's reach and was refused before searching.
 
+A set move's filter is not one of these two obligations, and neither is any other set effect's
+(`instances:` or an `affects:` entry). The filter needs several rows it selects, and a seed supplies
+one row; seeding those rows would be arbitrary multi-row snapshot seeding (§ Not in this design). A
+selected seed row of the filtered entity is recorded and never applied there. Where the rows the
+filter selects cannot be arranged, the refusal keeps its cause, names each selected seed row of the
+filtered entity and says that seeds do not serve a set move's filter, and its help points to an
+authored scenario (`ess-scenario/1`). Without such a seed row the refusal keeps its text.
+
 A successful ordinary witness is never re-ranked, replaced or swapped for a seeded one. Where a
 scenario already has its ordinary steps and only one counter-limit side is missing, those steps,
 identities, values and assertions are kept byte for byte and only that side's segment is appended.
