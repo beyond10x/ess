@@ -380,3 +380,122 @@ fn a_fold_guard_is_open_to_the_finite_proof() {
         "{errors}"
     );
 }
+
+// ---- The identity in `when_subject` (declined, with the existence-step idiom) -------------------
+
+/// A grant per parent, minted create-or-update: `first` creates the row the existence step found
+/// absent, `already` updates the stored one. `{guard}` is the `when_subject` predicate written on
+/// `already`; with `default`, an unguarded `kept` update answers every other stored row.
+fn mint(guard: &str, default: bool) -> String {
+    let kept = if default {
+        "      - name: kept\n        updates: demo.grants.Grant\n        instance: parent_id\n        \
+         emits: [demo.grants.Minted]\n        payload: {demo.grants.Minted: {parent_id: input.parent_id}}\n        \
+         sets: {enabled: false}\n"
+    } else {
+        ""
+    };
+    format!(
+        r"format: ess/32
+system: demo
+version: v1
+domain: demo.grants
+types:
+  - {{name: demo.grants.ParentId, kind: newtype, of: Uuid}}
+entities:
+  - name: demo.grants.Grant
+    identity: {{name: parent_id, type: demo.grants.ParentId}}
+    fields:
+      - {{name: enabled, type: Boolean}}
+    lifecycle: {{initial: Live, states: [Live], terminal: [Live]}}
+events:
+  - name: demo.grants.Minted
+    fields: [{{name: parent_id, type: demo.grants.ParentId}}]
+commands:
+  - name: demo.grants.Mint
+    input: [{{name: parent_id, type: demo.grants.ParentId}}]
+    outcomes:
+      - name: first
+        unknown_instance: true
+        creates: demo.grants.Grant
+        instance: parent_id
+        emits: [demo.grants.Minted]
+        payload: {{demo.grants.Minted: {{parent_id: input.parent_id}}}}
+        sets: {{enabled: true}}
+      - name: already
+        when_subject:
+          predicate: {guard}
+        updates: demo.grants.Grant
+        instance: parent_id
+        emits: [demo.grants.Minted]
+        payload: {{demo.grants.Minted: {{parent_id: input.parent_id}}}}
+        sets: {{enabled: true}}
+{kept}"
+    )
+}
+
+/// The two spellings of "the addressed row is stored" the identity read stands for.
+const IDENTITY_READS: [&str; 2] = ["parent_id == input.parent_id", "defined(parent_id)"];
+
+/// What the hint names in place of the stored fields: the existence step.
+const IDENTITY_HINT: &str = "`parent_id` is the identity that addresses this row, so on every row \
+                             `when_subject:` reads it equals `input.parent_id` and is defined; \
+                             answer an identity no row carries with an `unknown_instance: true` \
+                             branch and drop `when_subject:` from the update";
+
+#[test]
+fn an_identity_read_in_when_subject_names_the_existence_step() {
+    for guard in IDENTITY_READS {
+        for default in [false, true] {
+            let errors = refusal(&mint(guard, default));
+            assert_eq!(
+                codes(&errors),
+                [ValidationCode::UnobservableFact],
+                "{guard} (default: {default}): {errors}"
+            );
+            let refused = &errors.as_slice()[0];
+            assert_eq!(
+                refused.hint.as_deref(),
+                Some(IDENTITY_HINT),
+                "{guard} (default: {default}): {errors}"
+            );
+            assert!(
+                refused
+                    .message
+                    .contains("`when_subject` reads the stored fields of `demo.grants.Grant`"),
+                "the message is unchanged: {errors}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_refused_when_subject_predicate_draws_no_coverage_refusal() {
+    for guard in IDENTITY_READS {
+        let errors = refusal(&mint(guard, false));
+        assert!(
+            !codes(&errors).contains(&ValidationCode::NonExhaustiveBranches),
+            "{guard}: the refused predicate is the one cause: {errors}"
+        );
+    }
+}
+
+#[test]
+fn a_non_identity_unknown_root_keeps_the_stored_fields_hint() {
+    let errors = refusal(&mint("missing == true", true));
+    assert_eq!(
+        codes(&errors),
+        [ValidationCode::UnobservableFact],
+        "{errors}"
+    );
+    let hint = errors.as_slice()[0].hint.as_deref().unwrap_or_default();
+    assert!(hint.starts_with("stored fields: `enabled`;"), "{errors}");
+    assert!(!hint.contains("unknown_instance"), "{errors}");
+}
+
+/// The idiom the hint names validates: the update unguarded beside the `unknown_instance:` creator.
+#[test]
+fn the_existence_step_idiom_validates() {
+    let idiom =
+        mint("true", false).replace("        when_subject:\n          predicate: true\n", "");
+    admits(&idiom).unwrap_or_else(|errors| panic!("{errors}"));
+}

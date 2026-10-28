@@ -632,3 +632,94 @@ fn the_go_runtime_reads_the_new_majors_and_answers_every_case_fold_the_corpus_st
         );
     }
 }
+
+// ---- The identity in `when_subject` (declined, with the existence-step idiom) -------------------
+
+/// "The addressed row is stored" written as the existence step, not as a `when_subject` read of the
+/// identity: the update unguarded beside an `unknown_instance: true` creator.
+const IDENTITY_IDIOM: &str = r"format: ess/32
+system: demo
+version: v1
+domain: demo.grants
+types:
+  - {name: demo.grants.ParentId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.grants.Grant
+    identity: {name: parent_id, type: demo.grants.ParentId}
+    fields:
+      - {name: enabled, type: Boolean}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live]}
+events:
+  - name: demo.grants.Minted
+    fields: [{name: parent_id, type: demo.grants.ParentId}]
+actors:
+  - name: demo.grants.User
+    may: [demo.grants.Mint]
+commands:
+  - name: demo.grants.Mint
+    input: [{name: parent_id, type: demo.grants.ParentId}]
+    outcomes:
+      - name: first
+        unknown_instance: true
+        creates: demo.grants.Grant
+        instance: parent_id
+        emits: [demo.grants.Minted]
+        payload: {demo.grants.Minted: {parent_id: input.parent_id}}
+        sets: {enabled: true}
+      - name: already
+        updates: demo.grants.Grant
+        instance: parent_id
+        emits: [demo.grants.Minted]
+        payload: {demo.grants.Minted: {parent_id: input.parent_id}}
+        sets: {enabled: true}
+views:
+  - name: demo.grants.Grants
+    source: demo.grants.Grant
+    consistency: read_your_writes
+    fields:
+      - {name: parent_id, type: demo.grants.ParentId}
+      - {name: enabled, type: Boolean}
+";
+
+#[test]
+fn the_identity_idiom_witnesses_the_stored_and_the_unknown_row() {
+    use ess_conformance::interpret::Interpreted;
+    use ess_conformance::report::Status;
+    use ess_conformance::Runner;
+
+    let ir = compiled(IDENTITY_IDIOM);
+    let synthesis = synthesize(&ir);
+    assert!(
+        synthesis.refusals.is_empty(),
+        "both branches are witnessed: {:?}",
+        synthesis.refusals
+    );
+    scenario(&synthesis.suite, "demo.grants.Mint/outcome/already");
+    scenario(&synthesis.suite, "demo.grants.Mint/outcome/first");
+    let json = synthesis.suite.to_canonical_json().expect("serialises");
+    let admitted = AdmittedSuite::from_json(&json).expect("the suite is admitted");
+    let report = Runner::for_suite(admitted.suite())
+        .run_admitted(&admitted, &Interpreted::for_model(ir.clone()))
+        .into_report();
+    let statuses: Vec<(String, Status)> = report
+        .scenarios
+        .iter()
+        .map(|scenario| (scenario.scenario.to_string(), scenario.status))
+        .collect();
+    assert_eq!(statuses.len(), synthesis.suite.scenarios.len());
+    for wanted in [
+        "demo.grants.Mint/outcome/already",
+        "demo.grants.Mint/outcome/first",
+    ] {
+        assert!(
+            statuses
+                .iter()
+                .any(|(id, status)| id == wanted && *status == Status::Passed),
+            "{wanted} passes on the interpreted target: {statuses:?}"
+        );
+    }
+    assert!(
+        statuses.iter().all(|(_, status)| *status == Status::Passed),
+        "{statuses:?}"
+    );
+}
