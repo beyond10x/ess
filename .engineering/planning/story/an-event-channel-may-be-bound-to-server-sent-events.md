@@ -13,6 +13,8 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 - depends_on: story:a-response-stream-follows-one-row-until-a-terminal-state
+- informed_by: architecture-decision-record:transport-and-idl-compile-targets
+- informed_by: architecture-decision-record:messages-are-exchanged-independent-of-the-wire
 revision: 2
 ---
 **Blocked on `architecture-decision-record:transport-and-idl-compile-targets`. Not to be implemented

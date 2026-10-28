@@ -8,14 +8,14 @@ summary: Two decision-blockers; batches proceed without them
 relations:
 - informed_by: decision-blocker:websocket-upgrade-binding-form
 - informed_by: decision-blocker:a-view-without-a-source
-revision: 2
+revision: 3
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-28T10:43:06Z", actor: "human:timo", revision: 2, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
 ## Decision
 
 D134, taken by the orchestrator under the operator's grant on 2026-10-28: "#650 (WebSocket half) and
-#674: both need an ADR amendment, which is Timo's. File a decision-blocker for each in the ESS store
+#674: both need an ADR amendment, which is the operator's. File a decision-blocker for each in the ESS store
 with the options table from the plan, the recommendation (#650 A, #674 A staged), and a body line
 `Decider: operator`. Batches proceed without them; those units wait."
 

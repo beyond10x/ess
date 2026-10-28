@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: architecture-decision-record:messages-are-exchanged-independent-of-the-wire
 kind: architecture-decision-record
-status: proposed
+status: accepted
 title: Messages are exchanged independent of the wire; WebSocket, broker, HTTP upgrade and JSON-RPC bind the exchange
 summary: 'Proposed: a transport-neutral exchange layer, with A, B and C of #650 and ess-jsonrpc/1 as bindings side by side'
 refs:
@@ -13,13 +13,13 @@ relations:
 - informed_by: architecture-decision-record:transport-and-idl-compile-targets
 - informed_by: architecture-decision-record:ess-evolution-02-semantics-before-bindings
 - informed_by: decision-blocker:websocket-upgrade-binding-form
-- blocks: story:http-binding-carries-transport-framing
-- blocks: story:a-response-stream-follows-one-row-until-a-terminal-state
-- blocks: story:an-event-channel-may-be-bound-to-server-sent-events
-revision: 1
+revision: 3
+transitions:
+- {from: "proposed", to: "accepted", at: "2026-10-28T10:54:27Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
-Status: proposed (draft), 2026-10-28. Not accepted; nothing under it is dispatched before the operator
-accepts it.
+Status: accepted 2026-10-28 by the operator: "F1, F2, F3, AAA, all as you suggested."
+(`approval-record:exchange-adr-accepted-as-recommended`). The forks below are decided as
+recommended: F1 (a), F2 (a), F3 (a).
 
 ## Operator direction
 

@@ -10,11 +10,6 @@ relations:
 - informed_by: task:deferred-protocol-ui-bindings
 - informed_by: approval-record:ess-evolution-20260915
 - informed_by: architecture-decision-record:ess-evolution-02-semantics-before-bindings
-- blocks: story:ess-projects-a-protobuf-idl-with-http-annotations
-- blocks: story:a-command-binds-to-json-rpc-and-grpc-beside-http
-- blocks: story:an-event-channel-may-be-bound-to-server-sent-events
-- blocks: story:a-response-stream-follows-one-row-until-a-terminal-state
-- blocks: story:an-authored-scenario-claims-a-binding-error-code
 revision: 5
 transitions:
 - {from: "proposed", to: "accepted", at: "2026-10-23T19:36:17Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}

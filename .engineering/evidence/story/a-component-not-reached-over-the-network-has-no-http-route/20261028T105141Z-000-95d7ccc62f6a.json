@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-28T10:51:41Z",
+  "actor": "human:timo",
+  "artifact": "story:a-component-not-reached-over-the-network-has-no-http-route",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "redaction",
+    "literal_sha256": "85ee877a32d85a6178900edb730f4fad69d85d9e33ccb42f9ddd61e6d75d9f4b",
+    "literal_chars": 4,
+    "replacement": "the operator",
+    "count": 3,
+    "reason": "public text names no person"
+  }
+}

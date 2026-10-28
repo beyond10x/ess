@@ -62,16 +62,24 @@ Reproduced with the 0.74.0 release binary at `ess/32`.
 
 ## Batches
 
-| batch | issues | why together |
-|---|---|---|
-| 1 | S and M with no source-format change: #643, #644, #645, #647, #648, #651, #652, #653, #659, #661, #664, #665, #671, #673, #685, #686, #687, #688, #693, #694 | no `ess/N` bump |
-| 2 | the `ess/33` language batch: #636, #640, #642, #498, #678, #637 (tag half), #638 | one source format opened once |
-| 3 | suite formats and HTTP authentication: #646, #680, #681 | new suite pair; ADR accepted |
-| 4+ | the epic remainders: #554, #560, #561, #564 | decomposed per story |
+A wave is at most four units (the orchestrator's process rule), so the S and M issues with no
+`ess/N` change run as three batches of at most four units each (revised 2026-10-28):
 
-A unit of batch 1 that turns out to need `ess/33` leaves batch 1 for batch 2.
+| batch | units | issues | why together |
+|---|---|---|---|
+| 1 | U1, U2, U3, U4 | #685, #686, #687, #688, #643, #644, #664, #665, #671, #666 (option A fixture), #651, #653 | no two share a file; decided by D133, D137, D138 |
+| 2 | U5, U6, U7, U8 | #652, #673, #647, #648, #661, #659 | U5 needs U4; U6 and U7 need U1 (`realize.rs`); D135 may take #648 or #661 out |
+| 3 | U9, U10, the two #554 synthesis stories | #645, #693, #694 | U9 after `0.75.0` (`synthesize.rs`) |
+| 4 | exchange wave 1: the exchange in the specification, its projections, its conformance, the WebSocket binding | #650 | `epic:messages-are-exchanged-independent-of-the-wire`; moves `ess/N` |
+| 5 | exchange wave 2: HTTP upgrade key, broker binding, JSON-RPC binding; the sourceless view (first cut) | #650, #674 | the same `ess/N` as batch 4 when both land in one release |
+| 6 | the language batch | #636, #640, #642, #498, #678, #637 (tag half), #638 | one source format opened once |
+| 7 | suite formats and HTTP authentication | #646, #680, #681 | new suite pair; ADR accepted |
+| later | #663 (D132, `ess specify vendor`) | | sized for later |
+| 8+ | the epic remainders | #554, #560, #561, #564 | decomposed per story |
 
-## Units of batch 1
+A unit of batches 1-3 that turns out to need a new `ess/N` leaves for a format batch.
+
+## Units (batches 1-3)
 
 | unit | issues | stories | crates | shares a file with |
 |---|---|---|---|---|
@@ -88,10 +96,11 @@ A unit of batch 1 that turns out to need `ess/33` leaves batch 1 for batch 2.
 
 ## Builds
 
-One shared `CARGO_TARGET_DIR` (`~/.cache/ess-batches-target`), `CARGO_PROFILE_DEV_DEBUG=line-tables-only`,
-`CARGO_INCREMENTAL=0`, every cargo call serialised by one lock (`ess-cargo` wrapper) so a test never
-runs a binary another tree just rebuilt. No build under 40 GB free while another ESS tree builds;
-none under 25 GB.
+Each tree keeps its own `target/` (no shared `CARGO_TARGET_DIR`: test code hard-codes `target/`
+paths, and concurrent trees would overwrite each other's test binaries).
+`CARGO_PROFILE_DEV_DEBUG=line-tables-only CARGO_PROFILE_TEST_DEBUG=line-tables-only
+CARGO_INCREMENTAL=0`; `cargo test` names each `--test` target as its own argument. Nothing builds
+before the `0.75.0` tag; after it, at most two builds at once and only at 40 GB free or more.
 
 ## Commits this wave makes
 
@@ -100,25 +109,37 @@ into `integration/ess-issues-1`, the store commits, the pull request and its mer
 
 ## Unit state
 
-Stopped on 2026-10-28 before dispatch: the steward handed ESS steering to one session. No unit
-tree exists, no implementor ran, the planning store is unchanged. Fit reviews and scopes were
-derived read-only for U2, U3, U5, U6, U7, U8, U9 and U10 (summaries below); U1 and U4 were not
-returned.
+Stopped on 2026-10-28 before dispatch, then taken over by the orchestrator's batch lead the same
+day. Every unit has a fit review and a scope; batch 1's stories carry them in the store. No unit
+tree exists and no implementor has run (nothing builds before the `0.75.0` tag).
 
 | unit | stage | scoping result |
 |---|---|---|
-| U1 schema-invariants | not started | not returned |
+| U1 schema-invariants | stories written | #688 accept as proposed (`x-ess-invariants`, integer bounds); #687, #685, #686 accept, redesigned (D138); list counts deferred to their own story |
 | U2 subject-guards | not started | #643 decline with the idiom (drop `when_subject:`, keep `unknown_instance: true`; hint in ESS-COMMAND-003, no duplicate 005); #644 accept, redesigned, no format: a `defined`/`not defined` pair over one Optional path is proved exhaustive, held-state partitions excluded |
 | U3 composition | not started | #665 accept, redesigned (hint per kind, no format); #664 and #671 accept, redesigned, both at `ess-composition/5`, one unit, #664 first; #671 gets its own story |
-| U4 http-presentation | not started | not returned |
+| U4 http-presentation | stories written | #653 accept, additive `operation_id` and `servers` (ESS-HTTP-032/033); #651 accept as one `info.description` sentence, routes stay (D137) |
 | U5 http-answers | not started | split into U5a (#652 `alike` groups, N21 `encoding: text`) then U5b (N26 route `refusals`, N27 literal body on `empty`, N29 `body: array`); all `ess-http/1` additions; after U4 |
-| U6 openapi-import | not started | #647 accept, redesigned, stays `ess-openapi-import/1`: empty schemas import as `json`, objects gain `additional_properties`, a nullable `anyOf`/`oneOf` imports as its schema with the null gap (not `Optional<X>` as the 2026-10-23 approval says: confirm); #648 accept, redesigned: bundle `int32`/`int64` realize at native width (breaking for generated bundle libraries) |
+| U6 openapi-import | not started | #647 accept, redesigned, stays `ess-openapi-import/1`: empty schemas import as `json`, objects gain `additional_properties`, a nullable `anyOf`/`oneOf` imports as `Optional<X>`, as the operator approved on 2026-10-23 (D135; the scoper's null-gap variant is dropped); #648 accept, redesigned: bundle `int32`/`int64` realize at native width (breaking for generated bundle libraries) |
 | U7 rust-layout | not started | #661 accept, redesigned, no format: declaration order via a side table from `ModelTypes`, Box only on cycle-closing references, Go keeps pointers; Rust key order on the wire changes; textual conflict with U6 in `realize.rs` `kind()` |
 | U8 synth-field-names | not started | #659 accept, redesigned: response fields get their own allocation scope in Rust and web; field `naming.code` becomes a follow-up story |
 | U9 synthesis-order | not started | #645 accept as proposed, edits `synthesize.rs` `arranged` (collides with 0.75.0); #693 accept as proposed, stays in `synthesize/related_guard.rs` |
 | U10 cli-flags | not started | #694 gaps 1-2 accept, redesigned: `flag` over a required Boolean, `repeated` over a required `List<T>`, in ess-cli/1 and /2 with no format bump; gap 3 decline with the idiom plus a clearer refusal |
 
-## Decisions for Timo
+## Decisions for the operator
+
+Outcomes, 2026-10-28 (records in `.engineering/planning/`):
+
+- #650: the operator first chose A, then the same day asked for a transport-neutral message
+  exchange with A, B and C all possible. `architecture-decision-record:messages-are-exchanged-independent-of-the-wire`
+  was proposed and accepted the same day with forks F1 (a), F2 (a), F3 (a)
+  (`approval-record:exchange-adr-accepted-as-recommended`).
+- #663: B (D132, `approval-record:d132-types-across-specifications-by-vendor`).
+- #674: A, staged (`approval-record:a-view-reads-a-setting-first-cut`; Amendment 1 of
+  `a-command-guard-reads-a-component-setting`).
+- #666: A now (D133); the reporter is asked which side sends the subset.
+
+The option tables below are kept as they were put to the operator.
 
 ### #650 WebSocket upgrade binding
 

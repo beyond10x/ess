@@ -12,6 +12,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:ess-projects-a-protobuf-idl-with-http-annotations
 - informed_by: story:http-binding-carries-transport-framing
+- informed_by: architecture-decision-record:transport-and-idl-compile-targets
 revision: 3
 ---
 **Blocked on `architecture-decision-record:transport-and-idl-compile-targets`. Not to be implemented

@@ -10,7 +10,7 @@ refs:
   reference: beyond10x/ess#666
 relations:
 - decides: story:role-input-drift-tells-a-caller-from-an-implementation
-revision: 2
+revision: 3
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-28T10:43:05Z", actor: "human:timo", revision: 2, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
@@ -21,7 +21,7 @@ D133, taken by the orchestrator under the operator's grant on 2026-10-28: "D133 
 through the App (neutral wording, no customer or company names); B or C follows the reporter's
 answer."
 
-Option A of `docs/plan/wave-ess-issues-1.md` § Decisions for Timo, #666: `role_input_drift` on a
+Option A of `docs/plan/wave-ess-issues-1.md` § Decisions for the operator, #666: `role_input_drift` on a
 `stands: implements` entry whose local command lacks contract inputs stays. The design page
 `composition-contract-roles.md` says that a caller of a contract command is not a role entry (use
 `gates` or no entry), and a fixture pins

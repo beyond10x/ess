@@ -5,7 +5,7 @@ kind: approval-record
 status: approved
 title: Open-issue batch 1 runs as one wave and one pull request
 summary: Operator request of 2026-10-28, approved under the grant by the orchestrator
-revision: 2
+revision: 3
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-28T10:43:03Z", actor: "human:timo", revision: 2, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
@@ -47,3 +47,10 @@ the store commits on that branch, one pull request to `main` and its merge throu
 `0.75.0` tag exists. Not a tag, a release or the next batch.
 
 Decider: operator
+
+## Revision (2026-10-28)
+
+A wave holds at most four units (the orchestrator's process rule), so the issues above run as
+batches 1-3 of `docs/plan/wave-ess-issues-1.md` § Batches, one pull request each: batch 1 is U1-U4
+(#685 #686 #687 #688, #643 #644, #664 #665 #671 and the #666 fixture, #651 #653). This record
+authorises the same commits for each of the three batches.

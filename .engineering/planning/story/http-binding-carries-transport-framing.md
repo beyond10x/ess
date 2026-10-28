@@ -9,6 +9,8 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- informed_by: epic:messages-are-exchanged-independent-of-the-wire
+- informed_by: architecture-decision-record:messages-are-exchanged-independent-of-the-wire
 revision: 2
 ---
 ## Outcome

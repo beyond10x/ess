@@ -8,7 +8,7 @@ tags:
 - ess-0.71.0
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 ---
 ## Outcome
 
@@ -324,3 +324,11 @@ In crates/verify/ess-conformance/tests/interpreted_response_values.rs:
   `Responded{field}` and passes; Confirm/mismatch passes.
 - `a_target_storing_another_value_fails`.
 - In the suite format tests: `responded_needs_suite_format_58`.
+
+## Format retarget (2026-10-28)
+
+`ess/31` shipped in 0.69.0 and `ess/32` in 0.70.0 without this story (`FORMAT_HISTORY` in
+`crates/specify/ess-domain/src/system.rs`). Its planned format gate is now the next one, `ess/33`,
+opened once for the open-issue batch that carries the `ess/33` language changes
+(`docs/plan/wave-ess-issues-1.md` § Batches). Read `ess/31` above as `ess/33`, and `ess/30` as
+"below `ess/33`". Store drift fixed under D136 (`approval-record:d136-synthesis-defects-and-store-drift`).

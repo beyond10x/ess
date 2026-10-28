@@ -10,7 +10,7 @@ refs:
   reference: beyond10x/ess#650
 relations:
 - blocks: story:http-binding-carries-transport-framing
-revision: 2
+revision: 3
 transitions:
 - {from: "open", to: "cleared", at: "2026-10-28T10:44:16Z", actor: "human:timo", revision: 2, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
@@ -19,7 +19,7 @@ transitions:
 The JSON-RPC half of #650 is decided (ADR `transport-and-idl-compile-targets` § Decision 2,
 `docs/design/rpc-bindings.md:19-48`). The WebSocket half needs an amendment to that ADR, and an ADR
 amendment is the operator's (orchestrator decision D134, 2026-10-28: "#650 (WebSocket half) and #674:
-both need an ADR amendment, which is Timo's. File a decision-blocker for each ... Batches proceed
+both need an ADR amendment, which is the operator's. File a decision-blocker for each ... Batches proceed
 without them; those units wait."). On 0.74.0 `101` stays refused as an outcome
 (`docs/design/http-presentation-binding.md:337`).
 

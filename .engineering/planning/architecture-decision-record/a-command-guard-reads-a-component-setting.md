@@ -8,7 +8,7 @@ summary: Proposes a setting.<name> guard root compared with literals and one syn
 relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "proposed", to: "accepted", at: "2026-10-23T19:36:13Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
@@ -81,3 +81,30 @@ guard over a setting never selects among per-request facts. That question stays 
 ## Acceptance evidence
 
 None yet. Acceptance is the operator's move of this record to `accepted`.
+
+## Amendment 1 (accepted, 2026-10-28): a view may read a setting, and a view of only literals and settings needs no source
+
+Status: accepted 2026-10-28 by the operator, answering `decision-blocker:a-view-without-a-source`
+(beyond10x/ess#674) with its recommended option A, staged: "as you recommend." Recorded in
+`approval-record:a-view-reads-a-setting-first-cut`.
+
+**Need.** A view must name a `source`, and every field is stored, derived from the row or read
+through a related row. A value the process holds (a limit, a capability) has no row, so a limits
+endpoint cannot be specified (#674).
+
+**Decision.** The `setting.<name>` root this record admits in guards is admitted in a view field,
+`{name: max_upload_bytes, type: Integer, expr: setting.max_upload_bytes}`, under the same
+boundaries: a non-secret setting of a component that serves the view, of a type assignable to the
+field. A view whose every field is a literal or a setting may omit `source:`; it answers one row.
+
+**First cut.** Only settings that declare a fixed `value:` may be read in a view. Their value is
+known from the specification, so the interpreter answers it, synthesis checks it, and no suite needs
+a `configuration:`. A setting without a fixed `value:` stays refused in a view by name until the
+per-configuration suites of this record's Effect are built.
+
+**Format.** The next `ess/N`, shared with the exchange layer
+(`architecture-decision-record:messages-are-exchanged-independent-of-the-wire`) when both land in
+one batch. Below it a sourceless view keeps its `missing field source` refusal and a `setting.` read
+in a view stays `unobservable_fact`, each naming the new format; a model without either keeps its IR
+bytes. The view IR's `source` becomes optional, which every IR reader (synthesis, interpreter,
+generators, `ess-http`) handles.

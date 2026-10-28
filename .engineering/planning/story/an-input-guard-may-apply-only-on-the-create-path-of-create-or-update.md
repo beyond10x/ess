@@ -13,7 +13,7 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 4
+revision: 5
 ---
 ## Need
 
@@ -208,3 +208,11 @@ Acceptance, each test written to fail first, as a module of an existing test bin
 The requester is told: accepted, redesigned. Their first shape (`when:` beside `unknown_instance:` on
 a refusal) works as written from `ess/31`. Their second shape works when the creating branch is the
 last, unguarded `unknown_instance:` branch.
+
+## Format retarget (2026-10-28)
+
+`ess/31` shipped in 0.69.0 and `ess/32` in 0.70.0 without this story (`FORMAT_HISTORY` in
+`crates/specify/ess-domain/src/system.rs`). Its planned format gate is now the next one, `ess/33`,
+opened once for the open-issue batch that carries the `ess/33` language changes
+(`docs/plan/wave-ess-issues-1.md` § Batches). Read `ess/31` above as `ess/33`, and `ess/30` as
+"below `ess/33`". Store drift fixed under D136 (`approval-record:d136-synthesis-defects-and-store-drift`).
