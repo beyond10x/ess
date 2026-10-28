@@ -415,9 +415,12 @@ fn adv_w3u2_p1_the_byte_probes_see_the_pinned_set_of_reorders() {
     // rests on the adversary's base-against-unit comparison of 9,720 Rust and 9,600 Go generated
     // models, recorded as the story's verification evidence. When a repository model the probes
     // read covers a pair, it leaves this list: shrink the expected list, never widen it.
+    // `present_related <-> accepting`, the last pair, left it in 0.73.0: the conformance fixture
+    // `affects-past-predicate-guard.yaml` (story:affects-witness-with-the-adopters-remaining-condition)
+    // is a probe model that changes under that swap. Every pair is now covered.
     assert_eq!(
         blind,
-        ["present_related <-> accepting"],
+        Vec::<String>::new(),
         "the byte probes (adversary_e_u2_bytes, adversary_e_u6_bytes) see a different set of \
          reorders than pinned; a pair that left the list is now covered by a probe model, a pair \
          that joined it has lost its coverage.\n{report}"
