@@ -499,3 +499,335 @@ fn the_existence_step_idiom_validates() {
         mint("true", false).replace("        when_subject:\n          predicate: true\n", "");
     admits(&idiom).unwrap_or_else(|errors| panic!("{errors}"));
 }
+
+// ---- `defined(x)` / `not defined(x)` partitions over one Optional path --------------------------
+
+/// An account with an optional reset token, opened without one. `ResendReset` refuses an account no
+/// row carries, then answers by `{branches}`, each a `when_subject:` update over the stored token.
+fn account(branches: &str) -> String {
+    format!(
+        r"format: ess/32
+system: demo
+version: v1
+domain: demo.accounts
+types:
+  - {{name: demo.accounts.AccountId, kind: newtype, of: Uuid}}
+entities:
+  - name: demo.accounts.Account
+    identity: {{name: account_id, type: demo.accounts.AccountId}}
+    fields:
+      - {{name: reset_token, type: Optional<String>}}
+    lifecycle: {{initial: Open, states: [Open], terminal: [Open]}}
+errors:
+  - {{name: demo.accounts.UnknownAccount, summary: No account carries the identity., fields: []}}
+events:
+  - name: demo.accounts.Opened
+    fields: [{{name: account_id, type: demo.accounts.AccountId}}]
+  - name: demo.accounts.ResetSent
+    fields: [{{name: account_id, type: demo.accounts.AccountId}}]
+commands:
+  - name: demo.accounts.Open
+    input: []
+    outcomes:
+      - name: opened
+        creates: demo.accounts.Account
+        instance: account_id
+        emits: [demo.accounts.Opened]
+        payload: {{demo.accounts.Opened: {{account_id: {{generated: true}}}}}}
+  - name: demo.accounts.ResendReset
+    input: [{{name: account_id, type: demo.accounts.AccountId}}]
+    outcomes:
+      - name: unknown
+        unknown_instance: true
+        error: demo.accounts.UnknownAccount
+{branches}"
+    )
+}
+
+/// One `when_subject:` update of the account named `name`, selected by `predicate`.
+fn resend(name: &str, predicate: &str) -> String {
+    format!(
+        "      - name: {name}\n        when_subject: {{predicate: {predicate}}}\n        \
+         updates: demo.accounts.Account\n        instance: account_id\n        \
+         sets: {{reset_token: t}}\n        emits: [demo.accounts.ResetSent]\n        \
+         payload: {{demo.accounts.ResetSent: {{account_id: input.account_id}}}}\n"
+    )
+}
+
+/// The stored pair: `resent` where a token is stored, `issued` where none is.
+fn stored_pair() -> String {
+    account(&format!(
+        "{}{}",
+        resend("resent", "defined(reset_token)"),
+        resend("issued", "not defined(reset_token)")
+    ))
+}
+
+/// The input pair: a checkout answered by whether a coupon is sent.
+const CHECKOUT: &str = "  - name: demo.orders.Checkout
+    input: [{name: coupon, type: Optional<String>}]
+    outcomes:
+      - name: discounted
+        when: defined(coupon)
+        emits: [demo.orders.CheckedOut]
+      - name: full-price
+        when: not defined(coupon)
+        emits: [demo.orders.CheckedOut]
+";
+
+fn checkout() -> String {
+    format!(
+        "format: ess/32
+system: demo
+version: v1
+domain: demo.orders
+events:
+  - name: demo.orders.CheckedOut
+    fields: []
+commands:
+{CHECKOUT}"
+    )
+}
+
+#[test]
+fn defined_and_not_defined_over_one_stored_optional_field_are_exhaustive() {
+    admits(&stored_pair()).unwrap_or_else(|errors| panic!("{errors}"));
+}
+
+#[test]
+fn a_defined_pair_over_an_optional_input_is_exhaustive() {
+    // At shape time, with no type registry: the coverage is deferred to the typed pass.
+    // The list item, as a mapping of its own.
+    let command = CHECKOUT
+        .lines()
+        .map(|line| {
+            line.strip_prefix("  - ")
+                .or_else(|| line.strip_prefix("    "))
+                .unwrap_or(line)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let raw: ess_domain::command::RawCommandSpec =
+        ess_yaml::from_str(&command).unwrap_or_else(|error| panic!("{error}\n{command}"));
+    ess_domain::command::CommandSpec::try_from(raw)
+        .unwrap_or_else(|errors| panic!("shape time: {errors}"));
+    // And typed, where the proof runs.
+    admits(&checkout()).unwrap_or_else(|errors| panic!("typed: {errors}"));
+}
+
+/// A tier with an optional note, read through the seat's reference to it.
+fn related(noted: &str, unnoted: &str) -> String {
+    format!(
+        r"format: ess/32
+system: demo
+version: v1
+domain: demo.seats
+types:
+  - {{name: demo.seats.SeatId, kind: newtype, of: Uuid}}
+  - {{name: demo.seats.TierId, kind: newtype, of: Uuid}}
+entities:
+  - name: demo.seats.Tier
+    identity: {{name: tier_id, type: demo.seats.TierId}}
+    fields:
+      - {{name: note, type: Optional<String>}}
+    lifecycle: {{initial: Active, states: [Active], terminal: [Active]}}
+  - name: demo.seats.Seat
+    identity: {{name: seat_id, type: demo.seats.SeatId}}
+    fields:
+      - {{name: tier_id, type: demo.seats.TierId}}
+    relations:
+      - {{name: tier, kind: references, target: demo.seats.Tier, cardinality: one, via: tier_id}}
+    lifecycle: {{initial: Active, states: [Active], terminal: [Active]}}
+errors:
+  - {{name: demo.seats.UnknownSeat, summary: No seat carries the identity., fields: []}}
+  - {{name: demo.seats.UnknownTier, summary: No tier carries the identity., fields: []}}
+events:
+  - name: demo.seats.TierDefined
+    fields: [{{name: tier_id, type: demo.seats.TierId}}]
+  - name: demo.seats.Issued
+    fields: [{{name: seat_id, type: demo.seats.SeatId}}]
+  - name: demo.seats.TierChanged
+    fields: [{{name: seat_id, type: demo.seats.SeatId}}]
+commands:
+  - name: demo.seats.DefineTier
+    input: [{{name: note, type: Optional<String>}}]
+    outcomes:
+      - name: defined
+        creates: demo.seats.Tier
+        instance: tier_id
+        sets: {{note: input.note}}
+        emits: [demo.seats.TierDefined]
+        payload: {{demo.seats.TierDefined: {{tier_id: {{generated: true}}}}}}
+  - name: demo.seats.Issue
+    input: [{{name: tier_id, type: demo.seats.TierId}}]
+    outcomes:
+      - name: issued
+        creates: demo.seats.Seat
+        instance: seat_id
+        sets: {{tier_id: input.tier_id}}
+        emits: [demo.seats.Issued]
+        payload: {{demo.seats.Issued: {{seat_id: {{generated: true}}}}}}
+  - name: demo.seats.ChangeTier
+    input:
+      - {{name: seat_id, type: demo.seats.SeatId}}
+      - {{name: tier_id, type: demo.seats.TierId}}
+    outcomes:
+      - name: unknown-seat
+        unknown_instance: true
+        error: demo.seats.UnknownSeat
+      - name: unknown-tier
+        when_related: {{via: input.tier_id, exists: false}}
+        error: demo.seats.UnknownTier
+      - name: noted
+        when_related: {{via: input.tier_id, predicate: {noted}}}
+        updates: demo.seats.Seat
+        instance: seat_id
+        sets: {{tier_id: input.tier_id}}
+        emits: [demo.seats.TierChanged]
+        payload: {{demo.seats.TierChanged: {{seat_id: input.seat_id}}}}
+      - name: unnoted
+        when_related: {{via: input.tier_id, predicate: {unnoted}}}
+        updates: demo.seats.Seat
+        instance: seat_id
+        sets: {{tier_id: input.tier_id}}
+        emits: [demo.seats.TierChanged]
+        payload: {{demo.seats.TierChanged: {{seat_id: input.seat_id}}}}
+"
+    )
+}
+
+#[test]
+fn a_defined_pair_over_a_related_optional_field_is_exhaustive() {
+    admits(&related("defined(note)", "not defined(note)"))
+        .unwrap_or_else(|errors| panic!("{errors}"));
+}
+
+/// The text the prover's Unsupported decline renders.
+const UNSUPPORTED: &str =
+    "a guard reads an optional or collection path, or a construct other than equality and membership";
+
+#[test]
+fn defined_beside_a_value_comparison_still_declines() {
+    let errors = refusal(&account(&format!(
+        "{}{}",
+        resend("resent", "defined(reset_token)"),
+        resend("issued", "reset_token == a")
+    )));
+    assert_eq!(
+        codes(&errors),
+        [ValidationCode::NonExhaustiveBranches],
+        "{errors}"
+    );
+    assert!(errors.to_string().contains(UNSUPPORTED), "{errors}");
+}
+
+#[test]
+fn defined_alone_without_a_default_names_the_absent_case() {
+    let errors = refusal(&account(&resend("resent", "defined(reset_token)")));
+    assert_eq!(
+        codes(&errors),
+        [ValidationCode::NonExhaustiveBranches],
+        "{errors}"
+    );
+    let text = errors.to_string();
+    assert!(
+        text.contains("stored [reset_token = absent]") && text.contains("select 0 branches"),
+        "{text}"
+    );
+}
+
+/// Below the one precedence rule (`ess/27`), where two selected branches conflict rather than the
+/// first declared answering.
+#[test]
+fn an_overlapping_defined_pair_names_the_present_case() {
+    let errors = refusal(
+        &account(&format!(
+            "{}{}",
+            resend("resent", "defined(reset_token)"),
+            resend(
+                "again",
+                "{any: [defined(reset_token), not defined(reset_token)]}"
+            )
+        ))
+        .replace("format: ess/32\n", "format: ess/26\n"),
+    );
+    let text = errors.to_string();
+    assert!(
+        codes(&errors).contains(&ValidationCode::ConflictingDeclaration)
+            && text.contains("stored [reset_token = present]")
+            && text.contains("select 2 branches"),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_default_bearing_command_keeps_its_enum_only_proof() {
+    let text = account(&format!(
+        "{}{}      - name: kept\n        updates: demo.accounts.Account\n        \
+         instance: account_id\n        emits: [demo.accounts.ResetSent]\n        \
+         payload: {{demo.accounts.ResetSent: {{account_id: input.account_id}}}}\n",
+        resend("resent", "defined(reset_token)"),
+        resend("again", "defined(reset_token)")
+    ));
+    admits(&text).unwrap_or_else(|errors| panic!("{errors}"));
+}
+
+/// A ticket closed from `Open`, refused from `Closed`, and refused first when a note is sent.
+const HELD: &str = r"format: ess/32
+system: demo
+version: v1
+domain: demo.tickets
+types:
+  - {name: demo.tickets.TicketId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.tickets.Ticket
+    identity: {name: ticket_id, type: demo.tickets.TicketId}
+    fields: []
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+errors:
+  - {name: demo.tickets.NoteRefused, summary: A note is not accepted on close., fields: []}
+  - {name: demo.tickets.AlreadyClosed, summary: The ticket is closed., fields: []}
+events:
+  - name: demo.tickets.Opened
+    fields: [{name: ticket_id, type: demo.tickets.TicketId}]
+  - name: demo.tickets.Closed
+    fields: [{name: ticket_id, type: demo.tickets.TicketId}]
+commands:
+  - name: demo.tickets.OpenTicket
+    input: []
+    outcomes:
+      - name: opened
+        creates: demo.tickets.Ticket
+        instance: ticket_id
+        emits: [demo.tickets.Opened]
+        payload: {demo.tickets.Opened: {ticket_id: {generated: true}}}
+  - name: demo.tickets.Close
+    input:
+      - {name: ticket_id, type: demo.tickets.TicketId}
+      - {name: note, type: Optional<String>}
+    outcomes:
+      - name: noted
+        when: defined(note)
+        error: demo.tickets.NoteRefused
+      - name: closed
+        when_subject_state: Open
+        moves: demo.tickets.Ticket.close
+        instance: ticket_id
+        emits: [demo.tickets.Closed]
+        payload: {demo.tickets.Closed: {ticket_id: input.ticket_id}}
+      - name: already-closed
+        when_subject_state: Closed
+        error: demo.tickets.AlreadyClosed
+";
+
+/// What 0.74.0 answers for [`HELD`]: the held-state proof drops the `defined` refusal it cannot
+/// decide and proves the rest, so the command validates.
+#[test]
+fn a_held_state_partition_keeps_its_decline() {
+    admits(HELD).unwrap_or_else(|errors| panic!("{errors}"));
+}

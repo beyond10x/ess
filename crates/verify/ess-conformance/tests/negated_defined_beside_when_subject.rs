@@ -296,3 +296,79 @@ fn with_two_string_guards_every_branch_beside_the_related_row_is_witnessed() {
 fn with_three_string_guards_every_branch_beside_the_related_row_is_witnessed() {
     assert_every_branch_witnessed(SIGN_IN);
 }
+
+// ---- A `defined` / `not defined` pair without a default (beyond10x/ess#644) ---------------------
+
+/// A checkout answered by whether a coupon is sent: both branches guarded, no default, so the
+/// closed proof enumerates the coupon's presence.
+const CHECKOUT_PAIR: &str = r"format: ess/32
+system: demo
+version: v1
+domain: demo.orders
+events:
+  - name: demo.orders.Discounted
+    fields: []
+  - name: demo.orders.FullPrice
+    fields: []
+actors:
+  - name: demo.orders.Shopper
+    may: [demo.orders.Checkout]
+commands:
+  - name: demo.orders.Checkout
+    input: [{name: coupon, type: Optional<String>}]
+    outcomes:
+      - name: discounted
+        when: defined(coupon)
+        emits: [demo.orders.Discounted]
+      - name: full-price
+        when: not defined(coupon)
+        emits: [demo.orders.FullPrice]
+";
+
+/// A precedence swap of the disjoint pair is `equivalent` (beyond10x/ess#501); the mutant that
+/// changes an answer is `guard-negate`. Negating either side of an exhaustive pair without a
+/// default leaves both branches on one presence and none on the other, which the closed proof now
+/// decides, so validation refuses the mutant (`ESS-MUTATE-002`) naming the case, and no
+/// implementation of it can pass for the original.
+#[test]
+fn the_guard_negate_mutant_of_a_defined_pair_is_refused_by_validation() {
+    use ess_compiler::source::SourceMap as Texts;
+    use ess_conformance::interpret::Interpreted;
+    use ess_conformance::mutate::{self, MutantClass, Verdict};
+
+    let label = "checkout.yaml".to_owned();
+    let raw = RawSpecFile::parse(CHECKOUT_PAIR).unwrap_or_else(|error| panic!("{error}"));
+    let mut texts = Texts::new();
+    texts.insert(label.clone(), CHECKOUT_PAIR.to_owned());
+    let documents = vec![(Source::new(label), raw)];
+    let original =
+        mutate::compile(documents.clone(), &texts).unwrap_or_else(|error| panic!("{error:?}"));
+    let negated: Vec<_> = mutate::mutants(&documents, &[MutantClass::GuardNegate])
+        .into_iter()
+        .filter(|mutant| mutant.id.starts_with("guard-negate/demo.orders.Checkout/"))
+        .collect();
+    assert!(!negated.is_empty(), "the pair offers guard-negate sites");
+    for mutant in &negated {
+        let entry = mutate::evaluate(&documents, &texts, mutant, || {
+            Interpreted::for_model(original.clone())
+        })
+        .unwrap_or_else(|refusal| panic!("{}: {refusal:?}", mutant.id));
+        assert_eq!(
+            entry.verdict,
+            Verdict::Stillborn,
+            "{}: {entry:#?}",
+            mutant.id
+        );
+        let stillborn = entry
+            .stillborn
+            .as_ref()
+            .unwrap_or_else(|| panic!("{}: {entry:#?}", mutant.id));
+        assert!(
+            ["ESS-COMMAND-004", "ESS-COMMAND-005"].contains(&stillborn.cause.as_str())
+                && (stillborn.message.contains("coupon = absent")
+                    || stillborn.message.contains("coupon = present")),
+            "{}: the refusal names the presence case: {stillborn:#?}",
+            mutant.id
+        );
+    }
+}

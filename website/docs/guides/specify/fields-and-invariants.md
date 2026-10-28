@@ -91,11 +91,20 @@ or overlapping guards produce a concrete failing assignment. Required `Boolean`
 inputs also form a closed domain: `pause == true` and `pause == false` cover every
 value without a default. Their witnesses carry Boolean values, not text.
 
+An `Optional` value read only through `defined(…)` is closed too: it is either absent
+or present. `when: defined(coupon)` and `when: not defined(coupon)` cover every
+input without a default, and so do the same pair over a stored field in
+`when_subject:` and over a related row's field in `when_related:`. A missing case is
+named as `coupon = absent` or `coupon = present`. The pair is not proved beside
+`when_subject_state:`, where a default is still needed.
+
 This proof is bounded to 64 joint assignments and 128 predicate nodes. Required
-enum and Boolean fields, transparent wrappers, equality, membership, Boolean truthiness and supported Boolean
-combinations participate. Every referenced input must fit that finite domain;
-Optional paths, open types, unsupported expressions and unknown results retain the
-requirement for a default. Existing defaults and external outcomes keep their behavior.
+enum and Boolean fields, transparent wrappers, equality, membership, Boolean truthiness,
+`defined(…)` of an `Optional` path and supported Boolean combinations participate.
+Every referenced input must fit that finite domain; an `Optional` path compared by
+value (`token == a`, even beside `defined(token)`), open types, unsupported
+expressions and unknown results retain the requirement for a default. Existing
+defaults and external outcomes keep their behavior.
 
 ### Give enum variants typed attributes
 

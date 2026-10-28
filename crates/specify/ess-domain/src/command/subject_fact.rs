@@ -684,14 +684,7 @@ fn validate_partition(
         if selected.len() == 1 {
             continue;
         }
-        let assignment =
-            |values: &std::collections::BTreeMap<_, ess_primitives::facts::FactValue>| {
-                values
-                    .iter()
-                    .map(|(path, value)| format!("{path} = {value}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            };
+        let assignment = |values, presence| finite::assignment_terms(values, presence).join(", ");
         errors.push(ValidationError::at(
             command.site().key("outcomes"),
             if selected.is_empty() {
@@ -701,8 +694,8 @@ fn validate_partition(
             },
             format!(
                 "stored [{}] and input [{}] select {} branches: {}",
-                assignment(&case.fields),
-                assignment(&case.input),
+                assignment(&case.fields, &case.fields_presence),
+                assignment(&case.input, &case.input_presence),
                 selected.len(),
                 selected
                     .iter()

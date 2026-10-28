@@ -495,3 +495,144 @@ fn a_refused_row_is_never_asserted_unchanged_through_an_eventual_view() {
         serde_json::to_string(&held.steps).unwrap()
     );
 }
+
+// ---- A `defined` / `not defined` pair without a default (beyond10x/ess#644) ---------------------
+
+/// An account opened without a reset token: `ResendReset` answers `resent` where one is stored and
+/// `issued` where none is, both branches guarded and no default. No `unknown_instance:` refusal:
+/// beside a pair of guarded stored-field branches without a default, synthesis cannot arrange one
+/// for a Boolean pair either (`ESS-SYNTH-008`), which is not what this case is about.
+const STORED_PRESENCE_PAIR: &str = r"format: ess/32
+system: demo
+version: v1
+domain: demo.accounts
+types:
+  - {name: demo.accounts.AccountId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.accounts.Account
+    identity: {name: account_id, type: demo.accounts.AccountId}
+    fields:
+      - {name: reset_token, type: Optional<String>}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: demo.accounts.Opened
+    fields: [{name: account_id, type: demo.accounts.AccountId}]
+  - name: demo.accounts.ResetSent
+    fields: [{name: account_id, type: demo.accounts.AccountId}]
+  - name: demo.accounts.ResetIssued
+    fields: [{name: account_id, type: demo.accounts.AccountId}]
+actors:
+  - name: demo.accounts.User
+    may: [demo.accounts.Open, demo.accounts.ResendReset]
+commands:
+  - name: demo.accounts.Open
+    input: []
+    outcomes:
+      - name: opened
+        creates: demo.accounts.Account
+        instance: account_id
+        emits: [demo.accounts.Opened]
+        payload: {demo.accounts.Opened: {account_id: {generated: true}}}
+  - name: demo.accounts.ResendReset
+    input: [{name: account_id, type: demo.accounts.AccountId}]
+    outcomes:
+      - name: resent
+        when_subject: {predicate: defined(reset_token)}
+        updates: demo.accounts.Account
+        instance: account_id
+        sets: {reset_token: t}
+        emits: [demo.accounts.ResetSent]
+        payload: {demo.accounts.ResetSent: {account_id: input.account_id}}
+      - name: issued
+        when_subject: {predicate: not defined(reset_token)}
+        updates: demo.accounts.Account
+        instance: account_id
+        sets: {reset_token: t}
+        emits: [demo.accounts.ResetIssued]
+        payload: {demo.accounts.ResetIssued: {account_id: input.account_id}}
+views:
+  - name: demo.accounts.Accounts
+    source: demo.accounts.Account
+    consistency: read_your_writes
+    fields:
+      - {name: account_id, type: demo.accounts.AccountId}
+      - {name: reset_token, type: Optional<String>}
+";
+
+/// A checkout answered by whether a coupon is sent, both branches guarded and no default.
+const INPUT_PRESENCE_PAIR: &str = r"format: ess/32
+system: demo
+version: v1
+domain: demo.orders
+events:
+  - name: demo.orders.Discounted
+    fields: []
+  - name: demo.orders.FullPrice
+    fields: []
+actors:
+  - name: demo.orders.Shopper
+    may: [demo.orders.Checkout]
+commands:
+  - name: demo.orders.Checkout
+    input: [{name: coupon, type: Optional<String>}]
+    outcomes:
+      - name: discounted
+        when: defined(coupon)
+        emits: [demo.orders.Discounted]
+      - name: full-price
+        when: not defined(coupon)
+        emits: [demo.orders.FullPrice]
+";
+
+#[test]
+fn a_defined_pair_witnesses_both_presence_states() {
+    use ess_conformance::interpret::Interpreted;
+    for (text, branches) in [
+        (
+            STORED_PRESENCE_PAIR,
+            [
+                "demo.accounts.ResendReset/outcome/resent",
+                "demo.accounts.ResendReset/outcome/issued",
+            ],
+        ),
+        (
+            INPUT_PRESENCE_PAIR,
+            [
+                "demo.orders.Checkout/outcome/discounted",
+                "demo.orders.Checkout/outcome/full-price",
+            ],
+        ),
+    ] {
+        let raw = RawSpecFile::parse(text).unwrap_or_else(|error| panic!("{error}"));
+        let spec = Specification::assemble([(Source::new("presence.yaml"), raw)])
+            .unwrap_or_else(|errors| panic!("{errors}"));
+        let ir: EssIr = compile(&spec, &SourceMap::new()).unwrap();
+        let result = ess_conformance::synthesize::synthesize(&ir);
+        assert_no_witness_gap(&result);
+        for branch in branches {
+            scenario(&result.suite, branch);
+        }
+        let admitted = AdmittedSuite::from_suite(&result.suite).unwrap();
+        let report = Runner::for_suite(&result.suite)
+            .run_admitted(&admitted, &Interpreted::for_model(ir.clone()))
+            .into_report();
+        let statuses: Vec<(String, Status)> = report
+            .scenarios
+            .iter()
+            .map(|scenario| (scenario.scenario.to_string(), scenario.status))
+            .collect();
+        assert_eq!(statuses.len(), result.suite.scenarios.len());
+        for branch in branches {
+            assert!(
+                statuses
+                    .iter()
+                    .any(|(id, status)| id == branch && *status == Status::Passed),
+                "{branch} passes on the interpreted target: {statuses:?}"
+            );
+        }
+        assert!(
+            statuses.iter().all(|(_, status)| *status == Status::Passed),
+            "{statuses:?}"
+        );
+    }
+}
