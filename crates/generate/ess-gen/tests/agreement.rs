@@ -329,7 +329,7 @@ fn inside_relation(fields: &serde_json::Map<String, Value>) -> bool {
 /// rule finds both under one heading. A keyword in neither list is treated as an assertion, which is
 /// the safe default and which `every_keyword_the_projections_publish_is_classified` makes loud rather
 /// than silent.
-const ASSERTIONS: [&str; 14] = [
+const ASSERTIONS: [&str; 15] = [
     "$ref",
     "additionalProperties",
     "anyOf",
@@ -338,6 +338,7 @@ const ASSERTIONS: [&str; 14] = [
     "enum",
     "format",
     "items",
+    "minimum",
     "oneOf",
     "pattern",
     "properties",

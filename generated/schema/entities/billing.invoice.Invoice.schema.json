@@ -61,7 +61,8 @@
       "contentEncoding": "base64"
     },
     "reminder_count": {
-      "type": "integer"
+      "type": "integer",
+      "minimum": 0
     },
     "state": {
       "$ref": "#/$defs/billing.invoice.Invoice.State"
@@ -82,6 +83,10 @@
     "state"
   ],
   "additionalProperties": false,
+  "x-ess-invariants": [
+    "total.amount >= 0",
+    "reminder_count >= 0"
+  ],
   "x-ess-provenance": {
     "system": "billing",
     "specification_version": "v3",

@@ -99,7 +99,11 @@ field with an integer literal on its right (`>=`, `>`, `<=`, `<`, `==`) publishe
 `minimum`, `maximum` or `const` on that property, the tighter bound winning, and
 `==` on a field that may be absent or `null` publishing `minimum` and `maximum`
 instead of `const`. `x-ess-invariants` is still published verbatim; every other
-invariant shape stays an annotation only.
+invariant shape stays an annotation only. An entity's invariants take the same path
+(beyond10x/ess#688): its schema document and its `x-ess-entities` entry in OpenAPI
+publish them under `x-ess-invariants` and carry the same keywords on its fields'
+properties. A command input, an event or a view row that carries a value the
+entity also holds is not the entity and gains nothing.
 
 A newtype of `Integer` gets the same keywords on its own definition from invariants
 over its wrapped value, `value` (`ess_domain::types` `VALUE`): `value == 2` publishes

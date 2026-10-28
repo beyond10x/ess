@@ -1002,8 +1002,8 @@ pub(crate) fn content_key(tag: &str) -> &'static str {
     }
 }
 
-/// The integer bounds a struct's invariants state about its own fields, as `minimum`, `maximum`
-/// and `const` on those fields' properties (beyond10x/ess#394).
+/// The integer bounds a struct's or an entity's invariants state about its own fields, as `minimum`,
+/// `maximum` and `const` on those fields' properties (beyond10x/ess#394, beyond10x/ess#688).
 ///
 /// Only the shape a JSON Schema keyword says exactly is lowered: one comparison of a top-level
 /// `Integer` field (required or `Optional`) with an integer literal on its right, `>=`, `>`, `<=`, `<`
@@ -1181,6 +1181,10 @@ pub(crate) struct Message<'a> {
     /// What a reader does with a field it does not declare: `ignored` only for a command response
     /// whose command declares it (`ess/24`), `refused` for every other message.
     pub(crate) undeclared_fields: UndeclaredFields,
+    /// What must hold of every value, as the entity declares it (beyond10x/ess#688). Empty for
+    /// everything but an entity, for the reason `relations` is: a command input, an event or a
+    /// view row copies some of an entity's values and is not the entity.
+    pub(crate) invariants: &'a [Invariant],
 }
 
 impl<'a> Message<'a> {
@@ -1195,6 +1199,7 @@ impl<'a> Message<'a> {
             relations: BTreeMap::new(),
             examples: Some(&command.examples),
             undeclared_fields: UndeclaredFields::Refused,
+            invariants: &[],
         }
     }
 
@@ -1210,6 +1215,7 @@ impl<'a> Message<'a> {
             relations: BTreeMap::new(),
             examples: None,
             undeclared_fields: command.undeclared_fields,
+            invariants: &[],
         }
     }
 
@@ -1224,6 +1230,7 @@ impl<'a> Message<'a> {
             relations: BTreeMap::new(),
             examples: None,
             undeclared_fields: UndeclaredFields::Refused,
+            invariants: &[],
         }
     }
 
@@ -1241,6 +1248,7 @@ impl<'a> Message<'a> {
             relations: BTreeMap::new(),
             examples: None,
             undeclared_fields: UndeclaredFields::Refused,
+            invariants: &[],
         }
     }
 
@@ -1259,6 +1267,7 @@ impl<'a> Message<'a> {
             relations: BTreeMap::new(),
             examples: None,
             undeclared_fields: UndeclaredFields::Refused,
+            invariants: &[],
         }
     }
 
@@ -1281,6 +1290,7 @@ impl<'a> Message<'a> {
             relations,
             examples: None,
             undeclared_fields: UndeclaredFields::Refused,
+            invariants: &entity.invariants,
         }
     }
 
@@ -1300,15 +1310,22 @@ impl<'a> Message<'a> {
 }
 
 /// The schema for one message's payload.
+///
+/// An entity's invariants are published verbatim and lowered onto its fields' properties by the
+/// same reader a struct's go through ([`integer_bounds`]), so an entity and a struct holding the
+/// same fields under the same invariants publish the same keywords (beyond10x/ess#688).
 pub(crate) fn message(carried: &Message<'_>) -> Node {
-    Node {
+    let mut node = Node {
         title: Some(carried.title.clone()),
         description: carried.description.clone(),
         ess_name: Some(carried.name.to_string()),
         ess_kind: Some(carried.kind),
         additional: Some(Additional::of(carried.undeclared_fields)),
+        invariants: statements(carried.invariants),
         ..object_annotated(carried.fields, &carried.relations, carried.examples)
-    }
+    };
+    integer_bounds(&mut node, carried.fields, carried.invariants);
+    node
 }
 
 /// What one instance of an entity holds: its identity, its declared fields, and its state.
