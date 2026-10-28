@@ -30,6 +30,11 @@
 //! that contract: `implements`, whose inputs are compared field by field, or `gates`, recorded and
 //! not executed. See [`ContractRole`].
 //!
+//! Under [`PAYLOAD_COMPOSITION_FORMAT`] a conformance end may also name an event, a declared
+//! error, or a command's input or response ([`ConformanceEnd`]). Each must be exported by its
+//! selected component, and a payload is compared as a struct of its fields, against another
+//! payload or a struct type. Conformance ends are never added to the client surface.
+//!
 //! The persisted input formats are [`SUPPORTED_COMPOSITION_FORMATS`]. Generated clients consume
 //! the derived [`EssClientPlan`] rather than reinterpreting multiple service models independently.
 //! The Rust client constrains operation descriptors to that selection, but forwards request and
@@ -67,8 +72,12 @@ pub const READER_COMPOSITION_FORMAT: &str = "ess-composition/3";
 /// The composition format that also admits `roles`: contract roles between imported services.
 pub const ROLE_COMPOSITION_FORMAT: &str = "ess-composition/4";
 
+/// The composition format whose conformance ends may also name an event, an error or a command's
+/// input or response.
+pub const PAYLOAD_COMPOSITION_FORMAT: &str = "ess-composition/5";
+
 /// Every `ess-composition/N` major this build reads; any other marker is refused.
-pub const SUPPORTED_COMPOSITION_FORMATS: &[u32] = &[1, 2, 3, 4];
+pub const SUPPORTED_COMPOSITION_FORMATS: &[u32] = &[1, 2, 3, 4, 5];
 
 /// The language-neutral client-plan format emitted from composition IR.
 pub const CLIENT_PLAN_FORMAT: &str = "ess-client-plan/1";
@@ -315,31 +324,295 @@ impl CompositionRef {
     }
 }
 
-/// One end of a [`TypeConformance`]: a declared type in the service selected by its key.
+/// One end of a [`TypeConformance`]: a declared type in the service selected by its key, or (from
+/// [`PAYLOAD_COMPOSITION_FORMAT`]) an event's, an error's or a command part's payload.
+///
+/// Written `{service, type}`, `{service, event}`, `{service, error}` or `{service, command, part}`:
+/// exactly one of `type`, `event`, `error` and `command`, and `part` only beside `command`. A type
+/// end reads and writes the bytes it did before `/5`.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "RawTypeBinding", into = "RawTypeBinding")]
 pub struct TypeBinding {
     service: ServiceKey,
-    #[serde(rename = "type")]
-    declared: DeclaredTypeRef,
+    end: ConformanceEnd,
+}
+
+/// What a [`TypeBinding`] names in its service. A type sorts first, so a `/2` to `/4` document's
+/// conformances keep their order.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ConformanceEnd {
+    /// A declared type.
+    Type(DeclaredTypeRef),
+    /// An event's payload (`ess-composition/5`).
+    Event(EventRef),
+    /// A declared error's payload (`ess-composition/5`).
+    Error(ErrorRef),
+    /// A command's input or response (`ess-composition/5`).
+    Command {
+        /// The command.
+        command: CommandRef,
+        /// Which of its field lists.
+        part: CommandPart,
+    },
+}
+
+impl ConformanceEnd {
+    /// The name the end resolves, as the selected component must export it.
+    fn semantic(&self) -> EssSemanticRef {
+        match self {
+            Self::Type(name) => name.clone().into(),
+            Self::Event(name) => name.clone().into(),
+            Self::Error(name) => name.clone().into(),
+            Self::Command { command, .. } => command.clone().into(),
+        }
+    }
+
+    /// Whether the end names a payload rather than a type: an `ess-composition/5` construct.
+    const fn is_payload(&self) -> bool {
+        !matches!(self, Self::Type(_))
+    }
+}
+
+impl fmt::Display for ConformanceEnd {
+    /// `type demo.Name` in backticks as a drift writes it: ``type `demo.Name` ``.
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Type(name) => write!(formatter, "type `{name}`"),
+            Self::Event(name) => write!(formatter, "event `{name}`"),
+            Self::Error(name) => write!(formatter, "error `{name}`"),
+            Self::Command { command, part } => write!(formatter, "command `{command}` {part}"),
+        }
+    }
+}
+
+/// Which field list of a command a [`ConformanceEnd::Command`] names.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandPart {
+    /// What a caller sends.
+    Input,
+    /// What the command returns; a command with no `response` has none to name.
+    Response,
+}
+
+impl fmt::Display for CommandPart {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Input => "input",
+            Self::Response => "response",
+        })
+    }
 }
 
 impl TypeBinding {
     /// Names a declared type in one imported service.
     pub fn new(service: ServiceKey, declared: DeclaredTypeRef) -> Self {
-        Self { service, declared }
+        Self {
+            service,
+            end: ConformanceEnd::Type(declared),
+        }
     }
 
-    /// The service whose compiled model declares the type.
+    /// Names an event's payload in one imported service (`ess-composition/5`).
+    pub fn event(service: ServiceKey, event: EventRef) -> Self {
+        Self {
+            service,
+            end: ConformanceEnd::Event(event),
+        }
+    }
+
+    /// Names a declared error's payload in one imported service (`ess-composition/5`).
+    pub fn error(service: ServiceKey, error: ErrorRef) -> Self {
+        Self {
+            service,
+            end: ConformanceEnd::Error(error),
+        }
+    }
+
+    /// Names a command's input or response in one imported service (`ess-composition/5`).
+    pub fn command(service: ServiceKey, command: CommandRef, part: CommandPart) -> Self {
+        Self {
+            service,
+            end: ConformanceEnd::Command { command, part },
+        }
+    }
+
+    /// The service whose compiled model declares the end.
     pub fn service(&self) -> &ServiceKey {
         &self.service
     }
 
-    /// The declared type's stable name.
-    pub fn declared(&self) -> &DeclaredTypeRef {
-        &self.declared
+    /// The declared type's stable name; `None` for a payload end.
+    pub fn declared(&self) -> Option<&DeclaredTypeRef> {
+        match &self.end {
+            ConformanceEnd::Type(name) => Some(name),
+            _ => None,
+        }
+    }
+
+    /// What the end names.
+    pub fn end(&self) -> &ConformanceEnd {
+        &self.end
+    }
+}
+
+/// A [`TypeBinding`] as written, before its keys are held to one end.
+#[derive(Clone, Default, serde::Serialize)]
+struct RawTypeBinding {
+    service: Option<ServiceKey>,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    declared: Option<DeclaredTypeRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    event: Option<EventRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<ErrorRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command: Option<CommandRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    part: Option<CommandPart>,
+}
+
+/// The keys of an end that only `ess-composition/5` reads, in the order a refusal names them.
+const PAYLOAD_END_KEYS: [&str; 4] = ["event", "error", "command", "part"];
+
+impl RawTypeBinding {
+    /// The first `/5`-only key written, if any.
+    fn payload_key(&self) -> Option<&'static str> {
+        [
+            self.event.is_some(),
+            self.error.is_some(),
+            self.command.is_some(),
+            self.part.is_some(),
+        ]
+        .into_iter()
+        .zip(PAYLOAD_END_KEYS)
+        .find_map(|(written, key)| written.then_some(key))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RawTypeBinding {
+    /// Reads the six keys by hand so an unknown one is refused as it was before `/5` named any
+    /// payload key: ``unknown field `x`, expected `service` or `type` ``.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Keys;
+
+        impl<'de> serde::de::Visitor<'de> for Keys {
+            type Value = RawTypeBinding;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a conformance end")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                fn once<'de, A: serde::de::MapAccess<'de>, T: serde::Deserialize<'de>>(
+                    slot: &mut Option<T>,
+                    key: &'static str,
+                    map: &mut A,
+                ) -> Result<(), A::Error> {
+                    if slot.is_some() {
+                        return Err(serde::de::Error::duplicate_field(key));
+                    }
+                    *slot = Some(map.next_value()?);
+                    Ok(())
+                }
+
+                let mut raw = RawTypeBinding::default();
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "service" => once(&mut raw.service, "service", &mut map)?,
+                        "type" => once(&mut raw.declared, "type", &mut map)?,
+                        "event" => once(&mut raw.event, "event", &mut map)?,
+                        "error" => once(&mut raw.error, "error", &mut map)?,
+                        "command" => once(&mut raw.command, "command", &mut map)?,
+                        "part" => once(&mut raw.part, "part", &mut map)?,
+                        other => {
+                            return Err(serde::de::Error::custom(format_args!(
+                                "unknown field `{other}`, expected `service` or `type` (from \
+                                 {PAYLOAD_COMPOSITION_FORMAT} also `event`, `error`, `command` \
+                                 or `part`)"
+                            )))
+                        }
+                    }
+                }
+                Ok(raw)
+            }
+        }
+
+        deserializer.deserialize_struct(
+            "TypeBinding",
+            &["service", "type", "event", "error", "command", "part"],
+            Keys,
+        )
+    }
+}
+
+impl TryFrom<RawTypeBinding> for TypeBinding {
+    type Error = String;
+
+    fn try_from(raw: RawTypeBinding) -> Result<Self, Self::Error> {
+        let service = raw
+            .service
+            .ok_or_else(|| "missing field `service`".to_owned())?;
+        let end = match (raw.declared, raw.event, raw.error, raw.command, raw.part) {
+            (Some(declared), None, None, None, None) => ConformanceEnd::Type(declared),
+            (None, Some(event), None, None, None) => ConformanceEnd::Event(event),
+            (None, None, Some(error), None, None) => ConformanceEnd::Error(error),
+            (None, None, None, Some(command), Some(part)) => {
+                ConformanceEnd::Command { command, part }
+            }
+            (None, None, None, Some(command), None) => {
+                return Err(format!(
+                    "the conformance end on command `{command}` names no `part`: name \
+                     `input` or `response`"
+                ))
+            }
+            (declared, event, error, None, Some(_))
+                if usize::from(declared.is_some())
+                    + usize::from(event.is_some())
+                    + usize::from(error.is_some())
+                    == 1 =>
+            {
+                return Err(
+                    "`part` belongs to a `command` end: a type, event or error end \
+                            names no part"
+                        .to_owned(),
+                )
+            }
+            _ => {
+                return Err(
+                    "a conformance end names exactly one of `type`, `event`, `error` \
+                            or `command`"
+                        .to_owned(),
+                )
+            }
+        };
+        Ok(Self { service, end })
+    }
+}
+
+impl From<TypeBinding> for RawTypeBinding {
+    fn from(binding: TypeBinding) -> Self {
+        let mut raw = Self {
+            service: Some(binding.service),
+            ..Self::default()
+        };
+        match binding.end {
+            ConformanceEnd::Type(name) => raw.declared = Some(name),
+            ConformanceEnd::Event(name) => raw.event = Some(name),
+            ConformanceEnd::Error(name) => raw.error = Some(name),
+            ConformanceEnd::Command { command, part } => {
+                raw.command = Some(command);
+                raw.part = Some(part);
+            }
+        }
+        raw
     }
 }
 
@@ -352,6 +625,9 @@ impl TypeBinding {
 ///
 /// A reader assertion (`reader: true`, from `ess-composition/3`) also admits the widening a
 /// consumer that only reads the imported type may do; see [`TypeConformance::for_reader`].
+///
+/// From `ess-composition/5` either end may name an event, an error or a command part instead of a
+/// type ([`ConformanceEnd`]); its payload is compared as a struct of its fields.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -442,8 +718,10 @@ impl TypeConformance {
 /// The human-authored persisted composition input.
 ///
 /// Read through `RawCompositionSpec`, which rejects every unknown field, and then refuses
-/// `roles` under any marker but [`ROLE_COMPOSITION_FORMAT`] as an unknown field too: an earlier
-/// document carrying it reads exactly as it did before `/4` existed.
+/// `roles` under any marker but [`ROLE_COMPOSITION_FORMAT`] and [`PAYLOAD_COMPOSITION_FORMAT`],
+/// and an end's `event`, `error`, `command` or `part` under any marker but
+/// [`PAYLOAD_COMPOSITION_FORMAT`], as unknown fields too: an earlier document carrying them reads
+/// exactly as it did before the format that introduced them existed.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "RawCompositionSpec")]
 pub struct CompositionSpec {
@@ -457,13 +735,14 @@ pub struct CompositionSpec {
     /// authored `null` reads as the absent key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     conformances: Option<Vec<TypeConformance>>,
-    /// Present only under `ess-composition/4`; any other document carrying the key, even empty
-    /// or `null`, does not read. Under `/4` an authored `null` reads as the absent key.
+    /// Present only from `ess-composition/4`; any earlier document carrying the key, even empty
+    /// or `null`, does not read. From `/4` an authored `null` reads as the absent key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     roles: Option<Vec<ContractRole>>,
 }
 
-/// The closed shape every composition marker reads through, before `roles` is held to `/4`.
+/// The closed shape every composition marker reads through, before `roles` and payload ends are
+/// held to their formats.
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawCompositionSpec {
@@ -486,41 +765,108 @@ struct RawCompositionSpec {
 /// `Option<ConformancesKey>`.
 #[derive(serde::Deserialize)]
 #[serde(transparent)]
-struct ConformancesKey(Option<Vec<TypeConformance>>);
+struct ConformancesKey(Option<Vec<RawConformance>>);
+
+/// A `conformances` entry whose ends are not yet held to the document's format.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawConformance {
+    local: RawTypeBinding,
+    conforms_to: RawTypeBinding,
+    #[serde(default, deserialize_with = "present")]
+    reader: Option<ReaderKey>,
+}
+
+impl RawConformance {
+    /// The entry, its ends read as `format` reads them.
+    fn read(self, format: &str) -> Result<TypeConformance, ReadRefusal> {
+        Ok(TypeConformance {
+            local: bind(self.local, format)?,
+            conforms_to: bind(self.conforms_to, format)?,
+            reader: self.reader,
+        })
+    }
+}
+
+/// One end read as `format` reads it: before [`PAYLOAD_COMPOSITION_FORMAT`] only `service` and
+/// `type` are fields, and a missing `type` is a missing field.
+fn bind(raw: RawTypeBinding, format: &str) -> Result<TypeBinding, ReadRefusal> {
+    if format != PAYLOAD_COMPOSITION_FORMAT {
+        if let Some(key) = raw.payload_key() {
+            return Err(ReadRefusal::PayloadEndBeforeFive {
+                key,
+                format: format.to_owned(),
+            });
+        }
+        if raw.declared.is_none() {
+            return Err(ReadRefusal::End("missing field `type`".to_owned()));
+        }
+    }
+    TypeBinding::try_from(raw).map_err(ReadRefusal::End)
+}
 
 /// An authored `roles:` value, `null` included; kept apart from absence by `Option<RolesKey>`.
 #[derive(serde::Deserialize)]
 #[serde(transparent)]
 struct RolesKey(Option<Vec<ContractRole>>);
 
-/// `roles` in a document whose marker is not [`ROLE_COMPOSITION_FORMAT`].
+/// A key the document's format does not read, or a malformed conformance end.
 #[derive(Debug)]
-struct RolesBeforeFour(String);
+enum ReadRefusal {
+    /// `roles` under a marker before [`ROLE_COMPOSITION_FORMAT`].
+    RolesBeforeFour(String),
+    /// An end's `event`, `error`, `command` or `part` under a marker but
+    /// [`PAYLOAD_COMPOSITION_FORMAT`].
+    PayloadEndBeforeFive { key: &'static str, format: String },
+    /// An end that names no kind, several, or a command without its part.
+    End(String),
+}
 
-impl fmt::Display for RolesBeforeFour {
+impl fmt::Display for ReadRefusal {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "unknown field `roles`, expected one of `format`, `composition`, `services`, \
-             `references`, `conformances`: `roles` is an {ROLE_COMPOSITION_FORMAT} construct, \
-             and this document is {:?}",
-            self.0
-        )
+        match self {
+            Self::RolesBeforeFour(format) => write!(
+                formatter,
+                "unknown field `roles`, expected one of `format`, `composition`, `services`, \
+                 `references`, `conformances`: `roles` is an {ROLE_COMPOSITION_FORMAT} construct, \
+                 and this document is {format:?}"
+            ),
+            Self::PayloadEndBeforeFive { key, format } => write!(
+                formatter,
+                "unknown field `{key}`, expected `service` or `type`: `{key}` on a conformance \
+                 end is an {PAYLOAD_COMPOSITION_FORMAT} construct, and this document is \
+                 {format:?}"
+            ),
+            Self::End(detail) => formatter.write_str(detail),
+        }
     }
 }
 
 impl TryFrom<RawCompositionSpec> for CompositionSpec {
-    type Error = RolesBeforeFour;
+    type Error = ReadRefusal;
 
     fn try_from(raw: RawCompositionSpec) -> Result<Self, Self::Error> {
-        if raw.roles.is_some() && raw.format != ROLE_COMPOSITION_FORMAT {
-            return Err(RolesBeforeFour(raw.format));
+        if raw.roles.is_some()
+            && !matches!(
+                raw.format.as_str(),
+                ROLE_COMPOSITION_FORMAT | PAYLOAD_COMPOSITION_FORMAT
+            )
+        {
+            return Err(ReadRefusal::RolesBeforeFour(raw.format));
         }
         // From `/2` an authored `null` is the absent key. `/1` admits the key under no value,
         // so its `null` is held as `[]` and refused by `compile` exactly as `[]` is.
         let conformances = match raw.conformances {
             Some(ConformancesKey(None)) if raw.format == COMPOSITION_FORMAT => Some(Vec::new()),
-            key => key.and_then(|ConformancesKey(conformances)| conformances),
+            key => key
+                .and_then(|ConformancesKey(conformances)| conformances)
+                .map(|entries| {
+                    entries
+                        .into_iter()
+                        .map(|entry| entry.read(&raw.format))
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?,
         };
         Ok(Self {
             format: raw.format,
@@ -595,6 +941,22 @@ impl CompositionSpec {
             format: ROLE_COMPOSITION_FORMAT.to_owned(),
             roles: (!roles.is_empty()).then_some(roles),
             ..Self::with_conformances(composition, services, references, conformances)
+        }
+    }
+
+    /// Creates an `ess-composition/5` input, whose conformance ends may also name an event, an
+    /// error or a command's input or response ([`TypeBinding::event`], [`TypeBinding::error`],
+    /// [`TypeBinding::command`]). Semantic validation happens in [`compile`].
+    pub fn with_payload_conformances(
+        composition: ServiceKey,
+        services: Vec<ServiceImportSpec>,
+        references: Vec<CompositionRef>,
+        conformances: Vec<TypeConformance>,
+        roles: Vec<ContractRole>,
+    ) -> Self {
+        Self {
+            format: PAYLOAD_COMPOSITION_FORMAT.to_owned(),
+            ..Self::with_roles(composition, services, references, conformances, roles)
         }
     }
 
@@ -689,7 +1051,8 @@ pub enum CompositionCode {
     /// A semantic name exists in the model but is outside the selected component surface.
     ReferenceOutsideComponent,
     /// A local type asserted to conform to an imported type differs from it in a field's name,
-    /// presence or type (from `ess-composition/2`).
+    /// presence or type (from `ess-composition/2`), or a payload end (from `ess-composition/5`)
+    /// differs from the other end in kind or field.
     TypeConformanceDrift,
     /// A role's `service` or `plays` names a key the composition does not import (from
     /// `ess-composition/4`).
@@ -781,9 +1144,9 @@ impl CompositionCode {
         },
         ess_compiler::diagnostic::CatalogueEntry {
             key: Self::TypeConformanceDrift,
-            meaning: "A local type said to conform to an imported type differs from it in a \
-                      field's name, presence or type.",
-            repair: "Change the local type to match the imported one field for field.",
+            meaning: "A local type or payload said to conform to an imported type or payload \
+                      differs from it in kind, or in a field's name, presence or type.",
+            repair: "Change the local type or payload to match the imported one field for field.",
         },
         ess_compiler::diagnostic::CatalogueEntry {
             key: Self::UnknownRoleService,
@@ -1628,22 +1991,39 @@ fn validate_format(
         CONFORMANCE_COMPOSITION_FORMAT => CONFORMANCE_COMPOSITION_FORMAT,
         READER_COMPOSITION_FORMAT => READER_COMPOSITION_FORMAT,
         ROLE_COMPOSITION_FORMAT => ROLE_COMPOSITION_FORMAT,
+        PAYLOAD_COMPOSITION_FORMAT => PAYLOAD_COMPOSITION_FORMAT,
         other => {
             diagnostics.push(CompositionDiagnostic::new(
                 CompositionCode::UnsupportedFormat,
                 None,
                 format!(
                     "format {other:?} is unsupported; expected {COMPOSITION_FORMAT}, \
-                     {CONFORMANCE_COMPOSITION_FORMAT}, {READER_COMPOSITION_FORMAT} or \
-                     {ROLE_COMPOSITION_FORMAT}"
+                     {CONFORMANCE_COMPOSITION_FORMAT}, {READER_COMPOSITION_FORMAT}, \
+                     {ROLE_COMPOSITION_FORMAT} or {PAYLOAD_COMPOSITION_FORMAT}"
                 ),
             ));
             return COMPOSITION_FORMAT;
         }
     };
-    // The reader refuses `roles` outside `/4`; this holds the same line for a document built
-    // some other way.
-    if format != ROLE_COMPOSITION_FORMAT && specification.roles.is_some() {
+    // The reader refuses `roles` before `/4` and payload ends before `/5`; this holds the same
+    // lines for a document built some other way.
+    if format != PAYLOAD_COMPOSITION_FORMAT
+        && specification.conformances().iter().any(|asserted| {
+            asserted.local.end.is_payload() || asserted.conforms_to.end.is_payload()
+        })
+    {
+        diagnostics.push(CompositionDiagnostic::new(
+            CompositionCode::UnsupportedFormat,
+            None,
+            format!(
+                "a conformance end naming an event, an error or a command is an \
+                 {PAYLOAD_COMPOSITION_FORMAT} construct; {format} does not admit it"
+            ),
+        ));
+    }
+    if !matches!(format, ROLE_COMPOSITION_FORMAT | PAYLOAD_COMPOSITION_FORMAT)
+        && specification.roles.is_some()
+    {
         diagnostics.push(CompositionDiagnostic::new(
             CompositionCode::UnsupportedFormat,
             None,
@@ -1662,11 +2042,13 @@ fn validate_format(
             ),
         ));
     }
-    if !matches!(format, READER_COMPOSITION_FORMAT | ROLE_COMPOSITION_FORMAT)
-        && specification
-            .conformances()
-            .iter()
-            .any(TypeConformance::reader_key)
+    if !matches!(
+        format,
+        READER_COMPOSITION_FORMAT | ROLE_COMPOSITION_FORMAT | PAYLOAD_COMPOSITION_FORMAT
+    ) && specification
+        .conformances()
+        .iter()
+        .any(TypeConformance::reader_key)
     {
         diagnostics.push(CompositionDiagnostic::new(
             CompositionCode::UnsupportedFormat,

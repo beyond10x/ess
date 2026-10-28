@@ -116,11 +116,47 @@ example. `Json` read as any map is refused here, `Map<String, Json>` included, b
 may be an array or a scalar; the issue's own rule — anything that could reject a producer value
 stays drift — decides it. Only a value that is always an object is read as `Map<String, Json>`.
 
+## Payload ends (`ess-composition/5`)
+
+beyond10x/ess#664. A consumer that keeps its own copy of an owner's event, error, or command input
+or response had no way to assert that the copy agrees: a conformance end named a declared type
+only, and a payload is a field list, not a type. Under `ess-composition/5` an end names exactly one
+of `type`, `event`, `error` or `command`, and a `command` end says which `part` it means:
+
+```yaml
+format: ess-composition/5
+conformances:
+  - local: {service: reports, event: demo.reports.OrderShipped}
+    conforms_to: {service: orders, event: demo.orders.OrderShipped}
+  - local: {service: reports, type: demo.reports.Shipment}
+    conforms_to: {service: orders, command: demo.orders.Ship, part: response}
+```
+
+- A payload (an event's or an error's fields, a command's `input` or `response`) is compared as an
+  anonymous struct with those fields, by the struct rule above, so `reader: true` and its widenings
+  apply unchanged. A payload end meets another payload end or a struct type; a newtype, enum or
+  union against a payload is `type_conformance_drift` ("`…` is a newtype where `…` is an event
+  payload").
+- Admission is the selected surface, as for a reference: an event the component publishes or an
+  accepted command emits, an error an accepted command raises, a command it accepts. The owned-domain
+  widening of `/2` covers `type` ends only.
+- `part` is required on a `command` end and refused on any other; two kinds, or none, are refused
+  when read. A `response` end on a command that declares no `response:` is
+  `unresolved_semantic_reference`.
+- A command input against a command input is admitted for uniformity. It is not a contract role:
+  `roles: implements` (`/4`) says that the local command answers the contract command, and compares
+  inputs by that rule; a conformance says that two copies of a payload agree.
+- Conformance ends are never added to the client surface, so the client plan does not move.
+
 ## Compatibility
 
-- `SUPPORTED_COMPOSITION_FORMATS` is `[1, 2, 3]` here (`/4`, contract roles, is
+- `SUPPORTED_COMPOSITION_FORMATS` is `[1, 2, 3, 4, 5]` (`/4`, contract roles, is
   [composition-contract-roles.md](composition-contract-roles.md)); `cargo xtask docs` reads it, so
   a new major without a release row and a reference page is refused.
+- Under `/1` to `/4` an `event`, `error`, `command` or `part` key on a conformance end is refused
+  when read, as the unknown field it was, with a clause naming `/5`. A `type` end reads and writes
+  `{service, type}` under every format, so earlier documents keep their authored and compiled
+  bytes. `/5` admits `reader` and `roles` as `/3` and `/4` do.
 - A `/1` or `/2` document whose conformance entry carries `reader`, whatever its value (`false` and
   `null` included), is refused as `unsupported_format`, naming `/3`. `/3` keeps the key as written; an entry without it is
   serialised without it, so a `/2` entry's authored and compiled bytes are unchanged.

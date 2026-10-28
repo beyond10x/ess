@@ -112,7 +112,8 @@ const SUPPORTED: &[(&str, &str, &str)] = &[
 /// | `9746c09f` | `ess/5`, `ess-diff/5` | 0.27.0 |
 ///
 /// `ess-composition` gained `SUPPORTED_COMPOSITION_FORMATS` with `/2`; its `/1` row is read the way
-/// the rows below are, `/2` shipped in 0.38.0, `/3` in 0.40.0 and `/4` is unreleased.
+/// the rows below are, `/2` shipped in 0.38.0, `/3` in 0.40.0, `/4` in 0.60.0 and `/5` is
+/// unreleased.
 ///
 /// The families after `ess-composition` have no `SUPPORTED_*` constant to read. Their rows are the
 /// ones the version history gives a release (`HISTORY`), each read as the earliest version tag
@@ -241,6 +242,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),
     ("ess-composition", 4, Some("0.60.0")),
+    // A conformance end names an event, error or command payload, and value constraints and
+    // variant attributes are compared.
+    ("ess-composition", 5, None),
     ("ess-scenario", 1, Some("0.16.0")),
     ("ess-scenario", 2, Some("0.23.0")),
     ("ess-scenario", 3, Some("0.35.0")),

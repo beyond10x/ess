@@ -10,6 +10,10 @@
 //! * enums have the same variant names, each with the same wire spelling;
 //! * unions have the same tag and the same variant names, each with a conforming shape.
 //!
+//! An `ess-composition/5` end may name an event, an error or a command's input or response
+//! instead of a type. Its payload is compared as a struct of its fields, against another payload or
+//! a struct type, by the struct rule above; a newtype, enum or union meets no payload.
+//!
 //! Primitives, lists and maps must match exactly. The one tolerance is the one a reader of the
 //! imported type can afford: where the imported value is required the local one may be
 //! `Optional`, at any position. The reverse, a local value required where the imported one may be
@@ -32,12 +36,14 @@
 use std::collections::BTreeSet;
 
 use ess_compiler::ir::{ResolvedBody, ResolvedField, ResolvedType, ResolvedTypeRef};
-use ess_compiler::refs::EssSemanticRef;
 use ess_compiler::EssIr;
 use ess_domain::name::QualifiedName;
 use ess_domain::types::{EnumVariant, Presence, Primitive};
 
-use crate::{Admission, CompositionCode, CompositionDiagnostic, CompositionSpec, TypeConformance};
+use crate::{
+    Admission, CommandPart, CompositionCode, CompositionDiagnostic, CompositionSpec,
+    ConformanceEnd, TypeBinding, TypeConformance,
+};
 
 /// Admits both ends of every assertion and compares their shapes.
 pub(crate) fn resolve_conformances(
@@ -47,17 +53,9 @@ pub(crate) fn resolve_conformances(
 ) -> BTreeSet<TypeConformance> {
     let mut conformances = BTreeSet::new();
     for asserted in specification.conformances() {
-        let local = admission.admit(
-            &asserted.local.service,
-            &EssSemanticRef::from(asserted.local.declared.clone()),
-            diagnostics,
-        );
-        let imported = admission.admit(
-            &asserted.conforms_to.service,
-            &EssSemanticRef::from(asserted.conforms_to.declared.clone()),
-            diagnostics,
-        );
-        let (Some(local_ir), Some(imported_ir)) = (local, imported) else {
+        let local = shape(admission, &asserted.local, diagnostics);
+        let imported = shape(admission, &asserted.conforms_to, diagnostics);
+        let (Some((local_ir, local)), Some((imported_ir, imported))) = (local, imported) else {
             continue;
         };
         let mut comparison = Comparison {
@@ -67,11 +65,7 @@ pub(crate) fn resolve_conformances(
             visiting: BTreeSet::new(),
             drifts: Vec::new(),
         };
-        comparison.named(
-            "",
-            asserted.local.declared.name(),
-            asserted.conforms_to.declared.name(),
-        );
+        comparison.shapes(&local, &imported);
         if comparison.drifts.is_empty() {
             conformances.insert(asserted.clone());
         } else {
@@ -79,17 +73,85 @@ pub(crate) fn resolve_conformances(
                 CompositionCode::TypeConformanceDrift,
                 Some(asserted.local.service.clone()),
                 format!(
-                    "`{}` type `{}` does not conform to `{}` type `{}`: {}",
+                    "`{}` {} does not conform to `{}` {}: {}",
                     asserted.local.service,
-                    asserted.local.declared,
+                    asserted.local.end,
                     asserted.conforms_to.service,
-                    asserted.conforms_to.declared,
+                    asserted.conforms_to.end,
                     comparison.drifts.join("; ")
                 ),
             ));
         }
     }
     conformances
+}
+
+/// What one conformance end compares: a declared type, or a payload's fields.
+enum Shape<'ir> {
+    Named(&'ir QualifiedName),
+    Payload {
+        name: &'ir QualifiedName,
+        fields: &'ir [ResolvedField],
+        /// What the payload is, as a drift names it: `an event payload`.
+        what: &'static str,
+    },
+}
+
+/// Admits one end and finds its shape in its compiled model, recording why when it has none.
+fn shape<'ir>(
+    admission: &Admission<'_, 'ir>,
+    binding: &TypeBinding,
+    diagnostics: &mut Vec<CompositionDiagnostic>,
+) -> Option<(&'ir EssIr, Shape<'ir>)> {
+    let ir = admission.admit(&binding.service, &binding.end.semantic(), diagnostics)?;
+    // Admission resolved the name, so every lookup below finds it.
+    let shape = match &binding.end {
+        ConformanceEnd::Type(name) => Shape::Named(&ir.types().get(name.name())?.name),
+        ConformanceEnd::Event(name) => {
+            let event = ir.events().get(name.name())?;
+            Shape::Payload {
+                name: &event.name,
+                fields: &event.fields,
+                what: "an event payload",
+            }
+        }
+        ConformanceEnd::Error(name) => {
+            let error = ir.errors().get(name.name())?;
+            Shape::Payload {
+                name: &error.name,
+                fields: &error.fields,
+                what: "an error payload",
+            }
+        }
+        ConformanceEnd::Command { command, part } => {
+            let resolved = ir.commands().get(command.name())?;
+            match part {
+                CommandPart::Input => Shape::Payload {
+                    name: &resolved.name,
+                    fields: &resolved.input,
+                    what: "a command input",
+                },
+                CommandPart::Response if resolved.response.is_empty() => {
+                    diagnostics.push(CompositionDiagnostic::new(
+                        CompositionCode::UnresolvedSemanticReference,
+                        Some(binding.service.clone()),
+                        format!(
+                            "service `{}` command `{command}` declares no `response`, so a \
+                             conformance end cannot name its response",
+                            binding.service
+                        ),
+                    ));
+                    return None;
+                }
+                CommandPart::Response => Shape::Payload {
+                    name: &resolved.name,
+                    fields: &resolved.response,
+                    what: "a command response",
+                },
+            }
+        }
+    };
+    Some((ir, shape))
 }
 
 /// Compares a local command's input with a contract command's for an `implements` role entry,
@@ -158,6 +220,23 @@ struct Comparison<'ir> {
 }
 
 impl Comparison<'_> {
+    /// Two conformance ends: types by [`Comparison::named`], and a payload as a struct of its
+    /// fields, against another payload or a struct type. No other type meets a payload.
+    fn shapes(&mut self, local: &Shape<'_>, imported: &Shape<'_>) {
+        if let (Shape::Named(local), Shape::Named(imported)) = (local, imported) {
+            return self.named("", local, imported);
+        }
+        let mine = fields(self.local, local);
+        let theirs = fields(self.imported, imported);
+        match (mine.fields, theirs.fields) {
+            (Some(own), Some(sent)) => self.structs("", (mine.name, own), (theirs.name, sent)),
+            _ => self.drifts.push(format!(
+                "the type itself: `{}` is {} where `{}` is {}",
+                mine.name, mine.kind, theirs.name, theirs.kind
+            )),
+        }
+    }
+
     fn named(&mut self, path: &str, local: &QualifiedName, imported: &QualifiedName) {
         let pair = (local.clone(), imported.clone());
         if !self.visiting.insert(pair.clone()) {
@@ -472,6 +551,35 @@ impl Comparison<'_> {
                 }
             }
             _ => false,
+        }
+    }
+}
+
+/// One end as a struct comparison sees it: its name, its kind as a drift names it, and its fields
+/// when it has them (a payload, or a struct type).
+struct Compared<'s> {
+    name: &'s QualifiedName,
+    kind: &'static str,
+    fields: Option<&'s [ResolvedField]>,
+}
+
+fn fields<'s>(ir: &'s EssIr, shape: &Shape<'s>) -> Compared<'s> {
+    match *shape {
+        Shape::Payload { name, fields, what } => Compared {
+            name,
+            kind: what,
+            fields: Some(fields),
+        },
+        Shape::Named(name) => {
+            let body = ir.types().get(name).map(|found| &found.body);
+            Compared {
+                name,
+                kind: body.map_or("undeclared", kind),
+                fields: match body {
+                    Some(ResolvedBody::Struct { fields, .. }) => Some(fields),
+                    _ => None,
+                },
+            }
         }
     }
 }
