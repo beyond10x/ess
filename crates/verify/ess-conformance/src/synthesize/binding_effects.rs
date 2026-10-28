@@ -1850,7 +1850,10 @@ fn refuses_only_missing(publisher: &ResolvedCommand, from: &str, entity: &Entity
 /// `input.<from>` with a stored field of its subject or of a related row, a set guard's filter
 /// reading it, or a related row of another entity read through it may answer otherwise for the new
 /// value, so the binding keeps the gap it had rather than a scenario sending the trigger down
-/// another branch (a downstream adopter's report of 2026-10-26).
+/// another branch (a downstream adopter's report of 2026-10-26). An ordinary input guard (`when:`,
+/// the input half of a subject or related guard, `external:` beside `when:`) reads the input under
+/// its bare name, `when: from != "a"`, and is a read of `from` as `input.<from>` is in a stored-field
+/// predicate.
 fn keeps_branch_sent(
     publisher: &ResolvedCommand,
     from: &str,
@@ -1862,7 +1865,20 @@ fn keeps_branch_sent(
 
     let reads =
         |predicate: &Predicate| super::row_set::input_reads(predicate).any(|read| read == from);
-    let input_guard = |predicate: Option<&Predicate>| input_kept || !predicate.is_some_and(reads);
+    let guard_reads = |predicate: &Predicate| {
+        predicate
+            .fact_paths()
+            .into_iter()
+            .any(|path| match path.segments() {
+                [root, ..] if root == from => true,
+                [root, field, ..] => {
+                    root == ess_domain::command::subject_fact::INPUT_NAMESPACE && field == from
+                }
+                _ => false,
+            })
+    };
+    let input_guard =
+        |predicate: Option<&Predicate>| input_kept || !predicate.is_some_and(guard_reads);
     let through = |via: &ResolvedRelatedVia| matches!(via, ResolvedRelatedVia::Input { field, .. } if field == from);
     publisher.outcomes.iter().all(|outcome| {
         let acts_on = outcome.subject.as_ref().is_some_and(|subject| {

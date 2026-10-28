@@ -1,0 +1,74 @@
+domain: demo.d
+types:
+  - {name: demo.d.GrantId, kind: newtype, of: String}
+entities:
+  - name: demo.d.Grant
+    identity: {name: grant_id, type: demo.d.GrantId}
+    fields:
+      - {name: flag, type: Boolean}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+commands:
+  - name: demo.d.DefineGrant
+    input: []
+    outcomes:
+      - name: defined
+        creates: demo.d.Grant
+        instance: grant_id
+        emits: [demo.d.GrantDefined]
+        payload: {demo.d.GrantDefined: {grant_id: {generated: true}}}
+        sets: {flag: true}
+  - name: demo.d.Lower
+    input:
+      - {name: grant_id, type: demo.d.GrantId}
+    outcomes:
+      - {name: not-found, unknown_instance: true, error: demo.d.Refused}
+      - name: lowered
+        updates: demo.d.Grant
+        instance: grant_id
+        sets: {flag: false}
+        emits: [demo.d.Lowered]
+        payload: {demo.d.Lowered: {grant_id: input.grant_id}}
+  - name: demo.d.Raise
+    input:
+      - {name: grant_id, type: demo.d.GrantId}
+    outcomes:
+      - {name: not-found, unknown_instance: true, error: demo.d.Refused}
+      - name: raised
+        updates: demo.d.Grant
+        instance: grant_id
+        sets: {flag: true}
+        emits: [demo.d.Raised]
+        payload: {demo.d.Raised: {grant_id: input.grant_id}}
+  - name: demo.d.Touch
+    input:
+      - {name: grant_id, type: demo.d.GrantId}
+    outcomes:
+      - name: touched
+        emits: [demo.d.Touched]
+        payload: {demo.d.Touched: {grant_id: input.grant_id}}
+  - name: demo.d.Give
+    input:
+      - {name: grant_id, type: demo.d.GrantId}
+    outcomes:
+      - name: missing
+        when_related: {via: input.grant_id, exists: false}
+        error: demo.d.Refused
+      - name: not-flagged
+        when_related: {via: input.grant_id, predicate: flag == false}
+        error: demo.d.Refused
+      - name: given
+        emits: [demo.d.Given]
+        payload: {demo.d.Given: {grant_id: input.grant_id}}
+errors:
+  - name: demo.d.Refused
+events:
+  - name: demo.d.GrantDefined
+    fields: [{name: grant_id, type: demo.d.GrantId}]
+  - name: demo.d.Lowered
+    fields: [{name: grant_id, type: demo.d.GrantId}]
+  - name: demo.d.Raised
+    fields: [{name: grant_id, type: demo.d.GrantId}]
+  - name: demo.d.Touched
+    fields: [{name: grant_id, type: demo.d.GrantId}]
+  - name: demo.d.Given
+    fields: [{name: grant_id, type: demo.d.GrantId}]
