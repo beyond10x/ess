@@ -1924,13 +1924,7 @@ fn validate_partition(
             continue;
         }
         let assignment =
-            |values: &std::collections::BTreeMap<_, ess_primitives::facts::FactValue>| {
-                values
-                    .iter()
-                    .map(|(path, value)| format!("{path} = {value}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            };
+            |values, presence| super::finite::assignment_terms(values, presence).join(", ");
         let refusal = ValidationError::at(
             command.site().key("outcomes"),
             if selected == 0 {
@@ -1940,8 +1934,8 @@ fn validate_partition(
             },
             format!(
                 "related [{}] and input [{}] select {selected} branches: {}",
-                assignment(&case.fields),
-                assignment(&case.input),
+                assignment(&case.fields, &case.fields_presence),
+                assignment(&case.input, &case.input_presence),
                 case.selected
                     .iter()
                     .map(|index| guarded[*index].name.as_str())
@@ -2033,12 +2027,7 @@ fn validate_absent(
         if selected == 1 {
             continue;
         }
-        let input = case
-            .input
-            .iter()
-            .map(|(path, value)| format!("{path} = {value}"))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let input = super::finite::assignment_terms(&case.input, &case.input_presence).join(", ");
         if selected == 0 {
             errors.push(uncovered(format!("input [{input}] selects no branch")));
         } else {
@@ -2100,15 +2089,12 @@ fn validate_several(
     errors
 }
 
-/// One related row's side of [`validate_joint_partition`]: the values its fields take, or `None`
-/// for an absent Optional reference, and the guarded branches over that row its predicates select.
+/// One related row's side of [`validate_joint_partition`]: the values its fields take, as the
+/// refusals print them (`path = value`, or `path = absent` / `present` for a field read only
+/// through `defined(…)`), or `None` for an absent Optional reference, and the guarded branches over
+/// that row its predicates select.
 struct RowCase {
-    values: Option<
-        std::collections::BTreeMap<
-            ess_primitives::facts::FactPath,
-            ess_primitives::facts::FactValue,
-        >,
-    >,
+    values: Option<Vec<String>>,
     selected: Vec<usize>,
 }
 
@@ -2400,7 +2386,10 @@ fn row_side(
     let mut side: Vec<RowCase> = cases
         .into_iter()
         .map(|case| RowCase {
-            values: Some(case.fields),
+            values: Some(super::finite::assignment_terms(
+                &case.fields,
+                &case.fields_presence,
+            )),
             selected: case
                 .selected
                 .into_iter()
@@ -2432,18 +2421,13 @@ fn unanswered_case(
             Some(values) if values.is_empty() => format!("{via} present"),
             Some(values) => values
                 .iter()
-                .map(|(path, value)| format!("{via}: {path} = {value}"))
+                .map(|term| format!("{via}: {term}"))
                 .collect::<Vec<_>>()
                 .join(", "),
         })
         .collect::<Vec<_>>()
         .join("; ");
-    let supplied = input
-        .input
-        .iter()
-        .map(|(path, value)| format!("{path} = {value}"))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let supplied = super::finite::assignment_terms(&input.input, &input.input_presence).join(", ");
     ValidationError::at(
         command.site().key("outcomes"),
         if count == 0 {
