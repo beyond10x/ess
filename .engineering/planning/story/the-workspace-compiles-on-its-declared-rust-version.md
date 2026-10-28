@@ -2,12 +2,17 @@
 format: aep.planning-md/3
 id: story:the-workspace-compiles-on-its-declared-rust-version
 kind: story
-status: draft
+status: active
 title: The workspace compiles on its declared rust-version
 summary: ess-conformance compiles on rustc 1.85, the declared rust-version, and an MSRV CI job holds every pull request to it
 tags:
 - ess-0.75.0
-revision: 1
+relations:
+- serves: vision:O2
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T08:42:09Z", actor: "human:timo", revision: 2, executor: "agent:b10x-chef-orchestrator-ess-0720"}
+- {from: "proposed", to: "active", at: "2026-10-28T08:42:10Z", actor: "human:timo", revision: 3, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 ---
 ## Problem
 
