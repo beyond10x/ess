@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-seed-says-it-does-not-serve-a-set-move-filter
 kind: story
-status: active
+status: implemented
 title: A seed says it does not serve a set-move filter
 summary: A selected seed row of a set-move filtered entity is named in the refusal, which says seeds do not serve a set move filter; the CLI help and design page state the two obligations a seed serves
 tags:
@@ -10,10 +10,11 @@ tags:
 relations:
 - informed_by: story:a-synthesis-seed-is-accepted-for-a-caller-model
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T08:42:08Z", actor: "human:timo", revision: 2, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 - {from: "proposed", to: "active", at: "2026-10-28T08:42:09Z", actor: "human:timo", revision: 3, executor: "agent:b10x-chef-orchestrator-ess-0720"}
+- {from: "active", to: "implemented", at: "2026-10-28T10:58:28Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 ---
 ## Problem
 

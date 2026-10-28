@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-seeded-scenario-notes-its-skipped-reversed-caller-run
 kind: story
-status: active
+status: implemented
 title: A seeded scenario notes its skipped reversed-caller run
 summary: A suite note names a seeded scenario whose fixed caller skips the reversed-caller run
 tags:
@@ -10,10 +10,11 @@ tags:
 relations:
 - informed_by: story:a-synthesis-seed-is-accepted-for-a-caller-model
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T08:42:12Z", actor: "human:timo", revision: 3, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 - {from: "proposed", to: "active", at: "2026-10-28T08:42:12Z", actor: "human:timo", revision: 4, executor: "agent:b10x-chef-orchestrator-ess-0720"}
+- {from: "active", to: "implemented", at: "2026-10-28T10:58:31Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 ---
 ## Problem
 

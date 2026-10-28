@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-28T10:58:27Z",
+  "actor": "human:timo",
+  "artifact": "story:a-seed-says-it-does-not-serve-a-set-move-filter",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "a_seed_says_it_does_not_serve_a_set_move_filter 3 passed and adversary_0750_pass1 7 passed on 5d715c4fd; reproduction with seed parked-cap: 2 selected, 1 refusal now naming parked.yaml#parked-cap (0.74.0 never named it); unseeded suite byte-identical",
+    "reference": "commit:5d715c4fd"
+  }
+}
