@@ -213,7 +213,7 @@ fn keeps_branch_checks_the_command_under_test() {
                 scenario, input, ..
             } => Some((scenario.to_string(), input.clone())),
             Note::CrossCallerUnswapped { scenario, reason } => {
-                Some((scenario.to_string(), (*reason).to_owned()))
+                Some((scenario.to_string(), reason.clone()))
             }
             _ => None,
         })

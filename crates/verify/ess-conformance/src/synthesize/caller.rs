@@ -652,6 +652,7 @@ pub(super) fn synthesize(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Synthesis 
     }
     cross_single_command(ir, (&callers, seeds), &mut whole);
     arranged_by_callers(ir, &callers, &reading, &mut identities, &mut whole);
+    seeded_unswapped(ir, seeds, &reading, &mut whole);
     // Every reading above is synthesized from a rewritten copy of the model, whose digests are not
     // the model's; the suite names the model it came from, the one a target and an adapter digest
     // (beyond10x/ess#216).
@@ -660,6 +661,73 @@ pub(super) fn synthesize(ir: &EssIr, seeds: &super::AdmittedSeeds) -> Synthesis 
     whole.suite.provenance.contract_digest = model.contract_digest;
     whole.suite.select_fresh_format_for(ir);
     whole
+}
+
+/// A note naming every seeded scenario left without the run its unseeded twin gets with the callers
+/// swapped or reversed, and the seed rows it establishes.
+///
+/// Such a scenario sends a caller-reading command or two callers, so a scenario arranged without a
+/// seed gets that second run. A seeded one does not: the row it establishes by setup carries its
+/// literal identity, which cannot be established again, and the swapped and reversed readings are
+/// seed-free. Every path above leaves it out, some without a note, so the note is written here,
+/// once per scenario, in place of one naming the setup alone.
+fn seeded_unswapped(
+    ir: &EssIr,
+    seeds: &super::AdmittedSeeds,
+    reading: &BTreeSet<QualifiedName>,
+    whole: &mut Synthesis,
+) {
+    if seeds.is_empty() {
+        return;
+    }
+    let shown = |source: &str, instance: &dyn std::fmt::Display| format!("`{source}#{instance}`");
+    let listed = |rows: &BTreeSet<String>| rows.iter().cloned().collect::<Vec<_>>().join(", ");
+    let fixing: BTreeSet<String> = implied(ir, seeds)
+        .unwrap_or_default()
+        .into_values()
+        .map(|(_, selection)| format!("`{selection}`"))
+        .collect();
+    let caller = if fixing.is_empty() {
+        String::new()
+    } else {
+        format!(
+            ", and the caller of its seeded run is the one {} fixes",
+            listed(&fixing)
+        )
+    };
+    let mut rows: BTreeMap<ScenarioId, BTreeSet<String>> = BTreeMap::new();
+    for application in crate::synthesis_seeds::applications(&whole.suite, seeds.rows()) {
+        let Some(scenario) = whole.suite.scenarios.get(&application.scenario) else {
+            continue;
+        };
+        if !sends_any(scenario, reading) && !crosses_callers(scenario) {
+            continue;
+        }
+        rows.entry(application.scenario)
+            .or_default()
+            .insert(shown(application.source.as_str(), &application.instance));
+    }
+    for (id, established) in rows {
+        whole.notes.retain(|note| {
+            !matches!(note,
+                Note::UnswappedCallers { scenario, .. }
+                | Note::CrossCallerUnswapped { scenario, .. } if scenario == &id)
+        });
+        let noun = if established.len() == 1 {
+            "row"
+        } else {
+            "rows"
+        };
+        let reason = format!(
+            "the seed {noun} {} it establishes by setup cannot be established again for the \
+             swapped callers{caller}",
+            listed(&established)
+        );
+        whole.notes.push(Note::CrossCallerUnswapped {
+            scenario: id,
+            reason,
+        });
+    }
 }
 
 /// Upserts and duplicate-identity controls arrange and act with the same command name.
@@ -735,11 +803,11 @@ fn cross_single_command(
                 {
                     whole.notes.push(Note::CrossCallerUnswapped {
                         scenario: id.clone(),
-                        reason,
+                        reason: reason.to_owned(),
                     });
                 }
             } else {
-                whole.notes.push(Note::CrossCallerUnswapped { scenario: id.clone(), reason: "the reversed caller interpretation cannot arrange this source-selected outcome" });
+                whole.notes.push(Note::CrossCallerUnswapped { scenario: id.clone(), reason: "the reversed caller interpretation cannot arrange this source-selected outcome".to_owned() });
             }
             whole
                 .refusals
