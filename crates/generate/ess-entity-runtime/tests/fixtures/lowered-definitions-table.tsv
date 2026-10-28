@@ -300,6 +300,7 @@ crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-effect-binding-causes/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-effect-fresh-input/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-related-value.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-refuses-missing-related-row.yaml	components=0

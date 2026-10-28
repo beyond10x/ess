@@ -1368,6 +1368,13 @@ impl RefusalCause {
                  effect write a field from its input, or let a command creating the rows write \
                  that field from an input, so an arranged row can hold another value"
             }
+            // A set move's rows resting only where set moves take them: the filter is met, the
+            // state no arrangement reaches is what is missing.
+            Self::NoWitness(gap) if gap.reason == set_effects::SET_MOVE_ONLY => {
+                "a set move arranges no row for another scenario; declare a single-row transition \
+                 into the state (a branch moving the one instance its `instance:` names there), \
+                 or cover the branch with an authored scenario (ess-scenario/1)"
+            }
             Self::NoWitness(gap) if set_effects::UNARRANGED.contains(&gap.reason) => {
                 "let a command that creates the entity write each field the filter reads from an \
                  input or from a caller attribute (`{caller: <attribute>}`) rather than from a \
