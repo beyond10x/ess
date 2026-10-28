@@ -25,7 +25,7 @@
 //!
 //! | model | schema | what a consumer that ignores `format` and `x-ess-*` still sees |
 //! |---|---|---|
-//! | `String` | `{"type": "string"}` | the same |
+//! | `String` | `{"type": "string"}`, plus `minLength`/`maxLength` a `.count` invariant on the value or the field states | the same; a length counts Unicode scalar values, as `.count` does |
 //! | `Boolean` | `{"type": "boolean"}` | the same |
 //! | `Integer` | `{"type": "integer"}`, plus `minimum`/`maximum`/`const` a field's invariants state | the same; no width beyond the bounds the author wrote |
 //! | `Binary64` | `{"type": "number"}`, plus `minimum`/`exclusiveMinimum`/`maximum`/`exclusiveMaximum` a field's invariants state with a literal that is its own shortest spelling | the same; finiteness and signed zero stay a realizer's obligation |
@@ -259,6 +259,14 @@ pub(crate) struct Node {
     /// The grammar, where it is small enough to be certainly right.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) pattern: Option<std::borrow::Cow<'static, str>>,
+    /// The fewest Unicode scalar values a string this node accepts has, from a `.count` invariant
+    /// (beyond10x/ess#685).
+    #[serde(rename = "minLength", skip_serializing_if = "Option::is_none")]
+    pub(crate) min_length: Option<u64>,
+    /// The most Unicode scalar values a string this node accepts has, from a `.count` invariant
+    /// (beyond10x/ess#685).
+    #[serde(rename = "maxLength", skip_serializing_if = "Option::is_none")]
+    pub(crate) max_length: Option<u64>,
     /// How bytes are carried.
     #[serde(rename = "contentEncoding", skip_serializing_if = "Option::is_none")]
     pub(crate) content_encoding: Option<&'static str>,
@@ -835,9 +843,10 @@ pub(crate) fn prefix_pattern(prefix: &str) -> String {
 ///
 /// The prefix and the alphabet are one anchored pattern, `^<prefix>[<class>]*$`, because validation
 /// keeps a prefix's characters inside the alphabet; without a prefix it is `^[<class>]*$`. The
-/// pattern bounds no length: a `value.count` invariant stays the annotation it was. An alphabet
-/// holding a character outside the Basic Multilingual Plane publishes no class, because no class
-/// reads it alike with and without the `u` flag, and the prefix keeps its own pattern.
+/// pattern bounds no length; a `value.count` invariant publishes `minLength` and `maxLength`
+/// beside it (beyond10x/ess#685). An alphabet holding a character outside the Basic Multilingual
+/// Plane publishes no class, because no class reads it alike with and without the `u` flag, and
+/// the prefix keeps its own pattern.
 pub(crate) fn text_pattern(prefix: Option<&str>, alphabet: Option<&str>) -> Option<String> {
     match (prefix, alphabet.and_then(alphabet_class)) {
         (None, None) => None,
@@ -1038,23 +1047,28 @@ pub(crate) fn content_key(tag: &str) -> &'static str {
 /// fields' properties (beyond10x/ess#394, beyond10x/ess#687, beyond10x/ess#688).
 ///
 /// Only the shape a JSON Schema keyword says exactly is lowered: one comparison of a top-level
-/// field (required or `Optional`) with a numeric literal, `>=`, `>`, `<=`, `<` or `==`, as
-/// [`comparison`] reads it. Anything else — `!=`, a dotted path, two fields, a `Decimal`, a
-/// disjunction — stays an annotation in `x-ess-invariants` only, which is still published beside
-/// the keywords. [`apply_bound`] says what each field type takes.
+/// field (required or `Optional`), or of a top-level `String` field's `.count`, with a numeric
+/// literal, `>=`, `>`, `<=`, `<` or `==`, as [`comparisons`] reads it. Anything else — `!=`, a
+/// dotted path, two fields, a `Decimal`, a disjunction, `utf8_bytes`, the `.count` of a field typed
+/// by a newtype (whose schema is a `$ref`) — stays an annotation in `x-ess-invariants` only, which
+/// is still published beside the keywords. [`apply_bound`] and [`apply_length`] say what each
+/// field type takes.
 fn field_bounds(node: &mut Node, fields: &[ResolvedField], invariants: &[Invariant]) {
-    for invariant in invariants {
-        let Some((path, op, value)) = comparison(invariant) else {
-            continue;
-        };
-        let [segment] = path else {
-            continue;
+    for (path, op, value) in invariants.iter().flat_map(comparisons) {
+        let (segment, counted) = match path {
+            [segment] => (segment, false),
+            [segment, count] if count == COUNT => (segment, true),
+            _ => continue,
         };
         let Some(field) = fields.iter().find(|field| &field.name == segment) else {
             continue;
         };
         if let Some(property) = node.properties.get_mut(wire_name(field)) {
-            apply_bound(property, &field.type_ref, op, value);
+            if counted {
+                apply_length(property, &field.type_ref, op, value);
+            } else {
+                apply_bound(property, &field.type_ref, op, value);
+            }
         }
     }
 }
@@ -1062,41 +1076,66 @@ fn field_bounds(node: &mut Node, fields: &[ResolvedField], invariants: &[Invaria
 /// The same lowering for a newtype, whose invariants read the wrapped value as `value`
 /// (`ess_domain::types` `VALUE`): the keywords go on the newtype's own definition.
 fn newtype_bounds(node: &mut Node, of: &ResolvedTypeRef, invariants: &[Invariant]) {
-    for invariant in invariants {
-        if let Some((path, op, value)) = comparison(invariant) {
-            if path == ["value"] {
-                apply_bound(node, of, op, value);
+    for (path, op, value) in invariants.iter().flat_map(comparisons) {
+        match path {
+            [segment] if segment == "value" => apply_bound(node, of, op, value),
+            [segment, count] if segment == "value" && count == COUNT => {
+                apply_length(node, of, op, value);
             }
+            _ => {}
         }
     }
 }
 
-/// `<path> <op> <number>`, the path's segments as written. A number on the left is read as its
-/// mirror: `0 < x` is `x > 0`, for every field type this lowers.
-fn comparison(
+/// The fact segment that reads a text's length in Unicode scalar values, or a collection's size.
+const COUNT: &str = "count";
+
+/// Every `<path> <op> <number>` an invariant states, the path's segments as written. The
+/// conjuncts of an `all` — what the mapping form `value.count: {gte: 1, lte: 10}` parses to — are
+/// read one by one, because each of them has to hold. A number on the left is read as its mirror:
+/// `0 < x` is `x > 0`, for every field type this lowers.
+fn comparisons(
     invariant: &Invariant,
-) -> Option<(
+) -> Vec<(
     &[String],
     ess_primitives::predicate::CompareOp,
     ess_primitives::Number,
 )> {
+    let mut found = Vec::new();
+    conjuncts(&invariant.predicate, &mut found);
+    found
+}
+
+/// The comparisons [`comparisons`] reads from one predicate and the `all`s it is made of.
+fn conjuncts<'a>(
+    predicate: &'a ess_primitives::predicate::Predicate,
+    found: &mut Vec<(
+        &'a [String],
+        ess_primitives::predicate::CompareOp,
+        ess_primitives::Number,
+    )>,
+) {
     use ess_primitives::predicate::{Operand, Predicate};
     use ess_primitives::FactValue;
 
-    let Predicate::Compare {
-        left, op, right, ..
-    } = &invariant.predicate
-    else {
-        return None;
-    };
-    match (left, right) {
-        (Operand::Fact(path), Operand::Literal(FactValue::Number(number))) => {
-            Some((path.segments(), *op, *number))
+    match predicate {
+        Predicate::All(children) => {
+            for child in children {
+                conjuncts(child, found);
+            }
         }
-        (Operand::Literal(FactValue::Number(number)), Operand::Fact(path)) => {
-            Some((path.segments(), mirror(*op), *number))
-        }
-        _ => None,
+        Predicate::Compare {
+            left, op, right, ..
+        } => match (left, right) {
+            (Operand::Fact(path), Operand::Literal(FactValue::Number(number))) => {
+                found.push((path.segments(), *op, *number));
+            }
+            (Operand::Literal(FactValue::Number(number)), Operand::Fact(path)) => {
+                found.push((path.segments(), mirror(*op), *number));
+            }
+            _ => {}
+        },
+        _ => {}
     }
 }
 
@@ -1215,6 +1254,57 @@ fn apply_binary64_bound(node: &mut Node, op: ess_primitives::predicate::CompareO
         CompareOp::Eq => {
             raise(&mut node.minimum, bound);
             lower(&mut node.maximum, bound);
+        }
+        CompareOp::Ne => {}
+    }
+}
+
+/// Tightens `node`, the schema of a value of type `of`, by one comparison of the value's `.count`
+/// with `value` (beyond10x/ess#685).
+///
+/// Only a `String` takes it, and only an integer literal: `.count` is the number of Unicode scalar
+/// values, which is what `minLength` and `maxLength` count. `>=` and `>` become `minLength`, `<=`
+/// and `<` become `maxLength`, `==` becomes both — on an `Optional` or nullable field too, since
+/// the length keywords ignore a value that is not a string. A bound every string meets
+/// (`.count >= 0`) publishes nothing, and so does one no string meets (`.count < 0`), because a
+/// length keyword is never negative; the annotation still states it.
+fn apply_length(
+    node: &mut Node,
+    of: &ResolvedTypeRef,
+    op: ess_primitives::predicate::CompareOp,
+    value: ess_primitives::Number,
+) {
+    use ess_primitives::predicate::CompareOp;
+
+    let ResolvedTypeRef::Primitive {
+        name: Primitive::String,
+    } = of.required()
+    else {
+        return;
+    };
+    let Some(value) = value.as_i64() else {
+        return;
+    };
+    let at_least = |node: &mut Node, length: Option<i64>| {
+        if let Some(length) = length.and_then(|length| u64::try_from(length).ok()) {
+            if length > 0 {
+                node.min_length = Some(node.min_length.map_or(length, |at| at.max(length)));
+            }
+        }
+    };
+    let at_most = |node: &mut Node, length: Option<i64>| {
+        if let Some(length) = length.and_then(|length| u64::try_from(length).ok()) {
+            node.max_length = Some(node.max_length.map_or(length, |at| at.min(length)));
+        }
+    };
+    match op {
+        CompareOp::Ge => at_least(node, Some(value)),
+        CompareOp::Gt => at_least(node, value.checked_add(1)),
+        CompareOp::Le => at_most(node, Some(value)),
+        CompareOp::Lt => at_most(node, value.checked_sub(1)),
+        CompareOp::Eq => {
+            at_least(node, Some(value));
+            at_most(node, Some(value));
         }
         CompareOp::Ne => {}
     }
@@ -1867,15 +1957,16 @@ mod tests {
         use ess_primitives::predicate::{CompareKind, CompareOp, Operand, Predicate};
         use ess_primitives::{FactPath, FactValue, Number};
 
-        let mirrored = |literal: i64, op: CompareOp| Invariant {
-            statement: format!("{literal} {} value", op.as_str()),
+        let mirrored_on = |path: &str, literal: i64, op: CompareOp| Invariant {
+            statement: format!("{literal} {} {path}", op.as_str()),
             predicate: Predicate::Compare {
                 left: Operand::Literal(FactValue::Number(Number::from(literal))),
                 op,
-                right: Operand::Fact(FactPath::new("value").expect("a path")),
+                right: Operand::Fact(FactPath::new(path).expect("a path")),
                 kind: CompareKind::Value,
             },
         };
+        let mirrored = |literal: i64, op: CompareOp| mirrored_on("value", literal, op);
         let published = |of: Primitive, invariants: &[Invariant]| {
             let mut node = primitive(of);
             newtype_bounds(
@@ -1898,6 +1989,16 @@ mod tests {
                 &[mirrored(0, CompareOp::Le), mirrored(10, CompareOp::Gt)]
             ),
             serde_json::json!({"type": "integer", "minimum": 0, "maximum": 9})
+        );
+        assert_eq!(
+            published(
+                Primitive::String,
+                &[
+                    mirrored_on("value.count", 1, CompareOp::Le),
+                    mirrored_on("value.count", 11, CompareOp::Gt),
+                ]
+            ),
+            serde_json::json!({"type": "string", "minLength": 1, "maxLength": 10})
         );
     }
 }

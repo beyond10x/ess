@@ -679,3 +679,60 @@ fn issue_687_a_bounded_binary64_realizes_with_its_bounds_as_obligations() {
         "{typescript:?}"
     );
 }
+
+const LENGTHS: &str = r"format: ess/20
+system: probe
+version: v1
+domains: [probe.units]
+domain: probe.units
+types:
+  - name: probe.units.Unit
+    kind: newtype
+    of: String
+    invariants: [value.count >= 1, value.count <= 8]
+  - name: probe.units.Measure
+    kind: struct
+    fields:
+      - {name: unit, type: probe.units.Unit}
+      - {name: note, type: String}
+    invariants: [note.count <= 40]
+";
+
+/// A `String` newtype whose `value.count` bounds are published as `minLength` and `maxLength`
+/// realizes on every target with the length reported once: the realizer enforces the text
+/// constraint it reads from `x-ess-invariants`, so the keywords add no obligation of their own.
+/// A struct field's length has no such constraint, so its `maxLength` stays an obligation.
+#[test]
+fn issue_685_the_types_only_realizer_reports_the_length_once() {
+    let selection = model::selection(LENGTHS, &["probe.units.Measure"]);
+    let definitions: serde_json::Value = serde_json::from_str(&selection.to_json()).expect("JSON");
+    let unit = &definitions["$defs"]["probe.units.Unit"];
+    assert_eq!(unit["minLength"], serde_json::json!(1), "{unit:#}");
+    assert_eq!(unit["maxLength"], serde_json::json!(8), "{unit:#}");
+
+    let plan = Plan::from_model(&selection).expect("plan");
+    let reports = [
+        ("typescript", plan.typescript().report),
+        ("rust", plan.rust("probe-units").expect("rust").report),
+        (
+            "go",
+            plan.go("units", "example.invalid/units")
+                .expect("go")
+                .report,
+        ),
+    ];
+    for (target, report) in &reports {
+        let rules = definition_obligations(report, "probe.units.Unit");
+        for rule in ["minLength", "maxLength"] {
+            assert!(
+                !rules.iter().any(|found| found == rule),
+                "{target}: a `{rule}` obligation repeats the enforced length: {rules:?}"
+            );
+        }
+        let measure = definition_obligations(report, "probe.units.Measure");
+        assert!(
+            measure.iter().any(|found| found == "maxLength"),
+            "{target}: the field length is not enforced and must stay an obligation: {measure:?}"
+        );
+    }
+}

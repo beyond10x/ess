@@ -115,7 +115,18 @@ lowered: `v < 9007199254740993` would be read by a binary64 validator as
 The realizer reports the new keywords as runtime obligations like any other bound,
 and the finite-binary64 obligation stays. The reader takes a literal on the left
 as its mirror (`0 < x` is `x > 0`) for every type it lowers; no authored spelling
-writes one today.
+writes one today. It reads the conjuncts of an `all` one by one, so the mapping form
+`value: {gte: 0, lte: 10}` lowers as the two comparisons written apart do.
+
+A `.count` bound on a `String` takes the same reader (beyond10x/ess#685): on a
+newtype's `value.count` or a top-level `String` field's `<field>.count`, `>=` and `>`
+publish `minLength`, `<=` and `<` publish `maxLength`, and `==` publishes both, also
+on a field that may be absent or `null`, which the length keywords ignore. A bound
+every string meets, or none does, publishes nothing. `utf8_bytes`, `!=` and the
+`.count` of a field typed by a newtype stay annotations. On model input the realizer
+already enforces a newtype's `value.count` from `x-ess-invariants`, so a `minLength` or
+`maxLength` equal to that bound adds no obligation, as an alphabet's own `pattern` adds
+none; a struct field's length keyword stays a runtime obligation.
 
 A newtype of `Integer` gets the same keywords on its own definition from invariants
 over its wrapped value, `value` (`ess_domain::types` `VALUE`): `value == 2` publishes
