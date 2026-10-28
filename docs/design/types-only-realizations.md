@@ -128,6 +128,21 @@ already enforces a newtype's `value.count` from `x-ess-invariants`, so a `minLen
 `maxLength` equal to that bound adds no obligation, as an alphabet's own `pattern` adds
 none; a struct field's length keyword stays a runtime obligation.
 
+A `distinct:` invariant over a top-level `List` field, or a `List` newtype's `value`, whose
+elements are never `null`, is asserted where a keyword says it exactly (beyond10x/ess#686).
+Without `by` it publishes `uniqueItems: true`. With `by` reaching an enum or a `Boolean`
+through required struct members, the list carries an `allOf` of one `contains` per variant,
+each with `minContains: 0` and `maxContains: 1`. The `contains` requires an object holding
+the key path and ends in the variant's wire spelling, so an element without the key, which
+the model reads as unknown, is never counted. An open key (`String`, `Integer`, `Decimal`,
+`Uuid`, `Timestamp`) or an `Optional` member on the path stays an annotation: JSON Schema has
+no keyword that compares one member across elements. `uniqueItems` compares JSON values, so
+two spellings of one `Decimal` or of one instant pass it where the model refuses them. On
+model input the realizer reads an `allOf` whose every entry holds only `contains`,
+`minContains` and `maxContains` as no shape at all, since Rust and Go refuse an intersection,
+and records it as one `contains` obligation at `<pointer>/allOf`; `uniqueItems` is an
+obligation like any other bound. A bundle carrying `contains` is still refused by name.
+
 A newtype of `Integer` gets the same keywords on its own definition from invariants
 over its wrapped value, `value` (`ess_domain::types` `VALUE`): `value == 2` publishes
 `const: 2`, `value >= 0` and `value < 1000` publish `minimum: 0` and `maximum: 999`.

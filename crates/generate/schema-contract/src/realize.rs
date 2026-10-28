@@ -347,6 +347,17 @@ fn alphabet_pattern(object: &Map<String, Value>) -> bool {
     }
 }
 
+/// Whether an `allOf` entry holds a `contains` and its count bounds and nothing else: what a model
+/// list publishes for a `distinct:` key (beyond10x/ess#686).
+fn bounded_contains(entry: &Value) -> bool {
+    entry.as_object().is_some_and(|entry| {
+        entry.contains_key("contains")
+            && entry.keys().all(|keyword| {
+                matches!(keyword.as_str(), "contains" | "minContains" | "maxContains")
+            })
+    })
+}
+
 /// Whether a model string schema's `minLength` or `maxLength` is exactly the bound its
 /// [`TextConstraint`] reads from `x-ess-invariants` (beyond10x/ess#685).
 fn enforced_length(object: &Map<String, Value>, keyword: &str) -> bool {
@@ -1419,6 +1430,18 @@ impl Builder {
         ] {
             if let Some(values) = object.get(keyword).and_then(Value::as_array) {
                 let location = path(pointer, keyword);
+                // A model list's `distinct:` key, one bounded `contains` per variant
+                // (beyond10x/ess#686): it shapes no value, so the list stays the list rather than
+                // an intersection Rust and Go refuse, and the bound is one runtime obligation.
+                if keyword == "allOf" && self.model && values.iter().all(bounded_contains) {
+                    self.obligations.insert(finding(
+                        &location,
+                        "contains",
+                        "validate that each variant of the distinct key appears at most once \
+                         against the source schema at runtime",
+                    ));
+                    continue;
+                }
                 let variants = values
                     .iter()
                     .enumerate()

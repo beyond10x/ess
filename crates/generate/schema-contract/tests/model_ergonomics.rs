@@ -736,3 +736,88 @@ fn issue_685_the_types_only_realizer_reports_the_length_once() {
         );
     }
 }
+
+const SPLITS: &str = r"format: ess/22
+system: probe
+version: v1
+domains: [probe.split]
+domain: probe.split
+types:
+  - name: probe.split.Role
+    kind: enum
+    variants: [Train, HeldOut]
+  - name: probe.split.Split
+    kind: struct
+    fields:
+      - {name: role, type: probe.split.Role}
+  - name: probe.split.Plan
+    kind: struct
+    fields:
+      - {name: splits, type: List<probe.split.Split>}
+    invariants:
+      - {distinct: {in: splits, as: split, by: split.role}}
+";
+
+/// A struct whose list is `distinct:` by an enum key publishes one bounded `contains` per variant
+/// (beyond10x/ess#686). `ess generate types` realizes it in Rust, Go and TypeScript without a
+/// refusal: the `allOf` shapes no value, so the list stays a list, and the bound is one obligation.
+#[test]
+fn issue_686_a_distinct_by_enum_struct_realizes_with_one_obligation() {
+    let selection = model::selection(SPLITS, &["probe.split.Plan"]);
+    let definitions: serde_json::Value = serde_json::from_str(&selection.to_json()).expect("JSON");
+    let splits = &definitions["$defs"]["probe.split.Plan"]["properties"]["splits"];
+    assert_eq!(
+        splits["allOf"].as_array().map(Vec::len),
+        Some(2),
+        "{splits:#}"
+    );
+
+    let plan = Plan::from_model(&selection).expect("plan");
+    let reports = [
+        ("typescript", plan.typescript().report),
+        ("rust", plan.rust("probe-split").expect("rust").report),
+        (
+            "go",
+            plan.go("split", "example.invalid/split")
+                .expect("go")
+                .report,
+        ),
+    ];
+    for (target, report) in &reports {
+        let report = serde_json::to_value(report).expect("report");
+        let bounded: Vec<&serde_json::Value> = report["obligations"]
+            .as_array()
+            .expect("obligations")
+            .iter()
+            .filter(|item| {
+                item["pointer"]
+                    .as_str()
+                    .is_some_and(|pointer| pointer.contains("/splits/allOf"))
+            })
+            .collect();
+        assert_eq!(bounded.len(), 1, "{target}: {report:#}");
+        assert_eq!(bounded[0]["rule"], "contains", "{target}: {report:#}");
+    }
+}
+
+/// A bundle is not a checked model: the same `contains` an imported schema carries is still
+/// refused by name when it is realized.
+#[test]
+fn a_bundle_with_contains_is_still_refused() {
+    let roots = std::collections::BTreeSet::from(["Holder".to_owned()]);
+    let bundle = schema_contract::bundle::import(
+        &serde_json::json!({"components":{"schemas":{
+            "Holder":{"type":"object","properties":{"roles":{
+                "type":"array","items":{"type":"string"},
+                "allOf":[{"contains":{"const":"train"},"minContains":0,"maxContains":1}]
+            }}}
+        }}})
+        .to_string(),
+        &roots,
+        schema_contract::bundle::Dialect::Draft202012,
+    )
+    .expect("the import accepts contains");
+    let refused = Plan::from_bundle(&bundle, &roots).expect_err("realization refuses contains");
+    let findings = format!("{refused:?}");
+    assert!(findings.contains("contains"), "{findings}");
+}

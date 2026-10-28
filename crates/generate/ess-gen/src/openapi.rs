@@ -2206,6 +2206,7 @@ fn entity_model(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, F
                 entity.name.to_string(),
                 under(
                     &types::message(&Message::of_entity(
+                        ir,
                         entity,
                         &fields,
                         types::carried(ir, entity, true),

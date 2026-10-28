@@ -37,7 +37,7 @@
 //! | `Named` | a `$ref` to a definition of its own | a named type, not its representation |
 //! | `Optional<T>` in a field | `T`, and the field is left out of `required` | absent is valid, `null` is not |
 //! | `Optional<T>` elsewhere | `{"anyOf": [T, {"type": "null"}]}` | `null` is valid, because a list element cannot be absent |
-//! | `List<T>` | `{"type": "array", "items": T}` | the same |
+//! | `List<T>` | `{"type": "array", "items": T}`, plus `uniqueItems`, or one bounded `contains` per variant of an enum or `Boolean` key, a `distinct:` invariant states | the same; a `distinct:` by an open key stays in `x-ess-invariants`, since no keyword compares one member across elements |
 //! | `Map<K, V>` | `{"type": "object", "propertyNames": K-as-text, "additionalProperties": V}` | the same |
 //! | `Newtype` | a definition of its own, `$ref`d, `x-ess-kind: newtype` | the representation's assertions |
 //! | `Struct` | `{"type": "object", "properties": …, "required": …, "additionalProperties": false}`, or `true` when it declares `undeclared_fields: ignored` (`ess/24`); when it declares `shorthand: <field>` (`ess/27`), `{"oneOf": [<the field's schema>, <that object>], "x-ess-shorthand": <the field's wire name>}` | the same: the two branches differ by JSON type, so exactly one matches |
@@ -314,12 +314,30 @@ pub(crate) struct Node {
     /// What an array holds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) items: Option<Box<Node>>,
+    /// Whether no two elements of an array are equal: a `distinct:` over a list of scalars
+    /// (beyond10x/ess#686).
+    #[serde(rename = "uniqueItems", skip_serializing_if = "Option::is_none")]
+    pub(crate) unique_items: Option<bool>,
+    /// What the elements [`Self::min_contains`] and [`Self::max_contains`] count match: one
+    /// variant of a `distinct:` key, inside an [`Self::all_of`] entry (beyond10x/ess#686).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) contains: Option<Box<Node>>,
+    /// The fewest elements matching [`Self::contains`] an array holds.
+    #[serde(rename = "minContains", skip_serializing_if = "Option::is_none")]
+    pub(crate) min_contains: Option<u64>,
+    /// The most elements matching [`Self::contains`] an array holds.
+    #[serde(rename = "maxContains", skip_serializing_if = "Option::is_none")]
+    pub(crate) max_contains: Option<u64>,
     /// A choice where more than one branch may match: the nullable idiom.
     #[serde(rename = "anyOf", skip_serializing_if = "Vec::is_empty")]
     pub(crate) any_of: Vec<Node>,
     /// A choice where exactly one branch matches: a tagged union.
     #[serde(rename = "oneOf", skip_serializing_if = "Vec::is_empty")]
     pub(crate) one_of: Vec<Node>,
+    /// Conditions that all hold: one bounded `contains` per variant of a `distinct:` key
+    /// (beyond10x/ess#686).
+    #[serde(rename = "allOf", skip_serializing_if = "Vec::is_empty")]
+    pub(crate) all_of: Vec<Node>,
     /// The field a union's variant is named in.
     #[serde(rename = "x-ess-union-tag", skip_serializing_if = "Option::is_none")]
     pub(crate) ess_union_tag: Option<String>,
@@ -449,8 +467,9 @@ impl serde::Serialize for Properties {
     }
 }
 
-/// The value of a `const` keyword: text for a tag or an outcome name, an integer for a field an
-/// invariant fixes. Serialised as the bare JSON value.
+/// The value of a `const` keyword: text for a tag, an outcome name or an enum variant, an integer
+/// for a field an invariant fixes, a boolean for a `distinct:` key. Serialised as the bare JSON
+/// value.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(untagged)]
 pub(crate) enum Constant {
@@ -458,6 +477,8 @@ pub(crate) enum Constant {
     Text(String),
     /// An integer constant.
     Integer(i64),
+    /// A boolean constant: one value of a `Boolean` `distinct:` key (beyond10x/ess#686).
+    Boolean(bool),
 }
 
 /// The value of a numeric bound keyword: an integer token when the bound is an integer an `i64`
@@ -933,6 +954,7 @@ pub(crate) fn body(ir: &EssIr, declared: &ResolvedType) -> Node {
                 ..wrapped
             };
             newtype_bounds(&mut node, of, invariants);
+            newtype_distinct(ir, &mut node, of, invariants);
             node
         }
         // Open where the struct declares `undeclared_fields: ignored` (`ess/24`), and so at every
@@ -944,6 +966,7 @@ pub(crate) fn body(ir: &EssIr, declared: &ResolvedType) -> Node {
                 ..object(fields)
             };
             field_bounds(&mut node, fields, invariants);
+            distinct_items(ir, &mut node, fields, invariants);
             // A struct with a shorthand (`ess/27`) is either its one field's value or the object:
             // the two differ by JSON type, a scalar against an object, so exactly one branch matches.
             if let Some(short) = ir
@@ -1310,6 +1333,203 @@ fn apply_length(
     }
 }
 
+/// What the `distinct:` invariants of a struct or an entity assert about its own list fields
+/// (beyond10x/ess#686), as keywords on those fields' properties.
+///
+/// `distinct: {in: F, as: x}`, where `F` is a top-level `List` field (required or `Optional`) of
+/// elements that are never `null`, publishes `uniqueItems: true` on `F`. With `by: x.m1…mk`
+/// reaching an enum or a `Boolean` through required struct members, `F` carries one bounded
+/// `contains` per variant instead ([`at_most_once`]). Any other key, or an `Optional` member on the
+/// path, stays an annotation in `x-ess-invariants` only, which is still published beside them.
+fn distinct_items(ir: &EssIr, node: &mut Node, fields: &[ResolvedField], invariants: &[Invariant]) {
+    for distinct in invariants.iter().flat_map(distincts) {
+        let [segment] = distinct.over.segments() else {
+            continue;
+        };
+        let Some(field) = fields.iter().find(|field| &field.name == segment) else {
+            continue;
+        };
+        if let Some(property) = node.properties.get_mut(wire_name(field)) {
+            apply_distinct(ir, property, &field.type_ref, distinct);
+        }
+    }
+}
+
+/// The same for a newtype of a `List`, whose invariants read the list as `value`.
+fn newtype_distinct(ir: &EssIr, node: &mut Node, of: &ResolvedTypeRef, invariants: &[Invariant]) {
+    for distinct in invariants.iter().flat_map(distincts) {
+        if distinct.over.segments() == ["value"] {
+            apply_distinct(ir, node, of, distinct);
+        }
+    }
+}
+
+/// Every `distinct:` an invariant states, at its top or as a conjunct of an `all`.
+fn distincts(invariant: &Invariant) -> Vec<&ess_primitives::predicate::Distinct> {
+    fn collect<'a>(
+        predicate: &'a ess_primitives::predicate::Predicate,
+        found: &mut Vec<&'a ess_primitives::predicate::Distinct>,
+    ) {
+        use ess_primitives::predicate::Predicate;
+        match predicate {
+            Predicate::All(children) => {
+                for child in children {
+                    collect(child, found);
+                }
+            }
+            Predicate::Distinct(distinct) => found.push(distinct),
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    collect(&invariant.predicate, &mut found);
+    found
+}
+
+/// Tightens `node`, the schema of a list of type `of`, by one `distinct:`.
+///
+/// Without `by` the elements are the keys, and `uniqueItems` refuses exactly the lists with two
+/// equal elements, for every key type: a JSON value equal to another is the same key under the
+/// model's equality, which is never finer. It is complete for `Boolean`, `Integer`, `String`,
+/// `Uuid` and an enum; two spellings of one `Decimal` or one instant pass it where the model
+/// refuses them. An `Optional` element is left alone, since the model reads `null` as unknown.
+fn apply_distinct(
+    ir: &EssIr,
+    node: &mut Node,
+    of: &ResolvedTypeRef,
+    distinct: &ess_primitives::predicate::Distinct,
+) {
+    use ess_primitives::predicate::DistinctKeyKind;
+
+    let ResolvedTypeRef::List { of: element } = of.required() else {
+        return;
+    };
+    if element.is_optional() {
+        return;
+    }
+    let Some(kind) = distinct.key_kind else {
+        return;
+    };
+    let members = match &distinct.key {
+        None => &[][..],
+        Some(key) => match key.segments().split_first() {
+            Some((bind, members)) if *bind == distinct.bind => members,
+            _ => return,
+        },
+    };
+    if members.is_empty() {
+        node.unique_items = Some(true);
+        return;
+    }
+    let Some((wires, leaf)) = key_path(ir, element, members) else {
+        return;
+    };
+    let (DistinctKeyKind::Boolean | DistinctKeyKind::Enum, Some(values)) =
+        (kind, finite_key(ir, leaf))
+    else {
+        return;
+    };
+    node.all_of
+        .extend(values.into_iter().map(|value| at_most_once(&wires, value)));
+}
+
+/// The wire names of `members` read from a value of type `element`, and the type the last one
+/// has; `None` where a step is not a required member of a struct.
+fn key_path<'a>(
+    ir: &'a EssIr,
+    element: &'a ResolvedTypeRef,
+    members: &[String],
+) -> Option<(Vec<String>, &'a ResolvedTypeRef)> {
+    let mut current = element;
+    let mut wires = Vec::new();
+    for member in members {
+        let field = struct_fields(ir, current)?
+            .iter()
+            .find(|field| &field.name == member)?;
+        if field.type_ref.is_optional() {
+            return None;
+        }
+        wires.push(wire_name(field).to_owned());
+        current = &field.type_ref;
+    }
+    Some((wires, current))
+}
+
+/// The fields of the struct `of` is, through newtypes; `None` for any other type.
+fn struct_fields<'a>(ir: &'a EssIr, of: &'a ResolvedTypeRef) -> Option<&'a [ResolvedField]> {
+    let mut current = of;
+    for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+        let ResolvedTypeRef::Declared { name } = current else {
+            return None;
+        };
+        match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => current = of,
+            ResolvedBody::Struct { fields, .. } => return Some(fields),
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// Every value a key of type `of` can take, as its wire spelling, where there are finitely many:
+/// an enum's variants in declaration order, or `true` and `false`. Through newtypes; `None` for
+/// any other type, and for an `Optional` one.
+fn finite_key(ir: &EssIr, of: &ResolvedTypeRef) -> Option<Vec<Constant>> {
+    let mut current = of;
+    for _ in 0..=ess_domain::types::MAX_TYPE_DEPTH {
+        match current {
+            ResolvedTypeRef::Primitive {
+                name: Primitive::Boolean,
+            } => return Some(vec![Constant::Boolean(true), Constant::Boolean(false)]),
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, .. } => current = of,
+                ResolvedBody::Enum { variants } => {
+                    return Some(
+                        variants
+                            .iter()
+                            .map(|variant| Constant::Text(variant.wire().to_owned()))
+                            .collect(),
+                    );
+                }
+                _ => return None,
+            },
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// At most one element holds `value` at the end of the member path `wires`.
+///
+/// `contains` counts only an element that is an object holding every member on the path, so an
+/// element without the key, or a struct's scalar short form, is never counted: the model reads an
+/// absent key as unknown, and the schema must not refuse what it admits. `minContains: 0` lets a
+/// list hold no element of the variant at all.
+fn at_most_once(wires: &[String], value: Constant) -> Node {
+    let matched = wires.iter().rev().fold(
+        Node {
+            constant: Some(value),
+            ..Node::default()
+        },
+        |inner, wire| {
+            let mut properties = Properties::default();
+            properties.insert(wire, inner);
+            Node {
+                kind: Some("object"),
+                properties,
+                required: vec![wire.clone()],
+                ..Node::default()
+            }
+        },
+    );
+    Node {
+        contains: Some(Box::new(matched)),
+        min_contains: Some(0),
+        max_contains: Some(1),
+        ..Node::default()
+    }
+}
+
 /// What an author wrote, for each invariant.
 fn statements(invariants: &[Invariant]) -> Vec<String> {
     invariants
@@ -1378,6 +1598,9 @@ pub(crate) struct Message<'a> {
     /// everything but an entity, for the reason `relations` is: a command input, an event or a
     /// view row copies some of an entity's values and is not the entity.
     pub(crate) invariants: &'a [Invariant],
+    /// The model the invariants are read against, to follow a `distinct:` key through the types
+    /// it names; `None` with no invariants.
+    pub(crate) ir: Option<&'a EssIr>,
 }
 
 impl<'a> Message<'a> {
@@ -1393,6 +1616,7 @@ impl<'a> Message<'a> {
             examples: Some(&command.examples),
             undeclared_fields: UndeclaredFields::Refused,
             invariants: &[],
+            ir: None,
         }
     }
 
@@ -1409,6 +1633,7 @@ impl<'a> Message<'a> {
             examples: None,
             undeclared_fields: command.undeclared_fields,
             invariants: &[],
+            ir: None,
         }
     }
 
@@ -1424,6 +1649,7 @@ impl<'a> Message<'a> {
             examples: None,
             undeclared_fields: UndeclaredFields::Refused,
             invariants: &[],
+            ir: None,
         }
     }
 
@@ -1442,6 +1668,7 @@ impl<'a> Message<'a> {
             examples: None,
             undeclared_fields: UndeclaredFields::Refused,
             invariants: &[],
+            ir: None,
         }
     }
 
@@ -1461,6 +1688,7 @@ impl<'a> Message<'a> {
             examples: None,
             undeclared_fields: UndeclaredFields::Refused,
             invariants: &[],
+            ir: None,
         }
     }
 
@@ -1470,6 +1698,7 @@ impl<'a> Message<'a> {
     /// entity owns: identity, declared fields and `state` are three sources, and
     /// [`entity_fields`] is the one place they are put in an order.
     pub(crate) fn of_entity(
+        ir: &'a EssIr,
         entity: &'a ResolvedEntity,
         fields: &'a [ResolvedField],
         relations: BTreeMap<&'a str, Relation>,
@@ -1484,6 +1713,7 @@ impl<'a> Message<'a> {
             examples: None,
             undeclared_fields: UndeclaredFields::Refused,
             invariants: &entity.invariants,
+            ir: Some(ir),
         }
     }
 
@@ -1518,6 +1748,9 @@ pub(crate) fn message(carried: &Message<'_>) -> Node {
         ..object_annotated(carried.fields, &carried.relations, carried.examples)
     };
     field_bounds(&mut node, carried.fields, carried.invariants);
+    if let Some(ir) = carried.ir {
+        distinct_items(ir, &mut node, carried.fields, carried.invariants);
+    }
     node
 }
 
