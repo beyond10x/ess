@@ -96,9 +96,11 @@ A unit of batches 1-3 that turns out to need a new `ess/N` leaves for a format b
 
 ## Builds
 
-Every unit tree of a batch builds into one shared `CARGO_TARGET_DIR` for that wave, `~/.cache/ess-issues-1-target` for batch 1 (operator rule, 2026-10-28). Builds stay serialized by one lock, so trees never overwrite each other's test binaries. Tests still write scratch output under each tree's own `target/`.
-`CARGO_PROFILE_DEV_DEBUG=line-tables-only CARGO_PROFILE_TEST_DEBUG=line-tables-only
-CARGO_INCREMENTAL=0`; `cargo test` names each `--test` target as its own argument. Builds start only at 40 GB free or more, one at a time under the lock; a build stops when the shared target passes 30 GB or `/` drops under 25 GB free. Each unit tree finishes with `worktree finish --discard-cache` when it merges.
+Every unit tree of a batch builds into one shared `CARGO_TARGET_DIR` for that wave, `~/.cache/ess-issues-1-target` for batch 1 (operator rule, 2026-10-28). Builds run one at a time under one lock, with `CARGO_INCREMENTAL=0` and no debug info (`CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`, disk steward request, 2026-10-28). Tests still write scratch output under each tree's own `target/`.
+
+The trees share one layout, so cargo names a workspace crate's artifacts the same in every tree and judges freshness by mtime: a sibling tree's newer build of a crate counts as current in another tree (observed 2026-10-28, units U1 and U4). The wave wrapper therefore touches every tracked file of a tree when the previous build came from a different tree, so the workspace crates are rebuilt from that tree's sources; registry dependencies stay shared. Results produced in the shared target before that guard are re-run.
+
+`cargo test` names each `--test` target as its own argument. Builds start only at 40 GB free or more; a build stops when the shared target passes 30 GB or `/` drops under 25 GB free. When a unit merges, the coordinator runs `cargo clean -p` for the crates it changed and `worktree finish --discard-cache` on its tree.
 
 ## Commits this wave makes
 
