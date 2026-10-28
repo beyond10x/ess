@@ -118,3 +118,29 @@ fn compose_reads_an_event_conformance() {
     assert!(all.contains("type_conformance_drift"), "{all}");
     assert!(all.contains("field `channel`"), "{all}");
 }
+
+#[test]
+fn compose_exits_non_zero_on_an_invariant_drift_under_v5() {
+    let directory = TemporaryDirectory::create("ess-compose-v5-invariant").unwrap();
+    let rest = "conformances:\n  \
+                - local: {service: demo, type: demo.gate.Code}\n    \
+                  conforms_to: {service: wire, type: wire.server.Code}\n";
+    let drift = compose(
+        &directory,
+        "constraint-conformance",
+        "ess-composition/5",
+        rest,
+    );
+    assert_eq!(drift.status.code(), Some(1), "{}", text(&drift));
+    let all = text(&drift);
+    assert!(all.contains("type_conformance_drift"), "{all}");
+    assert!(all.contains("invariant"), "{all}");
+    // `/4` compares no value constraint, so the same document composes.
+    let four = compose(
+        &directory,
+        "constraint-conformance",
+        "ess-composition/4",
+        rest,
+    );
+    assert!(four.status.success(), "{}", text(&four));
+}

@@ -1,0 +1,198 @@
+domain: demo.gate
+
+# Local copies of the owner's types, each differing from it in one constraint or attribute, or in
+# structure.
+types:
+  # No invariant where the owner has `value != "x"`.
+  - name: demo.gate.Code
+    kind: newtype
+    of: String
+
+  # An invariant the owner lacks.
+  - name: demo.gate.Strict
+    kind: newtype
+    of: String
+    invariants:
+      - value != "y"
+
+  # `>= 1` where the owner has `>= 2`.
+  - name: demo.gate.Level
+    kind: newtype
+    of: Integer
+    invariants:
+      - value >= 1
+
+  # The owner's `value >= 1`, spelled without spaces.
+  - name: demo.gate.Floor
+    kind: newtype
+    of: Integer
+    invariants:
+      - value>=1
+
+  # A wider alphabet and no prefix: a reader rejects nothing the owner sends.
+  - name: demo.gate.Ref
+    kind: newtype
+    of: String
+    alphabet: "abcdr-"
+
+  # A narrower alphabet and a longer prefix: a reader rejects some of what the owner sends.
+  - name: demo.gate.RefTight
+    kind: newtype
+    of: String
+    alphabet: "abr-"
+    prefix: "r-a"
+
+  # No invariant where the owner has `low <= high`.
+  - name: demo.gate.Window
+    kind: struct
+    fields:
+      - name: low
+        type: Integer
+      - name: high
+        type: Integer
+
+  - name: demo.gate.WindowText
+    kind: struct
+    fields:
+      - name: low
+        type: String
+      - name: high
+        type: Integer
+    invariants:
+      - high >= 0
+
+  - name: demo.gate.WindowLow
+    kind: struct
+    fields:
+      - name: low
+        type: Integer
+
+  # The owner reads `text` as `null` when absent; this copy leaves its presence unstated.
+  - name: demo.gate.Note
+    kind: struct
+    fields:
+      - name: text
+        type: Optional<String>
+
+  # The owner's `Kind`, with the attributes as the owner has them.
+  - name: demo.gate.Kind
+    kind: enum
+    attributes:
+      - {name: terminal, type: Boolean}
+      - {name: handled_by, type: String}
+      - {name: request, type: String}
+      - {name: response, type: String}
+    variants:
+      - {name: Open, attributes: {terminal: false, handled_by: desk, request: OpenRequest, response: OpenResponse}}
+      - {name: Closed, attributes: {terminal: true, handled_by: robot, request: CloseRequest, response: CloseResponse}}
+
+  # `Closed` is handled by `desk` where the owner has `robot`.
+  - name: demo.gate.KindHandled
+    kind: enum
+    attributes:
+      - {name: terminal, type: Boolean}
+      - {name: handled_by, type: String}
+      - {name: request, type: String}
+      - {name: response, type: String}
+    variants:
+      - {name: Open, attributes: {terminal: false, handled_by: desk, request: OpenRequest, response: OpenResponse}}
+      - {name: Closed, attributes: {terminal: true, handled_by: desk, request: CloseRequest, response: CloseResponse}}
+
+  # `Closed` is not terminal where the owner's is.
+  - name: demo.gate.KindTerminal
+    kind: enum
+    attributes:
+      - {name: terminal, type: Boolean}
+      - {name: handled_by, type: String}
+      - {name: request, type: String}
+      - {name: response, type: String}
+    variants:
+      - {name: Open, attributes: {terminal: false, handled_by: desk, request: OpenRequest, response: OpenResponse}}
+      - {name: Closed, attributes: {terminal: false, handled_by: robot, request: CloseRequest, response: CloseResponse}}
+
+  # `Closed` names other message types.
+  - name: demo.gate.KindMessages
+    kind: enum
+    attributes:
+      - {name: terminal, type: Boolean}
+      - {name: handled_by, type: String}
+      - {name: request, type: String}
+      - {name: response, type: String}
+    variants:
+      - {name: Open, attributes: {terminal: false, handled_by: desk, request: OpenRequest, response: OpenResponse}}
+      - {name: Closed, attributes: {terminal: true, handled_by: robot, request: CloseAsk, response: CloseAnswer}}
+
+  # Declares `terminal` only, as the owner has it.
+  - name: demo.gate.KindTerminalOnly
+    kind: enum
+    attributes:
+      - {name: terminal, type: Boolean}
+    variants:
+      - {name: Open, attributes: {terminal: false}}
+      - {name: Closed, attributes: {terminal: true}}
+
+  # The owner's variants without attributes.
+  - name: demo.gate.KindLess
+    kind: enum
+    variants:
+      - Open
+      - Closed
+
+  # `Closed` renamed.
+  - name: demo.gate.KindRenamed
+    kind: enum
+    attributes:
+      - {name: terminal, type: Boolean}
+      - {name: handled_by, type: String}
+      - {name: request, type: String}
+      - {name: response, type: String}
+    variants:
+      - {name: Open, attributes: {terminal: false, handled_by: desk, request: OpenRequest, response: OpenResponse}}
+      - {name: Shut, attributes: {terminal: true, handled_by: robot, request: CloseRequest, response: CloseResponse}}
+
+  # `Closed` travels under another spelling.
+  - name: demo.gate.KindWire
+    kind: enum
+    attributes:
+      - {name: terminal, type: Boolean}
+      - {name: handled_by, type: String}
+      - {name: request, type: String}
+      - {name: response, type: String}
+    variants:
+      - {name: Open, attributes: {terminal: false, handled_by: desk, request: OpenRequest, response: OpenResponse}}
+      - {name: Closed, wire: shut, attributes: {terminal: true, handled_by: robot, request: CloseRequest, response: CloseResponse}}
+
+  # `Closed` dropped.
+  - name: demo.gate.KindOpen
+    kind: enum
+    attributes:
+      - {name: terminal, type: Boolean}
+      - {name: handled_by, type: String}
+      - {name: request, type: String}
+      - {name: response, type: String}
+    variants:
+      - {name: Open, attributes: {terminal: false, handled_by: desk, request: OpenRequest, response: OpenResponse}}
+
+actors:
+  - name: demo.gate.Client
+    may:
+      - demo.gate.Ping
+
+commands:
+  - name: demo.gate.Ping
+    input:
+      - name: code
+        type: demo.gate.Code
+    outcomes:
+      - name: pinged
+        emits:
+          - demo.gate.Pinged
+        payload:
+          demo.gate.Pinged:
+            code: input.code
+
+events:
+  - name: demo.gate.Pinged
+    fields:
+      - name: code
+        type: demo.gate.Code

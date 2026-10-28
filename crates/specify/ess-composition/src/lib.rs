@@ -1052,7 +1052,8 @@ pub enum CompositionCode {
     ReferenceOutsideComponent,
     /// A local type asserted to conform to an imported type differs from it in a field's name,
     /// presence or type (from `ess-composition/2`), or a payload end (from `ess-composition/5`)
-    /// differs from the other end in kind or field.
+    /// differs from the other end in kind or field, or under `/5` in a value constraint or variant
+    /// attribute.
     TypeConformanceDrift,
     /// A role's `service` or `plays` names a key the composition does not import (from
     /// `ess-composition/4`).
@@ -1145,8 +1146,11 @@ impl CompositionCode {
         ess_compiler::diagnostic::CatalogueEntry {
             key: Self::TypeConformanceDrift,
             meaning: "A local type or payload said to conform to an imported type or payload \
-                      differs from it in kind, or in a field's name, presence or type.",
-            repair: "Change the local type or payload to match the imported one field for field.",
+                      differs from it in kind, or in a field's name, presence or type; from \
+                      `ess-composition/5` also in a value constraint (alphabet, prefix, \
+                      invariant) or an enum variant attribute.",
+            repair: "Change the local type or payload to match the imported one field for field, \
+                     and constraint for constraint under `ess-composition/5`.",
         },
         ess_compiler::diagnostic::CatalogueEntry {
             key: Self::UnknownRoleService,

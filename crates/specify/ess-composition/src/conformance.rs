@@ -17,10 +17,14 @@
 //! Primitives, lists and maps must match exactly. The one tolerance is the one a reader of the
 //! imported type can afford: where the imported value is required the local one may be
 //! `Optional`, at any position. The reverse, a local value required where the imported one may be
-//! absent, is drift. Newtype alphabets, prefixes and invariants, struct invariants and display
-//! names are not
-//! compared. A pair of named types already on the current path is taken as conforming, so recursive
-//! shapes terminate.
+//! absent, is drift. Display names are not compared. A pair of named types already on the current
+//! path is taken as conforming, so recursive shapes terminate.
+//!
+//! Under `ess-composition/5` a type conformance also compares value constraints and variant
+//! attributes: newtype alphabets and prefixes must be equal, newtype and struct invariants must
+//! state the same conditions (by parsed predicate, so spelling does not matter), and enums must
+//! declare the same attributes, of conforming types, with the same value on each variant. Up to
+//! `/4`, and in a contract role's input comparison, none of this is compared.
 //!
 //! A reader assertion (`reader: true`, `ess-composition/3`) admits what a consumer that only reads
 //! the imported type can also afford, because it rejects no value the imported type allows: an
@@ -32,17 +36,22 @@
 //! must be `Optional` and not `null_when_absent`. Everything else is compared as above. The subset
 //! assumes a tolerant reader that ignores keys it does not declare; ESS-generated closed types do
 //! not, and that is the author's assertion, not something this comparison can see.
+//!
+//! Under `/5` a reader may also state no alphabet or a wider one, no prefix or a shorter one the
+//! imported prefix starts with, a subset of the imported invariants, and a subset of the imported
+//! attributes, each agreeing in type and in value on every variant matched by wire name.
 
 use std::collections::BTreeSet;
 
 use ess_compiler::ir::{ResolvedBody, ResolvedField, ResolvedType, ResolvedTypeRef};
 use ess_compiler::EssIr;
+use ess_domain::entity::Invariant;
 use ess_domain::name::QualifiedName;
-use ess_domain::types::{EnumVariant, Presence, Primitive};
+use ess_domain::types::{EnumVariant, Presence, Primitive, TypeRef};
 
 use crate::{
     Admission, CommandPart, CompositionCode, CompositionDiagnostic, CompositionSpec,
-    ConformanceEnd, TypeBinding, TypeConformance,
+    ConformanceEnd, TypeBinding, TypeConformance, PAYLOAD_COMPOSITION_FORMAT,
 };
 
 /// Admits both ends of every assertion and compares their shapes.
@@ -62,6 +71,7 @@ pub(crate) fn resolve_conformances(
             local: local_ir,
             imported: imported_ir,
             reader: asserted.reader(),
+            constraints: specification.format() == PAYLOAD_COMPOSITION_FORMAT,
             visiting: BTreeSet::new(),
             drifts: Vec::new(),
         };
@@ -170,6 +180,7 @@ pub(crate) fn compare_inputs(
         local,
         imported: contract,
         reader: false,
+        constraints: false,
         visiting: BTreeSet::new(),
         drifts: Vec::new(),
     };
@@ -212,6 +223,9 @@ struct Comparison<'ir> {
     imported: &'ir EssIr,
     /// A reader assertion (`ess-composition/3`): the widenings [`Comparison::widened`] names apply.
     reader: bool,
+    /// Value constraints and variant attributes are compared too (`ess-composition/5`): newtype
+    /// alphabets, prefixes and invariants, struct invariants and enum variant attributes.
+    constraints: bool,
     /// Named-type pairs on the current path, so a recursive shape terminates while a pair reached
     /// through two fields is compared, and reported, at each.
     visiting: BTreeSet<(QualifiedName, QualifiedName)>,
@@ -229,7 +243,14 @@ impl Comparison<'_> {
         let mine = fields(self.local, local);
         let theirs = fields(self.imported, imported);
         match (mine.fields, theirs.fields) {
-            (Some(own), Some(sent)) => self.structs("", (mine.name, own), (theirs.name, sent)),
+            (Some(own), Some(sent)) => {
+                self.structs("", (mine.name, own), (theirs.name, sent));
+                self.invariants(
+                    "",
+                    (mine.name, mine.invariants),
+                    (theirs.name, theirs.invariants),
+                );
+            }
             _ => self.drifts.push(format!(
                 "the type itself: `{}` is {} where `{}` is {}",
                 mine.name, mine.kind, theirs.name, theirs.kind
@@ -358,40 +379,284 @@ impl Comparison<'_> {
         }
     }
 
+    /// Two invariant lists, compared by parsed predicate so spelling does not matter. Exact ends
+    /// must state the same conditions; a reader may omit the owner's, since that rejects nothing
+    /// the owner sends, but may not add one the owner lacks.
+    fn invariants(
+        &mut self,
+        path: &str,
+        (local, mine): (&QualifiedName, &[Invariant]),
+        (imported, theirs): (&QualifiedName, &[Invariant]),
+    ) {
+        if !self.constraints {
+            return;
+        }
+        let missing = |from: &[Invariant], within: &[Invariant]| -> Vec<String> {
+            from.iter()
+                .filter(|invariant| {
+                    !within
+                        .iter()
+                        .any(|other| other.predicate == invariant.predicate)
+                })
+                .map(|invariant| invariant.statement.clone())
+                .collect()
+        };
+        if !self.reader {
+            for statement in missing(theirs, mine) {
+                self.drifts.push(format!(
+                    "{}: invariant `{statement}` in `{imported}` and not in `{local}`",
+                    at(path)
+                ));
+            }
+        }
+        for statement in missing(mine, theirs) {
+            self.drifts.push(format!(
+                "{}: invariant `{statement}` in `{local}` and not in `{imported}`",
+                at(path)
+            ));
+        }
+    }
+
+    /// A newtype's `alphabet` or `prefix`. Exact ends must agree. A reader rejects nothing the
+    /// owner sends when it states none, or when its alphabet holds every character of the
+    /// owner's, or its prefix starts the owner's.
+    fn text_constraint(
+        &mut self,
+        path: &str,
+        what: &str,
+        (mine, theirs): (Option<&str>, Option<&str>),
+        imported: &QualifiedName,
+    ) {
+        if !self.constraints || mine == theirs {
+            return;
+        }
+        if self.reader {
+            let reads_all = match (what, mine, theirs) {
+                (_, None, _) => true,
+                ("alphabet", Some(mine), Some(theirs)) => {
+                    theirs.chars().all(|character| mine.contains(character))
+                }
+                (_, Some(mine), Some(theirs)) => theirs.starts_with(mine),
+                (_, Some(_), None) => false,
+            };
+            if reads_all {
+                return;
+            }
+        }
+        let stated = |value: Option<&str>| {
+            value.map_or_else(|| format!("no {what}"), |value| format!("{what} `{value}`"))
+        };
+        self.drifts.push(format!(
+            "{}: {} where `{imported}` has {}",
+            at(path),
+            stated(mine),
+            theirs.map_or_else(|| "none".to_owned(), |value| format!("`{value}`"))
+        ));
+    }
+
+    /// Two enums' variant attributes (`ess/23`). Exact ends declare the same attributes, of
+    /// conforming types, and give each variant the same values; a reader may declare a subset, each
+    /// of which the owner declares, and must agree on it. Variants are matched by name, a reader's
+    /// by wire name; an unmatched variant is the variant comparison's to report.
+    fn attributes(
+        &mut self,
+        path: &str,
+        mine: &[EnumVariant],
+        (imported, theirs): (&QualifiedName, &[EnumVariant]),
+    ) {
+        if !self.constraints {
+            return;
+        }
+        let declared = |variants: &[EnumVariant]| -> Vec<(String, TypeRef)> {
+            variants.first().map_or_else(Vec::new, |variant| {
+                variant
+                    .attributes
+                    .iter()
+                    .map(|attribute| (attribute.name.clone(), attribute.type_ref.clone()))
+                    .collect()
+            })
+        };
+        let (my_declared, their_declared) = (declared(mine), declared(theirs));
+        let my_names: BTreeSet<_> = my_declared.iter().map(|(name, _)| name.clone()).collect();
+        let their_names: BTreeSet<_> = their_declared
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect();
+        let agree = if self.reader {
+            my_names.is_subset(&their_names)
+        } else {
+            my_names == their_names
+        };
+        if !agree {
+            self.drifts.push(format!(
+                "{}: attributes {} where `{imported}` has {}",
+                at(path),
+                names(&my_names),
+                names(&their_names)
+            ));
+            return;
+        }
+        for (name, mine) in &my_declared {
+            if let Some((_, theirs)) = their_declared.iter().find(|(other, _)| other == name) {
+                self.attribute_type(&format!("{} attribute `{name}`", at(path)), mine, theirs);
+            }
+        }
+        for variant in mine {
+            let Some(sent) = theirs.iter().find(|candidate| {
+                if self.reader {
+                    candidate.wire() == variant.wire()
+                } else {
+                    candidate.name == variant.name
+                }
+            }) else {
+                continue;
+            };
+            for attribute in &variant.attributes {
+                let theirs = sent
+                    .attributes
+                    .iter()
+                    .find(|other| other.name == attribute.name)
+                    .and_then(|other| other.value.as_deref());
+                let mine = attribute.value.as_deref();
+                if mine != theirs {
+                    let value = |value: Option<&str>| {
+                        value.map_or_else(|| "unfilled".to_owned(), |value| format!("`{value}`"))
+                    };
+                    let place = if path.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{}: ", at(path))
+                    };
+                    self.drifts.push(format!(
+                        "{place}variant `{}`: attribute `{}` is {} where `{imported}` has {}",
+                        variant.name,
+                        attribute.name,
+                        value(mine),
+                        value(theirs)
+                    ));
+                }
+            }
+        }
+    }
+
+    /// An attribute's declared type, compared as a field's is but over the unresolved type
+    /// expression an attribute carries.
+    fn attribute_type(&mut self, at: &str, mine: &TypeRef, theirs: &TypeRef) {
+        match (mine, theirs) {
+            (TypeRef::Primitive(mine), TypeRef::Primitive(theirs)) if mine == theirs => {}
+            (TypeRef::Optional(mine), TypeRef::Optional(theirs))
+            | (TypeRef::List(mine), TypeRef::List(theirs)) => {
+                self.attribute_type(at, mine, theirs);
+            }
+            (TypeRef::Map(my_key, mine), TypeRef::Map(their_key, theirs))
+                if my_key == their_key =>
+            {
+                self.attribute_type(at, mine, theirs);
+            }
+            (TypeRef::Named(mine), TypeRef::Named(theirs)) => {
+                let before = self.drifts.len();
+                self.named("", mine, theirs);
+                for drift in &mut self.drifts[before..] {
+                    *drift = format!("{at}: {drift}");
+                }
+            }
+            _ => self.drifts.push(format!(
+                "{at}: type `{mine}` where the imported enum has `{theirs}`"
+            )),
+        }
+    }
+
+    /// The value constraints of two newtypes (alphabet, prefix, invariants) or two structs
+    /// (invariants), compared only under `ess-composition/5`.
+    fn value_constraints(&mut self, path: &str, local: &ResolvedType, imported: &ResolvedType) {
+        match (&local.body, &imported.body) {
+            (
+                ResolvedBody::Newtype {
+                    alphabet: my_alphabet,
+                    prefix: my_prefix,
+                    invariants: mine,
+                    ..
+                },
+                ResolvedBody::Newtype {
+                    alphabet: their_alphabet,
+                    prefix: their_prefix,
+                    invariants: theirs,
+                    ..
+                },
+            ) => {
+                self.text_constraint(
+                    path,
+                    "alphabet",
+                    (my_alphabet.as_deref(), their_alphabet.as_deref()),
+                    &imported.name,
+                );
+                self.text_constraint(
+                    path,
+                    "prefix",
+                    (my_prefix.as_deref(), their_prefix.as_deref()),
+                    &imported.name,
+                );
+                self.invariants(path, (&local.name, mine), (&imported.name, theirs));
+            }
+            (
+                ResolvedBody::Struct {
+                    invariants: mine, ..
+                },
+                ResolvedBody::Struct {
+                    invariants: theirs, ..
+                },
+            ) => self.invariants(path, (&local.name, mine), (&imported.name, theirs)),
+            _ => {}
+        }
+    }
+
+    /// Two enums' variants, each by name and wire spelling, as an exact end compares them.
+    fn spellings(
+        &mut self,
+        path: &str,
+        mine: &[EnumVariant],
+        (imported, theirs): (&QualifiedName, &[EnumVariant]),
+    ) {
+        let mine: BTreeSet<_> = mine.iter().map(variant_spelling).collect();
+        let theirs: BTreeSet<_> = theirs.iter().map(variant_spelling).collect();
+        if mine != theirs {
+            self.drifts.push(format!(
+                "{}: variants {} where `{imported}` has {}",
+                at(path),
+                names(&mine),
+                names(&theirs)
+            ));
+        }
+    }
+
     fn bodies(&mut self, path: &str, local: &ResolvedType, imported: &ResolvedType) {
         match (&local.body, &imported.body) {
             (
                 ResolvedBody::Struct { fields: mine, .. },
                 ResolvedBody::Struct { fields: theirs, .. },
-            ) => self.structs(
-                path,
-                (&local.name, mine.as_slice()),
-                (&imported.name, theirs),
-            ),
-            (ResolvedBody::Newtype { of: mine, .. }, ResolvedBody::Newtype { of: theirs, .. }) => {
-                self.references(path, mine, theirs);
-            }
-            (ResolvedBody::Enum { variants: mine }, ResolvedBody::Enum { variants: theirs })
-                if self.reader =>
-            {
-                self.wire_names(
+            ) => {
+                self.structs(
                     path,
                     (&local.name, mine.as_slice()),
                     (&imported.name, theirs),
                 );
+                self.value_constraints(path, local, imported);
+            }
+            (ResolvedBody::Newtype { of: mine, .. }, ResolvedBody::Newtype { of: theirs, .. }) => {
+                self.references(path, mine, theirs);
+                self.value_constraints(path, local, imported);
             }
             (ResolvedBody::Enum { variants: mine }, ResolvedBody::Enum { variants: theirs }) => {
-                let mine: BTreeSet<_> = mine.iter().map(variant_spelling).collect();
-                let theirs: BTreeSet<_> = theirs.iter().map(variant_spelling).collect();
-                if mine != theirs {
-                    self.drifts.push(format!(
-                        "{}: variants {} where `{}` has {}",
-                        at(path),
-                        names(&mine),
-                        imported.name,
-                        names(&theirs)
-                    ));
+                if self.reader {
+                    self.wire_names(
+                        path,
+                        (&local.name, mine.as_slice()),
+                        (&imported.name, theirs),
+                    );
+                } else {
+                    self.spellings(path, mine, (&imported.name, theirs));
                 }
+                self.attributes(path, mine, (&imported.name, theirs));
             }
             (
                 ResolvedBody::Union {
@@ -561,6 +826,8 @@ struct Compared<'s> {
     name: &'s QualifiedName,
     kind: &'static str,
     fields: Option<&'s [ResolvedField]>,
+    /// A struct type's invariants; a payload has none.
+    invariants: &'s [Invariant],
 }
 
 fn fields<'s>(ir: &'s EssIr, shape: &Shape<'s>) -> Compared<'s> {
@@ -569,16 +836,21 @@ fn fields<'s>(ir: &'s EssIr, shape: &Shape<'s>) -> Compared<'s> {
             name,
             kind: what,
             fields: Some(fields),
+            invariants: &[],
         },
         Shape::Named(name) => {
             let body = ir.types().get(name).map(|found| &found.body);
+            let (fields, invariants) = match body {
+                Some(ResolvedBody::Struct { fields, invariants }) => {
+                    (Some(fields.as_slice()), invariants.as_slice())
+                }
+                _ => (None, &[][..]),
+            };
             Compared {
                 name,
                 kind: body.map_or("undeclared", kind),
-                fields: match body {
-                    Some(ResolvedBody::Struct { fields, .. }) => Some(fields),
-                    _ => None,
-                },
+                fields,
+                invariants,
             }
         }
     }

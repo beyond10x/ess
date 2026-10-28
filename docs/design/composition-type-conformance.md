@@ -59,10 +59,11 @@ reject a value the owner may send. Field sets must be equal in both directions: 
 declares and the consumer does not is drift, as is the opposite, since the assertion is that the
 two copies agree, which is what the hand-written check verified.
 
-Not compared: newtype `alphabet`, `prefix` and invariants, struct invariants, display names and
-summaries. They constrain values, not the shape a reader decodes. This is a known limit: a local
-newtype with a stricter `prefix` or `alphabet` than the owner's still conforms, although it can
-reject a value the owner sends.
+Not compared up to `ess-composition/4`: newtype `alphabet`, `prefix` and invariants, struct
+invariants and enum variant attributes, which constrain values rather than the shape a reader
+decodes; nor, under any format, display names and summaries. So up to `/4` a local newtype with a
+stricter `prefix` or `alphabet` than the owner's still conforms, although it can reject a value the
+owner sends. `/5` compares the value constraints and attributes (see below).
 
 A difference is refused as `type_conformance_drift` on the local service. The detail names both
 types and every differing field path, for example:
@@ -103,8 +104,8 @@ A reader decodes by wire name, so an extra local field is matched by wire name a
 imported field, including the ones it omits, and compared with the reader rules when the keys meet.
 This holds inside union variant payloads too. Field wire names, the `presence` of fields that are
 optional at both ends, map keys, lists, unions and every rule not in the table are compared as
-without `reader`. Without `reader: true` nothing changes, under `/3` as under `/2`. The known limit
-above carries over: a local newtype's `alphabet` and `prefix` are still not compared.
+without `reader`. Without `reader: true` nothing changes, under `/3` as under `/2`. The limit
+above carries over up to `/4`: a local newtype's `alphabet` and `prefix` are not compared there.
 
 **Precondition.** A field subset holds only for a tolerant reader. `reader: true` also asserts that
 the consumer's reader ignores keys it does not declare; ESS-generated closed types
@@ -147,6 +148,37 @@ conformances:
   `roles: implements` (`/4`) says that the local command answers the contract command, and compares
   inputs by that rule; a conformance says that two copies of a payload agree.
 - Conformance ends are never added to the client surface, so the client plan does not move.
+
+## Value constraints and variant attributes (`ess-composition/5`)
+
+beyond10x/ess#671. Up to `/4` a conformance compares the shape a reader decodes, so a local copy
+that drops the owner's `value != "x"`, widens its `alphabet` or gives an enum variant another
+`handled_by` still conforms. Under `ess-composition/5` a conformance also compares, at every level
+the comparison reaches:
+
+- newtype `alphabet` and `prefix`: equal, or both absent;
+- newtype and struct `invariants`: the same conditions, compared by parsed predicate, so
+  `value>=1` and `value >= 1` agree; a payload has none, so a struct type with an invariant against
+  a payload is drift;
+- enum variant attributes (`ess/23`): the same declared attributes with conforming types, and the
+  same value on each variant, matched by name.
+
+`reader: true` admits what rejects no value the owner sends: no `alphabet`, or one holding every
+character of the owner's; no `prefix`, or one the owner's starts with; a subset of the owner's
+invariants; and a subset of its attributes, each declared by the owner, conforming in type and equal
+in value on each variant matched by wire name. A reader invariant the owner lacks is drift.
+
+The detail names the place and both values, for example:
+
+```text
+`demo` type `demo.gate.Ref` does not conform to `wire` type `wire.server.Ref`: the type itself:
+alphabet `abcdr-` where `wire.server.Ref` has `abcr-`; the type itself: no prefix where
+`wire.server.Ref` has `r-`
+```
+
+Display names and summaries are still not compared. A `/2` to `/4` document compares none of this
+and keeps its result; moving it to `/5` is how a consumer opts in. Contract roles (`/4`) compare
+inputs without it under every format.
 
 ## Compatibility
 
