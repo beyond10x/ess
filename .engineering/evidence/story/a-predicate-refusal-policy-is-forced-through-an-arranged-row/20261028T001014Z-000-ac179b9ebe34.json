@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-28T00:10:14Z",
+  "actor": "human:timo",
+  "artifact": "story:a-predicate-refusal-policy-is-forced-through-an-arranged-row",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "a_predicate_refusal_policy_is_forced_through_an_arranged_row 3 passed on d155d455b; adversary_0730_pass1 6 passed on 3daa68993; reduced reproduction 9/1 -> 10/0, interpreted 10/10",
+    "reference": "commit:3daa68993"
+  }
+}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-predicate-refusal-policy-is-forced-through-an-arranged-row
 kind: story
-status: active
+status: implemented
 title: A predicate refusal failure policy is forced through an arranged row
 summary: 'ESS-SYNTH-010: a per-refusal failure policy on a via plus predicate refusal cannot be forced; 9 / 1, 10 / 0 with external.'
 tags:
@@ -11,10 +11,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-27T22:48:07Z", actor: "human:timo", revision: 2, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 - {from: "proposed", to: "active", at: "2026-10-27T22:48:07Z", actor: "human:timo", revision: 3, executor: "agent:b10x-chef-orchestrator-ess-0720"}
+- {from: "active", to: "implemented", at: "2026-10-28T00:10:15Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 ---
 ## Problem
 
