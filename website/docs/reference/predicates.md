@@ -357,7 +357,8 @@ by name, an entity invariant with it refuses the generated target by name, and E
 refuses it as `DistinctUnsupported`.
 
 The published JSON Schema asserts it where a keyword says it exactly (beyond10x/ess#686). Over a
-list of scalars, or a list newtype's `value`, it is `uniqueItems: true` on the list. With `by`
+list of scalars, or a list newtype's `value`, it is `uniqueItems: true` on the list. Where an
+element may be `null`, a list with two or more `null`s is not checked, since each is an unknown key. With `by`
 reaching an enum or a `Boolean` through required struct members, the list carries one `contains` per
 variant with `minContains: 0` and `maxContains: 1`. Each `contains` requires an object holding the
 key path and ends in the variant's wire spelling, so an element without the key is not counted.

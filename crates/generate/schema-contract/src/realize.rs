@@ -311,7 +311,7 @@ impl TextConstraint {
             .into_iter()
             .flatten()
             .filter_map(Value::as_str);
-        for (op, bound) in statements.filter_map(length_comparison) {
+        for (op, bound) in statements.flat_map(length_comparisons) {
             let (lower, upper) = match op {
                 CompareOp::Eq => (Some(bound), Some(bound)),
                 CompareOp::Ge => (Some(bound), None),
@@ -347,13 +347,18 @@ fn alphabet_pattern(object: &Map<String, Value>) -> bool {
     }
 }
 
-/// Whether an `allOf` entry holds a `contains` and its count bounds and nothing else: what a model
-/// list publishes for a `distinct:` key (beyond10x/ess#686).
-fn bounded_contains(entry: &Value) -> bool {
+/// Whether an `allOf` entry only counts a list's elements, as a model list publishes it for a
+/// `distinct:` (beyond10x/ess#686): a `contains` with its count bounds, `uniqueItems`, or an
+/// `anyOf` of such entries, the form a list whose elements may be `null` takes.
+fn counts_elements(entry: &Value) -> bool {
     entry.as_object().is_some_and(|entry| {
-        entry.contains_key("contains")
-            && entry.keys().all(|keyword| {
-                matches!(keyword.as_str(), "contains" | "minContains" | "maxContains")
+        !entry.is_empty()
+            && entry.iter().all(|(keyword, value)| match keyword.as_str() {
+                "contains" | "minContains" | "maxContains" | "uniqueItems" => true,
+                "anyOf" => value
+                    .as_array()
+                    .is_some_and(|branches| branches.iter().all(counts_elements)),
+                _ => false,
             })
     })
 }
@@ -373,14 +378,70 @@ fn enforced_length(object: &Map<String, Value>, keyword: &str) -> bool {
     declared.is_some() && declared == published
 }
 
+/// Every `value.count <op> <integer>` a statement makes, the statement itself or the conjuncts of
+/// an `and` — what the mapping form `value.count: {gte: 1, lte: 8}` is written back as
+/// (beyond10x/ess#685) — each as the comparison of the count with the literal.
+fn length_comparisons(statement: &str) -> Vec<(ess_primitives::predicate::CompareOp, i64)> {
+    fn conjuncts(
+        predicate: ess_primitives::predicate::Predicate,
+        found: &mut Vec<(ess_primitives::predicate::CompareOp, i64)>,
+    ) {
+        use ess_primitives::predicate::Predicate;
+        match predicate {
+            Predicate::All(children) => {
+                for child in children {
+                    conjuncts(child, found);
+                }
+            }
+            compare => found.extend(length_comparison(compare)),
+        }
+    }
+    let mut found = Vec::new();
+    if let Ok(predicate) = ess_primitives::predicate::Predicate::parse_expression(statement) {
+        conjuncts(predicate, &mut found);
+    } else if let Some(parts) = written_conjuncts(statement) {
+        // An `all` is written back as `(a and b)`, which the compact grammar spells `a && b`.
+        for part in parts {
+            found.extend(length_comparisons(part));
+        }
+    }
+    found
+}
+
+/// The conjuncts of a statement written as one parenthesised `all`, `(a and b and …)`, split at
+/// the ` and ` outside any nested parenthesis or quoted text; `None` for any other statement.
+fn written_conjuncts(statement: &str) -> Option<Vec<&str>> {
+    let inner = statement.trim().strip_prefix('(')?.strip_suffix(')')?;
+    let mut parts = Vec::new();
+    let (mut depth, mut quoted, mut start) = (0_usize, false, 0);
+    for (at, character) in inner.char_indices() {
+        match character {
+            '\'' => quoted = !quoted,
+            '(' if !quoted => depth += 1,
+            ')' if !quoted => depth = depth.checked_sub(1)?,
+            ' ' if !quoted && depth == 0 && inner[at..].starts_with(" and ") => {
+                parts.push(&inner[start..at]);
+                start = at + " and ".len();
+            }
+            _ => {}
+        }
+    }
+    (depth == 0 && !quoted && !parts.is_empty()).then(|| {
+        parts.push(&inner[start..]);
+        parts
+    })
+}
+
 /// `value.count <op> <integer>`, or the same with the literal on the left, as the comparison of
 /// the count with the literal.
-fn length_comparison(statement: &str) -> Option<(ess_primitives::predicate::CompareOp, i64)> {
+fn length_comparison(
+    predicate: ess_primitives::predicate::Predicate,
+) -> Option<(ess_primitives::predicate::CompareOp, i64)> {
     use ess_primitives::predicate::{CompareOp, Operand, Predicate};
     use ess_primitives::FactValue;
-    let Ok(Predicate::Compare {
+    let Predicate::Compare {
         left, op, right, ..
-    }) = Predicate::parse_expression(statement)
+    } = predicate
     else {
         return None;
     };
@@ -1430,15 +1491,15 @@ impl Builder {
         ] {
             if let Some(values) = object.get(keyword).and_then(Value::as_array) {
                 let location = path(pointer, keyword);
-                // A model list's `distinct:` key, one bounded `contains` per variant
-                // (beyond10x/ess#686): it shapes no value, so the list stays the list rather than
-                // an intersection Rust and Go refuse, and the bound is one runtime obligation.
-                if keyword == "allOf" && self.model && values.iter().all(bounded_contains) {
+                // A model list's `distinct:`, counts over its elements (beyond10x/ess#686): it
+                // shapes no value, so the list stays the list rather than an intersection Rust and
+                // Go refuse, and the count is one runtime obligation.
+                if keyword == "allOf" && self.model && values.iter().all(counts_elements) {
                     self.obligations.insert(finding(
                         &location,
                         "contains",
-                        "validate that each variant of the distinct key appears at most once \
-                         against the source schema at runtime",
+                        "validate the element counts of the distinct invariant against the \
+                         source schema at runtime",
                     ));
                     continue;
                 }
