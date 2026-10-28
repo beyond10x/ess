@@ -11,7 +11,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:generic-guard-precedence
-revision: 1
+revision: 2
 ---
 ## Problem
 
@@ -42,3 +42,7 @@ reports `passed` against the reference implementation. Pinned by a conformance t
 
 Repro (minimal specification and synthesis output) outside the repository; the specification is
 restated in the test fixture when the story is implemented.
+
+## Also seen
+
+- Batch 1 (#644, 2026-10-28) found the same ESS-SYNTH-008 refusal for a stored pair guarded on both sides with no default (`defined(x)` / `not defined(x)`, and likewise a Boolean pair) beside an `unknown_instance: true` branch. It predates #644. Cover it here, or split it into its own story when this one is scoped.

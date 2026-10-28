@@ -29,7 +29,7 @@ scope:
   path: docs/design/closed-enum-outcome-coverage.md
 - confidence: cited
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T11:01:24Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-10-28T11:01:24Z", actor: "human:timo", revision: 10}
@@ -87,7 +87,7 @@ In `crates/verify/ess-conformance/tests/`:
 
 - `finite_enum.rs`, `analyze_keeps_declining_presence`: `finite::analyze` over `Defined` of an Optional input is `None`. `cargo test -p ess-conformance --locked --test finite_enum analyze_keeps_declining_presence`
 - `when_subject_witness.rs`, `a_defined_pair_witnesses_both_presence_states`: the stored and input pairs synthesize one scenario per branch, all passing on the interpreted target. `cargo test -p ess-conformance --locked --test when_subject_witness a_defined_pair_witnesses_both_presence_states`
-- `negated_defined_beside_when_subject.rs`, `the_guard_negate_mutant_of_a_defined_pair_is_killed`: `cargo test -p ess-conformance --locked --test negated_defined_beside_when_subject the_guard_negate_mutant_of_a_defined_pair_is_killed`
+- `negated_defined_beside_when_subject.rs`, `the_guard_negate_mutant_of_a_defined_pair_is_refused_by_validation`: `cargo test -p ess-conformance --locked --test negated_defined_beside_when_subject the_guard_negate_mutant_of_a_defined_pair_is_refused_by_validation`. Negating one side of an exhaustive pair with no default leaves one presence answered twice and the other not at all, so validation refuses the mutant (stillborn) before any suite could kill it (decided 2026-10-28, batch 1)
 
 In `crates/generate/ess-synth/tests/finite_presence.rs` (new file):
 
@@ -112,3 +112,8 @@ Package gates: `cargo test -p ess-cli --locked` and `task test-xtask` (CHANGELOG
 
 - Batch 1 runs U1, U2, U3 and U4 at once (`approval-record:ess-issues-batch-1`). This unit does not edit `CHANGELOG.md`, `changes/*.yaml` or `WHATS-CHANGED.md`: the implementor returns its changelog entry in its report, and the integration branch `integration/ess-issues-1` writes every entry once, after the last unit merges, so four entries under the empty `[Unreleased]` heading do not collide.
 - Shared with U1 (`story:a-text-length-invariant-is-projected-as-min-and-max-length`, `story:a-distinct-invariant-is-projected-into-its-schema`): all three edit `website/docs/guides/specify/fields-and-invariants.md`. This story edits lines 82-99 (the defined and not-defined branches); the U1 stories add to the schema-projection prose. On a conflict the integration branch keeps both edits.
+
+## Implementation decisions
+
+- The overlap acceptance test is authored at ess/26: at ess/32 the one-precedence rule lets the first declared branch answer, so an overlap is never reported there (batch 1, 2026-10-28).
+- A stored `defined`/`not defined` pair with no default cannot sit beside an `unknown_instance: true` branch: synthesis refuses it as ESS-SYNTH-008. The same refusal appears for a Boolean pair, so it predates this story; it is recorded on `story:an-unknown-identity-beside-a-related-guard-is-synthesized`.
