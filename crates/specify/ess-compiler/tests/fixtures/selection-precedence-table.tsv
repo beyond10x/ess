@@ -1,4 +1,4 @@
-#	models=331	commands=700
+#	models=332	commands=703
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -861,6 +861,10 @@ crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.ParkCall	held_state: not-waiting | default: parked
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.QueueEntry	default: queued
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	demo.q.StartCall	default: started
+crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	ir=a218176b41b1eab305d47254933e7f0a9c4fb83eca9b0bda04b73aab1ebaa512:9598
+crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	demo.z.AddChild	default: added
+crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	demo.z.Park	default: parked
+crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	demo.z.Resume	default: resumed
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	ir=fdc9f69c28ee3339cf2a2c2d20111d1e8a2fd0a597480d06af0135490f6674a7:15639
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	demo.z.AddChild	related_row: parent-not-found | accepting: already-added | default: added
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	demo.z.CreateParent	default: created
