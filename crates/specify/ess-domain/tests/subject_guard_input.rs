@@ -479,6 +479,52 @@ fn a_refused_when_subject_predicate_draws_no_coverage_refusal() {
     }
 }
 
+/// [`mint`] with a stored `uses: Integer` and a `busy` update guarded by `busy`, declared before
+/// the identity read so the prover meets the refused predicate last.
+fn mint_beside(guard: &str, busy: &str) -> String {
+    mint(guard, false)
+        .replace(
+            "      - {name: enabled, type: Boolean}\n",
+            "      - {name: enabled, type: Boolean}\n      - {name: uses, type: Integer}\n",
+        )
+        .replace(
+            "      - name: already\n",
+            &format!(
+                "      - name: busy\n        when_subject: {{predicate: {busy}}}\n        \
+                 updates: demo.grants.Grant\n        instance: parent_id\n        \
+                 emits: [demo.grants.Minted]\n        \
+                 payload: {{demo.grants.Minted: {{parent_id: input.parent_id}}}}\n        \
+                 sets: {{enabled: false}}\n      - name: already\n"
+            ),
+        )
+}
+
+/// Beside the refused identity read, an open guard still needs a default for a cause of its own,
+/// whichever spelling and declaration order; a closed one draws no coverage refusal.
+#[test]
+fn an_open_guard_beside_a_refused_read_keeps_its_own_coverage_refusal() {
+    for guard in IDENTITY_READS {
+        let errors = refusal(&mint_beside(guard, "uses > 3"));
+        assert!(
+            codes(&errors).contains(&ValidationCode::UnobservableFact),
+            "{guard}: {errors}"
+        );
+        assert!(
+            errors.as_slice().iter().any(|error| {
+                error.code == ValidationCode::NonExhaustiveBranches
+                    && error.message.contains("`uses` has no closed set of values")
+            }),
+            "{guard}: {errors}"
+        );
+        let closed = refusal(&mint_beside(guard, "enabled == true"));
+        assert_eq!(
+            codes(&closed),
+            [ValidationCode::UnobservableFact],
+            "{guard}: {closed}"
+        );
+    }
+}
+
 #[test]
 fn a_non_identity_unknown_root_keeps_the_stored_fields_hint() {
     let errors = refusal(&mint("missing == true", true));

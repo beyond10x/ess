@@ -2019,6 +2019,17 @@ fn validate_absent(
         return errors;
     };
     for case in cases {
+        // This proof is of the absent reference: an input naming it is the present case, proved
+        // where the row is read, so the cases that hold it present do not arise here.
+        if let RelatedVia::Input(field) = via {
+            if case
+                .input_presence
+                .iter()
+                .any(|(path, present)| *present && path.to_string() == *field)
+            {
+                continue;
+            }
+        }
         let selected = if case.selected.is_empty() {
             usize::from(default.is_some())
         } else {
