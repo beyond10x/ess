@@ -416,10 +416,11 @@ impl Lab {
             );
         }
         let study = if self.shape.copies() {
+            let own = (named.clone(), held.clone());
             let read = match self.mutant {
                 Mutant::CopiesFirstSample => samples.first(),
                 Mutant::CopiesLatestSample => samples.last(),
-                _ => Some(&(named.clone(), held.clone())),
+                _ => Some(&own),
             };
             read.map_or(Node::Null, |(_, study)| study.clone())
         } else {

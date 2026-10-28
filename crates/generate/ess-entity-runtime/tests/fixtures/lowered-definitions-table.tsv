@@ -1,4 +1,4 @@
-#	models=399	lines=549
+#	models=413	lines=569
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -98,6 +98,10 @@ crates/ui/ess-ui-check/tests/fixtures/model/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/affects-past-creating-not-found.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-refuses-the-related-row-it-names.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/adversary-0710/set-update-second-creator-copies-another-field.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/adversary-0750/applied-elsewhere/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/adversary-0750/arrives-only/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/adversary-0750/undriven/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/adversary-0750/unwritten/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/adversary-273-tree.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/adversary-explore-preconditions.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/adversary-l2-preserves.yaml	components=0
@@ -300,6 +304,10 @@ crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-effect-binding-causes/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-effect-fresh-input/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/set-move-filter-seed/affects/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/set-move-filter-seed/instances/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/set-move-only-affects.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/set-move-only-changed-row.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-related-value.yaml	components=0
@@ -440,6 +448,14 @@ system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.audit.E
 system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.audit.Entry	create	recorded
 system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.stock.Item	definition=725e4586268c9587e1311f7c3323d207fa1528309e4d7e18ea68d927330e6dbe:2073
 system-dir:crates/ui/ess-ui-check/tests/fixtures/model	shop-service	shop.stock.Item	create	added
+system-dir:crates/verify/ess-conformance/tests/fixtures/adversary-0750/applied-elsewhere	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/adversary-0750/applied-elsewhere	svc	REFUSED	50068dc89bec3004a4f50df302829dd8f90208baa673aa0086c3dfe94fef19b8:570
+system-dir:crates/verify/ess-conformance/tests/fixtures/adversary-0750/arrives-only	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/adversary-0750/arrives-only	svc	REFUSED	1272297a1fb9d95f72baae8f2507e1856f47a7fe35c9c367d644241e18762708:561
+system-dir:crates/verify/ess-conformance/tests/fixtures/adversary-0750/undriven	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/adversary-0750/undriven	svc	REFUSED	22e20de129af76904dc39f7f0261308423c8d8cebe0e697c284a7fcc51024474:1301
+system-dir:crates/verify/ess-conformance/tests/fixtures/adversary-0750/unwritten	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/adversary-0750/unwritten	svc	REFUSED	50068dc89bec3004a4f50df302829dd8f90208baa673aa0086c3dfe94fef19b8:570
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-every-publisher	components=1
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-every-publisher	svc	REFUSED	b2742302c0fcb12e63cfd50bb81d9c297ce97fc4333103311e1bc0dc765c7dce:982
 system-dir:crates/verify/ess-conformance/tests/fixtures/binding-every-publisher-renamed	components=1
@@ -472,6 +488,10 @@ system-dir:crates/verify/ess-conformance/tests/fixtures/relation-via-identity	co
 system-dir:crates/verify/ess-conformance/tests/fixtures/set-effect-binding-causes	components=1
 system-dir:crates/verify/ess-conformance/tests/fixtures/set-effect-binding-causes	svc	REFUSED	959db05efc14e599667172fd6a7b69565e9ec91541e2bb98893207ff61f130f9:611
 system-dir:crates/verify/ess-conformance/tests/fixtures/set-effect-fresh-input	components=0
+system-dir:crates/verify/ess-conformance/tests/fixtures/set-move-filter-seed/affects	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/set-move-filter-seed/affects	svc	REFUSED	1272297a1fb9d95f72baae8f2507e1856f47a7fe35c9c367d644241e18762708:561
+system-dir:crates/verify/ess-conformance/tests/fixtures/set-move-filter-seed/instances	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/set-move-filter-seed/instances	svc	REFUSED	50068dc89bec3004a4f50df302829dd8f90208baa673aa0086c3dfe94fef19b8:570
 system-dir:docs/design/models/authored-discovery	components=0
 system-dir:docs/design/models/entity-runtime-lowering	components=0
 system-dir:docs/design/models/service-contract	components=0

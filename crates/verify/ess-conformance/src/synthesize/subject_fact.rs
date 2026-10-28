@@ -6529,12 +6529,13 @@ pub(super) fn observe_published(
     }
     let declared = ir.entity(entity);
     let identity = &declared.identity.name;
+    let state_field = declared.state_field();
     let published = |view: &ess_compiler::ir::ResolvedView| -> BTreeSet<String> {
         row.keys()
             .filter(|name| *name != identity)
             .filter(|name| {
                 let declared_type = if name.as_str() == EntitySpec::STATE {
-                    Some(&declared.state_field().type_ref)
+                    Some(&state_field.type_ref)
                 } else {
                     declared
                         .fields

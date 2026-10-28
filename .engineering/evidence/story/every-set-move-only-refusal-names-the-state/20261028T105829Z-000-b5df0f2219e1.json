@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-28T10:58:29Z",
+  "actor": "human:timo",
+  "artifact": "story:every-set-move-only-refusal-names-the-state",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "every_set_move_only_refusal_names_the_state 5 passed on 5d715c4fd; ChangedRowUnarranged and affects: entry refusals name the set-move-only state; control keeps old text; tables add rows only",
+    "reference": "commit:5d715c4fd"
+  }
+}

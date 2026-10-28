@@ -1,0 +1,33 @@
+type: ess-scenario/4
+domain: demo.s
+scenario: parked
+summary: Parked rows offered as synthesis seeds.
+
+arrange:
+  - instance: parked-cap
+    entity: demo.s.Cap
+    setup:
+      identity: 00000000-0000-4000-8000-000000000a01
+      fields: {owner: 00000000-0000-4000-8000-000000000b01}
+      state: Parked
+  - instance: other-parked-cap
+    entity: demo.s.Cap
+    setup:
+      identity: 00000000-0000-4000-8000-000000000a02
+      fields: {owner: 00000000-0000-4000-8000-000000000b01}
+      state: Parked
+  - instance: active-owner
+    entity: demo.s.Owner
+    setup:
+      identity: 00000000-0000-4000-8000-000000000b01
+      fields: {label: seeded}
+      state: Active
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    actor: demo.s.Clerk
+    command: demo.s.Park
+    input: {owner: 00000000-0000-4000-8000-000000000b02}
+    outcome: parked
+    events:
+      - event: demo.s.Parked
+        payload: {owner: 00000000-0000-4000-8000-000000000b02}

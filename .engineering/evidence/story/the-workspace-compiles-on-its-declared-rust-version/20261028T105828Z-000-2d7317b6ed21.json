@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-28T10:58:28Z",
+  "actor": "human:timo",
+  "artifact": "story:the-workspace-compiles-on-its-declared-rust-version",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo +1.85.0 check --workspace --all-targets --locked exit 0 on e7fed52c2 (E0716 before); ci_lanes msrv case green in task test-xtask; D131 lock pins",
+    "reference": "commit:5d715c4fd"
+  }
+}

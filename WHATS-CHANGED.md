@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.75.0](#a-seed-says-it-does-not-serve-a-set-moves-filter-and-the-workspace-compiles-on-rust-185) | A seed says it does not serve a set move's filter, and the workspace compiles on rust 1.85 | capability | notable |
 | [0.74.0](#synthesis-seeds-work-on-caller-models-and-a-binding-tries-every-publisher-of-its-trigger) | Synthesis seeds work on caller models, and a binding tries every publisher of its trigger | capability | notable |
 | [0.73.0](#set-effect-bindings-row-sets-predicate-refusal-policies-and-affects-rows-past-predicates-get-their-scenarios) | Set-effect bindings, row sets, predicate refusal policies and affects rows past predicates get their scenarios | capability | notable |
 | [0.72.0](#bindings-past-related-and-set-guards-and-fresh-input-disclosure-follow-ups-get-their-scenarios) | Bindings past related and set guards, and fresh-input disclosure follow-ups, get their scenarios | capability | notable |
@@ -85,6 +86,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.75.0 — 2026-10-28
+
+### A seed says it does not serve a set move's filter, and the workspace compiles on rust 1.85
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.75.0)
+
+A set-move refusal names the selected seed rows that synthesis does not apply and points to an authored scenario. Every refusal a set-move-only state causes names that state. A seeded caller-model scenario notes the swapped-caller run it skips. The workspace compiles on its declared rust-version 1.85, and CI checks it.
 
 ## 0.74.0 — 2026-10-28
 

@@ -349,12 +349,17 @@ pub enum Note {
         /// Its declared type.
         type_ref: String,
     },
-    /// The mixed-caller scenario is retained, but its reversed-role counterpart cannot compose.
+    /// The scenario is retained, but its reversed-role counterpart cannot compose: a mixed-caller
+    /// scenario's, or a seeded one's, whose seed rows fix the caller.
     CrossCallerUnswapped {
         /// The retained scenario.
         scenario: ScenarioId,
-        /// The concrete arrangement or observation restriction.
-        reason: &'static str,
+        /// Whether the retained scenario is a mixed-caller witness, sending commands as two
+        /// callers. A seeded scenario sent as one caller is not, and its note does not say so.
+        mixed: bool,
+        /// The concrete arrangement or observation restriction; for a seeded scenario, the seed
+        /// rows it establishes by setup.
+        reason: String,
     },
     /// The ordinary witness remains, but no source-authorized mixed caller witness composes.
     CrossCallerUnwitnessed {
@@ -522,8 +527,10 @@ impl fmt::Display for Note {
                  give it an identity no other scenario sends, so a target that answers one caller \
                  by name is not failed by it"
             ),
-            Self::CrossCallerUnswapped { scenario, reason } => write!(f,
+            Self::CrossCallerUnswapped { scenario, mixed: true, reason } => write!(f,
                 "`{scenario}` retains its mixed-caller witness without an appended reversed-role run: {reason}"),
+            Self::CrossCallerUnswapped { scenario, mixed: false, reason } => write!(f,
+                "`{scenario}` runs once, without an appended swapped- or reversed-caller run: {reason}"),
             Self::CrossCallerUnwitnessed { scenario, reason } => write!(f,
                 "`{scenario}` retains its ordinary witness without a mixed-caller same-row witness: {reason}"),
             Self::UnaccompaniedRelatedCopy { scenario, fields } => {
@@ -1276,6 +1283,15 @@ impl RefusalCause {
     #[allow(clippy::too_many_lines)]
     pub fn hint(&self) -> &'static str {
         match self {
+            // A seed row of a set effect's filtered entity, which no seed serves: the rows the
+            // filter selects are what is missing, and the cause before the seed rows says why.
+            Self::NoWitness(gap) if gap.reason == set_effects::SEEDS_UNSERVED => {
+                "a seed serves only the primary witness of a branch that reads its stored subject \
+                 row and one side of a stored counter's limit, and a set move's filter selects \
+                 several rows, so the seed rows named are not applied; repair the cause named \
+                 before them, as the same run without seeds asks, or cover the branch with an \
+                 authored scenario (ess-scenario/1)"
+            }
             // A struct a target may answer in its short form (beyond10x/ess#594).
             Self::NoWitness(gap) if gap.reason == shorthand::OBSERVED => {
                 "no runner decodes a struct's short form yet: keep the struct out of what a \
@@ -2334,6 +2350,9 @@ pub enum ChangedRowCause {
         /// Whether a creating command writes every key from its input.
         written: bool,
     },
+    /// A row the filter selects can be arranged in some state, and every state the branch's move
+    /// starts from is reached only by a set move: those states and moves, the one cause.
+    SetMoveOnly(SetMoveOnly),
 }
 
 impl ChangedRowCause {
@@ -2373,6 +2392,7 @@ impl ChangedRowCause {
                  selects in a state the per-row event's `when_state:` admits; or cover the \
                  binding with an authored scenario (ess-scenario/1)"
             }
+            Self::SetMoveOnly(_) => SET_MOVE_ONLY_HELP,
         }
     }
 }
@@ -2676,6 +2696,11 @@ impl fmt::Display for BindingGap {
                         f,
                         "no arranging command leaves a `{entity}` it selects resting where the \
                          event is published for it"
+                    ),
+                    ChangedRowCause::SetMoveOnly(only) => write!(
+                        f,
+                        "`{}`, which synthesis does not take to arrange a row for another scenario",
+                        only.described(&entity.to_string())
                     ),
                 }
             }
