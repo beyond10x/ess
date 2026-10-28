@@ -124,7 +124,11 @@ it is never renamed: another eligible seed is tried, or the refusal stands. Sepa
 their begin/end isolation. Where two attribute-free actors are both granted a command, a scenario
 is run once more with the callers reversed; a scenario that establishes a row by setup is not run
 again, since the row's identity cannot be established twice, and the note `CrossCallerUnswapped`
-says so. External outcomes stay explicit controls from the model; a seed is evidence only for
+says so. On a model whose actors carry caller attributes, a seeded scenario that sends a
+caller-reading command or two callers is likewise not run again with the callers swapped or
+reversed; its `CrossCallerUnswapped` note names the seed rows it establishes and the rows that fix
+the caller of its seeded run. External outcomes stay explicit controls from the model; a seed is
+evidence only for
 stored state, never for trusted temporal context, authorization or a live continuation.
 
 ## Persisted provenance (suite/42 and /43)
