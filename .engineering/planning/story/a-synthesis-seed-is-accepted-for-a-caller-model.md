@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-synthesis-seed-is-accepted-for-a-caller-model
 kind: story
-status: draft
+status: active
 title: A synthesis seed is accepted for a model with caller attributes
 summary: 'Adopter batch 3 P: --synthesis-seed is refused [caller-model] for any model whose actors carry caller attributes; lift the refusal.'
 tags:
@@ -11,7 +11,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T00:21:16Z", actor: "human:timo", revision: 2, executor: "agent:b10x-chef-orchestrator-ess-0720"}
+- {from: "proposed", to: "active", at: "2026-10-28T00:21:17Z", actor: "human:timo", revision: 3, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 ---
 ## Problem
 

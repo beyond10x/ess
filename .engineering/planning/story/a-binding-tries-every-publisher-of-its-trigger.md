@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-binding-tries-every-publisher-of-its-trigger
 kind: story
-status: draft
+status: active
 title: A binding tries every publisher of its trigger event
 summary: 'ESS-SYNTH-010: synthesis tries only the first publisher of the trigger by name, so a rename changes the result; 6 / 4, 9 / 1 renamed.'
 tags:
@@ -11,7 +11,10 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T00:21:15Z", actor: "human:timo", revision: 2, executor: "agent:b10x-chef-orchestrator-ess-0720"}
+- {from: "proposed", to: "active", at: "2026-10-28T00:21:16Z", actor: "human:timo", revision: 3, executor: "agent:b10x-chef-orchestrator-ess-0720"}
 ---
 ## Problem
 
