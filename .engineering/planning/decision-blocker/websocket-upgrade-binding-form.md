@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: decision-blocker:websocket-upgrade-binding-form
 kind: decision-blocker
-status: open
+status: cleared
 title: How a WebSocket upgrade is bound
 summary: 'ADR amendment for the WebSocket half of #650; recommendation A'
 refs:
@@ -10,7 +10,9 @@ refs:
   reference: beyond10x/ess#650
 relations:
 - blocks: story:http-binding-carries-transport-framing
-revision: 1
+revision: 2
+transitions:
+- {from: "open", to: "cleared", at: "2026-10-28T10:44:16Z", actor: "human:timo", revision: 2, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
 # How a WebSocket upgrade is bound (beyond10x/ess#650, WebSocket half)
 

@@ -11,11 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "proposed", to: "accepted", at: "2026-10-23T19:36:15Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
-Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance. Target: 0.70.0.
+Status: accepted 2026-10-23 by the operator, after reviewing all 15 proposed ADRs in full: "I accept all of them" (see this record's transitions). Target: 0.70.0.
 
 ## Context
 

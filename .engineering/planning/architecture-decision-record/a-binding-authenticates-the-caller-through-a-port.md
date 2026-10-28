@@ -8,11 +8,11 @@ summary: 'Proposes an authentication scheme in ess-http/1 and an Authenticate po
 relations:
 - serves: vision:O2
 - informed_by: epic:downstream-reported-gaps
-revision: 4
+revision: 5
 transitions:
 - {from: "proposed", to: "accepted", at: "2026-10-23T19:36:12Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
-Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance.
+Status: accepted 2026-10-23 by the operator, after reviewing all 15 proposed ADRs in full: "I accept all of them" (see this record's transitions).
 
 ## Context
 
