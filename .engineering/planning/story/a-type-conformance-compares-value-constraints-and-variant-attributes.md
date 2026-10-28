@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-type-conformance-compares-value-constraints-and-variant-attributes
 kind: story
-status: draft
+status: active
 title: A type conformance compares value constraints and enum variant attributes
 summary: 'Adopter reports N17/N18: compose compares structure only; invariants, alphabet, prefix and variant attributes drift unseen (ess#671).'
 tags:
@@ -15,8 +15,6 @@ relations:
 - decomposes: epic:downstream-reported-gaps
 - depends_on: story:a-composition-conformance-may-name-an-event-or-command
 scope:
-- confidence: cited
-  path: CHANGELOG.md
 - confidence: inferred
   path: crates/edge/ess-cli/tests/compose_conformance_v5.rs
 - confidence: cited
@@ -33,7 +31,10 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 3
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T11:01:27Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-10-28T11:01:28Z", actor: "human:timo", revision: 7}
 ---
 ## Problem
 
@@ -84,3 +85,7 @@ Command: `cargo test -p ess-composition --locked --test constraint_conformance <
 - `docs/design/composition-type-conformance.md` (62-65, 106-107, 119-136), `website/docs/reference/spec-versions.md`, `formats.md`, `CHANGELOG.md`.
 - Inferred: `crates/specify/ess-composition/tests/constraint_conformance.rs` and `tests/fixtures/constraint-conformance/` (the `demo` and `wire` systems); `crates/edge/ess-cli/tests/compose_conformance_v5.rs` (shared with the #664 story).
 - Confidence: high for the crate and the documented limit; the defect site and the documented limit are both read in the tree.
+
+## Batch 1 integration
+
+- Batch 1 runs U1, U2, U3 and U4 at once (`approval-record:ess-issues-batch-1`). This unit does not edit `CHANGELOG.md`, `changes/*.yaml` or `WHATS-CHANGED.md`: the implementor returns its changelog entry in its report, and the integration branch `integration/ess-issues-1` writes every entry once, after the last unit merges, so four entries under the empty `[Unreleased]` heading do not collide.

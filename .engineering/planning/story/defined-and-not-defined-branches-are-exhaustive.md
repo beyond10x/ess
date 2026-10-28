@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:defined-and-not-defined-branches-are-exhaustive
 kind: story
-status: draft
+status: active
 title: Branches over defined(x) and not defined(x) are proved exhaustive
 summary: 'Adopter report R4: two update branches over one stored Optional field draw ESS-COMMAND-005.'
 tags:
@@ -11,8 +11,6 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 scope:
-- confidence: cited
-  path: CHANGELOG.md
 - confidence: inferred
   path: crates/generate/ess-synth/tests/finite_presence.rs
 - confidence: cited
@@ -31,7 +29,10 @@ scope:
   path: docs/design/closed-enum-outcome-coverage.md
 - confidence: cited
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 6
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T11:01:24Z", actor: "human:timo", revision: 9}
+- {from: "proposed", to: "active", at: "2026-10-28T11:01:24Z", actor: "human:timo", revision: 10}
 ---
 ## Report
 
@@ -106,3 +107,8 @@ Package gates: `cargo test -p ess-cli --locked` and `task test-xtask` (CHANGELOG
 - Shared with `story:when-subject-reads-the-addressed-identity` (both touch `crates/specify/ess-domain/tests/subject_guard_input.rs`, and possibly `subject_fact.rs`). Other units: unknown.
 - Safety fact: every no-default closed-mode caller refuses when the proof declines (subject_fact.rs:607-626, command.rs:4067-4078, related_guard.rs:1899-1912 and :2019-2024), and any `Defined` node made the proof decline (finite.rs:152). So no document valid today has a guard those provers read through `defined`. Enabling presence there cannot change a valid document, and the one caller whose decline admits (subject_state.rs:348) is excluded. Level 2-3, unproven.
 - Not established: whether a pair with both sides guarded is witnessed by synthesis and handled by the generated targets (refused by 0.74.0, so unrun); that the reason-less ESS-COMMAND-005 on an input pair comes from the shape-time pass at command.rs:4119-4134 (read from the code, not traced); and whether adding presence to held state could newly refuse a valid document (a reading of subject_state.rs:340-350, not a reproduction).
+
+## Batch 1 integration
+
+- Batch 1 runs U1, U2, U3 and U4 at once (`approval-record:ess-issues-batch-1`). This unit does not edit `CHANGELOG.md`, `changes/*.yaml` or `WHATS-CHANGED.md`: the implementor returns its changelog entry in its report, and the integration branch `integration/ess-issues-1` writes every entry once, after the last unit merges, so four entries under the empty `[Unreleased]` heading do not collide.
+- Shared with U1 (`story:a-text-length-invariant-is-projected-as-min-and-max-length`, `story:a-distinct-invariant-is-projected-into-its-schema`): all three edit `website/docs/guides/specify/fields-and-invariants.md`. This story edits lines 82-99 (the defined and not-defined branches); the U1 stories add to the schema-projection prose. On a conflict the integration branch keeps both edits.

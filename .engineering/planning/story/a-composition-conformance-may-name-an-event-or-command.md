@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-composition-conformance-may-name-an-event-or-command
 kind: story
-status: draft
+status: active
 title: A composition conformance may name an event or command
 summary: 'Adopter report N10: compose cannot compare events or commands as types (ess#664).'
 tags:
@@ -14,8 +14,6 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 scope:
-- confidence: cited
-  path: CHANGELOG.md
 - confidence: cited
   path: crates/edge/ess-cli/src/main.rs
 - confidence: inferred
@@ -44,7 +42,10 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 7
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T11:01:26Z", actor: "human:timo", revision: 10}
+- {from: "proposed", to: "active", at: "2026-10-28T11:01:27Z", actor: "human:timo", revision: 11}
 ---
 ## Problem
 
@@ -109,3 +110,7 @@ Command: `cargo test -p ess-composition --locked --test payload_conformance <fn>
 - `website/docs/reference/{formats,spec-versions,cli,diagnostics}.md`, `docs/design/review-format-catalog.md`, `docs/design/composition-type-conformance.md`, `CHANGELOG.md`.
 - Inferred: `crates/specify/ess-composition/tests/payload_conformance.rs` and fixture dir `tests/fixtures/payload-conformance/` (needs a command with `response:` and an error); `crates/edge/ess-cli/tests/compose_conformance_v5.rs` (new).
 - Shared with `story:a-type-conformance-compares-value-constraints-and-variant-attributes` (`lib.rs`, the CLI test, the docs) and `story:reference-outside-component-names-its-remedy` (`lib.rs` catalogue, `diagnostics.md`). Lands in this order: #664, then #671, with #665 in the same unit.
+
+## Batch 1 integration
+
+- Batch 1 runs U1, U2, U3 and U4 at once (`approval-record:ess-issues-batch-1`). This unit does not edit `CHANGELOG.md`, `changes/*.yaml` or `WHATS-CHANGED.md`: the implementor returns its changelog entry in its report, and the integration branch `integration/ess-issues-1` writes every entry once, after the last unit merges, so four entries under the empty `[Unreleased]` heading do not collide.

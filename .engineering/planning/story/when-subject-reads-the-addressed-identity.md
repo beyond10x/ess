@@ -2,24 +2,25 @@
 format: aep.planning-md/3
 id: story:when-subject-reads-the-addressed-identity
 kind: story
-status: draft
-title: when_subject reads the addressed row's identity
-summary: 'Adopter report R3: a when_subject predicate on the identity field is refused as ESS-COMMAND-003.'
+status: active
+title: A when_subject on the identity is refused with the idiom that replaces it
+summary: 'Adopter report R3 (#643), declined: ESS-COMMAND-003 names the idiom (drop when_subject, keep unknown_instance: true).'
 tags:
 - ess-0.71.0
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 scope:
-- confidence: inferred
-  path: CHANGELOG.md
 - confidence: cited
   path: crates/specify/ess-domain/src/command/subject_fact.rs
 - confidence: cited
   path: crates/specify/ess-domain/tests/subject_guard_input.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/subject_guard_input.rs
-revision: 6
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T11:01:22Z", actor: "human:timo", revision: 10}
+- {from: "proposed", to: "active", at: "2026-10-28T11:01:23Z", actor: "human:timo", revision: 11}
 ---
 ## Report
 
@@ -75,3 +76,7 @@ Package gates: `cargo test -p ess-cli --locked` and `task test-xtask` (the diagn
 - Confidence: high. The defect site and the message are in the tree, and the defect was reproduced on 0.74.0.
 - Shared with `story:defined-and-not-defined-branches-are-exhaustive` (same unit U2): both edit `crates/specify/ess-domain/tests/subject_guard_input.rs`, and that story may edit `subject_fact.rs`. Other units: unknown.
 - Safety fact: the partition is skipped only for a command that already has an error-severity ESS-COMMAND-003, so nothing refused today becomes valid. Level 2, unproven: subject_fact.rs:275 and the skip at about line 219.
+
+## Batch 1 integration
+
+- Batch 1 runs U1, U2, U3 and U4 at once (`approval-record:ess-issues-batch-1`). This unit does not edit `CHANGELOG.md`, `changes/*.yaml` or `WHATS-CHANGED.md`: the implementor returns its changelog entry in its report, and the integration branch `integration/ess-issues-1` writes every entry once, after the last unit merges, so four entries under the empty `[Unreleased]` heading do not collide.

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-component-not-reached-over-the-network-has-no-http-route
 kind: story
-status: draft
+status: active
 title: A component not reached over the network has no http route
 summary: 'Adopter report S2: A component not reached over the network still gets HTTP routes (ess#651).'
 tags:
@@ -14,10 +14,10 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 scope:
-- confidence: inferred
-  path: CHANGELOG.md
 - confidence: cited
   path: crates/generate/ess-gen/src/openapi.rs
+- confidence: cited
+  path: crates/generate/ess-gen/tests/corpus/projection-digests.txt
 - confidence: inferred
   path: crates/generate/ess-gen/tests/openapi_reach.rs
 - confidence: cited
@@ -30,7 +30,10 @@ scope:
   path: website/docs/concepts/ess.md
 - confidence: inferred
   path: website/docs/guides/generate-artifacts.md
-revision: 10
+revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T11:01:32Z", actor: "human:timo", revision: 14}
+- {from: "proposed", to: "active", at: "2026-10-28T11:01:33Z", actor: "human:timo", revision: 15}
 ---
 ## Problem
 
@@ -91,3 +94,8 @@ Derived 2026-10-28 by story-scoper and checked by the prep agent. Every line is 
 - **Confidence:** high — one function writes the sentence, and the callers of `routes()` were walked
 - **Would collide with:** the http-answers unit (U5) only if it edits `description()`'s first `format!` (518-523); its sentence for stage 2 is at 587-604
 - **Safety fact:** the sentence joins a paragraph already emitted as one YAML line, so line counts and the tutorial excerpt hold — unproven until the repro output and the tutorial test confirm it
+
+## Batch 1 integration
+
+- Batch 1 runs U1, U2, U3 and U4 at once (`approval-record:ess-issues-batch-1`). This unit does not edit `CHANGELOG.md`, `changes/*.yaml` or `WHATS-CHANGED.md`: the implementor returns its changelog entry in its report, and the integration branch `integration/ess-issues-1` writes every entry once, after the last unit merges, so four entries under the empty `[Unreleased]` heading do not collide.
+- Shared with U1 (`story:an-entity-invariant-is-projected-into-its-schema`): both units regenerate `generated/openapi/invoice-service.yaml` (U1 the billing `x-ess-entities`, this unit its `info.description`), the byte count in `website/data/generate.terminal.json` and the openapi and served lines of `crates/generate/ess-gen/tests/corpus/projection-digests.txt` for billing, oracle-fixture and revision-pair. U1 merges first. This unit merges second, and on a conflict in any of these files the integration branch takes neither side: it regenerates them from the merged sources and commits the result, then `task projection-check` must pass.

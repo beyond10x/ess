@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-text-length-invariant-is-projected-as-min-and-max-length
 kind: story
-status: draft
+status: active
 title: A text-length invariant (.count against a literal) is published as minLength and maxLength
 summary: value.count and field.count bounds on a String lower to minLength and maxLength; utf8_bytes stays an annotation
 refs:
@@ -12,11 +12,13 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 - informed_by: approval-record:d138-schema-invariants-as-scoped
+- depends_on: story:an-entity-invariant-is-projected-into-its-schema
+- depends_on: story:a-binary64-bound-is-projected-as-a-numeric-keyword
 scope:
 - confidence: cited
-  path: CHANGELOG.md
-- confidence: cited
   path: crates/generate/ess-gen/src/types.rs
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/agreement.rs
 - confidence: inferred
   path: crates/generate/ess-gen/tests/text_length_bounds.rs
 - confidence: cited
@@ -29,7 +31,10 @@ scope:
   path: docs/design/types-only-realizations.md
 - confidence: inferred
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 3
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T11:01:20Z", actor: "human:timo", revision: 9}
+- {from: "proposed", to: "active", at: "2026-10-28T11:01:20Z", actor: "human:timo", revision: 10}
 ---
 ## Fit review
 
@@ -46,7 +51,7 @@ revision: 3
 - Accept, redesigned (2026-10-28). `<s>.count <op> <integer>`, where `s` is a newtype's `value` of String or a top-level primitive String field (required or Optional), lowers to:
   - `>=` minLength, `>` minLength+1, `<=` maxLength, `<` maxLength-1;
   - `==` both (on Optional and nullable fields too, since length keywords ignore non-strings);
-  - a literal on the left is mirrored; conjuncts of a top-level `all` are read one by one;
+  - a literal on the left is mirrored by the reader `story:a-binary64-bound-is-projected-as-a-numeric-keyword` (#687) adds, which this story reuses and does not build again; conjuncts of a top-level `all` are read one by one;
   - negative results are clamped or skipped, never published.
 - `utf8_bytes`, `!=`, dotted parents and newtype-typed fields stay `x-ess-invariants` only.
 - Following the #592 precedent (`realize.rs:1222-1225`), on model input a minLength/maxLength equal to the node's TextConstraint adds no obligation beyond `model_invariants`.
@@ -70,3 +75,9 @@ revision: 3
 - `docs/design/string-alphabet-and-length.md` `:561`, `docs/design/types-only-realizations.md`, `website/docs/guides/specify/fields-and-invariants.md`, `CHANGELOG.md`. The first two are cited; the guide is inferred.
 - Confidence: high.
 - Shared with: #687, #688, #686 (`types.rs`, `CHANGELOG.md`, design page); `realize.rs` and `model_ergonomics.rs` with #686.
+
+## Batch 1 integration
+
+- Batch 1 runs U1, U2, U3 and U4 at once (`approval-record:ess-issues-batch-1`). This unit does not edit `CHANGELOG.md`, `changes/*.yaml` or `WHATS-CHANGED.md`: the implementor returns its changelog entry in its report, and the integration branch `integration/ess-issues-1` writes every entry once, after the last unit merges, so four entries under the empty `[Unreleased]` heading do not collide.
+- Shared with U2 (`story:defined-and-not-defined-branches-are-exhaustive`, lines 82-99 of `website/docs/guides/specify/fields-and-invariants.md`): this story adds to the schema-projection prose of the same page and leaves those lines alone. On a conflict the integration branch keeps both edits.
+- `crates/generate/ess-gen/tests/agreement.rs` `:332-347` (inferred): the keywords this story publishes must be classified there, as the U1 entity-invariant story does for `minimum`, or `:861-891` fails on them.

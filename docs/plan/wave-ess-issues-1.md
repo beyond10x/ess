@@ -67,7 +67,7 @@ A wave is at most four units (the orchestrator's process rule), so the S and M i
 
 | batch | units | issues | why together |
 |---|---|---|---|
-| 1 | U1, U2, U3, U4 | #685, #686, #687, #688, #643, #644, #664, #665, #671, #666 (option A fixture), #651, #653 | no two share a file; decided by D133, D137, D138 |
+| 1 | U1, U2, U3, U4 | #685, #686, #687, #688, #643, #644, #664, #665, #671, #666 (option A fixture), #651, #653 | no two share a source file; U1 and U4 share regenerated projections (U1 merges first, the integration branch regenerates on conflict), U1 and U2 share a guide page, and the integration branch writes every `CHANGELOG.md` entry; decided by D133, D137, D138 |
 | 2 | U5, U6, U7, U8 | #652, #673, #647, #648, #661, #659 | U5 needs U4; U6 and U7 need U1 (`realize.rs`); D135 may take #648 or #661 out |
 | 3 | U9, U10, the two #554 synthesis stories | #645, #693, #694 | U9 after `0.75.0` (`synthesize.rs`) |
 | 4 | exchange wave 1: the exchange in the specification, its projections, its conformance, the WebSocket binding | #650 | `epic:messages-are-exchanged-independent-of-the-wire`; moves `ess/N` |

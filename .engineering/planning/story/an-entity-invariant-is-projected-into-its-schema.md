@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-entity-invariant-is-projected-into-its-schema
 kind: story
-status: draft
+status: active
 title: An entity's invariants reach its JSON Schema as x-ess-invariants and as the bounds a struct's already get
 summary: Entity documents (schema, OpenAPI x-ess-entities) publish x-ess-invariants and lower Integer comparisons like a struct
 refs:
@@ -13,8 +13,6 @@ relations:
 - decomposes: epic:downstream-reported-gaps
 - informed_by: approval-record:d138-schema-invariants-as-scoped
 scope:
-- confidence: cited
-  path: CHANGELOG.md
 - confidence: cited
   path: crates/generate/ess-gen/src/types.rs
 - confidence: cited
@@ -27,7 +25,14 @@ scope:
   path: docs/design/types-only-realizations.md
 - confidence: cited
   path: generated
-revision: 3
+- confidence: cited
+  path: generated/openapi/invoice-service.yaml
+- confidence: cited
+  path: website/data/generate.terminal.json
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T11:01:16Z", actor: "human:timo", revision: 7}
+- {from: "proposed", to: "active", at: "2026-10-28T11:01:17Z", actor: "human:timo", revision: 8}
 ---
 ## Fit review
 
@@ -65,3 +70,8 @@ revision: 3
 - `docs/design/types-only-realizations.md` `:96-101`, `CHANGELOG.md`: the lowering now covers entities.
 - Confidence: high. The defect site and both callers have been read.
 - Shared with: #687, #685, #686 (the `types.rs` lowering block, `agreement.rs`, `CHANGELOG.md`, `types-only-realizations.md`). `CHANGELOG.md` is shared with every unit.
+
+## Batch 1 integration
+
+- Batch 1 runs U1, U2, U3 and U4 at once (`approval-record:ess-issues-batch-1`). This unit does not edit `CHANGELOG.md`, `changes/*.yaml` or `WHATS-CHANGED.md`: the implementor returns its changelog entry in its report, and the integration branch `integration/ess-issues-1` writes every entry once, after the last unit merges, so four entries under the empty `[Unreleased]` heading do not collide.
+- Shared with U4 (`story:a-component-not-reached-over-the-network-has-no-http-route`): both units regenerate `generated/openapi/invoice-service.yaml` (this unit the billing `x-ess-entities`, U4 its `info.description`), the byte count in `website/data/generate.terminal.json` and the openapi and served lines of `crates/generate/ess-gen/tests/corpus/projection-digests.txt`. U1 merges first. U4 merges second, and on a conflict in any of these files the integration branch takes neither side: it regenerates them from the merged sources and commits the result, then `task projection-check` must pass.

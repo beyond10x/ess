@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-binary64-bound-is-projected-as-a-numeric-keyword
 kind: story
-status: draft
+status: active
 title: A Binary64 bound an invariant states is published as minimum, exclusiveMinimum, maximum or exclusiveMaximum
 summary: Binary64 comparisons with a canonical literal lower to numeric keywords on struct, newtype and entity schemas
 refs:
@@ -12,18 +12,22 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 - informed_by: approval-record:d138-schema-invariants-as-scoped
+- depends_on: story:an-entity-invariant-is-projected-into-its-schema
 scope:
 - confidence: cited
-  path: CHANGELOG.md
-- confidence: cited
   path: crates/generate/ess-gen/src/types.rs
+- confidence: inferred
+  path: crates/generate/ess-gen/tests/agreement.rs
 - confidence: inferred
   path: crates/generate/ess-gen/tests/binary64_bounds.rs
 - confidence: inferred
   path: crates/generate/schema-contract/tests/model_ergonomics.rs
 - confidence: cited
   path: docs/design/types-only-realizations.md
-revision: 3
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T11:01:18Z", actor: "human:timo", revision: 8}
+- {from: "proposed", to: "active", at: "2026-10-28T11:01:19Z", actor: "human:timo", revision: 9}
 ---
 ## Fit review
 
@@ -64,3 +68,8 @@ revision: 3
 - `docs/design/types-only-realizations.md` `:96-108`, `CHANGELOG.md`.
 - Confidence: high. Defect site, number semantics and realize admission have all been read.
 - Shared with: #688, #685, #686 (`types.rs` lowering and Node, `CHANGELOG.md`, design page); `model_ergonomics.rs` with #685 and #686.
+
+## Batch 1 integration
+
+- Batch 1 runs U1, U2, U3 and U4 at once (`approval-record:ess-issues-batch-1`). This unit does not edit `CHANGELOG.md`, `changes/*.yaml` or `WHATS-CHANGED.md`: the implementor returns its changelog entry in its report, and the integration branch `integration/ess-issues-1` writes every entry once, after the last unit merges, so four entries under the empty `[Unreleased]` heading do not collide.
+- `crates/generate/ess-gen/tests/agreement.rs` `:332-347` (inferred): the keywords this story publishes must be classified there, as the U1 entity-invariant story does for `minimum`, or `:861-891` fails on them.

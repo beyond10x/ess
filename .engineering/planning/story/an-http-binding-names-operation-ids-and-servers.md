@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-http-binding-names-operation-ids-and-servers
 kind: story
-status: draft
+status: active
 title: An http binding names operation ids and servers
 summary: 'Adopter report S5: HTTP binding has no operation_id and no servers (ess#653).'
 tags:
@@ -14,8 +14,6 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 scope:
-- confidence: inferred
-  path: CHANGELOG.md
 - confidence: inferred
   path: crates/edge/ess-cli/tests/http_presentation.rs
 - confidence: cited
@@ -36,7 +34,10 @@ scope:
   path: website/docs/guides/http-routes.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 9
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T11:01:30Z", actor: "human:timo", revision: 12}
+- {from: "proposed", to: "active", at: "2026-10-28T11:01:31Z", actor: "human:timo", revision: 13}
 ---
 ## Problem
 
@@ -100,3 +101,7 @@ Derived 2026-10-28 by story-scoper and checked by the prep agent. Every line is 
 - **Confidence:** high — the issue names both keys and the tree has one DTO, one IR and one projection site for each
 - **Would collide with:** the http-answers unit (U5) on `RouteSpec`, `Route`, the `routes()` literal, `CODES`, the `from_json` doc, the `compile` doc table, `openapi.rs`, and the shared documents; split by symbol, with the new passes in their own functions
 - **Safety fact:** an absent key is omitted from the IR and the document (`skip_serializing_if`, as at `lib.rs:1786-1787`), so bindings without the keys keep their bytes — unproven until the two existing byte tests pass
+
+## Batch 1 integration
+
+- Batch 1 runs U1, U2, U3 and U4 at once (`approval-record:ess-issues-batch-1`). This unit does not edit `CHANGELOG.md`, `changes/*.yaml` or `WHATS-CHANGED.md`: the implementor returns its changelog entry in its report, and the integration branch `integration/ess-issues-1` writes every entry once, after the last unit merges, so four entries under the empty `[Unreleased]` heading do not collide.

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-distinct-invariant-is-projected-into-its-schema
 kind: story
-status: draft
+status: active
 title: 'A distinct: invariant is asserted by the schema where JSON Schema says it exactly, and annotated with a documented limit where it cannot'
 summary: distinct over scalars gives uniqueItems; by an enum or Boolean key gives one bounded contains per variant; an open key stays x-ess-invariants
 refs:
@@ -12,9 +12,8 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 - informed_by: approval-record:d138-schema-invariants-as-scoped
+- depends_on: story:an-entity-invariant-is-projected-into-its-schema
 scope:
-- confidence: cited
-  path: CHANGELOG.md
 - confidence: cited
   path: crates/generate/ess-gen/src/types.rs
 - confidence: cited
@@ -29,7 +28,10 @@ scope:
   path: docs/design/types-only-realizations.md
 - confidence: inferred
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 3
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T11:01:21Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-10-28T11:01:22Z", actor: "human:timo", revision: 7}
 ---
 ## Fit review
 
@@ -71,3 +73,8 @@ revision: 3
 - `docs/design/types-only-realizations.md`, `website/docs/guides/specify/fields-and-invariants.md`, `CHANGELOG.md`: the documented open-key limit. The guide is inferred.
 - Confidence: medium. The schema form is proven; the realize collapse is designed but not run.
 - Shared with: #688, #687, #685 (`types.rs`, `CHANGELOG.md`, design page); `realize.rs` and `model_ergonomics.rs` with #685.
+
+## Batch 1 integration
+
+- Batch 1 runs U1, U2, U3 and U4 at once (`approval-record:ess-issues-batch-1`). This unit does not edit `CHANGELOG.md`, `changes/*.yaml` or `WHATS-CHANGED.md`: the implementor returns its changelog entry in its report, and the integration branch `integration/ess-issues-1` writes every entry once, after the last unit merges, so four entries under the empty `[Unreleased]` heading do not collide.
+- Shared with U2 (`story:defined-and-not-defined-branches-are-exhaustive`, lines 82-99 of `website/docs/guides/specify/fields-and-invariants.md`): this story adds to the schema-projection prose of the same page and leaves those lines alone. On a conflict the integration branch keeps both edits.

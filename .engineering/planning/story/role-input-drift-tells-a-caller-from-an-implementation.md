@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:role-input-drift-tells-a-caller-from-an-implementation
 kind: story
-status: draft
+status: active
 title: Role input drift tells a caller from an implementation
 summary: 'Adopter report N12: role_input_drift on a producer sending a subset (ess#666).'
 tags:
@@ -20,7 +20,10 @@ scope:
   path: crates/specify/ess-composition/tests/roles.rs
 - confidence: cited
   path: docs/design/composition-contract-roles.md
-revision: 7
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-28T11:01:29Z", actor: "human:timo", revision: 10}
+- {from: "proposed", to: "active", at: "2026-10-28T11:01:30Z", actor: "human:timo", revision: 11}
 ---
 ## Problem
 
@@ -37,11 +40,26 @@ Decline, with the idiom. Decided by the operator under the wave's option A (appr
 
 ## Acceptance
 
-- `an_implementation_missing_a_contract_input_drifts`: a `stands: implements` entry whose local command lacks a contract input is refused as `role_input_drift`, naming the entry, both commands and the missing field, for a required contract input and for an `Optional` one. Pinned by a new fixture (`crates/specify/ess-composition/tests/fixtures/implements-drift/`, a copy of the two systems with a contract command that has an `Optional` input; `contract-role/` stays unchanged because its IR bytes are pinned). Command: `cargo test -p ess-composition --locked --test roles an_implementation_missing_a_contract_input_drifts`.
-- `docs/design/composition-contract-roles.md` says that a caller of a contract command is not a role entry and names the idiom (no entry, or `gates`). Checked by reading the page in review; no test.
+- Characterization pin (the rule is unchanged, so this passes before and after; it keeps a later
+  change from loosening the rule silently): `an_implementation_missing_a_contract_input_drifts`, a
+  `stands: implements` entry whose local command lacks a contract input is refused as
+  `role_input_drift`, naming the entry, both commands and the missing field, for a required
+  contract input and for an `Optional` one. New fixture
+  `crates/specify/ess-composition/tests/fixtures/implements-drift/` (a copy of the two systems with a
+  contract command that has an `Optional` input; `contract-role/` stays unchanged because its IR
+  bytes are pinned). Command: `cargo test -p ess-composition --locked --test roles an_implementation_missing_a_contract_input_drifts`.
+- The documentation change, the story's transition: `docs/design/composition-contract-roles.md`
+  gains the sentence "A caller of a contract command is not a role entry: give its command no
+  entry, or `stands: gates` when it only admits the call." Before the edit
+  `git grep -n -F "A caller of a contract command is not a role entry" docs/design/composition-contract-roles.md`
+  exits 1; after it, it exits 0 and prints the line.
 
 ## Scope
 
 - `crates/specify/ess-composition/tests/roles.rs`: the new test function beside `an_implements_entry_whose_inputs_drift_is_refused` (cited).
 - `docs/design/composition-contract-roles.md`: the caller sentence in check 4 (cited).
 - `crates/specify/ess-composition/tests/fixtures/implements-drift/`: new fixture (inferred).
+
+## Batch 1 integration
+
+- Batch 1 runs U1, U2, U3 and U4 at once (`approval-record:ess-issues-batch-1`). This unit does not edit `CHANGELOG.md`, `changes/*.yaml` or `WHATS-CHANGED.md`: the implementor returns its changelog entry in its report, and the integration branch `integration/ess-issues-1` writes every entry once, after the last unit merges, so four entries under the empty `[Unreleased]` heading do not collide.
