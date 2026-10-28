@@ -1,4 +1,4 @@
-#	models=399	lines=549
+#	models=403	lines=555
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -300,6 +300,8 @@ crates/verify/ess-conformance/tests/fixtures/row-set-upsert.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-effect-binding-causes/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-effect-fresh-input/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-effect-identity-pin.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/set-move-filter-seed/affects/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/set-move-filter-seed/instances/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/set-move-only-state.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-guarded-related-value.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/set-update-creator-copies-related-value.yaml	components=0
@@ -472,6 +474,10 @@ system-dir:crates/verify/ess-conformance/tests/fixtures/relation-via-identity	co
 system-dir:crates/verify/ess-conformance/tests/fixtures/set-effect-binding-causes	components=1
 system-dir:crates/verify/ess-conformance/tests/fixtures/set-effect-binding-causes	svc	REFUSED	959db05efc14e599667172fd6a7b69565e9ec91541e2bb98893207ff61f130f9:611
 system-dir:crates/verify/ess-conformance/tests/fixtures/set-effect-fresh-input	components=0
+system-dir:crates/verify/ess-conformance/tests/fixtures/set-move-filter-seed/affects	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/set-move-filter-seed/affects	svc	REFUSED	1272297a1fb9d95f72baae8f2507e1856f47a7fe35c9c367d644241e18762708:561
+system-dir:crates/verify/ess-conformance/tests/fixtures/set-move-filter-seed/instances	components=1
+system-dir:crates/verify/ess-conformance/tests/fixtures/set-move-filter-seed/instances	svc	REFUSED	50068dc89bec3004a4f50df302829dd8f90208baa673aa0086c3dfe94fef19b8:570
 system-dir:docs/design/models/authored-discovery	components=0
 system-dir:docs/design/models/entity-runtime-lowering	components=0
 system-dir:docs/design/models/service-contract	components=0
