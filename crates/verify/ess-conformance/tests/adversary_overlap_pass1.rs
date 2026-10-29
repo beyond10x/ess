@@ -298,10 +298,12 @@ fn adversary_overlap_an_overlap_on_one_boundary_value_is_sent() {
     }
 }
 
-/// An enum overlap: `closed: priority == High` and `urgent-closed-refused: priority != Low`,
-/// beside a default. They overlap at `High`, which the refusal is sent and required at.
+/// An enum overlap: `closed: priority != Normal` and `not-low: priority != Low`, beside a
+/// default. They overlap at `High`, which the refusal is sent and required at.
 #[test]
 fn adversary_overlap_an_enum_overlap_is_sent() {
+    // `closed` also takes `Low`, outside `not-low`, to avoid the #702 refusal: under
+    // `priority == High` every input of `closed` was `not-low`'s, so it was unreachable.
     let text = TICKETS
         .replace(
             "types:\n",
@@ -311,7 +313,7 @@ fn adversary_overlap_an_enum_overlap_is_sent() {
             "      - {name: open, type: Boolean}\n",
             "      - {name: open, type: Boolean}\n      - {name: priority, type: demo.tickets.Priority}\n",
         )
-        .replace("        when: open == false\n", "        when: priority == High\n")
+        .replace("        when: open == false\n", "        when: priority != Normal\n")
         .replace(
             "        error: demo.tickets.TicketIdRequired\n",
             "        error: demo.tickets.TicketIdRequired\n      - name: not-low\n        when: priority != Low\n        error: demo.tickets.NotLow\n",

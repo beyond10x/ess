@@ -118,7 +118,9 @@ fn a_decided_overlap_with_a_state_guarded_success_is_the_refusal_s() {
 }
 
 /// Two refusals the same input selects: the first declared answers, as Entity Runtime orders
-/// them (decision for beyond10x/ess#227 adversary pass 1), so the case is `frozen`'s alone.
+/// them (decision for beyond10x/ess#227 adversary pass 1), so the case is `frozen`'s alone. Since
+/// beyond10x/ess#702 that makes `frozen-again`, whose guard is `frozen`'s, unreachable, and it is
+/// refused as such; the pair is still no conflict.
 #[test]
 fn two_refusals_the_same_input_selects_are_answered_by_the_first_declared() {
     let text = replaced(
@@ -126,7 +128,18 @@ fn two_refusals_the_same_input_selects_are_answered_by_the_first_declared() {
         TOO_SHORT,
         "      - name: frozen\n        when: mode == Freeze\n        error: demo.secrets.SecretTooShort\n      - name: frozen-again\n        when: mode == Freeze\n        error: demo.secrets.NotConfigured\n",
     );
-    accepted(&text);
+    // Equal decided guards draw the #702 refusal: the first declared answers, the second never.
+    let errors = refused(&text);
+    assert_eq!(errors.as_slice().len(), 1, "{errors}");
+    assert!(
+        has(
+            &errors,
+            ValidationCode::UnreachableBranch,
+            "`frozen-again` is unreachable: every input satisfying `mode == Freeze` is answered \
+             first by `frozen` (mode == Freeze)"
+        ),
+        "{errors}"
+    );
 }
 
 /// `too-short` (a guard the prover cannot decide) beside `frozen: mode == Freeze` (one it can),
