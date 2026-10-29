@@ -21,7 +21,7 @@ scope:
   path: crates/generate/ess-synth/src/rust/feasibility.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/feasibility.rs
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T05:17:22Z", actor: "human:timo", revision: 13, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 - {from: "proposed", to: "active", at: "2026-10-29T05:17:22Z", actor: "human:timo", revision: 14, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
@@ -119,7 +119,7 @@ in 21; the design table is `unique-wire-field-identity.md:14-21`, not `:12-20`.
 **accept, redesigned.** Format: none.
 
 - Rust and web allocate a command's response fields in their own scope,
-  `fields:{command}.response`. Input fields stay in `fields:{command}`. A collision between two
+  `response fields:{command}` (a key no qualified declaration name can spell; adversary round). Input fields stay in `fields:{command}`. A collision between two
   response fields still refuses, in the response scope.
 - A collision whose entries are all fields names the idiom that works: "rename one of them and
   keep its wire spelling with `naming: { wire: … }`, which changes no wire name and no document
@@ -163,7 +163,7 @@ file's `core` / `fixture` helpers.
   a follow-up story is filed.
   `cargo test -p ess-synth --locked --test feasibility an_input_and_response_field_share_a_name_in_go`
 - **A collision inside a response still refuses.** Transition: two response fields `fooBar` and
-  `foo_bar`. After: refused with "`foo_bar` is allocated 2 times in `fields:demo.…Send.response`".
+  `foo_bar`. After: refused with "`foo_bar` is allocated 2 times in `response fields:demo.core.Send`".
   Same file, `a_collision_inside_a_response_still_refuses`.
   `cargo test -p ess-synth --locked --test feasibility a_collision_inside_a_response_still_refuses`
 - **A field collision names the wire-rename idiom, and the idiom clears it.** Transition: a struct

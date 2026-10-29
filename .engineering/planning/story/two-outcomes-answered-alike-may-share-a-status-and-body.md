@@ -36,7 +36,7 @@ scope:
   path: website/docs/guides/http-routes.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T05:17:19Z", actor: "human:timo", revision: 6, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 - {from: "proposed", to: "active", at: "2026-10-29T05:17:19Z", actor: "human:timo", revision: 7, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
@@ -75,7 +75,7 @@ Decision kind: accept, redesigned. The requester's need is taken as is; the shap
 - The answers must also be ones the wire cannot tell apart. A group of `envelope` bodies, or of `{<member>: error}` objects with different error wire names, is refused: the wire already names the outcome.
 - ESS-HTTP-022 refuses an unknown name, a name in two groups, a group of one, a name with no declared answer, and `alike` on a view.
 - ESS-HTTP-025 refuses a group whose answers differ (naming the first differing key) or that the wire tells apart, and skips pairs inside one group.
-- IR: `alike` is written only when present, members in command declaration order, groups ordered by first member; `from_json` refuses other orders and an empty list. Refinement compares it (ESS-HTTP-012, answer 21).
+- IR: `alike` is written only when present, members in name order (the IR reader has no specification to read declaration order from), groups ordered by first member; `from_json` refuses other orders and an empty list. Refinement compares it (ESS-HTTP-012, answer 21).
 - OpenAPI: one response per status, `x-ess-outcomes` naming every member, one schema per group.
 - The old acceptance line `conformance_accepts_either_outcome_for_the_shared_answer` is replaced by a design-page note: no HTTP conformance target exists to test.
 - Replaces the story's `## Acceptance`; keeps `## Problem`.
