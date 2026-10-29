@@ -10,16 +10,11 @@ relations:
 - informed_by: task:deferred-protocol-ui-bindings
 - informed_by: approval-record:ess-evolution-20260915
 - informed_by: architecture-decision-record:ess-evolution-02-semantics-before-bindings
-- blocks: story:ess-projects-a-protobuf-idl-with-http-annotations
-- blocks: story:a-command-binds-to-json-rpc-and-grpc-beside-http
-- blocks: story:an-event-channel-may-be-bound-to-server-sent-events
-- blocks: story:a-response-stream-follows-one-row-until-a-terminal-state
-- blocks: story:an-authored-scenario-claims-a-binding-error-code
-revision: 3
+revision: 5
 transitions:
 - {from: "proposed", to: "accepted", at: "2026-10-23T19:36:17Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, correlation: "ess-0690"}
 ---
-Status: proposed (draft). Not accepted; nothing under it is dispatched before acceptance.
+Status: accepted 2026-10-23 by the operator, after reviewing all 15 proposed ADRs in full: "I accept all of them" (see this record's transitions).
 
 ## Context
 
@@ -80,7 +75,7 @@ None yet. Acceptance is the operator's move of this record to `accepted`, after 
 pages are reviewed. Until then `story:ess-projects-a-protobuf-idl-with-http-annotations` and
 `story:a-command-binds-to-json-rpc-and-grpc-beside-http` stay in draft and are not implemented.
 
-## Amendment 1 (proposed, 2026-10-22): a bound on response streams
+## Amendment 1 (proposed 2026-10-22, accepted with this record 2026-10-23): a bound on response streams
 
 Adopter repro (beyond10x/a2a, tracker row 37, ESS 0.67.0): A2A `SendStreamingMessage` and
 `SubscribeToTask` keep a stream open that follows one task. The adopter caps the number of streams
@@ -104,3 +99,36 @@ over the bound is answered with the declared error and changes nothing.
 Effect: no change beyond what § 6 decides for the stream itself; the bound adds one key, one error
 reference and one synthesized scenario per bounded stream. Without a bound every artifact keeps its
 bytes.
+
+## Amendment 2 (accepted 2026-10-28, withdrawn the same day): a WebSocket upgrade is a sibling binding
+
+Withdrawn 2026-10-28, the same day, by the operator: "Actually, I think we also kind of need B. Or I
+mean, we might even need A, B, and C. [...] I think still the most important is a generic transport
+one, yeah, because I mean this is about messages being exchanged, and there should be a way to
+express that completely independent of whether you are using a WebSocket or JSON RPC or whatever.
+[...] we shouldn't restrict us to one or the other option." The direction is proposed in
+`architecture-decision-record:messages-are-exchanged-independent-of-the-wire`; nothing below is
+built, and `ess-websocket/1` returns there as one binding of three. The text below is kept as it was
+accepted.
+
+Status: accepted 2026-10-28 by the operator: "option A for the ESS WebSocket one." Recorded in
+`approval-record:websocket-upgrade-is-a-sibling-binding`, which clears
+`decision-blocker:websocket-upgrade-binding-form`.
+
+beyond10x/ess#650 asks for a WebSocket upgrade beside the JSON-RPC binding Decision 2 already
+admits. `ess-http/1` keeps refusing `101` as an outcome (`docs/design/http-presentation-binding.md:337`):
+an upgrade is not an HTTP answer to one command.
+
+**Decision.** A third sibling document, `ess-websocket/1`, shaped like `ess-jsonrpc/1`: authored
+separately, pinned to the specification's source digest, refusing unknown keys by name. It lists
+sockets, each with a path, a subprotocol, the command that opens it, the commands the client sends on
+it and the events the server sends on it. It compiles against the resolved IR into
+`ess-websocket-ir/1` and is projected into AsyncAPI 3's `ws` binding by `ess-gen/src/asyncapi.rs`.
+`ess/N` does not change.
+
+**Rejected.** `ess-transport/3` with `brokers[].protocol: websocket`: the broker and stream
+vocabulary does not fit a point-to-point socket, and it leans to the generic binding this record
+rejects. An `ess-http/2` route key `upgrade:`: moves `ess-http/2` and `ess-http-ir/2`, needs AsyncAPI
+from the HTTP crate, and breaks the sibling pattern.
+
+**Compatibility.** Opt-in; without an `ess-websocket/1` document every artifact keeps its bytes.

@@ -546,9 +546,9 @@ ess specify compose [OPTIONS] --path <PATH> --service <KEY=PATH>
 
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
-| `--path` | `<PATH>` | yes |  | An `ess-composition/1` to `/4` JSON or YAML document |
+| `--path` | `<PATH>` | yes |  | An `ess-composition/1` to `/5` JSON or YAML document |
 | `--service` | `<KEY=PATH>`… | yes |  | A compiled ESS source, written `service-key=path`. Repeat for every import |
-| `--out` | `<OUT>` | no |  | Where to write canonical composition IR; its format echoes the input's (`/1`–`/4`) |
+| `--out` | `<OUT>` | no |  | Where to write canonical composition IR; its format echoes the input's (`/1`–`/5`) |
 | `--client-plan-out` | `<CLIENT_PLAN_OUT>` | no |  | Where to write canonical `ess-client-plan/1` |
 | `--client-rust-out` | `<CLIENT_RUST_OUT>` | no |  | Root for the generated dependency-free Rust composition client |
 | `--ownership-root` | `<OWNERSHIP_ROOT>` | no |  | One enclosing ownership anchor for every composition output |

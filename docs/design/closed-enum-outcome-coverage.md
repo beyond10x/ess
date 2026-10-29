@@ -11,15 +11,31 @@ not derive the domain from the guard's literals. At most 64 joint assignments an
 128 predicate nodes are admitted. Every referenced input participates in the joint
 domain. Unreferenced inputs do not affect the proof.
 
-Optional paths, open scalar domains, collection selectors, quantifiers, unsupported
-operations, invalid literals and exhausted resource bounds cannot establish this
-proof. Unknown is never false and never proves coverage. Such commands retain the
+An Optional path that every guard reads only through `defined(…)` (bare, or under
+`not`, `all` and `any`) has the domain {absent, present} in the proofs a command
+without a default runs: the input partition, the stored-field partition of
+`when_subject:` and the related-row partitions of `when_related:`. Absent leaves the
+fact unset; present sets one placeholder value, which only `defined(…)` reads. So
+`when: defined(coupon)` beside `when: not defined(coupon)` is exhaustive with no
+default, and a missing or overlapping case names the path as `coupon = absent` or
+`coupon = present`. The held-state partition (`when_subject_state:`) does not admit
+presence: when its proof declines it drops an undecidable input refusal and proves the
+rest, which can admit a command that a doubled domain or a new overlap would refuse.
+`finite::analyze`, which synthesis and the step-order checks read, keeps declining
+presence.
+
+Optional paths read by value (`defined(token)` beside `token == a` included), a
+required path read through `defined(…)`, open scalar domains, collection selectors,
+quantifiers, unsupported operations, invalid literals and exhausted resource bounds
+cannot establish this proof. Unknown is never false and never proves coverage. Such
+commands retain the
 requirement for a genuine default. Missing cases name a real typed assignment;
 overlapping guards name the conflicting outcomes and assignment. A branch whose
 guard is never true remains declared and receives the existing synthesis refusal.
 
 Raw command shape checking has no registry. It may defer the missing-default check
-only for the syntactic finite fragment over named or primitive Boolean input roots. Full typed validation
+only for the syntactic finite fragment over named or primitive Boolean input roots, and over
+Optional input roots read only through `defined(…)`. Full typed validation
 must establish the proof before the command becomes a validated specification.
 Shape checking still rejects multiple defaults and other structural defects.
 
@@ -45,6 +61,10 @@ Previously rejected exhaustive commands become valid; existing admitted commands
 with real defaults keep their semantics. `Case.values` and `FieldCase.fields/input`
 now carry `FactValue` instead of `String`, a public Rust source API change; enum text
 diagnostics and witness bytes remain unchanged. No format migration is required.
+Presence adds `Case.presence` and `FieldCase.fields_presence/input_presence`, the
+same kind of public Rust source change: each maps a path read only through
+`defined(…)` to whether it is present, and is empty wherever the proof does not
+admit presence. No IR, wire or witness bytes move.
 Stored/related-row and held-state validators use the expanded proof only without a
 default. With a default they retain the prior enum-only proof, including its existing
 overlap checks and unsupported-domain fallback. Learning Boolean values must not add

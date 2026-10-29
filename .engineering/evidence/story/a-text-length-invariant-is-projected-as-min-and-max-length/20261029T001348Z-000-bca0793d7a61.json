@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-29T00:13:48Z",
+  "actor": "human:timo",
+  "artifact": "story:a-text-length-invariant-is-projected-as-min-and-max-length",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ess-gen text_length_bounds; schema-contract model_ergonomics, adversary_ess_issues_1_u1 passed; local gate D171 EXIT=0 on d6174f931",
+    "reference": "commit:d6174f931"
+  }
+}

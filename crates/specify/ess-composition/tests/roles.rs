@@ -16,13 +16,18 @@ use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 
 fn fixture(system: &str) -> PathBuf {
+    fixture_in("contract-role", system)
+}
+
+fn fixture_in(set: &str, system: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/contract-role")
+        .join("tests/fixtures")
+        .join(set)
         .join(system)
 }
 
-fn compiled(system: &str) -> EssIr {
-    let base = fixture(system);
+fn compiled(set: &str, system: &str) -> EssIr {
+    let base = fixture_in(set, system);
     let mut found = Vec::new();
     let mut pending = vec![base.clone()];
     while let Some(directory) = pending.pop() {
@@ -67,9 +72,14 @@ struct Models {
 
 impl Models {
     fn new() -> Self {
+        Self::of("contract-role")
+    }
+
+    /// Both models of the fixture set under `tests/fixtures/<set>`.
+    fn of(set: &str) -> Self {
         Self {
-            demo: compiled("demo"),
-            wire: compiled("wire"),
+            demo: compiled(set, "demo"),
+            wire: compiled(set, "wire"),
         }
     }
 
@@ -316,6 +326,45 @@ fn an_implements_entry_whose_inputs_drift_is_refused() {
     let insist = finding_at(&diagnostics, "roles[0].commands[3]", "role_input_drift");
     assert!(insist.contains("field `note`"), "{insist}");
     assert!(insist.contains("null_when_absent"), "{insist}");
+}
+
+/// The rule holds for a contract input the local command lacks, required or `Optional`: an
+/// implementation accepts every input the contract's caller sends. A caller of the contract
+/// command is not a role entry (`docs/design/composition-contract-roles.md`, check 4).
+#[test]
+fn an_implementation_missing_a_contract_input_drifts() {
+    let models = Models::of("implements-drift");
+    let roles = |local: &str| {
+        format!(
+            "roles:\n  \
+               - service: demo\n    \
+                 plays: wire\n    \
+                 commands:\n      \
+                   - {{local: {local}, stands: implements, contract: wire.server.Subscribe}}\n"
+        )
+    };
+    models
+        .compose(&models.document("ess-composition/4", &roles("demo.gate.Answer")))
+        .unwrap_or_else(|diagnostics| panic!("every contract input is accepted:\n{diagnostics}"));
+
+    for (local, missing) in [
+        // The contract's `Optional` input.
+        ("demo.gate.NoNote", "note"),
+        // The contract's required input.
+        ("demo.gate.NoChannel", "channel"),
+    ] {
+        let diagnostics = models.refused(&models.document("ess-composition/4", &roles(local)));
+        let detail = finding_at(&diagnostics, "roles[0].commands[0]", "role_input_drift");
+        assert!(detail.contains(local), "{detail}");
+        assert!(detail.contains("wire.server.Subscribe"), "{detail}");
+        assert!(
+            detail.contains(&format!(
+                "field `{missing}`: `wire.server.Subscribe` sends it and `{local}` does not \
+                 declare it"
+            )),
+            "{detail}"
+        );
+    }
 }
 
 #[test]

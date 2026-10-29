@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-28T10:54:58Z",
+  "actor": "human:timo",
+  "artifact": "approval-record:d134-adr-amendments-wait-for-the-operator",
+  "kind": "approval-record",
+  "revision": 3,
+  "change": {
+    "change": "redaction",
+    "literal_sha256": "85ee877a32d85a6178900edb730f4fad69d85d9e33ccb42f9ddd61e6d75d9f4b",
+    "literal_chars": 4,
+    "replacement": "the operator",
+    "count": 1,
+    "reason": "public text names no person"
+  }
+}

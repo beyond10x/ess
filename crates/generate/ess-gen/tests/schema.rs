@@ -980,6 +980,10 @@ fn no_schema_uses_a_keyword_outside_the_set_this_projection_publishes() {
         "enum",
         "format",
         "items",
+        // The integer bound an invariant states about a field (beyond10x/ess#394), published on an
+        // entity's own property since beyond10x/ess#688: the billing `Invoice` states
+        // `reminder_count >= 0`.
+        "minimum",
         "oneOf",
         "pattern",
         "properties",

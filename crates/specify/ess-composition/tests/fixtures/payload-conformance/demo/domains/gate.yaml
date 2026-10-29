@@ -1,0 +1,93 @@
+domain: demo.gate
+
+types:
+  - name: demo.gate.Channel
+    kind: newtype
+    of: String
+
+  # The payload of `wire.server.Subscribed`, kept as a struct.
+  - name: demo.gate.Subscription
+    kind: struct
+    fields:
+      - name: channel
+        type: demo.gate.Channel
+
+  # A newtype, which no payload is.
+  - name: demo.gate.Name
+    kind: newtype
+    of: String
+
+errors:
+  - name: demo.gate.Refused
+    fields:
+      - name: reason
+        type: String
+
+actors:
+  - name: demo.gate.Client
+    may:
+      - demo.gate.Admit
+      - demo.gate.Ask
+      - demo.gate.Count
+
+commands:
+  # Its input answers `wire.server.Subscribe`'s.
+  - name: demo.gate.Admit
+    input:
+      - name: channel
+        type: demo.gate.Channel
+    outcomes:
+      - name: admitted
+        emits:
+          - demo.gate.Admitted
+        payload:
+          demo.gate.Admitted:
+            channel: input.channel
+      - name: refused
+        external: the channel is closed
+        error: demo.gate.Refused
+
+  # Its response is `wire.server.Ask`'s.
+  - name: demo.gate.Ask
+    input:
+      - name: channel
+        type: demo.gate.Channel
+    response:
+      - name: channel
+        type: demo.gate.Channel
+    outcomes:
+      - name: answered
+        returns: true
+        emits:
+          - demo.gate.Admitted
+        payload:
+          demo.gate.Admitted:
+            channel: input.channel
+
+  # `channel` of another type than the owner's.
+  - name: demo.gate.Count
+    input:
+      - name: channel
+        type: Integer
+    outcomes:
+      - name: counted
+        emits:
+          - demo.gate.Counted
+        payload:
+          demo.gate.Counted:
+            channel: input.channel
+
+events:
+  - name: demo.gate.Admitted
+    fields:
+      - name: channel
+        type: demo.gate.Channel
+  - name: demo.gate.Counted
+    fields:
+      - name: channel
+        type: Integer
+  # Reads `wire.server.Listed` without its `count`.
+  - name: demo.gate.Listed
+    fields:
+      - name: channel
+        type: demo.gate.Channel

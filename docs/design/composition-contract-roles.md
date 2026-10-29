@@ -79,7 +79,9 @@ In document order, every refusal accumulated, as the rest of `compile` does:
      the caller never sends refuses every call.
 
    A difference is refused as **`role_input_drift`**, naming the entry, both commands and every
-   differing field.
+   differing field, a contract input the local command lacks included, `Optional` or not.
+
+   A caller of a contract command is not a role entry: give its command no entry, or `stands: gates` when it only admits the call.
 5. A `gates` entry compares nothing beyond step 3. Its inputs may differ: the gate decides on its
    own input, and the composition does not say how the contract's input becomes it.
 

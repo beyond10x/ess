@@ -875,3 +875,51 @@ await test('boolean partition', t => run(t, () => ({
         }
     }
 }
+
+/// Synthesis and the step-order checks read `finite::analyze`, which keeps declining a guard set
+/// that reads an Optional input through `defined(…)`; only the closed partition proofs without a
+/// default enumerate its presence.
+#[test]
+fn analyze_keeps_declining_presence() {
+    use ess_domain::command::finite::{analyze, analyze_with_fields, FieldGuard};
+    use ess_domain::expression::DomainEnvironment;
+    use ess_domain::{Field, TypeRef, TypeRegistry};
+    use ess_primitives::predicate::Predicate;
+    let registry = TypeRegistry::new();
+    let input = vec![Field::new(
+        "coupon",
+        TypeRef::parse("Optional<String>").unwrap(),
+    )];
+    let environment = DomainEnvironment::new(&registry, &input);
+    let present = Predicate::parse_expression("defined(coupon)").unwrap();
+    let absent = Predicate::parse_expression("not defined(coupon)").unwrap();
+    assert!(analyze(&environment, &[&present, &absent]).is_none());
+    assert!(analyze(&environment, &[&present]).is_none());
+    // The closed joint proof over the same input enumerates absent and present.
+    let guards = [
+        FieldGuard {
+            fields: None,
+            input: Some(&present),
+        },
+        FieldGuard {
+            fields: None,
+            input: Some(&absent),
+        },
+    ];
+    let cases = analyze_with_fields(
+        &DomainEnvironment::new(&registry, &[]),
+        &environment,
+        &guards,
+    )
+    .expect("the closed proof enumerates presence");
+    let answered: Vec<(Vec<bool>, Vec<usize>)> = cases
+        .iter()
+        .map(|case| {
+            (
+                case.input_presence.values().copied().collect(),
+                case.selected.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(answered, [(vec![false], vec![1]), (vec![true], vec![0])]);
+}

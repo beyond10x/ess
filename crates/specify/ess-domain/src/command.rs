@@ -4116,16 +4116,23 @@ impl CommandSpec {
                 &guards,
             )
         });
+        // A path read only through `defined(…)` has the domain {absent, present} where its input
+        // is Optional, which the typed proof enumerates.
+        let presence = finite::presence_paths(&guards).unwrap_or_default();
         let deferred = types.is_none()
             && (finite::paths(&guards).is_some_and(|paths| {
                 paths.iter().all(|path| {
                     self.input.iter().any(|field| {
                         field.name == path.namespace()
-                            && matches!(
-                                field.type_ref,
-                                crate::TypeRef::Named(_)
-                                    | crate::TypeRef::Primitive(crate::Primitive::Boolean)
-                            )
+                            && if presence.contains(path) {
+                                matches!(field.type_ref, crate::TypeRef::Optional(_))
+                            } else {
+                                matches!(
+                                    field.type_ref,
+                                    crate::TypeRef::Named(_)
+                                        | crate::TypeRef::Primitive(crate::Primitive::Boolean)
+                                )
+                            }
                     })
                 })
             })
@@ -4143,12 +4150,7 @@ impl CommandSpec {
         };
         let mut errors = ValidationErrors::new();
         for case in cases.into_iter().filter(|case| case.selected.len() != 1) {
-            let assignment = case
-                .values
-                .iter()
-                .map(|(path, value)| format!("{path} = {value}"))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let assignment = finite::assignment_terms(&case.values, &case.presence).join(", ");
             let (code, message) = if case.selected.is_empty() {
                 (
                     ValidationCode::NonExhaustiveBranches,

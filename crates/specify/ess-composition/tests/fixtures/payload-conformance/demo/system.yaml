@@ -1,0 +1,22 @@
+format: ess/23
+system: demo
+version: v1
+
+domains:
+  - demo.gate
+
+components:
+  - component: relay
+    owns:
+      domains:
+        - demo.gate
+    accepts:
+      commands:
+        - demo.gate.Admit
+        - demo.gate.Ask
+        - demo.gate.Count
+    publishes:
+      events:
+        - demo.gate.Admitted
+        - demo.gate.Listed
+    reached_by: network

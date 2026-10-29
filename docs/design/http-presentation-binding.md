@@ -608,6 +608,55 @@ the order the command declares them. A view route with `single` answers the row 
 no content at its `empty` status. A `refusals:` override replaces the standard refusal's response on
 every bound operation that can answer it.
 
+## Operation ids and servers
+
+A binding may name the `operationId` a protocol or a generated client uses for a route, and the base
+URLs a component's paths resolve against. Both keys are optional additions inside `ess-http/1` and
+`ess-http-ir/1`, the way stage 2 added keys: a binding without them compiles to the same IR bytes
+and projects the same OpenAPI bytes, and an older reader refuses an IR that uses them by name
+("unknown field") rather than misreading it.
+
+```yaml
+servers:
+  orders-api:
+    - {url: 'https://api.example.test/v2', description: Production}
+    - {url: /v2}
+routes:
+  - command: shop.orders.ListOrders
+    operation_id: listOrders
+    method: get
+    path: /orders
+    request: {encoding: query}
+```
+
+- **`routes[i].operation_id`**, on a command or a view route. Its grammar is
+  `[A-Za-z_][A-Za-z0-9_.-]*`. It is unique across the binding and never the qualified name of
+  another operation of the specification, which is that operation's derived `operationId`. OpenAPI
+  publishes it as the operation's `operationId`; a route without one, and every derived route, keeps
+  its qualified name.
+- **`servers: {<component>: [{url, description}]}`**, keyed by component, because a binding spans
+  every component and one list would give every document the same URLs, documentation-only ones
+  included. A component listed is declared `reached_by: network`. Its list is not empty, keeps the
+  order written (the first entry is OpenAPI's default server) and names each URL once. A URL is
+  absolute `http://` or `https://` with a host, or `/`-rooted, and holds no whitespace, no `{` or
+  `}` (no server variables), no query, no fragment and no userinfo, the rule the realization's
+  URL follows. OpenAPI publishes the list as that component's document `servers`, after `info`; no
+  other document gets any.
+- **Refinement.** An `operation_id` the refined binding fixes cannot change or be left out
+  (`ESS-HTTP-012` at `routes[i].operation_id`); one may be added where the refined route has none.
+  `servers` is not compared: each server binding states its own deployment.
+- **IR.** `Route.operation_id` follows the operation's key, and `servers` follows `refusals`,
+  ordered by component; each is omitted when absent. The reader refuses an id outside the grammar,
+  one given to two routes or equal to another routed or derived operation's name, components out of
+  order, an empty list and a URL outside the rule or given twice.
+- Not offered: per-path `servers`, server variables, and an `operationId` derived from `naming.wire`
+  in `ess/N`, which would move every document's bytes.
+
+| code | refused | names |
+|---|---|---|
+| `ESS-HTTP-032` | an `operation_id` outside the grammar; one an earlier route gives; one equal to another operation's qualified name | `routes[i].operation_id`, and both routes for a duplicate |
+| `ESS-HTTP-033` | a `servers` component the specification does not declare, one not `reached_by: network`, one written twice, or an empty list; a URL outside the rule, or given twice for one component | `servers.<component>` or `servers.<component>[j].url` |
+
 ## Stage 3: an HTTP conformance target
 
 Today the runner is semantic only. `ConformanceTarget::execute_command` takes a

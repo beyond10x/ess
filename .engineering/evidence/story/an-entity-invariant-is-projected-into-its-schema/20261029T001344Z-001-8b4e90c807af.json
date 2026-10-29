@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-29T00:13:44Z",
+  "actor": "human:timo",
+  "artifact": "story:an-entity-invariant-is-projected-into-its-schema",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:ess-issues-1-u1-adversary-pass-1",
+    "review": "review-result:ess-issues-1-u1-adversary-pass-1",
+    "outcome": "fixed"
+  }
+}

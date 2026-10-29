@@ -1,0 +1,79 @@
+domain: wire.server
+
+# The owner's types, each carrying a value constraint or variant attributes.
+types:
+  - name: wire.server.Code
+    kind: newtype
+    of: String
+    invariants:
+      - value != "x"
+
+  - name: wire.server.Level
+    kind: newtype
+    of: Integer
+    invariants:
+      - value >= 2
+
+  - name: wire.server.Floor
+    kind: newtype
+    of: Integer
+    invariants:
+      - value >= 1
+
+  - name: wire.server.Ref
+    kind: newtype
+    of: String
+    alphabet: "abcr-"
+    prefix: "r-"
+
+  - name: wire.server.Window
+    kind: struct
+    fields:
+      - name: low
+        type: Integer
+      - name: high
+        type: Integer
+    invariants:
+      - low <= high
+
+  - name: wire.server.Note
+    kind: struct
+    fields:
+      - name: text
+        type: Optional<String>
+        presence: null_when_absent
+
+  - name: wire.server.Kind
+    kind: enum
+    attributes:
+      - {name: terminal, type: Boolean}
+      - {name: handled_by, type: String}
+      - {name: request, type: String}
+      - {name: response, type: String}
+    variants:
+      - {name: Open, attributes: {terminal: false, handled_by: desk, request: OpenRequest, response: OpenResponse}}
+      - {name: Closed, attributes: {terminal: true, handled_by: robot, request: CloseRequest, response: CloseResponse}}
+
+actors:
+  - name: wire.server.Client
+    may:
+      - wire.server.Ping
+
+commands:
+  - name: wire.server.Ping
+    input:
+      - name: code
+        type: wire.server.Code
+    outcomes:
+      - name: pinged
+        emits:
+          - wire.server.Pinged
+        payload:
+          wire.server.Pinged:
+            code: input.code
+
+events:
+  - name: wire.server.Pinged
+    fields:
+      - name: code
+        type: wire.server.Code

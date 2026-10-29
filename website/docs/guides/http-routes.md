@@ -168,6 +168,34 @@ The document follows those keys on the routes that use them:
 - A bare body names no branch, so every response of such a command carries `x-ess-outcomes`, the
   outcomes it answers. A challenge is a header only: the document declares no `securitySchemes`.
 
+### Operation ids and servers
+
+A route may name the `operationId` a protocol or a client generator expects, and a binding may name
+the base URLs of each component reached over the network:
+
+```yaml
+servers:
+  orders-api:
+    - {url: 'https://api.example.test/v2', description: Production}
+    - {url: /v2}
+routes:
+  - command: catalog.orders.PlaceOrder
+    operation_id: placeOrder
+    method: post
+    path: /orders
+```
+
+- `operation_id` becomes the operation's `operationId`. It starts with a letter or `_` and continues
+  with letters, digits, `_`, `.` and `-`; it is unique in the binding and is not another
+  operation's qualified name, the `operationId` that operation keeps (`ESS-HTTP-032`). A route
+  without one, and every operation the binding does not name, keeps its qualified name.
+- `servers` becomes that component's document `servers`, after `info`, in the order written, so the
+  first is the default. Only a component declared `reached_by: network` takes servers. Each URL is
+  absolute `http://` or `https://` with a host, or a path starting with `/`, without whitespace,
+  `{`, `}`, a query, a fragment or credentials, and is listed once (`ESS-HTTP-033`).
+- A server binding keeps every `operation_id` its protocol binding fixes, and may add one where the
+  protocol binding has none. It states its own `servers`.
+
 A binding with an open route is refused, naming each operation whose path it leaves open, and
 nothing is written: a published document cannot carry a route nobody can send a request to. Give the
 server binding that fills it in, with the protocol binding as `--refines`.

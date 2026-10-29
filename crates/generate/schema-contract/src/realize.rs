@@ -311,7 +311,7 @@ impl TextConstraint {
             .into_iter()
             .flatten()
             .filter_map(Value::as_str);
-        for (op, bound) in statements.filter_map(length_comparison) {
+        for (op, bound) in statements.flat_map(length_comparisons) {
             let (lower, upper) = match op {
                 CompareOp::Eq => (Some(bound), Some(bound)),
                 CompareOp::Ge => (Some(bound), None),
@@ -347,14 +347,101 @@ fn alphabet_pattern(object: &Map<String, Value>) -> bool {
     }
 }
 
+/// Whether an `allOf` entry only counts a list's elements, as a model list publishes it for a
+/// `distinct:` (beyond10x/ess#686): a `contains` with its count bounds, `uniqueItems`, or an
+/// `anyOf` of such entries, the form a list whose elements may be `null` takes.
+fn counts_elements(entry: &Value) -> bool {
+    entry.as_object().is_some_and(|entry| {
+        !entry.is_empty()
+            && entry.iter().all(|(keyword, value)| match keyword.as_str() {
+                "contains" | "minContains" | "maxContains" | "uniqueItems" => true,
+                "anyOf" => value
+                    .as_array()
+                    .is_some_and(|branches| branches.iter().all(counts_elements)),
+                _ => false,
+            })
+    })
+}
+
+/// Whether a model string schema's `minLength` or `maxLength` is exactly the bound its
+/// [`TextConstraint`] reads from `x-ess-invariants` (beyond10x/ess#685).
+fn enforced_length(object: &Map<String, Value>, keyword: &str) -> bool {
+    let Some(constraint) = TextConstraint::read(object) else {
+        return false;
+    };
+    let declared = if keyword == "minLength" {
+        constraint.minimum
+    } else {
+        constraint.maximum
+    };
+    let published = object.get(keyword).and_then(Value::as_i64);
+    declared.is_some() && declared == published
+}
+
+/// Every `value.count <op> <integer>` a statement makes, the statement itself or the conjuncts of
+/// an `and` — what the mapping form `value.count: {gte: 1, lte: 8}` is written back as
+/// (beyond10x/ess#685) — each as the comparison of the count with the literal.
+fn length_comparisons(statement: &str) -> Vec<(ess_primitives::predicate::CompareOp, i64)> {
+    fn conjuncts(
+        predicate: ess_primitives::predicate::Predicate,
+        found: &mut Vec<(ess_primitives::predicate::CompareOp, i64)>,
+    ) {
+        use ess_primitives::predicate::Predicate;
+        match predicate {
+            Predicate::All(children) => {
+                for child in children {
+                    conjuncts(child, found);
+                }
+            }
+            compare => found.extend(length_comparison(compare)),
+        }
+    }
+    let mut found = Vec::new();
+    if let Ok(predicate) = ess_primitives::predicate::Predicate::parse_expression(statement) {
+        conjuncts(predicate, &mut found);
+    } else if let Some(parts) = written_conjuncts(statement) {
+        // An `all` is written back as `(a and b)`, which the compact grammar spells `a && b`.
+        for part in parts {
+            found.extend(length_comparisons(part));
+        }
+    }
+    found
+}
+
+/// The conjuncts of a statement written as one parenthesised `all`, `(a and b and …)`, split at
+/// the ` and ` outside any nested parenthesis or quoted text; `None` for any other statement.
+fn written_conjuncts(statement: &str) -> Option<Vec<&str>> {
+    let inner = statement.trim().strip_prefix('(')?.strip_suffix(')')?;
+    let mut parts = Vec::new();
+    let (mut depth, mut quoted, mut start) = (0_usize, false, 0);
+    for (at, character) in inner.char_indices() {
+        match character {
+            '\'' => quoted = !quoted,
+            '(' if !quoted => depth += 1,
+            ')' if !quoted => depth = depth.checked_sub(1)?,
+            ' ' if !quoted && depth == 0 && inner[at..].starts_with(" and ") => {
+                parts.push(&inner[start..at]);
+                start = at + " and ".len();
+            }
+            _ => {}
+        }
+    }
+    (depth == 0 && !quoted && !parts.is_empty()).then(|| {
+        parts.push(&inner[start..]);
+        parts
+    })
+}
+
 /// `value.count <op> <integer>`, or the same with the literal on the left, as the comparison of
 /// the count with the literal.
-fn length_comparison(statement: &str) -> Option<(ess_primitives::predicate::CompareOp, i64)> {
+fn length_comparison(
+    predicate: ess_primitives::predicate::Predicate,
+) -> Option<(ess_primitives::predicate::CompareOp, i64)> {
     use ess_primitives::predicate::{CompareOp, Operand, Predicate};
     use ess_primitives::FactValue;
-    let Ok(Predicate::Compare {
+    let Predicate::Compare {
         left, op, right, ..
-    }) = Predicate::parse_expression(statement)
+    } = predicate
     else {
         return None;
     };
@@ -1009,6 +1096,17 @@ impl Plan {
 }
 
 impl Builder {
+    /// Whether a model string schema's `pattern`, `minLength` or `maxLength` only repeats a
+    /// constraint an annotation beside it already carries as an obligation.
+    fn restates(&self, object: &Map<String, Value>, keyword: &str) -> bool {
+        self.model
+            && if keyword == "pattern" {
+                alphabet_pattern(object)
+            } else {
+                enforced_length(object, keyword)
+            }
+    }
+
     fn definition(&mut self, schema: &Value, pointer: &str) -> Node {
         self.collect_patterns(schema, pointer);
         self.node(schema, pointer)
@@ -1220,10 +1318,10 @@ impl Builder {
                         },
                     ));
                 }
-                // A model newtype's alphabet is projected twice, as `x-ess-alphabet` and as the
-                // pattern derived from it (beyond10x/ess#592). The `model_alphabet` obligation is
-                // that constraint, so the pattern adds none; a prefix in it still does.
-                "pattern" if self.model && alphabet_pattern(object) => {}
+                // An alphabet and `value.count` bounds are projected twice, as an annotation and as
+                // `pattern` (beyond10x/ess#592) or `minLength`/`maxLength` (beyond10x/ess#685). The
+                // annotation's obligation is that constraint; a prefix in a pattern adds one.
+                "pattern" | "minLength" | "maxLength" if self.restates(object, keyword) => {}
                 "pattern" => {
                     if object[keyword].is_string() {
                         self.obligations.insert(finding(
@@ -1393,6 +1491,18 @@ impl Builder {
         ] {
             if let Some(values) = object.get(keyword).and_then(Value::as_array) {
                 let location = path(pointer, keyword);
+                // A model list's `distinct:`, counts over its elements (beyond10x/ess#686): it
+                // shapes no value, so the list stays the list rather than an intersection Rust and
+                // Go refuse, and the count is one runtime obligation.
+                if keyword == "allOf" && self.model && values.iter().all(counts_elements) {
+                    self.obligations.insert(finding(
+                        &location,
+                        "contains",
+                        "validate the element counts of the distinct invariant against the \
+                         source schema at runtime",
+                    ));
+                    continue;
+                }
                 let variants = values
                     .iter()
                     .enumerate()

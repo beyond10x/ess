@@ -326,7 +326,7 @@ fn entity_document(
     identify: impl Fn(&str) -> Option<String>,
 ) -> Artifact {
     let fields = types::entity_fields(entity);
-    let carried = Message::of_entity(entity, &fields, types::carried(ir, entity, false));
+    let carried = Message::of_entity(ir, entity, &fields, types::carried(ir, entity, false));
 
     let path = format!("entities/{}.schema.json", entity.name);
     let sliced = mint.of_seeds([EntityRef::new(entity.name.clone()).into()]);

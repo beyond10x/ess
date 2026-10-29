@@ -356,6 +356,17 @@ lists element by element. Generated Rust and Go behaviour owes a guard or a view
 by name, an entity invariant with it refuses the generated target by name, and Entity Runtime
 refuses it as `DistinctUnsupported`.
 
+The published JSON Schema asserts it where a keyword says it exactly (beyond10x/ess#686). Over a
+list of scalars, or a list newtype's `value`, it is `uniqueItems: true` on the list. Where an
+element may be `null`, a list with two or more `null`s is not checked, since each is an unknown key. With `by`
+reaching an enum or a `Boolean` through required struct members, the list carries one `contains` per
+variant with `minContains: 0` and `maxContains: 1`. Each `contains` requires an object holding the
+key path and ends in the variant's wire spelling, so an element without the key is not counted.
+An open key (text, a number, a `Uuid`, a `Timestamp`) and an `Optional` member on the path stay in
+`x-ess-invariants` only, because JSON Schema has no keyword that compares one member across
+elements. `uniqueItems` compares JSON values, so two spellings of one `Decimal` or of one instant
+pass it where the model refuses them.
+
 ### From `ess/22`: the UTF-8 byte length of a text
 
 From `ess/22` (beyond10x/ess#233), `.utf8_bytes` after a `String` — or a newtype or `Optional` of

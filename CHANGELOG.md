@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [0.76.0] — 2026-10-29
+
+### Added
+
+- `ess-http/1` routes may declare `operation_id`, published as the OpenAPI `operationId`, and a binding may declare `servers` per `reached_by: network` component, published as that component's document `servers` after `info` (beyond10x/ess#653). They are refused with `ESS-HTTP-032` and `ESS-HTTP-033`; a server URL must name a host, so an authority that is only a port, or an IPv6 address left unclosed, is refused. A binding without them keeps its IR and OpenAPI bytes.
+- `format: ess-composition/5`: a conformance end may name an `event`, an `error` or a `command` with `part: input | response`, and the payload is compared as a struct against another payload or a struct type (beyond10x/ess#664). `ess-composition/1` to `/4` refuse the new keys as unknown fields and keep their bytes.
+- Under `ess-composition/5` a type conformance also compares newtype `alphabet`, `prefix` and invariants, struct invariants, and enum variant attributes with their values (beyond10x/ess#671). Invariants compare as sets of parsed conditions, so spelling, order and grouping do not matter, and an alphabet compares as a set of characters. `reader: true` admits a wider alphabet, a shorter prefix, and a subset of the invariants and attributes. Contract roles never compare constraints, and `/2` to `/4` results are unchanged.
+
+### Changed
+
+- A `defined(x)` / `not defined(x)` pair of branches over one Optional value is proved exhaustive without a default, whether `x` is an input (`when:`), a stored field (`when_subject:`) or a related row's field (`when_related:`) (beyond10x/ess#644). Such commands were refused as ESS-COMMAND-005 and now validate. A missing or overlapping case is named as `x = absent` or `x = present`. A `when: not defined(<via>)` branch covers an absent Optional `via: input.<field>` reference without a default. A value comparison on the same path, and a `when_subject_state:` partition, still need a default.
+- In the `ess-composition` library, `TypeBinding::declared` now returns `Option<&DeclaredTypeRef>`, and `ConformanceEnd`, `CommandPart`, `TypeBinding::{event, error, command, end}` and `CompositionSpec::with_payload_conformances` are new. In the `ess-domain` library, `Case` has a new field `presence`, and `FieldCase` has new fields `fields_presence` and `input_presence`.
+
+### Fixed
+
+- An entity's JSON Schema document, and its `x-ess-entities` entry in OpenAPI, now publish the entity's invariants verbatim under `x-ess-invariants` (beyond10x/ess#688). An `Integer` comparison on one of its fields becomes `minimum`, `maximum` or `const` on that property, as a struct's already does. Command inputs, events and view rows that carry the same fields gain nothing.
+- A `Binary64` comparison with a numeric literal, on a newtype's value or on a struct or entity field, now becomes `minimum`, `exclusiveMinimum`, `maximum` or `exclusiveMaximum`; `==` becomes `minimum` and `maximum` (beyond10x/ess#687). A literal that is not the shortest spelling of its own binary64 stays only in `x-ess-invariants`. A bound of magnitude 2^53 or more publishes the integer at the edge of what rounds into range, so a payload the model rounds onto the bound is not refused.
+- A `.count` bound against an integer literal is now published as `minLength` and `maxLength`, and `==` publishes both (beyond10x/ess#685). This covers a `String` newtype's `value` and a top-level `String` field of a struct or entity, Optional included, and the mapping form `{gte, lte}`. `utf8_bytes`, `!=` and a newtype-typed field stay in `x-ess-invariants`. The types-only realizer reports a newtype's length once, in the mapping form as in the written-out pair.
+- `distinct:` over a list of scalars is now published as `uniqueItems: true` (beyond10x/ess#686). When the element may be null, through a newtype too, the list is checked only while it holds fewer than two nulls. With `by`, an enum or `Boolean` key gives one `contains` per variant, each with `minContains: 0` and `maxContains: 1`, inside an `allOf`; an element that lacks the key is not counted. An open key, or an Optional member on the key path, stays in `x-ess-invariants`. Rust, Go and TypeScript realize such a struct with one obligation, and a bundle carrying `contains` is still refused.
+- The OpenAPI document of a component not declared `reached_by: network` now says, in its first `info.description` paragraph, that no request reaches its paths (beyond10x/ess#651). Its paths are unchanged.
+- A `when_subject:` predicate that reads the identity addressing the row (`parent_id == input.parent_id`, `defined(parent_id)`) is still refused as ESS-COMMAND-003, and its hint now names the input the outcome's `instance:` gives (`input.<instance>`) and the idiom that replaces it: drop `when_subject:` from the update and answer an identity no row carries with an `unknown_instance: true` branch (beyond10x/ess#643). Such a command no longer also draws ESS-COMMAND-005 for the same cause; an open guard on another branch still draws its own.
+- `reference_outside_component` now names the domain and service that declare the name, and the fix for its kind: which component exports it (including through `accepts`), publishes or raises it, or what to add to the selected component (beyond10x/ess#665). Under `ess-composition/1` it offers no `owns` edit.
+
 ## [0.75.0] — 2026-10-28
 
 ### Changed

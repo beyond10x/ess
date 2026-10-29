@@ -1,4 +1,4 @@
-#	models=413	lines=569
+#	models=429	lines=596
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -69,10 +69,18 @@ crates/specify/ess-compiler/tests/fixtures/typed_diagnostics/repeated_names.yaml
 crates/specify/ess-compiler/tests/fixtures/union-unit-variants.yaml	components=1
 crates/specify/ess-compiler/tests/fixtures/union-unit-variants.yaml	work-service	REFUSED	300c29ac68b53352749ceafb9345cd6f9f6a5a88cfef425ddf00624808343bac:558
 crates/specify/ess-compiler/tests/fixtures/upsert-by-existence.yaml	components=0
+crates/specify/ess-composition/tests/fixtures/constraint-conformance/demo/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/constraint-conformance/wire/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/contract-role/demo/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/contract-role/wire/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/implements-drift/demo/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/implements-drift/wire/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/outside-component/demo/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/outside-component/wire/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/owner-consumer/consumer/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/owner-consumer/owner/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/payload-conformance/demo/system.yaml	ASSEMBLE
+crates/specify/ess-composition/tests/fixtures/payload-conformance/wire/system.yaml	ASSEMBLE
 crates/specify/ess-composition/tests/fixtures/two-components/system.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/binding-selection.yaml	components=0
 crates/specify/ess-domain/tests/fixtures/identity-beside-row-set.yaml	components=0
@@ -410,16 +418,35 @@ system-dir:crates/generate/ess-synth/tests/fixtures/declared-behaviour	component
 system-dir:crates/generate/ess-synth/tests/fixtures/declared-behaviour	desk-service	REFUSED	6378545d939fc958ca2be2322b4e154b12fdf7cdc6948a9b842fdc2770e60ee1:4312
 system-dir:crates/generate/ess-synth/tests/fixtures/served-notes	components=1
 system-dir:crates/generate/ess-synth/tests/fixtures/served-notes	notes	REFUSED	bf692e9bd0826837c5430ddea88b5bddddfd2814a257ae97fc44afb0ef957853:208
+system-dir:crates/specify/ess-composition/tests/fixtures/constraint-conformance/demo	components=1
+system-dir:crates/specify/ess-composition/tests/fixtures/constraint-conformance/demo	relay	REFUSED	4c0ef7589e55c8487213b136818ef4a4edc997a1471b181bbadc830a36d431a3:327
+system-dir:crates/specify/ess-composition/tests/fixtures/constraint-conformance/wire	components=1
+system-dir:crates/specify/ess-composition/tests/fixtures/constraint-conformance/wire	wire-server	REFUSED	2f5934a106fd23424888fdeb1da0aede6312a1363c83df31de7dda5778bcab62:331
 system-dir:crates/specify/ess-composition/tests/fixtures/contract-role/demo	components=2
 system-dir:crates/specify/ess-composition/tests/fixtures/contract-role/demo	auditor	REFUSED	f10bf771e1cf4320c657db2f6a7b8906471e9f2eb5134ee88081a06afbe02754:335
 system-dir:crates/specify/ess-composition/tests/fixtures/contract-role/demo	relay	REFUSED	26150074111c181de0962b7bdebf29efd9c4f44ebedf90ed7c3ea6d26a7ddfee:1657
 system-dir:crates/specify/ess-composition/tests/fixtures/contract-role/wire	components=2
 system-dir:crates/specify/ess-composition/tests/fixtures/contract-role/wire	wire-admin	REFUSED	a6e2c843428cac37f754a5c2c5b94e3c9fa1d2ec2306da99fccef595202d5bc1:332
 system-dir:crates/specify/ess-composition/tests/fixtures/contract-role/wire	wire-server	REFUSED	a6f4ead17458b9626d4c891a7d7af7255ff7be161d34cc34374024bfb9bd728b:345
+system-dir:crates/specify/ess-composition/tests/fixtures/implements-drift/demo	components=1
+system-dir:crates/specify/ess-composition/tests/fixtures/implements-drift/demo	relay	REFUSED	e229b727cbdce8dd180ce5c102f6e5c4daa141578dbba732ca0d06b507b4c4da:1004
+system-dir:crates/specify/ess-composition/tests/fixtures/implements-drift/wire	components=1
+system-dir:crates/specify/ess-composition/tests/fixtures/implements-drift/wire	wire-server	REFUSED	a6f4ead17458b9626d4c891a7d7af7255ff7be161d34cc34374024bfb9bd728b:345
+system-dir:crates/specify/ess-composition/tests/fixtures/outside-component/demo	components=2
+system-dir:crates/specify/ess-composition/tests/fixtures/outside-component/demo	auditor	REFUSED	f10bf771e1cf4320c657db2f6a7b8906471e9f2eb5134ee88081a06afbe02754:335
+system-dir:crates/specify/ess-composition/tests/fixtures/outside-component/demo	relay	REFUSED	0ac4ff3594e39ab5fb84bac33beebf9b9e9ac29fa57f6b538768d410c8f692b8:331
+system-dir:crates/specify/ess-composition/tests/fixtures/outside-component/wire	components=2
+system-dir:crates/specify/ess-composition/tests/fixtures/outside-component/wire	wire-admin	REFUSED	a6e2c843428cac37f754a5c2c5b94e3c9fa1d2ec2306da99fccef595202d5bc1:332
+system-dir:crates/specify/ess-composition/tests/fixtures/outside-component/wire	wire-server	REFUSED	a6f4ead17458b9626d4c891a7d7af7255ff7be161d34cc34374024bfb9bd728b:345
 system-dir:crates/specify/ess-composition/tests/fixtures/owner-consumer/consumer	components=1
 system-dir:crates/specify/ess-composition/tests/fixtures/owner-consumer/owner	components=1
 system-dir:crates/specify/ess-composition/tests/fixtures/owner-consumer/owner	status-component	demo.owner.agentstatus.AgentStatus	definition=26cc8e5aa29e31d3b86416f1c8e87795cc9fa49e9d675fd7fa499f852859c058:2190
 system-dir:crates/specify/ess-composition/tests/fixtures/owner-consumer/owner	status-component	demo.owner.agentstatus.AgentStatus	create	updated
+system-dir:crates/specify/ess-composition/tests/fixtures/payload-conformance/demo	components=1
+system-dir:crates/specify/ess-composition/tests/fixtures/payload-conformance/demo	relay	REFUSED	bdafcf93ce02b1e22a8f44eb2860e8273607d626d8fc6fa3771040549804f361:990
+system-dir:crates/specify/ess-composition/tests/fixtures/payload-conformance/wire	components=2
+system-dir:crates/specify/ess-composition/tests/fixtures/payload-conformance/wire	wire-admin	REFUSED	a6e2c843428cac37f754a5c2c5b94e3c9fa1d2ec2306da99fccef595202d5bc1:332
+system-dir:crates/specify/ess-composition/tests/fixtures/payload-conformance/wire	wire-server	REFUSED	94bd038603b7193be508940edf530df6ef80b134da8ffaa63d76e39cdf66c7cb:677
 system-dir:crates/specify/ess-composition/tests/fixtures/two-components	components=2
 system-dir:crates/specify/ess-composition/tests/fixtures/two-components	todo-component	workbench.todo.TodoList	definition=53db7051ac8735886c8ff9d51975ecf14e16b8e3e90d5ae0fb249fb6d0562ce9:2739
 system-dir:crates/specify/ess-composition/tests/fixtures/two-components	todo-component	workbench.todo.TodoList	create	created

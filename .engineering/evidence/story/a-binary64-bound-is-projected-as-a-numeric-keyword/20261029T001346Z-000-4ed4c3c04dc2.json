@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-29T00:13:46Z",
+  "actor": "human:timo",
+  "artifact": "story:a-binary64-bound-is-projected-as-a-numeric-keyword",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ess-gen binary64_bounds, adversary_ess_issues_1_u1 passed; local gate D171 EXIT=0 on d6174f931",
+    "reference": "commit:d6174f931"
+  }
+}

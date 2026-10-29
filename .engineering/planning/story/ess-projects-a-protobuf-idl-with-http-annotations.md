@@ -12,6 +12,7 @@ relations:
 - serves: vision:O2
 - depends_on: story:a-union-may-be-encoded-as-an-object-keyed-by-its-variant
 - informed_by: task:deferred-protocol-ui-bindings
+- informed_by: architecture-decision-record:transport-and-idl-compile-targets
 revision: 1
 ---
 **Blocked on `architecture-decision-record:transport-and-idl-compile-targets`. Not to be implemented

@@ -329,21 +329,49 @@ fn inside_relation(fields: &serde_json::Map<String, Value>) -> bool {
 /// rule finds both under one heading. A keyword in neither list is treated as an assertion, which is
 /// the safe default and which `every_keyword_the_projections_publish_is_classified` makes loud rather
 /// than silent.
-const ASSERTIONS: [&str; 14] = [
+const ASSERTIONS: [&str; 25] = [
     "$ref",
     "additionalProperties",
+    "allOf",
     "anyOf",
     "const",
+    "contains",
     "contentEncoding",
     "enum",
+    "exclusiveMaximum",
+    "exclusiveMinimum",
     "format",
     "items",
+    "maxContains",
+    "maxLength",
+    "maximum",
+    "minContains",
+    "minLength",
+    "minimum",
     "oneOf",
     "pattern",
     "properties",
     "propertyNames",
     "required",
     "type",
+    "uniqueItems",
+];
+
+/// The [`ASSERTIONS`] published only for invariants the billing example does not state: bounds on a
+/// `Binary64` (beyond10x/ess#687), text lengths (beyond10x/ess#685) and `distinct:`
+/// (beyond10x/ess#686). Classified ahead of any billing fragment carrying them, and so left out of
+/// the floor the harvest is held to.
+const UNEXERCISED: [&str; 10] = [
+    "allOf",
+    "contains",
+    "exclusiveMaximum",
+    "exclusiveMinimum",
+    "maxContains",
+    "maxLength",
+    "maximum",
+    "minContains",
+    "minLength",
+    "uniqueItems",
 ];
 
 /// The keywords that change only what a reader is shown.
@@ -869,12 +897,12 @@ fn every_keyword_the_projections_publish_is_classified_as_an_assertion_or_an_ann
     let found = keywords_published(&published);
 
     assert!(
-        found.len() >= ASSERTIONS.len(),
+        found.len() >= ASSERTIONS.len() - UNEXERCISED.len(),
         "only {} keywords were found across every published fragment, which is fewer than the {} \
-         this file classifies as assertions; the harvest is not reading the projections' output: \
-         {found:?}",
+         this file classifies as assertions billing can publish; the harvest is not reading the \
+         projections' output: {found:?}",
         found.len(),
-        ASSERTIONS.len()
+        ASSERTIONS.len() - UNEXERCISED.len()
     );
 
     let unclassified: Vec<&String> = found

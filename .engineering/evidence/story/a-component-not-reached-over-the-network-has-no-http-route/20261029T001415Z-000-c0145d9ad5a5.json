@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-29T00:14:15Z",
+  "actor": "human:timo",
+  "artifact": "story:a-component-not-reached-over-the-network-has-no-http-route",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ess-gen openapi_reach, adversary_ess_issues_1_u4 passed; local gate D171 EXIT=0 on d6174f931",
+    "reference": "commit:d6174f931"
+  }
+}

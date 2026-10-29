@@ -59,6 +59,8 @@ pub const CODES: &[&str] = &[
     "ESS-HTTP-029",
     "ESS-HTTP-030",
     "ESS-HTTP-031",
+    "ESS-HTTP-032",
+    "ESS-HTTP-033",
 ];
 
 /// The wording of a route collision, the same as the `OpenAPI` import's refusal of two operations
@@ -1289,6 +1291,12 @@ fn canonical_params<'de, D: serde::Deserializer<'de>>(
     canonical_map(deserializer, "params")
 }
 
+fn canonical_servers<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Vec<Server>>, D::Error> {
+    canonical_map(deserializer, "servers")
+}
+
 fn canonical_redirect_parameters<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<BTreeMap<String, AnswerSource>, D::Error> {
@@ -1348,6 +1356,9 @@ pub struct RouteSpec {
     /// The qualified name of the view it serves; exactly one of this and `command`.
     #[serde(default)]
     pub view: Option<String>,
+    /// The `operationId` the route is published under; absent, the operation's qualified name.
+    #[serde(default)]
+    pub operation_id: Option<String>,
     /// The method, as written. Read as text so that one outside the closed set is refused with a
     /// code and a path rather than as a parse error.
     pub method: String,
@@ -1626,8 +1637,104 @@ pub struct HttpSpec {
     /// or `unfinished`; one not listed keeps today's answer.
     #[serde(default)]
     pub refusals: Option<Entries<RefusalSpec>>,
+    /// The base URLs a `reached_by: network` component's paths resolve against, keyed by the
+    /// component, each list in the order written: the first is the default.
+    #[serde(default)]
+    pub servers: Option<Entries<Vec<ServerSpec>>>,
     /// One route per bound command or view, in document order.
     pub routes: Vec<RouteSpec>,
+}
+
+/// One base URL of a component, before resolution.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServerSpec {
+    /// An absolute `http://` or `https://` URL, or a `/`-rooted path.
+    pub url: String,
+    /// What the server is, for a reader.
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+/// One compiled base URL of a component.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Server {
+    /// An absolute `http://` or `https://` URL, or a `/`-rooted path, with no whitespace, no `{`
+    /// or `}`, no query, no fragment and no userinfo.
+    pub url: String,
+    /// What the server is, for a reader. Absent when not declared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// Why `url` is no server URL: neither absolute `http(s)://` with a host (the authority before any
+/// `:port`, an IPv6 literal bracketed) nor `/`-rooted, or holding whitespace, `{`, `}`, `?`, `#` or
+/// userinfo.
+fn server_url_reason(url: &str) -> Option<String> {
+    if let Some(found) = url
+        .chars()
+        .find(|c| c.is_whitespace() || c.is_control() || matches!(c, '{' | '}' | '?' | '#'))
+    {
+        let what = match found {
+            '{' | '}' => "a server variable, which a binding does not offer",
+            '?' => "a query",
+            '#' => "a fragment",
+            _ => "whitespace or a control character",
+        };
+        return Some(format!(
+            "`{url}` holds {what}; a server URL is a base its paths are appended to"
+        ));
+    }
+    let authority = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"));
+    match authority {
+        Some(rest) => {
+            let authority = rest.split('/').next().unwrap_or_default();
+            if authority.contains('@') {
+                return Some(format!(
+                    "`{url}` holds userinfo; a server URL carries no credentials"
+                ));
+            }
+            // The host is the authority before any `:port`; an IPv6 literal is bracketed and
+            // holds colons of its own.
+            let host = match authority.strip_prefix('[') {
+                Some(literal) => match literal.split_once(']') {
+                    Some((inside, after)) if after.is_empty() || after.starts_with(':') => inside,
+                    _ => {
+                        return Some(format!(
+                            "`{url}` opens an IP literal with `[` and does not close it before \
+                             the port or the path"
+                        ))
+                    }
+                },
+                None => authority.split(':').next().unwrap_or_default(),
+            };
+            host.is_empty().then(|| format!("`{url}` names no host"))
+        }
+        None if url.starts_with('/') && !url.starts_with("//") => None,
+        None => Some(format!(
+            "`{url}` is neither an absolute `http://` or `https://` URL nor a `/`-rooted path"
+        )),
+    }
+}
+
+/// Whether `id` is an operation id: `[A-Za-z_][A-Za-z0-9_.-]*`.
+fn is_operation_id(id: &str) -> bool {
+    let mut chars = id.chars();
+    chars
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+}
+
+/// The refusal of an operation id outside the grammar.
+fn operation_id_reason(id: &str) -> String {
+    format!(
+        "`{id}` is not an operation id: one starts with an ASCII letter or `_` and continues with \
+         ASCII letters, digits, `_`, `.` and `-`"
+    )
 }
 
 /// `sha256:<hex>` of `bytes`: what `refines:` pins a refined binding by.
@@ -1781,6 +1888,10 @@ pub struct Route {
     /// What it serves.
     #[serde(flatten)]
     pub operation: Operation,
+    /// The `operationId` the binding publishes the route under. Absent when it declares none; then
+    /// the operation's qualified name is its `operationId`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
     /// The method.
     pub method: Method,
     /// The path template; absent for an open route.
@@ -1887,6 +1998,14 @@ pub struct HttpIr {
         deserialize_with = "canonical_refusals"
     )]
     refusals: BTreeMap<RefusalKey, Refusal>,
+    /// Each `reached_by: network` component's base URLs, in component order, each list in the
+    /// order written. Absent when empty.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "canonical_servers"
+    )]
+    servers: BTreeMap<String, Vec<Server>>,
     routes: Vec<Route>,
     /// Ordered by component, then path, then method, then operation. Absent when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1907,6 +2026,12 @@ impl HttpIr {
     /// The standard refusals the binding answers its own way, in key order.
     pub fn refusals(&self) -> &BTreeMap<RefusalKey, Refusal> {
         &self.refusals
+    }
+
+    /// Each `reached_by: network` component's base URLs the binding declares, by component name,
+    /// each list in the order written: the first is the default.
+    pub fn servers(&self) -> &BTreeMap<String, Vec<Server>> {
+        &self.servers
     }
 
     /// Every route, ordered by path (an open route first), then method, then operation.
@@ -1962,8 +2087,13 @@ impl HttpIr {
     /// `redirect` on any status but the [`REDIRECTS`], a redirect status without one, or a body
     /// other than `none` beside one; a redirect `mode` outside `query` and `fragment`, a
     /// `location` reading `error.wire`, a parameter name outside RFC 3986 `unreserved`, and any
-    /// source outside the four forms; a derived route for an operation the IR routes; and a derived path that is
-    /// not a grammar-valid path without variables. Beyond these, it refuses, naming
+    /// source outside the four forms; a derived route for an operation the IR routes; a derived path that is
+    /// not a grammar-valid path without variables; a route's `operation_id` outside
+    /// `[A-Za-z_][A-Za-z0-9_.-]*`, given to two routes, or equal to the qualified name of another
+    /// operation the IR routes or derives; and `servers` out of component order or empty, a
+    /// component's list empty, or a server URL that is neither absolute `http(s)://` with a host
+    /// nor `/`-rooted, holds whitespace, `{`, `}`, `?`, `#` or userinfo, or is given twice for one
+    /// component. Beyond these, it refuses, naming
     /// the key, any IR that would not write back what it was given: a key compiled IR omits,
     /// written as an empty map or list, a `null` or a default.
     ///
@@ -2058,6 +2188,65 @@ impl HttpIr {
                             derived.path
                         ));
                     }
+                }
+            }
+        }
+        self.presentation_invariants()
+    }
+
+    /// The invariants of the operation ids and servers of compiled IR (see [`HttpIr::from_json`]).
+    fn presentation_invariants(&self) -> Result<(), String> {
+        let operations: Vec<&Operation> = self
+            .routes
+            .iter()
+            .map(|route| &route.operation)
+            .chain(self.derived_routes.iter().map(|derived| &derived.operation))
+            .collect();
+        let mut given: BTreeMap<&str, usize> = BTreeMap::new();
+        for (index, route) in self.routes.iter().enumerate() {
+            let Some(id) = route.operation_id.as_deref() else {
+                continue;
+            };
+            let at = format!("routes[{index}].operation_id");
+            if !is_operation_id(id) {
+                return Err(format!("`{at}`: {}", operation_id_reason(id)));
+            }
+            if let Some(first) = given.insert(id, index) {
+                return Err(format!(
+                    "`{at}` `{id}` is the operation id of `routes[{first}]` too; compiled IR gives \
+                     an operation id to one route"
+                ));
+            }
+            if let Some(other) = operations
+                .iter()
+                .find(|other| other.name() == id && **other != &route.operation)
+            {
+                return Err(format!(
+                    "`{at}` `{id}` is the qualified name of {other}, its operation id; compiled IR \
+                     gives no route another operation's name"
+                ));
+            }
+        }
+        for (component, servers) in &self.servers {
+            let at = format!("servers.{component}");
+            if servers.is_empty() {
+                return Err(format!(
+                    "`{at}` is empty; compiled IR omits a component without servers"
+                ));
+            }
+            for (index, server) in servers.iter().enumerate() {
+                let key = format!("{at}[{index}].url");
+                if let Some(reason) = server_url_reason(&server.url) {
+                    return Err(format!("`{key}`: {reason}"));
+                }
+                if servers[..index]
+                    .iter()
+                    .any(|earlier| earlier.url == server.url)
+                {
+                    return Err(format!(
+                        "`{key}` `{}` is given twice; compiled IR lists a URL once per component",
+                        server.url
+                    ));
                 }
             }
         }
@@ -2579,6 +2768,8 @@ impl Refusals {
 /// | `ESS-HTTP-029` | at `refusals.<key>`: a key outside `malformed`, `not_granted` and `unfinished`, or one written twice; at `refusals.<key>.status`: a status outside its class, `4xx` for `malformed` and `not_granted`, `5xx` for `unfinished`; at `refusals.<key>.body`: a body other than `none` or `{<member>: {literal: <text>}}` under a non-empty member |
 /// | `ESS-HTTP-030` | at `routes[i]`: `body: single` without `empty`, `empty` without `single` (on a command too), or an `empty` status outside `4xx`, unless the route answers `rows`, where `empty` is refused once, for itself |
 /// | `ESS-HTTP-031` | at `routes[i].body`: `body: single` on a view whose filter does not select by its source entity's identity: neither the filter nor a member of a top-level `all` (nested `all` included) is `<identity field> == param.<name>`, compared by value, in either operand order; naming the view, its entity and the identity field |
+/// | `ESS-HTTP-032` | at `routes[i].operation_id`: an id outside `[A-Za-z_][A-Za-z0-9_.-]*`; one an earlier route already gives, naming both routes; or the qualified name of another command or view of the specification, which is that operation's derived `operationId` |
+/// | `ESS-HTTP-033` | at `servers.<component>`: a component the specification does not declare, one not `reached_by: network`, one written twice, or an empty list; at `servers.<component>[j].url`: a URL that is neither absolute `http://` or `https://` with a host nor `/`-rooted, one holding whitespace, `{`, `}`, `?`, `#` or userinfo, or one given twice for the component |
 ///
 /// A listed outcome, a `single` view and a standard refusal are written into the IR with every
 /// default omitted: an outcome's `envelope`, a view's `rows`, an empty `outcomes`, `refusals`,
@@ -2608,7 +2799,9 @@ pub fn compile(
 /// | code | refused |
 /// |---|---|
 /// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
-/// | `ESS-HTTP-012` | at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding` or `routes[i].request.unknown`: a refined route's request restated with another value, a default written out or left out counting as that default; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes`: a route of the refined binding is dropped |
+/// | `ESS-HTTP-012` | at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding` or `routes[i].request.unknown`: a refined route's request restated with another value, a default written out or left out counting as that default; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none) |
+///
+/// `servers` is not compared: each server binding states its own deployment.
 ///
 /// The refined binding is checked against the same specification and derived routes, and its own
 /// refusals are reported with their path under `refined.` (`refined.routes[0].method`). It is
@@ -2625,8 +2818,10 @@ pub fn compile_refining(
     let standard = envelope(spec, ir, &mut refusals);
     let compared = refinement(spec, refined, ir, derived, &mut refusals);
     let (routes, derived_routes) = body(spec, ir, derived, &standard, &mut refusals);
+    let servers = presentation(spec, ir, &mut refusals);
     if let Some(refined) = compared {
         changes(spec, refined, &mut refusals);
+        operation_id_changes(spec, refined, &mut refusals);
     }
     if refusals.0.is_empty() {
         Ok(HttpIr {
@@ -2634,6 +2829,7 @@ pub fn compile_refining(
             specification: spec.specification.clone(),
             refines: spec.refines.clone(),
             refusals: standard,
+            servers,
             routes,
             derived_routes,
         })
@@ -2833,6 +3029,7 @@ fn refinement<'a>(
     let mut own = Refusals(Vec::new());
     let standard = envelope(&refined.spec, ir, &mut own);
     body(&refined.spec, ir, derived, &standard, &mut own);
+    presentation(&refined.spec, ir, &mut own);
     for diagnostic in own.0 {
         refusals.refuse(
             diagnostic.code,
@@ -2849,6 +3046,204 @@ fn named(route: &RouteSpec) -> Option<Operation> {
         (Some(name), None) => Some(Operation::Command(name.clone())),
         (None, Some(name)) => Some(Operation::View(name.clone())),
         _ => None,
+    }
+}
+
+/// A route's operation, as [`Operation`]'s display writes it, or `a route` when it names none.
+fn described(route: &RouteSpec) -> String {
+    named(route).map_or_else(|| "a route".to_owned(), |operation| operation.to_string())
+}
+
+/// Holds each route's `operation_id` to its rules (`ESS-HTTP-032`) and `servers` to theirs
+/// (`ESS-HTTP-033`), returning the servers compiled, by component.
+fn presentation(
+    spec: &HttpSpec,
+    ir: &EssIr,
+    refusals: &mut Refusals,
+) -> BTreeMap<String, Vec<Server>> {
+    operation_ids(spec, ir, refusals);
+    servers(spec.servers.as_ref(), ir, refusals)
+}
+
+/// Refuses an `operation_id` outside the grammar, one an earlier route already gives, or one that
+/// is the qualified name of another operation, its derived `operationId` (`ESS-HTTP-032`).
+fn operation_ids(spec: &HttpSpec, ir: &EssIr, refusals: &mut Refusals) {
+    let operations: Vec<Operation> = ir
+        .commands()
+        .keys()
+        .map(|name| Operation::Command(name.to_string()))
+        .chain(
+            ir.views()
+                .keys()
+                .map(|name| Operation::View(name.to_string())),
+        )
+        .collect();
+    let mut given: BTreeMap<&str, usize> = BTreeMap::new();
+    for (index, route) in spec.routes.iter().enumerate() {
+        let Some(id) = route.operation_id.as_deref() else {
+            continue;
+        };
+        let at = format!("routes[{index}].operation_id");
+        if !is_operation_id(id) {
+            refusals.refuse("ESS-HTTP-032", at, operation_id_reason(id));
+            continue;
+        }
+        if let Some(&first) = given.get(id) {
+            refusals.refuse(
+                "ESS-HTTP-032",
+                at,
+                format!(
+                    "operation id `{id}` of {} is already the operation id of {} at \
+                     `routes[{first}]`; an operation id names one operation",
+                    described(route),
+                    described(&spec.routes[first])
+                ),
+            );
+            continue;
+        }
+        given.insert(id, index);
+        let own = named(route);
+        if let Some(other) = operations
+            .iter()
+            .find(|operation| operation.name() == id && Some(*operation) != own.as_ref())
+        {
+            refusals.refuse(
+                "ESS-HTTP-032",
+                at,
+                format!(
+                    "operation id `{id}` of {} is the qualified name of {other}, which is that \
+                     operation's derived operation id; an operation id names one operation",
+                    described(route)
+                ),
+            );
+        }
+    }
+}
+
+/// Holds each `servers:` entry to its rules (`ESS-HTTP-033`): a `reached_by: network` component
+/// of the specification, written once, with a list that is not empty of URLs each admitted and
+/// each given once.
+fn servers(
+    written: Option<&Entries<Vec<ServerSpec>>>,
+    ir: &EssIr,
+    refusals: &mut Refusals,
+) -> BTreeMap<String, Vec<Server>> {
+    let mut compiled: BTreeMap<String, Vec<Server>> = BTreeMap::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for (name, list) in written
+        .map(|entries| entries.0.as_slice())
+        .unwrap_or_default()
+    {
+        let at = format!("servers.{name}");
+        if !seen.insert(name.as_str()) {
+            refusals.refuse(
+                "ESS-HTTP-033",
+                at,
+                format!("component `{name}` is written twice; its servers are one list"),
+            );
+            continue;
+        }
+        let Some(component) = ir
+            .components()
+            .values()
+            .find(|component| component.name.to_string() == *name)
+        else {
+            refusals.refuse(
+                "ESS-HTTP-033",
+                at,
+                format!("the specification declares no component `{name}`"),
+            );
+            continue;
+        };
+        if component.reached_by != Reach::Network {
+            refusals.refuse(
+                "ESS-HTTP-033",
+                at,
+                format!(
+                    "component `{name}` is not declared `reached_by: network`: its callers are \
+                     deployed with it, so no request reaches its paths at a server URL"
+                ),
+            );
+            continue;
+        }
+        if list.is_empty() {
+            refusals.refuse(
+                "ESS-HTTP-033",
+                at,
+                format!(
+                    "component `{name}` lists no server; a component without servers is left out"
+                ),
+            );
+            continue;
+        }
+        for (index, server) in list.iter().enumerate() {
+            let key = format!("{at}[{index}].url");
+            if let Some(reason) = server_url_reason(&server.url) {
+                refusals.refuse("ESS-HTTP-033", key, reason);
+            } else if list[..index]
+                .iter()
+                .any(|earlier| earlier.url == server.url)
+            {
+                refusals.refuse(
+                    "ESS-HTTP-033",
+                    key,
+                    format!(
+                        "`{}` is already a server of component `{name}`; a URL is listed once",
+                        server.url
+                    ),
+                );
+            }
+        }
+        compiled.insert(
+            name.clone(),
+            list.iter()
+                .map(|server| Server {
+                    url: server.url.clone(),
+                    description: server.description.clone(),
+                })
+                .collect(),
+        );
+    }
+    compiled
+}
+
+/// Refuses a refinement that changes or leaves out an `operation_id` the refined binding fixed
+/// (`ESS-HTTP-012`), at `routes[i].operation_id`. Each operation is compared at the first route
+/// that names it in each document, as [`changes`] compares the rest; a dropped route is refused
+/// there. An id added where the refined route has none is admitted.
+fn operation_id_changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
+    let mut routed: BTreeMap<Operation, usize> = BTreeMap::new();
+    for (index, route) in spec.routes.iter().enumerate() {
+        if let Some(operation) = named(route) {
+            routed.entry(operation).or_insert(index);
+        }
+    }
+    let mut compared = std::collections::BTreeSet::new();
+    for (at, fixed) in refined.routes.iter().enumerate() {
+        let Some(operation) = named(fixed) else {
+            continue;
+        };
+        if !compared.insert(operation.clone()) {
+            continue;
+        }
+        let (Some(fixed_id), Some(&index)) =
+            (fixed.operation_id.as_deref(), routed.get(&operation))
+        else {
+            continue;
+        };
+        let here = spec.routes[index].operation_id.as_deref();
+        if here != Some(fixed_id) {
+            let found = here.map_or_else(|| "none".to_owned(), |id| format!("`{id}`"));
+            refusals.refuse(
+                "ESS-HTTP-012",
+                format!("routes[{index}].operation_id"),
+                format!(
+                    "{operation} has operation id {found} here, and the refined binding fixes \
+                     `{fixed_id}` at `routes[{at}]`; a refinement keeps every operation id the \
+                     refined binding fixes"
+                ),
+            );
+        }
     }
 }
 
@@ -3381,6 +3776,7 @@ fn routes(
             (Some(_), Some(method), Some(_), Some(sources), Ok(request), Ok(answers)) => {
                 Some(Route {
                     operation: operation.clone(),
+                    operation_id: spec.operation_id.clone(),
                     method,
                     path: spec.path.clone(),
                     parameters: sources,

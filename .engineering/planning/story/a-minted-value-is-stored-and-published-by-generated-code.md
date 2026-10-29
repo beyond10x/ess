@@ -9,7 +9,7 @@ tags:
 - ess-0.70.0
 relations:
 - decomposes: epic:downstream-reported-gaps
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -145,3 +145,11 @@ In crates/specify/ess-domain/tests/minted_value_sources.rs:
 In crates/verify/ess-conformance/tests/minted_value_sources.rs:
 
 - `a_nested_payload_read_is_witnessed_on_the_interpreted_target`.
+
+## Format retarget (2026-10-28)
+
+`ess/31` shipped in 0.69.0 and `ess/32` in 0.70.0 without this story (`FORMAT_HISTORY` in
+`crates/specify/ess-domain/src/system.rs`). Its planned format gate is now the next one, `ess/33`,
+opened once for the open-issue batch that carries the `ess/33` language changes
+(`docs/plan/wave-ess-issues-1.md` § Batches). Read `ess/31` above as `ess/33`, and `ess/30` as
+"below `ess/33`". Store drift fixed under D136 (`approval-record:d136-synthesis-defects-and-store-drift`).

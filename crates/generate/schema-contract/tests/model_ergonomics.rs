@@ -606,3 +606,218 @@ fn unknown_members_are_decoded_and_not_encoded() {
         );
     }
 }
+
+/// A `Binary64` newtype bounded by its invariants (beyond10x/ess#687): the projection publishes
+/// `exclusiveMinimum` and `maximum` on its definition.
+const RATES: &str = r"format: ess/20
+system: probe
+version: v1
+domains: [probe.sensor]
+domain: probe.sensor
+types:
+  - name: probe.sensor.Rate
+    kind: newtype
+    of: Binary64
+    invariants: [value > 0, value <= 1]
+  - name: probe.sensor.Reading
+    kind: struct
+    fields:
+      - {name: rate, type: probe.sensor.Rate}
+";
+
+/// The rules a realization's report leaves on one definition: every obligation whose pointer is
+/// the definition's own keyword.
+fn definition_obligations(report: &schema_contract::realize::Report, name: &str) -> Vec<String> {
+    let report = serde_json::to_value(report).expect("report");
+    report["obligations"]
+        .as_array()
+        .expect("obligations")
+        .iter()
+        .filter(|item| {
+            let pointer = item["pointer"].as_str().unwrap_or_default();
+            pointer.contains(&format!("/{name}"))
+        })
+        .map(|item| item["rule"].as_str().unwrap_or_default().to_owned())
+        .collect()
+}
+
+/// `ess generate types` realizes a bounded `Binary64` newtype in Rust, Go and TypeScript without a
+/// refusal; the new keywords are runtime obligations on every target.
+#[test]
+fn issue_687_a_bounded_binary64_realizes_with_its_bounds_as_obligations() {
+    let selection = model::selection(RATES, &["probe.sensor.Reading"]);
+    let definitions: serde_json::Value = serde_json::from_str(&selection.to_json()).expect("JSON");
+    let rate = &definitions["$defs"]["probe.sensor.Rate"];
+    assert_eq!(rate["exclusiveMinimum"], serde_json::json!(0), "{rate:#}");
+    assert_eq!(rate["maximum"], serde_json::json!(1), "{rate:#}");
+
+    let plan = Plan::from_model(&selection).expect("plan");
+    let reports = [
+        ("typescript", plan.typescript().report),
+        ("rust", plan.rust("probe-sensor").expect("rust").report),
+        (
+            "go",
+            plan.go("sensor", "example.invalid/sensor")
+                .expect("go")
+                .report,
+        ),
+    ];
+    for (target, report) in &reports {
+        let rules = definition_obligations(report, "probe.sensor.Rate");
+        for rule in ["exclusiveMinimum", "maximum"] {
+            assert!(
+                rules.iter().any(|found| found == rule),
+                "{target}: no `{rule}` obligation on the Rate definition: {rules:?}"
+            );
+        }
+    }
+    // The bounds do not discharge the finite-binary64 contract: TypeScript, which has no codec of
+    // its own for it, still reports `model_binary64`.
+    let typescript = definition_obligations(&reports[0].1, "probe.sensor.Rate");
+    assert!(
+        typescript.iter().any(|found| found == "model_binary64"),
+        "{typescript:?}"
+    );
+}
+
+const LENGTHS: &str = r"format: ess/20
+system: probe
+version: v1
+domains: [probe.units]
+domain: probe.units
+types:
+  - name: probe.units.Unit
+    kind: newtype
+    of: String
+    invariants: [value.count >= 1, value.count <= 8]
+  - name: probe.units.Measure
+    kind: struct
+    fields:
+      - {name: unit, type: probe.units.Unit}
+      - {name: note, type: String}
+    invariants: [note.count <= 40]
+";
+
+/// A `String` newtype whose `value.count` bounds are published as `minLength` and `maxLength`
+/// realizes on every target with the length reported once: the realizer enforces the text
+/// constraint it reads from `x-ess-invariants`, so the keywords add no obligation of their own.
+/// A struct field's length has no such constraint, so its `maxLength` stays an obligation.
+#[test]
+fn issue_685_the_types_only_realizer_reports_the_length_once() {
+    let selection = model::selection(LENGTHS, &["probe.units.Measure"]);
+    let definitions: serde_json::Value = serde_json::from_str(&selection.to_json()).expect("JSON");
+    let unit = &definitions["$defs"]["probe.units.Unit"];
+    assert_eq!(unit["minLength"], serde_json::json!(1), "{unit:#}");
+    assert_eq!(unit["maxLength"], serde_json::json!(8), "{unit:#}");
+
+    let plan = Plan::from_model(&selection).expect("plan");
+    let reports = [
+        ("typescript", plan.typescript().report),
+        ("rust", plan.rust("probe-units").expect("rust").report),
+        (
+            "go",
+            plan.go("units", "example.invalid/units")
+                .expect("go")
+                .report,
+        ),
+    ];
+    for (target, report) in &reports {
+        let rules = definition_obligations(report, "probe.units.Unit");
+        for rule in ["minLength", "maxLength"] {
+            assert!(
+                !rules.iter().any(|found| found == rule),
+                "{target}: a `{rule}` obligation repeats the enforced length: {rules:?}"
+            );
+        }
+        let measure = definition_obligations(report, "probe.units.Measure");
+        assert!(
+            measure.iter().any(|found| found == "maxLength"),
+            "{target}: the field length is not enforced and must stay an obligation: {measure:?}"
+        );
+    }
+}
+
+const SPLITS: &str = r"format: ess/22
+system: probe
+version: v1
+domains: [probe.split]
+domain: probe.split
+types:
+  - name: probe.split.Role
+    kind: enum
+    variants: [Train, HeldOut]
+  - name: probe.split.Split
+    kind: struct
+    fields:
+      - {name: role, type: probe.split.Role}
+  - name: probe.split.Plan
+    kind: struct
+    fields:
+      - {name: splits, type: List<probe.split.Split>}
+    invariants:
+      - {distinct: {in: splits, as: split, by: split.role}}
+";
+
+/// A struct whose list is `distinct:` by an enum key publishes one bounded `contains` per variant
+/// (beyond10x/ess#686). `ess generate types` realizes it in Rust, Go and TypeScript without a
+/// refusal: the `allOf` shapes no value, so the list stays a list, and the bound is one obligation.
+#[test]
+fn issue_686_a_distinct_by_enum_struct_realizes_with_one_obligation() {
+    let selection = model::selection(SPLITS, &["probe.split.Plan"]);
+    let definitions: serde_json::Value = serde_json::from_str(&selection.to_json()).expect("JSON");
+    let splits = &definitions["$defs"]["probe.split.Plan"]["properties"]["splits"];
+    assert_eq!(
+        splits["allOf"].as_array().map(Vec::len),
+        Some(2),
+        "{splits:#}"
+    );
+
+    let plan = Plan::from_model(&selection).expect("plan");
+    let reports = [
+        ("typescript", plan.typescript().report),
+        ("rust", plan.rust("probe-split").expect("rust").report),
+        (
+            "go",
+            plan.go("split", "example.invalid/split")
+                .expect("go")
+                .report,
+        ),
+    ];
+    for (target, report) in &reports {
+        let report = serde_json::to_value(report).expect("report");
+        let bounded: Vec<&serde_json::Value> = report["obligations"]
+            .as_array()
+            .expect("obligations")
+            .iter()
+            .filter(|item| {
+                item["pointer"]
+                    .as_str()
+                    .is_some_and(|pointer| pointer.contains("/splits/allOf"))
+            })
+            .collect();
+        assert_eq!(bounded.len(), 1, "{target}: {report:#}");
+        assert_eq!(bounded[0]["rule"], "contains", "{target}: {report:#}");
+    }
+}
+
+/// A bundle is not a checked model: the same `contains` an imported schema carries is still
+/// refused by name when it is realized.
+#[test]
+fn a_bundle_with_contains_is_still_refused() {
+    let roots = std::collections::BTreeSet::from(["Holder".to_owned()]);
+    let bundle = schema_contract::bundle::import(
+        &serde_json::json!({"components":{"schemas":{
+            "Holder":{"type":"object","properties":{"roles":{
+                "type":"array","items":{"type":"string"},
+                "allOf":[{"contains":{"const":"train"},"minContains":0,"maxContains":1}]
+            }}}
+        }}})
+        .to_string(),
+        &roots,
+        schema_contract::bundle::Dialect::Draft202012,
+    )
+    .expect("the import accepts contains");
+    let refused = Plan::from_bundle(&bundle, &roots).expect_err("realization refuses contains");
+    let findings = format!("{refused:?}");
+    assert!(findings.contains("contains"), "{findings}");
+}
