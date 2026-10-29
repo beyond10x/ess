@@ -151,6 +151,7 @@ lane that failed in CI.
 | a `ValidationCode`, a diagnostic, a format version, `CHANGELOG.md`, `website/` or `docs/` | also `task test-xtask` (see the pins paragraph below) |
 | `RawSpecFile` | also `cargo xtask schema`, then `task projection-check` |
 | a workflow, `Taskfile.yml` or a public API | also `task ci-lint` |
+| anything that changes a committed example tree under `generated/` or a projection (`ess-gen`, `ess-synth`, schema or OpenAPI output) | also `ess-synth`'s whole test set: `feasibility`, `adversary_related_guard_behaviour_pass1` (`adv319`) and `http_binding_rust` (its `go` module) compare the committed example trees byte for byte |
 
 Every push also runs `task fmt-check`. A crate the change does not touch is not gated locally; CI
 covers it.

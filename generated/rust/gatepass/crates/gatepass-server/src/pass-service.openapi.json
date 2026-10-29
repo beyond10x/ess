@@ -1140,7 +1140,8 @@
           "$ref": "#/x-ess-entities/gatepass.visit.Host"
         },
         "expected_minutes": {
-          "type": "integer"
+          "type": "integer",
+          "minimum": 1
         },
         "expected_stay": {
           "type": "string",
@@ -1185,7 +1186,11 @@
         "on_watchlist",
         "state"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "x-ess-invariants": [
+        "deposit.amount >= 0",
+        "expected_minutes > 0"
+      ]
     },
     "gatepass.visit.Visit.State": {
       "title": "State",

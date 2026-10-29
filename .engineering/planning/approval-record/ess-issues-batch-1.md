@@ -5,7 +5,7 @@ kind: approval-record
 status: approved
 title: Open-issue batch 1 runs as one wave and one pull request
 summary: Operator request of 2026-10-28, approved under the grant by the orchestrator
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-28T10:43:03Z", actor: "human:timo", revision: 2, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
@@ -66,3 +66,9 @@ The local gate is:
 - `cargo clippy -p <crate> --all-targets --locked -- -D warnings` for each of the nine touched crates, and `cargo fmt --check` for them.
 
 The literal `task check` is not run locally: it builds every test binary (about 92 GiB for `ess-conformance` alone), which this machine cannot hold, and `AGENTS.md` gives the full gate to CI. CI runs it on the pull request before the auto-merge lands.
+
+## Gate amendment (2026-10-29)
+
+PR 701's CI failed on three `ess-synth` tests (`feasibility`, `adv319`, `http_binding_rust` go) that compare the committed gatepass example trees byte for byte: #688 added `minimum` and `x-ess-invariants` to `pass-service.openapi.json`, and the D171 gate ran `ess-synth` only in named lanes. The two files were regenerated on the queue branch.
+
+From this batch on, `ess-synth`'s whole test set is part of the local gate whenever a change alters a committed example tree under `generated/` or a projection (orchestrator, 2026-10-29). `AGENTS.md` § The package-gate subset carries the rule.
