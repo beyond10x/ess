@@ -103,9 +103,9 @@ the source-only adapter still supports the existing subset, not broad OpenAPI va
 | Valid OpenAPI 3.1 patch version; omitted dialect or explicitly supported OAS base dialect | Admit the existing service subset. Validate the version token, not merely a `3.1.` prefix. Preserve the authored version. |
 | 3.2/unknown version, Swagger 2.0, unsupported `jsonSchemaDialect` or schema `$schema` | Refuse before interpreting schemas under a guessed dialect. No alternate-dialect support is added. A matching dialect declaration is not itself a coverage gap. OpenAPI 3.0 is admitted through the rewrite in the amendment below. |
 | Explicit string, nonempty all-string enum and/or string const | Preserve the existing representable constraints. Infer string only when type is genuinely absent and the admitted literal constraint proves a string-only domain. A type array must not be mistaken for absent type. |
-| Integer/number/boolean/object/array enum or const | Record a semantic gap at each unpreserved keyword; do not globally mark enum/const consumed. Mixed/untyped shapes without a faithful structural carrier may refuse. |
+| Integer/number/boolean/object/array enum or const | Record a semantic gap at each unpreserved keyword; do not globally mark enum/const consumed. Mixed/untyped shapes without a faithful structural carrier may refuse; an untyped schema of annotations only, `{}` and `true` import as `json` (see the amendment of 2026-10-29). |
 | Empty enum, a type array other than `[<type>, "null"]` (see the amendment below), or unrepresentable literal combination | Refuse as an unsupported adapter shape; never turn an empty enum into an unconstrained string. Do not call every valid-but-unsupported schema malformed. |
-| 3.1 array without items; boolean/untyped items that the existing IR cannot represent | Explicit refusal at the schema/items boundary before any caller can silently drop the component, property or message schema. |
+| 3.1 array without items; boolean/untyped items that the existing IR cannot represent | Amended 2026-10-29: a missing `items` imports as an array of `json`, and `items: true` or `{}` as `json`. `items: false` and other shapes the IR cannot represent still refuse at the schema/items boundary before any caller can silently drop the component, property or message schema. |
 | Bare supported local component reference | Preserve it and record exact reference sites. Missing target remains durable unresolved accounting and blocks checked projection. |
 | 3.1 schema reference with siblings | Inspect every sibling before returning a Reference. Report each unpreserved constraint as a gap; record explicitly known omitted annotations as normalizations. Do not apply the nonschema Reference Object's sibling rule here. |
 | External/noncomponent/non-string reference; resource/anchor/base behavior outside this local subset | Refuse; no network or speculative lookup. Preserve existing supported pointer escapes; unsupported URI-fragment spellings must refuse before being misclassified as a different missing component. |
@@ -171,3 +171,25 @@ The 3.1 spelling of the same meaning agrees with it: `type: [<type>, "null"]` (e
 imports as `<type>` with the identical `feature-unpreserved` gap at `…/type`, and an `enum` or
 `const` that excludes `null` makes it exact. Any other `type` array still refuses as an
 unsupported adapter shape. Swagger 2.0 (`swagger:`) and every other version still refuse.
+
+## Amendment 2026-10-29: open objects, empty schemas and nullable pairs (beyond10x/ess#647)
+
+Three refused constructs import. Envelope, profile and interface formats stay at `/1`: every input
+accepted before imports byte-identically, so every stored envelope still replays, and the new IR
+pieces arise only from inputs that were refused. A 0.76.0 reader refuses them by name
+(`unknown variant json`, `unknown variant optional`, `unknown field additional_properties`).
+
+| Construct | Import |
+|---|---|
+| `{}`, `true`, or a schema with no `type` whose keys are only annotations or `$schema` | `{kind: json}`, a unit kind: replay admission refuses any other field on it. Annotations are normalizations as before. `false` and an untyped schema carrying any other assertion still refuse. |
+| An array without `items` | An array of `json`. |
+| `additionalProperties` absent, `true` or `{}` | `Object.additional_properties: {kind: json}`. A missing `properties` is `{}`, so the object constraint is kept. |
+| `additionalProperties: <schema>` | That schema: a typed map. `false` leaves the field absent, so closed objects keep their bytes. |
+| `required` name outside `properties` | Admitted on an open object (a required extra member); refused on a closed one, since no value validates. A property whose own schema was refused is not reported again. |
+| `anyOf` or `oneOf` of exactly one schema S and `{type: 'null'}`, either order | `{kind: optional, schema: S}`, with no gap: the null member is preserved. Projection writes `anyOf: [S, {type: 'null'}]`; for such a pair both keywords and both orders mean the same, so the spelling is normalized without an entry. Refused at `…/anyOf` or `…/oneOf` when S itself admits `null` (a null type, `nullable`, a nested nullable pair, `{}`), since the pair is then ambiguous; a `$ref` is not followed for this check. |
+| Any other `allOf`, `anyOf`, `oneOf` or `not` on a schema with no `type` | Refused at `…/<keyword>`, naming the union. Beside a `type` they remain gaps, as before. |
+| OpenAPI 3.0 `anyOf`/`oneOf` with `{type: 'null'}` | Refused: 3.0 has no `null` type. |
+
+The other two null spellings are unchanged: `type: [T, "null"]` and 3.0 `nullable: true` still
+import as `T` with the `feature-unpreserved` gap. Making the three spellings agree would change the
+replay of stored envelopes, so it needs `ess-openapi-import/2` and is left for that version.
