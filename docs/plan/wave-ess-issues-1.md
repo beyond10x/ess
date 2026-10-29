@@ -92,6 +92,8 @@ Two synthesis findings filed on 2026-10-29 were placed by D229 (`approval-record
   Batch 4 is the earliest batch not yet gated.
 - #707 (D232, `approval-record:d232-707-is-u21-in-batch-4`) is a defect: the generated Rust server admits
   bodies its served OpenAPI refuses. It joins batch 4 as U21, its sixth unit.
+- #708 to #711 (D234, `approval-record:d234-mutate-limits-in-batch-7`) are four mutation-audit gaps: the
+  order-flip tie, error-swap payloads, actor grants and sites left unmutated. They join batch 7.
 - #705 is a gap. It joins batch 7 beside D226's obligation-contract story. The exchange, language and suite-format batches listed above as 4 to 7 follow after
 it, in the same order.
 
