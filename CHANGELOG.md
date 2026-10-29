@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.76.0] — 2026-10-29
+
 ### Added
 
 - `ess-http/1` routes may declare `operation_id`, published as the OpenAPI `operationId`, and a binding may declare `servers` per `reached_by: network` component, published as that component's document `servers` after `info` (beyond10x/ess#653). They are refused with `ESS-HTTP-032` and `ESS-HTTP-033`; a server URL must name a host, so an authority that is only a port, or an IPv6 address left unclosed, is refused. A binding without them keeps its IR and OpenAPI bytes.

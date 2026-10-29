@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.76.0](#schemas-publish-entity-binary64-length-and-distinct-invariants-and-composition-compares-events-and-constraints) | Schemas publish entity, Binary64, length and distinct invariants, and composition compares events and constraints | capability | notable |
 | [0.75.0](#a-seed-says-it-does-not-serve-a-set-moves-filter-and-the-workspace-compiles-on-rust-185) | A seed says it does not serve a set move's filter, and the workspace compiles on rust 1.85 | capability | notable |
 | [0.74.0](#synthesis-seeds-work-on-caller-models-and-a-binding-tries-every-publisher-of-its-trigger) | Synthesis seeds work on caller models, and a binding tries every publisher of its trigger | capability | notable |
 | [0.73.0](#set-effect-bindings-row-sets-predicate-refusal-policies-and-affects-rows-past-predicates-get-their-scenarios) | Set-effect bindings, row sets, predicate refusal policies and affects rows past predicates get their scenarios | capability | notable |
@@ -86,6 +87,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.76.0 — 2026-10-29
+
+### Schemas publish entity, Binary64, length and distinct invariants, and composition compares events and constraints
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.76.0)
+
+Schemas carry entity invariants and publish Binary64 bounds, text lengths and distinct lists as keywords. Defined / not defined branches are exhaustive without a default. ess-composition/5 compares events, commands, constraints and variant attributes. HTTP bindings name operation ids and servers.
 
 ## 0.75.0 — 2026-10-28
 

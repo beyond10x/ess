@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/open-issue-batch-1-0.76.0
+repository: ess
+publishedAt: 2026-10-29T00:00:00Z
+title: Schemas publish entity, Binary64, length and distinct invariants, and composition compares events and constraints
+summary: >-
+  Schemas carry entity invariants and publish Binary64 bounds, text lengths and distinct lists as
+  keywords. Defined / not defined branches are exhaustive without a default. ess-composition/5
+  compares events, commands, constraints and variant attributes. HTTP bindings name operation ids
+  and servers.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.76.0
+  version: 0.76.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]
