@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-29T10:39:45Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-fields-keep-declaration-order-and-box-only-recursion",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "schema-contract declaration_order, rust_generator_options, rust_realization, adversary_ess_issues_2_u7; ess-gen model_types; ess-cli model_type_events passed; local gate (D171 form with ess-synth's whole set) on 75a9d5b91 and its failed lanes re-run green on c5a17aab7",
+    "reference": "commit:c5a17aab7"
+  }
+}

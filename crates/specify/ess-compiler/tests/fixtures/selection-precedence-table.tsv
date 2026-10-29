@@ -1,4 +1,4 @@
-#	models=354	commands=711
+#	models=356	commands=714
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -65,6 +65,8 @@ crates/generate/ess-synth/tests/fixtures/http-binding-shop.yaml	shop.items.PutIt
 crates/generate/ess-synth/tests/fixtures/http-binding-shop.yaml	shop.items.ReadPrivate	input_refusal: token-refused | default: read
 crates/generate/ess-synth/tests/fixtures/http-binding-shop.yaml	shop.items.Search	default: searched
 crates/generate/ess-synth/tests/fixtures/http-binding-shop.yaml	shop.items.StrictOrder	default: ordered
+crates/generate/ess-synth/tests/fixtures/response-echoes-input.yaml	ir=0895730d891cb8b3a910f9ea95d99dda9b4b0ccd0278df5462c2d1c8507973b6:5132
+crates/generate/ess-synth/tests/fixtures/response-echoes-input.yaml	demo.core.Send	default: sent
 crates/generate/ess-synth/tests/fixtures/served-notes/system.yaml	ir=a10f6b66cb12080e6ad9e81dede30aed3eb9632c676d8e5714090fdf8f88d42b:10372
 crates/generate/ess-synth/tests/fixtures/served-notes/system.yaml	notebook.notes.AddNote	default: added
 crates/generate/ess-synth/tests/fixtures/served-notes/system.yaml	notebook.notes.ArchiveNote	existence: unknown | held_state: archived-already | default: archived
@@ -187,6 +189,9 @@ crates/specify/ess-http/tests/fixtures/catalog.yaml	ir=11e75f985e5228749c7c2764f
 crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.ListItem	default: listed
 crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.PurgeItems	default: purged
 crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.TouchItem	default: touched
+crates/specify/ess-http/tests/fixtures/notes.yaml	ir=6f96343df02c571d719dacdb5a0ef098805379515c16fc96ee0b4a45d1d41c5a:10008
+crates/specify/ess-http/tests/fixtures/notes.yaml	demo.notes.CreateNote	input_refusal: too-large, negative, blank | accepting: skipped, fetched | default: inline
+crates/specify/ess-http/tests/fixtures/notes.yaml	demo.notes.TouchNote	default: touched
 crates/specify/ess-http/tests/fixtures/orders.yaml	ir=fddd48b56d6cbdc488eac31670526927c5688b1b586aaf658f263858597eef1e:13993
 crates/specify/ess-http/tests/fixtures/orders.yaml	catalog.orders.NoteOrder	default: noted
 crates/specify/ess-http/tests/fixtures/orders.yaml	catalog.orders.PlaceOrder	input_refusal: out-of-stock, too-many | accepting: placed | default: mislabelled

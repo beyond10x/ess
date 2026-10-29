@@ -253,9 +253,9 @@ fn a_missing_status_or_body_is_a_parse_refusal_naming_the_key() {
         (
             view_route(
                 "OrderById",
-                "    body: single\n    empty: {status: 404, body: none}\n",
+                "    body: single\n    empty: {status: 404, reason: gone}\n",
             ),
-            "body",
+            "reason",
         ),
         (
             "refusals:\n  malformed: {status: 400, body: none, retry: true}\nroutes: []\n"

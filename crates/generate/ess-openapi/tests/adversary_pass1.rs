@@ -189,12 +189,8 @@ fn contradictory_string_enum_and_const_survive_both_boundaries() {
 
 #[test]
 fn unsupported_items_cannot_disappear_at_nested_or_message_sites() {
-    for items in [
-        Value::Bool(true),
-        Value::Bool(false),
-        json!({}),
-        json!({"type": ["string"]}),
-    ] {
+    // `true` and `{}` import as `json` (beyond10x/ess#647); these two stay refused.
+    for items in [Value::Bool(false), json!({"type": ["string"]})] {
         for site in 0..5 {
             let (source, pointer, _) = at_site(json!({"type": "array", "items": items}), site);
             let errors = import(&source.to_string()).unwrap_err();

@@ -226,6 +226,7 @@ fn the_report_records_each_option() {
         type_derives: BTreeMap::from([("Map".to_owned(), BTreeSet::from([RustDerive::Eq]))]),
         fold_null: true,
         drop_unknown_members: true,
+        box_only_recursion: true,
     };
     let realization = bundle_plan(&open_schemas())
         .rust_with("open_types", &options)
@@ -239,7 +240,29 @@ fn the_report_records_each_option() {
             "derives": ["Hash"],
             "type_derives": {"Map": ["Eq"]},
             "fold_null": true,
-            "drop_unknown_members": true
+            "drop_unknown_members": true,
+            "box_only_recursion": true
+        })
+    );
+    // The declared field order is a plan option a bundle refuses, so a model records it.
+    let ordered = shop_plan()
+        .with_declared_field_order()
+        .unwrap()
+        .rust_with(
+            "shop_types",
+            &RustOptions {
+                box_only_recursion: true,
+                ..RustOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&ordered.report).unwrap()["configuration"],
+        json!({
+            "language": "rust",
+            "package": "shop_types",
+            "declared_field_order": true,
+            "box_only_recursion": true
         })
     );
     let obligations = report["obligations"]

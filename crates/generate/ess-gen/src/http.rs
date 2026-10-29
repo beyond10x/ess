@@ -57,6 +57,10 @@ pub const DOCS: &str = "/docs";
 /// ([`Binding::servable`]).
 pub const RESERVED: [&str; 2] = [OPENAPI, DOCS];
 
+/// The `Content-Type` a served answer writes for an outcome an `ess-http/1` binding answers
+/// `encoding: text`: the string field's value alone, UTF-8.
+pub const TEXT_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
+
 /// Whether a request for the concrete `path` would match a route whose template is `segments`: as
 /// many segments, each literal equal and each variable taking whatever is there. The overlap rule
 /// of `ESS-HTTP-011`, with one side a path rather than a template.
@@ -423,6 +427,32 @@ impl Binding {
     /// The standard refusal `key` the binding answers its own way, if it overrides it.
     pub fn refusal(&self, key: ess_http::RefusalKey) -> Option<&ess_http::Refusal> {
         self.0.refusals().get(&key)
+    }
+
+    /// The standard refusal `key` as `route` answers it: the route's own override, else the
+    /// binding's, if either overrides it.
+    pub fn refusal_on<'a>(
+        &'a self,
+        route: &'a ess_http::Route,
+        key: ess_http::RefusalKey,
+    ) -> Option<&'a ess_http::Refusal> {
+        route.refusals.get(&key).or_else(|| self.refusal(key))
+    }
+
+    /// Every standard refusal `route` answers its own way: the binding's overrides, with the
+    /// route's own in their place.
+    pub fn refusals_on(
+        &self,
+        route: &ess_http::Route,
+    ) -> std::collections::BTreeMap<ess_http::RefusalKey, ess_http::Refusal> {
+        let mut refusals = self.0.refusals().clone();
+        refusals.extend(
+            route
+                .refusals
+                .iter()
+                .map(|(key, refusal)| (*key, refusal.clone())),
+        );
+        refusals
     }
 
     /// The binding's route of `served`, if it declares one.

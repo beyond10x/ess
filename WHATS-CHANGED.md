@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.77.0](#http-bindings-group-alike-outcomes-openapi-import-widens-and-validate-refuses-unreachable-branches) | HTTP bindings group alike outcomes, OpenAPI import widens, and validate refuses unreachable branches | capability | notable |
 | [0.76.0](#schemas-publish-entity-binary64-length-and-distinct-invariants-and-composition-compares-events-and-constraints) | Schemas publish entity, Binary64, length and distinct invariants, and composition compares events and constraints | capability | notable |
 | [0.75.0](#a-seed-says-it-does-not-serve-a-set-moves-filter-and-the-workspace-compiles-on-rust-185) | A seed says it does not serve a set move's filter, and the workspace compiles on rust 1.85 | capability | notable |
 | [0.74.0](#synthesis-seeds-work-on-caller-models-and-a-binding-tries-every-publisher-of-its-trigger) | Synthesis seeds work on caller models, and a binding tries every publisher of its trigger | capability | notable |
@@ -87,6 +88,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.77.0 — 2026-10-29
+
+### HTTP bindings group alike outcomes, OpenAPI import widens, and validate refuses unreachable branches
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.77.0)
+
+HTTP routes group alike outcomes and declare own refusals, empty bodies and arrays. OpenAPI import admits open objects; integer formats keep native width. Types keep declared field order and box only recursion. Response fields may share input names. Validate refuses a branch an earlier refusal hides; mutate scores disjoint precedence swaps equivalent.
 
 ## 0.76.0 — 2026-10-29
 

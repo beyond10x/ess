@@ -36,6 +36,81 @@ fn error_name(at: usize) -> String {
 }
 
 fn model(chain: &Chain) -> EssIr {
+    compiled(chain).unwrap_or_else(|stillborn| {
+        panic!(
+            "the model compiles: {} {} {}\n{}",
+            stillborn.code,
+            stillborn.cause,
+            stillborn.message,
+            model_text(chain)
+        )
+    })
+}
+
+fn compiled(chain: &Chain) -> Result<EssIr, mutate::Stillborn> {
+    let text = model_text(chain);
+    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    let mut texts = SourceMap::new();
+    texts.insert("adv.yaml".to_owned(), text);
+    mutate::compile(vec![(Source::new("adv.yaml"), raw)], &texts)
+}
+
+/// `chain` without the refusals the compiler refuses as unreachable (`ESS-COMMAND-012`), and its
+/// model. Each dropped refusal is checked here first, by the crate's own evaluator over every
+/// input: whatever input satisfies its guard selects a refusal declared before it.
+fn live(chain: &Chain) -> (Chain, EssIr, usize) {
+    let mut chain = Chain {
+        inputs: chain.inputs.clone(),
+        refusals: chain.refusals.clone(),
+    };
+    let mut dropped = 0;
+    loop {
+        let stillborn = match compiled(&chain) {
+            Ok(ir) => return (chain, ir, dropped),
+            Err(stillborn) if stillborn.cause == "ESS-COMMAND-012" => stillborn,
+            Err(stillborn) => panic!("{stillborn:?}\n{}", model_text(&chain)),
+        };
+        let name = stillborn
+            .message
+            .split('`')
+            .nth(1)
+            .unwrap_or_else(|| panic!("no branch named: {}", stillborn.message))
+            .to_owned();
+        let at = chain
+            .refusals
+            .iter()
+            .position(|(refusal, _)| *refusal == name)
+            .unwrap_or_else(|| panic!("`{name}` is not a refusal of the chain"));
+        let guard = chain.refusals.remove(at);
+        let before = Chain {
+            inputs: chain.inputs.clone(),
+            refusals: chain.refusals[..at].to_vec(),
+        };
+        let alone = model(&Chain {
+            inputs: chain.inputs.clone(),
+            refusals: vec![guard.clone()],
+        });
+        let ir = model(&before);
+        let alone_command = command(&alone);
+        let own = when(&alone_command.outcomes[0]).expect("the refusal is guarded");
+        for input in every_input(&chain) {
+            let facts = flatten(&alone, alone_command, &input).expect("an input of the types");
+            if facts.decide(own) == Decision::Satisfied {
+                assert_ne!(
+                    selected(&ir, &input),
+                    "created",
+                    "`{}` was refused as unreachable, yet {input:?} satisfies it and no refusal \
+                     before it: {}",
+                    guard.0,
+                    stillborn.message
+                );
+            }
+        }
+        dropped += 1;
+    }
+}
+
+fn model_text(chain: &Chain) -> String {
     let mut text =
         String::from("format: ess/19\nsystem: demo\nversion: v1\ndomain: demo.adv\ntypes:\n");
     let mut enums = BTreeSet::new();
@@ -78,15 +153,7 @@ fn model(chain: &Chain) -> EssIr {
         .unwrap();
     }
     text.push_str("      - name: created\n        creates: demo.adv.Request\n        instance: request_id\n        sets: {note: true}\n        emits: [demo.adv.Submitted]\n        payload:\n          demo.adv.Submitted: {request_id: {generated: true}}\n");
-    let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}\n{text}"));
-    let mut texts = SourceMap::new();
-    texts.insert("adv.yaml".to_owned(), text.clone());
-    mutate::compile(vec![(Source::new("adv.yaml"), raw)], &texts).unwrap_or_else(|stillborn| {
-        panic!(
-            "the model compiles: {} {}\n{text}",
-            stillborn.code, stillborn.cause
-        )
-    })
+    text
 }
 
 fn command(ir: &EssIr) -> &ResolvedCommand {
@@ -488,9 +555,11 @@ fn seeded_chain(seed: u64, length: usize) -> Chain {
 fn every_reachable_branch_of_seeded_sixteen_refusal_chains_over_the_adopter_shape_has_its_scenario()
 {
     let mut failures = Vec::new();
+    let mut dropped = 0;
     for seed in 0..24u64 {
         let chain = seeded_chain(seed, 16);
-        let ir = model(&chain);
+        let (chain, ir, gone) = live(&chain);
+        dropped += gone;
         let (synthesis, steps) = directed_steps(|| synthesize(&ir));
         let missing = missing(&chain, &ir, &synthesis);
         if !missing.is_empty() {
@@ -498,6 +567,11 @@ fn every_reachable_branch_of_seeded_sixteen_refusal_chains_over_the_adopter_shap
         }
     }
     assert!(failures.is_empty(), "seed, steps, missing: {failures:#?}");
+    eprintln!("refusals dropped as unreachable: {dropped} of {}", 24 * 16);
+    assert!(
+        dropped * 4 < 24 * 16,
+        "{dropped} refusals dropped as unreachable"
+    );
 }
 
 /// The first seed above that fails, pinned: `refuse-14` of seed 22 is reached by some input and
@@ -608,6 +682,7 @@ fn plain_guard(random: &mut Seeded) -> String {
 #[test]
 fn every_reachable_branch_of_seeded_plain_sixteen_refusal_chains_has_its_scenario() {
     let mut failures = Vec::new();
+    let mut dropped = 0;
     for seed in 100..148u64 {
         let mut random = Seeded(seed);
         let chain = Chain {
@@ -616,7 +691,8 @@ fn every_reachable_branch_of_seeded_plain_sixteen_refusal_chains_has_its_scenari
                 .map(|at| (format!("refuse-{at}"), plain_guard(&mut random)))
                 .collect(),
         };
-        let ir = model(&chain);
+        let (chain, ir, gone) = live(&chain);
+        dropped += gone;
         let (synthesis, steps) = directed_steps(|| synthesize(&ir));
         let missing = missing(&chain, &ir, &synthesis);
         if !missing.is_empty() {
@@ -632,6 +708,11 @@ fn every_reachable_branch_of_seeded_plain_sixteen_refusal_chains_has_its_scenari
         failures.is_empty(),
         "{} failing seeds: {failures:#?}",
         failures.len()
+    );
+    eprintln!("refusals dropped as unreachable: {dropped} of {}", 48 * 16);
+    assert!(
+        dropped * 4 < 48 * 16,
+        "{dropped} refusals dropped as unreachable"
     );
 }
 

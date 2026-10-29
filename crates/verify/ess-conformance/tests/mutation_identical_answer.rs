@@ -731,6 +731,7 @@ fn overlap_taken_by_on_a_mutant_that_swaps_nothing_is_refused() {
 /// which addresses a book or a shelf. The interpreter reads the row the first declared branch
 /// acting on a stored row addresses before any branch is selected (`addressed_row`), so which of
 /// the two is first decides whose absence refuses a request neither of them takes.
+// `twin`'s text conjunct avoids the #702 refusal: the finite prover declines it, the audit decides it.
 const SHELF: &str = r"format: ess/23
 system: demo
 version: v1
@@ -822,7 +823,7 @@ commands:
         payload:
           demo.shelf.BookPaused: {book: input.book}
       - name: twin
-        when: rush == true
+        when: {all: [rush == true, curator != nobody]}
         updates: demo.shelf.TWIN
         instance: TWIN_KEY
         emits: [demo.shelf.Twin]

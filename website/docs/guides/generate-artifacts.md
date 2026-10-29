@@ -369,7 +369,7 @@ a `Box<serde_json::value::RawValue>`. Its bytes round-trip with or without `exac
 not count toward that feature, and the report names it under `rust_raw_json`. A location that
 names no selected type or field, or no `Json` value, is refused; other targets refuse the option.
 
-Three more Rust options are off by default. Without them the library and the report are
+Four more Rust options are off by default. Without them the library and the report are
 exactly what the target writes otherwise, and other targets refuse each of them.
 
 - `--rust-derive <DERIVE>` adds `Eq`, `Hash`, `PartialOrd`, `Ord` or `Default` to every
@@ -386,6 +386,18 @@ exactly what the target writes otherwise, and other targets refuse each of them.
   declared fields only. An object without declared fields is a map and keeps its members. The
   report names each such object under `rust_drop_unknown_members`, in place of
   `open_object_storage`.
+- `--rust-box-only-recursion` holds a named type by value and boxes a reference only where it
+  closes a cycle of by-value fields: `Optional<Self>` stays `EssPresence<Box<Self>>`, both
+  sides of a mutual cycle are boxed, and a field of a type that merely contains a cycle holds
+  it by value. A reference inside a `List` or `Map` is not boxed, so `List<Self>` is
+  `Vec<Self>`.
+
+`--declared-field-order` lists a model type's fields in the order the specification declares
+them, for Rust, Go and TypeScript; without it they are in wire-name order. Rust then encodes
+members in that order, and a derived `PartialOrd` or `Ord` compares fields in it; decoding
+accepts members in any order. Go's encoded bytes do not change. A bundle carries no
+declaration order, so `ess generate schema types-bundle` refuses the option as
+`declared_field_order_bundle`.
 
 The report's `configuration` lists each option given.
 

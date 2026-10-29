@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-29T10:39:38Z",
+  "actor": "human:timo",
+  "artifact": "story:two-outcomes-answered-alike-may-share-a-status-and-body",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:ess-issues-2-u5-adversary",
+    "review": "review-result:ess-issues-2-u5-adversary",
+    "outcome": "fixed"
+  }
+}

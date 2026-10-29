@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-29T10:39:47Z",
+  "actor": "human:timo",
+  "artifact": "story:a-command-input-and-response-field-may-share-a-name-in-rust",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ess-synth feasibility, adversary_ess_issues_2_u8 passed; local gate (D171 form with ess-synth's whole set) on 75a9d5b91 and its failed lanes re-run green on c5a17aab7",
+    "reference": "commit:c5a17aab7"
+  }
+}

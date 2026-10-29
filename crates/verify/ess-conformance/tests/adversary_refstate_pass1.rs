@@ -103,6 +103,9 @@ const ROTATE: &str = include_str!("fixtures/refusal-beside-state.yaml");
 /// `refusal-beside-state.yaml` with a closed `mode` input and two refusals that both claim
 /// `mode == Freeze`, beside the undecidable `too-short`. Validation admits it (the partition drops
 /// every input refusal once `too-short` is undecidable; see the ess-domain adversary file).
+///
+/// `frozen` also reads `secret.count >= 0`, which every secret satisfies, so it still claims
+/// exactly `mode == Freeze`.
 fn frozen_twice() -> String {
     let edit = |text: &str, from: &str, to: &str| {
         let out = text.replace(from, to);
@@ -119,10 +122,12 @@ fn frozen_twice() -> String {
         "      - {name: secret, type: String}\n    outcomes:\n",
         "      - {name: secret, type: String}\n      - {name: mode, type: demo.secrets.Mode}\n    outcomes:\n",
     );
+    // The Integer conjunct avoids the #702 refusal: the finite prover declines it, so validation
+    // stays silent where an equal decided guard would make `frozen-again` unreachable.
     edit(
         &text,
         "        error: demo.secrets.SecretTooShort\n      - name: rotated\n",
-        "        error: demo.secrets.SecretTooShort\n      - name: frozen\n        when: mode == Freeze\n        error: demo.secrets.SecretTooShort\n      - name: frozen-again\n        when: mode == Freeze\n        error: demo.secrets.NotConfigured\n      - name: rotated\n",
+        "        error: demo.secrets.SecretTooShort\n      - name: frozen\n        when: {all: [mode == Freeze, secret.count >= 0]}\n        error: demo.secrets.SecretTooShort\n      - name: frozen-again\n        when: mode == Freeze\n        error: demo.secrets.NotConfigured\n      - name: rotated\n",
     )
 }
 

@@ -64,10 +64,11 @@ fn a_tuple_that_is_not_closed_or_whose_bounds_disagree_is_refused() {
     }
 }
 
+/// `true` imports as `json` (beyond10x/ess#647); `false` is still a refused item.
 #[test]
 fn a_refused_tuple_item_refuses_the_tuple() {
     let errors = import(&source(&json!({
-        "type": "array", "prefixItems": [true], "items": false
+        "type": "array", "prefixItems": [false], "items": false
     })))
     .expect_err("refused");
     assert!(

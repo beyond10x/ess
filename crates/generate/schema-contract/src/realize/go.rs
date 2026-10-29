@@ -24,6 +24,7 @@ pub(super) fn emit(plan: &Plan, package: &str, module: &str) -> Result<Realizati
         report: plan.report(TargetConfiguration::Go {
             package: package.to_owned(),
             module: module.to_owned(),
+            declared_field_order: plan.declared_order,
         }),
     };
     for helper in [
@@ -226,8 +227,10 @@ impl Emitter<'_> {
         if !closed {
             allocated.insert("EssExtra".to_owned());
         }
+        // The encoder writes through a map, so the order moves the declaration, not the bytes.
+        let ordered = self.plan.ordered_fields(pointer, fields);
         writeln!(out, "type {name} struct {{").expect("String write");
-        for (wire, field) in fields {
+        for &(wire, field) in &ordered {
             let id = declaration_name(wire);
             if id.is_empty() || id.as_bytes()[0].is_ascii_digit() || !allocated.insert(id.clone()) {
                 self.errors.insert(finding(
@@ -248,15 +251,15 @@ impl Emitter<'_> {
             writeln!(out, "\tEssExtra map[string]{extra}").expect("String write");
         }
         writeln!(out, "}}\n\nfunc (v {name}) MarshalJSON() ([]byte, error) {{\n\tobject := make(map[string]json.RawMessage)").expect("String write");
-        for (wire, field) in fields {
+        for &(wire, field) in &ordered {
             self.encode_field(out, wire, field);
         }
         if extra.is_some() {
             out.push_str("\tfor key, value := range v.EssExtra {\n");
             if !fields.is_empty() {
-                let keys = fields
-                    .keys()
-                    .map(|key| quote(key))
+                let keys = ordered
+                    .iter()
+                    .map(|(key, _)| quote(key))
                     .collect::<Vec<_>>()
                     .join(", ");
                 writeln!(out, "\t\tswitch key {{\n\t\tcase {keys}:\n\t\t\treturn nil, fmt.Errorf(\"additional key collides with a declared field\")\n\t\t}}").expect("String write");
@@ -278,7 +281,7 @@ impl Emitter<'_> {
             writeln!(out, "\tif trimmed := bytes.TrimLeft(data, \" \\t\\r\\n\"); len(trimmed) != 0 && trimmed[0] != '{{' {{\n\t\tvar decoded {name}\n\t\tif err := essDecode(data, &decoded.{id}, {null}); err != nil {{\n\t\t\treturn fmt.Errorf(\"short form %s: %w\", {}, err)\n\t\t}}\n\t\t*v = decoded\n\t\treturn nil\n\t}}", quote(&short.wire)).expect("String write");
         }
         writeln!(out, "\tvar object map[string]json.RawMessage\n\tif err := essDecode(data, &object, false); err != nil {{\n\t\treturn err\n\t}}\n\tvar decoded {name}").expect("String write");
-        for (wire, field) in fields {
+        for &(wire, field) in &ordered {
             self.decode_field(out, wire, field);
         }
         if let Some(extra) = extra {

@@ -1,0 +1,81 @@
+# The fixture `tests/alike_and_text.rs` binds: a command with two successes that return one
+# response, whose fields are a `String` newtype and an `Integer`, beside a success that returns
+# none, two `when:` refusals reporting one error and a third reporting another; a command that
+# reports no error; and a view.
+format: ess/22
+system: demo
+version: v1
+domain: demo.notes
+types:
+  - {name: demo.notes.NoteId, kind: newtype, of: String}
+entities:
+  - name: demo.notes.Note
+    identity: {name: note_id, type: demo.notes.NoteId}
+    fields:
+      - {name: size, type: Integer}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+errors:
+  - name: demo.notes.Refused
+    naming: {wire: refused}
+  - name: demo.notes.TooLarge
+    naming: {wire: too_large}
+events:
+  - name: demo.notes.NoteSeen
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+commands:
+  - name: demo.notes.CreateNote
+    input:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: size, type: Integer}
+    response:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: size, type: Integer}
+    outcomes:
+      - name: too-large
+        when: size > 100
+        error: demo.notes.TooLarge
+      - name: negative
+        when: size < 0
+        error: demo.notes.Refused
+      - name: blank
+        when: size == 0
+        error: demo.notes.Refused
+      - name: skipped
+        when: size == 1
+        emits: [demo.notes.NoteSeen]
+        payload:
+          demo.notes.NoteSeen: {note_id: input.note_id}
+      - name: fetched
+        when: size == 2
+        returns: true
+        emits: [demo.notes.NoteSeen]
+        payload:
+          demo.notes.NoteSeen: {note_id: input.note_id}
+      - name: inline
+        creates: demo.notes.Note
+        instance: note_id
+        sets: {size: input.size}
+        returns: true
+        emits: [demo.notes.NoteSeen]
+        payload:
+          demo.notes.NoteSeen: {note_id: input.note_id}
+  - name: demo.notes.TouchNote
+    input:
+      - {name: note_id, type: demo.notes.NoteId}
+    outcomes:
+      - name: touched
+        emits: [demo.notes.NoteSeen]
+        payload:
+          demo.notes.NoteSeen: {note_id: input.note_id}
+views:
+  - name: demo.notes.Notes
+    source: demo.notes.Note
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+components:
+  - component: notes-service
+    reached_by: network
+    owns: {domains: [demo.notes]}
+    accepts: {commands: [demo.notes.CreateNote, demo.notes.TouchNote]}
+    publishes: {events: [demo.notes.NoteSeen]}

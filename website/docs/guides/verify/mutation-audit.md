@@ -86,7 +86,8 @@ Shipped]` into `all:` writes a rule that can never be taken, so there is nothing
 catch. Its entry names the guard as `unsatisfiable_guard`. The guard is decided only for
 equality, membership and truth tests of input fields against literals, and `defined` tests of
 input fields, by trying every combination of each field's values that could matter: a boolean's
-two, an enum's variants, and for any other field its literals and one value none of them equals,
+two, an enum's variants the guard names and one it does not (any other variant answers alike),
+and for any other field its literals and one value none of them equals,
 plus absence for an `Optional` field, up to 64 combinations. A `precedence-swap` of two branches
 no input selects together, such as `defined(x)` and `not defined(x)`, is equivalent on the same
 rule. So is a guard mutant whose `when:` sits beside a `when_subject:` predicate that can hold
@@ -97,7 +98,14 @@ stored predicate together. A mutant of the `when_subject:` predicate itself is d
 way where a `when:` sits beside it; one with no `when:` beside it, and every mutant of a
 `when_related:` predicate, is not decided and is scored as before. An
 ordering, a text match, a quantifier, or a guard with more combinations is not decided, and such a
-mutant is scored as before. A mutant with a changed scenario that was not scored stays
+mutant is scored as before, except in a `precedence-swap`, where a part of the two guards that
+decides is enough: two pinned values that contradict each other (`flag == false` and
+`flag == true`) decide it whatever an ordering or a text match beside them says, an enum attribute
+is read over the enum's variants, and an `any:` is decided where each of its alternatives is. An
+`Optional` input that is absent and compared with a literal in both guards selects neither branch.
+The entry names the part that decides. A swap where one guard holds while the other is unknown
+keeps its scoring: read first, the unknown guard refuses the request the other would have
+answered. A mutant with a changed scenario that was not scored stays
 *inconclusive*: that scenario might have killed it.
 
 A `precedence-swap` of two branches that answer alike is equivalent too, unless a scenario still
