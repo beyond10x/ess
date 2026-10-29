@@ -429,6 +429,32 @@ impl Binding {
         self.0.refusals().get(&key)
     }
 
+    /// The standard refusal `key` as `route` answers it: the route's own override, else the
+    /// binding's, if either overrides it.
+    pub fn refusal_on<'a>(
+        &'a self,
+        route: &'a ess_http::Route,
+        key: ess_http::RefusalKey,
+    ) -> Option<&'a ess_http::Refusal> {
+        route.refusals.get(&key).or_else(|| self.refusal(key))
+    }
+
+    /// Every standard refusal `route` answers its own way: the binding's overrides, with the
+    /// route's own in their place.
+    pub fn refusals_on(
+        &self,
+        route: &ess_http::Route,
+    ) -> std::collections::BTreeMap<ess_http::RefusalKey, ess_http::Refusal> {
+        let mut refusals = self.0.refusals().clone();
+        refusals.extend(
+            route
+                .refusals
+                .iter()
+                .map(|(key, refusal)| (*key, refusal.clone())),
+        );
+        refusals
+    }
+
     /// The binding's route of `served`, if it declares one.
     pub fn route(&self, served: Served<'_>) -> Option<&ess_http::Route> {
         self.0.route(&served.operation())

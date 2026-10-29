@@ -323,7 +323,8 @@ malformed under `refuse`.
 | `{<member>: {literal: <text>}}` | a standard refusal (below) | an object with one fixed member |
 | `none` | any outcome | no body; required with `204` and every redirect |
 | `rows` (default) | a view | today's `{rows: [...]}` |
-| `single` | a view selected by its source entity's identity (decided for stage 2, answer 7) | the one row, bare; with `empty: {status}` answering a view that holds none |
+| `single` | a view selected by its source entity's identity (decided for stage 2, answer 7) | the one row, bare; with `empty: {status, body}` answering a view that holds none, `body` being `none` (the default) or `{<member>: {literal: <text>}}` |
+| `array` | a view that is not paged | the rows, a bare JSON array, `[]` when the view holds none |
 
 A bare body carries no `outcome` and no `published`. A caller of such a route sees the branch only
 through status, body shape and headers, and sees no published event. That is what the protocol
@@ -449,6 +450,11 @@ path nothing declares (`rust/http.rs:1566-1579`). A protocol states its own answ
 `unfinished` and `malformed`, each with `status`, a literal body and headers. A refusal not listed
 keeps today's answer.
 
+A route may state its own: `routes[i].refusals:` takes the same keys and the same checks, and on
+that route only stands in place of the top-level entry of the same key. One endpoint of a protocol
+can answer a malformed request with its own error while the binding's other routes keep theirs
+(`story:ess-http-admits-text-bodies-route-refusals-empty-bodies-and-array-views`).
+
 ### What compiling checks (stage 2)
 
 | code | refused | names |
@@ -457,13 +463,13 @@ keeps today's answer.
 | `ESS-HTTP-021` | a `form` or `query` field whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
 | `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view; `errors:` on a view, or on a route whose command has no outcome with `error` that `outcomes:` leaves unlisted; `alike:` on a view, or a group of one, a name that is not an outcome of the command, one in two groups or twice in one, or one with no declared answer | `routes[i].outcomes.<name>`, `routes[i].errors` or `routes[i].alike` |
 | `ESS-HTTP-023` | a status outside `100..=599`, in a class the outcome may not use, or a `3xx` other than `301`, `302`, `303`, `307` and `308` | the outcome, the status, the class |
-| `ESS-HTTP-024` | a body form not admitted for the outcome or operation: `response` or `response.<field>` on an outcome without `returns: true` or with `error`, and so under `errors`; `response.<field>` naming no response field or an `Optional` one, or a source other than `response.<field>` as a body; `{…: error}` without `error`; `{…: {literal: …}}` on an outcome; a body other than `none` on `204` or beside a `redirect`; `single` or `rows` on a command, or an outcome form on a view; `single` on a paged view; a `<member>` that is empty or equals the wire name of one of the error's fields; an `encoding` other than `json` and `text`, or `text` beside any body but `response.<field>`, on a field that is not a `String`, or under `errors` | the outcome (or `routes[i].body`) and the form, or `….encoding` |
-| `ESS-HTTP-025` | two outcomes on one status that the bodies cannot tell apart, an unlisted outcome counted at its derived status with `envelope`, unless both declare a `redirect` and one always writes (its source not `Optional`) a parameter name the other never writes, or both write one parameter name from `error.wire` with distinct error wire names; a `refusals:` override on a route the binding names, on the status of an outcome of its command, with a body that does not tell the two apart (answer 24); an `alike:` group whose answers differ, or that the wire tells apart (`envelope` bodies, error objects under distinct wire names, redirects told apart as above); two outcomes in one group are never a pair | both outcomes and the status (for an override, `refusals.<key>`, the route and the outcomes; for a group, `routes[i].alike`, the group and the first key that differs) |
+| `ESS-HTTP-024` | a body form not admitted for the outcome or operation: `response` or `response.<field>` on an outcome without `returns: true` or with `error`, and so under `errors`; `response.<field>` naming no response field or an `Optional` one, or a source other than `response.<field>` as a body; `{…: error}` without `error`; `{…: {literal: …}}` on an outcome; a body other than `none` on `204` or beside a `redirect`; `single`, `array` or `rows` on a command, or an outcome form on a view; `single` or `array` on a paged view; a `<member>` that is empty or equals the wire name of one of the error's fields; an `encoding` other than `json` and `text`, or `text` beside any body but `response.<field>`, on a field that is not a `String`, or under `errors` | the outcome (or `routes[i].body`) and the form, or `….encoding` |
+| `ESS-HTTP-025` | two outcomes on one status that the bodies cannot tell apart, an unlisted outcome counted at its derived status with `envelope`, unless both declare a `redirect` and one always writes (its source not `Optional`) a parameter name the other never writes, or both write one parameter name from `error.wire` with distinct error wire names; a `refusals:` override on a route the binding names, on the status of an outcome of its command, with a body that does not tell the two apart (answer 24); an `alike:` group whose answers differ, or that the wire tells apart (`envelope` bodies, error objects under distinct wire names, redirects told apart as above); two outcomes in one group are never a pair | both outcomes and the status (for an override, `refusals.<key>` or the route's own `routes[i].refusals.<key>`, the route and the outcomes; for a group, `routes[i].alike`, the group and the first key that differs) |
 | `ESS-HTTP-026` | a header name that is not a token, a header the server (`Connection`), the encoding (`Content-Type`, `Content-Encoding`, `Content-Length`, `Transfer-Encoding`) or `redirect` (`Location`) owns, a literal that is not a field value, `error.wire` whose wire name is not a field value, a header declared twice ignoring case, a source that names no field or names a non-scalar, a source the outcome cannot supply (`response.` without `returns: true`, `error.` without `error`), `error.wire` on an outcome whose error declares a field named `wire`, or any `source` in a `refusals:` header | the header and the source |
 | `ESS-HTTP-027` | a challenge whose scheme or param name is not a token, a param declared twice, a literal param or a param reading `error.wire` whose text no quoted string carries, a challenge under any header but `WWW-Authenticate`, or a declared `401` (outcome or refusal) without a `WWW-Authenticate` challenge | the header, the param |
 | `ESS-HTTP-028` | `redirect` without a `3xx` status, a `3xx` without `redirect`, a `location` that is not a `String` or a newtype of `String`, or is `Optional`, or that reads `error.wire`; a `mode` absent or outside the set, a parameter name that is not one or more RFC 3986 `unreserved` characters, a parameter declared twice, a parameter source that names no field, names a non-scalar or that the outcome cannot supply | the outcome and the key |
-| `ESS-HTTP-029` | a `refusals:` key outside the set; a status in the wrong class for it (`4xx` for `malformed` and `not_granted`, `5xx` for `unfinished`); a body other than `{<member>: {literal: …}}` or `none` | `refusals.<key>` |
-| `ESS-HTTP-030` | `body: single` without `empty`, `empty` without `single`, or an `empty` status outside `4xx` | `routes[i]` |
+| `ESS-HTTP-029` | a `refusals:` key outside the set; a status in the wrong class for it (`4xx` for `malformed` and `not_granted`, `5xx` for `unfinished`); a body other than `{<member>: {literal: …}}` or `none`; the same under a route's own `refusals:` | `refusals.<key>` or `routes[i].refusals.<key>` |
+| `ESS-HTTP-030` | `body: single` without `empty`, `empty` without `single`, an `empty` status outside `4xx`, or an `empty` body other than `none` and `{<member>: {literal: …}}` | `routes[i]`, or `routes[i].empty.body` |
 | `ESS-HTTP-031` | `body: single` on a view whose filter does not select by its source entity's identity: neither the filter nor a member of a top-level `all` (nested `all` included) is `<identity field> == param.<name>`, compared by value, in either operand order | `routes[i].body`, the view, its source entity and the entity's identity field |
 
 A refinement may not change a refined route's stage-2 keys either; that is `ESS-HTTP-012`. A
@@ -514,8 +520,10 @@ same bytes.
 | `routes[].outcomes.<outcome>.encoding` | `json`, `text` (with `response.<field>` naming a `String` field) | `json`, omitted | 0.77.0 |
 | `routes[].errors` | one answer with the keys of a listed outcome, for every outcome with `error` the route does not list | absent, omitted | 0.69.0 |
 | `routes[].alike` | a list of groups, each two or more outcome names of the command whose declared answers are equal ("Status per outcome") | absent, omitted; each group in name order, the groups in the order of their first names | 0.77.0 |
-| `routes[].body` (view route) | `rows`, `single` | `rows`, omitted | k2 |
-| `routes[].empty.status` (view route) | an integer, `4xx`; **required** with `single`, and the only key of `empty` | written with `single` | k2 |
+| `routes[].body` (view route) | `rows`, `single`, `array` (a view that is not paged) | `rows`, omitted | k2; `array` 0.77.0 |
+| `routes[].empty.status` (view route) | an integer, `4xx`; **required** with `single` | written with `single` | k2 |
+| `routes[].empty.body` (view route) | `none`, `{<member>: {literal: <text>}}` | `none`, omitted | 0.77.0 |
+| `routes[].refusals.<key>` | as `refusals.<key>` with its `status`, `body` and `headers`; on that route in place of the top-level entry | absent, omitted when the route states none | 0.77.0 |
 | `refusals.<key>` | `malformed`, `not_granted`, `unfinished` | absent: today's answer | k2 |
 | `refusals.<key>.status` | an integer; **required** | always written | k2 |
 | `refusals.<key>.body` | `{<member>: {literal: <text>}}`, `none`; **required** | always written | k2 |
@@ -567,8 +575,9 @@ match: the literal path itself, or a one-segment template such as `/{name}`, by 
 
 A refining document restates each stage-2 key of every route of the refined binding exactly: one it
 adds, changes or drops on such a route is `ESS-HTTP-012`, naming the key, the refined value and the
-new one. A route's `errors` is compared as one value, at `routes[i].errors`. Its top-level
-`refusals:` equals the refined binding's, both absent or both the same. A
+new one. A route's `errors` is compared as one value, at `routes[i].errors`, and its `empty` as
+status and body. Its top-level `refusals:` equals the refined binding's, both absent or both the
+same, and so does each refined route's own `refusals:`, compared at `routes[i].refusals.<key>`. A
 route the refining document adds may carry any stage-2 key. The comparison is over the compiled
 values, so writing a default explicitly is not a change.
 
@@ -589,11 +598,12 @@ servers already follow (`crates/generate/ess-synth/src/rust/http.rs:824-868`):
    `refusals.malformed`, else today's `400`. A path variable's value wins over a body or query key
    for the same field, and that key counts as unknown.
 7. The command runs and takes an outcome: the route's `outcomes.<outcome>` if listed, else its
-   `errors` for an outcome with `error`, else `outcome_status` and `envelope`. A view answers `rows`, or `single` with the row or `empty`.
+   `errors` for an outcome with `error`, else `outcome_status` and `envelope`. A view answers `rows`, `array`, or `single` with the row or `empty`.
 8. The realization is unfinished: `refusals.unfinished`, else today's `501`.
 
-`refusals:` applies to the routes the binding names and to no derived route, and never replaces a
-declared outcome. A listed outcome replaces status and body as a whole; its headers are added to
+Where steps 4, 6 and 8 read `refusals.<key>`, a route's own `routes[i].refusals.<key>` stands in
+its place on that route. `refusals:` applies to the routes the binding names and to no derived
+route, and never replaces a declared outcome. A listed outcome replaces status and body as a whole; its headers are added to
 the ones the encoding and `redirect` write, which they cannot name (`ESS-HTTP-026`). At compile
 time there is no precedence: every refusal is reported at once, and a view route with `body:
 single` and no identity selection and no `empty` earns both `ESS-HTTP-030` and `ESS-HTTP-031`.
@@ -637,9 +647,10 @@ declared status is one response: the bare response schema, the one field's schem
 the wire name beside the error's fields), or no content; an outcome `errors` answers is described
 as if listed with that answer; headers as response `headers`, a challenge as a `string` header, and a redirect's
 `Location`. Every response of a bound operation carries `x-ess-outcomes`, the outcomes it answers in
-the order the command declares them. A view route with `single` answers the row schema at `200` and
-no content at its `empty` status. A `refusals:` override replaces the standard refusal's response on
-every bound operation that can answer it.
+the order the command declares them. A view route with `single` answers the row schema at `200` and,
+at its `empty` status, no content or the literal object its `empty.body` names; one with `array`
+answers an array of the row schema. A `refusals:` override replaces the standard refusal's response
+on every bound operation that can answer it, and a route's own override on that route only.
 
 ## Operation ids and servers
 
@@ -786,7 +797,8 @@ and none can be tightened later without refusing a document that compiled.
 17. `refusals:` applies to the routes the binding names, never to a derived route, a declared
     outcome, an unmatched path (`404`) or method (`405`). `malformed` and `not_granted` take a `4xx`
     status, `unfinished` a `5xx` (`ESS-HTTP-029`). An unmatched path is a property of the whole
-    surface, which a binding of some routes does not own.
+    surface, which a binding of some routes does not own. Since 0.77.0 a route the binding names
+    may state its own `refusals:`, which stand in place of the top-level ones on that route alone.
 18. `{challenge}` is admitted under `WWW-Authenticate` only, and a declared `401` (an outcome or a
     refusal) requires a `WWW-Authenticate` challenge, as RFC 9110 §15.5.2 requires of every `401`
     (`ESS-HTTP-027`). `Proxy-Authenticate` and other `401` answers wait for a protocol that needs
@@ -795,7 +807,9 @@ and none can be tightened later without refusing a document that compiled.
     declares a field named `wire` is refused as ambiguous (`ESS-HTTP-026`), rather than one reading
     shadowing the other.
 20. `single` is refused on a paged view (`ESS-HTTP-024`), whose answer carries a page, and `empty`
-    holds a `4xx` status and nothing else: the empty answer has no body (`ESS-HTTP-030`).
+    holds a `4xx` status and nothing else: the empty answer has no body (`ESS-HTTP-030`). Since
+    0.77.0 `empty` also takes `body`, `none` or a literal object, and `array` answers a view that
+    is not paged with its rows bare; `array` is refused on a paged view for the same reason.
 21. A refining document restates every stage-2 key of each refined route, and `refusals:`, exactly
     (`ESS-HTTP-012`). A protocol fixes its encoding, statuses and challenges as it fixes a path; a
     server binding may later be allowed to fill in what a protocol binding leaves out.

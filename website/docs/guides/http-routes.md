@@ -168,9 +168,13 @@ The document follows those keys on the routes that use them:
   bodies do not tell them apart on one status are refused.
 - Declared headers are response `headers`, a `WWW-Authenticate` challenge among them, and a
   `redirect` answers a required `Location` header and no content.
-- A `single` view answers its one row at `200` and no content at its `empty` status.
+- A `single` view answers its one row at `200` and, at its `empty` status, no content or the
+  literal object `empty: {status: 404, body: {error: {literal: not_found}}}` names.
+- `body: array` on a view that is not paged answers its rows as a bare JSON array, `[]` when it
+  holds none.
 - A `refusals:` entry replaces the standard answer for that refusal on every operation the binding
-  names.
+  names. A route's own `refusals:` replaces it on that route alone, so one endpoint can answer
+  `malformed` with its protocol's error while the others keep the binding's.
 - A bare body names no branch, so every response of such a command carries `x-ess-outcomes`, the
   outcomes it answers. A challenge is a header only: the document declares no `securitySchemes`.
 

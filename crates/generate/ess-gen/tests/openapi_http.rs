@@ -1034,3 +1034,89 @@ fn a_text_outcome_projects_text_plain() {
     let description = created["description"].as_str().expect("a description");
     assert!(description.contains("as text"), "{description}");
 }
+
+/// The orders service with a route's own refusal over the binding's, an empty answer with a
+/// literal body, and a view answered as a bare array.
+const ANSWER_FORMS: &str = "refusals:
+  malformed: {status: 400, body: {error: {literal: invalid_request}}}
+routes:
+  - command: catalog.orders.PlaceOrder
+    method: post
+    path: /api/orders
+    refusals:
+      malformed: {status: 400, body: {error: {literal: unreadable}}}
+  - command: catalog.orders.NoteOrder
+    method: post
+    path: /api/orders/{order_id}/note
+    parameters: {order_id: input.order_id}
+  - view: catalog.orders.OrderById
+    method: get
+    path: /orders/{order_id}
+    parameters: {order_id: param.order_id}
+    body: single
+    empty: {status: 404, body: {error: {literal: not_found}}}
+  - view: catalog.orders.OrdersOfSize
+    method: get
+    path: /orders/size/{quantity}
+    parameters: {quantity: param.quantity}
+    body: array
+";
+
+/// The `const` of the one member `member` of the JSON body `response` answers.
+fn literal<'a>(response: &'a Value, member: &str) -> &'a Value {
+    &response["content"]["application/json"]["schema"]["properties"][member]["const"]
+}
+
+#[test]
+fn route_refusals_empty_bodies_and_arrays_project() {
+    let ir = model_of("orders.yaml", ORDERS);
+    let document = bound_document(&ir, binding(&ir, ANSWER_FORMS), "orders-service");
+    let paths = &document["paths"];
+
+    // The route's own `malformed` stands on its route; the binding's on the other.
+    let placed = &paths["/api/orders"]["post"]["responses"]["400"];
+    assert_eq!(literal(placed, "error"), "unreadable", "{placed:#}");
+    assert_eq!(placed["x-ess-outcomes"], json!([]), "{placed:#}");
+    let description = placed["description"].as_str().expect("a description");
+    assert!(description.contains("`malformed`"), "{description}");
+    let noted = &paths["/api/orders/{order_id}/note"]["post"]["responses"]["400"];
+    assert_eq!(literal(noted, "error"), "invalid_request", "{noted:#}");
+
+    // An empty answer's literal body is its response's schema.
+    let empty = &paths["/orders/{order_id}"]["get"]["responses"]["404"];
+    assert_eq!(literal(empty, "error"), "not_found", "{empty:#}");
+    assert_eq!(
+        empty["content"]["application/json"]["schema"]["required"],
+        json!(["error"])
+    );
+
+    // An array view answers the row schema in an array, and no rows wrapper is described.
+    let rows = &paths["/orders/size/{quantity}"]["get"]["responses"]["200"];
+    let schema = &rows["content"]["application/json"]["schema"];
+    assert_eq!(schema["type"], "array", "{rows:#}");
+    let row = resolved(&document, &schema["items"]);
+    assert_eq!(keys(&row["properties"]), ["order_id"], "{row:#}");
+    assert!(
+        document["components"]["schemas"]
+            .get("catalog.orders.OrdersOfSize.Response")
+            .is_none(),
+        "the rows wrapper nothing answers is not described"
+    );
+    let description = rows["description"].as_str().expect("a description");
+    assert!(description.contains("`body: array`"), "{description}");
+
+    // Without a route's own refusals or a top-level one, a route keeps the stage-1 answers.
+    let plain = ANSWER_FORMS
+        .replace(
+            "refusals:\n  malformed: {status: 400, body: {error: {literal: invalid_request}}}\n",
+            "",
+        )
+        .replace(
+            "    refusals:\n      malformed: {status: 400, body: {error: {literal: unreadable}}}\n",
+            "",
+        );
+    assert_ne!(plain, ANSWER_FORMS);
+    let document = bound_document(&ir, binding(&ir, &plain), "orders-service");
+    let placed = &document["paths"]["/api/orders"]["post"]["responses"];
+    assert!(!any_key(placed, "x-ess-outcomes"), "{placed:#}");
+}

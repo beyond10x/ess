@@ -948,13 +948,19 @@ mod adversary_k6_pass1 {
         synthesis: &Synthesis,
         requests: &[[&str; 7]],
     ) -> BTreeMap<String, Answer> {
+        go_run_with(label, synthesis, requests, super::HARNESS)
+    }
+
+    /// The Go server's answers to `requests`, through `harness` as the module's harness.
+    pub(super) fn go_run_with(
+        label: &str,
+        synthesis: &Synthesis,
+        requests: &[[&str; 7]],
+        harness: &str,
+    ) -> BTreeMap<String, Answer> {
         let directory = scratch(&format!("{label}-module"));
         shared::write(synthesis, &directory);
-        std::fs::write(
-            directory.join("server/http_binding_test.go"),
-            super::HARNESS,
-        )
-        .expect("write");
+        std::fs::write(directory.join("server/http_binding_test.go"), harness).expect("write");
         let file = scratch(&format!("{label}.tsv"));
         write_requests(&file, requests);
         let ran = super::go(

@@ -582,6 +582,8 @@ pub enum ViewBody {
     Rows,
     /// The one row, bare, and the route's `empty` status when the view holds none.
     Single,
+    /// The rows, bare: a JSON array with no object around it.
+    Array,
 }
 
 impl ViewBody {
@@ -589,6 +591,15 @@ impl ViewBody {
     #[allow(clippy::trivially_copy_pass_by_ref)]
     fn is_default(&self) -> bool {
         *self == Self::default()
+    }
+
+    /// The word that spells it.
+    fn word(self) -> &'static str {
+        match self {
+            Self::Rows => "rows",
+            Self::Single => "single",
+            Self::Array => "array",
+        }
     }
 }
 
@@ -731,20 +742,45 @@ pub struct Outcome {
 }
 
 /// A `single` view route's answer for a view that holds no row, as written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EmptySpec {
-    /// A `4xx` status; required, and the only key.
+    /// A `4xx` status; required.
     pub status: i64,
+    /// `none` or `{<member>: {literal: <text>}}`, read as any body form so that another is refused
+    /// with a code (`ESS-HTTP-030`) rather than as a parse error; absent, `none`.
+    #[serde(default)]
+    pub body: Option<BodySpec>,
 }
 
 /// A `single` view route's answer for a view that holds no row, compiled: a `4xx` status and no
-/// body.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// body, or one literal member.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empty {
     /// The status.
     pub status: u16,
+    /// The body; `none` is the default and compiled IR omits it.
+    #[serde(
+        default = "RefusalBody::none",
+        skip_serializing_if = "RefusalBody::is_none",
+        deserialize_with = "omitted_none"
+    )]
+    pub body: RefusalBody,
+}
+
+/// Reads an empty answer's `body` of compiled IR, refusing `none` written out: compiled IR omits
+/// it.
+fn omitted_none<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<RefusalBody, D::Error> {
+    let body = <RefusalBody as serde::Deserialize>::deserialize(deserializer)?;
+    if body.is_none() {
+        return Err(serde::de::Error::custom(
+            "an empty answer's `body` is `none`, its default, which compiled IR omits",
+        ));
+    }
+    Ok(body)
 }
 
 /// A standard refusal the served surface answers without a declared outcome
@@ -827,6 +863,16 @@ pub enum RefusalBody {
 }
 
 impl RefusalBody {
+    /// No body, the default of an empty answer.
+    pub fn none() -> Self {
+        Self::None
+    }
+
+    /// Whether this is no body.
+    pub fn is_none(&self) -> bool {
+        *self == Self::None
+    }
+
     fn spec(&self) -> BodySpec {
         match self {
             Self::None => BodySpec::Word("none".into()),
@@ -1377,6 +1423,20 @@ fn canonical_refusals<'de, D: serde::Deserializer<'de>>(
     canonical_map(deserializer, "refusals")
 }
 
+/// Reads a route's `refusals` of compiled IR, refusing them written empty: compiled IR omits a
+/// route's `refusals` when it overrides none.
+fn route_refusals<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<RefusalKey, Refusal>, D::Error> {
+    let refusals = canonical_refusals(deserializer)?;
+    if refusals.is_empty() {
+        return Err(serde::de::Error::custom(
+            "a route's `refusals` is empty; compiled IR omits it when the route overrides none",
+        ));
+    }
+    Ok(refusals)
+}
+
 fn canonical_headers<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<BTreeMap<String, Header>, D::Error> {
@@ -1481,12 +1541,16 @@ pub struct RouteSpec {
     /// outcomes with one declared answer, so that the wire need not tell them apart; absent, none.
     #[serde(default)]
     pub alike: Option<Vec<Vec<String>>>,
-    /// A view route's body, `rows` or `single`; absent, `rows`.
+    /// A view route's body, `rows`, `array` or `single`; absent, `rows`.
     #[serde(default)]
     pub body: Option<BodySpec>,
     /// A `single` view route's answer for a view that holds no row.
     #[serde(default)]
     pub empty: Option<EmptySpec>,
+    /// The standard refusals this route answers its own way, by key, over the binding's
+    /// top-level `refusals:`; absent, the binding's.
+    #[serde(default)]
+    pub refusals: Option<Entries<RefusalSpec>>,
 }
 
 /// A route's `parameters`, as written: every entry in document order, a key written twice kept
@@ -2043,6 +2107,14 @@ pub struct Route {
     /// A `single` view route's answer for a view that holds no row; present exactly with `single`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub empty: Option<Empty>,
+    /// The standard refusals this route answers its own way, in key order, over the binding's
+    /// [`HttpIr::refusals`]. Absent when empty.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "route_refusals"
+    )]
+    pub refusals: BTreeMap<RefusalKey, Refusal>,
 }
 
 impl Route {
@@ -2190,10 +2262,12 @@ impl HttpIr {
     /// written empty, a group of fewer than two names, a name in two groups or twice, names out of
     /// name order or groups out of the order of their first names, a name no listed outcome or
     /// `errors` answers, or a group whose answers differ or hold an `envelope`; a view body `rows`
-    /// written out, `single` without `empty` or `empty` without `single`, or an `empty` status
-    /// outside `4xx`; a refusal key outside `malformed`, `not_granted` and `unfinished`, a refusal
-    /// status outside its class (`4xx`, `4xx`, `5xx`), or a refusal body other than `none` or one
-    /// literal member with a name; `headers`, challenge `params` or redirect `parameters` out of
+    /// written out, `single` without `empty` or `empty` without `single` (beside `rows` or
+    /// `array`), an `empty` status outside `4xx`, or an `empty` body `none` written out or a
+    /// literal under an empty member; a refusal key outside `malformed`, `not_granted` and
+    /// `unfinished`, a refusal status outside its class (`4xx`, `4xx`, `5xx`), or a refusal body
+    /// other than `none` or one literal member with a name, the binding's or a route's own, and a
+    /// route's `refusals` out of key order or written empty; `headers`, challenge `params` or redirect `parameters` out of
     /// name order or empty; a header name that is not a token, one the server, the encoding or
     /// `redirect` writes, or one declared twice ignoring case; a literal header that is not a field
     /// value; a challenge under any header but `WWW-Authenticate`, with a scheme or param name
@@ -2217,7 +2291,7 @@ impl HttpIr {
     /// `returns`, whether a `text` field is a `String`, whether an `alike` name is an outcome of
     /// the command and whether error objects alike share one wire name, the distinguishability of
     /// outcomes and overridden refusals on one status, a
-    /// `single` view's identity selection and paging, whether the outcome supplies each header,
+    /// `single` view's identity selection and paging, an `array` view's paging, whether the outcome supplies each header,
     /// param and redirect source and its type, and collisions on each component's surface.
     /// A reader that needs those compiles the authored binding instead.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
@@ -2253,7 +2327,7 @@ impl HttpIr {
             }
         }
         for (key, refusal) in &self.refusals {
-            refusal_invariants(*key, refusal)?;
+            refusal_invariants(*key, refusal, "refusals")?;
         }
         let route_key = |route: &Route| (route.path.clone(), route.method, route.operation.clone());
         if let Some(at) = out_of_order(&self.routes, |left, right| {
@@ -2281,6 +2355,9 @@ impl HttpIr {
                 ));
             }
             route_invariants(route, &at)?;
+            for (key, refusal) in &route.refusals {
+                refusal_invariants(*key, refusal, &format!("{at}.refusals"))?;
+            }
         }
         for (index, derived) in self.derived_routes.iter().enumerate() {
             let at = format!("derived_routes[{index}]");
@@ -2446,7 +2523,8 @@ fn route_invariants(route: &Route, at: &str) -> Result<(), String> {
 
 /// The invariants of one compiled route's answers (see [`HttpIr::from_json`]): `outcomes` on a
 /// command, each with a status an outcome may answer and a body admitted beside it; `body` and
-/// `empty` on a view, `single` exactly with an `empty` holding a `4xx`.
+/// `empty` on a view, `single` exactly with an `empty` holding a `4xx` and no body or one named
+/// literal member.
 fn answer_invariants(route: &Route, at: &str) -> Result<(), String> {
     match route.operation {
         Operation::View(_) => {
@@ -2468,19 +2546,26 @@ fn answer_invariants(route: &Route, at: &str) -> Result<(), String> {
                     route.operation
                 ));
             }
-            match (route.body, route.empty) {
+            match (route.body, &route.empty) {
                 (ViewBody::Single, None) => Err(format!(
                     "`{at}.body` is `single`, and `{at}.empty` is missing; compiled IR writes \
                      the empty answer of every `single` route"
                 )),
-                (ViewBody::Rows, Some(_)) => Err(format!(
-                    "`{at}.empty` is on a route that answers `rows`; only a `single` route has \
-                     an empty answer"
+                (body @ (ViewBody::Rows | ViewBody::Array), Some(_)) => Err(format!(
+                    "`{at}.empty` is on a route that answers `{}`; only a `single` route has \
+                     an empty answer",
+                    body.word()
                 )),
                 (_, Some(empty)) if !(400..500).contains(&empty.status) => Err(format!(
                     "`{at}.empty.status` `{}` is not a `4xx` status",
                     empty.status
                 )),
+                (_, Some(empty)) if matches!(&empty.body, RefusalBody::Literal { member, .. } if member.is_empty()) => {
+                    Err(format!(
+                        "`{at}.empty.body` names an empty member; a literal body has one named \
+                         member"
+                    ))
+                }
                 _ => Ok(()),
             }
         }
@@ -2651,11 +2736,12 @@ fn outcome_invariants(outcome: &Outcome, key: &str) -> Result<(), String> {
 }
 
 /// The invariants of one compiled standard refusal (see [`HttpIr::from_json`]): a status of its
-/// key's class, and a literal body under a named member when it has one.
-fn refusal_invariants(key: RefusalKey, refusal: &Refusal) -> Result<(), String> {
+/// key's class, and a literal body under a named member when it has one. `prefix` is `refusals`,
+/// or a route's `routes[i].refusals`.
+fn refusal_invariants(key: RefusalKey, refusal: &Refusal, prefix: &str) -> Result<(), String> {
     if refusal.status / 100 != key.class() {
         return Err(format!(
-            "`refusals.{key}.status` `{}` is not a `{}xx` status, the class of `{key}`",
+            "`{prefix}.{key}.status` `{}` is not a `{}xx` status, the class of `{key}`",
             refusal.status,
             key.class()
         ));
@@ -2663,14 +2749,14 @@ fn refusal_invariants(key: RefusalKey, refusal: &Refusal) -> Result<(), String> 
     if let RefusalBody::Literal { member, .. } = &refusal.body {
         if member.is_empty() {
             return Err(format!(
-                "`refusals.{key}.body` names an empty member; a literal body has one named member"
+                "`{prefix}.{key}.body` names an empty member; a literal body has one named member"
             ));
         }
     }
     headers_invariants(
         &refusal.headers,
         refusal.status,
-        &format!("refusals.{key}"),
+        &format!("{prefix}.{key}"),
         true,
     )
 }
@@ -2958,20 +3044,21 @@ impl Refusals {
 /// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form` or `query` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried |
 /// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view; at `routes[i].errors`: `errors` on a view, or on a command none of whose outcomes reports an error without being listed under `outcomes`; at `routes[i].alike`: `alike` on a view, a group of fewer than two names, a name that is not the local name of an outcome of the command, one in two groups or twice in one, or one with no declared answer (neither listed under `outcomes` nor covered by `errors`) |
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`, or `routes[i].errors.status` once for each outcome `errors` covers: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
-/// | `ESS-HTTP-024` | at `routes[i].outcomes.<name>.body`, or `routes[i].errors.body` once for each outcome `errors` covers: a word no body form spells, `response` or `response.<field>` on an outcome without `returns: true` or with an error, `response.<field>` naming no field of the response or an `Optional` one, `input.<field>`, `error.<field>` or `error.wire` as a body, `{<member>: error}` on one without an error, under an empty `<member>` or one equal to the wire name of a field of the error, a literal body, `rows` or `single`, or any body but `none` on `204` when that status compiled, or beside a `redirect` on a redirect status; at `routes[i].body`: `body` on a command, a body other than `rows` and `single` on a view, or `single` on a paged view; at `routes[i].outcomes.<name>.encoding`, or `routes[i].errors.encoding` once for each outcome `errors` covers: a word other than `json` and `text`, or `text` beside any body but `response.<field>` or on a field that is not a `String` (a newtype of one counts) |
-/// | `ESS-HTTP-025` | at `routes[i].outcomes.<name>`, or `routes[i].errors` for an outcome `errors` covers: two outcomes of the command on one status whose bodies do not tell them apart (both `envelope`, or both `{<member>: error}` on one member with distinct error wire names, do) and whose redirects do not either (both declare one and one always writes a parameter, its source not `Optional`, the other never writes, do), an outcome `errors` covers counted at the status and body of `errors`, any other the route does not list at its derived status ([`status::outcome_status`]) with `envelope`. Reported once, at the first listed outcome in document order, then the first covered one in declaration order, naming the others and the status; a pair already named together is not reported again, and an outcome left with none is not reported; at `refusals.<key>`: an override on a route the binding names, on the status of an outcome of its command, whose body does not tell the two apart (only `{<member>: {literal: <text>}}` beside `{<member>: error}` on one member, the text differing from the error's wire name, does), once per route, naming the route, the outcomes and the status; two outcomes in one `alike` group are not a pair; at `routes[i].alike`: a group whose answers differ (the first differing key among `status`, `body`, `encoding`, `headers` and `redirect` named), or that the wire tells apart: `envelope` bodies, `{<member>: error}` bodies under distinct error wire names, or redirects one of which always writes a parameter the other never does |
-/// | `ESS-HTTP-026` | at `routes[i].outcomes.<name>.headers.<Name>`, `routes[i].errors.headers.<Name>` (once for each outcome `errors` covers) or `refusals.<key>.headers.<Name>`: a name that is not an RFC 9110 token; `Content-Type`, `Content-Length`, `Transfer-Encoding` or `Location` in any case, which the encoding and `redirect` write; a name declared again ignoring case; a literal that is not a field value (visible US-ASCII, spaces and tabs, no space or tab at either end); a source outside `input.<field>`, `response.<field>`, `error.<field>` and `error.wire`, naming no field, naming one of a type other than a scalar or an `Optional` scalar, or one the outcome cannot supply (`response.` without `returns: true`, `error.` without an error), or `error.wire` where the error declares a field named `wire`; any source in a standard refusal's header. At `….challenge.params.<param>`: the same source refusals for a sourced challenge param |
+/// | `ESS-HTTP-024` | at `routes[i].outcomes.<name>.body`, or `routes[i].errors.body` once for each outcome `errors` covers: a word no body form spells, `response` or `response.<field>` on an outcome without `returns: true` or with an error, `response.<field>` naming no field of the response or an `Optional` one, `input.<field>`, `error.<field>` or `error.wire` as a body, `{<member>: error}` on one without an error, under an empty `<member>` or one equal to the wire name of a field of the error, a literal body, `rows`, `array` or `single`, or any body but `none` on `204` when that status compiled, or beside a `redirect` on a redirect status; at `routes[i].body`: `body` on a command, a body other than `rows`, `array` and `single` on a view, or `single` or `array` on a paged view; at `routes[i].outcomes.<name>.encoding`, or `routes[i].errors.encoding` once for each outcome `errors` covers: a word other than `json` and `text`, or `text` beside any body but `response.<field>` or on a field that is not a `String` (a newtype of one counts) |
+/// | `ESS-HTTP-025` | at `routes[i].outcomes.<name>`, or `routes[i].errors` for an outcome `errors` covers: two outcomes of the command on one status whose bodies do not tell them apart (both `envelope`, or both `{<member>: error}` on one member with distinct error wire names, do) and whose redirects do not either (both declare one and one always writes a parameter, its source not `Optional`, the other never writes, do), an outcome `errors` covers counted at the status and body of `errors`, any other the route does not list at its derived status ([`status::outcome_status`]) with `envelope`. Reported once, at the first listed outcome in document order, then the first covered one in declaration order, naming the others and the status; a pair already named together is not reported again, and an outcome left with none is not reported; at `refusals.<key>`: an override on a route the binding names, on the status of an outcome of its command, whose body does not tell the two apart (only `{<member>: {literal: <text>}}` beside `{<member>: error}` on one member, the text differing from the error's wire name, does), once per route, naming the route, the outcomes and the status; at `routes[i].refusals.<key>`: the same for a route's own override, which stands on that route in place of the binding's; two outcomes in one `alike` group are not a pair; at `routes[i].alike`: a group whose answers differ (the first differing key among `status`, `body`, `encoding`, `headers` and `redirect` named), or that the wire tells apart: `envelope` bodies, `{<member>: error}` bodies under distinct error wire names, or redirects one of which always writes a parameter the other never does |
+/// | `ESS-HTTP-026` | at `routes[i].outcomes.<name>.headers.<Name>`, `routes[i].errors.headers.<Name>` (once for each outcome `errors` covers), `refusals.<key>.headers.<Name>` or `routes[i].refusals.<key>.headers.<Name>`: a name that is not an RFC 9110 token; `Content-Type`, `Content-Length`, `Transfer-Encoding` or `Location` in any case, which the encoding and `redirect` write; a name declared again ignoring case; a literal that is not a field value (visible US-ASCII, spaces and tabs, no space or tab at either end); a source outside `input.<field>`, `response.<field>`, `error.<field>` and `error.wire`, naming no field, naming one of a type other than a scalar or an `Optional` scalar, or one the outcome cannot supply (`response.` without `returns: true`, `error.` without an error), or `error.wire` where the error declares a field named `wire`; any source in a standard refusal's header. At `….challenge.params.<param>`: the same source refusals for a sourced challenge param |
 /// | `ESS-HTTP-027` | at `….headers.<Name>`: a challenge under any header but `WWW-Authenticate`; at `….challenge.scheme`: a scheme that is not a token; at `….challenge.params.<param>`: a param name that is not a token, one declared again ignoring case, or a literal a quoted string cannot carry; at `….headers`: an outcome or standard refusal on `401` without a `WWW-Authenticate` challenge (one refused for its scheme or params counts as declared) |
 /// | `ESS-HTTP-028` | at `routes[i].outcomes.<name>.redirect` or `routes[i].errors.redirect` (once for each outcome `errors` covers): a `redirect` on a compiled status other than `301`, `302`, `303`, `307` and `308`, or one of those without a `redirect`; at `….redirect.location`: a source the outcome cannot supply (as for `ESS-HTTP-026`), or of a type other than `String` or a newtype of `String`, `Optional` included; at `….redirect.mode`: none, or one outside `query` and `fragment`; at `….redirect.parameters.<name>`: a parameter written twice, or a source refused as a header source is |
-/// | `ESS-HTTP-029` | at `refusals.<key>`: a key outside `malformed`, `not_granted` and `unfinished`, or one written twice; at `refusals.<key>.status`: a status outside its class, `4xx` for `malformed` and `not_granted`, `5xx` for `unfinished`; at `refusals.<key>.body`: a body other than `none` or `{<member>: {literal: <text>}}` under a non-empty member |
-/// | `ESS-HTTP-030` | at `routes[i]`: `body: single` without `empty`, `empty` without `single` (on a command too), or an `empty` status outside `4xx`, unless the route answers `rows`, where `empty` is refused once, for itself |
+/// | `ESS-HTTP-029` | at `refusals.<key>`, or a route's own `routes[i].refusals.<key>`: a key outside `malformed`, `not_granted` and `unfinished`, or one written twice; at `….<key>.status`: a status outside its class, `4xx` for `malformed` and `not_granted`, `5xx` for `unfinished`; at `….<key>.body`: a body other than `none` or `{<member>: {literal: <text>}}` under a non-empty member |
+/// | `ESS-HTTP-030` | at `routes[i]`: `body: single` without `empty`, `empty` without `single` (on a command too), or an `empty` status outside `4xx`, unless the route answers `rows` or `array`, where `empty` is refused once, for itself; at `routes[i].empty.body`: a body other than `none` or `{<member>: {literal: <text>}}` under a non-empty member |
 /// | `ESS-HTTP-031` | at `routes[i].body`: `body: single` on a view whose filter does not select by its source entity's identity: neither the filter nor a member of a top-level `all` (nested `all` included) is `<identity field> == param.<name>`, compared by value, in either operand order; naming the view, its entity and the identity field |
 /// | `ESS-HTTP-032` | at `routes[i].operation_id`: an id outside `[A-Za-z_][A-Za-z0-9_.-]*`; one an earlier route already gives, naming both routes; or the qualified name of another command or view of the specification, which is that operation's derived `operationId` |
 /// | `ESS-HTTP-033` | at `servers.<component>`: a component the specification does not declare, one not `reached_by: network`, one written twice, or an empty list; at `servers.<component>[j].url`: a URL that is neither absolute `http://` or `https://` with a host nor `/`-rooted, one holding whitespace, `{`, `}`, `?`, `#` or userinfo, or one given twice for the component |
 ///
 /// A listed outcome, a `single` view and a standard refusal are written into the IR with every
-/// default omitted: an outcome's `envelope`, a view's `rows`, an empty `outcomes`, `refusals`,
-/// `headers`, challenge `params` or redirect `parameters`. Header, param and parameter maps are
+/// default omitted: an outcome's `envelope`, a view's `rows`, an empty answer's `none` body, an
+/// empty `outcomes`, `refusals` (the binding's or a route's), `headers`, challenge `params` or
+/// redirect `parameters`. Header, param and parameter maps are
 /// written in name order, each name as authored.
 ///
 /// A route without a path is open, and valid: the artifacts that need a path refuse it. It takes
@@ -2997,7 +3084,7 @@ pub fn compile(
 /// | code | refused |
 /// |---|---|
 /// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
-/// | `ESS-HTTP-012` | at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding` or `routes[i].request.unknown`: a refined route's request restated with another value, a default written out or left out counting as that default; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
+/// | `ESS-HTTP-012` | at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding` or `routes[i].request.unknown`: a refined route's request restated with another value, a default written out or left out counting as that default; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer (its body included, none written out or left out counting as none) added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes[i].refusals.<key>` and `routes[i].refusals.<key>.headers`: the same for a route's own refusals; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
 ///
 /// `servers` is not compared: each server binding states its own deployment.
 ///
@@ -3047,19 +3134,41 @@ fn envelope(spec: &HttpSpec, ir: &EssIr, refusals: &mut Refusals) -> BTreeMap<Re
         );
     }
     specification(&spec.specification, ir, refusals);
-    standard(spec.refusals.as_ref(), refusals)
+    standard(spec.refusals.as_ref(), "refusals", refusals)
 }
 
-/// Holds each `refusals:` entry to its rules (`ESS-HTTP-029`): a key of the set, written once, a
-/// status of the key's class and a body that is `none` or one literal member with a name.
+/// The standard refusals one route answers its own way, each with the path it is declared at: the
+/// route's own (`routes[i].refusals.<key>`) over the binding's (`refusals.<key>`).
+type Standing = BTreeMap<RefusalKey, (Refusal, String)>;
+
+/// The refusals that stand on the route at `path`: `own` over the binding's `standard`.
+fn standing(
+    standard: &BTreeMap<RefusalKey, Refusal>,
+    own: &BTreeMap<RefusalKey, Refusal>,
+    path: &str,
+) -> Standing {
+    let mut standing: Standing = standard
+        .iter()
+        .map(|(key, refusal)| (*key, (refusal.clone(), format!("refusals.{key}"))))
+        .collect();
+    for (key, refusal) in own {
+        standing.insert(*key, (refusal.clone(), format!("{path}.refusals.{key}")));
+    }
+    standing
+}
+
+/// Holds each `refusals:` entry under `prefix` (`refusals`, or a route's `routes[i].refusals`) to
+/// its rules (`ESS-HTTP-029`): a key of the set, written once, a status of the key's class and a
+/// body that is `none` or one literal member with a name.
 fn standard(
     written: Option<&Entries<RefusalSpec>>,
+    prefix: &str,
     refusals: &mut Refusals,
 ) -> BTreeMap<RefusalKey, Refusal> {
     let mut compiled = BTreeMap::new();
     let mut seen = std::collections::BTreeSet::new();
     for (name, spec) in written.map_or(&[][..], |entries| &entries.0[..]) {
-        let at = format!("refusals.{name}");
+        let at = format!("{prefix}.{name}");
         if !seen.insert(name.as_str()) {
             refusals.refuse(
                 "ESS-HTTP-029",
@@ -3450,7 +3559,12 @@ fn operation_id_changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refu
 /// a route of the refined binding (`ESS-HTTP-012`). Each operation is compared at the first route
 /// that names it in each document; a second one is `ESS-HTTP-005` already.
 fn changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
-    refusal_changes(spec, refined, refusals);
+    refusal_changes(
+        spec.refusals.as_ref(),
+        refined.refusals.as_ref(),
+        "refusals",
+        refusals,
+    );
     let mut routed: BTreeMap<Operation, usize> = BTreeMap::new();
     for (index, route) in spec.routes.iter().enumerate() {
         if let Some(operation) = named(route) {
@@ -3524,57 +3638,66 @@ fn changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
             }
         }
         answer_changes(route, fixed, &operation, index, at, refusals);
+        refusal_changes(
+            route.refusals.as_ref(),
+            fixed.refusals.as_ref(),
+            &format!("routes[{index}].refusals"),
+            refusals,
+        );
     }
 }
 
-/// Refuses a refining document whose `refusals:` differs from the refined binding's
-/// (`ESS-HTTP-012`), entry by entry, at `refusals.<key>`: an entry added, dropped, or restated with
-/// another status or body. The first entry of each key is compared; a second is `ESS-HTTP-029`.
-/// Bodies are compared as written values, never as text, so that one literal cannot spell another.
-fn refusal_changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals) {
-    let entries = |document: &HttpSpec| -> BTreeMap<String, (i64, BodySpec)> {
+/// Refuses a refining document whose refusals under `prefix` differ from the refined binding's
+/// (`ESS-HTTP-012`), entry by entry, at `<prefix>.<key>`: an entry added, dropped, or restated with
+/// another status, body or headers. `prefix` is `refusals` for the binding's, `routes[i].refusals`
+/// for a route's own. The first entry of each key is compared; a second is `ESS-HTTP-029`. Bodies
+/// are compared as written values, never as text, so that one literal cannot spell another.
+fn refusal_changes(
+    here: Option<&Entries<RefusalSpec>>,
+    there: Option<&Entries<RefusalSpec>>,
+    prefix: &str,
+    refusals: &mut Refusals,
+) {
+    type Compared = (i64, BodySpec, Option<serde_json::Value>);
+    let entries = |written: Option<&Entries<RefusalSpec>>| -> BTreeMap<String, Compared> {
         let mut entries = BTreeMap::new();
-        for (key, refusal) in document.refusals.iter().flat_map(|entries| &entries.0) {
-            entries
-                .entry(key.clone())
-                .or_insert_with(|| (refusal.status, refusal.body.clone()));
+        for (key, refusal) in written.iter().flat_map(|entries| &entries.0) {
+            entries.entry(key.clone()).or_insert_with(|| {
+                (
+                    refusal.status,
+                    refusal.body.clone(),
+                    compared_entries(refusal.headers.as_ref(), HeaderSpec::compared),
+                )
+            });
         }
         entries
     };
-    let (new, old) = (entries(spec), entries(refined));
-    let headers = |document: &HttpSpec| -> BTreeMap<String, Option<serde_json::Value>> {
-        let mut headers = BTreeMap::new();
-        for (key, refusal) in document.refusals.iter().flat_map(|entries| &entries.0) {
-            headers.entry(key.clone()).or_insert_with(|| {
-                compared_entries(refusal.headers.as_ref(), HeaderSpec::compared)
-            });
-        }
-        headers
-    };
-    let (new_headers, old_headers) = (headers(spec), headers(refined));
+    let (new, old) = (entries(here), entries(there));
     let keys: std::collections::BTreeSet<&String> = new.keys().chain(old.keys()).collect();
     for key in keys {
-        let shown = |entry: Option<&(i64, BodySpec)>| {
+        let shown = |entry: Option<&Compared>| {
             entry.map_or_else(
                 || "nothing".to_owned(),
-                |(status, body)| format!("`{status}` with `{body}`"),
+                |(status, body, _)| format!("`{status}` with `{body}`"),
             )
         };
         let (here, there) = (new.get(key), old.get(key));
-        if here != there {
+        let answer =
+            |entry: Option<&Compared>| entry.map(|(status, body, _)| (*status, body.clone()));
+        if answer(here) != answer(there) {
             refusals.refuse(
                 "ESS-HTTP-012",
-                format!("refusals.{key}"),
+                format!("{prefix}.{key}"),
                 format!(
-                    "`refusals.{key}` answers {} here, and the refined binding fixes {}; a \
-                     refinement restates the refined binding's `refusals:` exactly",
+                    "`{prefix}.{key}` answers {} here, and the refined binding fixes {}; a \
+                     refinement restates the refined binding's refusals exactly",
                     shown(here),
                     shown(there)
                 ),
             );
         }
         // A refusal added or dropped is refused above, as a whole.
-        let (Some(here), Some(there)) = (new_headers.get(key), old_headers.get(key)) else {
+        let (Some((_, _, here)), Some((_, _, there))) = (here, there) else {
             continue;
         };
         if here != there {
@@ -3586,10 +3709,10 @@ fn refusal_changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals)
             };
             refusals.refuse(
                 "ESS-HTTP-012",
-                format!("refusals.{key}.headers"),
+                format!("{prefix}.{key}.headers"),
                 format!(
-                    "`refusals.{key}` declares {} here, and the refined binding fixes {}; a \
-                     refinement restates the refined binding's `refusals:` exactly",
+                    "`{prefix}.{key}` declares {} here, and the refined binding fixes {}; a \
+                     refinement restates the refined binding's refusals exactly",
                     shown(here),
                     shown(there)
                 ),
@@ -3730,16 +3853,25 @@ fn answer_changes(
             ),
         );
     }
-    let shown_empty = |empty: Option<i64>| {
+    let shown_empty = |empty: Option<(i64, BodySpec)>| {
         empty.map_or_else(
             || "no empty answer".to_owned(),
-            |status| format!("`{status}`"),
+            |(status, body)| format!("`{status}` with `{body}`"),
         )
     };
-    let (new_empty, old_empty) = (
-        route.empty.map(|empty| empty.status),
-        fixed.empty.map(|empty| empty.status),
-    );
+    // An empty answer's body left out is `none`.
+    let empty = |route: &RouteSpec| {
+        route.empty.as_ref().map(|empty| {
+            (
+                empty.status,
+                empty
+                    .body
+                    .clone()
+                    .unwrap_or_else(|| BodySpec::Word("none".to_owned())),
+            )
+        })
+    };
+    let (new_empty, old_empty) = (empty(route), empty(fixed));
     if new_empty != old_empty {
         let (new_empty, old_empty) = (shown_empty(new_empty), shown_empty(old_empty));
         refusals.refuse(
@@ -3957,29 +4089,7 @@ fn routes(
     let mut routes = Vec::new();
     for (index, spec) in specs.iter().enumerate() {
         let path = format!("routes[{index}]");
-        let operation = match (&spec.command, &spec.view) {
-            (Some(name), None) => Some(Operation::Command(name.clone())),
-            (None, Some(name)) => Some(Operation::View(name.clone())),
-            (None, None) => {
-                refusals.refuse(
-                    "ESS-HTTP-004",
-                    path.as_str(),
-                    "a route names the command or the view it serves, with `command:` or `view:`",
-                );
-                None
-            }
-            (Some(command), Some(view)) => {
-                refusals.refuse(
-                    "ESS-HTTP-004",
-                    path.as_str(),
-                    format!(
-                        "a route serves one operation, and this one names both command \
-                         `{command}` and view `{view}`"
-                    ),
-                );
-                None
-            }
-        };
+        let operation = served_operation(spec, &path, refusals);
         let method = method(spec, operation.as_ref(), &path, refusals);
         // `None` when the path breaks the grammar; `Some(None)` for an open route.
         let segments = match spec.path.as_deref().map(template) {
@@ -4012,7 +4122,20 @@ fn routes(
             &path,
             refusals,
         );
-        let answers = answers(spec, &operation, target.as_ref(), &path, standard, refusals);
+        let own = self::standard(
+            spec.refusals.as_ref(),
+            &format!("{path}.refusals"),
+            refusals,
+        );
+        let standing = standing(standard, &own, &path);
+        let answers = answers(
+            spec,
+            &operation,
+            target.as_ref(),
+            &path,
+            &standing,
+            refusals,
+        );
         if let Some(first) = first_route.get(&operation) {
             refusals.refuse(
                 "ESS-HTTP-005",
@@ -4042,6 +4165,7 @@ fn routes(
                     alike: answers.alike,
                     body: answers.body,
                     empty: answers.empty,
+                    refusals: own,
                 })
             }
             _ => None,
@@ -4054,6 +4178,32 @@ fn routes(
         });
     }
     routes
+}
+/// The operation a route serves, or `None` when it names neither or both (`ESS-HTTP-004`).
+fn served_operation(spec: &RouteSpec, path: &str, refusals: &mut Refusals) -> Option<Operation> {
+    match (&spec.command, &spec.view) {
+        (Some(name), None) => Some(Operation::Command(name.clone())),
+        (None, Some(name)) => Some(Operation::View(name.clone())),
+        (None, None) => {
+            refusals.refuse(
+                "ESS-HTTP-004",
+                path,
+                "a route names the command or the view it serves, with `command:` or `view:`",
+            );
+            None
+        }
+        (Some(command), Some(view)) => {
+            refusals.refuse(
+                "ESS-HTTP-004",
+                path,
+                format!(
+                    "a route serves one operation, and this one names both command \
+                     `{command}` and view `{view}`"
+                ),
+            );
+            None
+        }
+    }
 }
 
 /// The route's method, when it is one of the closed set and admitted for what the route serves.
@@ -4611,7 +4761,7 @@ fn answers(
     operation: &Operation,
     target: Option<&Target<'_>>,
     path: &str,
-    standard: &BTreeMap<RefusalKey, Refusal>,
+    standard: &Standing,
     refusals: &mut Refusals,
 ) -> Result<Answers, Refused> {
     let before = refusals.0.len();
@@ -4677,7 +4827,7 @@ fn outcomes(
     operation: &Operation,
     command: Option<(&EssIr, &ResolvedCommand)>,
     path: &str,
-    standard: &BTreeMap<RefusalKey, Refusal>,
+    standard: &Standing,
     refusals: &mut Refusals,
 ) -> (BTreeMap<String, Outcome>, Option<Outcome>, Vec<Vec<String>>) {
     let mut compiled = BTreeMap::new();
@@ -5203,7 +5353,7 @@ fn outcome_body(
             "envelope" => Ok(Body::Envelope),
             "none" => Ok(Body::None),
             "response" => answers_none(word).map_or(Ok(Body::Response), Err),
-            "rows" | "single" => Err(format!("`{word}` is a view's body; {forms}")),
+            "rows" | "array" | "single" => Err(format!("`{word}` is a view's body; {forms}")),
             _ => match AnswerSource::parse(word) {
                 Some(AnswerSource::Response(field)) => match answers_none(word) {
                     Some(reason) => Err(reason),
@@ -5896,7 +6046,7 @@ fn distinguishable(
     command: &ResolvedCommand,
     declared: &Declared<'_>,
     path: &str,
-    standard: &BTreeMap<RefusalKey, Refusal>,
+    standard: &Standing,
     refusals: &mut Refusals,
 ) {
     let counted = counted(ir, command, declared);
@@ -6026,17 +6176,18 @@ fn counted<'a>(
 
 /// A standard refusal the binding overrides answers on this route too (`ESS-HTTP-025`): on the
 /// status of a counted outcome, its body must tell the two apart, which only a literal beside an
-/// error object on one member, the error's wire name differing from the text, does. Refused at
-/// `refusals.<key>`, naming the route and every outcome on its status.
+/// error object on one member, the error's wire name differing from the text, does. Refused where
+/// the refusal is declared, `routes[i].refusals.<key>` or `refusals.<key>`, naming the route and
+/// every outcome on its status.
 fn overridden(
     operation: &Operation,
     declared: &Declared<'_>,
     counted: &[Counted<'_>],
-    standard: &BTreeMap<RefusalKey, Refusal>,
+    standard: &Standing,
     path: &str,
     refusals: &mut Refusals,
 ) {
-    for (key, refusal) in standard {
+    for (key, (refusal, at)) in standard {
         let body = refusal.body.spec();
         let clashing: Vec<String> = counted
             .iter()
@@ -6058,7 +6209,7 @@ fn overridden(
         }
         refusals.refuse(
             "ESS-HTTP-025",
-            format!("refusals.{key}"),
+            at.as_str(),
             format!(
                 "standard refusal `{key}` answers `{}` with `{body}` on `{path}`, and so does \
                  outcome {} of {operation}, with a body a reader cannot tell apart; a refusal and \
@@ -6112,10 +6263,44 @@ fn no_outcomes_on_a_view(
     }
 }
 
-/// A view route's body and empty answer, checked: no `outcomes` (`ESS-HTTP-022`), `rows` or
-/// `single`, never `single` on a paged view (`ESS-HTTP-024`), `single` exactly with an `empty`
-/// holding a `4xx` (`ESS-HTTP-030`), and `single` only where the filter selects by identity
-/// (`ESS-HTTP-031`).
+/// The body of a `single` view's empty answer (`ESS-HTTP-030` at `<path>.empty.body`): absent or
+/// `none`, no body; `{<member>: {literal: <text>}}` under a member with a name, that one member.
+/// `None` when refused, or left unchecked (`held` false) because the route answers rows.
+fn empty_body(
+    written: Option<&BodySpec>,
+    held: bool,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Option<RefusalBody> {
+    match written {
+        None => Some(RefusalBody::None),
+        Some(BodySpec::Word(word)) if word == "none" => Some(RefusalBody::None),
+        Some(BodySpec::Literal { member, text }) if !member.is_empty() => {
+            Some(RefusalBody::Literal {
+                member: member.clone(),
+                text: text.clone(),
+            })
+        }
+        Some(written) => {
+            if held {
+                refusals.refuse(
+                    "ESS-HTTP-030",
+                    format!("{path}.empty.body"),
+                    format!(
+                        "`{written}` is not an empty answer's body: it is `none`, or \
+                         `{{<member>: {{literal: <text>}}}}` under a member with a name"
+                    ),
+                );
+            }
+            None
+        }
+    }
+}
+
+/// A view route's body and empty answer, checked: no `outcomes` (`ESS-HTTP-022`), `rows`,
+/// `array` or `single`, never `array` or `single` on a paged view (`ESS-HTTP-024`), `single`
+/// exactly with an `empty` holding a `4xx` and a body that is none or one literal member
+/// (`ESS-HTTP-030`), and `single` only where the filter selects by identity (`ESS-HTTP-031`).
 fn view_answers(
     spec: &RouteSpec,
     operation: &Operation,
@@ -6125,36 +6310,7 @@ fn view_answers(
 ) -> Answers {
     no_outcomes_on_a_view(spec, operation, path, refusals);
     // `None` when the body is refused, which leaves `empty` unchecked against it.
-    let body = match &spec.body {
-        None => Some(ViewBody::Rows),
-        Some(written) => match written.word() {
-            Some("rows") => Some(ViewBody::Rows),
-            Some("single") => Some(ViewBody::Single),
-            _ => {
-                refusals.refuse(
-                    "ESS-HTTP-024",
-                    format!("{path}.body"),
-                    format!(
-                        "{operation} answers `rows` or `single`, and `{written}` is not a view's \
-                         body"
-                    ),
-                );
-                None
-            }
-        },
-    };
-    if body == Some(ViewBody::Single) {
-        if let Some((_, view)) = view.filter(|(_, view)| view.paging.is_some()) {
-            refusals.refuse(
-                "ESS-HTTP-024",
-                format!("{path}.body"),
-                format!(
-                    "view `{}` is paged: its answer carries a page, which one bare row cannot",
-                    view.name
-                ),
-            );
-        }
-    }
+    let body = view_body(spec, operation, view, path, refusals);
     match (body, &spec.empty) {
         (Some(ViewBody::Single), None) => refusals.refuse(
             "ESS-HTTP-030",
@@ -6162,30 +6318,38 @@ fn view_answers(
             "`body: single` answers one row, and needs `empty` (`{status: <4xx>}`), the answer \
              for a view that holds none",
         ),
-        (Some(ViewBody::Rows), Some(_)) => refusals.refuse(
+        (Some(written @ (ViewBody::Rows | ViewBody::Array)), Some(_)) => refusals.refuse(
             "ESS-HTTP-030",
             path,
-            "`empty` answers a `single` view that holds no row, and this route answers `rows`",
+            format!(
+                "`empty` answers a `single` view that holds no row, and this route answers `{}`",
+                written.word()
+            ),
         ),
         _ => {}
     }
-    // An `empty` beside `rows` is refused above as a whole, so its status is not refused again.
-    let empty = spec.empty.and_then(|empty| {
+    let held = !matches!(body, Some(ViewBody::Rows | ViewBody::Array));
+    // An `empty` beside `rows` or `array` is refused above as a whole, so its status and body are
+    // not refused again.
+    let empty = spec.empty.as_ref().and_then(|empty| {
         let status = u16::try_from(empty.status)
             .ok()
             .filter(|status| (400..500).contains(status));
-        if status.is_none() && body != Some(ViewBody::Rows) {
+        if status.is_none() && held {
             refusals.refuse(
                 "ESS-HTTP-030",
                 path,
                 format!(
                     "`empty` answers `{}`; the answer of a `single` view that holds no row is a \
-                     `4xx` status, without a body",
+                     `4xx` status",
                     empty.status
                 ),
             );
         }
-        status.map(|status| Empty { status })
+        let body = empty_body(empty.body.as_ref(), held, path, refusals);
+        status
+            .zip(body)
+            .map(|(status, body)| Empty { status, body })
     });
     if body == Some(ViewBody::Single) {
         if let Some((ir, view)) = view {
@@ -6217,6 +6381,54 @@ fn view_answers(
         body: body.unwrap_or_default(),
         empty,
     }
+}
+
+/// A view route's `body`: `rows`, `array` or `single`, never `array` or `single` on a paged view
+/// (`ESS-HTTP-024`); `None` when it is refused.
+fn view_body(
+    spec: &RouteSpec,
+    operation: &Operation,
+    view: Option<(&EssIr, &ResolvedView)>,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Option<ViewBody> {
+    let body = match &spec.body {
+        None => Some(ViewBody::Rows),
+        Some(written) => match written.word() {
+            Some("rows") => Some(ViewBody::Rows),
+            Some("single") => Some(ViewBody::Single),
+            Some("array") => Some(ViewBody::Array),
+            _ => {
+                refusals.refuse(
+                    "ESS-HTTP-024",
+                    format!("{path}.body"),
+                    format!(
+                        "{operation} answers `rows`, `array` or `single`, and `{written}` is not \
+                         a view's body"
+                    ),
+                );
+                None
+            }
+        },
+    };
+    if matches!(body, Some(ViewBody::Single | ViewBody::Array)) {
+        if let Some((_, view)) = view.filter(|(_, view)| view.paging.is_some()) {
+            let answer = if body == Some(ViewBody::Single) {
+                "one bare row"
+            } else {
+                "a bare array of rows"
+            };
+            refusals.refuse(
+                "ESS-HTTP-024",
+                format!("{path}.body"),
+                format!(
+                    "view `{}` is paged: its answer carries a page, which {answer} cannot",
+                    view.name
+                ),
+            );
+        }
+    }
+    body
 }
 
 /// Whether `filter` holds only of the row whose `identity` equals a view parameter: it is

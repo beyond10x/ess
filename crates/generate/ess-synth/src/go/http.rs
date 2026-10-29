@@ -216,6 +216,14 @@ fn helpers_file(
                 })
         });
         helpers.push_str(&bound::refusals(binding, checks_grant));
+        for component in served(ir, refusals) {
+            helpers.push_str(&bound::route_refusals(
+                ir,
+                layout,
+                binding,
+                &http::bound_routes(ir, component, Some(binding)),
+            ));
+        }
     }
     emit.file(provenance, SERVER_DOC, &helpers)
 }

@@ -220,8 +220,10 @@
 //! | `body: none` | no content |
 //! | `headers` | response `headers`: a literal is a `const`, a source a `string` required unless it may be absent, a challenge a `string` described param by param |
 //! | `redirect` | a required `Location` header, `format: uri`, saying which parameters go into its query or fragment |
-//! | a view's `body: single` | the row schema at `200` and no content at its `empty` status |
+//! | a view's `body: single` | the row schema at `200` and no content at its `empty` status, or the one literal member its `empty.body` declares |
+//! | a view's `body: array` | at `200`, an array of the row schema, with no `{view}.Response` |
 //! | `refusals.<key>` | replaces the standard refusal's response on every bound operation that can answer it |
+//! | `routes[i].refusals.<key>` | replaces it on that route alone, in place of the binding's |
 //!
 //! A bare body names no branch, so every response of a command whose route uses a stage-2 key
 //! carries `x-ess-outcomes`: the outcomes it answers, in the order the command declares them, and
@@ -638,15 +640,16 @@ fn refusals_of(binding: Option<&http::Binding>) -> Option<&Refusals> {
 type Refusals = BTreeMap<ess_http::RefusalKey, ess_http::Refusal>;
 
 /// Whether an operation is answered as an `ess-http/1` binding declares beyond its route: its
-/// route carries a stage-2 key, or the binding overrides a standard refusal, which applies to every
-/// route it names. A derived route never is, and neither is a route of a binding with no stage-2
-/// key, so both keep their stage-1 bytes.
+/// route carries a stage-2 key (its own `refusals` among them), or the binding overrides a
+/// standard refusal, which applies to every route it names. A derived route never is, and neither
+/// is a route of a binding with no stage-2 key, so both keep their stage-1 bytes.
 fn answered_by_binding(declared: Option<&ess_http::Route>, refusals: Option<&Refusals>) -> bool {
     declared.is_some_and(|route| {
         route.request.is_some()
             || route.declares_answers()
             || route.body != ess_http::ViewBody::Rows
             || route.empty.is_some()
+            || !route.refusals.is_empty()
             || refusals.is_some_and(|refusals| !refusals.is_empty())
     })
 }
@@ -693,8 +696,12 @@ fn paths(
     let mut out: BTreeMap<String, PathItem> = BTreeMap::new();
     for route in http::bound_routes(ir, component, binding) {
         // A standard refusal's override applies to the routes the binding names, never to a
-        // derived one (decided for stage 2, answer 17).
-        let refusals = route.declared.and(refusals_of(binding));
+        // derived one (decided for stage 2, answer 17). A route's own override stands in place of
+        // the binding's on that route.
+        let refusals = binding
+            .zip(route.declared)
+            .map(|(binding, declared)| binding.refusals_on(declared));
+        let refusals = refusals.as_ref();
         let served = match route.serves {
             http::Served::Command(handle) => {
                 operation(ir, handle, &grants, checked, route.declared, refusals)
@@ -1275,8 +1282,10 @@ enum Answer<'a> {
     Rows(&'a ResolvedView),
     /// A `single` view's one row, bare.
     Row(&'a ResolvedView),
-    /// A `single` view's answer when it holds no row: no body.
-    Empty(&'a ResolvedView),
+    /// An `array` view's rows, bare: a JSON array.
+    Array(&'a ResolvedView),
+    /// A `single` view's answer when it holds no row: no body, or one literal member.
+    Empty(&'a ResolvedView, &'a ess_http::RefusalBody),
 }
 
 /// One `oneOf` member of a response, and what tells it apart from the others where a
@@ -1357,20 +1366,20 @@ fn bound_responses(
         .collect()
 }
 
-/// The responses of a view whose route an `ess-http/1` binding answers its own way: `single`, or
-/// a binding that overrides a standard refusal the view can answer — `not_granted` where its read
-/// is checked, `malformed` where it declares a parameter. A view has no outcome, so its responses
-/// carry no `x-ess-outcomes`.
+/// The responses of a view whose route an `ess-http/1` binding answers its own way: `single` or
+/// `array`, or a standard refusal the view can answer, overridden by the binding or the route —
+/// `not_granted` where its read is checked, `malformed` where it declares a parameter. A view has
+/// no outcome, so its responses carry no `x-ess-outcomes`.
 fn bound_view_responses<'a>(
     ir: &EssIr,
     view: &'a ResolvedView,
     read_checked: bool,
-    route: &ess_http::Route,
+    route: &'a ess_http::Route,
     refusals: Option<&'a Refusals>,
 ) -> BTreeMap<String, Response> {
     let mut by_status: BTreeMap<String, Vec<Answer<'a>>> = BTreeMap::new();
     let overridden = |key| refusals.and_then(|refusals| refusals.get(&key).map(|r| (key, r)));
-    match (route.body, route.empty) {
+    match (route.body, &route.empty) {
         (ess_http::ViewBody::Single, Some(empty)) => {
             by_status
                 .entry(READ.to_owned())
@@ -1379,8 +1388,12 @@ fn bound_view_responses<'a>(
             by_status
                 .entry(empty.status.to_string())
                 .or_default()
-                .push(Answer::Empty(view));
+                .push(Answer::Empty(view, &empty.body));
         }
+        (ess_http::ViewBody::Array, _) => by_status
+            .entry(READ.to_owned())
+            .or_default()
+            .push(Answer::Array(view)),
         // Compiling refuses `single` without `empty` (`ESS-HTTP-030`).
         _ => by_status
             .entry(READ.to_owned())
@@ -1544,19 +1557,11 @@ fn rendered(
             rendered_outcome(ir, command, status, outcome, *listed)
         }
         Answer::Refusal(key, refusal) => Rendered {
-            member: match &refusal.body {
-                ess_http::RefusalBody::None => None,
-                ess_http::RefusalBody::Literal { member, text } => Some(Member {
-                    schema: json!({
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [member],
-                        "properties": {member: {"type": "string", "const": text}},
-                    }),
-                    discriminated: None,
-                    text: false,
-                }),
-            },
+            member: literal_schema(&refusal.body).map(|schema| Member {
+                schema,
+                discriminated: None,
+                text: false,
+            }),
             label: format!("the `{key}` refusal"),
             headers: refusal
                 .headers
@@ -1599,12 +1604,30 @@ fn rendered(
                 ir.entity(&view.source).name
             ),
         ),
-        Answer::Empty(view) => Rendered::standard(
-            None,
+        Answer::Array(view) => Rendered::standard(
+            Some(json!({
+                "type": "array",
+                "items": {"$ref": reference(&row_schema_key(view))},
+            })),
+            format!(
+                "Every row of `{}`, a projection of `{}`, as a bare JSON array, as the \
+                 `ess-http/1` binding declares (`body: array`): no object around it.",
+                view.name,
+                ir.entity(&view.source).name
+            ),
+        ),
+        Answer::Empty(view, body) => Rendered::standard(
+            literal_schema(body),
             format!(
                 "`{}` holds no row for these parameters, as the `ess-http/1` binding declares \
-                 (`empty`). No body.",
-                view.name
+                 (`empty`). {}",
+                view.name,
+                match body {
+                    ess_http::RefusalBody::None => "No body.".to_owned(),
+                    ess_http::RefusalBody::Literal { member, text } => {
+                        format!("A body whose one member `{member}` is `{text}`.")
+                    }
+                }
             ),
         ),
     }
@@ -1771,6 +1794,20 @@ fn listed_sentence(
         "Outcome `{}`, answered {status} as the `ess-http/1` binding declares, with {body}",
         outcome.name
     )
+}
+
+/// The schema of a standard refusal's or an empty answer's body: none, or an object with the one
+/// literal member.
+fn literal_schema(body: &ess_http::RefusalBody) -> Option<Value> {
+    match body {
+        ess_http::RefusalBody::None => None,
+        ess_http::RefusalBody::Literal { member, text } => Some(json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": [member],
+            "properties": {member: {"type": "string", "const": text}},
+        })),
+    }
 }
 
 /// What an overridden standard refusal answers, for its response's description.
@@ -2148,10 +2185,10 @@ fn schemas(
             roots.extend(types::field_leaves(&view.fields));
         }
         roots.extend(types::field_leaves(&view.params));
-        let single = binding
+        let bare = binding
             .and_then(|binding| binding.route(http::Served::View(handle)))
-            .is_some_and(|route| route.body == ess_http::ViewBody::Single);
-        if !single {
+            .is_some_and(|route| route.body != ess_http::ViewBody::Rows);
+        if !bare {
             out.insert(view_key(view), written(view_schema(view)));
         }
     }

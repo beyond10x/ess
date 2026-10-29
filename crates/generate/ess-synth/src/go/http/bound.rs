@@ -1059,9 +1059,10 @@ fn answer_call(
     variables: bool,
 ) -> String {
     let values = if variables { "values" } else { "nil" };
+    let suffix = refusal_suffix(ir, layout, route);
     let refuse = |standard: &str| {
         if declared {
-            format!("refusalNotGranted({standard})")
+            format!("refusalNotGranted{suffix}({standard})")
         } else {
             standard.to_owned()
         }
@@ -1259,6 +1260,7 @@ fn command(
         "body"
     });
     let (statements, members) = path_members(ir, route);
+    let suffix = refusal_suffix(ir, layout, route);
     let declares = http::declares_answers(route);
     let answer = if declares {
         format!("answerBound{function}(answer{function}(outcome), value)")
@@ -1272,13 +1274,13 @@ fn command(
          body []byte, path []string) response {{\n\tvalue, err := func() (any, error) \
          {{\n\t\tvalue, err := {read}\n\t\tif err != nil {{\n\t\t\treturn nil, \
          err\n\t\t}}\n{statements}\t\treturn withPath(value, {members}, {at})\n\t}}()\n\tif err \
-         != nil {{\n\t\treturn refusalMalformed(err.Error())\n\t}}\n\tinput, err := \
+         != nil {{\n\t\treturn refusalMalformed{suffix}(err.Error())\n\t}}\n\tinput, err := \
          decodeCommand{function}(value, \"body\")\n\tif err != nil {{\n\t\treturn \
-         refusalMalformed(err.Error())\n\t}}\n\toutcome, unmet := \
+         refusalMalformed{suffix}(err.Error())\n\t}}\n\toutcome, unmet := \
          system.{field}.{method}(input)\n\tif unmet != nil {{\n\t\treturn \
-         refusalUnfinished(unmet.Error(), false)\n\t}}\n\tfailure := \
+         refusalUnfinished{suffix}(unmet.Error(), false)\n\t}}\n\tfailure := \
          system.Pump()\n\tsystem.TakePublished()\n{invocations}\tif failure != nil {{\n\t\treturn \
-         refusalUnfinished(\"delivering what the command published: \"+failure.Error(), \
+         refusalUnfinished{suffix}(\"delivering what the command published: \"+failure.Error(), \
          true)\n\t}}\n\treturn {answer}\n}}\n",
         route.method.as_str(),
         route.path,
@@ -1290,7 +1292,7 @@ fn command(
         },
     );
     if declares {
-        outcome_answer(out, ir, route, command, function);
+        outcome_answer(out, ir, route, command, [function, suffix]);
     }
 }
 
@@ -1301,7 +1303,7 @@ fn outcome_answer(
     ir: &EssIr,
     route: &http::Route<'_>,
     command: &ResolvedCommand,
-    function: &str,
+    [function, suffix]: [&str; 2],
 ) {
     let listed: Vec<(&ess_compiler::ir::ResolvedOutcome, &ess_http::Outcome)> = command
         .outcomes
@@ -1334,7 +1336,7 @@ fn outcome_answer(
          status for\n// every other outcome.\nfunc answerBound{function}(answer response, input \
          any) response {{\n\tdeclared, err := declared{function}(answer.body, input)\n\tif err != \
          nil {{\n\t\t// The effect stands; only its answer could not be written.\n\t\treturn \
-         refusalUnfinished(err.Error(), true)\n\t}}\n\tif declared != nil {{\n\t\treturn \
+         refusalUnfinished{suffix}(err.Error(), true)\n\t}}\n\tif declared != nil {{\n\t\treturn \
          *declared\n\t}}\n\treturn answer\n}}\n\n// declared{function} is each listed outcome of \
          `{}`, answered as declared; nil for an outcome\n// the binding does not list.\nfunc \
          declared{function}(envelope string, input any) (*response, error) {{\n\tread := \
@@ -1558,6 +1560,7 @@ fn view(
     let function = ident(layout, &view.name);
     let field = name::exported(&component.name.to_string());
     let method = layout.declared(&view.name);
+    let suffix = refusal_suffix(ir, layout, route);
     let _ = write!(
         out,
         "\n// serveBound{function} answers `{}` `{}`: `{}`, read and answered as its `ess-http/1`\n\
@@ -1584,9 +1587,9 @@ fn view(
              queryObject(request.URL.RawQuery, {}, \"query\")\n\t\tif err != nil {{\n\t\t\treturn \
              nil, err\n\t\t}}\n{statements}\t\treturn withPath(value, {members}, \
              \"query\")\n\t}}()\n\tif err != nil {{\n\t\treturn \
-             refusalMalformed(err.Error())\n\t}}\n\tparams, err := \
+             refusalMalformed{suffix}(err.Error())\n\t}}\n\tparams, err := \
              decodeParams{function}(value, \"query\")\n\tif err != nil {{\n\t\treturn \
-             refusalMalformed(err.Error())\n\t}}\n",
+             refusalMalformed{suffix}(err.Error())\n\t}}\n",
             super::query_params(ir, &unmapped),
         );
         view.params
@@ -1603,24 +1606,37 @@ fn view(
     let _ = write!(
         out,
         "\trows, unmet := system.{field}.{method}({arguments})\n\tif unmet != nil {{\n\t\treturn \
-         refusalUnfinished(unmet.Error(), false)\n\t}}\n\tencoded := make([]any, 0, \
+         refusalUnfinished{suffix}(unmet.Error(), false)\n\t}}\n\tencoded := make([]any, 0, \
          len(rows))\n\tfor _, row := range rows {{\n\t\tencoded = append(encoded, \
          encodeView{function}(row))\n\t}}\n"
     );
-    let single = route
+    let body = route
         .declared
-        .filter(|declared| declared.body == ess_http::ViewBody::Single)
-        .and_then(|declared| declared.empty);
-    match single {
-        Some(empty) => {
+        .map_or(ess_http::ViewBody::Rows, |declared| declared.body);
+    let empty = route
+        .declared
+        .filter(|_| body == ess_http::ViewBody::Single)
+        .and_then(|declared| declared.empty.as_ref());
+    match (body, empty) {
+        (_, Some(empty)) => {
+            let none = match &empty.body {
+                RefusalBody::None => format!("response{{status: {}}}", empty.status),
+                RefusalBody::Literal { member, text } => format!(
+                    "response{{status: {}, contentType: mediaJSON, body: literalObject({}, {})}}",
+                    empty.status,
+                    go_string(member),
+                    go_string(text)
+                ),
+            };
             let _ = write!(
                 out,
-                "\tif len(encoded) == 0 {{\n\t\treturn response{{status: {}}}\n\t}}\n\treturn \
-                 response{{status: 200, contentType: mediaJSON, body: bare(encoded[0])}}\n}}\n",
-                empty.status
+                "\tif len(encoded) == 0 {{\n\t\treturn {none}\n\t}}\n\treturn \
+                 response{{status: 200, contentType: mediaJSON, body: bare(encoded[0])}}\n}}\n"
             );
         }
-        None => out.push_str("\treturn rendered(200, map[string]any{\"rows\": encoded})\n}\n"),
+        // The rows, bare: the array `rows` would hold.
+        (ess_http::ViewBody::Array, None) => out.push_str("\treturn rendered(200, encoded)\n}\n"),
+        _ => out.push_str("\treturn rendered(200, map[string]any{\"rows\": encoded})\n}\n"),
     }
 }
 
@@ -1628,55 +1644,146 @@ fn view(
 /// (`refusals:`), and today's answer for each the binding does not override. `refusalNotGranted`
 /// only where some declared route checks a grant, so nothing emitted goes unused.
 pub(super) fn refusals(binding: &http::Binding, checks_grant: bool) -> String {
-    let mut out = String::from(
-        "\n// refusalMalformed is a request a bound route cannot read as its binding declares: \
-         `refusals.malformed`,\n// else 400.\n",
+    refusal_set(
+        &RefusalSet {
+            suffix: "",
+            on: "a bound route".to_owned(),
+            from: "",
+            checks_grant,
+        },
+        |key| binding.refusal(key),
+    )
+}
+
+/// The standard refusals of each declared route that overrides one itself (`routes[i].refusals`),
+/// in route order: its own set of functions, named with [`refusal_suffix`], answering its own
+/// overrides over the binding's. Every other route answers through [`refusals`], so it keeps its
+/// bytes.
+pub(super) fn route_refusals(
+    ir: &EssIr,
+    layout: &Layout,
+    binding: &http::Binding,
+    routes: &[http::Route<'_>],
+) -> String {
+    let mut out = String::new();
+    for route in routes {
+        let Some(own) = route.declared.filter(|own| !own.refusals.is_empty()) else {
+            continue;
+        };
+        let checks_grant = match route.serves {
+            Served::Command(_) => http::checks_grants(ir),
+            Served::View(handle) => http::read_checked(ir, handle.name()),
+        };
+        out.push_str(&refusal_set(
+            &RefusalSet {
+                suffix: refusal_suffix(ir, layout, route),
+                on: format!("`{} {}`", route.method.as_str(), route.path),
+                from: "routes[].",
+                checks_grant,
+            },
+            |key| binding.refusal_on(own, key),
+        ));
+    }
+    out
+}
+
+/// The suffix of the standard-refusal functions a declared route answers through: none for the
+/// binding's (`refusalMalformed`, …), the construct's identifier for a route that overrides one
+/// itself (`routes[i].refusals`).
+fn refusal_suffix<'a>(ir: &EssIr, layout: &'a Layout, route: &http::Route<'_>) -> &'a str {
+    if route
+        .declared
+        .is_none_or(|declared| declared.refusals.is_empty())
+    {
+        return "";
+    }
+    match route.serves {
+        Served::Command(handle) => ident(layout, &ir.command(handle).name),
+        Served::View(handle) => ident(layout, &ir.view(handle).name),
+    }
+}
+
+/// One set of standard-refusal functions: their name suffix, the route they answer on, as the
+/// comments name it, where the overrides are declared, and whether a grant is checked.
+struct RefusalSet<'a> {
+    suffix: &'a str,
+    on: String,
+    from: &'static str,
+    checks_grant: bool,
+}
+
+/// The functions answering each standard refusal for `set`: `refusalMalformed`,
+/// `refusalUnfinished` and, where a grant is checked, `refusalNotGranted`, each with
+/// `set.suffix`. `lookup` gives the override standing for a key.
+fn refusal_set<'a>(
+    set: &RefusalSet<'_>,
+    lookup: impl Fn(RefusalKey) -> Option<&'a ess_http::Refusal>,
+) -> String {
+    let RefusalSet {
+        suffix, on, from, ..
+    } = set;
+    let mut out = format!(
+        "\n// refusalMalformed{suffix} is a request {on} cannot read as its binding declares: \
+         `{from}refusals.malformed`,\n// else 400.\n"
     );
-    match binding.refusal(RefusalKey::Malformed) {
+    match lookup(RefusalKey::Malformed) {
         Some(refusal) => {
             let _ = write!(
                 out,
-                "func refusalMalformed(_ string) response {{\n{}}}\n",
+                "func refusalMalformed{suffix}(_ string) response {{\n{}}}\n",
                 overridden(refusal)
             );
         }
-        None => out.push_str(
-            "func refusalMalformed(detail string) response {\n\treturn refusal(400, detail)\n}\n",
-        ),
+        None => {
+            let _ = write!(
+                out,
+                "func refusalMalformed{suffix}(detail string) response {{\n\treturn refusal(400, \
+                 detail)\n}}\n"
+            );
+        }
     }
-    out.push_str(
-        "\n// refusalUnfinished is an unfinished realization on a bound route: \
-         `refusals.unfinished`, else 501\n// with committed.\n",
+    let _ = write!(
+        out,
+        "\n// refusalUnfinished{suffix} is an unfinished realization on {on}: \
+         `{from}refusals.unfinished`, else 501\n// with committed.\n"
     );
-    match binding.refusal(RefusalKey::Unfinished) {
+    match lookup(RefusalKey::Unfinished) {
         Some(refusal) => {
             let _ = write!(
                 out,
-                "func refusalUnfinished(_ string, _ bool) response {{\n{}}}\n",
+                "func refusalUnfinished{suffix}(_ string, _ bool) response {{\n{}}}\n",
                 overridden(refusal)
             );
         }
-        None => out.push_str(
-            "func refusalUnfinished(detail string, committed bool) response {\n\treturn \
-             unfinished(detail, committed)\n}\n",
-        ),
+        None => {
+            let _ = write!(
+                out,
+                "func refusalUnfinished{suffix}(detail string, committed bool) response \
+                 {{\n\treturn unfinished(detail, committed)\n}}\n"
+            );
+        }
     }
-    if checks_grant {
-        out.push_str(
-            "\n// refusalNotGranted is a caller no grant admits, on a bound route: \
-             `refusals.not_granted`, else the\n// standard 403.\n",
+    if set.checks_grant {
+        let _ = write!(
+            out,
+            "\n// refusalNotGranted{suffix} is a caller no grant admits, on {on}: \
+             `{from}refusals.not_granted`, else the\n// standard 403.\n"
         );
-        match binding.refusal(RefusalKey::NotGranted) {
+        match lookup(RefusalKey::NotGranted) {
             Some(refusal) => {
                 let _ = write!(
                     out,
-                    "func refusalNotGranted(_ response) response {{\n{}}}\n",
+                    "func refusalNotGranted{suffix}(_ response) response {{\n{}}}\n",
                     overridden(refusal)
                 );
             }
-            None => out.push_str(
-                "func refusalNotGranted(standard response) response {\n\treturn standard\n}\n",
-            ),
+            None => {
+                let _ = write!(
+                    out,
+                    "func refusalNotGranted{suffix}(standard response) response {{\n\treturn \
+                     standard\n}}\n"
+                );
+            }
         }
     }
     out
