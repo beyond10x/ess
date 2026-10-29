@@ -483,6 +483,134 @@ fn normalized_fields_share_their_actual_struct_scope() {
     refusal(&core("types:\n  - name: demo.core.Value\n    kind: struct\n    fields:\n      - name: fooBar\n        type: String\n      - name: foo_bar\n        type: String\n", ""), "symbol-collision", "field-collision");
 }
 
+/// `Send(id, text) -> response { … }` over a `Message` entity, with the response fields given.
+///
+/// A direct return needs format `ess/17`, which `core` does not declare. The command is served, so
+/// the HTTP layer reads the input and the response too.
+fn send_fixture(response: &str) -> EssIr {
+    fixture(&[
+        (
+            "system.yaml",
+            "format: ess/22\nsystem: demo\nversion: v1\ndomains:\n  - demo.core\n",
+        ),
+        ("core.yaml", &format!("domain: demo.core\nentities:\n  - name: demo.core.Message\n    identity: {{name: id, type: String}}\n    fields:\n      - {{name: text, type: String}}\n    lifecycle: {{initial: Sent, states: [Sent], terminal: [Sent]}}\nevents:\n  - name: demo.core.Sent\n    fields:\n      - {{name: id, type: String}}\ncommands:\n  - name: demo.core.Send\n    input:\n      - {{name: id, type: String}}\n      - {{name: text, type: String}}\n    response:\n{response}    outcomes:\n      - name: sent\n        returns: true\n        emits: [demo.core.Sent]\n        payload:\n          demo.core.Sent:\n            id: {{generated: true}}\n")),
+        (
+            "wiring.yaml",
+            "components:\n  - component: messages\n    owns: {domains: [demo.core]}\n    accepts: {commands: [demo.core.Send]}\n    publishes: {events: [demo.core.Sent]}\n    reached_by: network\n",
+        ),
+    ])
+}
+
+fn details(failure: &ess_synth::TargetFailure) -> String {
+    failure
+        .causes()
+        .iter()
+        .map(|cause| cause.detail().to_owned())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The body of the struct `open` starts, up to its closing brace.
+fn struct_body<'a>(source: &'a str, open: &str) -> &'a str {
+    let start = source
+        .find(open)
+        .unwrap_or_else(|| panic!("`{open}` is emitted: {source}"));
+    let body = &source[start..];
+    &body[..body.find("\n}").expect("the struct closes")]
+}
+
+#[test]
+fn an_input_and_response_field_may_share_a_name() {
+    // The input and the response are two structs, so `id` in each is no collision.
+    let ir = send_fixture("      - {name: id, type: String}\n");
+    let synthesis = synthesize(&ir).unwrap_or_else(|failure| panic!("{}", details(&failure)));
+    let source = &synthesis.artifacts["crates/demo-types/src/core.rs"].contents;
+    assert!(
+        struct_body(source, "pub struct Send {").contains("pub id: String"),
+        "{source}"
+    );
+    assert!(
+        struct_body(source, "pub struct SendResponse {").contains("pub id: String"),
+        "{source}"
+    );
+    let directory = scratch("input-response-share-a-name");
+    write_emission(&directory, &synthesis);
+    check_generated(&directory);
+}
+
+#[test]
+fn the_web_target_admits_an_input_and_response_field_of_one_name() {
+    let ir = send_fixture("      - {name: id, type: String}\n");
+    synthesize_for(&ir, Target::Web).unwrap_or_else(|failure| panic!("{}", details(&failure)));
+}
+
+#[test]
+fn an_input_and_response_field_share_a_name_in_go() {
+    let ir = send_fixture("      - {name: id, type: String}\n");
+    synthesize_for(&ir, Target::Go).unwrap_or_else(|failure| panic!("{}", details(&failure)));
+}
+
+#[test]
+fn a_collision_inside_a_response_still_refuses() {
+    let ir = send_fixture(
+        "      - {name: fooBar, type: String}\n      - {name: foo_bar, type: String}\n",
+    );
+    refusal(&ir, "symbol-collision", "response-field-collision");
+    let detail = details(
+        &synthesize(&ir)
+            .err()
+            .expect("two response fields want `foo_bar`"),
+    );
+    assert!(
+        detail.contains("`foo_bar` is allocated 2 times in `fields:demo.core.Send.response`"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn a_field_collision_names_the_wire_rename_idiom() {
+    // A served command carries the struct, so its codec spells the wire names.
+    let value = |fields: &str| {
+        core(
+            &format!("types:\n  - name: demo.core.Value\n    kind: struct\n    fields:\n{fields}events:\n  - name: demo.core.Put\n    fields:\n      - {{name: value, type: demo.core.Value}}\ncommands:\n  - name: demo.core.Store\n    input:\n      - {{name: value, type: demo.core.Value}}\n    outcomes:\n      - name: stored\n        emits: [demo.core.Put]\n"),
+            "components:\n  - component: store\n    owns: {domains: [demo.core]}\n    accepts: {commands: [demo.core.Store]}\n    publishes: {events: [demo.core.Put]}\n    reached_by: network\n",
+        )
+    };
+    let colliding =
+        value("      - {name: fooBar, type: String}\n      - {name: foo_bar, type: String}\n");
+    let detail = details(
+        &synthesize(&colliding)
+            .err()
+            .expect("`fooBar` and `foo_bar` collide"),
+    );
+    assert!(
+        detail.contains("`foo_bar` is allocated 2 times in `fields:demo.core.Value`"),
+        "{detail}"
+    );
+    assert!(detail.contains("naming: { wire: … }"), "{detail}");
+    assert!(!detail.contains("naming: { code: … }"), "{detail}");
+
+    // The idiom the refusal names: rename one field and keep its wire spelling.
+    let renamed = value("      - {name: foo_bar2, type: String, naming: {wire: fooBar}}\n      - {name: foo_bar, type: String}\n");
+    let synthesis = synthesize(&renamed).unwrap_or_else(|failure| panic!("{}", details(&failure)));
+    let source = &synthesis.artifacts["crates/demo-types/src/core.rs"].contents;
+    let body = struct_body(source, "pub struct Value {");
+    assert!(body.contains("pub foo_bar2: String"), "{source}");
+    assert!(body.contains("pub foo_bar: String"), "{source}");
+    let codec = &synthesis.artifacts["crates/demo-server/src/wire.rs"].contents;
+    assert!(
+        codec.contains("json::member(out, \"fooBar\");\n"),
+        "the emitted wire name is `fooBar`: {codec}"
+    );
+    assert!(
+        !codec.contains("json::member(out, \"foo_bar2\")"),
+        "{codec}"
+    );
+    let directory = scratch("field-wire-rename");
+    write_emission(&directory, &synthesis);
+    check_generated(&directory);
+}
+
 #[test]
 fn path_keyword_repairs_cannot_merge_fields() {
     refusal(&core("types:\n  - name: demo.core.Value\n    kind: struct\n    fields:\n      - name: self\n        type: String\n      - name: self_\n        type: String\n", ""), "symbol-collision", "path-keyword-fields");

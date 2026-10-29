@@ -141,11 +141,22 @@ impl Inventory {
     }
 
     fn fields(&mut self, scope: &str, owner: &QualifiedName, fields: &[ResolvedField]) {
-        let field_scope = format!("fields:{owner}");
+        self.fields_in(scope, &format!("fields:{owner}"), owner, fields);
+    }
+
+    /// The fields of one emitted struct, allocated in `field_scope`. A command's response is a
+    /// struct of its own beside the input, so its fields take a scope of their own.
+    fn fields_in(
+        &mut self,
+        scope: &str,
+        field_scope: &str,
+        owner: &QualifiedName,
+        fields: &[ResolvedField],
+    ) {
         for field in fields {
             let source = format!("{owner}.{}", field.name);
             self.symbol(
-                &field_scope,
+                field_scope,
                 &name::value_ident(&field.name),
                 &source,
                 "field",
@@ -167,10 +178,15 @@ impl Inventory {
                 // out that a name they never wrote — the lifecycle enum a target derives — is one
                 // of the two things holding the identifier.
                 // An enum's or a union's variants share a scope only with their siblings. An enum
-                // variant takes the flat `code:`; a union label takes none.
+                // variant takes the flat `code:`; a union label takes none. A field's identifier
+                // comes from its name, so the remedy that works is a new name that keeps the old
+                // spelling on the wire.
                 let all = |wanted: &str| entries.iter().all(|(_, role)| role == wanted);
                 let remedy = if code != Code::SymbolCollision {
                     ""
+                } else if all("field") {
+                    "; rename one of them and keep its wire spelling with `naming: { wire: … }`, \
+                     which changes no wire name and no document schema"
                 } else if all("union variant") {
                     "; a union label declares no `code:`, so only renaming one of them, which \
                      changes its tag on the wire, separates them"
@@ -524,8 +540,9 @@ fn records_and_commands(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) 
                 &source,
                 "command response",
             );
-            inventory.fields(
+            inventory.fields_in(
                 &format!("response:{source}"),
+                &format!("fields:{source}.response"),
                 &command.name,
                 &command.response,
             );
