@@ -16,6 +16,7 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Output, Stdio};
@@ -673,4 +674,70 @@ fn the_suite_keeps_the_frozen_spelling_of_an_integer_literal() {
         witness.contains("\"value\": 1.0"),
         "the synthesized witness is written as 1.0:\n{witness}"
     );
+}
+
+// ---- a number nobody parsed ----------------------------------------------------------------------
+
+/// The committed Rust JSON module, which `ess generate synthesize` writes from this crate.
+#[allow(dead_code, missing_docs, clippy::all, clippy::pedantic)]
+#[path = "../../../../generated/rust/gatepass/crates/gatepass-server/src/json.rs"]
+mod json;
+
+/// Spellings outside the JSON number grammar: a byte that is not a digit where a digit belongs, or a
+/// digit group left empty. The parser never yields them, but a number can be built by hand.
+const OUTSIDE_THE_GRAMMAR: [&str; 12] = [
+    "1.:e1", "2.;e1", "1:", "1e:", "1e/", "1.", "1e", "1e+", "", "-", ".", "e5",
+];
+
+#[test]
+fn the_rust_reader_refuses_a_number_built_by_hand_outside_the_grammar() {
+    for spelling in OUTSIDE_THE_GRAMMAR {
+        let value = json::Value::Number(spelling.to_owned());
+        let answer = json::integer_at(&value, "limit", "an integer");
+        assert!(answer.is_err(), "{spelling:?}: {answer:?}");
+    }
+}
+
+#[test]
+fn the_go_reader_refuses_a_number_built_by_hand_outside_the_grammar() {
+    if !has_go() {
+        return;
+    }
+    let wire = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../generated/go/gatepass/server/wire.go"),
+    )
+    .expect("the committed Go wire");
+    let cut = |from: &str, to: &str| {
+        let start = wire
+            .find(from)
+            .unwrap_or_else(|| panic!("`{from}` in wire.go"));
+        let end = start
+            + wire[start..]
+                .find(to)
+                .unwrap_or_else(|| panic!("`{to}` in wire.go"));
+        wire[start..end].to_owned()
+    };
+    let mut program = String::from(
+        "package main\n\nimport (\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"strconv\"\n\t\"strings\"\n)\n\n\
+         var _ = strconv.Itoa\nvar _ = strings.TrimSpace\n\n",
+    );
+    program.push_str(&cut("type DecodeError struct", "// nested is one step"));
+    program.push_str(&cut("func integerAt(", "// decimalAt is"));
+    program.push_str("func main() {\n\tfor _, spelling := range []string{");
+    for spelling in OUTSIDE_THE_GRAMMAR {
+        write!(program, "{spelling:?}, ").expect("a string takes text");
+    }
+    program.push_str(
+        "} {\n\t\tif held, err := integerAt(json.Number(spelling), \"limit\", \"an integer\"); \
+         err == nil {\n\t\t\tfmt.Printf(\"%q: %d\\n\", spelling, held)\n\t\t}\n\t}\n}\n",
+    );
+    let directory = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("integer-spellings-grammar-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("mkdir");
+    std::fs::write(directory.join("main.go"), program).expect("write main.go");
+    let output = go(&directory, &["run", "main.go"]);
+    let _ = std::fs::remove_dir_all(&directory);
+    assert!(output.status.success(), "{}", shown(&output));
+    let accepted = String::from_utf8_lossy(&output.stdout);
+    assert!(accepted.is_empty(), "accepted:\n{accepted}");
 }

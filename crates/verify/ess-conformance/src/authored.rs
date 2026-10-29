@@ -2919,23 +2919,116 @@ fn read_document(ir: &EssIr, text: &str) -> Result<Document, Box<Cause>> {
         })?;
     // The one place a repeated key is answered: a refusal here, or a warning beside the compiled
     // scenario should a repeat ever have to be admitted again.
-    if let Some(detail) = repeated_key(value.as_ref()) {
+    if let Some(detail) = repeated_key(text, value.as_ref()) {
         return Err(Box::new(Cause::RepeatedKey { detail }));
     }
     Ok(document)
 }
 
-/// What the read as a value says about a repeated mapping key, and `None` when it says nothing
-/// about one.
+/// What the reader says about a repeated mapping key, and `None` when it says nothing about one.
 ///
 /// The YAML reader's own wording, as a model file's repeat gets it: the mapping's path, the key,
 /// and the line and column of the mapping (`timeline[0].input: duplicate entry with key "label"
 /// at line 12 column 12`). It has no position for either key.
-fn repeated_key(value: Result<&ess_yaml::Value, &ess_yaml::Error>) -> Option<String> {
-    let detail = value.err()?.to_string();
-    detail
-        .contains("duplicate entry with key")
-        .then_some(detail)
+///
+/// The read as a value tells `1` from `"1"` and `true` from `"true"`, but a mapping the document
+/// reads as a map of strings does not: it keeps the second value of either pair. So a document
+/// the value read admits is read once more for its key texts, as such a map reads them.
+fn repeated_key(text: &str, value: Result<&ess_yaml::Value, &ess_yaml::Error>) -> Option<String> {
+    let detail = match value {
+        Err(error) => error.to_string(),
+        Ok(_) => ess_yaml::from_str::<KeyTexts>(text).err()?.to_string(),
+    };
+    detail.contains(REPEATED).then_some(detail)
+}
+
+/// The words the YAML reader opens a repeated key's message with, and so does [`KeyTexts`].
+const REPEATED: &str = "duplicate entry with key";
+
+/// A read of a document that refuses two keys of one mapping with the same text, whatever their
+/// YAML types, and keeps nothing. A key that is a collection reads as no string, and ends the read
+/// with an error that names no repeat.
+struct KeyTexts;
+
+impl<'de> serde::Deserialize<'de> for KeyTexts {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(KeyTextsVisitor)
+    }
+}
+
+struct KeyTextsVisitor;
+
+impl<'de> serde::de::Visitor<'de> for KeyTextsVisitor {
+    type Value = KeyTexts;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a YAML node")
+    }
+
+    fn visit_bool<E>(self, _: bool) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_i64<E>(self, _: i64) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_u64<E>(self, _: u64) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_i128<E>(self, _: i128) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_u128<E>(self, _: u128) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_f64<E>(self, _: f64) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_str<E>(self, _: &str) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_bytes<E>(self, _: &[u8]) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_unit<E>(self) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_none<E>(self) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_some<D: serde::Deserializer<'de>>(self, inner: D) -> Result<KeyTexts, D::Error> {
+        serde::Deserialize::deserialize(inner)
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut items: A) -> Result<KeyTexts, A::Error> {
+        while items.next_element::<KeyTexts>()?.is_some() {}
+        Ok(KeyTexts)
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<KeyTexts, A::Error> {
+        let mut seen = BTreeSet::new();
+        while let Some(text) = map.next_key::<String>()? {
+            if !seen.insert(text.clone()) {
+                return Err(serde::de::Error::custom(format!("{REPEATED} {text:?}")));
+            }
+            map.next_value::<KeyTexts>()?;
+        }
+        Ok(KeyTexts)
+    }
+
+    fn visit_enum<A: serde::de::EnumAccess<'de>>(self, tagged: A) -> Result<KeyTexts, A::Error> {
+        let (serde::de::IgnoredAny, inner) = tagged.variant()?;
+        serde::de::VariantAccess::newtype_variant::<KeyTexts>(inner)
+    }
 }
 
 /// What a mapping document says in its `type:` key, read before the rest of it.

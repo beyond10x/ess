@@ -202,3 +202,51 @@ fn a_repeated_document_key_keeps_its_unreadable_refusal() {
     assert_eq!(code, "ESS-AUTHOR-001", "{message}");
     assert!(message.contains("duplicate field `summary`"), "{message}");
 }
+
+/// `1` and `"1"`, or `true` and `"true"`, are two YAML keys but one key once a mapping is read as a
+/// map of strings: the map would keep the second value and drop the first.
+#[test]
+fn keys_that_differ_only_in_yaml_type_are_a_repeat() {
+    for (input, key) in [
+        (
+            "{label: morning, limit: 3, tags: {1: 10, \"1\": 20}}",
+            "\"1\"",
+        ),
+        (
+            "{label: morning, limit: 3, tags: {true: 10, \"true\": 20}}",
+            "\"true\"",
+        ),
+        (
+            "{label: morning, limit: 3, tags: {\"null\": 10, null: 20}}",
+            "\"null\"",
+        ),
+    ] {
+        let (code, message) =
+            the_refusal(&document(input, "{board_id: {$instance: board}, limit: 3}"));
+        assert_eq!(code, "ESS-AUTHOR-047", "{input}: {message}");
+        for part in ["timeline[0].input.tags", key, "at line"] {
+            assert!(
+                message.contains(part),
+                "{input}: `{part}` missing from:\n{message}"
+            );
+        }
+    }
+}
+
+/// Keys whose text differs stay two keys, whatever their YAML types.
+#[test]
+fn keys_with_different_text_are_not_a_repeat() {
+    let authoring = authoring(&document(
+        "{label: morning, limit: 3, tags: {1: 10, \"01\": 20, \"1.0\": 30}}",
+        "{board_id: {$instance: board}, limit: 3}",
+    ));
+    let codes: Vec<String> = authoring
+        .refusals
+        .iter()
+        .map(|refusal| refusal.code().to_string())
+        .collect();
+    assert!(
+        !codes.iter().any(|code| code == "ESS-AUTHOR-047"),
+        "{codes:#?}"
+    );
+}

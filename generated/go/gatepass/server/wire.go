@@ -159,22 +159,37 @@ func integerAt(value any, at string, expected string) (int64, error) {
 }
 
 // wholeNumber is the int64 a JSON number spelt with a fraction or an exponent denotes, when it
-// denotes one exactly. The significant digits and their power of ten are read off the text, so a
-// hostile exponent (1e999999999) is refused by counting, without building digits.
+// denotes one exactly. A number built by hand may hold anything, so a spelling outside the JSON
+// number grammar (a byte that is not a digit where a digit belongs, an empty group of digits) is
+// refused. The significant digits and their power of ten are read off the text, so a hostile
+// exponent (1e999999999) is refused by counting, without building digits.
 func wholeNumber(spelling string) (int64, bool) {
+	allDigits := func(part string) bool {
+		for _, digit := range []byte(part) {
+			if digit < '0' || digit > '9' {
+				return false
+			}
+		}
+		return part != ""
+	}
 	unsigned := strings.TrimPrefix(spelling, "-")
-	mantissa, exponent := unsigned, ""
+	mantissa, exponent := unsigned, "0"
 	if index := strings.IndexAny(unsigned, "eE"); index >= 0 {
 		mantissa, exponent = unsigned[:index], unsigned[index+1:]
 	}
-	whole, fraction, _ := strings.Cut(mantissa, ".")
-	sign := int64(1)
+	whole, fraction, pointed := strings.Cut(mantissa, ".")
+	sign, magnitude := int64(1), exponent
 	if strings.HasPrefix(exponent, "-") {
-		sign = -1
+		sign, magnitude = -1, exponent[1:]
+	} else if strings.HasPrefix(exponent, "+") {
+		magnitude = exponent[1:]
+	}
+	if !allDigits(whole) || (pointed && !allDigits(fraction)) || !allDigits(magnitude) {
+		return 0, false
 	}
 	// Bounded: past any power an int64 can carry, a larger exponent says nothing new.
 	scale := int64(0)
-	for _, digit := range []byte(strings.TrimLeft(exponent, "+-")) {
+	for _, digit := range []byte(magnitude) {
 		if scale < 1<<40 {
 			scale = scale*10 + int64(digit-'0')
 		}

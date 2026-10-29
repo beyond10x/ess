@@ -748,23 +748,33 @@ pub fn integer_at(value: &Value, at: &str, expected: &str) -> Result<i64, Decode
 
 /// The `i64` a number spelt with a fraction or an exponent denotes, when it denotes one exactly.
 ///
-/// `spelling` is what [`number`] admitted: an optional `-`, digits, an optional `.` and digits,
-/// and an optional exponent. The significant digits and their power of ten are read off the
-/// text, so a hostile exponent (`1e999999999`) is refused by counting, without building digits.
+/// `spelling` is what [`number`] admits: an optional `-`, digits, an optional `.` and digits,
+/// and an optional exponent. A number built by hand may hold anything, so a spelling outside that
+/// grammar (a byte that is not a digit where a digit belongs, an empty group of digits) is
+/// refused. The significant digits and their power of ten are read off the text, so a hostile
+/// exponent (`1e999999999`) is refused by counting, without building digits.
 fn whole_number(spelling: &str) -> Option<i64> {
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit());
     let (negative, unsigned) = match spelling.strip_prefix('-') {
         Some(rest) => (true, rest),
         None => (false, spelling),
     };
     let (mantissa, exponent) = match unsigned.find(|c: char| c == 'e' || c == 'E') {
         Some(index) => (&unsigned[..index], &unsigned[index + 1..]),
-        None => (unsigned, ""),
+        None => (unsigned, "0"),
     };
-    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let (whole, fraction) = match mantissa.split_once('.') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (mantissa, None),
+    };
     let (sign, magnitude) = match exponent.strip_prefix('-') {
         Some(rest) => (-1, rest),
         None => (1, exponent.strip_prefix('+').unwrap_or(exponent)),
     };
+    if !digits(whole) || fraction.is_some_and(|part| !digits(part)) || !digits(magnitude) {
+        return None;
+    }
+    let fraction = fraction.unwrap_or("");
     // Saturated: past any bound an `i64` cares about, a larger exponent says nothing new.
     let mut scale: i64 = 0;
     for digit in magnitude.bytes() {
