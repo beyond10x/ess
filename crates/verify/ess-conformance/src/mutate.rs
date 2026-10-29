@@ -2657,9 +2657,9 @@ fn guard_of<'ir>(
 /// never a `Timestamp`, with literals by equality, membership or truth, or asks whether it is
 /// `defined`. Over such a guard, which literal each leaf equals — or none — and whether an
 /// `Optional` leaf is present is all that decides it, so each leaf's domain is finite: a boolean's
-/// two values, an enum's variants, and for any other text or number its literals and one value
-/// none of them equals; an `Optional` leaf's domain adds its absence
-/// (<https://github.com/beyond10x/ess/issues/501>). A combination under which the guard is
+/// two values, an enum's variants the literals name and one they do not, and for any other text or
+/// number its literals and one value none of them equals; an `Optional` leaf's domain adds its
+/// absence (<https://github.com/beyond10x/ess/issues/501>). A combination under which the guard is
 /// unknown — a comparison of an absent leaf — decides nothing, so the guard is called
 /// unsatisfiable only where every combination refutes it. Every combination of those domains is
 /// evaluated, and only where their product is at most
@@ -3044,8 +3044,30 @@ fn domains(
                 add(FactValue::Bool(true));
             }
             (ScalarKind::Text, Some(variants)) => {
+                // The leaf is tested only for which literal it equals, so every variant no
+                // literal names answers alike and one of them stands for the rest
+                // (https://github.com/beyond10x/ess/issues/703): a wide enum pinned to two values
+                // is two values and one other, not every variant. A leaf another leaf reads
+                // through, as an attribute read would, keeps every variant.
+                let read_through = leaves.keys().any(|other| {
+                    other.segments().len() > path.segments().len()
+                        && other.segments().starts_with(path.segments())
+                });
+                let named = |variant: &String| {
+                    literals
+                        .iter()
+                        .any(|it| matches!(it, FactValue::Text(text) if text == variant))
+                };
+                let mut other = None;
                 for variant in variants {
-                    add(FactValue::Text(variant.clone()));
+                    if read_through || named(variant) {
+                        add(FactValue::Text(variant.clone()));
+                    } else if other.is_none() {
+                        other = Some(variant.clone());
+                    }
+                }
+                if let Some(other) = other {
+                    add(FactValue::Text(other));
                 }
                 literals
                     .iter()

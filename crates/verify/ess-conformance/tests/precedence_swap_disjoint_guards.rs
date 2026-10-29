@@ -365,8 +365,9 @@ fn guards_that_can_both_hold_are_not_equivalent() {
     }
 }
 
-/// The downstream report's shapes, with neutral names. Every enum and every guard has more value
-/// combinations than the 64 the whole-overlap check tries, as the reported specification's do.
+/// The downstream report's shapes, with neutral names. `PinnedWide` and `SplitWide` add Boolean
+/// pins, so their overlaps have more value combinations than the 64 the whole-overlap check tries,
+/// as the reported specification's do, and only the part that decides is named.
 const DOWNSTREAM: &str = r#"format: ess/23
 system: demo
 version: v1
@@ -378,7 +379,7 @@ components:
     owns:
       domains: [demo.flow]
     accepts:
-      commands: [demo.flow.Pinned, demo.flow.Routed, demo.flow.Split, demo.flow.Shared, demo.flow.Either, demo.flow.EitherBeside]
+      commands: [demo.flow.Pinned, demo.flow.Routed, demo.flow.Split, demo.flow.Shared, demo.flow.Either, demo.flow.EitherBeside, demo.flow.PinnedWide, demo.flow.SplitWide]
     reached_by: network
 
 types:
@@ -515,14 +516,54 @@ commands:
         error: demo.flow.RefusedB
       - name: rest
         accepts: nothing
+  - name: demo.flow.PinnedWide
+    input:
+      - {name: enum_e, type: demo.flow.E}
+      - {name: enum_c, type: demo.flow.C}
+      - {name: bool_p, type: Boolean}
+      - {name: bool_q, type: Boolean}
+      - {name: bool_v, type: Boolean}
+      - {name: bool_w, type: Boolean}
+      - {name: bool_x, type: Boolean}
+    outcomes:
+      - name: first
+        when: {all: ['enum_e == "A"', 'enum_c == "H"', 'bool_p == false', 'bool_q == true', 'bool_w == true']}
+        error: demo.flow.RefusedA
+      - name: second
+        when: {all: ['enum_c == "H"', 'bool_p == true', 'bool_v == false', 'bool_x == false']}
+        error: demo.flow.RefusedB
+      - name: rest
+        accepts: nothing
+  - name: demo.flow.SplitWide
+    input:
+      - {name: op, type: demo.flow.Op}
+      - {name: bool_i, type: Boolean}
+      - {name: bool_h, type: Boolean}
+      - {name: bool_k, type: Boolean}
+      - {name: bool_w, type: Boolean}
+    outcomes:
+      - name: first
+        when: {all: ['op.attr_a == true', 'bool_i == true', 'bool_h == false', 'bool_w == true']}
+        error: demo.flow.RefusedA
+      - name: second
+        when: {all: ['op.attr_b == true', 'bool_i == true', 'bool_k == false']}
+        error: demo.flow.RefusedB
+      - name: rest
+        accepts: nothing
 "#;
 
 #[test]
 fn a_pair_disjoint_on_one_boolean_beside_other_pins_is_equivalent() {
     let report = audit(DOWNSTREAM);
-    equivalent_by_guard(
+    // Within 64 combinations the whole overlap is decided and named, as before.
+    equivalent_naming(
         &report,
         "precedence-swap/demo.flow.Pinned/first/second",
+        &["bool_p == false", "bool_p == true"],
+    );
+    equivalent_by_guard(
+        &report,
+        "precedence-swap/demo.flow.PinnedWide/first/second",
         "(bool_p == false and bool_p == true)",
     );
 }
@@ -530,32 +571,49 @@ fn a_pair_disjoint_on_one_boolean_beside_other_pins_is_equivalent() {
 #[test]
 fn a_pair_disjoint_on_an_enum_beside_variant_attributes_is_equivalent() {
     let report = audit(DOWNSTREAM);
-    equivalent_by_guard(
+    equivalent_naming(
         &report,
         "precedence-swap/demo.flow.Routed/first/second",
-        "(enum_f == X and enum_f == Y)",
+        &["enum_f == X", "enum_f == Y"],
     );
 }
 
 #[test]
 fn a_pair_disjoint_through_variant_attributes_is_equivalent() {
     let report = audit(DOWNSTREAM);
-    let entry = swap(&report, "precedence-swap/demo.flow.Split/first/second");
+    // Decided over the variant table: the two attribute reads hold for no variant together.
+    equivalent_naming(
+        &report,
+        "precedence-swap/demo.flow.Split/first/second",
+        &["op in [V1, V2, V7]", "op in [V3, V4, V8]"],
+    );
+    equivalent_by_guard(
+        &report,
+        "precedence-swap/demo.flow.SplitWide/first/second",
+        "(op in [V1, V2, V7] and op in [V3, V4, V8])",
+    );
+}
+
+/// `id` is `equivalent` because no input selects both branches, and the reason names each of
+/// `conjuncts`.
+fn equivalent_naming(report: &MutationReport, id: &str, conjuncts: &[&str]) {
+    let entry = swap(report, id);
     assert_eq!(
         entry.verdict,
         Verdict::Equivalent,
-        "{}",
+        "{id}\n{}",
         report.render_text()
     );
-    // Decided over the variant table: the two attribute reads hold for no variant together.
     let overlap = entry
         .unsatisfiable_guard
         .as_deref()
         .expect("an equivalent swap names the overlap no input satisfies");
-    assert!(
-        overlap.contains("op") && !overlap.contains("bool_"),
-        "the reason names the attribute reads alone: {overlap}"
-    );
+    for conjunct in conjuncts {
+        assert!(
+            overlap.contains(conjunct),
+            "{id}: the reason names `{conjunct}`: {overlap}"
+        );
+    }
 }
 
 #[test]
