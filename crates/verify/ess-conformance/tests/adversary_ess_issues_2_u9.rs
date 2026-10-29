@@ -314,6 +314,139 @@ const SHAPES: &[Shape] = &[
         accepting: false,
         expect: Expect::Scored,
     },
+    // Pass 2: an enum leaf decided over the variants its guard names and one stand-in for the
+    // rest. `demo.adv.Wide` has six variants; the grid sends every one.
+    Shape {
+        command: "WideNe",
+        input: &[("wide", "demo.adv.Wide")],
+        first: r#"'wide != "w0"'"#,
+        second: r#"'wide == "w0"'"#,
+        accepting: false,
+        expect: Expect::Equivalent,
+    },
+    // The two guards overlap only on variants neither names.
+    Shape {
+        command: "WideUnnamedOverlap",
+        input: &[("wide", "demo.adv.Wide")],
+        first: r#"{wide: {none_of: [w0]}}"#,
+        second: r#"{wide: {none_of: [w1]}}"#,
+        accepting: false,
+        expect: Expect::Scored,
+    },
+    Shape {
+        command: "WideNotIn",
+        input: &[("wide", "demo.adv.Wide")],
+        first: r#"{not: {wide: {in: [w0, w1]}}}"#,
+        second: r#"{not: 'wide == "w2"'}"#,
+        accepting: false,
+        expect: Expect::Scored,
+    },
+    Shape {
+        command: "WideAnyNot",
+        input: &[
+            ("wide", "demo.adv.Wide"),
+            ("flag", "Boolean"),
+            ("amount", "Integer"),
+        ],
+        first: r#"{any: [{wide: {none_of: [w0, w1, w2]}}, 'flag == true']}"#,
+        second: r#"{all: ['flag == false', {wide: {in: [w0, w1]}}, 'amount > 0']}"#,
+        accepting: false,
+        expect: Expect::Equivalent,
+    },
+    Shape {
+        command: "WideAnyNotOpen",
+        input: &[
+            ("wide", "demo.adv.Wide"),
+            ("flag", "Boolean"),
+            ("amount", "Integer"),
+        ],
+        first: r#"{any: [{wide: {none_of: [w0, w1, w2]}}, 'flag == true']}"#,
+        second: r#"{all: ['flag == false', {not: 'wide == "w0"'}, 'amount > 0']}"#,
+        accepting: false,
+        expect: Expect::Scored,
+    },
+    Shape {
+        command: "OptionalWideAbsent",
+        input: &[("owide", "Optional<demo.adv.Wide>")],
+        first: r#"'owide != "w0"'"#,
+        second: r#"{owide: {defined: false}}"#,
+        accepting: false,
+        expect: Expect::Scored,
+    },
+    Shape {
+        command: "OptionalWideShut",
+        input: &[("owide", "Optional<demo.adv.Wide>")],
+        first: r#"{owide: {none_of: [w0]}}"#,
+        second: r#"'owide == "w0"'"#,
+        accepting: false,
+        expect: Expect::Equivalent,
+    },
+    // Two enum inputs of one type.
+    Shape {
+        command: "SharedType",
+        input: &[("left", "demo.adv.Wide"), ("right", "demo.adv.Wide")],
+        first: r#"{all: ['left == "w0"', 'right != "w0"']}"#,
+        second: r#"{all: ['right == "w0"', 'left != "w0"']}"#,
+        accepting: false,
+        expect: Expect::Equivalent,
+    },
+    Shape {
+        command: "SharedTypeOpen",
+        input: &[("left", "demo.adv.Wide"), ("right", "demo.adv.Wide")],
+        first: r#"'left != "w0"'"#,
+        second: r#"'right != "w1"'"#,
+        accepting: false,
+        expect: Expect::Scored,
+    },
+    Shape {
+        command: "SharedTypeCross",
+        input: &[("left", "demo.adv.Wide"), ("right", "demo.adv.Wide")],
+        first: r#"{all: ['left == "w0"', 'right == "w1"']}"#,
+        second: r#"{all: ['left != "w1"', 'right != "w0"']}"#,
+        accepting: false,
+        expect: Expect::Scored,
+    },
+    // An earlier refusal (`EARLIER`) takes part of the overlap: only a variant no guard names is
+    // left over.
+    Shape {
+        command: "WideTaken",
+        input: &[("wide", "demo.adv.Wide")],
+        first: r#"'wide != "w1"'"#,
+        second: r#"'wide != "w2"'"#,
+        accepting: false,
+        expect: Expect::Scored,
+    },
+    Shape {
+        command: "WideTakenShut",
+        input: &[("wide", "demo.adv.Wide")],
+        first: r#"'wide != "w1"'"#,
+        second: r#"'wide != "w2"'"#,
+        accepting: false,
+        expect: Expect::Equivalent,
+    },
+    // Accepting branches that emit.
+    Shape {
+        command: "WideEmits",
+        input: &[("wide", "demo.adv.Wide")],
+        first: r#"'wide == "w0"'"#,
+        second: r#"'wide != "w0"'"#,
+        accepting: true,
+        expect: Expect::Equivalent,
+    },
+    Shape {
+        command: "WideEmitsUnnamed",
+        input: &[("wide", "demo.adv.Wide")],
+        first: r#"{wide: {none_of: [w0]}}"#,
+        second: r#"{wide: {none_of: [w1]}}"#,
+        accepting: true,
+        expect: Expect::Scored,
+    },
+];
+
+/// A refusal declared before `first` in the commands named.
+const EARLIER: &[(&str, &str)] = &[
+    ("WideTaken", r#"'wide == "w0"'"#),
+    ("WideTakenShut", r#"{wide: {none_of: [w1, w2]}}"#),
 ];
 
 const HEADER: &str = r#"format: ess/23
@@ -336,6 +469,7 @@ types:
       - {name: V1, attributes: {attr_a: true}}
       - {name: V2, attributes: {attr_a: false}}
       - {name: V3, attributes: {attr_a: true}}
+  - {name: demo.adv.Wide, kind: enum, variants: [w0, w1, w2, w3, w4, w5]}
 
 errors:
   - name: demo.adv.RefusedA
@@ -369,6 +503,13 @@ fn fixture(shapes: &[Shape], swapped: Option<&str>) -> String {
             writeln!(text, "      - {{name: {name}, type: {kind}}}").expect("a String takes text");
         }
         text.push_str("    outcomes:\n");
+        if let Some((_, guard)) = EARLIER.iter().find(|(it, _)| *it == shape.command) {
+            writeln!(
+                text,
+                "      - {{name: earlier, when: {guard}, error: demo.adv.RefusedA}}"
+            )
+            .expect("a String takes text");
+        }
         let (first_answer, second_answer) = if shape.accepting {
             ("emits: [demo.adv.Left]", "emits: [demo.adv.Right]")
         } else {
@@ -444,6 +585,7 @@ fn values(kind: &str) -> Vec<Option<Node>> {
         "String" => text(&["u", "v", "w"]),
         "demo.adv.Lane" => text(&["north", "south", "east"]),
         "demo.adv.Op" => text(&["V1", "V2", "V3"]),
+        "demo.adv.Wide" => text(&["w0", "w1", "w2", "w3", "w4", "w5"]),
         "demo.adv.Route" => ["north", "south", "east"]
             .into_iter()
             .map(|lane| {
@@ -610,6 +752,74 @@ fn attributes_of_an_optional_enum_decide_soundly() {
         "OptionalAttributeNe",
         "OptionalAttributeAbsent",
     ]);
+}
+
+#[test]
+fn the_enum_stand_in_decides_soundly() {
+    assert_agree(&[
+        "WideNe",
+        "WideUnnamedOverlap",
+        "WideNotIn",
+        "WideAnyNot",
+        "WideAnyNotOpen",
+        "OptionalWideAbsent",
+        "OptionalWideShut",
+    ]);
+}
+
+#[test]
+fn two_enum_inputs_of_one_type_decide_soundly() {
+    assert_agree(&["SharedType", "SharedTypeOpen", "SharedTypeCross"]);
+}
+
+#[test]
+fn an_earlier_branch_taking_the_named_part_of_the_overlap_decides_soundly() {
+    assert_agree(&["WideTaken", "WideTakenShut"]);
+}
+
+#[test]
+fn accepting_pairs_over_the_enum_stand_in_decide_soundly() {
+    assert_agree(&["WideEmits", "WideEmitsUnnamed"]);
+}
+
+/// The reading `ess-diff` asks: over declared values only, an overlap reached only by a variant
+/// no literal names is satisfiable, and one every variant is named out of is not.
+#[test]
+fn declared_values_reading_keeps_the_unnamed_variants() {
+    use ess_compiler::ir::ResolvedCondition;
+    use ess_primitives::predicate::Predicate;
+    let ir = compiled(&fixture(SHAPES, None));
+    let overlap = |command: &str| {
+        let found = ir
+            .commands()
+            .values()
+            .find(|it| it.name.to_string() == format!("demo.adv.{command}"))
+            .expect("a command of the fixture");
+        let guard = |name: &str| match &found
+            .outcomes
+            .iter()
+            .find(|it| it.name.to_string() == name)
+            .expect("a branch")
+            .condition
+        {
+            ResolvedCondition::When { predicate } => predicate.clone(),
+            other => panic!("{other:?}"),
+        };
+        (found, Predicate::All(vec![guard("first"), guard("second")]))
+    };
+    let decided = |command: &str| {
+        let (found, guard) = overlap(command);
+        mutate::satisfiable_by_declared_values(&ir, found, &guard)
+    };
+    assert_eq!(
+        [
+            decided("WideUnnamedOverlap"),
+            decided("SharedTypeOpen"),
+            decided("WideNe"),
+            decided("SharedType"),
+        ],
+        [Some(true), Some(true), Some(false), Some(false)]
+    );
 }
 
 /// The soundness property over every shape at once: no swap scored `equivalent` is observable.
