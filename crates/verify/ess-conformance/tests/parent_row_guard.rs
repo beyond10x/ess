@@ -613,3 +613,133 @@ fn a_subject_refusal_the_first_input_misses_leaves_the_segment_as_it_was() {
         .collect();
     assert!(failed.is_empty(), "no scenario fails: {failed:#?}");
 }
+
+/// The deleter's input, as [`MODEL`] writes it.
+const DELETER_INPUT: &str = "  - name: demo.d.DeleteChild\n    input:\n";
+
+/// The deleter's `affects:` filter, as [`MODEL`] writes it.
+const DELETER_WHERE: &str = "            where: {all: [parent_id == subject.id, child_id == \
+     input.child_id]}\n            deletes: demo.d.Child\n";
+
+/// No scenario the suite holds fails on the interpreted target.
+fn assert_none_fails(run: &Run) {
+    let failed: Vec<String> = run
+        .results
+        .iter()
+        .filter(|(_, result)| matches!(result.status, Status::Failed | Status::Error))
+        .map(|(id, result)| {
+            format!(
+                "{id}: {:?} {:#?}\n{}",
+                result.status,
+                result.diagnostics().collect::<Vec<_>>(),
+                serde_json::to_string_pretty(&scenario(run, id)).unwrap()
+            )
+        })
+        .collect();
+    assert!(
+        failed.is_empty(),
+        "no scenario fails on the interpreted target:\n{}",
+        failed.join("\n")
+    );
+}
+
+/// `wanted` is either synthesized and passes, or refused as ESS-SYNTH-001.
+fn assert_passes_or_refused(run: &Run, wanted: &str) {
+    let written = run
+        .synthesis
+        .suite
+        .scenarios
+        .keys()
+        .any(|id| id.to_string() == wanted);
+    if written {
+        let result = run.results.get(wanted).expect("run");
+        assert_eq!(
+            result.status,
+            Status::Passed,
+            "{wanted} passes on the interpreted target: {:#?}\n{:#}",
+            result.diagnostics().collect::<Vec<_>>(),
+            scenario(run, wanted)
+        );
+    } else {
+        let refusals = refused(run, wanted);
+        assert!(
+            refusals
+                .iter()
+                .any(|line| line.starts_with("[ESS-SYNTH-001]")),
+            "{wanted} is refused as ESS-SYNTH-001: {refusals:#?}"
+        );
+    }
+}
+
+/// `base` whose deleter names the child by its identity (`row == input.row`), a pinned entry.
+fn pinned(base: &str) -> String {
+    let text = replaced(
+        base,
+        DELETER_INPUT,
+        "  - name: demo.d.DeleteChild\n    input:\n      - {name: row, type: demo.d.ChildRow}\n",
+    );
+    replaced(
+        &text,
+        DELETER_WHERE,
+        "            where: {all: [parent_id == subject.id, row == input.row]}\n            \
+         deletes: demo.d.Child\n",
+    )
+}
+
+/// `base` whose deleter removes the children a list names (`each:`), an entry naming its rows.
+fn per_element(base: &str) -> String {
+    let text = replaced(
+        base,
+        "  - {name: demo.d.ChildRow, kind: newtype, of: String}\n",
+        "  - {name: demo.d.ChildRow, kind: newtype, of: String}\n  - name: demo.d.Pick\n    kind: \
+         struct\n    fields:\n      - {name: row, type: demo.d.ChildRow}\n",
+    );
+    let text = replaced(
+        &text,
+        DELETER_INPUT,
+        "  - name: demo.d.DeleteChild\n    input:\n      - {name: picks, type: \
+         List<demo.d.Pick>}\n",
+    );
+    let text = replaced(
+        &text,
+        "      - name: not-found\n        unknown_instance: true\n        error: demo.d.NotFound\n      \
+         - name: other-tenant\n        when_subject:",
+        "      - name: repeated\n        when: {not: {distinct: {in: picks, as: p, by: p.row}}}\n        \
+         error: demo.d.NotFound\n      - name: not-found\n        unknown_instance: true\n        \
+         error: demo.d.NotFound\n      - name: other-tenant\n        when_subject:",
+    );
+    replaced(
+        &text,
+        DELETER_WHERE,
+        "            each: {in: input.picks, as: p}\n            instance: p.row\n            \
+         deletes: demo.d.Child\n",
+    )
+}
+
+#[test]
+fn a_pinned_deleter_past_a_subject_refusal_sends_an_input_its_subject_accepts() {
+    let run = run(&pinned(MODEL));
+    assert_passes_or_refused(&run, DELETED);
+    assert_none_fails(&run);
+}
+
+#[test]
+fn a_pinned_deleter_past_a_required_tenant_refusal_sends_an_input_its_subject_accepts() {
+    let run = run(&pinned(&required_tenant()));
+    assert_passes_or_refused(&run, DELETED);
+    assert_none_fails(&run);
+}
+
+#[test]
+fn a_per_element_deleter_past_a_subject_refusal_sends_an_input_its_subject_accepts() {
+    let run = run(&per_element(MODEL));
+    assert_passes_or_refused(&run, DELETED);
+    assert_none_fails(&run);
+}
+
+#[test]
+fn a_per_element_deleter_past_a_required_tenant_refusal_sends_an_input_its_subject_accepts() {
+    let run = run(&per_element(&required_tenant()));
+    assert_passes_or_refused(&run, DELETED);
+    assert_none_fails(&run);
+}
