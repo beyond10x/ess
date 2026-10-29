@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-29T10:39:41Z",
+  "actor": "human:timo",
+  "artifact": "story:openapi-import-admits-open-objects-as-json",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ess-openapi open_objects, tuples, adversary_pass1, adversary_ess_issues_2_u6; ess-cli openapi_accounting passed; local gate (D171 form with ess-synth's whole set) on 75a9d5b91 and its failed lanes re-run green on c5a17aab7",
+    "reference": "commit:c5a17aab7"
+  }
+}

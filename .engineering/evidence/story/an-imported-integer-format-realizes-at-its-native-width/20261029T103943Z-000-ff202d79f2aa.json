@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-29T10:39:43Z",
+  "actor": "human:timo",
+  "artifact": "story:an-imported-integer-format-realizes-at-its-native-width",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "schema-contract bundle_integer_formats, model_ergonomics, adversary_ess_issues_2_u6; ess-cli schema_bundle passed; local gate (D171 form with ess-synth's whole set) on 75a9d5b91 and its failed lanes re-run green on c5a17aab7",
+    "reference": "commit:c5a17aab7"
+  }
+}

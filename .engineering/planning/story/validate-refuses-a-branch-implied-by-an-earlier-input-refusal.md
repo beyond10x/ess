@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:validate-refuses-a-branch-implied-by-an-earlier-input-refusal
 kind: story
-status: active
+status: implemented
 title: Validate refuses a branch implied by an earlier input-guarded refusal
 summary: A when branch whose guard implies an earlier input-guarded refusal guard in the same step is UnreachableBranch at validate (ess#702)
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T07:28:23Z", actor: "human:timo", revision: 2, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 - {from: "proposed", to: "active", at: "2026-10-29T07:28:23Z", actor: "human:timo", revision: 3, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
+- {from: "active", to: "implemented", at: "2026-10-29T10:39:52Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 ---
 ## Problem
 

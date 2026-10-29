@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ess-http-admits-text-bodies-route-refusals-empty-bodies-and-array-views
 kind: story
-status: active
+status: implemented
 title: ess-http/1 admits text bodies, route refusals, empty bodies and array views
 summary: 'Adopter reports N21, N26, N27, N29: four answer forms refused by ess-http/1 (ess#673).'
 tags:
@@ -46,10 +46,11 @@ scope:
   path: website/docs/guides/http-routes.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T05:17:19Z", actor: "human:timo", revision: 6, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 - {from: "proposed", to: "active", at: "2026-10-29T05:17:20Z", actor: "human:timo", revision: 7, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
+- {from: "active", to: "implemented", at: "2026-10-29T10:39:40Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 ---
 ## Problem
 

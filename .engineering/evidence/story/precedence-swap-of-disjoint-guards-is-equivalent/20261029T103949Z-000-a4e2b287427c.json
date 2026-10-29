@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-29T10:39:49Z",
+  "actor": "human:timo",
+  "artifact": "story:precedence-swap-of-disjoint-guards-is-equivalent",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ess-conformance precedence_swap_disjoint_guards, adversary_ess_issues_2_u9, mutation_arms, mutation_identical_answer, mutation_unkillable, mutation_known_failures; ess-diff adversary_514_pass1, narrowed_acceptance passed; local gate (D171 form with ess-synth's whole set) on 75a9d5b91 and its failed lanes re-run green on c5a17aab7",
+    "reference": "commit:c5a17aab7"
+  }
+}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:openapi-import-admits-open-objects-as-json
 kind: story
-status: active
+status: implemented
 title: Openapi import admits open objects as json
 summary: 'Adopter report R9: OpenAPI import refuses open objects and nullable anyOf (ess#647).'
 tags:
@@ -30,10 +30,11 @@ scope:
   path: crates/generate/ess-openapi/tests/open_objects.rs
 - confidence: cited
   path: docs/design/review-openapi-accounting.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-23T13:39:56Z", actor: "human:timo", revision: 4, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-29T05:17:20Z", actor: "human:timo", revision: 8, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
+- {from: "active", to: "implemented", at: "2026-10-29T10:39:42Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 ---
 ## Problem
 

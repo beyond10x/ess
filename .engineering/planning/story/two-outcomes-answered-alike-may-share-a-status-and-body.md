@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:two-outcomes-answered-alike-may-share-a-status-and-body
 kind: story
-status: active
+status: implemented
 title: Two outcomes answered alike may share a status and body
 summary: 'Adopter report S3: Two outcomes answered alike cannot share a status and body (ess#652).'
 tags:
@@ -36,10 +36,11 @@ scope:
   path: website/docs/guides/http-routes.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T05:17:19Z", actor: "human:timo", revision: 6, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 - {from: "proposed", to: "active", at: "2026-10-29T05:17:19Z", actor: "human:timo", revision: 7, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
+- {from: "active", to: "implemented", at: "2026-10-29T10:39:38Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 ---
 ## Problem
 

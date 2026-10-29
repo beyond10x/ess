@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:precedence-swap-of-disjoint-guards-is-equivalent
 kind: story
-status: active
+status: implemented
 title: A precedence swap of disjoint input guards is equivalent
 summary: Optional inputs and undecidable conjuncts no longer leave a disjoint precedence swap unwitnessed (ess#703)
 refs:
@@ -11,10 +11,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 5
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T07:28:22Z", actor: "human:timo", revision: 2, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 - {from: "proposed", to: "active", at: "2026-10-29T07:28:22Z", actor: "human:timo", revision: 3, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
+- {from: "active", to: "implemented", at: "2026-10-29T10:39:50Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 ---
 ## Problem
 
@@ -108,3 +109,21 @@ disjoint.
 Out of scope here, a possible follow-up: swaps whose guards can both hold unless the model's
 declared invariants exclude it (for example a field whose value depends on another). Deciding
 equivalence under declared invariants is a separate change.
+
+## Results per shape
+
+Each downstream shape rebuilt as a neutral model, scored by `ess` 0.76.0 and by the batch 2 head.
+
+| shape | 0.76.0 | cause on 0.76.0 | 0.77.0 |
+|---|---|---|---|
+| S1, pins contradicting beside trailing Boolean conjuncts | survived | 4 × 2⁵ = 128 combinations, over 64 | equivalent |
+| S1, trailing `amount > 0` | survived | a conjunct the check could not decide | equivalent, naming the contradicting pins |
+| S1, fields inside an input struct | survived | over 64 combinations | equivalent |
+| S1, over stored fields | no precedence-swap site | a `when:` cannot read a stored field (ESS-COMMAND-003); `when_subject:` branches are not swap sites | unchanged |
+| S2, duplicate `in` conjunct | unwitnessed | 35 × 3 = 105 combinations; the duplicate is not the cause | equivalent |
+| S3, conjunction against a disjunction | survived | 6 × 6 × 2³ = 288 combinations | equivalent |
+| S4, 30-value list against a value outside it | survived | 35 × 4 = 140 combinations | equivalent |
+| S4 control, value inside the list | killed | — | killed |
+
+Tests: `ess-conformance/tests/precedence_swap_disjoint_guards.rs`, the `s1_*` to `s4_*` cases.
+Equivalence under declared invariants (S5–S7) stays out of scope; #703 names it as a follow-up.

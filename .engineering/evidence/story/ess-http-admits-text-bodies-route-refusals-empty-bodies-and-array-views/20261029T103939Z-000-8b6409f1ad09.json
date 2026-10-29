@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-29T10:39:39Z",
+  "actor": "human:timo",
+  "artifact": "story:ess-http-admits-text-bodies-route-refusals-empty-bodies-and-array-views",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ess-http route_refusals_and_view_answers, outcomes, adversary_ess_issues_2_u5; ess-gen openapi_http; ess-synth http_binding passed; local gate (D171 form with ess-synth's whole set) on 75a9d5b91 and its failed lanes re-run green on c5a17aab7",
+    "reference": "commit:c5a17aab7"
+  }
+}

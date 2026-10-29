@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-29T10:39:51Z",
+  "actor": "human:timo",
+  "artifact": "story:validate-refuses-a-branch-implied-by-an-earlier-input-refusal",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ess-domain implied_input_guard, adversary_ess_issues_2_u10, adversary_refstate_pass1, refusal_beside_state; ess-conformance adversary_refstate_pass1, adversary_refstate_pass2, adversary_overlap_pass1, mutation_identical_answer, witness_directed_search passed; local gate (D171 form with ess-synth's whole set) on 75a9d5b91 and its failed lanes re-run green on c5a17aab7",
+    "reference": "commit:c5a17aab7"
+  }
+}

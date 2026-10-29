@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-imported-integer-format-realizes-at-its-native-width
 kind: story
-status: active
+status: implemented
 title: An imported integer format realizes at its native width
 summary: 'Adopter report R10: An imported integer format does not realize at native width (ess#648).'
 tags:
@@ -24,10 +24,11 @@ scope:
   path: crates/generate/schema-contract/src/realize.rs
 - confidence: inferred
   path: crates/generate/schema-contract/tests/bundle_integer_formats.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T05:17:20Z", actor: "human:timo", revision: 6, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 - {from: "proposed", to: "active", at: "2026-10-29T05:17:21Z", actor: "human:timo", revision: 7, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
+- {from: "active", to: "implemented", at: "2026-10-29T10:39:44Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 ---
 ## Problem
 

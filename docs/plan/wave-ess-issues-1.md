@@ -68,8 +68,8 @@ A wave is at most four units (the orchestrator's process rule), so the S and M i
 | batch | units | issues | why together |
 |---|---|---|---|
 | 1 | U1, U2, U3, U4 | #685, #686, #687, #688, #643, #644, #664, #665, #671, #666 (option A fixture), #651, #653 | no two share a source file; U1 and U4 share regenerated projections (U1 merges first, the integration branch regenerates on conflict), U1 and U2 share a guide page, and the integration branch writes every `CHANGELOG.md` entry; decided by D133, D137, D138 |
-| 2 | U5, U6, U7, U8 | #652, #673, #647, #648, #661, #659 | U5 needs U4; U6 and U7 need U1 (`realize.rs`); D135 may take #648 or #661 out |
-| 3 | U9, U10, the two #554 synthesis stories | #645, #693, #694 | U9 after `0.75.0` (`synthesize.rs`) |
+| 2 | U5, U6, U7, U8, U9, U10 | #652, #673, #647, #648, #661, #659, #703, #702 | U5 needs U4; U6 and U7 need U1 (`realize.rs`); D135 may take #648 or #661 out; U9 and U10 are two downstream defects D186 added over the four-unit cap |
+| 3 | U11, U12, the two #554 synthesis stories | #645, #693, #694 | U11 after `0.75.0` (`synthesize.rs`) |
 | 4 | exchange wave 1: the exchange in the specification, its projections, its conformance, the WebSocket binding | #650 | `epic:messages-are-exchanged-independent-of-the-wire`; moves `ess/N` |
 | 5 | exchange wave 2: HTTP upgrade key, broker binding, JSON-RPC binding; the sourceless view (first cut) | #650, #674 | the same `ess/N` as batch 4 when both land in one release |
 | 6 | the language batch | #636, #640, #642, #498, #678, #637 (tag half), #638 | one source format opened once |
@@ -91,8 +91,10 @@ A unit of batches 1-3 that turns out to need a new `ess/N` leaves for a format b
 | U6 openapi-import | #647, #648 | openapi-import-admits-open-objects-as-json; an-imported-integer-format-realizes-at-its-native-width | ess-openapi, schema-contract | U1, U7 |
 | U7 rust-layout | #661 | generated-fields-keep-declaration-order-and-box-only-recursion | schema-contract realizers | U1, U6 |
 | U8 synth-field-names | #659 | a-command-input-and-response-field-may-share-a-name-in-rust | ess-synth | none |
-| U9 synthesis-order | #645, #693 | new | ess-conformance synthesis | orchestrator 0.75.0 (`synthesize.rs`) |
-| U10 cli-flags | #694 | new | ess-cli-contract, ess-cli-project | none |
+| U9 precedence-swap | #703 | precedence-swap-of-disjoint-guards-is-equivalent | ess-conformance (`mutate.rs`), ess-diff | none |
+| U10 unreachable-branch | #702 | validate-refuses-a-branch-implied-by-an-earlier-input-refusal | ess-domain (`command.rs`) | U9 (tests in ess-conformance) |
+| U11 synthesis-order | #645, #693 | new | ess-conformance synthesis | orchestrator 0.75.0 (`synthesize.rs`) |
+| U12 cli-flags | #694 | new | ess-cli-contract, ess-cli-project | none |
 
 ## Builds
 
@@ -119,12 +121,14 @@ tree exists and no implementor has run (nothing builds before the `0.75.0` tag).
 | U2 subject-guards | released in 0.76.0 (batch 1) | #643 decline with the idiom (drop `when_subject:`, keep `unknown_instance: true`; hint in ESS-COMMAND-003, no duplicate 005); #644 accept, redesigned, no format: a `defined`/`not defined` pair over one Optional path is proved exhaustive, held-state partitions excluded |
 | U3 composition | released in 0.76.0 (batch 1) | #665 accept, redesigned (hint per kind, no format); #664 and #671 accept, redesigned, both at `ess-composition/5`, one unit, #664 first; #671 gets its own story |
 | U4 http-presentation | released in 0.76.0 (batch 1) | #653 accept, additive `operation_id` and `servers` (ESS-HTTP-032/033); #651 accept as one `info.description` sentence, routes stay (D137) |
-| U5 http-answers | batch 2, stories active | split into U5a (#652 `alike` groups, N21 `encoding: text`) then U5b (N26 route `refusals`, N27 literal body on `empty`, N29 `body: array`); all `ess-http/1` additions; after U4 |
-| U6 openapi-import | batch 2, stories active | #647 accept, redesigned, stays `ess-openapi-import/1`: empty schemas import as `json`, objects gain `additional_properties`, a nullable `anyOf`/`oneOf` imports as `Optional<X>`, as the operator approved on 2026-10-23 (D135; the scoper's null-gap variant is dropped); #648 accept, redesigned: bundle `int32`/`int64` realize at native width only under the opt-in `types-bundle --integer-format-widths`, so the default output keeps its bytes (D135) |
-| U7 rust-layout | batch 2, story active | #661 accept, redesigned, no format: declaration order via a side table from `ModelTypes` under the opt-in `--declared-field-order`, Box only on cycle-closing references under the opt-in `--rust-box-only-recursion`, Go keeps pointers; the default output keeps its bytes (D135); no edit in `realize.rs` `kind()` |
-| U8 synth-field-names | batch 2, story active | #659 accept, redesigned: response fields get their own allocation scope in Rust and web; field `naming.code` becomes the draft follow-up `story:a-field-naming-code-chooses-its-identifier-in-rust-and-go` |
-| U9 synthesis-order | not started | #645 accept as proposed, edits `synthesize.rs` `arranged` (collides with 0.75.0); #693 accept as proposed, stays in `synthesize/related_guard.rs` |
-| U10 cli-flags | not started | #694 gaps 1-2 accept, redesigned: `flag` over a required Boolean, `repeated` over a required `List<T>`, in ess-cli/1 and /2 with no format bump; gap 3 decline with the idiom plus a clearer refusal |
+| U5 http-answers | released in 0.77.0 (batch 2) | split into U5a (#652 `alike` groups, N21 `encoding: text`) then U5b (N26 route `refusals`, N27 literal body on `empty`, N29 `body: array`); all `ess-http/1` additions; after U4 |
+| U6 openapi-import | released in 0.77.0 (batch 2) | #647 accept, redesigned, stays `ess-openapi-import/1`: empty schemas import as `json`, objects gain `additional_properties`, a nullable `anyOf`/`oneOf` imports as `Optional<X>`, as the operator approved on 2026-10-23 (D135; the scoper's null-gap variant is dropped); #648 accept, redesigned: bundle `int32`/`int64` realize at native width only under the opt-in `types-bundle --integer-format-widths`, so the default output keeps its bytes (D135) |
+| U7 rust-layout | released in 0.77.0 (batch 2) | #661 accept, redesigned, no format: declaration order via a side table from `ModelTypes` under the opt-in `--declared-field-order`, Box only on cycle-closing references under the opt-in `--rust-box-only-recursion`, Go keeps pointers; the default output keeps its bytes (D135); no edit in `realize.rs` `kind()` |
+| U8 synth-field-names | released in 0.77.0 (batch 2) | #659 accept, redesigned: response fields get their own allocation scope in Rust and web; field `naming.code` becomes the draft follow-up `story:a-field-naming-code-chooses-its-identifier-in-rust-and-go` |
+| U9 precedence-swap | released in 0.77.0 (batch 2) | #703 accept (D186): a precedence swap of guards no input selects together is `equivalent` (`unsatisfiable_guard`), naming the contradicting part; an enum compared only by equality or membership is decided over its named variants plus one stand-in; downstream shapes S1-S4 decided, S5-S7 (equivalence under declared invariants) a possible follow-up |
+| U10 unreachable-branch | released in 0.77.0 (batch 2) | #702 accept (D186): validate refuses a `when:` branch implied by an earlier input-guarded refusal as `unreachable_branch`; the D177 replay found no adopter refused, so it ships as a refusal |
+| U11 synthesis-order | not started | #645 accept as proposed, edits `synthesize.rs` `arranged` (collides with 0.75.0); #693 accept as proposed, stays in `synthesize/related_guard.rs` |
+| U12 cli-flags | not started | #694 gaps 1-2 accept, redesigned: `flag` over a required Boolean, `repeated` over a required `List<T>`, in ess-cli/1 and /2 with no format bump; gap 3 decline with the idiom plus a clearer refusal |
 
 ## Decisions for the operator
 

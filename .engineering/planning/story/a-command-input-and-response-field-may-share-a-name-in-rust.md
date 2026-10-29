@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-command-input-and-response-field-may-share-a-name-in-rust
 kind: story
-status: active
+status: implemented
 title: Rust and web synthesis scope a command's input and response fields apart
 summary: Rust and web synthesis refuse a command whose input and response fields share a name, and the refusal's naming.code remedy does not clear it (beyond10x/ess#659); defect, still on 0.76.0.
 tags:
@@ -21,10 +21,11 @@ scope:
   path: crates/generate/ess-synth/src/rust/feasibility.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/feasibility.rs
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T05:17:22Z", actor: "human:timo", revision: 13, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 - {from: "proposed", to: "active", at: "2026-10-29T05:17:22Z", actor: "human:timo", revision: 14, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
+- {from: "active", to: "implemented", at: "2026-10-29T10:39:48Z", actor: "human:timo", revision: 17, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 ---
 ## Need
 
