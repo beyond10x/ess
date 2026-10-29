@@ -1,0 +1,34 @@
+openapi: 3.0.3
+info:
+  title: demo.wide30
+  version: v1
+paths:
+  /items:
+    get:
+      operationId: listItems
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Item"}
+components:
+  schemas:
+    Item:
+      type: object
+      properties:
+        id: {type: string, nullable: true}
+        size: {type: integer, minimum: 1, exclusiveMinimum: true, format: int32}
+        state: {type: string, enum: [on, off, null], nullable: true}
+        flag: {type: boolean, nullable: false}
+        child:
+          type: object
+          nullable: true
+          properties:
+            name: {type: string}
+          required: [name]
+          additionalProperties: false
+      required: [id]
+      additionalProperties: false

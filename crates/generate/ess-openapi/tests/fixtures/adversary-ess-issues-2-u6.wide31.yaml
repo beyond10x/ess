@@ -1,0 +1,81 @@
+openapi: 3.1.0
+info:
+  title: demo.wide
+  version: v1
+  x-owner: demo
+paths:
+  /things/{id}:
+    get:
+      operationId: getThing
+      summary: Get a thing
+      tags: [b, a]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Thing"
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: {type: string, minLength: 1}
+                required: [message]
+                additionalProperties: false
+    post:
+      operationId: putThing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: {$ref: "#/components/schemas/Thing"}
+              maxItems: 4
+      responses:
+        "202": {description: accepted}
+components:
+  schemas:
+    Thing:
+      type: object
+      description: a thing
+      properties:
+        id: {type: string, format: uuid}
+        label: {type: [string, "null"], maxLength: 12}
+        kind: {type: [string, "null"], enum: [a, b, null]}
+        fixed: {const: v1}
+        count: {type: integer, minimum: 0, format: int64}
+        ratio: {type: number, exclusiveMaximum: 1}
+        flag: {type: boolean, default: false}
+        pair:
+          type: array
+          prefixItems: [{type: string}, {type: integer}]
+          items: false
+        empty: {type: array, maxItems: 0}
+        nested:
+          type: object
+          properties:
+            deep: {type: array, items: {type: array, items: {type: number}}}
+          required: [deep]
+          additionalProperties: false
+        tagged: {type: string, anyOf: [{minLength: 1}, {maxLength: 2}]}
+        ref: {$ref: "#/components/schemas/Other", description: sibling}
+        ext: {type: string, x-thing: 1}
+      required: [id, kind]
+      additionalProperties: false
+    Other:
+      type: object
+      properties: {}
+      additionalProperties: false
+    Bare:
+      type: string
+      pattern: "^[a-z]+$"
