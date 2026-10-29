@@ -87,7 +87,7 @@ the batches after it. Batch 5 (`0.80.0`) has four units: React tokens and themes
 account menu `sets` and `navigate`; the row confirm key; the Uuid path segment. Batch 6 holds the
 minor findings. The stories carry the tags `ess-batch-5` and `ess-batch-6`.
 
-Two synthesis findings filed on 2026-10-29 were placed under the orchestrator's approval:
+Two synthesis findings filed on 2026-10-29 were placed by D229 (`approval-record:d229-u20-in-batch-4-and-705-in-batch-7`):
 - #706 is a defect. It joins batch 4 as U20, its fifth unit, over the cap as D186 allowed for batch 2.
   Batch 4 is the earliest batch not yet gated.
 - #705 is a gap. It joins batch 7 beside D226's obligation-contract story. The exchange, language and suite-format batches listed above as 4 to 7 follow after
