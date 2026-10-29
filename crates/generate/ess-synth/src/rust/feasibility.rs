@@ -145,7 +145,8 @@ impl Inventory {
     }
 
     /// The fields of one emitted struct, allocated in `field_scope`. A command's response is a
-    /// struct of its own beside the input, so its fields take a scope of their own.
+    /// struct of its own beside the input, so its fields take a scope of their own. Every scope
+    /// key is a prefix and a bare qualified name, so no declaration can spell another's key.
     fn fields_in(
         &mut self,
         scope: &str,
@@ -542,7 +543,7 @@ fn records_and_commands(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) 
             );
             inventory.fields_in(
                 &format!("response:{source}"),
-                &format!("fields:{source}.response"),
+                &format!("response fields:{source}"),
                 &command.name,
                 &command.response,
             );
@@ -1021,6 +1022,16 @@ fn size_cycles(inventory: &mut Inventory, ir: &EssIr) {
 }
 
 fn wire_fields(inventory: &mut Inventory, owner: &QualifiedName, fields: &[ResolvedField]) {
+    wire_object(inventory, owner, &owner.to_string(), fields);
+}
+
+/// The JSON members of one emitted object, `object` naming it in a refusal.
+fn wire_object(
+    inventory: &mut Inventory,
+    owner: &QualifiedName,
+    object: &str,
+    fields: &[ResolvedField],
+) {
     let mut names: BTreeMap<&str, Vec<String>> = BTreeMap::new();
     for field in fields {
         names
@@ -1034,7 +1045,7 @@ fn wire_fields(inventory: &mut Inventory, owner: &QualifiedName, fields: &[Resol
                 Code::WireCollision,
                 sources,
                 format!(
-                    "generated codec for `{owner}` maps multiple fields to JSON member `{key}`"
+                    "generated codec for `{object}` maps multiple fields to JSON member `{key}`"
                 ),
             );
         }
@@ -1112,6 +1123,13 @@ fn wire(
             );
         }
         wire_fields(inventory, &command.name, &command.input);
+        // The specification checks input members only; the response is its own JSON object.
+        wire_object(
+            inventory,
+            &command.name,
+            &format!("{} response", command.name),
+            &command.response,
+        );
         outcome_codec_locals(inventory, ir, layout, command);
     }
 }

@@ -562,7 +562,7 @@ fn a_collision_inside_a_response_still_refuses() {
             .expect("two response fields want `foo_bar`"),
     );
     assert!(
-        detail.contains("`foo_bar` is allocated 2 times in `fields:demo.core.Send.response`"),
+        detail.contains("`foo_bar` is allocated 2 times in `response fields:demo.core.Send`"),
         "{detail}"
     );
 }
