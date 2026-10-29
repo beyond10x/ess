@@ -309,6 +309,123 @@ fn declared_order_and_box_only_recursion_build_and_round_trip() {
     );
 }
 
+#[allow(dead_code)]
+#[path = "fixtures/normalization_model.rs"]
+mod normalization_model;
+
+#[path = "fixtures/cycle_shapes.rs"]
+mod cycle_shapes;
+
+/// The cycle shapes and records the fixture above leaves out (beyond10x/ess#661): a three-type
+/// cycle, recursion through a union payload, a map and an optional list, a type reached from
+/// inside and outside its cycle, an open struct and a shorthand struct.
+fn cycle_shapes_plan() -> Plan {
+    Plan::from_model(&normalization_model::selection(
+        cycle_shapes::SOURCE,
+        &cycle_shapes::ROOTS,
+    ))
+    .unwrap()
+}
+
+const CYCLE_SHAPES_WIRE: &str = r##"
+use demo_r::*;
+
+fn round_trip<T>(text: &str)
+where
+    T: serde::de::DeserializeOwned + serde::Serialize + PartialEq + std::fmt::Debug,
+{
+    let value: T = serde_json::from_str(text).unwrap();
+    assert_eq!(serde_json::to_string(&value).unwrap(), text);
+    let again: T = serde_json::from_str(&serde_json::to_string(&value).unwrap()).unwrap();
+    assert_eq!(again, value);
+}
+
+#[test]
+fn every_cycle_shape_round_trips() {
+    round_trip::<DemoRC1>(r#"{"c2":{"c3":{"back":{"c2":{"c3":{}},"label":"in"}}},"label":"out"}"#);
+    round_trip::<DemoRExpr>(r#"{"kind":"neg","value":{"inner":{"kind":"neg","value":{"inner":{"kind":"lit","value":"x"}}}}}"#);
+    round_trip::<DemoRDir>(r#"{"entries":{"a":{"entries":{},"kids":[]}},"kids":[{"entries":{},"kids":[],"parent":[]}],"parent":[{"entries":{},"kids":[]}]}"#);
+    round_trip::<DemoROutside>(r#"{"entry":{"next":{"leaf":{"zeta":"z","alpha":"a"}},"leaf":{"zeta":"y","alpha":"b"}},"also":{"leaf":{"zeta":"x","alpha":"c"}},"expr":{"kind":"lit","value":"v"}}"#);
+    // The open record drops its unknown member and writes the declared order.
+    let open: DemoROpen = serde_json::from_str(r#"{"aaa":"r","extra":1,"alpha":null,"zeta":"z"}"#).unwrap();
+    assert_eq!(serde_json::to_string(&open).unwrap(), r#"{"zeta":"z","aaa":"r"}"#);
+    let short: DemoRShort = serde_json::from_str(r#""z""#).unwrap();
+    assert_eq!(serde_json::to_string(&short).unwrap(), r#"{"zeta":"z"}"#);
+    round_trip::<DemoRShort>(r#"{"zeta":"z","alpha":"a"}"#);
+}
+
+#[test]
+fn a_derived_ord_compares_in_declaration_order() {
+    let first = DemoRLeaf { zeta: "a".to_owned(), alpha: "z".to_owned() };
+    let second = DemoRLeaf { zeta: "b".to_owned(), alpha: "a".to_owned() };
+    assert!(first < second);
+    let mut set = std::collections::BTreeSet::new();
+    set.insert(serde_json::from_str::<DemoRC1>(r#"{"c2":{"c3":{}},"label":"x"}"#).unwrap());
+    set.insert(serde_json::from_str::<DemoRC1>(r#"{"c2":{"c3":{}},"label":"x"}"#).unwrap());
+    assert_eq!(set.len(), 1);
+}
+"##;
+
+/// Both options with every other Rust option on: the crate builds (no E0072 on any cycle shape),
+/// each shape round-trips, and a derived `Ord` compares fields in declaration order, as the
+/// option's documentation says.
+#[test]
+fn every_cycle_shape_builds_and_round_trips_with_every_option() {
+    use schema_contract::realize::{RustDerive, RustOptions};
+    let options = RustOptions {
+        derives: BTreeSet::from([
+            RustDerive::Eq,
+            RustDerive::Hash,
+            RustDerive::PartialOrd,
+            RustDerive::Ord,
+        ]),
+        fold_null: true,
+        drop_unknown_members: true,
+        box_only_recursion: true,
+        ..RustOptions::default()
+    };
+    let realization = cycle_shapes_plan()
+        .with_declared_field_order()
+        .unwrap()
+        .rust_with("demo_r", &options)
+        .unwrap();
+    compile(
+        &realization.supporting["Cargo.toml"],
+        &realization.declarations,
+        CYCLE_SHAPES_WIRE,
+    );
+}
+
+const OPEN_RECORD_WIRE: &str = r##"
+use demo_r::*;
+
+#[test]
+fn the_open_record_writes_declared_members_first_and_keeps_the_rest() {
+    let open: DemoROpen = serde_json::from_str(r#"{"extra":1,"aaa":"r","alpha":"a","zeta":"z"}"#).unwrap();
+    assert_eq!(serde_json::to_string(&open).unwrap(), r#"{"zeta":"z","alpha":"a","aaa":"r","extra":1}"#);
+}
+"##;
+
+/// An open record under declared order alone: declared members in declaration order, then the
+/// members it keeps.
+#[test]
+fn an_open_record_builds_and_encodes_in_declaration_order() {
+    let options = schema_contract::realize::RustOptions {
+        box_only_recursion: true,
+        ..schema_contract::realize::RustOptions::default()
+    };
+    let realization = cycle_shapes_plan()
+        .with_declared_field_order()
+        .unwrap()
+        .rust_with("demo_r", &options)
+        .unwrap();
+    compile(
+        &realization.supporting["Cargo.toml"],
+        &realization.declarations,
+        OPEN_RECORD_WIRE,
+    );
+}
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;

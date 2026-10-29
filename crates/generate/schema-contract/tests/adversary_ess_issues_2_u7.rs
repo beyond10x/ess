@@ -6,98 +6,20 @@
 //! union payload, recursion through a map and an optional list, and a type reached both from inside
 //! its cycle and from outside it. They also hold the records whose order the fixture does not
 //! reach: an open struct, a shorthand struct and a field whose wire name differs from its name.
+//!
+//! The cases that build the generated crate are in `rust_realization.rs`.
 
 #[allow(dead_code)]
 #[path = "fixtures/normalization_model.rs"]
 mod model;
 
+#[path = "fixtures/cycle_shapes.rs"]
+mod cycle_shapes;
+
 use std::collections::BTreeSet;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-use schema_contract::realize::{Plan, RustDerive, RustOptions};
-
-const SOURCE: &str = r"format: ess/32
-system: demo
-version: v1
-domains: [demo.r]
-domain: demo.r
-types:
-  - name: demo.r.Leaf
-    kind: struct
-    fields:
-      - {name: zeta, type: String}
-      - {name: alpha, type: String}
-  - name: demo.r.C1
-    kind: struct
-    fields:
-      - {name: c2, type: demo.r.C2}
-      - {name: label, type: String}
-  - name: demo.r.C2
-    kind: struct
-    fields:
-      - {name: c3, type: demo.r.C3}
-  - name: demo.r.C3
-    kind: struct
-    fields:
-      - {name: back, type: 'Optional<demo.r.C1>'}
-  - name: demo.r.Neg
-    kind: struct
-    fields:
-      - {name: inner, type: demo.r.Expr}
-  - name: demo.r.Expr
-    kind: union
-    tag: kind
-    variants:
-      lit: String
-      neg: demo.r.Neg
-  - name: demo.r.Dir
-    kind: struct
-    fields:
-      - {name: entries, type: 'Map<String, demo.r.Dir>'}
-      - {name: kids, type: 'List<demo.r.Dir>'}
-      - {name: parent, type: 'Optional<List<demo.r.Dir>>'}
-  - name: demo.r.Entry
-    kind: struct
-    fields:
-      - {name: next, type: 'Optional<demo.r.Entry>'}
-      - {name: leaf, type: demo.r.Leaf}
-  - name: demo.r.Outside
-    kind: struct
-    fields:
-      - {name: entry, type: demo.r.Entry}
-      - {name: also, type: 'Optional<demo.r.Entry>'}
-      - {name: expr, type: demo.r.Expr}
-  - name: demo.r.Open
-    kind: struct
-    undeclared_fields: ignored
-    fields:
-      - {name: zeta, type: String}
-      - {name: alpha, type: 'Optional<String>'}
-      - {name: renamed, type: String, wire: aaa}
-  - name: demo.r.Short
-    kind: struct
-    shorthand: zeta
-    fields:
-      - {name: zeta, type: String}
-      - {name: alpha, type: 'Optional<String>'}
-";
-
-const ROOTS: [&str; 11] = [
-    "demo.r.Leaf",
-    "demo.r.C1",
-    "demo.r.C2",
-    "demo.r.C3",
-    "demo.r.Neg",
-    "demo.r.Expr",
-    "demo.r.Dir",
-    "demo.r.Entry",
-    "demo.r.Outside",
-    "demo.r.Open",
-    "demo.r.Short",
-];
+use cycle_shapes::{ROOTS, SOURCE};
+use schema_contract::realize::{Plan, RustOptions};
 
 fn plan() -> Plan {
     Plan::from_model(&model::selection(SOURCE, &ROOTS)).expect("plan")
@@ -360,129 +282,5 @@ fn options_off_keep_every_output_byte_for_byte() {
             "entry: ::std::boxed::Box<DemoREntry>",
             "expr: ::std::boxed::Box<DemoRExpr>"
         ]
-    );
-}
-
-const WIRE_ALL_OPTIONS: &str = r##"
-use demo_r::*;
-
-fn round_trip<T>(text: &str)
-where
-    T: serde::de::DeserializeOwned + serde::Serialize + PartialEq + std::fmt::Debug,
-{
-    let value: T = serde_json::from_str(text).unwrap();
-    assert_eq!(serde_json::to_string(&value).unwrap(), text);
-    let again: T = serde_json::from_str(&serde_json::to_string(&value).unwrap()).unwrap();
-    assert_eq!(again, value);
-}
-
-#[test]
-fn every_cycle_shape_round_trips() {
-    round_trip::<DemoRC1>(r#"{"c2":{"c3":{"back":{"c2":{"c3":{}},"label":"in"}}},"label":"out"}"#);
-    round_trip::<DemoRExpr>(r#"{"kind":"neg","value":{"inner":{"kind":"neg","value":{"inner":{"kind":"lit","value":"x"}}}}}"#);
-    round_trip::<DemoRDir>(r#"{"entries":{"a":{"entries":{},"kids":[]}},"kids":[{"entries":{},"kids":[],"parent":[]}],"parent":[{"entries":{},"kids":[]}]}"#);
-    round_trip::<DemoROutside>(r#"{"entry":{"next":{"leaf":{"zeta":"z","alpha":"a"}},"leaf":{"zeta":"y","alpha":"b"}},"also":{"leaf":{"zeta":"x","alpha":"c"}},"expr":{"kind":"lit","value":"v"}}"#);
-    // The open record drops its unknown member and writes the declared order.
-    let open: DemoROpen = serde_json::from_str(r#"{"aaa":"r","extra":1,"alpha":null,"zeta":"z"}"#).unwrap();
-    assert_eq!(serde_json::to_string(&open).unwrap(), r#"{"zeta":"z","aaa":"r"}"#);
-    let short: DemoRShort = serde_json::from_str(r#""z""#).unwrap();
-    assert_eq!(serde_json::to_string(&short).unwrap(), r#"{"zeta":"z"}"#);
-    round_trip::<DemoRShort>(r#"{"zeta":"z","alpha":"a"}"#);
-}
-
-#[test]
-fn a_derived_ord_compares_in_declaration_order() {
-    let first = DemoRLeaf { zeta: "a".to_owned(), alpha: "z".to_owned() };
-    let second = DemoRLeaf { zeta: "b".to_owned(), alpha: "a".to_owned() };
-    assert!(first < second);
-    let mut set = std::collections::BTreeSet::new();
-    set.insert(serde_json::from_str::<DemoRC1>(r#"{"c2":{"c3":{}},"label":"x"}"#).unwrap());
-    set.insert(serde_json::from_str::<DemoRC1>(r#"{"c2":{"c3":{}},"label":"x"}"#).unwrap());
-    assert_eq!(set.len(), 1);
-}
-"##;
-
-/// Both options with every other Rust option on: the crate builds (no E0072 on any cycle shape),
-/// each shape round-trips, and a derived `Ord` compares fields in declaration order, as the
-/// option's documentation says.
-#[test]
-fn every_cycle_shape_builds_and_round_trips_with_every_option() {
-    let options = RustOptions {
-        derives: BTreeSet::from([
-            RustDerive::Eq,
-            RustDerive::Hash,
-            RustDerive::PartialOrd,
-            RustDerive::Ord,
-        ]),
-        fold_null: true,
-        drop_unknown_members: true,
-        box_only_recursion: true,
-        ..RustOptions::default()
-    };
-    let realization = plan()
-        .with_declared_field_order()
-        .expect("ordered")
-        .rust_with("demo_r", &options)
-        .expect("rust");
-    compile(
-        "adversary-u7-all",
-        &realization.supporting["Cargo.toml"],
-        &realization.declarations,
-        WIRE_ALL_OPTIONS,
-    );
-}
-
-const WIRE_OPEN: &str = r##"
-use demo_r::*;
-
-#[test]
-fn the_open_record_writes_declared_members_first_and_keeps_the_rest() {
-    let open: DemoROpen = serde_json::from_str(r#"{"extra":1,"aaa":"r","alpha":"a","zeta":"z"}"#).unwrap();
-    assert_eq!(serde_json::to_string(&open).unwrap(), r#"{"zeta":"z","alpha":"a","aaa":"r","extra":1}"#);
-}
-"##;
-
-/// An open record under declared order alone: declared members in declaration order, then the
-/// members it keeps.
-#[test]
-fn an_open_record_builds_and_encodes_in_declaration_order() {
-    let realization = plan()
-        .with_declared_field_order()
-        .expect("ordered")
-        .rust_with("demo_r", &boxed_only())
-        .expect("rust");
-    compile(
-        "adversary-u7-open",
-        &realization.supporting["Cargo.toml"],
-        &realization.declarations,
-        WIRE_OPEN,
-    );
-}
-
-fn compile(name: &str, manifest: &str, source: &str, tests: &str) {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let root: PathBuf = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
-        "{name}-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir_all(root.join("tests")).expect("scratch");
-    fs::write(root.join("Cargo.toml"), manifest).expect("manifest");
-    fs::write(root.join("types.rs"), source).expect("types");
-    fs::write(root.join("tests/wire.rs"), tests).expect("tests");
-    let output = Command::new(env!("CARGO"))
-        .args(["test", "--offline", "--quiet", "--manifest-path"])
-        .arg(root.join("Cargo.toml"))
-        .env(
-            "CARGO_TARGET_DIR",
-            Path::new(env!("CARGO_TARGET_TMPDIR")).join("adversary-u7-target"),
-        )
-        .output()
-        .expect("cargo runs");
-    assert!(
-        output.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
     );
 }
