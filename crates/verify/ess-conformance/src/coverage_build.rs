@@ -566,7 +566,8 @@ fn authored_refusal(
         | Cause::UnorderedTie { .. }
         | Cause::SystemActorSends { .. }
         | Cause::AwaitedWithoutInstance { .. }
-        | Cause::NotIssuedClaims { .. } => Effect::CandidateNotEmitted,
+        | Cause::NotIssuedClaims { .. }
+        | Cause::RepeatedKey { .. } => Effect::CandidateNotEmitted,
     };
     Ok(Refusal {
         origin: Origin::Authored,

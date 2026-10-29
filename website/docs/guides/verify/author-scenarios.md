@@ -54,6 +54,11 @@ refused now rather than at the first run that reaches it. The act checks on this
 (`ESS-AUTHOR-037` and the others) apply the same way. Use it in a pre-commit or CI step that only
 checks scenario files, and run the result like any other suite.
 
+A key written twice in one mapping, such as `label` twice in a step's `input:` or `$instance`
+twice inside a `contains:` field, is refused as `ESS-AUTHOR-047`, as a model file's repeat is:
+YAML keeps only one of the two values, so the other would never be sent or checked. The refusal
+names the mapping's path, the key, and the line of the mapping.
+
 ## Run a chosen subset of a coverage suite
 
 `ess verify conform select` narrows a coverage suite (`--suite-format 5`, or the `/7` and `/9`

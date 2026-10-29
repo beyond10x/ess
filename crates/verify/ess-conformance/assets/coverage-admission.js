@@ -469,7 +469,7 @@ const refusalKey = value => [value.origin, value.source ?? '', referenceKey(valu
 // generated codes recorded as check_not_emitted (ess_conformance's synthesize::CHECK_NOT_EMITTED).
 // tests/coverage_refusal_catalogue.rs holds all three to the Rust catalogues, vector by vector.
 const NEWEST_GENERATED_REFUSAL = 24
-const NEWEST_AUTHORED_REFUSAL = 46
+const NEWEST_AUTHORED_REFUSAL = 47
 const CHECK_NOT_EMITTED = [5, 11, 12, 14, 16, 17, 20, 21, 22]
 function inventory(suite) {
   const c = closed(suite.coverage, 'selection knowledge generated authored outside refused authored_sources counts')

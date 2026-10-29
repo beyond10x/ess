@@ -176,6 +176,7 @@ refusal[ESS-AUTHOR-012]: `billing.invoice/authored/a-scenario` in a.yaml
 | `ESS-AUTHOR-044` | An act sends a command the system issues itself as a system actor. | No caller can be the system: name no `actor:`, and the act awaits the system's step; to check that an outside caller cannot issue it, name an actor the specification does not grant it, with `refused: not_granted`. |
 | `ESS-AUTHOR-045` | An act awaiting a command the system issues itself names no record to await it on. | State the input the outcomes name as `instance:` under `input:`, a literal or `{$instance: name}`; a step the system takes to create a record, or over rows with no subject, is not awaited in this release. |
 | `ESS-AUTHOR-046` | An act expects a refusal of a command the system issues itself and claims what only an issued command answers. | A refusal of the system's own step is checked as nothing issued within the bound, none of its events published: state only the instance under `input:`, and drop `error`, `response`, `events` and `capture`. |
+| `ESS-AUTHOR-047` | A mapping in the document repeats a key. | Write each key once; YAML keeps only one of two equal keys, and which one is not the author's choice. |
 
 ## Synthesis: `ESS-SYNTH`
 
