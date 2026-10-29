@@ -108,6 +108,16 @@ pub struct BundleOptions {
     pub integer_format_widths: bool,
 }
 
+/// The annotation on a `format` the integer-format-widths option realizes, for the targets whose
+/// decoder asserts its range (Rust, Go).
+const ASSERTED_FORMAT: &str = "the decoder asserts this format's range (accepted with the \
+     integer-format-widths option); `validate-bundle` treats `format` as an annotation";
+
+/// The same annotation for TypeScript, which declares `number` and decodes nothing.
+const UNASSERTED_FORMAT: &str = "TypeScript declares `number` and has no decoder, so the \
+     consumer enforces this format's range (`typescript_integer_range`); `validate-bundle` treats \
+     `format` as an annotation";
+
 impl BundleOptions {
     // serde's `skip_serializing_if` passes a reference.
     #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -1181,8 +1191,7 @@ impl Builder {
     /// integer-format-widths option realizes, why it has some.
     fn annotation_detail(&self, object: &Map<String, Value>, keyword: &str) -> &'static str {
         if keyword == "format" && self.format_width(object).is_some() {
-            "the decoder asserts this format's range (accepted with the integer-format-widths \
-             option); `validate-bundle` treats `format` as an annotation"
+            ASSERTED_FORMAT
         } else if self.model {
             "retained in source.schema.json; no decoder behavior inferred"
         } else {

@@ -342,6 +342,10 @@ fn the_report_records_the_option_and_names_the_asserted_format() {
     let detail =
         "the decoder asserts this format's range (accepted with the integer-format-widths \
                   option); `validate-bundle` treats `format` as an annotation";
+    // TypeScript decodes nothing: the range is the consumer's, as an obligation.
+    let typescript_detail = "TypeScript declares `number` and has no decoder, so the consumer \
+                             enforces this format's range (`typescript_integer_range`); \
+                             `validate-bundle` treats `format` as an annotation";
     let default = plan(&counter(), BundleOptions::default());
     let widths = plan(&counter(), WIDTHS);
     for (default, widths) in targets(&default).iter().zip(targets(&widths).iter()) {
@@ -361,7 +365,12 @@ fn the_report_records_the_option_and_names_the_asserted_format() {
                 .find(|(at, _, _)| *at == pointer)
                 .unwrap_or_else(|| panic!("{target}: no annotation at {pointer}"));
             assert_eq!(annotation.1, "format");
-            assert_eq!(annotation.2, detail, "{target}");
+            let expected = if target == "typescript" {
+                typescript_detail
+            } else {
+                detail
+            };
+            assert_eq!(annotation.2, expected, "{target}");
             let unchanged = findings(&default.1, "annotations")
                 .into_iter()
                 .find(|(at, _, _)| *at == pointer)
@@ -394,6 +403,11 @@ fn the_report_records_the_option_and_names_the_asserted_format() {
         rules_at(&typescript(&widths), &format!("{PROPERTIES}/wide"))
             .contains("json_number_precision")
     );
+    for field in ["wide", "narrow"] {
+        let pointer = format!("{PROPERTIES}/{field}");
+        assert!(rules_at(&typescript(&widths), &pointer).contains("typescript_integer_range"));
+        assert!(!rules_at(&typescript(&default), &pointer).contains("typescript_integer_range"));
+    }
 }
 
 #[test]

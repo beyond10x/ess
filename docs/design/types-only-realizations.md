@@ -75,7 +75,11 @@ All structural siblings apply together, including beside `$ref`, `const` and `en
 Unsupported combinations refuse before a partial successful artifact is returned.
 Conditional object/array constraints without an explicit type need a conditional
 mapping, not an inferred narrowing to that type. Defaults and formats remain
-annotations; they do not enable coercion or infer integer storage widths.
+annotations; they do not enable coercion. Formats infer no integer storage width, except that
+bundle input with the opt-in integer-format-widths option realizes an `int32` or `int64`
+`format` at that width (beyond10x/ess#648): the Rust and Go decoders then assert its range,
+TypeScript records it as the consumer's obligation, and `validate-bundle` still treats `format`
+as an annotation.
 
 ### Bounded model integers (beyond10x/ess#394)
 
