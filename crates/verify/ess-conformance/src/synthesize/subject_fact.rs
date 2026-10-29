@@ -67,7 +67,7 @@ pub(super) fn uses_predicate(command: &ResolvedCommand) -> bool {
 }
 
 /// What a branch requires of the stored fields, as one predicate over them.
-fn stored(condition: &ResolvedCondition) -> Option<Predicate> {
+pub(super) fn stored(condition: &ResolvedCondition) -> Option<Predicate> {
     match condition {
         ResolvedCondition::SubjectPredicate { predicate, .. } => Some(predicate.clone()),
         ResolvedCondition::SubjectField { field, equals, .. } => Some(Predicate::Compare {
