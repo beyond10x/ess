@@ -82,8 +82,10 @@ A unit of batches 1-3 that turns out to need a new `ess/N` leaves for a format b
 Revised 2026-10-29 by D220 (`approval-record:d220-batch-4-after-0780`). Batch 4, which starts after
 `0.78.0`, holds four units: U16 (`service_forward` over commands and views, plus the Timestamp,
 Decimal and Uuid CLI primitives), U17 (components sharing a CLI binary), U18 (required form inputs)
-and U19 (a record action's row scope). Batch 5 holds the remaining downstream stories, tagged
-`ess-batch-5`. The exchange, language and suite-format batches listed above as 4 to 7 follow after
+and U19 (a record action's row scope). D225 (`approval-record:d225-batch-5-and-6-after-0790`) sets
+the batches after it. Batch 5 (`0.80.0`) has four units: React tokens and themes; badge tone with
+account menu `sets` and `navigate`; the row confirm key; the Uuid path segment. Batch 6 holds the
+minor findings. The stories carry the tags `ess-batch-5` and `ess-batch-6`. The exchange, language and suite-format batches listed above as 4 to 7 follow after
 it, in the same order.
 
 ## Units (batches 1-3)

@@ -6,9 +6,9 @@ status: draft
 title: The Rust crate layout is rustfmt and clippy clean
 summary: ess generate synthesize --target rust --layout crate writes 327 rustfmt hunks in 18 files and 47 clippy warnings (0.77.0)
 tags:
-- ess-batch-5
+- ess-batch-6
 - ess-next
-revision: 3
+revision: 4
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
