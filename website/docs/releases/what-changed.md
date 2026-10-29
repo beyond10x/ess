@@ -11,7 +11,7 @@ This page is generated from the change records kept in the repository. A release
 
 ## 0.77.0 — 2026-10-29
 
-### HTTP bindings group alike outcomes, OpenAPI import widens, types keep declared order, and validate refuses unreachable branches
+### HTTP bindings group alike outcomes, OpenAPI import widens, and validate refuses unreachable branches
 
 capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/alike-outcomes-and-unreachable-branches) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.77.0)
 

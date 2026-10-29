@@ -2,7 +2,7 @@ schema: b10x-change/v1
 id: ess/open-issue-batch-2-0.77.0
 repository: ess
 publishedAt: 2026-10-29T00:00:00Z
-title: HTTP bindings group alike outcomes, OpenAPI import widens, types keep declared order, and validate refuses unreachable branches
+title: HTTP bindings group alike outcomes, OpenAPI import widens, and validate refuses unreachable branches
 summary: >-
   HTTP routes group alike outcomes and declare own refusals, empty bodies and arrays. OpenAPI import
   admits open objects; integer formats keep native width. Types keep declared field order and box
