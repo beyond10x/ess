@@ -165,6 +165,7 @@
 //! |---|---|
 //! | a command declares no outcomes | [`EmptyDeclaration`](ValidationCode::EmptyDeclaration) |
 //! | every outcome is decided outside the input | [`UnreachableBranch`](ValidationCode::UnreachableBranch) |
+//! | a `when:` branch whose input guard implies the guard of an input-guarded refusal answered before it | [`UnreachableBranch`](ValidationCode::UnreachableBranch) |
 //! | no outcome catches the input every `when` missed | [`NonExhaustiveBranches`](ValidationCode::NonExhaustiveBranches) |
 //! | two outcomes are unconditional | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
 //! | an outcome neither emits nor errors | [`EmptyChange`](ValidationCode::EmptyChange) |
@@ -3103,6 +3104,9 @@ impl CommandSpec {
             }
             errors.extend(self.validate_before_row_order(types));
         }
+        if let Some(types) = types {
+            errors.extend(self.validate_implied_input_guards(types));
+        }
         errors.extend(outcome_shapes::validate_command(
             self,
             types.and_then(TypeRegistry::format),
@@ -3970,6 +3974,99 @@ impl CommandSpec {
                     earlier.name,
                     step(place.phase)
                 )),
+            );
+        }
+        errors
+    }
+
+    /// Refuses a `when:` branch whose input guard implies the guard of an input-guarded refusal the
+    /// precedence order answers before it (beyond10x/ess#702): every input the later guard admits
+    /// is answered first by that refusal, so no request reaches the branch. Equal guards count.
+    ///
+    /// The refusal before it is a `when:` refusal read among the input-guarded refusals
+    /// ([`precedence::Phase::InputRefusal`]); the plan reads those in declaration order, before every
+    /// other step that reads a request. Implication is decided by the finite prover over the two
+    /// guards alone ([`finite::analyze`]): every joint assignment the later guard holds in, the
+    /// earlier holds in too, and the later holds in one at least. Where the prover declines either
+    /// guard nothing is said, and synthesis keeps ESS-SYNTH-003 for it. The wording is that
+    /// finding's: "an input-guarded refusal declared before it" for a refusal, "the input-guarded
+    /// refusal taken first" for an accepting branch.
+    fn validate_implied_input_guards(&self, types: &TypeRegistry) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let environment = crate::expression::DomainEnvironment::new(types, &self.input);
+        let composition = self.composition(Some(types));
+        let shapes: Vec<precedence::BranchShape> = self
+            .outcomes
+            .iter()
+            .map(precedence::BranchShape::of)
+            .collect();
+        let read: Vec<usize> = precedence::order(&shapes, &composition)
+            .into_iter()
+            .flat_map(|(_, held)| held)
+            .collect();
+        let guard = |index: usize| match &self.outcomes[index].condition {
+            OutcomeCondition::When(predicate) => Some(predicate),
+            _ => None,
+        };
+        // Whether `later` holds in some assignment and `earlier` in every one `later` holds in;
+        // `None` where the prover declines.
+        let implies = |later: &Predicate, earlier: &Predicate| {
+            let cases = finite::analyze(&environment, &[later, earlier])?;
+            let mut held = cases.iter().filter(|case| case.selected.contains(&0));
+            let first = held.next()?;
+            Some(first.selected.contains(&1) && held.all(|case| case.selected.contains(&1)))
+        };
+        for (position, later_index) in read.iter().enumerate() {
+            let Some(later_guard) = guard(*later_index) else {
+                continue;
+            };
+            let later = &self.outcomes[*later_index];
+            let Some((earlier, earlier_guard)) = read[..position].iter().find_map(|index| {
+                let earlier = &self.outcomes[*index];
+                let earlier_guard = guard(*index)?;
+                (earlier.error.is_some()
+                    && precedence::place(&shapes[*index], &composition).phase
+                        == precedence::Phase::InputRefusal
+                    && implies(later_guard, earlier_guard) == Some(true))
+                .then_some((earlier, earlier_guard))
+            }) else {
+                continue;
+            };
+            let refusal = later.error.is_some();
+            let taken = if refusal {
+                "an input-guarded refusal declared before it"
+            } else {
+                "the input-guarded refusal taken first"
+            };
+            // A narrower refusal declared first answers the inputs it names and leaves the rest to
+            // the broader one; an equal guard or an accepting branch has no such order.
+            let hint = if refusal && implies(earlier_guard, later_guard) == Some(false) {
+                format!(
+                    "declare `{}` before `{}` to answer those inputs with it, or drop it",
+                    later.name, earlier.name
+                )
+            } else {
+                format!(
+                    "drop `{}`, or narrow `{}` so some input `{}` admits falls outside it",
+                    later.name, earlier.name, later.name
+                )
+            };
+            // An `all:` or `any:` guard is written in parentheses already.
+            let written = match earlier_guard {
+                Predicate::All(_) | Predicate::Any(_) => earlier_guard.to_string(),
+                _ => format!("({earlier_guard})"),
+            };
+            errors.push(
+                ValidationError::at(
+                    self.site().key("outcomes").named(later.name.as_str()),
+                    ValidationCode::UnreachableBranch,
+                    format!(
+                        "`{}` is unreachable: every input satisfying `{later_guard}` is answered \
+                         first by `{}` {written}, {taken}",
+                        later.name, earlier.name
+                    ),
+                )
+                .with_hint(hint),
             );
         }
         errors

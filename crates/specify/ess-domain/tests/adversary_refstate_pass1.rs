@@ -48,23 +48,35 @@ fn conflict(errors: &ValidationErrors) -> bool {
     })
 }
 
-/// Control: without the undecidable refusal the two decidable ones validate, the first declared
-/// answering `mode == Freeze` (the unit's own
+/// The one refusal the pair draws since beyond10x/ess#702: `frozen-again`, unreachable because
+/// `frozen`, declared first, answers every input it admits.
+fn answered_by_the_first_declared(errors: &ValidationErrors) -> bool {
+    matches!(errors.as_slice(), [error] if error.code == ValidationCode::UnreachableBranch
+    && error.to_string().contains(
+        "`frozen-again` is unreachable: every input satisfying `mode == Freeze` is answered \
+         first by `frozen` (mode == Freeze)",
+    ))
+}
+
+/// Control: without the undecidable refusal the first declared of the two decidable ones answers
+/// `mode == Freeze` (the unit's own
 /// `two_refusals_the_same_input_selects_are_answered_by_the_first_declared`). Superseded by the
-/// precedence order (#227 correction 1): this asserted `conflicting_declaration`.
+/// precedence order (#227 correction 1): this asserted `conflicting_declaration`; it asserted the
+/// pair validates until beyond10x/ess#702.
 #[test]
 fn control_two_decided_refusals_claiming_one_input_are_answered_first_declared() {
     let text = replaced(&with_mode(ROTATE), TOO_SHORT, FROZEN_TWICE);
-    if let Err(errors) = assemble(&text) {
-        assert!(!conflict(&errors), "{errors}");
-        panic!("must validate:\n{errors}\n{text}");
-    }
+    // Equal decided guards draw the #702 refusal: the second is unreachable, not a conflict.
+    let errors = assemble(&text).expect_err("frozen-again is unreachable");
+    assert!(!conflict(&errors), "{errors}");
+    assert!(answered_by_the_first_declared(&errors), "{errors}\n{text}");
 }
 
 /// The same two refusals, with `too-short` (a guard the prover cannot decide) kept beside them.
 /// `mode == Freeze` still selects `frozen` and `frozen-again` together in every held state, and
 /// the first declared answers it, as without `too-short`. Superseded by the precedence order
-/// (#227 correction 1): this asserted `conflicting_declaration`.
+/// (#227 correction 1): this asserted `conflicting_declaration`; it asserted the pair validates
+/// until beyond10x/ess#702.
 #[test]
 fn an_undecidable_refusal_beside_them_does_not_change_that_answer() {
     let text = replaced(
@@ -72,10 +84,10 @@ fn an_undecidable_refusal_beside_them_does_not_change_that_answer() {
         TOO_SHORT,
         &format!("{TOO_SHORT}{FROZEN_TWICE}"),
     );
-    if let Err(errors) = assemble(&text) {
-        assert!(!conflict(&errors), "{errors}");
-        panic!("must validate:\n{errors}\n{text}");
-    }
+    // Equal decided guards draw the #702 refusal, the undecidable neighbour beside them or not.
+    let errors = assemble(&text).expect_err("frozen-again is unreachable");
+    assert!(!conflict(&errors), "{errors}");
+    assert!(answered_by_the_first_declared(&errors), "{errors}\n{text}");
 }
 
 /// A refusal naming no subject whose `when:` reads the held state by name is not an input guard;
