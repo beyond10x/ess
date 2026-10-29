@@ -1,0 +1,47 @@
+openapi: 3.1.0
+info:
+  title: demo.ping
+  version: v1
+paths:
+  /ping:
+    post:
+      operationId: ping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PingRequest'
+      responses:
+        '200':
+          description: pong
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingResponse'
+components:
+  schemas:
+    Codec:
+      type: string
+      enum: [opus, pcm]
+    Meta:
+      type: object
+      additionalProperties: true
+    PingRequest:
+      type: object
+      properties:
+        data: {}
+        meta:
+          $ref: '#/components/schemas/Meta'
+      required: [data]
+    PingResponse:
+      type: object
+      properties:
+        audio_codec:
+          anyOf:
+            - $ref: '#/components/schemas/Codec'
+            - type: 'null'
+        count:
+          type: integer
+          format: int32
+      required: [audio_codec, count]

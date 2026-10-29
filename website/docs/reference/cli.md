@@ -1022,6 +1022,7 @@ ess generate schema types-bundle [OPTIONS] --bundle <BUNDLE> --root <ROOT> --tar
 | `--rust-derive` | `<[TYPE=]DERIVE>`… | no |  | Rust only: add a derive to the generated types, one of `Eq`, `Hash`, `PartialOrd`, `Ord` and `Default`. `DERIVE` adds it to every type, `TYPE=DERIVE` to that type (by its qualified model or component name) and the anonymous types it holds. A derive a type cannot satisfy is refused, naming the type and the member that blocks it. Repeatable |
 | `--rust-fold-null` |  | no |  | Rust only: decode an explicit `null` in an optional field as the missing member. Encoding still omits an absent member; types-report.json records the fold at each field |
 | `--rust-drop-unknown-members` |  | no |  | Rust only: decode an open object with declared fields without keeping the members it does not declare, so it has no `ess_extra` field. types-report.json records each such object as an obligation the consumer accepted |
+| `--integer-format-widths` |  | no |  | Realize an integer whose `format` is `int32` or `int64` at that native width, every target: the decoder then refuses a value outside the range, which `validate-bundle` treats as an annotation. types-report.json records the option. Off by default |
 | `--out` | `<OUT>` | yes |  | Directory for declarations, target accounting and the retained source bundle |
 
 #### `ess generate schema normalize-check`

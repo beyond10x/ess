@@ -116,6 +116,11 @@ pub struct TypesArgs {
     root: Vec<String>,
     #[command(flatten)]
     options: TypeOptions,
+    /// Realize an integer whose `format` is `int32` or `int64` at that native width, every
+    /// target: the decoder then refuses a value outside the range, which `validate-bundle` treats
+    /// as an annotation. types-report.json records the option. Off by default.
+    #[arg(long)]
+    integer_format_widths: bool,
     /// Directory for declarations, target accounting and the retained source bundle.
     #[arg(long)]
     out: PathBuf,
@@ -190,8 +195,13 @@ impl TypeOptions {
 
 pub fn types(args: &TypesArgs) -> Result<ExitCode> {
     let bundle = read(&args.bundle)?;
-    let plan =
-        schema_contract::realize::Plan::from_bundle(&bundle, &args.root.iter().cloned().collect())?;
+    let plan = schema_contract::realize::Plan::from_bundle_with(
+        &bundle,
+        &args.root.iter().cloned().collect(),
+        &schema_contract::realize::BundleOptions {
+            integer_format_widths: args.integer_format_widths,
+        },
+    )?;
     let mut files = type_files(&plan, &args.options)?;
     files.insert("source.bundle.json".to_owned(), bundle.to_json()?);
     let destination = crate::resolve_output_directory(&args.out)?;

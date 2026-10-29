@@ -232,13 +232,26 @@ pub enum InterfaceSchema {
         /// Item shapes, in order.
         items: Vec<InterfaceSchema>,
     },
-    /// Closed object with explicitly typed properties.
+    /// Object with explicitly typed properties, closed unless it names a schema for every other
+    /// member.
     Object {
         /// Properties keyed deterministically by wire name.
         properties: BTreeMap<String, InterfaceSchema>,
-        /// Required property names.
+        /// Required property names. On an open object a name outside `properties` is a required
+        /// member of the extra-member schema.
         #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
         required: BTreeSet<String>,
+        /// Schema of every member not in `properties` (`additionalProperties`); absent when the
+        /// object is closed (`additionalProperties: false`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        additional_properties: Option<Box<InterfaceSchema>>,
+    },
+    /// Any JSON value: the empty schema `{}`, `true`, or a schema of annotations only.
+    Json,
+    /// The schema's values or `null`: an `anyOf` or `oneOf` of one schema and `{type: 'null'}`.
+    Optional {
+        /// The non-null member.
+        schema: Box<InterfaceSchema>,
     },
 }
 
@@ -444,6 +457,7 @@ fn schema_value(schema: &InterfaceSchema) -> Value {
         InterfaceSchema::Object {
             properties,
             required,
+            additional_properties,
         } => {
             value.insert("type".to_owned(), Value::String("object".to_owned()));
             value.insert(
@@ -459,7 +473,22 @@ fn schema_value(schema: &InterfaceSchema) -> Value {
                 "required".to_owned(),
                 serde_json::to_value(required).expect("required set serializes"),
             );
-            value.insert("additionalProperties".to_owned(), Value::Bool(false));
+            value.insert(
+                "additionalProperties".to_owned(),
+                additional_properties
+                    .as_deref()
+                    .map_or(Value::Bool(false), schema_value),
+            );
+        }
+        InterfaceSchema::Json => {}
+        InterfaceSchema::Optional { schema } => {
+            value.insert(
+                "anyOf".to_owned(),
+                Value::Array(vec![
+                    schema_value(schema),
+                    serde_json::json!({ "type": "null" }),
+                ]),
+            );
         }
     }
     Value::Object(value)
@@ -472,6 +501,9 @@ struct Importer {
     references: BTreeSet<UnresolvedReference>,
     /// The source is `OpenAPI` 3.0: each schema is rewritten to its 3.1 form before it is read.
     openapi30: bool,
+    /// The document's `components/schemas` as written, so a nullable pair can follow a local
+    /// `$ref` to tell whether its member admits `null` by itself.
+    schemas: Map<String, Value>,
 }
 
 #[derive(Clone, Copy)]
@@ -507,6 +539,7 @@ impl Importer {
             refusals: Vec::new(),
             references: BTreeSet::new(),
             openapi30: false,
+            schemas: Map::new(),
         }
     }
 
@@ -541,6 +574,12 @@ impl Importer {
         if !self.refusals.is_empty() {
             return Err(self.refusals);
         }
+        self.schemas = root
+            .get("components")
+            .and_then(|components| components.get("schemas"))
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
         let service = self.service(root.get("info"));
         let types = self.types(root.get("components"));
         let operations = self.operations(root.get("paths"));
@@ -812,9 +851,13 @@ impl Importer {
 
     fn schema(&mut self, value: &Value, pointer: &str) -> Option<InterfaceSchema> {
         let Some(object) = value.as_object() else {
+            if value == &Value::Bool(true) {
+                return Some(InterfaceSchema::Json);
+            }
             self.refusals.push(Refusal::new(
                 pointer,
-                "only object schemas are supported; boolean schemas are valid but unsupported",
+                "only object schemas and the `true` schema are supported; the `false` schema is \
+                 valid but unsupported",
             ));
             return None;
         };
@@ -852,11 +895,10 @@ impl Importer {
                                 items: Box::new(items),
                             })
                     } else {
-                        self.refusals.push(Refusal::new(
-                            format!("{pointer}/items"),
-                            "array without typed items is a valid but unsupported adapter shape",
-                        ));
-                        None
+                        // A missing `items` asserts nothing about the elements: `items: {}`.
+                        Some(InterfaceSchema::Array {
+                            items: Box::new(InterfaceSchema::Json),
+                        })
                     }
                 }
                 Some("object") => self.object_schema(object, pointer),
@@ -867,13 +909,7 @@ impl Importer {
                     ));
                     None
                 }
-                None => {
-                    self.refusals.push(Refusal::new(
-                        pointer,
-                        "schema must declare `$ref` or one supported `type`",
-                    ));
-                    None
-                }
+                None => return self.typeless_schema(object, pointer),
             }
         };
         let consumed: &[&str] = match &schema {
@@ -935,6 +971,111 @@ impl Importer {
         rewritten.insert("type".to_owned(), Value::String(single));
         strip_null_enum(&mut rewritten);
         Some(Cow::Owned(rewritten))
+    }
+
+    /// A schema with no `type`, no `$ref` and no string literal: a nullable pair imports as
+    /// `optional`, annotations alone as `json`; any other union or assertion is refused.
+    fn typeless_schema(
+        &mut self,
+        object: &Map<String, Value>,
+        pointer: &str,
+    ) -> Option<InterfaceSchema> {
+        let unions: Vec<&str> = UNION_KEYWORDS
+            .into_iter()
+            .filter(|keyword| object.contains_key(*keyword))
+            .collect();
+        match unions.as_slice() {
+            [] => {}
+            [keyword @ ("anyOf" | "oneOf")] => {
+                let schema = self.nullable_pair(object, keyword, pointer)?;
+                self.note_keywords(
+                    object,
+                    &[keyword, "$schema"],
+                    pointer,
+                    KeywordContext::Schema,
+                );
+                return Some(schema);
+            }
+            _ => {
+                for keyword in unions {
+                    self.refusals.push(union_refusal(pointer, keyword));
+                }
+                return None;
+            }
+        }
+        if object
+            .keys()
+            .all(|key| key == "$schema" || KeywordContext::Schema.annotation(key))
+        {
+            self.note_keywords(object, &["$schema"], pointer, KeywordContext::Schema);
+            return Some(InterfaceSchema::Json);
+        }
+        self.refusals.push(Refusal::new(
+            pointer,
+            "schema must declare `$ref` or one supported `type`",
+        ));
+        None
+    }
+
+    /// `anyOf`/`oneOf` of exactly one schema and `{type: 'null'}`, in either order, as
+    /// `optional`. The null member is preserved, so nothing is accounted for it.
+    fn nullable_pair(
+        &mut self,
+        object: &Map<String, Value>,
+        keyword: &str,
+        pointer: &str,
+    ) -> Option<InterfaceSchema> {
+        let at = format!("{pointer}/{keyword}");
+        let pair =
+            object
+                .get(keyword)
+                .and_then(Value::as_array)
+                .and_then(|branches| match branches.as_slice() {
+                    [first, second] => Some((first, second)),
+                    _ => None,
+                });
+        let member = match pair {
+            Some(_) if self.openapi30 => {
+                self.refusals.push(Refusal::new(
+                    &at,
+                    format!(
+                        "`{keyword}` is a union this adapter does not carry, and OpenAPI 3.0 has \
+                         no `null` type to make it a nullable pair"
+                    ),
+                ));
+                return None;
+            }
+            Some((first, second)) => match (null_branch(first), null_branch(second)) {
+                (None, Some(null)) => Some((0, first, null)),
+                (Some(null), None) => Some((1, second, null)),
+                _ => None,
+            },
+            None => None,
+        };
+        let Some((index, member, null)) = member else {
+            self.refusals.push(union_refusal(pointer, keyword));
+            return None;
+        };
+        if schema_admits_null(member, &self.schemas, &mut BTreeSet::new()) {
+            self.refusals.push(Refusal::new(
+                &at,
+                format!(
+                    "`{keyword}` pairs `{{type: 'null'}}` with a schema that itself admits \
+                     `null`; the pair is ambiguous and is not carried"
+                ),
+            ));
+            return None;
+        }
+        self.note_keywords(
+            null,
+            &["type"],
+            &format!("{at}/{}", 1 - index),
+            KeywordContext::Schema,
+        );
+        let schema = self.schema(member, &format!("{at}/{index}"))?;
+        Some(InterfaceSchema::Optional {
+            schema: Box::new(schema),
+        })
     }
 
     fn string_schema(
@@ -1086,20 +1227,29 @@ impl Importer {
         object: &Map<String, Value>,
         pointer: &str,
     ) -> Option<InterfaceSchema> {
-        if object.get("additionalProperties") != Some(&Value::Bool(false)) {
-            self.refusals.push(Refusal::new(
-                format!("{pointer}/additionalProperties"),
-                "supported objects must be closed with `additionalProperties: false`",
-            ));
-        }
-        let Some(properties) = object.get("properties").and_then(Value::as_object) else {
-            self.refusals.push(Refusal::new(
-                format!("{pointer}/properties"),
-                "object properties must be an object",
-            ));
-            return None;
+        // `false` closes the object; absent, `true` and `{}` admit any other member as `json`;
+        // a schema types every other member. `None` in `additional` means a refused schema.
+        let (open, additional) = match object.get("additionalProperties") {
+            Some(Value::Bool(false)) => (false, None),
+            None => (true, Some(InterfaceSchema::Json)),
+            Some(value) => (
+                true,
+                self.schema(value, &format!("{pointer}/additionalProperties")),
+            ),
         };
-        let properties: BTreeMap<String, InterfaceSchema> = properties
+        let none = Map::new();
+        let declared = match object.get("properties") {
+            None => &none,
+            Some(Value::Object(properties)) => properties,
+            Some(_) => {
+                self.refusals.push(Refusal::new(
+                    format!("{pointer}/properties"),
+                    "object properties must be an object",
+                ));
+                return None;
+            }
+        };
+        let properties: BTreeMap<String, InterfaceSchema> = declared
             .iter()
             .filter_map(|(name, value)| {
                 self.schema(
@@ -1116,17 +1266,26 @@ impl Importer {
         )
         .into_iter()
         .collect();
+        // On an open object a required name outside `properties` is a required extra member. A
+        // declared property whose schema was refused is already reported at its own pointer.
         for name in &required {
-            if !properties.contains_key(name) {
+            if !open && !declared.contains_key(name) {
                 self.refusals.push(Refusal::new(
                     format!("{pointer}/required"),
-                    format!("required property `{name}` is not declared"),
+                    format!(
+                        "required property `{name}` is not declared and the object is closed, so \
+                         no value can validate"
+                    ),
                 ));
             }
+        }
+        if open && additional.is_none() {
+            return None;
         }
         Some(InterfaceSchema::Object {
             properties,
             required,
+            additional_properties: additional.map(Box::new),
         })
     }
 
@@ -1354,6 +1513,82 @@ fn null_union(object: &Map<String, Value>) -> Option<String> {
         ("null", single) | (single, "null") if single != "null" => Some(single.to_owned()),
         _ => None,
     }
+}
+
+/// Applicator keywords that combine schemas; only a nullable `anyOf`/`oneOf` pair is carried.
+const UNION_KEYWORDS: [&str; 4] = ["allOf", "anyOf", "oneOf", "not"];
+
+fn union_refusal(pointer: &str, keyword: &str) -> Refusal {
+    Refusal::new(
+        format!("{pointer}/{keyword}"),
+        format!(
+            "`{keyword}` is a union this adapter does not carry; only an `anyOf` or `oneOf` of \
+             one schema and `{{type: 'null'}}` imports, as `optional`"
+        ),
+    )
+}
+
+/// The branch as an object when it is `{type: 'null'}`, with annotations at most.
+fn null_branch(value: &Value) -> Option<&Map<String, Value>> {
+    let object = value.as_object()?;
+    (object.get("type").and_then(Value::as_str) == Some("null")
+        && object
+            .keys()
+            .all(|key| key == "type" || KeywordContext::Schema.annotation(key)))
+    .then_some(object)
+}
+
+/// Whether the other member of a nullable pair admits `null` by itself, which would make the pair
+/// ambiguous. A local component reference is followed; one back into a schema already followed
+/// adds nothing, so a cycle ends.
+fn schema_admits_null(
+    value: &Value,
+    schemas: &Map<String, Value>,
+    followed: &mut BTreeSet<String>,
+) -> bool {
+    let Some(object) = value.as_object() else {
+        return value == &Value::Bool(true);
+    };
+    let typed_null = match object.get("type") {
+        Some(Value::String(kind)) => kind == "null",
+        Some(Value::Array(kinds)) => kinds.iter().any(|kind| kind == "null"),
+        _ => false,
+    };
+    let union_null = ["anyOf", "oneOf"].into_iter().any(|keyword| {
+        object
+            .get(keyword)
+            .and_then(Value::as_array)
+            .is_some_and(|branches| {
+                branches
+                    .iter()
+                    .any(|branch| schema_admits_null(branch, schemas, followed))
+            })
+    });
+    let referenced_null = object
+        .get("$ref")
+        .and_then(Value::as_str)
+        .and_then(|reference| reference.strip_prefix("#/components/schemas/"))
+        .and_then(pointer_unescape)
+        .is_some_and(|name| {
+            followed.insert(name.clone())
+                && schemas
+                    .get(&name)
+                    .is_some_and(|target| schema_admits_null(target, schemas, followed))
+        });
+    let annotations_only = !object.contains_key("$ref")
+        && object
+            .keys()
+            .all(|key| key == "$schema" || KeywordContext::Schema.annotation(key));
+    typed_null
+        || union_null
+        || referenced_null
+        || annotations_only
+        || object.get("nullable") == Some(&Value::Bool(true))
+        || object.get("const") == Some(&Value::Null)
+        || object
+            .get("enum")
+            .and_then(Value::as_array)
+            .is_some_and(|values| values.contains(&Value::Null))
 }
 
 /// Whether a type admitting `null` still admits it past the schema's `enum` and `const`.
@@ -1613,11 +1848,6 @@ components:
                 "{refusals:?}"
             );
         }
-    }
-
-    #[test]
-    fn review_missing_array_items_refuses_at_every_site() {
-        refused_at_every_site(&serde_json::json!({"type": "array"}), "/items");
     }
 
     #[test]

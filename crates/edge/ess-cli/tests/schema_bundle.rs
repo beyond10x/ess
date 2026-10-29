@@ -456,3 +456,146 @@ fn corrupted_import_cannot_be_projected_and_output_cannot_replace_source() {
     assert!(!output.status.success());
     assert_eq!(fs::read(fixture.0.join("source.json")).unwrap(), original);
 }
+
+/// The counter document used for the 0.76.0 baseline below, byte for byte.
+const COUNTER: &str = r#"{"openapi":"3.1.0","info":{"title":"demo.counter","version":"v1"},"paths":{},"components":{"schemas":{"Counter":{"type":"object","properties":{"wide":{"type":"integer","format":"int64"},"narrow":{"type":"integer","format":"int32"},"bounded":{"type":"integer","minimum":0,"maximum":100}},"required":["wide","narrow","bounded"],"additionalProperties":false}}}}
+"#;
+
+/// SHA-256 of each file `ess 0.76.0` wrote for `COUNTER`, with the release version replaced by
+/// `<version>`. `.ess-output/state.json` carries a random anchor and is left out.
+const COUNTER_0_76: [(&str, &str); 10] = [
+    (
+        "go/go.mod",
+        "47987f329f8abb69066f9958ceeb3fc45243cc9d201fca851967d994fcaf13fb",
+    ),
+    (
+        "go/source.bundle.json",
+        "762a867df23cfd9638a8f139830513a08b69cac4ee5c339ed2eaf8fe15475fa6",
+    ),
+    (
+        "go/types.go",
+        "15ed43388fe243f93c1ded8732834d2c722a167756db7206e618f5fe8e29f4a1",
+    ),
+    (
+        "go/types-report.json",
+        "e03a1296eefac937d2a2a1bac4e1f9ca85ccfaf469eec36316bb411eb20fd5fe",
+    ),
+    (
+        "rust/Cargo.toml",
+        "f3b41876ccd83842558e8d65076e8b519355839ff93a8ff01e8adbbfaaed9e12",
+    ),
+    (
+        "rust/source.bundle.json",
+        "762a867df23cfd9638a8f139830513a08b69cac4ee5c339ed2eaf8fe15475fa6",
+    ),
+    (
+        "rust/types-report.json",
+        "0f8c23029a5b75da57dc1c991adc27ba45f7fc20c84d186c24efd918daedccb7",
+    ),
+    (
+        "rust/types.rs",
+        "62d0c21f0298f53c609338f0c3782d8c13c9f54068aba18385ad161abb6069a2",
+    ),
+    (
+        "typescript/types-report.json",
+        "9346b9523f078516802dc3451a3cae3e72a499b6002d8f4d13359378dc26a94e",
+    ),
+    (
+        "typescript/types.ts",
+        "b629785d44493dc0cd1d155740fc3df8e25f25f9f2340d7c6ccfb81628757ded",
+    ),
+];
+
+fn masked_sha256(path: &std::path::Path) -> String {
+    use sha2::{Digest as _, Sha256};
+    use std::fmt::Write as _;
+    let text = fs::read_to_string(path).unwrap();
+    let masked = text.replace(env!("CARGO_PKG_VERSION"), "<version>");
+    Sha256::digest(masked.as_bytes())
+        .iter()
+        .fold(String::new(), |mut out, byte| {
+            write!(out, "{byte:02x}").expect("writing to a String");
+            out
+        })
+}
+
+#[test]
+fn the_integer_format_widths_option_reaches_every_target() {
+    let fixture = Fixture::new();
+    fs::write(fixture.0.join("counter.json"), COUNTER).unwrap();
+    let imported = fixture.run(&[
+        "import-bundle",
+        "--path",
+        "counter.json",
+        "--component",
+        "Counter",
+        "--dialect",
+        "draft-2020-12",
+        "--out",
+        "counter.bundle.json",
+    ]);
+    assert!(imported.status.success(), "{imported:?}");
+    let targets: [(&str, &[&str]); 3] = [
+        ("rust", &["--package", "counter_types"]),
+        (
+            "go",
+            &[
+                "--package",
+                "countertypes",
+                "--module",
+                "example.invalid/countertypes",
+            ],
+        ),
+        ("typescript", &[]),
+    ];
+    for flag in [false, true] {
+        for (target, identity) in targets {
+            let out = if flag {
+                format!("{target}-widths")
+            } else {
+                target.to_owned()
+            };
+            let mut arguments = vec![
+                "types-bundle",
+                "--bundle",
+                "counter.bundle.json",
+                "--root",
+                "Counter",
+                "--target",
+                target,
+                "--out",
+                &out,
+            ];
+            arguments.extend_from_slice(identity);
+            if flag {
+                arguments.push("--integer-format-widths");
+            }
+            let output = fixture.run(&arguments);
+            assert!(output.status.success(), "{target} {flag}: {output:?}");
+            let report: Value = serde_json::from_slice(
+                &fs::read(fixture.0.join(&out).join("types-report.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                report["options"]["integer_format_widths"],
+                if flag { json!(true) } else { Value::Null },
+                "{target}: {report}"
+            );
+        }
+    }
+    for (file, digest) in COUNTER_0_76 {
+        assert_eq!(masked_sha256(&fixture.0.join(file)), digest, "{file}");
+    }
+    let rust = fs::read_to_string(fixture.0.join("rust-widths/types.rs")).unwrap();
+    assert!(rust.contains("pub wide: i64"), "{rust}");
+    assert!(rust.contains("pub narrow: i32"), "{rust}");
+    let go = fs::read_to_string(fixture.0.join("go-widths/types.go")).unwrap();
+    assert!(go.contains("int32"), "{go}");
+    // TypeScript declares `number` either way; its report drops the precision obligation.
+    let typescript =
+        fs::read_to_string(fixture.0.join("typescript-widths/types-report.json")).unwrap();
+    assert_ne!(
+        typescript,
+        fs::read_to_string(fixture.0.join("typescript/types-report.json")).unwrap()
+    );
+}
