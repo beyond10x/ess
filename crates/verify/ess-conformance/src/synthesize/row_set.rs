@@ -1698,13 +1698,19 @@ fn arrange_rows(
     head: &mut Head<'_>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     taken: &mut BTreeSet<InstanceName>,
-    (before, under, linked): (&[ScenarioStep], Option<&InstanceName>, Option<&Linked>),
+    (before, under, linked, subject): (
+        &[ScenarioStep],
+        Option<&InstanceName>,
+        Option<&Linked>,
+        Option<&Arrangement>,
+    ),
 ) -> Option<Vec<Arrangement>> {
     let owners_held = held_owners(ir, entity, before, under);
     let owner = Owner {
         under,
         held: &owners_held,
         linked,
+        subject,
     };
     // Whether the steps so far, and `row`'s after them, leave every row-set command they send
     // taking the branch it is required to: a row arranged through such a command is kept only
@@ -2220,6 +2226,10 @@ struct Owner<'o> {
     /// The related row the rows are created naming, where the selector compares a field of
     /// theirs with the input naming it (beyond10x/ess#682).
     linked: Option<&'o Linked>,
+    /// The addressed subject `under` names, as the setup left it, where the rows' creator is
+    /// steered on it ([`Arranging::held_under`]): its refusals of that subject on its stored
+    /// fields are decided per input on the values it settled.
+    subject: Option<&'o Arrangement>,
 }
 
 impl Owner<'_> {
@@ -2228,6 +2238,7 @@ impl Owner<'_> {
         under: None,
         held: &[],
         linked: None,
+        subject: None,
     };
 
     /// Whether `goal` pins the owner link of `entity` to the identity of a row the steps hold: a
@@ -2350,7 +2361,33 @@ fn arrange_row(
                 arrange_then_updated(ir, entity, goal, actors, distinction, &create, &accept)
             });
     }
+    // Rows filed under the addressed subject, their creator's input steered on the subject as it
+    // was created, so a refusal of that subject comparing it with the input passes: a child row
+    // sent the tenant its parent holds.
+    let held_subject = owner.subject.and_then(|subject| {
+        let link = ir.owner_of(entity)?;
+        Some((
+            BTreeMap::from([(link.via.to_owned(), subject.instance.clone())]),
+            BTreeMap::from([(subject.instance.clone(), subject.state.clone())]),
+            super::related_guard::HeldRows::from([(
+                subject.instance.clone(),
+                subject.settled.clone(),
+            )]),
+        ))
+    });
     let create = |steer: &Predicate, accept: &dyn Fn(&Arrangement) -> bool| {
+        if let Some((fields, held, rows)) = &held_subject {
+            return super::arrange_toward_held(
+                ir,
+                entity,
+                steer,
+                actors,
+                distinction,
+                fields,
+                (held, rows),
+                accept,
+            );
+        }
         if owner.under.is_none() && owner.names_held(ir, entity, steer) {
             arrange_toward_named_owner(ir, entity, steer, actors, distinction, accept)
         } else {
@@ -2490,8 +2527,12 @@ struct Plan<'p> {
     outcome: &'p ResolvedOutcome,
     selections: &'p [&'p ResolvedRowSelection],
     filters: Vec<Predicate>,
-    /// The subject each selector's rows are arranged under, by their owner link (beyond10x/ess#553).
-    owners: Vec<Option<&'p InstanceName>>,
+    /// The subject each selector's rows are arranged under, by their owner link (beyond10x/ess#553),
+    /// as the setup left it.
+    owners: Vec<Option<&'p Arrangement>>,
+    /// Whether the rows arranged under the subject are created steered on it
+    /// ([`Arranging::held_under`]).
+    held_under: bool,
     /// The related row each selector's rows are created naming, where one is linked
     /// (beyond10x/ess#682).
     links: &'p [Option<Linked>],
@@ -2561,8 +2602,9 @@ impl<'p> Plan<'p> {
                 .collect(),
             owners: unders
                 .iter()
-                .map(|under| under.as_ref().map(|(_, row)| &row.instance))
+                .map(|under| under.as_ref().map(|(_, row)| row))
                 .collect(),
+            held_under: false,
             links,
             foralls,
             copied: selections
@@ -2575,6 +2617,16 @@ impl<'p> Plan<'p> {
                 .collect(),
             crowded: std::cell::Cell::new(false),
         }
+    }
+
+    /// The subject selector `at`'s rows are filed under, and that subject as the setup left it
+    /// where they are created steered on it ([`Arranging::held_under`]).
+    fn owner(&self, at: usize) -> (Option<&InstanceName>, Option<&Arrangement>) {
+        let row = self.owners[at];
+        (
+            row.map(|row| &row.instance),
+            row.filter(|_| self.held_under),
+        )
     }
 
     /// No refuting row, then one refuting each `forall`, named `(selector, index)`.
@@ -2636,6 +2688,7 @@ impl<'p> Plan<'p> {
                 })
                 .map(|(_, (_, filter))| related_rows::stripped(filter))
                 .collect();
+            let (under, subject) = self.owner(at);
             let rows = arrange_rows(
                 ir,
                 &selection.entity,
@@ -2657,7 +2710,7 @@ impl<'p> Plan<'p> {
                 },
                 actors,
                 &mut taken,
-                (&steps, self.owners[at], self.links[at].as_ref()),
+                (&steps, under, self.links[at].as_ref(), subject),
             )
             .ok_or(at)?;
             for row in &rows {
@@ -2984,6 +3037,7 @@ impl<'p> Plan<'p> {
                             under: None,
                             held: &owners_held,
                             linked: None,
+                            subject: None,
                         },
                     ),
                     &accept,
@@ -3101,15 +3155,17 @@ pub(super) fn prepare(
     }) else {
         return Err(refused);
     };
-    prepare_with(models, command, outcome, actors, Arranging::LINKED).map_err(|_| {
-        guarded_creator(
-            models.arrangement,
-            (command, outcome),
-            &link,
-            actors,
-            refused,
-        )
-    })
+    prepare_with(models, command, outcome, actors, Arranging::LINKED)
+        .or_else(|_| prepare_with(models, command, outcome, actors, Arranging::HELD_UNDER))
+        .map_err(|_| {
+            guarded_creator(
+                models.arrangement,
+                (command, outcome),
+                &link,
+                actors,
+                refused,
+            )
+        })
 }
 
 /// How one arrangement of [`prepare_with`] is tried.
@@ -3122,6 +3178,12 @@ struct Arranging {
     later: u8,
     /// Only rows on which every row-set refusal answered after the branch holds stand.
     eager: bool,
+    /// The rows a selector reads under the addressed subject are created with their creator's
+    /// input steered on that subject as the setup left it ([`super::arrange_toward_held`]), so a
+    /// creator refusing the subject on its stored fields compared with its input passes: a child
+    /// row sent the tenant its parent holds. Tried last, so every arrangement an earlier attempt
+    /// stands with keeps its steps.
+    held_under: bool,
 }
 
 impl Arranging {
@@ -3129,6 +3191,13 @@ impl Arranging {
         link: true,
         later: 0,
         eager: false,
+        held_under: false,
+    };
+
+    /// [`Self::LINKED`], the rows under the addressed subject steered on it.
+    const HELD_UNDER: Self = Self {
+        held_under: true,
+        ..Self::LINKED
     };
 }
 
@@ -3152,6 +3221,7 @@ fn beside_attempts(
             link,
             later: 0,
             eager: true,
+            held_under: false,
         }));
     }
     if outcome.error.is_some() && matches!(outcome.condition, ResolvedCondition::RelatedSet { .. })
@@ -3162,6 +3232,7 @@ fn beside_attempts(
                 link,
                 later,
                 eager: false,
+                held_under: false,
             }));
         }
     }
@@ -3358,6 +3429,10 @@ fn prepare_with(
         .iter()
         .map(|selection| under_subject(ir, command, selection, &setup, &supplied))
         .collect();
+    // Steering the rows under the subject on it changes nothing where no rows are filed there.
+    if attempt.held_under && unders.iter().all(Option::is_none) {
+        return Err(gap(at(), ROWS_UNARRANGED));
+    }
     let links = if link {
         linked(
             ir,
@@ -3391,7 +3466,8 @@ fn prepare_with(
         .next()
         .and_then(|(_, row)| addressed(command, &supplied).map(|(entity, _)| (entity, row)))
         .map(|(entity, row)| subject_fact::holding(ir, entity, row));
-    let plan = Plan::new(command, outcome, (&selections, &unders, &links), &closed);
+    let mut plan = Plan::new(command, outcome, (&selections, &unders, &links), &closed);
+    plan.held_under = attempt.held_under;
     // A head is arranged only where a creating command steers its first key: a field set from the
     // input, or an identity the input names (ess/27, beyond10x/ess#543).
     for (selection, order_by) in selections.iter().zip(&plan.heads) {
@@ -3642,21 +3718,34 @@ fn under_subject(
         matches(left, right) || matches(right, left)
     })?;
     // The subject as the setup's steps leave it, its unwritten `Optional` fields included.
-    let walked = walk(ir, &setup.steps, false).ok()?;
-    let left = walked
-        .held
-        .iter()
-        .find(|row| row.entity == *entity && row.instance.as_ref() == Some(instance))?;
+    let (state, settled, unwritten) = walked_row(ir, &setup.steps, entity, instance)?;
     let row = Arrangement {
         instance: instance.clone(),
-        state: left.state.clone(),
+        state,
         steps: setup.steps.clone(),
         source: setup.source.clone(),
-        settled: left.settled.clone(),
-        unwritten: left.unwritten.clone(),
+        settled,
+        unwritten,
         unobserved: BTreeSet::new(),
     };
     Some((link.clone(), row))
+}
+
+/// The row of `entity` named `instance` as `steps` leave it: its state, the values it settled and
+/// the `Optional` fields no step wrote. `None` where the steps leave no such row, or change rows
+/// in a way [`walk`] does not follow.
+pub(super) fn walked_row(
+    ir: &EssIr,
+    steps: &[ScenarioStep],
+    entity: &EntityHandle,
+    instance: &InstanceName,
+) -> Option<(StateName, BTreeMap<String, Determined>, BTreeSet<String>)> {
+    let walked = walk(ir, steps, false).ok()?;
+    let left = walked
+        .held
+        .into_iter()
+        .find(|row| row.entity == *entity && row.instance.as_ref() == Some(instance))?;
+    Some((left.state, left.settled, left.unwritten))
 }
 
 /// `filter` without the conjunct `link`, which arranging the rows under the subject holds.

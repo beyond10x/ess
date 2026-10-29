@@ -2875,6 +2875,173 @@ fn creators_reading_subject(ir: &EssIr, outcome: &ResolvedOutcome) -> Vec<Predic
     subject_fact::compared_presence(ir, &subject.entity, &predicates)
 }
 
+/// Why an `affects:` segment is refused where a `when_subject:` refusal answered before the branch
+/// takes the subject the segment arranges under every input tried beside it ([`subject_accepted`]).
+pub(super) const SUBJECT_REFUSING: &str = "refuses the subject the segment arranges under every \
+     input tried beside it, so the branch whose rows the entry changes is never taken there";
+
+/// A `when_subject:` refusal of `command` the precedence plan reads before `outcome`: the branch,
+/// its guard over the subject's stored fields, and its input guard where it declares one.
+type SubjectRefusal<'c> = (&'c ResolvedOutcome, Predicate, Option<&'c Predicate>);
+
+/// Every [`SubjectRefusal`] of `command` answered before `outcome`, in declaration order.
+fn subject_refusals<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Vec<SubjectRefusal<'c>> {
+    let earlier = super::precedence::answers_before(ir.format(), command, outcome);
+    command
+        .outcomes
+        .iter()
+        .filter(|branch| {
+            branch.error.is_some() && earlier.iter().any(|before| before.name == branch.name)
+        })
+        .filter_map(|branch| {
+            let stored = subject_fact::stored(&branch.condition)?;
+            let guard = match &branch.condition {
+                ess_compiler::ir::ResolvedCondition::SubjectField { predicate, .. } => {
+                    predicate.as_ref()
+                }
+                ess_compiler::ir::ResolvedCondition::SubjectPredicate { input, .. } => {
+                    input.as_ref()
+                }
+                _ => None,
+            };
+            Some((branch, stored, guard))
+        })
+        .collect()
+}
+
+/// The inputs [`subject_accepted`] tries in place of `input`, in order: candidates steered on the
+/// subject's `settled` values by the comparisons and input presence tests of `predicates`
+/// ([`subject_fact::grounded`], [`subject_fact::input_presence`]), all of them first and then each
+/// alone and refuted, as `row_set::steered_inputs` steers a creator beside a related row. Each is
+/// `input` with only the input fields `predicates` read taken from the candidate, and none is
+/// `input` itself.
+fn subject_steered(
+    ir: &EssIr,
+    (command, entity): (&ResolvedCommand, &EntityHandle),
+    settled: &BTreeMap<String, Determined>,
+    predicates: &[Predicate],
+    input: &BTreeMap<String, Node>,
+) -> Vec<BTreeMap<String, Node>> {
+    let read: BTreeSet<String> = predicates
+        .iter()
+        .flat_map(Predicate::fact_paths)
+        .filter_map(|path| match path.segments() {
+            [root, field, ..] if root == ess_domain::command::subject_fact::INPUT_NAMESPACE => {
+                Some(field.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    let mut steering = subject_fact::grounded(ir, entity, settled, predicates);
+    steering.extend(subject_fact::input_presence(ir, entity, predicates));
+    let negated: Vec<Predicate> = steering
+        .iter()
+        .map(|guard| Predicate::Not(Box::new(guard.clone())))
+        .collect();
+    let guard_sets = std::iter::once(steering.iter().collect::<Vec<&Predicate>>())
+        .chain(steering.iter().chain(&negated).map(|guard| vec![guard]));
+    let mut tried: Vec<BTreeMap<String, Node>> = Vec::new();
+    for guards in guard_sets {
+        for distinction in [Distinction::PLAIN, Distinction::further(1)] {
+            for candidate in
+                super::candidates(ir, command, &guards, distinction).unwrap_or_default()
+            {
+                let mut sent = input.clone();
+                for field in &read {
+                    match candidate.get(field) {
+                        Some(value) => sent.insert(field.clone(), value.clone()),
+                        None => sent.remove(field),
+                    };
+                }
+                if sent != *input && !tried.contains(&sent) {
+                    tried.push(sent);
+                }
+            }
+        }
+    }
+    tried
+}
+
+/// The input an `affects:` segment sends `command` for `outcome`, the subject arranged by `steps`.
+///
+/// `input` itself, where no `when_subject:` refusal the precedence plan reads before `outcome`
+/// certainly takes it on that subject (its stored guard decided true, its input guard too). Where
+/// one does, the first input [`subject_steered`] tries on which every such refusal is decided
+/// false and the branch's own guards still select it: a deleter refusing another tenant, sent the
+/// tenant its parent holds, or none where it holds none. `Err` names the refusals the first input
+/// takes, where no input tried passes them.
+fn subject_accepted(
+    ir: &EssIr,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    (entity, instance, held): (&EntityHandle, &InstanceName, &StateName),
+    (steps, settled): (&[ScenarioStep], &BTreeMap<String, Determined>),
+    input: BTreeMap<String, Node>,
+) -> Result<BTreeMap<String, Node>, Vec<String>> {
+    let refusals = subject_refusals(ir, command, outcome);
+    if refusals.is_empty() {
+        return Ok(input);
+    }
+    // The subject as the steps leave it, its unwritten `Optional` fields included.
+    let (state, settled, unwritten) = super::row_set::walked_row(ir, steps, entity, instance)
+        .unwrap_or_else(|| (held.clone(), settled.clone(), BTreeSet::new()));
+    // Each refusal decided on the subject for `sent`: its stored guard, then its input guard.
+    let decided = |sent: &BTreeMap<String, Node>| -> Vec<(String, Truth)> {
+        let facts = super::flatten(ir, command, sent).ok();
+        refusals
+            .iter()
+            .map(|(branch, stored, guard)| {
+                let row = subject_fact::guard_truth_with(
+                    ir,
+                    entity,
+                    &settled,
+                    &unwritten,
+                    Some(&state),
+                    stored,
+                    Some((command, sent)),
+                );
+                let truth = match guard {
+                    Some(_) if row == Truth::False => Truth::False,
+                    Some(guard) => match facts
+                        .as_ref()
+                        .map(|facts| super::decides(facts, &[guard], true))
+                    {
+                        Some(Ok(true)) => row,
+                        Some(Ok(false)) => Truth::False,
+                        _ => Truth::Unknown,
+                    },
+                    None => row,
+                };
+                (format!("{}/{}", command.name, branch.name), truth)
+            })
+            .collect()
+    };
+    let taking: Vec<String> = decided(&input)
+        .into_iter()
+        .filter(|(_, truth)| *truth == Truth::True)
+        .map(|(branch, _)| branch)
+        .collect();
+    if taking.is_empty() {
+        return Ok(input);
+    }
+    let predicates: Vec<Predicate> = refusals
+        .iter()
+        .map(|(_, stored, _)| stored.clone())
+        .collect();
+    subject_steered(ir, (command, entity), &settled, &predicates, &input)
+        .into_iter()
+        .find(|sent| {
+            decided(sent)
+                .iter()
+                .all(|(_, truth)| *truth == Truth::False)
+                && super::selects_branch(ir, command, outcome, Some(&state), sent) != Ok(false)
+        })
+        .ok_or(taking)
+}
+
 /// [`affects_segment`], the subject arranged holding every field `steer` names present, and each
 /// entry's rows searched for beside rows of their own where `beside` is set ([`Selection::beside`]).
 #[allow(clippy::too_many_lines)] // One complete set-effect witness, including invocation authority.
@@ -2926,6 +3093,28 @@ fn affects_segment_on(
         (Some(held), true) => reach_in_state(ir, command, outcome, held, Distinction::PLAIN)?,
         _ => reach(ir, command, outcome, Distinction::PLAIN)?,
     };
+    // A `when_subject:` refusal answered before the branch that takes this input on the subject
+    // just arranged would answer in its place: the input is chosen again on that subject.
+    if let Some(held) = &setup.before {
+        input = subject_accepted(
+            ir,
+            (command, outcome),
+            (&subject.entity, &instance, held),
+            (&setup.steps, &setup.settled),
+            input,
+        )
+        .map_err(|refusing| {
+            gap(
+                at(0),
+                format!(
+                    "{}` answered first by `{}",
+                    subject.entity,
+                    refusing.join("`, `")
+                ),
+                SUBJECT_REFUSING,
+            )
+        })?;
+    }
     // One row per element of an input list (ess/23, beyond10x/ess#459): the command under test
     // sends the elements naming the held row and a new one, after a first call put the held row
     // and a decoy in place.

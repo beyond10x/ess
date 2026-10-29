@@ -22,12 +22,12 @@
 use super::super::selects_branch;
 use super::{
     after, gap, has_subject_guards, input_value, invocation, next, observing, prepare_in, reach,
-    reach_in_state, reaches_other_rows, require, require_absent, row_fields, send, subject_reads,
-    supply, with_sets, written_in, ActorRef, Arrangement, BTreeMap, BTreeSet, Determined,
-    Distinction, EntityRef, EssSemanticRef, FactPath, FactValue, InstanceName, InvocationModels,
-    InvocationPhase, Node, QualifiedName, RefusalCause, ResolvedAffect, ResolvedCommand,
-    ResolvedOutcome, ResolvedView, ScenarioStep, ScenarioValue, StateName, Truth, ViewExpectation,
-    ViewRef,
+    reach_in_state, reaches_other_rows, require, require_absent, row_fields, send,
+    subject_accepted, subject_reads, supply, with_sets, written_in, ActorRef, Arrangement,
+    BTreeMap, BTreeSet, Determined, Distinction, EntityRef, EssSemanticRef, FactPath, FactValue,
+    InstanceName, InvocationModels, InvocationPhase, Node, QualifiedName, RefusalCause,
+    ResolvedAffect, ResolvedCommand, ResolvedOutcome, ResolvedView, ScenarioStep, ScenarioValue,
+    StateName, Truth, ViewExpectation, ViewRef, SUBJECT_REFUSING,
 };
 use ess_compiler::ir::{ResolvedEach, ResolvedTypeRef};
 
@@ -264,10 +264,32 @@ pub(super) fn affects_segment(
             "has no subject row an arrangement names",
         )
     })?;
-    let input = match (&setup.before, has_subject_guards(command)) {
+    let mut input = match (&setup.before, has_subject_guards(command)) {
         (Some(held), true) => reach_in_state(ir, command, outcome, held, Distinction::PLAIN)?,
         _ => reach(ir, command, outcome, Distinction::PLAIN)?,
     };
+    // A `when_subject:` refusal answered before the branch that takes this input on the subject
+    // just arranged would answer in its place: the input is chosen again on that subject.
+    if let Some(held) = &setup.before {
+        input = subject_accepted(
+            ir,
+            (command, outcome),
+            (&subject.entity, &instance, held),
+            (&setup.steps, &setup.settled),
+            input,
+        )
+        .map_err(|refusing| {
+            gap(
+                at(0),
+                format!(
+                    "{}` answered first by `{}",
+                    subject.entity,
+                    refusing.join("`, `")
+                ),
+                SUBJECT_REFUSING,
+            )
+        })?;
+    }
     // An element selected by entry `index` and, where the witness offers one, by no other entry.
     let element_for = |index: usize| -> Option<BTreeMap<String, Node>> {
         let candidates: Vec<BTreeMap<String, Node>> = (0..TRIES).filter_map(witness).collect();

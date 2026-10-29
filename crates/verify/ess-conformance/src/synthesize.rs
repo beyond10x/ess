@@ -1349,6 +1349,15 @@ impl RefusalCause {
                  arrives in, or let the entry write a field (`sets:`) a view publishes, so a \
                  target that skips the move reads differently"
             }
+            // An `affects:` segment whose subject an earlier `when_subject:` refusal takes under
+            // every input tried: the subject, not the input, is what the refusal reads.
+            Self::NoWitness(gap) if gap.reason == set_effects::SUBJECT_REFUSING => {
+                "the `when_subject:` refusal named answers before the branch on the subject the \
+                 entry's rows are arranged under, whatever the command is sent; narrow that \
+                 refusal, or the guards of the commands creating the subject and its rows, so a \
+                 subject holding such rows passes it, or cover the branch with an authored \
+                 scenario (ess-scenario/1)"
+            }
             Self::NoWitness(gap) if gap.reason == set_effects::UNDRIVEN => {
                 "the creating branch named is not taken when sent with the rows the scenario holds, \
                  in the states it holds them; narrow the guard that answers before it there, or \
