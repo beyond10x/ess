@@ -38,6 +38,9 @@ pub struct ModelTypes {
     definitions: BTreeMap<String, Value>,
     newtypes: BTreeSet<String>,
     binary64: BTreeSet<String>,
+    /// Each object's wire names in the order the specification declares them, by the object's
+    /// schema pointer (beyond10x/ess#661).
+    field_order: BTreeMap<String, Vec<String>>,
     provenance: Provenance,
 }
 
@@ -110,8 +113,25 @@ impl ModelTypes {
         for (root, body) in &bodies {
             fields_numeric_locations(&pointer("/$defs", root), body.fields, &mut binary64);
         }
+        // Minted from the typed fields: the definitions below are sorted JSON maps.
+        let mut field_order = BTreeMap::new();
+        for item in selected.values() {
+            if let ResolvedBody::Struct { fields, .. } = &item.body {
+                field_order.insert(
+                    pointer("/$defs", &item.name.to_string()),
+                    declared_order(fields),
+                );
+            }
+        }
+        for (root, body) in &bodies {
+            // A row of a view with a `shape:` is a reference, not an object of its own.
+            if !body.fields.is_empty() {
+                field_order.insert(pointer("/$defs", root), declared_order(body.fields));
+            }
+        }
         Ok(Self {
             binary64,
+            field_order,
             roots: roots.clone(),
             definitions: selected
                 .values()
@@ -178,6 +198,15 @@ impl ModelTypes {
     /// These are private projection metadata, never recovered from serialized annotations.
     pub fn binary64_locations(&self) -> &BTreeSet<String> {
         &self.binary64
+    }
+
+    /// Each selected object's wire names in the order the specification declares them, by the
+    /// object's schema pointer: a struct's and an event payload's under its definition, a
+    /// command's input and response and a view's row under its root (beyond10x/ess#661). A
+    /// union variant's object has no declared order and no entry. Private projection metadata
+    /// minted from the typed fields, since [`Self::definitions`] lists properties by name.
+    pub fn declared_field_order(&self) -> &BTreeMap<String, Vec<String>> {
+        &self.field_order
     }
 
     /// Existing model and contract provenance, minted from the resolved input.
@@ -337,6 +366,14 @@ fn wire_collisions(name: &str, fields: &[ResolvedField], errors: &mut BTreeSet<M
 
 fn pointer(at: &str, key: &str) -> String {
     format!("{at}/{}", key.replace('~', "~0").replace('/', "~1"))
+}
+
+/// The wire names of `fields`, in the order they are declared.
+fn declared_order(fields: &[ResolvedField]) -> Vec<String> {
+    fields
+        .iter()
+        .map(|field| types::wire_name(field).to_owned())
+        .collect()
 }
 
 fn numeric_locations(reference: &ResolvedTypeRef, at: &str, found: &mut BTreeSet<String>) {

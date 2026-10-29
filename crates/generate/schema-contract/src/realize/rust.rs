@@ -57,8 +57,14 @@ pub(super) fn emit(
         anonymous: BTreeMap::new(),
         errors: BTreeSet::new(),
         exact: BTreeSet::new(),
+        boxed: if options.box_only_recursion {
+            plan.recursive_references()
+        } else {
+            BTreeSet::new()
+        },
         report: plan.report(TargetConfiguration::Rust {
             package: package.to_owned(),
+            declared_field_order: plan.declared_order,
             options: options.clone(),
         }),
     };
@@ -148,6 +154,9 @@ struct Emitter<'a> {
     /// Source pointers whose emitted code holds JSON numbers in `serde_json::Number` or
     /// `serde_json::Value`, the values `arbitrary_precision` changes.
     exact: BTreeSet<String>,
+    /// Under `box_only_recursion`, the pointers of the references that close a cycle of
+    /// by-value fields, the only ones boxed.
+    boxed: BTreeSet<String>,
     report: Report,
 }
 
@@ -509,11 +518,13 @@ impl Emitter<'_> {
         if !closed && !dropped {
             allocated.insert("ess_extra".to_owned());
         }
-        let mut members = self.fields(out, fields, allocated);
+        let ordered = self.plan.ordered_fields(pointer, fields);
+        let mut members = self.fields(out, &ordered, allocated);
         let mut codecs = String::new();
         if let Some(short) = short {
             let ty = self.ty(&fields[&short.wire].value);
-            short_form(&mut codecs, name, fields, short, &ty, closed || dropped);
+            let wires = ordered.iter().map(|(wire, _)| *wire).collect::<Vec<_>>();
+            short_form(&mut codecs, name, &wires, short, &ty, closed || dropped);
         }
         if closed || dropped {
             out.push_str("}\n");
@@ -538,9 +549,9 @@ impl Emitter<'_> {
         writeln!(out, "    #[serde(flatten, serialize_with = \"{name}::ess_serialize_extra\")]\n    pub ess_extra: ::std::collections::BTreeMap<::std::string::String, {extra}>,\n}}").expect("String write");
         writeln!(out, "impl {name} {{\n    fn ess_serialize_extra<S: ::serde::Serializer>(values: &::std::collections::BTreeMap<::std::string::String, {extra}>, serializer: S) -> Result<S::Ok, S::Error> {{").expect("String write");
         if !fields.is_empty() {
-            let keys = fields
-                .keys()
-                .map(|key| format!("{key:?}"))
+            let keys = ordered
+                .iter()
+                .map(|(key, _)| format!("{key:?}"))
                 .collect::<Vec<_>>()
                 .join(", ");
             writeln!(out, "        if [{keys}].iter().any(|key| values.contains_key(*key)) {{\n            return Err(::serde::ser::Error::custom(\"additional key collides with a declared field\"));\n        }}").expect("String write");
@@ -553,16 +564,16 @@ impl Emitter<'_> {
         out.push_str(&codecs);
     }
 
-    /// Writes the declared fields of a record, naming each against `allocated`, and returns them
-    /// as the members a derive needs.
+    /// Writes the declared fields of a record in the order given, naming each against
+    /// `allocated`, and returns them as the members a derive needs.
     fn fields(
         &mut self,
         out: &mut String,
-        fields: &BTreeMap<String, Field>,
+        fields: &[(&String, &Field)],
         mut allocated: BTreeSet<String>,
     ) -> Vec<Member> {
         let mut members = Vec::new();
-        for (wire, field) in fields {
+        for &(wire, field) in fields {
             let field_name = field_name(wire);
             if field_name.is_empty()
                 || field_name.as_bytes()[0].is_ascii_digit()
@@ -673,6 +684,11 @@ impl Emitter<'_> {
             }
             Shape::SizedInteger(IntegerWidth::I32) => "i32".to_owned(),
             Shape::SizedInteger(IntegerWidth::I64) => "i64".to_owned(),
+            Shape::Ref(name)
+                if self.options.box_only_recursion && !self.boxed.contains(&node.pointer) =>
+            {
+                self.plan.names[name].clone()
+            }
             Shape::Ref(name) => format!("::std::boxed::Box<{}>", self.plan.names[name]),
             Shape::Array { prefix, items, .. } if prefix.is_empty() => {
                 format!("::std::vec::Vec<{}>", self.ty(items))
@@ -941,13 +957,13 @@ fn checked_text(
 fn short_form(
     out: &mut String,
     name: &str,
-    fields: &BTreeMap<String, Field>,
+    fields: &[&String],
     short: &Shorthand,
     ty: &str,
     closed: bool,
 ) {
     let mut filled = String::new();
-    for wire in fields.keys() {
+    for &wire in fields {
         let field = field_name(wire);
         if *wire == short.wire {
             write!(

@@ -11,7 +11,9 @@ use super::{
 };
 
 pub(super) fn emit(plan: &Plan) -> Realization {
-    let mut report = plan.report(TargetConfiguration::Typescript);
+    let mut report = plan.report(TargetConfiguration::Typescript {
+        declared_field_order: plan.declared_order,
+    });
     report.obligations.insert(finding("/", "typescript_compiler_options", "use strict and exactOptionalPropertyTypes; these declarations do not validate runtime JSON"));
     format_ranges(&mut report);
     let mut output = format!(
@@ -156,7 +158,7 @@ fn object(
 ) -> String {
     let mut output = String::from("{\n");
     let mut known = BTreeSet::new();
-    for (name, field) in fields {
+    for (name, field) in plan.ordered_fields(&node.pointer, fields) {
         let rendered = render(&field.value, plan, obligations);
         known.insert(rendered.clone());
         let optional = if field.required { "" } else { "?" };
