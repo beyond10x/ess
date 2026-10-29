@@ -647,3 +647,313 @@ fn a_pair_disjoint_through_a_disjunction_is_equivalent() {
         );
     }
 }
+
+/// The survivor shapes of a downstream audit, with neutral names. Each survived on 0.76.0 because
+/// its overlap has more value combinations than the 64 the check tried (an enum's every variant
+/// times the Booleans), or beside that a conjunct it cannot decide. `S4Inside` is the control whose
+/// one value lies inside the wide list, so a request selects both branches.
+const SURVIVORS: &str = r#"format: ess/23
+system: demo
+version: v1
+domain: demo.shape
+summary: The downstream survivor shapes over command inputs.
+
+components:
+  - component: demo-server
+    owns:
+      domains: [demo.shape]
+    accepts:
+      commands: [demo.shape.S1, demo.shape.S1Ordering, demo.shape.S1Struct, demo.shape.S2, demo.shape.S2Single, demo.shape.S3, demo.shape.S4, demo.shape.S4Inside]
+    reached_by: network
+
+types:
+  - name: demo.shape.Message
+    kind: struct
+    fields:
+      - {name: sent, type: Boolean}
+      - {name: answered, type: Boolean}
+      - {name: closed, type: Boolean}
+      - {name: urgent, type: Boolean}
+      - {name: flagged, type: Boolean}
+  - {name: demo.shape.K, kind: enum, variants: [X, Y, Z, W]}
+  - {name: demo.shape.E, kind: enum, variants: [Unavailable, Incomplete, Ready]}
+  - {name: demo.shape.P, kind: enum, variants: [R, C, P3, P4, P5, P6]}
+  - {name: demo.shape.Q, kind: enum, variants: [S, M, Q3, Q4, Q5, Q6]}
+  - name: demo.shape.Op
+    kind: enum
+    variants: [L, O1, O2, O3, O4, O5, O6, O7, O8, O9, O10, O11, O12, O13, O14, O15, O16, O17, O18, O19, O20, O21, O22, O23, O24, O25, O26, O27, O28, O29, O30, O31, O32, O33, O34]
+
+errors:
+  - name: demo.shape.RefusedA
+    summary: Refused for the first reason.
+  - name: demo.shape.RefusedB
+    summary: Refused for the second reason.
+
+commands:
+  - name: demo.shape.S1
+    input:
+      - {name: k, type: demo.shape.K}
+      - {name: c, type: Boolean}
+      - {name: f, type: Boolean}
+      - {name: g, type: Boolean}
+      - {name: h, type: Boolean}
+      - {name: j, type: Boolean}
+    outcomes:
+      - name: first
+        when: {all: ['k == "X"', 'c == true', 'f == false', 'h == true', 'j == false']}
+        error: demo.shape.RefusedA
+      - name: second
+        when: {all: ['k == "X"', 'f == true', 'g == false']}
+        error: demo.shape.RefusedB
+      - name: rest
+        accepts: nothing
+  - name: demo.shape.S1Ordering
+    input:
+      - {name: k, type: demo.shape.K}
+      - {name: c, type: Boolean}
+      - {name: f, type: Boolean}
+      - {name: g, type: Boolean}
+      - {name: amount, type: Integer}
+    outcomes:
+      - name: first
+        when: {all: ['k == "X"', 'c == true', 'f == false', 'amount > 0']}
+        error: demo.shape.RefusedA
+      - name: second
+        when: {all: ['k == "X"', 'f == true', 'g == false']}
+        error: demo.shape.RefusedB
+      - name: rest
+        accepts: nothing
+  - name: demo.shape.S1Struct
+    input:
+      - {name: k, type: demo.shape.K}
+      - {name: message, type: demo.shape.Message}
+    outcomes:
+      - name: first
+        when: {all: ['k == "X"', 'message.sent == true', 'message.answered == false', 'message.urgent == true', 'message.flagged == false']}
+        error: demo.shape.RefusedA
+      - name: second
+        when: {all: ['k == "X"', 'message.answered == true', 'message.closed == false']}
+        error: demo.shape.RefusedB
+      - name: rest
+        accepts: nothing
+  - name: demo.shape.S2
+    input:
+      - {name: op, type: demo.shape.Op}
+      - {name: e, type: demo.shape.E}
+    outcomes:
+      - name: first
+        when: {all: [{op: {in: [L]}}, {op: {in: [L]}}, 'e == "Unavailable"']}
+        error: demo.shape.RefusedA
+      - name: second
+        when: {all: [{op: {in: [L]}}, 'e == "Incomplete"']}
+        error: demo.shape.RefusedB
+      - name: rest
+        accepts: nothing
+  - name: demo.shape.S2Single
+    input:
+      - {name: op, type: demo.shape.Op}
+      - {name: e, type: demo.shape.E}
+    outcomes:
+      - name: first
+        when: {all: [{op: {in: [L]}}, 'e == "Unavailable"']}
+        error: demo.shape.RefusedA
+      - name: second
+        when: {all: [{op: {in: [L]}}, 'e == "Incomplete"']}
+        error: demo.shape.RefusedB
+      - name: rest
+        accepts: nothing
+  - name: demo.shape.S3
+    input:
+      - {name: p, type: demo.shape.P}
+      - {name: q, type: demo.shape.Q}
+      - {name: s, type: Boolean}
+      - {name: t, type: Boolean}
+      - {name: u, type: Boolean}
+    outcomes:
+      - name: first
+        when: {all: ['p == "R"', 'q == "S"', 's == true', 't == true']}
+        error: demo.shape.RefusedA
+      - name: second
+        when: {all: [{any: ['p == "C"', 'q == "M"', 's == false']}, 'u == true']}
+        error: demo.shape.RefusedB
+      - name: rest
+        accepts: nothing
+  - name: demo.shape.S4
+    input:
+      - {name: op, type: demo.shape.Op}
+      - {name: x, type: Boolean}
+      - {name: y, type: Boolean}
+    outcomes:
+      - name: first
+        when: {all: [{op: {in: [O1, O2, O3, O4, O5, O6, O7, O8, O9, O10, O11, O12, O13, O14, O15, O16, O17, O18, O19, O20, O21, O22, O23, O24, O25, O26, O27, O28, O29, O30]}}, 'x == true']}
+        error: demo.shape.RefusedA
+      - name: second
+        when: {all: [{op: {in: [L]}}, 'y == true']}
+        error: demo.shape.RefusedB
+      - name: rest
+        accepts: nothing
+  - name: demo.shape.S4Inside
+    input:
+      - {name: op, type: demo.shape.Op}
+      - {name: x, type: Boolean}
+      - {name: y, type: Boolean}
+    outcomes:
+      - name: first
+        when: {all: [{op: {in: [O1, O2, O3, O4, O5, O6, O7, O8, O9, O10, O11, O12, O13, O14, O15, O16, O17, O18, O19, O20, O21, O22, O23, O24, O25, O26, O27, O28, O29, O30]}}, 'x == true']}
+        error: demo.shape.RefusedA
+      - name: second
+        when: {all: [{op: {in: [O7]}}, 'y == true']}
+        error: demo.shape.RefusedB
+      - name: rest
+        accepts: nothing
+"#;
+
+#[test]
+fn s1_pins_contradicting_beside_trailing_conjuncts_are_equivalent() {
+    let report = audit(SURVIVORS);
+    equivalent_naming(
+        &report,
+        "precedence-swap/demo.shape.S1/first/second",
+        &["f == false", "f == true"],
+    );
+    equivalent_by_guard(
+        &report,
+        "precedence-swap/demo.shape.S1Ordering/first/second",
+        "(f == false and f == true)",
+    );
+    equivalent_naming(
+        &report,
+        "precedence-swap/demo.shape.S1Struct/first/second",
+        &["message.answered == false", "message.answered == true"],
+    );
+}
+
+#[test]
+fn s2_a_duplicate_membership_conjunct_does_not_defeat_the_check() {
+    let report = audit(SURVIVORS);
+    for id in [
+        "precedence-swap/demo.shape.S2/first/second",
+        "precedence-swap/demo.shape.S2Single/first/second",
+    ] {
+        equivalent_naming(&report, id, &["e == Unavailable", "e == Incomplete"]);
+    }
+}
+
+#[test]
+fn s3_a_disjunction_whose_every_disjunct_contradicts_the_other_guard_is_equivalent() {
+    let report = audit(SURVIVORS);
+    equivalent_naming(
+        &report,
+        "precedence-swap/demo.shape.S3/first/second",
+        &[
+            "p == R",
+            "q == S",
+            "s == true",
+            "p == C or q == M or s == false",
+        ],
+    );
+}
+
+#[test]
+fn s4_a_wide_membership_against_a_value_outside_it_is_equivalent() {
+    let report = audit(SURVIVORS);
+    equivalent_naming(
+        &report,
+        "precedence-swap/demo.shape.S4/first/second",
+        &["op in [O1,", "op in [L]"],
+    );
+    scored(&report, "precedence-swap/demo.shape.S4Inside/first/second");
+}
+
+/// A branch guarded by stored fields is selected by `when_subject:`, never by a `when:` (which
+/// reads only the input), and is no `precedence-swap` site: the swap compares input guards alone.
+const STORED: &str = r#"format: ess/23
+system: demo
+version: v1
+domain: demo.ticket
+summary: S1 with the contradicting fields stored on the ticket.
+types:
+  - {name: demo.ticket.TicketId, kind: newtype, of: Uuid}
+  - {name: demo.ticket.K, kind: enum, variants: [X, Y, Z, W]}
+entities:
+  - name: demo.ticket.Ticket
+    identity: {name: ticket_id, type: demo.ticket.TicketId}
+    fields:
+      - {name: sent, type: Boolean}
+      - {name: answered, type: Boolean}
+    lifecycle:
+      initial: Open
+      states: [Open, Done]
+      terminal: [Done]
+      transitions:
+        - {name: finish, from: [Open], to: Done}
+actors:
+  - name: demo.ticket.Clerk
+    may: [demo.ticket.Open, demo.ticket.Reply]
+errors:
+  - {name: demo.ticket.TicketNotFound, summary: No such ticket., fields: []}
+  - {name: demo.ticket.RefusedA, summary: Refused for the first reason., fields: []}
+  - {name: demo.ticket.RefusedB, summary: Refused for the second reason., fields: []}
+  - {name: demo.ticket.WrongState, summary: The ticket is done., fields: []}
+events:
+  - name: demo.ticket.Opened
+    fields: [{name: ticket_id, type: demo.ticket.TicketId}]
+  - name: demo.ticket.Replied
+    fields: [{name: ticket_id, type: demo.ticket.TicketId}]
+commands:
+  - name: demo.ticket.Open
+    input:
+      - {name: sent, type: Boolean}
+      - {name: answered, type: Boolean}
+    outcomes:
+      - name: opened
+        creates: demo.ticket.Ticket
+        instance: ticket_id
+        sets: {sent: input.sent, answered: input.answered}
+        emits: [demo.ticket.Opened]
+        payload: {demo.ticket.Opened: {ticket_id: {generated: true}}}
+  - name: demo.ticket.Reply
+    input:
+      - {name: ticket_id, type: demo.ticket.TicketId}
+      - {name: k, type: demo.ticket.K}
+    outcomes:
+      - name: first
+        when: k == "X"
+        when_subject:
+          predicate:
+            all: [sent == true, answered == false]
+        error: demo.ticket.RefusedA
+      - name: second
+        when: k == "X"
+        when_subject:
+          predicate:
+            all: [answered == true]
+        error: demo.ticket.RefusedB
+      - name: replied
+        moves: demo.ticket.Ticket.finish
+        instance: ticket_id
+        emits: [demo.ticket.Replied]
+        payload: {demo.ticket.Replied: {ticket_id: input.ticket_id}}
+      - {name: wrong-state, wrong_state: true, error: demo.ticket.WrongState}
+      - {name: not-found, unknown_instance: true, error: demo.ticket.TicketNotFound}
+views:
+  - name: demo.ticket.Tickets
+    source: demo.ticket.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: demo.ticket.TicketId}
+      - {name: sent, type: Boolean}
+      - {name: answered, type: Boolean}
+      - {name: state, type: demo.ticket.Ticket.State}
+"#;
+
+#[test]
+fn s1_over_stored_fields_is_no_precedence_swap_site() {
+    let (files, texts) = parsed(STORED);
+    let ir = mutate::compile(files.clone(), &texts).expect("the fixture compiles");
+    let refusal = mutate::audit(&files, &texts, &[MutantClass::PrecedenceSwap], || {
+        Interpreted::for_model(ir.clone())
+    })
+    .expect_err("no branch guarded by stored fields is a precedence-swap site");
+    assert!(refusal.to_string().contains("ESS-MUTATE-003"), "{refusal}");
+}
