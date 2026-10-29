@@ -1,4 +1,4 @@
-#	models=429	lines=596
+#	models=430	lines=598
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -95,6 +95,8 @@ crates/specify/ess-http/tests/fixtures/auth.yaml	components=1
 crates/specify/ess-http/tests/fixtures/auth.yaml	auth-service	REFUSED	e96828b8c5343da0b4344369da4de42f90f082703f6185eab0ae44012b173204:861
 crates/specify/ess-http/tests/fixtures/catalog.yaml	components=1
 crates/specify/ess-http/tests/fixtures/catalog.yaml	items-service	REFUSED	734b68eeaf4515a0f0d77fded5286b8ae5996506adfce054b60302b66ce2a3f2:346
+crates/specify/ess-http/tests/fixtures/notes.yaml	components=1
+crates/specify/ess-http/tests/fixtures/notes.yaml	notes-service	REFUSED	bd51861fb27f21797e44878ca4388d9b040687e5df037d3ec52fcd75a3a45a2c:648
 crates/specify/ess-http/tests/fixtures/orders.yaml	components=1
 crates/specify/ess-http/tests/fixtures/orders.yaml	orders-service	REFUSED	6c23ef3d644c6df120455d5300c571da61bd0329294b8a5880c0216f35ed2431:346
 crates/specify/ess-http/tests/fixtures/tasks.yaml	components=1

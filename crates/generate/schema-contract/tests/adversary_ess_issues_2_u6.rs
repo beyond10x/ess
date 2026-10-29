@@ -176,7 +176,8 @@ fn obligation_rules(realization: &Realization, pointer: &str) -> BTreeSet<String
         .collect()
 }
 
-/// Without the option every file is the one the 0.76.0 binary wrote, for each target and for
+/// Without the option every file is the one the 0.76.0 binary wrote, the generator version aside
+/// (the realizers stamp the running version into headers and reports), for each target and for
 /// the Rust generator options beside it, across every integer shape in `INTS`.
 #[test]
 fn without_the_option_every_target_writes_the_0_76_bytes_for_every_integer_shape() {
@@ -193,7 +194,12 @@ fn without_the_option_every_target_writes_the_0_76_bytes_for_every_integer_shape
     ] {
         let actual = files(&plan)
             .into_iter()
-            .map(|(path, text)| (path, sha256(&text)))
+            .map(|(path, text)| {
+                (
+                    path,
+                    sha256(&text.replace(env!("CARGO_PKG_VERSION"), "0.76.0")),
+                )
+            })
             .collect::<Vec<_>>();
         let frozen = FILES_0_76
             .iter()

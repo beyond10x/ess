@@ -13,7 +13,7 @@ This page is generated from the change records kept in the repository. A release
 
 ### HTTP bindings group alike outcomes, OpenAPI import widens, types keep declared order, and validate refuses unreachable branches
 
-capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.77.0)
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/alike-outcomes-and-unreachable-branches) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.77.0)
 
 HTTP routes group alike outcomes and declare own refusals, empty bodies and arrays. OpenAPI import admits open objects; integer formats keep native width. Types keep declared field order and box only recursion. Response fields may share input names. Validate refuses a branch an earlier refusal hides; mutate scores disjoint precedence swaps equivalent.
 

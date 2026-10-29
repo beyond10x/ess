@@ -640,9 +640,19 @@ fn answer(ir: &EssIr, command: &str, input: &BTreeMap<String, Node>) -> String {
 }
 
 /// The first input on which the baseline and the swapped model of `shape` answer differently.
+/// A swapped model that validation refuses because the moved refusal now answers every input of
+/// the branch behind it (`unreachable_branch`, #702) is told apart before any input is sent.
 fn observed_on(shape: &Shape) -> Option<String> {
     let baseline = compiled(&fixture(SHAPES, None));
-    let swapped = compiled(&fixture(SHAPES, Some(shape.command)));
+    let text = fixture(SHAPES, Some(shape.command));
+    let (files, texts) = parsed(&text);
+    let swapped = match mutate::compile(files, &texts) {
+        Ok(ir) => ir,
+        Err(refused) if refused.cause == "ESS-COMMAND-012" => {
+            return Some(format!("swapped model refused: {}", refused.message));
+        }
+        Err(refused) => panic!("{refused:?}\n{text}"),
+    };
     grid(shape.input).into_iter().find_map(|input| {
         let (before, after) = (
             answer(&baseline, shape.command, &input),
