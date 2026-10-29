@@ -363,11 +363,19 @@ fn a_reachable_branch_late_in_a_chain_of_twelve_refusals_has_its_scenario() {
 #[test]
 fn a_refusal_shadowed_by_earlier_ones_in_the_chain_is_refused_naming_itself() {
     let mut guards = first(6);
+    // `e2` and `b3` avoid the #702 refusal: beside `refuse-2` the guards cross 96 assignments, past
+    // the finite prover's 64, so validation stays silent and synthesis names the shadow.
     guards.insert(
         3,
         (
             "shadowed".to_owned(),
-            vec![("e1", "D"), ("b2", "false"), ("b6", "true")],
+            vec![
+                ("e1", "D"),
+                ("b2", "false"),
+                ("b6", "true"),
+                ("e2", "Y"),
+                ("b3", "true"),
+            ],
         ),
     );
     assert!(!reachable(&guards).contains("shadowed"));

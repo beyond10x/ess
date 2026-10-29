@@ -2378,8 +2378,9 @@ fn outcome_site(class: MutantClass, id: &str) -> Option<(&str, &str)> {
 /// decide. Beside `when_subject:`, the guard named is the mutant's `when:` and the stored guard
 /// together: no input it admits leaves the stored guard able to hold on any row.
 ///
-/// For a `precedence-swap`, the overlap of the two guards in the baseline, where no input satisfies
-/// it: the two branches never compete, so their order decides nothing.
+/// For a `precedence-swap`, the overlap of the two guards in the baseline, or the part of it that
+/// decides, where no input selects both branches ([`disjoint_overlap`]): the two branches never
+/// compete, so their order decides nothing.
 fn unsatisfiable_guard(baseline: &EssIr, mutant: &EssIr, mutation: &Mutation) -> Option<String> {
     if let Mutation::PrecedenceSwap {
         command,
@@ -2389,8 +2390,7 @@ fn unsatisfiable_guard(baseline: &EssIr, mutant: &EssIr, mutation: &Mutation) ->
     {
         let (found, one) = guard_of(baseline, command, first)?;
         let (_, other) = guard_of(baseline, command, second)?;
-        let overlap = Predicate::All(vec![one.clone(), other.clone()]);
-        return (!satisfiable(baseline, found, &overlap)?).then(|| overlap.to_string());
+        return disjoint_overlap(baseline, found, one, other);
     }
     let (Mutation::GuardBoundary {
         command,
@@ -2657,9 +2657,9 @@ fn guard_of<'ir>(
 /// never a `Timestamp`, with literals by equality, membership or truth, or asks whether it is
 /// `defined`. Over such a guard, which literal each leaf equals — or none — and whether an
 /// `Optional` leaf is present is all that decides it, so each leaf's domain is finite: a boolean's
-/// two values, an enum's variants, and for any other text or number its literals and one value
-/// none of them equals; an `Optional` leaf's domain adds its absence
-/// (<https://github.com/beyond10x/ess/issues/501>). A combination under which the guard is
+/// two values, an enum's variants the literals name and one they do not, and for any other text or
+/// number its literals and one value none of them equals; an `Optional` leaf's domain adds its
+/// absence (<https://github.com/beyond10x/ess/issues/501>). A combination under which the guard is
 /// unknown — a comparison of an absent leaf — decides nothing, so the guard is called
 /// unsatisfiable only where every combination refutes it. Every combination of those domains is
 /// evaluated, and only where their product is at most
@@ -2676,6 +2676,184 @@ fn satisfiable(
     guard: &Predicate,
 ) -> Option<bool> {
     decide(ir, command, guard, true, &|_| true)
+}
+
+/// Which of a `precedence-swap`'s two guards a conjunct of their overlap comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Side {
+    First,
+    Second,
+}
+
+/// How many parts of one overlap [`refuted`] decides before it gives up: an `any:` is decided once
+/// per disjunct, so nested disjunctions multiply.
+const MAX_OVERLAP_PARTS: usize = 64;
+
+/// The overlap `all: [one, other]` of a `precedence-swap`'s two guards, rendered, where no input
+/// selects both branches, or the part of it that decides so; `None` where that is not decided
+/// (<https://github.com/beyond10x/ess/issues/703>).
+///
+/// The swap is observable on an input only where neither guard is false and one of them is true:
+/// both true, the two answer in the other order; one true and the other unknown, the unknown one is
+/// a refusal naming the command where it is read first. Where both are unknown, either order reads
+/// an unknown guard first, so an `Optional` input that is absent and compared with a literal in
+/// both selects neither branch. Every combination of the leaves' values is tried as [`satisfiable`]
+/// tries them, and the overlap is decided only where none is observable.
+///
+/// Where every conjunct is one [`satisfiable`] reads, that is decided over all of them and the
+/// whole overlap is named, as before. Otherwise it is decided over a part: a conjunct left out can
+/// only make its guard false or unknown where the part already made it so, so a part that decides
+/// the overlap decides it whatever the rest says. The parts tried are each group of readable
+/// conjuncts that share an input leaf, then all of them together, and the part is named. Then an
+/// `any:` conjunct, put in its place each of its disjuncts: where every one is decided, so is the
+/// disjunction, named with the conjuncts each decision used. An ordering, a text match or any other
+/// conjunct [`satisfiable`] does not read is in no part, and neither is a part of more than
+/// [`MAX_CANDIDATES`](crate::witness::MAX_CANDIDATES) combinations.
+fn disjoint_overlap(
+    ir: &EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    one: &Predicate,
+    other: &Predicate,
+) -> Option<String> {
+    let mut conjuncts = Vec::new();
+    conjuncts_of(one, Side::First, &mut conjuncts);
+    conjuncts_of(other, Side::Second, &mut conjuncts);
+    let every: Vec<usize> = (0..conjuncts.len()).collect();
+    if conjuncts
+        .iter()
+        .all(|(_, conjunct)| equality_tests(conjunct, &mut BTreeMap::new()))
+        && apart(ir, command, &conjuncts, &every)
+    {
+        return Some(Predicate::All(vec![one.clone(), other.clone()]).to_string());
+    }
+    let mut budget = MAX_OVERLAP_PARTS;
+    let mut part: Vec<Predicate> = refuted(ir, command, &conjuncts, &mut budget)?
+        .into_iter()
+        .map(|index| conjuncts[index].1.clone())
+        .collect();
+    Some(if part.len() == 1 {
+        part.remove(0).to_string()
+    } else {
+        Predicate::All(part).to_string()
+    })
+}
+
+/// `predicate`'s conjuncts, with `side`, appended to `conjuncts`: `all:` is read through.
+fn conjuncts_of(predicate: &Predicate, side: Side, conjuncts: &mut Vec<(Side, Predicate)>) {
+    match predicate {
+        Predicate::All(children) => children
+            .iter()
+            .for_each(|child| conjuncts_of(child, side, conjuncts)),
+        _ => conjuncts.push((side, predicate.clone())),
+    }
+}
+
+/// The indices of a part of `conjuncts` that no input makes observable ([`disjoint_overlap`]), or
+/// `None` where no part tried is; each decision spends one of `budget`.
+fn refuted(
+    ir: &EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    conjuncts: &[(Side, Predicate)],
+    budget: &mut usize,
+) -> Option<BTreeSet<usize>> {
+    *budget = budget.checked_sub(1)?;
+    // Groups of the readable conjuncts, joined where two read a common leaf.
+    let mut groups: Vec<(BTreeSet<ess_primitives::facts::FactPath>, Vec<usize>)> = Vec::new();
+    let mut readable = Vec::new();
+    for (index, (_, conjunct)) in conjuncts.iter().enumerate() {
+        let mut leaves = BTreeMap::new();
+        if !equality_tests(conjunct, &mut leaves) {
+            continue;
+        }
+        readable.push(index);
+        let mut group = (leaves.into_keys().collect::<BTreeSet<_>>(), vec![index]);
+        let (joined, apart_from): (Vec<_>, Vec<_>) = groups
+            .into_iter()
+            .partition(|(paths, _)| !paths.is_disjoint(&group.0));
+        for (paths, members) in joined {
+            group.0.extend(paths);
+            group.1.extend(members);
+        }
+        group.1.sort_unstable();
+        groups = apart_from;
+        groups.push(group);
+    }
+    groups.sort_by_key(|(_, members)| members[0]);
+    let mut parts: Vec<Vec<usize>> = groups.into_iter().map(|(_, members)| members).collect();
+    if parts.len() > 1 {
+        parts.push(readable);
+    }
+    for part in parts {
+        *budget = budget.checked_sub(1)?;
+        if apart(ir, command, conjuncts, &part) {
+            return Some(part.into_iter().collect());
+        }
+    }
+    for (index, (side, conjunct)) in conjuncts.iter().enumerate() {
+        let Predicate::Any(disjuncts) = conjunct else {
+            continue;
+        };
+        let mut used = BTreeSet::from([index]);
+        let decided = disjuncts.iter().all(|disjunct| {
+            let mut reduced: Vec<(Side, Predicate)> = conjuncts
+                .iter()
+                .enumerate()
+                .filter(|(at, _)| *at != index)
+                .map(|(_, it)| it.clone())
+                .collect();
+            let kept = reduced.len();
+            conjuncts_of(disjunct, *side, &mut reduced);
+            let Some(found) = refuted(ir, command, &reduced, budget) else {
+                return false;
+            };
+            used.extend(found.into_iter().map(|at| match at {
+                at if at >= kept => index,
+                at if at >= index => at + 1,
+                at => at,
+            }));
+            true
+        });
+        if decided {
+            return Some(used);
+        }
+    }
+    None
+}
+
+/// Whether no combination of the leaves `part` of `conjuncts` reads makes the swap observable:
+/// under each, the conjuncts of one guard are false, or those of both are unknown
+/// ([`disjoint_overlap`]).
+fn apart(
+    ir: &EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    conjuncts: &[(Side, Predicate)],
+    part: &[usize],
+) -> bool {
+    use ess_primitives::predicate::Truth;
+    let mut leaves = BTreeMap::new();
+    if !part
+        .iter()
+        .all(|index| equality_tests(&conjuncts[*index].1, &mut leaves))
+    {
+        return false;
+    }
+    let Some((domains, combinations)) = domains(ir, command, &leaves, true) else {
+        return false;
+    };
+    (0..combinations).all(|index| {
+        let (facts, _) = combination(&domains, index);
+        let truth = |side: Side| {
+            part.iter()
+                .filter(|at| conjuncts[**at].0 == side)
+                .fold(Truth::True, |truth, at| {
+                    truth.and(conjuncts[*at].1.evaluate(&facts))
+                })
+        };
+        let (first, second) = (truth(Side::First), truth(Side::Second));
+        first == Truth::False
+            || second == Truth::False
+            || (first == Truth::Unknown && second == Truth::Unknown)
+    })
 }
 
 /// The command of `ir` named `command`, and the input guard and stored guard of its outcome
@@ -2794,17 +2972,44 @@ fn decide(
     outside_variants: bool,
     admits: &dyn Fn(&[ess_primitives::facts::FactPath]) -> bool,
 ) -> Option<bool> {
-    use ess_domain::expression::ScalarKind;
-    use ess_primitives::facts::{FactPath, FactValue};
-    let mut leaves: std::collections::BTreeMap<FactPath, Vec<FactValue>> =
-        std::collections::BTreeMap::new();
+    let mut leaves = BTreeMap::new();
     if !equality_tests(guard, &mut leaves) {
         return None;
     }
+    let (domains, combinations) = domains(ir, command, &leaves, outside_variants)?;
+    let mut undecided = false;
+    for index in 0..combinations {
+        let (facts, absent) = combination(&domains, index);
+        match guard.evaluate(&facts) {
+            ess_primitives::predicate::Truth::True if admits(&absent) => return Some(true),
+            ess_primitives::predicate::Truth::True | ess_primitives::predicate::Truth::False => {}
+            ess_primitives::predicate::Truth::Unknown => undecided = true,
+        }
+    }
+    (!undecided).then_some(false)
+}
+
+/// Each input leaf [`equality_tests`] recorded, with the values [`decide`] tries for it.
+type Domains = Vec<(
+    ess_primitives::facts::FactPath,
+    Vec<Option<ess_primitives::facts::FactValue>>,
+)>;
+
+/// The domain of each of `leaves`, as [`decide`] reads them, and the number of their combinations;
+/// `None` where a leaf is not one it decides or the combinations exceed
+/// [`MAX_CANDIDATES`](crate::witness::MAX_CANDIDATES).
+fn domains(
+    ir: &EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    leaves: &BTreeMap<ess_primitives::facts::FactPath, Vec<ess_primitives::facts::FactValue>>,
+    outside_variants: bool,
+) -> Option<(Domains, usize)> {
+    use ess_domain::expression::ScalarKind;
+    use ess_primitives::facts::FactValue;
     let environment = ess_compiler::expression::Environment::new(ir, &command.input);
-    let mut domains: Vec<(FactPath, Vec<Option<FactValue>>)> = Vec::new();
+    let mut domains: Domains = Vec::new();
     let mut combinations: usize = 1;
-    for (path, literals) in &leaves {
+    for (path, literals) in leaves {
         let resolved =
             ess_domain::expression::resolve_path(&environment, path, "mutation audit").ok()?;
         if resolved.access.collection || resolved.access.text_length {
@@ -2839,8 +3044,30 @@ fn decide(
                 add(FactValue::Bool(true));
             }
             (ScalarKind::Text, Some(variants)) => {
+                // The leaf is tested only for which literal it equals, so every variant no
+                // literal names answers alike and one of them stands for the rest
+                // (https://github.com/beyond10x/ess/issues/703): a wide enum pinned to two values
+                // is two values and one other, not every variant. A leaf another leaf reads
+                // through, as an attribute read would, keeps every variant.
+                let read_through = leaves.keys().any(|other| {
+                    other.segments().len() > path.segments().len()
+                        && other.segments().starts_with(path.segments())
+                });
+                let named = |variant: &String| {
+                    literals
+                        .iter()
+                        .any(|it| matches!(it, FactValue::Text(text) if text == variant))
+                };
+                let mut other = None;
                 for variant in variants {
-                    add(FactValue::Text(variant.clone()));
+                    if read_through || named(variant) {
+                        add(FactValue::Text(variant.clone()));
+                    } else if other.is_none() {
+                        other = Some(variant.clone());
+                    }
+                }
+                if let Some(other) = other {
+                    add(FactValue::Text(other));
                 }
                 literals
                     .iter()
@@ -2877,28 +3104,31 @@ fn decide(
         }
         domains.push((path.clone(), domain));
     }
-    let mut undecided = false;
-    for index in 0..combinations {
-        let mut rest = index;
-        let mut absent: Vec<FactPath> = Vec::new();
-        let facts: ess_primitives::facts::FactStore = domains
-            .iter()
-            .filter_map(|(path, domain)| {
-                let value = domain[rest % domain.len()].clone();
-                rest /= domain.len();
-                if value.is_none() {
-                    absent.push(path.clone());
-                }
-                value.map(|value| (path.clone(), value))
-            })
-            .collect();
-        match guard.evaluate(&facts) {
-            ess_primitives::predicate::Truth::True if admits(&absent) => return Some(true),
-            ess_primitives::predicate::Truth::True | ess_primitives::predicate::Truth::False => {}
-            ess_primitives::predicate::Truth::Unknown => undecided = true,
-        }
-    }
-    (!undecided).then_some(false)
+    Some((domains, combinations))
+}
+
+/// Combination `index` of `domains`: the facts it sets, and the `Optional` leaves it leaves out.
+fn combination(
+    domains: &Domains,
+    index: usize,
+) -> (
+    ess_primitives::facts::FactStore,
+    Vec<ess_primitives::facts::FactPath>,
+) {
+    let mut rest = index;
+    let mut absent = Vec::new();
+    let facts = domains
+        .iter()
+        .filter_map(|(path, domain)| {
+            let value = domain[rest % domain.len()].clone();
+            rest /= domain.len();
+            if value.is_none() {
+                absent.push(path.clone());
+            }
+            value.map(|value| (path.clone(), value))
+        })
+        .collect();
+    (facts, absent)
 }
 
 /// Whether `predicate` tests only input leaves against literals by `==`, `!=`, membership or

@@ -213,13 +213,17 @@
 //! | `outcomes.<o>.status` | the outcome is answered under that status instead of the derived one |
 //! | `body: response` | the command's `{command}.Result`, bare: no `outcome`, no `published` |
 //! | `body: response.<field>` | `{command}.{outcome}.Response` is that response field's schema alone |
+//! | `encoding: text` | that schema is written under `text/plain` instead of `application/json` |
+//! | `alike` | a group's members share one response at their status, `x-ess-outcomes` naming each, with one schema, the first member's, where a `oneOf` would hold equal ones |
 //! | `errors` | each outcome with `error` the route does not list is described as if listed with that answer |
 //! | `body: {<member>: error}` | `{command}.{outcome}.Response` is the error object: `<member>` a `const` of the error's wire name beside the error's fields; two on one status are told apart by a discriminator on `<member>` |
 //! | `body: none` | no content |
 //! | `headers` | response `headers`: a literal is a `const`, a source a `string` required unless it may be absent, a challenge a `string` described param by param |
 //! | `redirect` | a required `Location` header, `format: uri`, saying which parameters go into its query or fragment |
-//! | a view's `body: single` | the row schema at `200` and no content at its `empty` status |
+//! | a view's `body: single` | the row schema at `200` and no content at its `empty` status, or the one literal member its `empty.body` declares |
+//! | a view's `body: array` | at `200`, an array of the row schema, with no `{view}.Response` |
 //! | `refusals.<key>` | replaces the standard refusal's response on every bound operation that can answer it |
+//! | `routes[i].refusals.<key>` | replaces it on that route alone, in place of the binding's |
 //!
 //! A bare body names no branch, so every response of a command whose route uses a stage-2 key
 //! carries `x-ess-outcomes`: the outcomes it answers, in the order the command declares them, and
@@ -260,6 +264,10 @@ const VERSION: &str = "3.1.0";
 /// The one media type. The model describes payloads as typed fields, and nothing in it selects an
 /// encoding, so there is exactly one and it is the one every other projection here uses.
 const MEDIA_TYPE: &str = "application/json";
+
+/// The response media type of an outcome an `ess-http/1` binding answers `encoding: text`: one
+/// string field, its value alone, and only because a binding says so.
+const TEXT_MEDIA_TYPE: &str = "text/plain";
 
 /// The request media type of an `ess-http/1` route encoded `form` (RFC 6749 §4.1.3, Appendix B):
 /// the only place a request is not [`MEDIA_TYPE`], and only because a binding says so.
@@ -632,15 +640,16 @@ fn refusals_of(binding: Option<&http::Binding>) -> Option<&Refusals> {
 type Refusals = BTreeMap<ess_http::RefusalKey, ess_http::Refusal>;
 
 /// Whether an operation is answered as an `ess-http/1` binding declares beyond its route: its
-/// route carries a stage-2 key, or the binding overrides a standard refusal, which applies to every
-/// route it names. A derived route never is, and neither is a route of a binding with no stage-2
-/// key, so both keep their stage-1 bytes.
+/// route carries a stage-2 key (its own `refusals` among them), or the binding overrides a
+/// standard refusal, which applies to every route it names. A derived route never is, and neither
+/// is a route of a binding with no stage-2 key, so both keep their stage-1 bytes.
 fn answered_by_binding(declared: Option<&ess_http::Route>, refusals: Option<&Refusals>) -> bool {
     declared.is_some_and(|route| {
         route.request.is_some()
             || route.declares_answers()
             || route.body != ess_http::ViewBody::Rows
             || route.empty.is_some()
+            || !route.refusals.is_empty()
             || refusals.is_some_and(|refusals| !refusals.is_empty())
     })
 }
@@ -687,8 +696,12 @@ fn paths(
     let mut out: BTreeMap<String, PathItem> = BTreeMap::new();
     for route in http::bound_routes(ir, component, binding) {
         // A standard refusal's override applies to the routes the binding names, never to a
-        // derived one (decided for stage 2, answer 17).
-        let refusals = route.declared.and(refusals_of(binding));
+        // derived one (decided for stage 2, answer 17). A route's own override stands in place of
+        // the binding's on that route.
+        let refusals = binding
+            .zip(route.declared)
+            .map(|(binding, declared)| binding.refusals_on(declared));
+        let refusals = refusals.as_ref();
         let served = match route.serves {
             http::Served::Command(handle) => {
                 operation(ir, handle, &grants, checked, route.declared, refusals)
@@ -1269,15 +1282,19 @@ enum Answer<'a> {
     Rows(&'a ResolvedView),
     /// A `single` view's one row, bare.
     Row(&'a ResolvedView),
-    /// A `single` view's answer when it holds no row: no body.
-    Empty(&'a ResolvedView),
+    /// An `array` view's rows, bare: a JSON array.
+    Array(&'a ResolvedView),
+    /// A `single` view's answer when it holds no row: no body, or one literal member.
+    Empty(&'a ResolvedView, &'a ess_http::RefusalBody),
 }
 
 /// One `oneOf` member of a response, and what tells it apart from the others where a
-/// discriminator can: the property, its value and the member's pointer.
+/// discriminator can: the property, its value and the member's pointer. `text` holds a string
+/// field an outcome answers `encoding: text`, written under [`TEXT_MEDIA_TYPE`].
 struct Member {
     schema: Value,
     discriminated: Option<(String, String, String)>,
+    text: bool,
 }
 
 /// One response per status a command whose route an `ess-http/1` binding answers its own way
@@ -1343,26 +1360,26 @@ fn bound_responses(
     by_status
         .into_iter()
         .map(|(status, answers)| {
-            let response = bound_response(ir, Some(command), &status, &answers, true);
+            let response = bound_response(ir, Some(command), &status, &answers, true, &route.alike);
             (status, response)
         })
         .collect()
 }
 
-/// The responses of a view whose route an `ess-http/1` binding answers its own way: `single`, or
-/// a binding that overrides a standard refusal the view can answer — `not_granted` where its read
-/// is checked, `malformed` where it declares a parameter. A view has no outcome, so its responses
-/// carry no `x-ess-outcomes`.
+/// The responses of a view whose route an `ess-http/1` binding answers its own way: `single` or
+/// `array`, or a standard refusal the view can answer, overridden by the binding or the route —
+/// `not_granted` where its read is checked, `malformed` where it declares a parameter. A view has
+/// no outcome, so its responses carry no `x-ess-outcomes`.
 fn bound_view_responses<'a>(
     ir: &EssIr,
     view: &'a ResolvedView,
     read_checked: bool,
-    route: &ess_http::Route,
+    route: &'a ess_http::Route,
     refusals: Option<&'a Refusals>,
 ) -> BTreeMap<String, Response> {
     let mut by_status: BTreeMap<String, Vec<Answer<'a>>> = BTreeMap::new();
     let overridden = |key| refusals.and_then(|refusals| refusals.get(&key).map(|r| (key, r)));
-    match (route.body, route.empty) {
+    match (route.body, &route.empty) {
         (ess_http::ViewBody::Single, Some(empty)) => {
             by_status
                 .entry(READ.to_owned())
@@ -1371,8 +1388,12 @@ fn bound_view_responses<'a>(
             by_status
                 .entry(empty.status.to_string())
                 .or_default()
-                .push(Answer::Empty(view));
+                .push(Answer::Empty(view, &empty.body));
         }
+        (ess_http::ViewBody::Array, _) => by_status
+            .entry(READ.to_owned())
+            .or_default()
+            .push(Answer::Array(view)),
         // Compiling refuses `single` without `empty` (`ESS-HTTP-030`).
         _ => by_status
             .entry(READ.to_owned())
@@ -1402,7 +1423,7 @@ fn bound_view_responses<'a>(
     by_status
         .into_iter()
         .map(|(status, answers)| {
-            let response = bound_response(ir, None, &status, &answers, false);
+            let response = bound_response(ir, None, &status, &answers, false, &[]);
             (status, response)
         })
         .collect()
@@ -1426,6 +1447,7 @@ impl Rendered {
             member: schema.map(|schema| Member {
                 schema,
                 discriminated: None,
+                text: false,
             }),
             label: String::new(),
             headers: BTreeMap::new(),
@@ -1442,23 +1464,53 @@ impl Rendered {
 /// `outcome` between envelopes, `<member>` between error objects. A standard refusal's body
 /// beside them is told apart by its own closed members, and the discriminator is then left out,
 /// because `OpenAPI` reads one only over pointers.
+///
+/// Outcomes a route declares `alike` answer one body, so a group is one member, its first
+/// outcome's, and the description says the answer does not tell them apart. A body answered
+/// `encoding: text` is written under its own media type.
 fn bound_response(
     ir: &EssIr,
     command: Option<&ResolvedCommand>,
     status: &str,
     answers: &[Answer<'_>],
     outcomes: bool,
+    alike: &[Vec<String>],
 ) -> Response {
     let mut members: Vec<Member> = Vec::new();
     let mut headers: Vec<(String, BTreeMap<String, HeaderDoc>)> = Vec::new();
     let mut unlisted: Vec<String> = Vec::new();
     let mut sentences: Vec<String> = Vec::new();
+    // The groups of outcomes declared alike whose one body is already a member.
+    let mut written_groups: Vec<usize> = Vec::new();
     for answer in answers {
         let rendered = rendered(ir, command, status, answer);
-        members.extend(rendered.member);
+        let group = match answer {
+            Answer::Outcome(outcome, Some(_)) => alike
+                .iter()
+                .position(|group| group.iter().any(|name| *name == outcome.name.as_str())),
+            _ => None,
+        };
+        match group {
+            Some(group) if written_groups.contains(&group) => {}
+            Some(group) => {
+                written_groups.push(group);
+                members.extend(rendered.member);
+            }
+            None => members.extend(rendered.member),
+        }
         headers.push((rendered.label, rendered.headers));
         sentences.extend(rendered.sentence);
         unlisted.extend(rendered.unlisted);
+    }
+    for group in written_groups {
+        let named: Vec<String> = alike[group]
+            .iter()
+            .map(|name| format!("`{name}`"))
+            .collect();
+        sentences.push(format!(
+            "Outcomes {} are declared alike: one answer, which does not tell them apart.",
+            list(&named)
+        ));
     }
     if !unlisted.is_empty() {
         sentences.insert(
@@ -1478,7 +1530,7 @@ fn bound_response(
     Response {
         description: sentences.join(" "),
         headers: merged_headers(headers),
-        content: one_of(members).map(content),
+        content: by_media_type(members),
         outcomes: outcomes.then(|| {
             answers
                 .iter()
@@ -1505,18 +1557,11 @@ fn rendered(
             rendered_outcome(ir, command, status, outcome, *listed)
         }
         Answer::Refusal(key, refusal) => Rendered {
-            member: match &refusal.body {
-                ess_http::RefusalBody::None => None,
-                ess_http::RefusalBody::Literal { member, text } => Some(Member {
-                    schema: json!({
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [member],
-                        "properties": {member: {"type": "string", "const": text}},
-                    }),
-                    discriminated: None,
-                }),
-            },
+            member: literal_schema(&refusal.body).map(|schema| Member {
+                schema,
+                discriminated: None,
+                text: false,
+            }),
             label: format!("the `{key}` refusal"),
             headers: refusal
                 .headers
@@ -1559,12 +1604,30 @@ fn rendered(
                 ir.entity(&view.source).name
             ),
         ),
-        Answer::Empty(view) => Rendered::standard(
-            None,
+        Answer::Array(view) => Rendered::standard(
+            Some(json!({
+                "type": "array",
+                "items": {"$ref": reference(&row_schema_key(view))},
+            })),
+            format!(
+                "Every row of `{}`, a projection of `{}`, as a bare JSON array, as the \
+                 `ess-http/1` binding declares (`body: array`): no object around it.",
+                view.name,
+                ir.entity(&view.source).name
+            ),
+        ),
+        Answer::Empty(view, body) => Rendered::standard(
+            literal_schema(body),
             format!(
                 "`{}` holds no row for these parameters, as the `ess-http/1` binding declares \
-                 (`empty`). No body.",
-                view.name
+                 (`empty`). {}",
+                view.name,
+                match body {
+                    ess_http::RefusalBody::None => "No body.".to_owned(),
+                    ess_http::RefusalBody::Literal { member, text } => {
+                        format!("A body whose one member `{member}` is `{text}`.")
+                    }
+                }
             ),
         ),
     }
@@ -1585,14 +1648,17 @@ fn rendered_outcome(
         ess_http::Body::Envelope => Some(Member {
             schema: json!({"$ref": key}),
             discriminated: Some((OUTCOME.to_owned(), outcome.name.to_string(), key)),
+            text: false,
         }),
         ess_http::Body::Response => Some(Member {
             schema: json!({"$ref": reference(&format!("{}.Result", command.name))}),
             discriminated: None,
+            text: false,
         }),
         ess_http::Body::ResponseField(_) => Some(Member {
             schema: json!({"$ref": key}),
             discriminated: None,
+            text: listed.is_some_and(|listed| listed.encoding == ess_http::ResponseEncoding::Text),
         }),
         ess_http::Body::Error { member } => Some(Member {
             schema: json!({"$ref": key}),
@@ -1604,6 +1670,7 @@ fn rendered_outcome(
                     key,
                 )
             }),
+            text: false,
         }),
         ess_http::Body::None => None,
     };
@@ -1623,6 +1690,20 @@ fn rendered_outcome(
         sentence: listed.map(|listed| listed_sentence(ir, outcome, listed, status)),
         unlisted: listed.is_none().then(|| format!("`{}`", outcome.name)),
     }
+}
+
+/// The content of a response whose answers have these bodies: none, or one media type per
+/// encoding they are written in, each holding [`one_of`] its members.
+fn by_media_type(members: Vec<Member>) -> Option<BTreeMap<String, MediaType>> {
+    let (text, json): (Vec<Member>, Vec<Member>) =
+        members.into_iter().partition(|member| member.text);
+    let mut out = BTreeMap::new();
+    for (media_type, members) in [(MEDIA_TYPE, json), (TEXT_MEDIA_TYPE, text)] {
+        if let Some(schema) = one_of(members) {
+            out.extend(content_as(media_type, schema));
+        }
+    }
+    (!out.is_empty()).then_some(out)
 }
 
 /// The schema of a response whose answers have these bodies: none, one, or a `oneOf` of them.
@@ -1682,6 +1763,14 @@ fn listed_sentence(
         ess_http::Body::Response => "the command's response, bare: no `outcome` names the branch \
                                      and no `published` lists what it published."
             .to_owned(),
+        ess_http::Body::ResponseField(field)
+            if listed.encoding == ess_http::ResponseEncoding::Text =>
+        {
+            format!(
+                "the command's response field `{field}` as text: the string alone, \
+                 `{TEXT_MEDIA_TYPE}`, not JSON."
+            )
+        }
         ess_http::Body::ResponseField(field) => format!(
             "the command's response field `{field}`, bare: its value alone, with no object around \
              it."
@@ -1705,6 +1794,20 @@ fn listed_sentence(
         "Outcome `{}`, answered {status} as the `ess-http/1` binding declares, with {body}",
         outcome.name
     )
+}
+
+/// The schema of a standard refusal's or an empty answer's body: none, or an object with the one
+/// literal member.
+fn literal_schema(body: &ess_http::RefusalBody) -> Option<Value> {
+    match body {
+        ess_http::RefusalBody::None => None,
+        ess_http::RefusalBody::Literal { member, text } => Some(json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": [member],
+            "properties": {member: {"type": "string", "const": text}},
+        })),
+    }
 }
 
 /// What an overridden standard refusal answers, for its response's description.
@@ -2082,10 +2185,10 @@ fn schemas(
             roots.extend(types::field_leaves(&view.fields));
         }
         roots.extend(types::field_leaves(&view.params));
-        let single = binding
+        let bare = binding
             .and_then(|binding| binding.route(http::Served::View(handle)))
-            .is_some_and(|route| route.body == ess_http::ViewBody::Single);
-        if !single {
+            .is_some_and(|route| route.body != ess_http::ViewBody::Rows);
+        if !bare {
             out.insert(view_key(view), written(view_schema(view)));
         }
     }

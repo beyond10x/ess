@@ -5,7 +5,7 @@ kind: approval-record
 status: approved
 title: Open-issue batch 1 runs as one wave and one pull request
 summary: Operator request of 2026-10-28, approved under the grant by the orchestrator
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "approved", at: "2026-10-28T10:43:03Z", actor: "human:timo", revision: 2, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
@@ -72,3 +72,22 @@ The literal `task check` is not run locally: it builds every test binary (about 
 PR 701's CI failed on three `ess-synth` tests (`feasibility`, `adv319`, `http_binding_rust` go) that compare the committed gatepass example trees byte for byte: #688 added `minimum` and `x-ess-invariants` to `pass-service.openapi.json`, and the D171 gate ran `ess-synth` only in named lanes. The two files were regenerated on the queue branch.
 
 From this batch on, `ess-synth`'s whole test set is part of the local gate whenever a change alters a committed example tree under `generated/` or a projection (orchestrator, 2026-10-29). `AGENTS.md` § The package-gate subset carries the rule.
+
+## Batch 2 (D183, 2026-10-29)
+
+The orchestrator approved batch 2 under the operator's grant on 2026-10-29 as D183: "Start batch 2
+(D183) with the same shape: one integration branch, at most 4 units, targeted tests per unit, one
+local gate at the end (including ess-synth's whole set when examples or projections move), the
+replay against the 5 adopters if output can move, one queue PR, one release."
+
+- Units: U5 (#652, #673), U6 (#647, #648), U7 (#661), U8 (#659), as `docs/plan/wave-ess-issues-1.md`
+  § Batches plans them. D135 still holds for U6's #648 and U7: a unit with no non-breaking form
+  leaves the batch with a `decision-blocker`.
+- Integration branch `integration/ess-issues-2`, cut from `main` at the 0.76.0 merge. The release
+  pull request comes from a `queue/` branch, as for 0.76.0.
+- Builds: one shared target, capped at 20G (the orchestrator's budget; batch 1 reached 22G).
+- This section authorises, beyond the commits above, the release of batch 2 through the
+  repository's own process: version bump, annotated tag through the bot, release workflow, the
+  verified draft and its publication.
+
+Decider: operator

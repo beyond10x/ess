@@ -1,0 +1,46 @@
+format: ess/22
+system: demo
+version: v1
+domain: demo.core
+types:
+  - name: demo.core.Body
+    kind: struct
+    fields:
+      - {name: text, type: String}
+      - {name: fooBar, type: String}
+events:
+  - name: demo.core.Sent
+    fields:
+      - {name: id, type: String}
+commands:
+  - name: demo.core.Send
+    input:
+      - {name: id, type: String}
+      - {name: fooBar, type: String}
+      - {name: type, type: String}
+      - {name: body, type: demo.core.Body}
+      - {name: bodies, type: List<demo.core.Body>}
+      - {name: note, type: Optional<demo.core.Body>}
+    response:
+      - {name: id, type: String}
+      - {name: foo_bar, type: String}
+      - {name: type, type: String}
+      - {name: body, type: demo.core.Body}
+      - {name: bodies, type: List<demo.core.Body>}
+      - {name: note, type: Optional<demo.core.Body>}
+    outcomes:
+      - name: sent
+        returns: true
+        emits: [demo.core.Sent]
+        payload:
+          demo.core.Sent:
+            id: {generated: true}
+actors:
+  - name: demo.core.Writer
+    may: [demo.core.Send]
+components:
+  - component: messages
+    owns: {domains: [demo.core]}
+    accepts: {commands: [demo.core.Send]}
+    publishes: {events: [demo.core.Sent]}
+    reached_by: network

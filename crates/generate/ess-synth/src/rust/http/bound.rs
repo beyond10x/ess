@@ -22,6 +22,7 @@ use std::fmt::Write as _;
 use ess_compiler::ir::{ResolvedCommand, ResolvedField, ResolvedView};
 use ess_gen::ess_http::{
     self, AnswerSource, Body, Encoding, Header, Param, RedirectMode, RefusalBody, RefusalKey,
+    ResponseEncoding,
 };
 use ess_gen::http::{self, Served};
 
@@ -676,9 +677,9 @@ fn answer_call(
     let layout = server.layout;
     let path = if variables { "&path" } else { "&[]" };
     let refuse = if declared {
-        "refusal_not_granted"
+        format!("refusal_not_granted{}", refusal_suffix(server, route))
     } else {
-        "not_granted"
+        "not_granted".to_owned()
     };
     let mut call = String::new();
     match route.serves {
@@ -743,6 +744,23 @@ fn answer_call(
 /// The handler function name of one construct's bound route.
 fn bound_ident(layout: &Layout, declared: &ess_domain::name::QualifiedName) -> String {
     format!("serve_bound_{}", wire::ident(layout, declared))
+}
+
+/// The suffix of the standard-refusal functions a declared route answers through: none for the
+/// binding's (`refusal_malformed`, …), `_<ident>` for a route that overrides one itself
+/// (`routes[i].refusals`), whose functions answer its own overrides over the binding's.
+fn refusal_suffix(server: &Server<'_>, route: &http::Route<'_>) -> String {
+    if route
+        .declared
+        .is_none_or(|declared| declared.refusals.is_empty())
+    {
+        return String::new();
+    }
+    let name = match route.serves {
+        Served::Command(handle) => &server.ir.command(handle).name,
+        Served::View(handle) => &server.ir.view(handle).name,
+    };
+    format!("_{}", wire::ident(server.layout, name))
 }
 
 /// One bound route's handler: read the request the binding declares, run the shared path, answer
@@ -850,6 +868,7 @@ fn command(
         "body"
     };
     let path = if variables { "path" } else { "_path" };
+    let suffix = refusal_suffix(server, route);
     let declares = http::declares_answers(route);
     let answer = if declares {
         format!("answer_bound_{ident}(status, envelope, &value)")
@@ -863,8 +882,8 @@ fn command(
          {path}: &[String], taken: &mut Vec<{system_crate}::SystemEvent>) -> http::Response\n{}{{\n    let read = || -> Result<json::Value, \
          String> {{\n        let value = {read};\n        http::with_path(value, {}, {at:?})\n    \
          }};\n    let value = match read() {{\n        Ok(value) => value,\n        Err(detail) => \
-         return refusal_malformed(&detail),\n    }};\n    match {run}(system, &value, taken) {{\n        \
-         Ok((status, envelope)) => {answer},\n        Err(refused) => refused_bound(&refused),\n    \
+         return refusal_malformed{suffix}(&detail),\n    }};\n    match {run}(system, &value, taken) {{\n        \
+         Ok((status, envelope)) => {answer},\n        Err(refused) => refused_bound{suffix}(&refused),\n    \
          }}\n}}\n",
         route.method.as_str(),
         route.path,
@@ -891,6 +910,7 @@ fn outcome_answer(
     command: &ResolvedCommand,
 ) {
     let ident = wire::ident(server.layout, &command.name);
+    let suffix = refusal_suffix(server, route);
     let listed: Vec<(&ess_compiler::ir::ResolvedOutcome, &ess_http::Outcome)> = command
         .outcomes
         .iter()
@@ -923,7 +943,7 @@ fn outcome_answer(
          http::Response {{\n    match declared_{ident}(&envelope, input) {{\n        \
          Ok(Some(answer)) => answer,\n        Ok(None) => http::Response::new(status, http::JSON, \
          envelope),\n        // The effect stands; only its answer could not be written.\n        \
-         Err(detail) => refusal_unfinished(&detail, true),\n    }}\n}}\n\n/// Each listed outcome \
+         Err(detail) => refusal_unfinished{suffix}(&detail, true),\n    }}\n}}\n\n/// Each listed outcome \
          of `{}`, answered as declared; `None` for an outcome the binding does not \
          list.\nfn declared_{ident}(envelope: &str, {}: &json::Value) -> \
          Result<Option<http::Response>, String> {{\n    let read = \
@@ -973,6 +993,16 @@ fn outcome_arm(
         Body::Response => {
             format!("http::Response::new({status}, http::JSON, http::bare(response))")
         }
+        // A string field answered `encoding: text`: its value alone, not JSON. The media type is
+        // written inline rather than as a constant beside `JSON`, so a server whose binding
+        // answers no text keeps its bytes.
+        Body::ResponseField(field) if declared.encoding == ResponseEncoding::Text => format!(
+            "http::Response::new({status}, {:?}, match response.and_then(|response| \
+             response.member({:?})) {{ Some(crate::json::Value::Text(text)) => text.clone(), _ => \
+             String::new() }})",
+            http::TEXT_CONTENT_TYPE,
+            response_wire(command, field)
+        ),
         Body::ResponseField(field) => format!(
             "http::Response::new({status}, http::JSON, http::bare(response.and_then(|response| \
              response.member({:?}))))",
@@ -1149,6 +1179,7 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
     } else {
         "request"
     };
+    let suffix = refusal_suffix(server, route);
     let _ = write!(
         out,
         "\n/// `{}` `{}`: `{}`, read and answered as its `ess-http/1` binding declares.\nfn \
@@ -1174,7 +1205,7 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
             "    let read = || -> Result<json::Value, String> {{\n        let value = \
              http::query_object(&request.query, {}, \"query\")?;\n        http::with_path(value, \
              {}, \"query\")\n    }};\n    let value = match read() {{\n        Ok(value) => value,\n        \
-             Err(detail) => return refusal_malformed(&detail),\n    }};\n    let result = \
+             Err(detail) => return refusal_malformed{suffix}(&detail),\n    }};\n    let result = \
              {run}(system, &value);\n",
             super::query_params(ir, &unmapped),
             if variables {
@@ -1184,28 +1215,55 @@ fn view(out: &mut String, server: &Server<'_>, route: &http::Route<'_>, view: &R
             },
         );
     }
-    let single = route
+    let body = route
         .declared
-        .filter(|declared| declared.body == ess_http::ViewBody::Single)
-        .and_then(|declared| declared.empty);
-    let answer = match single {
-        Some(empty) => format!("http::single(&body, {})", empty.status),
-        None => "http::Response::new(status, http::JSON, body)".to_owned(),
-    };
-    let status = if answer.starts_with("http::single") {
-        "_status"
-    } else {
-        "status"
+        .map_or(ess_http::ViewBody::Rows, |declared| declared.body);
+    let empty = route
+        .declared
+        .filter(|_| body == ess_http::ViewBody::Single)
+        .and_then(|declared| declared.empty.as_ref());
+    let (status, answer) = match (body, empty) {
+        (_, Some(empty)) => ("_status", single_answer(empty)),
+        // The rows of `{"rows": [...]}`, bare.
+        (ess_http::ViewBody::Array, None) => (
+            "status",
+            "{\n            let read = json::parse(&body).unwrap_or(json::Value::Null);\n            \
+             http::Response::new(status, http::JSON, http::bare(read.member(\"rows\")))\n        \
+             }"
+            .to_owned(),
+        ),
+        _ => (
+            "status",
+            "http::Response::new(status, http::JSON, body)".to_owned(),
+        ),
     };
     let _ = write!(
         out,
         "    match result {{\n        Ok(({status}, body)) => {answer},\n        Err(refused) => \
-         refused_bound(&refused),\n    }}\n}}\n"
+         refused_bound{suffix}(&refused),\n    }}\n}}\n"
     );
 }
 
+/// A `single` view's answer: its one row, or `empty` when it holds none, with no body or the
+/// one literal member `empty.body` declares.
+fn single_answer(empty: &ess_http::Empty) -> String {
+    match &empty.body {
+        RefusalBody::None => format!("http::single(&body, {})", empty.status),
+        RefusalBody::Literal { member, text } => format!(
+            "{{\n            let answer = http::single(&body, {status});\n            if \
+             answer.status == {status} {{\n                http::Response::new({status}, \
+             http::JSON, http::literal_object({member:?}, {text:?}))\n            }} else {{\n                \
+             answer\n            }}\n        }}",
+            status = empty.status
+        ),
+    }
+}
+
 /// The standard refusals of a bound surface's declared routes, as its binding answers them
-/// (`refusals:`), and today's answer for each the binding does not override.
+/// (`refusals:`), and today's answer for each the binding does not override. A route that
+/// overrides one itself (`routes[i].refusals`) answers through its own set of functions, named with
+/// [`refusal_suffix`], so every other route keeps its bytes; the shared set is written only where a
+/// route answers through it, so the generated server builds with warnings denied.
 pub(super) fn refusals(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
     let ir = server.ir;
     let Some(binding) = server.binding else {
@@ -1215,91 +1273,169 @@ pub(super) fn refusals(out: &mut String, server: &Server<'_>, routes: &[http::Ro
         .iter()
         .filter(|route| route.declared.is_some())
         .collect();
-    out.push_str(
-        "\n/// A request a bound route cannot read as its binding declares: `refusals.malformed`, \
-         else `400`.\n",
-    );
-    match binding.refusal(RefusalKey::Malformed) {
-        Some(refusal) => {
-            let _ = write!(
-                out,
-                "fn refusal_malformed(_detail: &str) -> http::Response {{\n{}}}\n",
-                overridden(refusal)
-            );
-        }
-        None => out.push_str(
-            "fn refusal_malformed(detail: &str) -> http::Response {\n    \
-             http::Response::refusal(400, detail)\n}\n",
-        ),
-    }
-    out.push_str(
-        "\n/// An unfinished realization on a bound route: `refusals.unfinished`, else `501` with \
-         `committed`.\n",
-    );
-    match binding.refusal(RefusalKey::Unfinished) {
-        Some(refusal) => {
-            let _ = write!(
-                out,
-                "fn refusal_unfinished(_detail: &str, _committed: bool) -> http::Response \
-                 {{\n{}}}\n",
-                overridden(refusal)
-            );
-        }
-        None => out.push_str(
-            "fn refusal_unfinished(detail: &str, committed: bool) -> http::Response {\n    \
-             http::Response::unfinished(detail, committed)\n}\n",
-        ),
-    }
-    let checked = declared.iter().any(|route| match route.serves {
+    let own = |route: &http::Route<'_>| {
+        route
+            .declared
+            .is_some_and(|declared| !declared.refusals.is_empty())
+    };
+    let checked = |route: &http::Route<'_>| match route.serves {
         Served::Command(_) => http::checks_grants(ir),
         Served::View(handle) => http::read_checked(ir, handle.name()),
-    });
-    if checked {
-        out.push_str(
-            "\n/// A caller no grant admits, on a bound route: `refusals.not_granted`, else the \
-             standard `403`.\n",
+    };
+    let shared: Vec<&http::Route<'_>> = declared
+        .iter()
+        .copied()
+        .filter(|route| !own(route))
+        .collect();
+    if declared.is_empty() || !shared.is_empty() {
+        refusal_set(
+            out,
+            &RefusalSet {
+                suffix: String::new(),
+                on: "a bound route".to_owned(),
+                from: "",
+                checked: shared.iter().any(|route| checked(route)),
+            },
+            |key| binding.refusal(key),
         );
-        match binding.refusal(RefusalKey::NotGranted) {
+    }
+    for route in declared.into_iter().filter(|route| own(route)) {
+        let Some(own) = route.declared else {
+            continue;
+        };
+        refusal_set(
+            out,
+            &RefusalSet {
+                suffix: refusal_suffix(server, route),
+                on: format!("`{} {}`", route.method.as_str(), route.path),
+                from: "routes[].",
+                checked: checked(route),
+            },
+            |key| binding.refusal_on(own, key),
+        );
+    }
+}
+
+/// One set of standard-refusal functions: their name suffix, the route they answer on, as the
+/// docs name it, where the overrides are declared, and whether the route checks a grant.
+struct RefusalSet {
+    suffix: String,
+    on: String,
+    from: &'static str,
+    checked: bool,
+}
+
+/// The functions answering each standard refusal for `set`: `refusal_malformed`,
+/// `refusal_unfinished`, `refusal_not_granted` where a grant is checked, and `refused_bound`, each
+/// with `set.suffix`. `lookup` gives the override standing for a key.
+fn refusal_set<'a>(
+    out: &mut String,
+    set: &RefusalSet,
+    lookup: impl Fn(RefusalKey) -> Option<&'a ess_http::Refusal>,
+) {
+    let RefusalSet {
+        suffix, on, from, ..
+    } = set;
+    let _ = write!(
+        out,
+        "\n/// A request {on} cannot read as its binding declares: `{from}refusals.malformed`, \
+         else `400`.\n"
+    );
+    match lookup(RefusalKey::Malformed) {
+        Some(refusal) => {
+            let _ = write!(
+                out,
+                "fn refusal_malformed{suffix}(_detail: &str) -> http::Response {{\n{}}}\n",
+                overridden(refusal)
+            );
+        }
+        None => {
+            let _ = write!(
+                out,
+                "fn refusal_malformed{suffix}(detail: &str) -> http::Response {{\n    \
+                 http::Response::refusal(400, detail)\n}}\n"
+            );
+        }
+    }
+    let _ = write!(
+        out,
+        "\n/// An unfinished realization on {on}: `{from}refusals.unfinished`, else `501` with \
+         `committed`.\n"
+    );
+    match lookup(RefusalKey::Unfinished) {
+        Some(refusal) => {
+            let _ = write!(
+                out,
+                "fn refusal_unfinished{suffix}(_detail: &str, _committed: bool) -> \
+                 http::Response {{\n{}}}\n",
+                overridden(refusal)
+            );
+        }
+        None => {
+            let _ = write!(
+                out,
+                "fn refusal_unfinished{suffix}(detail: &str, committed: bool) -> http::Response \
+                 {{\n    http::Response::unfinished(detail, committed)\n}}\n"
+            );
+        }
+    }
+    if set.checked {
+        let _ = write!(
+            out,
+            "\n/// A caller no grant admits, on {on}: `{from}refusals.not_granted`, else the \
+             standard `403`.\n"
+        );
+        match lookup(RefusalKey::NotGranted) {
             Some(refusal) => {
                 let _ = write!(
                     out,
-                    "fn refusal_not_granted(_actor: Option<&str>) -> http::Response {{\n{}}}\n",
+                    "fn refusal_not_granted{suffix}(_actor: Option<&str>) -> http::Response \
+                     {{\n{}}}\n",
                     overridden(refusal)
                 );
             }
-            None => out.push_str(
-                "fn refusal_not_granted(actor: Option<&str>) -> http::Response {\n    \
-                 not_granted(actor)\n}\n",
-            ),
+            None => {
+                let _ = write!(
+                    out,
+                    "fn refusal_not_granted{suffix}(actor: Option<&str>) -> http::Response {{\n    \
+                     not_granted(actor)\n}}\n"
+                );
+            }
         }
     }
-    out.push_str(
-        "\n/// What a bound route's shared path refused, as its binding answers it.\nfn \
-         refused_bound(refused: &entry::Refused) -> http::Response {\n    match refused {\n        \
-         entry::Refused::Input(detail) => refusal_malformed(detail),\n        \
-         entry::Refused::Unmet(_) | entry::Refused::Undelivered(_) => {\n            \
-         refusal_unfinished(&refused.to_string(), refused.committed())\n        }\n        other \
-         => http::Response::from(other),\n    }\n}\n",
+    let _ = write!(
+        out,
+        "\n/// What {on}'s shared path refused, as its binding answers it.\nfn \
+         refused_bound{suffix}(refused: &entry::Refused) -> http::Response {{\n    match refused \
+         {{\n        entry::Refused::Input(detail) => refusal_malformed{suffix}(detail),\n        \
+         entry::Refused::Unmet(_) | entry::Refused::Undelivered(_) => {{\n            \
+         refusal_unfinished{suffix}(&refused.to_string(), refused.committed())\n        }}\n        \
+         other => http::Response::from(other),\n    }}\n}}\n"
     );
 }
 
 /// Whether a bound surface answers the standard `403` (`not_granted`) anywhere: on a route the
-/// binding does not name that checks a grant, or on a declared one that checks a grant where the
-/// binding does not override `not_granted`. Where it does not, the function is not emitted, so the
-/// generated server builds with warnings denied.
+/// binding does not name that checks a grant, or on a declared one that checks a grant where
+/// neither the binding nor the route overrides `not_granted`. Where it does not, the function is
+/// not emitted, so the generated server builds with warnings denied.
 pub(super) fn answers_standard_not_granted(
     server: &Server<'_>,
     routes: &[http::Route<'_>],
 ) -> bool {
     let ir = server.ir;
-    let overridden = server
-        .binding
-        .is_some_and(|binding| binding.refusal(RefusalKey::NotGranted).is_some());
     routes.iter().any(|route| {
         let checked = match route.serves {
             Served::Command(_) => http::checks_grants(ir),
             Served::View(handle) => http::read_checked(ir, handle.name()),
         };
+        let overridden = server
+            .binding
+            .zip(route.declared)
+            .is_some_and(|(binding, declared)| {
+                binding
+                    .refusal_on(declared, RefusalKey::NotGranted)
+                    .is_some()
+            });
         checked && (route.declared.is_none() || !overridden)
     })
 }

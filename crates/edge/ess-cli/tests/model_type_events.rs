@@ -322,7 +322,174 @@ types:
             }
         }
     }
+
+    /// The SHA-256 of each file `ess generate types` wrote for the declaration-order fixture
+    /// before `--declared-field-order` and `--rust-box-only-recursion` existed, the generator's
+    /// version replaced by `<version>`: the declarations, then the report, for each target.
+    const BEFORE: [(&str, &str, &str, &str); 3] = [
+        (
+            "rust",
+            "types.rs",
+            "2d05fd72d7aaad1c8712872e69f8bddbed3272a3351a14bf21b4e72a67d2bcde",
+            "17f7b053eabf91d3bdca447e4b301c8a7007a95ebd07c18ae6daaa00c0fb0837",
+        ),
+        (
+            "go",
+            "types.go",
+            "ec665e71dee281af5f0d780fcde55c391c63936711aba596be06025021e6e20a",
+            "0a4fbcf1a5ee029c2148b421556a5863397d64a97c4b8d4289071e7466a888fb",
+        ),
+        (
+            "typescript",
+            "types.ts",
+            "c4198fd65af95b63e59b9833c691783155ccda9ffce9b78e074acfdb2f4ef7a4",
+            "b775b4addeec2166e5cb5e6a808ddd110b1e5a0ecdb3bf8ba1e4f1d7bb972634",
+        ),
+    ];
+
+    fn ordered(target: &str, options: &[&str]) -> (Fixture, Output) {
+        let fixture = Fixture::new();
+        fs::write(
+            fixture.0.join("model/system.yaml"),
+            super::declaration_order::MODEL,
+        )
+        .unwrap();
+        let mut args = Vec::new();
+        for root in &super::declaration_order::ROOTS {
+            args.extend(["--root", root]);
+        }
+        args.extend(["--target", target, "--out", "out"]);
+        match target {
+            "rust" => args.extend(["--package", "demo-g"]),
+            "go" => args.extend(["--package", "demog", "--module", "example.com/demo/g"]),
+            _ => {}
+        }
+        args.extend(options);
+        let output = fixture.run(&args);
+        (fixture, output)
+    }
+
+    fn digest(text: &str) -> String {
+        use sha2::Digest as _;
+        use std::fmt::Write as _;
+        let text = text.replace(env!("CARGO_PKG_VERSION"), "<version>");
+        sha2::Sha256::digest(text.as_bytes())
+            .iter()
+            .fold(String::new(), |mut hex, byte| {
+                write!(hex, "{byte:02x}").unwrap();
+                hex
+            })
+    }
+
+    #[test]
+    fn declared_field_order_and_box_only_recursion_are_opt_in() {
+        for (target, declarations, before, report) in BEFORE {
+            let (fixture, output) = ordered(target, &[]);
+            assert!(output.status.success(), "{target}: {output:?}");
+            assert_eq!(
+                digest(&fixture.read(&format!("out/{declarations}"))),
+                before,
+                "{target}"
+            );
+            assert_eq!(
+                digest(&fixture.read("out/types-report.json")),
+                report,
+                "{target}"
+            );
+        }
+
+        let (fixture, output) = ordered(
+            "rust",
+            &["--declared-field-order", "--rust-box-only-recursion"],
+        );
+        assert!(output.status.success(), "{output:?}");
+        let types = fixture.read("out/types.rs");
+        let outer = &types[types.find("pub struct DemoGOuter {").unwrap()..];
+        let zeta = outer.find("pub zeta: DemoGInner,").unwrap();
+        let alpha = outer.find("pub alpha: ").unwrap();
+        let mid = outer.find("pub mid: EssPresence<DemoGInner>,").unwrap();
+        assert!(zeta < alpha && alpha < mid, "{outer}");
+        assert!(
+            types.contains("pub next: EssPresence<::std::boxed::Box<DemoGNode>>,")
+                && types.contains("pub tree: DemoGNode,"),
+            "{types}"
+        );
+        let report = fixture.read("out/types-report.json");
+        for expected in [
+            "\"declared_field_order\": true",
+            "\"box_only_recursion\": true",
+        ] {
+            assert!(report.contains(expected), "{expected}: {report}");
+        }
+
+        for target in ["go", "typescript"] {
+            let (fixture, output) = ordered(target, &["--declared-field-order"]);
+            assert!(output.status.success(), "{target}: {output:?}");
+            let report = fixture.read("out/types-report.json");
+            assert!(
+                report.contains("\"declared_field_order\": true"),
+                "{target}: {report}"
+            );
+            let (_, output) = ordered(target, &["--rust-box-only-recursion"]);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                !output.status.success()
+                    && stderr.contains(
+                        "--rust-box-only-recursion is only supported for the Rust target"
+                    ),
+                "{target}: {stderr}"
+            );
+        }
+
+        let fixture = Fixture::new();
+        let source = r#"{"openapi": "3.0.0", "info": {"title": "", "version": ""}, "paths": {},
+            "components": {"schemas": {"Root": {"type": "object",
+                "properties": {"b": {"type": "string"}, "a": {"type": "string"}}}}}}"#;
+        fs::write(fixture.0.join("source.json"), source).unwrap();
+        let schema = |args: &[&str]| {
+            Command::new(env!("CARGO_BIN_EXE_ess"))
+                .current_dir(&fixture.0)
+                .args(["generate", "schema"])
+                .args(args)
+                .output()
+                .unwrap()
+        };
+        let imported = schema(&[
+            "import-bundle",
+            "--path",
+            "source.json",
+            "--component",
+            "Root",
+            "--dialect",
+            "draft-2020-12",
+            "--out",
+            "root.bundle.json",
+        ]);
+        assert!(imported.status.success(), "{imported:?}");
+        let refused = schema(&[
+            "types-bundle",
+            "--bundle",
+            "root.bundle.json",
+            "--root",
+            "Root",
+            "--target",
+            "typescript",
+            "--declared-field-order",
+            "--out",
+            "types",
+        ]);
+        let stderr = String::from_utf8_lossy(&refused.stderr);
+        assert!(
+            !refused.status.success() && stderr.contains("declared_field_order_bundle"),
+            "{stderr}"
+        );
+        assert!(!fixture.0.join("types").exists());
+    }
 }
+
+#[allow(dead_code)]
+#[path = "../../../generate/ess-gen/tests/fixtures/declaration_order.rs"]
+mod declaration_order;
 
 /// A command's input and response and a view's row are roots (beyond10x/ess#656):
 /// `--root <command>.input`, `--root <command>.response`, `--root <view>.row`, and every one of

@@ -18,8 +18,10 @@ use serde_json::Value;
 
 /// A row-set command (`refused` reads a row set through the input) whose two accepting branches
 /// address different rows: `book-paused` a book through `book`, `shelf-paused` a shelf through
-/// `shelf`. `rushed`, an input-guarded refusal the plan reads before both, takes every input
-/// `shelf-paused` selects, so it takes their whole overlap. `PAIR` is the two, in either order.
+/// `shelf`. `rushed` and `hurried`, input-guarded refusals the plan reads before both, take every
+/// input `shelf-paused` selects between them, so they take the pair's whole overlap. Neither
+/// takes all of it alone: a branch one earlier refusal wholly takes is refused at compile
+/// (`ESS-COMMAND-012`, 0.77.0). `PAIR` is the two, in either order.
 const SHELF: &str = r"format: ess/23
 system: demo
 version: v1
@@ -102,7 +104,8 @@ commands:
           where: curator == input.curator
           exists: true
         error: demo.shelf.Refused
-      - {name: rushed, when: rush == true, error: demo.shelf.Rushed}
+      - {name: rushed, when: {all: ['rush == true', 'pause == true']}, error: demo.shelf.Rushed}
+      - {name: hurried, when: {all: ['rush == true', 'pause == false']}, error: demo.shelf.Rushed}
 PAIR      - {name: idle, error: demo.shelf.Idle}
 ";
 
@@ -216,8 +219,8 @@ fn mutant<'a>(json: &'a Value, id: &str) -> &'a Value {
 /// The two orders of `book-paused` and `shelf-paused` answer a request that selects neither of
 /// them differently: on a row-set command the interpreter's `addressed_row` reads the row the
 /// first declared accepting branch addresses, so the swap moves which row's absence refuses.
-/// `rushed` taking the pair's whole overlap says nothing about that, so the swap is not
-/// `equivalent`.
+/// `rushed` and `hurried` taking the pair's whole overlap say nothing about that, so the swap is
+/// not `equivalent`.
 #[test]
 fn a_swap_that_moves_the_addressed_row_is_not_scored_equivalent() {
     let baseline = act_on_a_held_shelf(true);
@@ -251,11 +254,11 @@ fn swaps_audited(text: &str) -> (Value, String) {
 }
 
 /// A swap of branches addressing different rows is killed by its suite and claims nothing about
-/// its overlap: `rushed` takes every input both select, but the order still decides which row a
-/// request neither of them takes reads, so the mutant carries no `overlap_taken_by` and its text
-/// line names no branch taking it. The killed line that does name one (`render_text`'s branch for
-/// a verdict other than `equivalent`) is held in `mutation_identical_answer`, on two branches
-/// addressing the same row.
+/// its overlap: `rushed` and `hurried` take every input both select, but the order still decides
+/// which row a request neither of them takes reads, so the mutant carries no `overlap_taken_by`
+/// and its text line names no branch taking it. The killed line that does name one
+/// (`render_text`'s branch for a verdict other than `equivalent`) is held in
+/// `mutation_identical_answer`, on two branches addressing the same row.
 #[test]
 fn a_killed_swap_of_branches_addressing_different_rows_names_no_overlap_taken() {
     let (json, rendered) = swaps_audited(&shelf(true));

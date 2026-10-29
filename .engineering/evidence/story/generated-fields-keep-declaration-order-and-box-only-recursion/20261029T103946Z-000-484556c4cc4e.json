@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-29T10:39:46Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-fields-keep-declaration-order-and-box-only-recursion",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:ess-issues-2-u7-adversary",
+    "review": "review-result:ess-issues-2-u7-adversary",
+    "outcome": "no-op"
+  }
+}

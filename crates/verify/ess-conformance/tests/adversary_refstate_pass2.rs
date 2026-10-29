@@ -449,8 +449,10 @@ fn named_or_refused(result: &Synthesis, command: &str, outcome: &str) -> bool {
 /// external branch — rather than file nothing for it.
 #[test]
 fn a_refusal_every_input_of_which_an_earlier_refusal_claims_is_named() {
+    // `frozen`'s Integer conjunct, true of every secret, avoids the #702 refusal: the finite
+    // prover declines it, so validation stays silent and synthesis still names the shadow.
     let held = rotate_with(
-        "      - name: frozen\n        when: mode == Freeze\n        error: demo.secrets.NotPending\n      - name: frozen-again\n        when: mode == Freeze\n        error: demo.secrets.NotActive\n",
+        "      - name: frozen\n        when: {all: [mode == Freeze, secret.count >= 0]}\n        error: demo.secrets.NotPending\n      - name: frozen-again\n        when: mode == Freeze\n        error: demo.secrets.NotActive\n",
         "",
     );
     let result = ess_conformance::synthesize::synthesize(&ir(&held));

@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.77.0 — 2026-10-29
+
+### HTTP bindings group alike outcomes, OpenAPI import widens, and validate refuses unreachable branches
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/alike-outcomes-and-unreachable-branches) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.77.0)
+
+HTTP routes group alike outcomes and declare own refusals, empty bodies and arrays. OpenAPI import admits open objects; integer formats keep native width. Types keep declared field order and box only recursion. Response fields may share input names. Validate refuses a branch an earlier refusal hides; mutate scores disjoint precedence swaps equivalent.
+
 ## 0.76.0 — 2026-10-29
 
 ### Schemas publish entity, Binary64, length and distinct invariants, and composition compares events and constraints

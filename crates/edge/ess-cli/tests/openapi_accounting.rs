@@ -12,6 +12,7 @@ const LEGACY: &str =
     include_str!("../../../generate/ess-openapi/tests/fixtures/supported.interface-v1.json");
 const PROJECTED: &str =
     include_str!("../../../generate/ess-openapi/tests/fixtures/supported.projected.yaml");
+const OPEN: &str = include_str!("../../../generate/ess-openapi/tests/fixtures/open.openapi.yaml");
 
 fn fixture(name: &str) -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
@@ -187,7 +188,13 @@ fn complete_projection_preserves_supported_yaml_through_both_spellings() {
 fn a_refused_import_keeps_existing_output_and_creates_no_new_file() {
     let dir = fixture("refused");
     let input = dir.join("source.yaml");
-    std::fs::write(&input, SOURCE.replace("type: number", "type: array")).unwrap();
+    // An array without `items` imports as an array of `json` (beyond10x/ess#647); `items: false`
+    // is still refused.
+    std::fs::write(
+        &input,
+        SOURCE.replace("type: number", "type: array\n          items: false"),
+    )
+    .unwrap();
     for format in ["text", "json", "yaml"] {
         for existing in [false, true] {
             let out = dir.join(format!("output-{format}-{existing}.json"));
@@ -249,4 +256,59 @@ fn an_openapi_30_document_with_nullable_imports_through_the_cli() {
             .collect::<Vec<_>>(),
         ["/components/schemas/Invoice/properties/id/nullable"]
     );
+}
+
+/// An open object, an untyped member and a nullable `anyOf` import (beyond10x/ess#647); checked
+/// projection then refuses for the one gap left, the integer `format`, and for nothing else.
+#[test]
+fn an_open_document_imports_and_checked_projection_names_only_the_format_gap() {
+    let dir = fixture("open");
+    let input = dir.join("openapi.yaml");
+    std::fs::write(&input, OPEN).unwrap();
+    let out = dir.join("import.json");
+    let output = ess(
+        &["infra", "import", "openapi", "--path"],
+        &input,
+        Some(&out),
+        "yaml",
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stored = std::fs::read_to_string(&out).unwrap();
+    let checked = ess_openapi::read_import(&stored).unwrap();
+    assert_eq!(checked.to_canonical_json(), stored);
+    let gap = "/components/schemas/PingResponse/properties/count/format";
+    assert_eq!(
+        checked
+            .accounting()
+            .coverage_gaps
+            .iter()
+            .map(|gap| gap.pointer.as_str())
+            .collect::<Vec<_>>(),
+        [gap]
+    );
+    let output = ess(
+        &["generate", "project", "openapi", "--ir"],
+        &out,
+        None,
+        "yaml",
+    );
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout.len(), 0);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!("{gap}: unpreserved semantics")),
+        "{stderr}"
+    );
+    assert_eq!(
+        stderr.matches("unpreserved semantics").count(),
+        1,
+        "{stderr}"
+    );
+    assert!(!stderr.contains("unresolved"), "{stderr}");
 }

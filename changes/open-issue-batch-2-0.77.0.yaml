@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/open-issue-batch-2-0.77.0
+repository: ess
+publishedAt: 2026-10-29T00:00:00Z
+title: HTTP bindings group alike outcomes, OpenAPI import widens, and validate refuses unreachable branches
+summary: >-
+  HTTP routes group alike outcomes and declare own refusals, empty bodies and arrays. OpenAPI import
+  admits open objects; integer formats keep native width. Types keep declared field order and box
+  only recursion. Response fields may share input names. Validate refuses a branch an earlier
+  refusal hides; mutate scores disjoint precedence swaps equivalent.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.77.0
+  version: 0.77.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

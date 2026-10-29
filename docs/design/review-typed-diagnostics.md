@@ -332,12 +332,17 @@ census does not walk, as it does not walk `view/absent.rs`.
 refused as `unsupported_construct` at `view.<name>.source`, at every format, from one
 `ConstructRef`, so it adds no head literal below.
 
+`command.rs` gains one typed site with beyond10x/ess#702: a `when:` branch whose input guard
+implies the guard of an input-guarded refusal answered before it is refused as
+`unreachable_branch` at `command.<name>.outcomes.<branch>`, from the command's own `site()`, so it
+adds no head literal below.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
 actor.rs 3 4
 binding.rs 36 0
-command.rs 15 65
+command.rs 15 66
 component.rs 15 9
 domain.rs 5 0
 entity.rs 19 5

@@ -197,7 +197,7 @@ fn check_unit_schema_fields(value: &ess_yaml::Value, pointer: &str) -> Result<()
         ess_yaml::Value::Mapping(mapping) => {
             let unit = matches!(
                 value.get("kind").and_then(ess_yaml::Value::as_str),
-                Some("integer" | "number" | "boolean")
+                Some("integer" | "number" | "boolean" | "json")
             );
             for (key, child) in mapping {
                 let key = key.as_str().expect("strict_value checked string keys");
