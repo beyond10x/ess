@@ -593,6 +593,71 @@ fn present_on(
         })
 }
 
+/// Every row `command`'s input names that `bound` leaves unnamed, each the input field naming it
+/// and a row of its entity on which no branch over it answers before `outcome` whatever the input
+/// ([`beside_row`]), arranged on its own in the driven blocks of `distinction`, as
+/// [`drive_several`] arranges the rows beside the one it drives. For the creator of a cascade's
+/// rows sent naming a captured row in one input and a row it reads through another input the
+/// cascade's filter does not bind: a generation started on the run a cancellation moves needs a
+/// node of its own beside it. `None` where `bound` names every row the command reads, where one is
+/// read through anything but an input, and where no bounded arrangement holds such a row.
+pub(super) fn beside_bound(
+    ir: &EssIr,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+) -> Option<Vec<(String, Arrangement)>> {
+    if stored::field(command).is_some() {
+        return None;
+    }
+    let unbound: Vec<(&ResolvedRelatedVia, &EntityHandle)> = rows(command)
+        .into_iter()
+        .filter(|(via, _)| !bound.contains_key(via.field()))
+        .collect();
+    if unbound.is_empty()
+        || unbound.len() > 4
+        || unbound
+            .iter()
+            .any(|(via, _)| !matches!(via, ResolvedRelatedVia::Input { .. }))
+    {
+        return None;
+    }
+    unbound
+        .into_iter()
+        .enumerate()
+        .map(|(index, (via, entity))| {
+            let at = block_start(BESIDE_DRIVEN + index, distinction);
+            beside_row(ir, (command, outcome), (via, entity), actors, (at, true))
+                .map(|row| (via.field().to_owned(), row))
+        })
+        .collect()
+}
+
+/// [`present_for`] over every row `command` reads, each the captured row `bound` names with the
+/// values `rows` settled for it, at every format: the creator of a cascade's rows sent beside rows
+/// [`beside_bound`] arranged, whose values are all known, so no format gate is needed.
+pub(super) fn present_beside(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    (held, rows): (
+        &BTreeMap<crate::scenario::InstanceName, super::StateName>,
+        &HeldRows,
+    ),
+    input: &BTreeMap<String, Node>,
+) -> bool {
+    stored::field(command).is_none()
+        && present_on(
+            ir,
+            command,
+            bound,
+            (held, rows),
+            input,
+            &self::rows(command),
+        )
+}
+
 /// The input guards that steer a creator's candidates toward one [`present_for`] admits: each
 /// refusal's comparisons with the input grounded on the values `rows` settled for the captured
 /// row `bound` names, and each presence test of the input it reads. Empty where that row's values

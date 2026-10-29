@@ -63,6 +63,7 @@ use super::precedence;
 use super::set_effects::{input_value, misses, subject_value, written_in};
 
 mod copied;
+pub(super) use copied::steered_held;
 mod related_rows;
 use super::{
     absorb, arrange_toward_named_owner, arrange_toward_owned, candidates, flatten, instance_name,

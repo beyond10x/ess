@@ -400,19 +400,76 @@ pub(super) const UNDRIVEN: &str = "no arrangement takes for a row the filter sel
 ///
 /// The branches are model text and [`WitnessGap::reason`] is `'static`, so they ride in the
 /// rendered type, as a shorthand's field does (`shorthand.rs`).
-fn undriven(ir: &EssIr, entity: &EntityHandle, at: String) -> Option<RefusalCause> {
-    let creators: BTreeSet<String> = ir
-        .drivers()
+///
+/// Where a creating branch's command refuses the subject row before it on that row's stored
+/// fields, and the state `held` gives the subject with the values it settled makes the refusal
+/// hold, the first such refusal of each creator is named too: the guard that answers first on the
+/// row the scenario holds (`run-not-active` holding `state == Active` on the active run a
+/// cancellation moves).
+fn undriven(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    at: String,
+    (subject, held, settled): (
+        &EntityHandle,
+        Option<&StateName>,
+        &BTreeMap<String, Determined>,
+    ),
+) -> Option<RefusalCause> {
+    let drivers = ir.drivers();
+    let creating: Vec<_> = drivers
         .get(entity)?
         .iter()
         .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .collect();
+    let creators: BTreeSet<String> = creating
+        .iter()
         .map(|driver| format!("{}/{}", driver.command.name, driver.outcome.name))
         .collect();
     if creators.is_empty() {
         return None;
     }
+    let answering: BTreeSet<String> = creating
+        .iter()
+        .filter_map(|driver| {
+            let held = held?;
+            driver
+                .command
+                .outcomes
+                .iter()
+                .take_while(|branch| branch.name != driver.outcome.name)
+                .find(|branch| match &branch.condition {
+                    ess_compiler::ir::ResolvedCondition::Related {
+                        entity: read,
+                        test: ess_compiler::ir::ResolvedRelatedTest::Holds { predicate },
+                        input: None,
+                        also,
+                        ..
+                    } => {
+                        read == subject
+                            && also.is_empty()
+                            && subject_fact::row_truth_with(
+                                ir,
+                                subject,
+                                settled,
+                                &BTreeSet::new(),
+                                Some(held),
+                                predicate,
+                                None,
+                            ) == Truth::True
+                    }
+                    _ => false,
+                })
+                .map(|branch| format!("{}/{}", driver.command.name, branch.name))
+        })
+        .collect();
     let creators: Vec<String> = creators.into_iter().collect();
-    let type_ref = format!("{entity}` and created only by `{}", creators.join("`, `"));
+    let mut type_ref = format!("{entity}` and created only by `{}", creators.join("`, `"));
+    if !answering.is_empty() {
+        let answering: Vec<String> = answering.into_iter().collect();
+        type_ref.push_str("`, answered first on the subject the scenario holds by `");
+        type_ref.push_str(&answering.join("`, `"));
+    }
     Some(gap(at, type_ref, UNDRIVEN))
 }
 
@@ -772,6 +829,11 @@ struct Selection<'a> {
     /// [`arranged_rows`] tries again after the plain search found no rows, so a selection that
     /// search already witnesses keeps its arrangement.
     vary: bool,
+    /// Whether a row bound to a captured instance is also searched for through a creator that
+    /// reads a related row the filter does not bind, sent beside a row of its own there
+    /// ([`super::arrange_toward_beside`]). Set only in [`affects_segment`]'s last try, so a
+    /// segment an earlier try builds keeps its arrangement.
+    beside: bool,
 }
 
 /// A field a row's creator fills from the related row another field of the row names
@@ -1006,11 +1068,26 @@ impl Selection<'_> {
                 && !reaches_other_rows(self.ir, &row.steps)
         };
         let distinction = next(self.ir, self.entity, taken);
+        // The rows of another entity a copied key is read from, each claimed beside the rows the
+        // scenario already names ([`super::row_set::steered_held`]).
+        let claimed = std::cell::RefCell::new(BTreeSet::new());
+        let claim = |entity: &EntityHandle| {
+            let mut claimed = claimed.borrow_mut();
+            let mut names: BTreeSet<InstanceName> = taken.union(&claimed).cloned().collect();
+            let distinction = next(self.ir, entity, &mut names);
+            claimed.extend(names);
+            distinction
+        };
         let found = |steer: &Predicate, fallback: &Predicate| {
             if self.symbolic(goal) {
                 let bound = self.bindings(goal, true)?;
                 let steering = self.steering(steer).unwrap_or(Predicate::Always);
-                return arrange_toward_held(
+                let arrange = if self.beside {
+                    super::arrange_toward_beside
+                } else {
+                    arrange_toward_held
+                };
+                return arrange(
                     self.ir,
                     self.entity,
                     &steering,
@@ -1019,7 +1096,24 @@ impl Selection<'_> {
                     &bound,
                     (&self.held, &self.rows),
                     &accept,
-                );
+                )
+                .or_else(|| {
+                    // A creator copying the filtered key from the row another input names, in
+                    // the last try only (an adopter's report of 2026-10-29).
+                    if !self.beside {
+                        return None;
+                    }
+                    super::row_set::steered_held(
+                        self.ir,
+                        self.entity,
+                        &steering,
+                        actors,
+                        (distinction, &claim),
+                        &bound,
+                        (&self.held, &self.rows),
+                        &accept,
+                    )
+                });
             }
             arrange_toward_filter(self.ir, self.entity, steer, actors, distinction, &accept)
                 .or_else(|| {
@@ -1035,7 +1129,7 @@ impl Selection<'_> {
                     )
                 })
         };
-        found(steer, &Predicate::Always)
+        let row = found(steer, &Predicate::Always)
             .or_else(|| {
                 // A creator writing a field the effect writes from its own input leaves each row
                 // the value its distinction gives, which may be the written one: the search is
@@ -1046,7 +1140,9 @@ impl Selection<'_> {
                     &changing,
                 )
             })
-            .map(|row| self.copied(&row).into_owned())
+            .map(|row| self.copied(&row).into_owned());
+        taken.extend(claimed.into_inner());
+        row
     }
 
     /// A row of the entity holding, in every field the effect writes a known value into, another
@@ -1116,6 +1212,7 @@ pub(super) fn selected_row(
         rows: BTreeMap::new(),
         copies: Vec::new(),
         vary: false,
+        beside: false,
     };
     selection.row(actors, taken, rests, false)
 }
@@ -1196,6 +1293,7 @@ pub(super) fn selected_row_naming(
         rows: rows.clone(),
         copies,
         vary: false,
+        beside: false,
     };
     selection.row(actors, taken, rests, false)
 }
@@ -2015,6 +2113,7 @@ fn under<T>(
             rows,
             copies,
             vary,
+            beside: false,
         };
         arrange(&selection)?
     };
@@ -2306,6 +2405,7 @@ fn combined(
             rows: BTreeMap::new(),
             copies: Vec::new(),
             vary: false,
+            beside: false,
         })
         .collect();
     let mut out = Vec::with_capacity(entries.len());
@@ -2650,6 +2750,11 @@ fn pinned_entry<'o>(
 /// on a subject holding each such field ([`super::prepare_steered`]): `MakeChild/made` is taken
 /// only under a parent holding a tenant. A segment the plain subject already builds is the one it
 /// always was.
+///
+/// Where every such try still arranges no row, the plain subject and then each steered one are
+/// tried a last time with each row's creator sent beside a row of its own in every related input
+/// the filter does not bind ([`Selection::beside`]): a generation started only on an active run
+/// and an existing node (an adopter's report of 2026-10-29).
 fn affects_segment(
     models: &InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -2657,7 +2762,7 @@ fn affects_segment(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     taken: &mut BTreeSet<InstanceName>,
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
-    let cause = match affects_segment_on(models, command, outcome, actors, taken, &[]) {
+    let cause = match affects_segment_on(models, command, outcome, actors, taken, (&[], false)) {
         Err(RefusalCause::NoWitness(gap)) if gap.reason == UNDRIVEN => RefusalCause::NoWitness(gap),
         built => return built,
     };
@@ -2672,10 +2777,23 @@ fn affects_segment(
     if !refuting.is_empty() {
         tries.push(steer.into_iter().chain(refuting).collect());
     }
-    for steer in tries {
+    let beside: Vec<Vec<Predicate>> = std::iter::once(Vec::new())
+        .chain(tries.iter().cloned())
+        .collect();
+    let tries = tries
+        .into_iter()
+        .map(|steer| (steer, false))
+        .chain(beside.into_iter().map(|steer| (steer, true)));
+    for (steer, beside) in tries {
         let mut again = taken.clone();
-        if let Ok(built) = affects_segment_on(models, command, outcome, actors, &mut again, &steer)
-        {
+        if let Ok(built) = affects_segment_on(
+            models,
+            command,
+            outcome,
+            actors,
+            &mut again,
+            (&steer, beside),
+        ) {
             *taken = again;
             return Ok(built);
         }
@@ -2757,7 +2875,8 @@ fn creators_reading_subject(ir: &EssIr, outcome: &ResolvedOutcome) -> Vec<Predic
     subject_fact::compared_presence(ir, &subject.entity, &predicates)
 }
 
-/// [`affects_segment`], the subject arranged holding every field `steer` names present.
+/// [`affects_segment`], the subject arranged holding every field `steer` names present, and each
+/// entry's rows searched for beside rows of their own where `beside` is set ([`Selection::beside`]).
 #[allow(clippy::too_many_lines)] // One complete set-effect witness, including invocation authority.
 fn affects_segment_on(
     models: &InvocationModels<'_>,
@@ -2765,7 +2884,7 @@ fn affects_segment_on(
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     taken: &mut BTreeSet<InstanceName>,
-    steer: &[Predicate],
+    (steer, beside): (&[Predicate], bool),
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
     let ir = models.arrangement;
     let at = |index: usize| format!("{}.affects[{index}]", outcome.name);
@@ -2914,6 +3033,7 @@ fn affects_segment_on(
             rows: rows.clone(),
             copies: Vec::new(),
             vary: false,
+            beside,
         };
         let rows = match affect_rows(&selection, actors, taken, affect) {
             Ok(rows) => rows,
@@ -2925,7 +3045,14 @@ fn affects_segment_on(
                     .is_none() =>
             {
                 return Err(unwritten(ir, &affect.entity, &selection.filter)
-                    .or_else(|| undriven(ir, &affect.entity, at(index)))
+                    .or_else(|| {
+                        undriven(
+                            ir,
+                            &affect.entity,
+                            at(index),
+                            (&subject.entity, setup.before.as_ref(), &setup.settled),
+                        )
+                    })
                     .unwrap_or_else(|| gap(at(index), affect.entity.to_string(), NO_MATCHING)));
             }
             Err(reason) => {
@@ -3754,6 +3881,7 @@ fn unpublished_segment(
         rows: BTreeMap::new(),
         copies: Vec::new(),
         vary: false,
+        beside: false,
     };
     let (from, to) = match &set.effect {
         ResolvedEffect::Moves { transition } => (Some(&transition.from), Some(&transition.to)),

@@ -12469,7 +12469,7 @@ fn arrange_toward_named_owner(
         filter,
         actors,
         distinction,
-        (None, true),
+        (None, true, false),
         (
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -12501,10 +12501,52 @@ fn arrange_toward_held(
         filter,
         actors,
         distinction,
-        (None, false),
+        (None, false, false),
         (fields, held, rows),
         accept,
     )
+}
+
+/// [`arrange_toward_held`], and where it finds nothing, each creator reading a related row through
+/// an input `fields` does not bind sent beside a row of its own there
+/// ([`related_guard::beside_bound`]), decided on every row it reads
+/// ([`related_guard::present_beside`]): the rows a cascade moves, created by a command reading the
+/// moving subject and a second related row (an adopter's report of 2026-10-29). Only a cascade
+/// witness's last try takes it, so every row [`arrange_toward_held`] arranges keeps its steps.
+#[allow(clippy::too_many_arguments)]
+fn arrange_toward_beside(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    filter: &Predicate,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    fields: &BTreeMap<String, InstanceName>,
+    (held, rows): (&BTreeMap<InstanceName, StateName>, &related_guard::HeldRows),
+    accept: &dyn Fn(&Arrangement) -> bool,
+) -> Option<Arrangement> {
+    arrange_toward_with(
+        ir,
+        entity,
+        filter,
+        actors,
+        distinction,
+        (None, false, true),
+        (fields, held, rows),
+        accept,
+    )
+}
+
+/// Which creators one pass of [`arrange_toward_with`] sends, and how each is decided.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CreatorPass {
+    /// Those whose related refusals a held state refutes ([`related_guard::present_in`]).
+    Plain,
+    /// Those whose refusal of the captured row also reads their input, per input
+    /// ([`related_guard::present_for`]).
+    PerInput,
+    /// Those reading a row `fields` does not bind, sent beside a row of their own there
+    /// ([`arrange_toward_beside`]).
+    Beside,
 }
 
 /// The same bounded arrangement search with fields populated from already captured instances.
@@ -12527,7 +12569,7 @@ fn arrange_toward_bound(
         filter,
         actors,
         distinction,
-        (owner, false),
+        (owner, false, false),
         (fields, &BTreeMap::new(), &related_guard::HeldRows::new()),
         accept,
     )
@@ -12539,6 +12581,9 @@ fn arrange_toward_bound(
 /// A creating branch below input-guarded siblings is tried, where no candidate for its own guards
 /// is selected, with candidates refuting theirs too (an adopter's report, row 14): a default branch
 /// below `when: urgent == true` needs `urgent` false, which no ladder over the filter alone tries.
+///
+/// Where `beside` is set, a last pass sends the creators reading a related row `fields` leaves
+/// unbound beside a row of their own there ([`arrange_toward_beside`]).
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn arrange_toward_with(
     ir: &EssIr,
@@ -12546,7 +12591,7 @@ fn arrange_toward_with(
     filter: &Predicate,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
-    (owner, named): (Option<&InstanceName>, bool),
+    (owner, named, beside): (Option<&InstanceName>, bool, bool),
     (fields, resting, rows): (
         &BTreeMap<String, InstanceName>,
         &BTreeMap<InstanceName, StateName>,
@@ -12560,17 +12605,20 @@ fn arrange_toward_with(
     let identity = &ir.entity(entity).identity;
     // A second pass, only where the first arranged nothing, sends the creators whose refusal of
     // the captured row also reads their input, steered by that row's settled values (row 29).
-    let passes: &[bool] = if rows.is_empty() {
-        &[false]
-    } else {
-        &[false, true]
-    };
-    for (per_input, creator) in passes.iter().flat_map(|per_input| {
+    let mut passes = vec![CreatorPass::Plain];
+    if !rows.is_empty() {
+        passes.push(CreatorPass::PerInput);
+    }
+    if beside && !fields.is_empty() {
+        passes.push(CreatorPass::Beside);
+    }
+    for (pass, creator) in passes.iter().flat_map(|pass| {
         drivers
             .iter()
             .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
-            .map(move |creator| (*per_input, creator))
+            .map(move |creator| (*pass, creator))
     }) {
+        let per_input = pass == CreatorPass::PerInput;
         let mut mapped: BTreeMap<&str, &str> = creator
             .outcome
             .sets
@@ -12588,17 +12636,42 @@ fn arrange_toward_with(
             mapped.entry(identity.name.as_str()).or_insert(field);
         }
         let checked = creator_bindings(ir, creator, &mapped, (fields, resting), false);
-        let bound = if per_input {
+        let bound = if pass == CreatorPass::Plain {
+            checked
+        } else {
             if checked.is_some() {
                 continue;
             }
             creator_bindings(ir, creator, &mapped, (fields, resting), true)
-        } else {
-            checked
         };
-        let Some(bound) = bound else {
+        let Some(mut bound) = bound else {
             continue;
         };
+        // The rows sent beside the bound one, and every row the creator reads, held as it rests.
+        let mut beside_rows = Vec::new();
+        let (mut resting_beside, mut rows_beside) = (BTreeMap::new(), BTreeMap::new());
+        if pass == CreatorPass::Beside {
+            if bound.is_empty() || !related_guard::routes(creator.command, creator.outcome) {
+                continue;
+            }
+            let Some(arranged) = related_guard::beside_bound(
+                ir,
+                (creator.command, creator.outcome),
+                &bound,
+                actors,
+                distinction,
+            ) else {
+                continue;
+            };
+            resting_beside.clone_from(resting);
+            rows_beside.clone_from(rows);
+            for (field, row) in arranged {
+                bound.insert(field, row.instance.clone());
+                resting_beside.insert(row.instance.clone(), row.state.clone());
+                rows_beside.insert(row.instance.clone(), row.settled.clone());
+                beside_rows.push(row);
+            }
+        }
         let steering = if per_input {
             related_guard::steering_for(ir, creator.command, &bound, rows)
         } else {
@@ -12623,15 +12696,21 @@ fn arrange_toward_with(
             continue;
         };
         for input in inputs {
+            let present = match pass {
+                CreatorPass::Plain => true,
+                CreatorPass::PerInput => {
+                    related_guard::present_for(ir, creator.command, &bound, (resting, rows), &input)
+                }
+                CreatorPass::Beside => related_guard::present_beside(
+                    ir,
+                    creator.command,
+                    &bound,
+                    (&resting_beside, &rows_beside),
+                    &input,
+                ),
+            };
             if selects_branch(ir, creator.command, creator.outcome, None, &input) != Ok(true)
-                || (per_input
-                    && !related_guard::present_for(
-                        ir,
-                        creator.command,
-                        &bound,
-                        (resting, rows),
-                        &input,
-                    ))
+                || !present
             {
                 continue;
             }
@@ -12648,9 +12727,18 @@ fn arrange_toward_with(
                 &bound,
                 &input,
             );
-            let Ok(start) = start else {
+            let Ok(mut start) = start else {
                 continue;
             };
+            if !beside_rows.is_empty() {
+                let mut steps = Vec::new();
+                for row in &beside_rows {
+                    steps.extend(row.steps.iter().cloned());
+                    start.source.extend(row.source.iter().cloned());
+                }
+                steps.append(&mut start.steps);
+                start.steps = steps;
+            }
             let mut best: Option<Arrangement> = None;
             for target in states {
                 let Some(route) = route_from(ir, entity, drivers, &start.state, target) else {
