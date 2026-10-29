@@ -52,11 +52,19 @@ enum InputIdentity {
 #[serde(tag = "language", rename_all = "snake_case")]
 pub enum TargetConfiguration {
     /// A declaration module consumed with strict optional-property semantics.
-    Typescript,
+    Typescript {
+        /// Whether fields are listed in declaration order (`--declared-field-order`,
+        /// beyond10x/ess#661); omitted while off.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        declared_field_order: bool,
+    },
     /// A standalone Cargo data library.
     Rust {
         /// Explicit Cargo package identity, independent of source type names.
         package: String,
+        /// Whether fields are listed in declaration order; omitted while off.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        declared_field_order: bool,
         /// The generator options asked for; each is omitted while it has its default.
         #[serde(flatten)]
         options: RustOptions,
@@ -67,6 +75,9 @@ pub enum TargetConfiguration {
         package: String,
         /// Explicit Go module identity.
         module: String,
+        /// Whether fields are listed in declaration order; omitted while off.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        declared_field_order: bool,
     },
 }
 
@@ -91,6 +102,11 @@ pub struct RustOptions {
     /// fields is a map, and keeps its members.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub drop_unknown_members: bool,
+    /// Hold a named type by value, boxing a reference only where it closes a cycle of by-value
+    /// fields, such as `Optional<Self>` (beyond10x/ess#661). A reference inside a list or a map
+    /// is never boxed; without the option every reference is.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub box_only_recursion: bool,
 }
 
 /// A standard derive the Rust target adds on request, refused on a type that cannot satisfy it.
@@ -168,7 +184,7 @@ impl std::str::FromStr for RustDerive {
 impl TargetConfiguration {
     fn name(&self) -> &'static str {
         match self {
-            Self::Typescript => "typescript",
+            Self::Typescript { .. } => "typescript",
             Self::Rust { .. } => "rust",
             Self::Go { .. } => "go",
         }
@@ -221,6 +237,12 @@ pub struct Plan {
     /// beyond10x/ess#594), by the pointer of the struct's definition. The struct is planned as
     /// its record; this names the field the short form fills.
     shorthands: BTreeMap<String, Shorthand>,
+    /// A model object's wire names in the order the specification declares them, by the
+    /// object's pointer (beyond10x/ess#661). Empty for a bundle.
+    field_order: BTreeMap<String, Vec<String>>,
+    /// Whether every output lists fields in `field_order` (`--declared-field-order`) rather
+    /// than by wire name.
+    declared_order: bool,
 }
 
 /// The field a model struct's short form fills, read from its `x-ess-shorthand`.
@@ -633,6 +655,7 @@ impl Plan {
             model.newtypes().clone(),
         )?;
         plan.binary64.clone_from(model.binary64_locations());
+        plan.field_order.clone_from(model.declared_field_order());
         for at in &plan.binary64 {
             plan.obligations.insert(finding(at, "model_binary64", "finite IEEE-754 binary64 requires nearest-even token decoding, signed-zero preservation and finite round-tripping serialization; the structural number representation alone does not enforce this contract"));
         }
@@ -749,6 +772,8 @@ impl Plan {
             variants: builder.variants,
             text: builder.text,
             shorthands,
+            field_order: BTreeMap::new(),
+            declared_order: false,
         })
     }
 
@@ -925,6 +950,104 @@ impl Plan {
         }
     }
 
+    /// List every model record's fields in the order the specification declares them, in every
+    /// target (`--declared-field-order`, beyond10x/ess#661), where they are otherwise in
+    /// wire-name order. Refused for a bundle, which carries no declaration order.
+    pub fn with_declared_field_order(mut self) -> Result<Self, Refused> {
+        if !matches!(self.input, InputIdentity::Model { .. }) {
+            return Err(Refused(vec![finding(
+                "/",
+                DECLARED_ORDER_RULE,
+                "a bundle carries no declaration order",
+            )]));
+        }
+        self.declared_order = true;
+        Ok(self)
+    }
+
+    /// The fields of the object at `pointer`, in the order every output lists them: by wire
+    /// name, or under the declared field order as the specification declares them, followed by
+    /// any field the declaration does not name, by wire name.
+    fn ordered_fields<'a>(
+        &self,
+        pointer: &str,
+        fields: &'a BTreeMap<String, Field>,
+    ) -> Vec<(&'a String, &'a Field)> {
+        let Some(declared) = self
+            .field_order
+            .get(pointer)
+            .filter(|_| self.declared_order)
+        else {
+            return fields.iter().collect();
+        };
+        let mut ordered = declared
+            .iter()
+            .filter_map(|wire| fields.get_key_value(wire))
+            .collect::<Vec<_>>();
+        ordered.extend(fields.iter().filter(|(wire, _)| !declared.contains(wire)));
+        ordered
+    }
+
+    /// Every object with declared fields, by its pointer, and whether the declared field order
+    /// names each of its fields. An object it does not cover, a union variant's or any object of
+    /// a bundle, lists its fields by wire name under `--declared-field-order`.
+    pub fn declared_order_coverage(&self) -> BTreeMap<String, bool> {
+        let mut coverage = BTreeMap::new();
+        let mut pending = self.definitions.values().collect::<Vec<_>>();
+        while let Some(node) = pending.pop() {
+            if let Shape::Object { fields, .. } = &node.shape {
+                if !fields.is_empty() {
+                    let covered = self
+                        .field_order
+                        .get(&node.pointer)
+                        .is_some_and(|declared| fields.keys().all(|wire| declared.contains(wire)));
+                    coverage.insert(node.pointer.clone(), covered);
+                }
+            }
+            pending.extend(children(node));
+        }
+        coverage
+    }
+
+    /// The pointers of the references that close a cycle of by-value fields: a reference held by
+    /// value in a definition to itself, or to a definition that holds it by value in turn. Only
+    /// these need a `Box` to give a recursive Rust type a size (`box_only_recursion`,
+    /// beyond10x/ess#661).
+    fn recursive_references(&self) -> BTreeSet<String> {
+        let held = self
+            .definitions
+            .iter()
+            .map(|(name, node)| {
+                let mut found = Vec::new();
+                by_value_references(node, &mut found);
+                (name.as_str(), found)
+            })
+            .collect::<BTreeMap<_, _>>();
+        let graph = held
+            .iter()
+            .map(|(name, found)| {
+                (
+                    (*name).to_owned(),
+                    found
+                        .iter()
+                        .map(|(_, target)| (*target).to_owned())
+                        .collect::<BTreeSet<_>>(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let graph = &graph;
+        held.iter()
+            .flat_map(|(name, found)| {
+                found
+                    .iter()
+                    .filter(move |(_, target)| {
+                        target == name || reaches(name, target, graph, &mut BTreeSet::new())
+                    })
+                    .map(|(pointer, _)| (*pointer).to_owned())
+            })
+            .collect()
+    }
+
     /// The pointers of the `Json` values one `--rust-raw-json` location covers.
     fn raw_json_location(&self, location: &str) -> Result<Vec<String>, (String, &'static str)> {
         let unknown = || ("/".to_owned(), "names no selected type or field");
@@ -1052,7 +1175,7 @@ impl Plan {
 
     fn report(&self, configuration: TargetConfiguration) -> Report {
         let mut obligations = self.obligations.clone();
-        if matches!(configuration, TargetConfiguration::Typescript) {
+        if matches!(configuration, TargetConfiguration::Typescript { .. }) {
             for name in &self.newtypes {
                 obligations.insert(finding(&path("/$defs", name), "typescript_nominal_identity", "structural TypeScript aliases do not enforce distinct model newtype identities"));
             }
@@ -1695,6 +1818,9 @@ const RAW_JSON_RULE: &str = "rust_raw_json";
 /// The refusal of an `x-ess-shorthand` struct this realization does not read.
 const SHORTHAND_RULE: &str = "model_shorthand";
 
+/// The refusal of `--declared-field-order` for a bundle (beyond10x/ess#661).
+const DECLARED_ORDER_RULE: &str = "declared_field_order_bundle";
+
 /// What `node` is on the wire when it is one JSON scalar type, references followed: the short
 /// form a struct's shorthand field is written as. `None` for anything else.
 fn short_kind(
@@ -1757,6 +1883,31 @@ fn children(node: &Node) -> Vec<&Node> {
             .collect(),
         Shape::Union { variants, .. } | Shape::Intersection(variants) => variants.iter().collect(),
         _ => Vec::new(),
+    }
+}
+
+/// The `$ref` nodes `node` holds by value, each with the definition it names: every child but
+/// array items, held in a `Vec`, and additional object members, held in a `BTreeMap`. Optional
+/// and nullable values, union variants, tuple positions and anonymous objects are held by value.
+fn by_value_references<'a>(node: &'a Node, found: &mut Vec<(&'a str, &'a str)>) {
+    match &node.shape {
+        Shape::Ref(name) => found.push((&node.pointer, name)),
+        Shape::Object { fields, .. } => {
+            for field in fields.values() {
+                by_value_references(&field.value, found);
+            }
+        }
+        Shape::Array { prefix, .. } => {
+            for position in prefix {
+                by_value_references(position, found);
+            }
+        }
+        Shape::Union { variants, .. } | Shape::Intersection(variants) => {
+            for variant in variants {
+                by_value_references(variant, found);
+            }
+        }
+        _ => {}
     }
 }
 

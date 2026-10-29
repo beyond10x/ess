@@ -201,6 +201,114 @@ fn a_closed_empty_struct_decodes_only_the_empty_object() {
     );
 }
 
+#[allow(dead_code)]
+#[path = "../../ess-gen/tests/fixtures/declaration_order.rs"]
+mod declaration_order;
+
+/// The fixture model's plan, every root selected (beyond10x/ess#661).
+fn declaration_order_plan() -> Plan {
+    let specification = ess_domain::spec::Specification::assemble([(
+        ess_domain::system::Source::new("demo.yaml"),
+        ess_domain::spec::RawSpecFile::parse(declaration_order::MODEL).unwrap(),
+    )])
+    .unwrap();
+    let ir =
+        ess_compiler::resolve::compile(&specification, &ess_compiler::source::SourceMap::new())
+            .unwrap();
+    let selected = ess_gen::schema::ModelTypes::select(
+        &ir,
+        &declaration_order::ROOTS.map(str::to_owned).into(),
+    )
+    .unwrap();
+    Plan::from_model(&selected).unwrap()
+}
+
+/// With both options: `Outer` encodes its members in declaration order and decodes them in any
+/// order to the same value, and the recursive types build with a `Box` only where a cycle of
+/// by-value fields closes.
+const DECLARED_ORDER_WIRE: &str = r##"
+#[cfg(test)]
+mod declared_order_wire {
+    use model_types::*;
+
+    const DECLARED: &str = r#"{"zeta":{"label":"z"},"alpha":"a","mid":{"label":"m"}}"#;
+    const DEFAULT: &str = r#"{"alpha":"a","mid":{"label":"m"},"zeta":{"label":"z"}}"#;
+
+    fn inner(label: &str) -> DemoGInner {
+        DemoGInner { label: label.to_owned() }
+    }
+
+    #[test]
+    fn members_encode_in_declaration_order_and_decode_in_any() {
+        let outer = DemoGOuter { zeta: inner("z"), alpha: "a".to_owned(), mid: EssPresence::Present(inner("m")) };
+        assert_eq!(serde_json::to_string(&outer).unwrap(), DECLARED);
+        let declared: DemoGOuter = serde_json::from_str(DECLARED).unwrap();
+        let default: DemoGOuter = serde_json::from_str(DEFAULT).unwrap();
+        assert_eq!(declared, outer);
+        assert_eq!(default, outer);
+    }
+
+    #[test]
+    fn recursive_types_box_only_the_cycle() {
+        let leaf = || DemoGNode { next: EssPresence::Absent, kids: ::std::vec::Vec::new() };
+        let node = DemoGNode { next: EssPresence::Present(::std::boxed::Box::new(leaf())), kids: vec![leaf(), leaf()] };
+        let holder = DemoGHolder { tree: node };
+        let text = serde_json::to_string(&holder).unwrap();
+        assert_eq!(text, r#"{"tree":{"next":{"kids":[]},"kids":[{"kids":[]},{"kids":[]}]}}"#);
+        assert_eq!(serde_json::from_str::<DemoGHolder>(&text).unwrap(), holder);
+        let a = DemoGA { b: EssPresence::Present(::std::boxed::Box::new(DemoGB { a: EssPresence::Present(::std::boxed::Box::new(DemoGA { b: EssPresence::Absent })) })) };
+        let text = serde_json::to_string(&a).unwrap();
+        assert_eq!(text, r#"{"b":{"a":{}}}"#);
+        assert_eq!(serde_json::from_str::<DemoGA>(&text).unwrap(), a);
+    }
+}
+"##;
+
+/// Without the options: the same value encodes in wire-name order, and both texts decode to it.
+const DEFAULT_ORDER_WIRE: &str = r##"
+#[cfg(test)]
+mod default_order_wire {
+    use model_types::*;
+
+    const DECLARED: &str = r#"{"zeta":{"label":"z"},"alpha":"a","mid":{"label":"m"}}"#;
+    const DEFAULT: &str = r#"{"alpha":"a","mid":{"label":"m"},"zeta":{"label":"z"}}"#;
+
+    #[test]
+    fn members_encode_in_wire_name_order_and_decode_in_any() {
+        let inner = |label: &str| ::std::boxed::Box::new(DemoGInner { label: label.to_owned() });
+        let outer = DemoGOuter { zeta: inner("z"), alpha: "a".to_owned(), mid: EssPresence::Present(inner("m")) };
+        assert_eq!(serde_json::to_string(&outer).unwrap(), DEFAULT);
+        assert_eq!(serde_json::from_str::<DemoGOuter>(DECLARED).unwrap(), outer);
+        assert_eq!(serde_json::from_str::<DemoGOuter>(DEFAULT).unwrap(), outer);
+    }
+}
+"##;
+
+#[test]
+fn declared_order_and_box_only_recursion_build_and_round_trip() {
+    let plan = declaration_order_plan();
+    let default = plan.rust("model_types").unwrap();
+    compile(
+        &default.supporting["Cargo.toml"],
+        &default.declarations,
+        DEFAULT_ORDER_WIRE,
+    );
+    let options = schema_contract::realize::RustOptions {
+        box_only_recursion: true,
+        ..schema_contract::realize::RustOptions::default()
+    };
+    let ordered = plan
+        .with_declared_field_order()
+        .unwrap()
+        .rust_with("model_types", &options)
+        .unwrap();
+    compile(
+        &ordered.supporting["Cargo.toml"],
+        &ordered.declarations,
+        DECLARED_ORDER_WIRE,
+    );
+}
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;

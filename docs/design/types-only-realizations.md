@@ -234,7 +234,9 @@ Go and Rust consume this same plan and preserve wire field names, not the host
 language's default name transformation. Their implementation must include explicit
 presence/nullable representations and open-object storage. Do not claim completion
 using pointers or `Option<T>` that collapse absent and present-null. Recursive values
-need size-breaking indirection. Native numeric storage and union decoding choices
+need size-breaking indirection: by default Rust boxes every reference to a named type and Go
+holds one by pointer; under `--rust-box-only-recursion` Rust boxes only the references that
+close a cycle of by-value fields (below). Native numeric storage and union decoding choices
 must have named target accounting; a first matching untagged alternative does not
 establish external dispatch semantics.
 
@@ -256,7 +258,7 @@ tries typed alternatives from a retained JSON value, preserving unknown data, an
 precision with the default `exact-numbers` feature (binary64 without it); the chosen Rust
 variant does not certify source branch validation.
 
-Three Rust generator options change that output, each off by default, each a command-line
+Rust generator options change that output, each off by default, each a command-line
 flag rather than a specification construct, and each recorded in the report's
 `configuration` only when given, so a run without them writes the bytes it wrote before
 they existed:
@@ -283,6 +285,29 @@ they existed:
   report carries `rust_drop_unknown_members` at each such object in place of
   `open_object_storage`, the obligation the consumer accepted, and the raw-value open-record
   refusals no longer apply to it because it holds no flattened map.
+- `--rust-box-only-recursion` (beyond10x/ess#661) holds a named type by value and boxes a
+  reference only where it closes a cycle. The plan's by-value graph has an edge for every
+  child of a node except array items (a `Vec`) and additional object members (a `BTreeMap`):
+  optional and nullable values, union variants, tuple positions and anonymous objects all
+  count, an anonymous node belonging to the definition that owns it. A reference held by
+  value in definition `D` to `T` is boxed when `T` is `D` or reaches `D` in that graph. So
+  `Optional<Self>` is `EssPresence<Box<Self>>`, `List<Self>` is `Vec<Self>`, both edges of a
+  mutual cycle are boxed, and a reference into a cycle from outside it is held by value.
+
+`--declared-field-order` (beyond10x/ess#661) is a plan option rather than a Rust one: it lists
+a model record's fields in the order the specification declares them in Rust, Go and
+TypeScript, where they are otherwise in wire-name order. `ModelTypes` records each object's
+declared wire names by its schema pointer, from the typed fields of a struct, an event payload
+and a command or view body, before the definitions become a sorted JSON value; the realizer
+reads that table only under the option, and lists a field the table does not name after the
+declared ones, by wire name. A union variant's object has no declared order and keeps
+wire-name order. A bundle carries no declaration order, so `Plan::with_declared_field_order`
+refuses it as `declared_field_order_bundle`. Under the option Rust encodes members in
+declaration order, and a derived `PartialOrd` or `Ord` compares fields in it; decoding accepts
+any order and gives the value the default build gives. Go encodes through a map, so its bytes
+do not move. The report's `configuration` records `declared_field_order` for each language
+when it is given; `source.schema.json` is unchanged.
+
 Fixed prefix tuples become tuple structs. Unsupported native intersections or
 variable prefix layouts refuse explicitly rather than becoming an untyped JSON bag.
 Anonymous native declarations derive names from source identity, not traversal order.

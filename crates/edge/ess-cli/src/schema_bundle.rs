@@ -122,6 +122,10 @@ pub struct TypesArgs {
 }
 
 #[derive(Debug, Args)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each generator option is an independent command-line switch"
+)]
 pub struct TypeOptions {
     /// Data library target. Unsupported language targets are not silently substituted.
     #[arg(long, value_enum)]
@@ -153,6 +157,16 @@ pub struct TypeOptions {
     /// as an obligation the consumer accepted.
     #[arg(long)]
     rust_drop_unknown_members: bool,
+    /// Rust only: hold a named type by value and box a reference only where it closes a cycle of
+    /// by-value fields, such as `Optional<Self>`. A reference inside a `List` or `Map` is not
+    /// boxed.
+    #[arg(long)]
+    rust_box_only_recursion: bool,
+    /// List a model type's fields in the order the specification declares them rather than by
+    /// wire name. Rust then encodes members in that order, and a derived `PartialOrd` or `Ord`
+    /// compares fields in it. A bundle carries no declaration order and is refused.
+    #[arg(long)]
+    declared_field_order: bool,
 }
 
 impl TypeOptions {
@@ -160,6 +174,7 @@ impl TypeOptions {
         let mut options = schema_contract::realize::RustOptions {
             fold_null: self.rust_fold_null,
             drop_unknown_members: self.rust_drop_unknown_members,
+            box_only_recursion: self.rust_box_only_recursion,
             ..Default::default()
         };
         for spelled in &self.rust_derive {
@@ -232,12 +247,23 @@ pub fn type_files(
                 args.rust_drop_unknown_members,
                 "--rust-drop-unknown-members",
             ),
+            (args.rust_box_only_recursion, "--rust-box-only-recursion"),
         ] {
             if given {
                 bail!("{flag} is only supported for the Rust target");
             }
         }
     }
+    let ordered;
+    let plan = if args.declared_field_order {
+        ordered = plan
+            .clone()
+            .with_declared_field_order()
+            .context("--declared-field-order")?;
+        &ordered
+    } else {
+        plan
+    };
     let (declaration_path, realization) = match args.target {
         TypesTarget::Typescript => {
             if args.package.is_some() || args.module.is_some() {
