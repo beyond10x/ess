@@ -680,6 +680,7 @@ fn the_suite_keeps_the_frozen_spelling_of_an_integer_literal() {
 
 /// The committed Rust JSON module, which `ess generate synthesize` writes from this crate.
 #[allow(dead_code, missing_docs, clippy::all, clippy::pedantic)]
+#[rustfmt::skip]
 #[path = "../../../../generated/rust/gatepass/crates/gatepass-server/src/json.rs"]
 mod json;
 
