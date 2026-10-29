@@ -6,12 +6,12 @@ status: draft
 title: grant/denied is synthesized beside a ranked view
 summary: 'Synthesize withholds grant/denied for a command on an existing row when a view of its entity has order_by: the grant template reads the scenario''s last send (#712)'
 tags:
-- ess-batch-7
+- ess-batch-5
 - ess-next
 refs:
 - provider: github
   reference: beyond10x/ess#712
-revision: 3
+revision: 4
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
