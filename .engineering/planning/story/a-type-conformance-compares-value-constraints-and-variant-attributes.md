@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-type-conformance-compares-value-constraints-and-variant-attributes
 kind: story
-status: active
+status: implemented
 title: A type conformance compares value constraints and enum variant attributes
 summary: 'Adopter reports N17/N18: compose compares structure only; invariants, alphabet, prefix and variant attributes drift unseen (ess#671).'
 tags:
@@ -31,10 +31,11 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T11:01:27Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-28T11:01:28Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-29T00:14:05Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
 ## Problem
 

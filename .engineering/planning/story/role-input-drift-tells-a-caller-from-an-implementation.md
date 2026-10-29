@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:role-input-drift-tells-a-caller-from-an-implementation
 kind: story
-status: active
+status: implemented
 title: Role input drift tells a caller from an implementation
 summary: 'Adopter report N12: role_input_drift on a producer sending a subset (ess#666).'
 tags:
@@ -20,10 +20,11 @@ scope:
   path: crates/specify/ess-composition/tests/roles.rs
 - confidence: cited
   path: docs/design/composition-contract-roles.md
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T11:01:29Z", actor: "human:timo", revision: 10}
 - {from: "proposed", to: "active", at: "2026-10-28T11:01:30Z", actor: "human:timo", revision: 11}
+- {from: "active", to: "implemented", at: "2026-10-29T00:14:11Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
 ## Problem
 

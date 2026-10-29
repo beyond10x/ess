@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-distinct-invariant-is-projected-into-its-schema
 kind: story
-status: active
+status: implemented
 title: 'A distinct: invariant is asserted by the schema where JSON Schema says it exactly, and annotated with a documented limit where it cannot'
 summary: distinct over scalars gives uniqueItems; by an enum or Boolean key gives one bounded contains per variant; an open key stays x-ess-invariants
 refs:
@@ -28,10 +28,11 @@ scope:
   path: docs/design/types-only-realizations.md
 - confidence: inferred
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T11:01:21Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-28T11:01:22Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-10-29T00:13:52Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
 ## Fit review
 

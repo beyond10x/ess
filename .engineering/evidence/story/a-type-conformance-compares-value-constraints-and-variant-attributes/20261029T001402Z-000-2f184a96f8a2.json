@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-29T00:14:02Z",
+  "actor": "human:timo",
+  "artifact": "story:a-type-conformance-compares-value-constraints-and-variant-attributes",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ess-composition constraint_conformance, adversary_ess_issues_1_u3 passed; local gate D171 EXIT=0 on d6174f931",
+    "reference": "commit:d6174f931"
+  }
+}

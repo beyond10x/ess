@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:defined-and-not-defined-branches-are-exhaustive
 kind: story
-status: active
+status: implemented
 title: Branches over defined(x) and not defined(x) are proved exhaustive
 summary: 'Adopter report R4: two update branches over one stored Optional field draw ESS-COMMAND-005.'
 tags:
@@ -29,10 +29,11 @@ scope:
   path: docs/design/closed-enum-outcome-coverage.md
 - confidence: cited
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T11:01:24Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-10-28T11:01:24Z", actor: "human:timo", revision: 10}
+- {from: "active", to: "implemented", at: "2026-10-29T00:13:57Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
 ## Report
 

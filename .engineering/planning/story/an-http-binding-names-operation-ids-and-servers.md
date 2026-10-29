@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-http-binding-names-operation-ids-and-servers
 kind: story
-status: active
+status: implemented
 title: An http binding names operation ids and servers
 summary: 'Adopter report S5: HTTP binding has no operation_id and no servers (ess#653).'
 tags:
@@ -34,10 +34,11 @@ scope:
   path: website/docs/guides/http-routes.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T11:01:30Z", actor: "human:timo", revision: 12}
 - {from: "proposed", to: "active", at: "2026-10-28T11:01:31Z", actor: "human:timo", revision: 13}
+- {from: "active", to: "implemented", at: "2026-10-29T00:14:15Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
 ## Problem
 

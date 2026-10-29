@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-binary64-bound-is-projected-as-a-numeric-keyword
 kind: story
-status: active
+status: implemented
 title: A Binary64 bound an invariant states is published as minimum, exclusiveMinimum, maximum or exclusiveMaximum
 summary: Binary64 comparisons with a canonical literal lower to numeric keywords on struct, newtype and entity schemas
 refs:
@@ -24,10 +24,11 @@ scope:
   path: crates/generate/schema-contract/tests/model_ergonomics.rs
 - confidence: cited
   path: docs/design/types-only-realizations.md
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T11:01:18Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-10-28T11:01:19Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-10-29T00:13:48Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
 ## Fit review
 

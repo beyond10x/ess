@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-entity-invariant-is-projected-into-its-schema
 kind: story
-status: active
+status: implemented
 title: An entity's invariants reach its JSON Schema as x-ess-invariants and as the bounds a struct's already get
 summary: Entity documents (schema, OpenAPI x-ess-entities) publish x-ess-invariants and lower Integer comparisons like a struct
 refs:
@@ -29,10 +29,11 @@ scope:
   path: generated/openapi/invoice-service.yaml
 - confidence: cited
   path: website/data/generate.terminal.json
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T11:01:16Z", actor: "human:timo", revision: 7}
 - {from: "proposed", to: "active", at: "2026-10-28T11:01:17Z", actor: "human:timo", revision: 8}
+- {from: "active", to: "implemented", at: "2026-10-29T00:13:45Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
 ## Fit review
 

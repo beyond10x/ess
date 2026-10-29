@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:when-subject-reads-the-addressed-identity
 kind: story
-status: active
+status: implemented
 title: A when_subject on the identity is refused with the idiom that replaces it
 summary: 'Adopter report R3 (#643), declined: ESS-COMMAND-003 names the idiom (drop when_subject, keep unknown_instance: true).'
 tags:
@@ -17,10 +17,11 @@ scope:
   path: crates/specify/ess-domain/tests/subject_guard_input.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/subject_guard_input.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T11:01:22Z", actor: "human:timo", revision: 10}
 - {from: "proposed", to: "active", at: "2026-10-28T11:01:23Z", actor: "human:timo", revision: 11}
+- {from: "active", to: "implemented", at: "2026-10-29T00:13:55Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
 ## Report
 

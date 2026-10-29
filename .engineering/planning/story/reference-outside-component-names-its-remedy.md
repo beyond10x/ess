@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:reference-outside-component-names-its-remedy
 kind: story
-status: active
+status: implemented
 title: Reference outside component names its remedy
 summary: 'Adopter report N11: reference_outside_component has no hint for an unowned domain (ess#665).'
 tags:
@@ -22,10 +22,11 @@ scope:
   path: crates/specify/ess-composition/tests/outside_component.rs
 - confidence: cited
   path: website/docs/reference/diagnostics.md
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T11:01:25Z", actor: "human:timo", revision: 7}
 - {from: "proposed", to: "active", at: "2026-10-28T11:01:25Z", actor: "human:timo", revision: 8}
+- {from: "active", to: "implemented", at: "2026-10-29T00:14:08Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
 ## Problem
 

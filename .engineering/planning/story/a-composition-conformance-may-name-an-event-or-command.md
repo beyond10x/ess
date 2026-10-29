@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-composition-conformance-may-name-an-event-or-command
 kind: story
-status: active
+status: implemented
 title: A composition conformance may name an event or command
 summary: 'Adopter report N10: compose cannot compare events or commands as types (ess#664).'
 tags:
@@ -42,10 +42,11 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T11:01:26Z", actor: "human:timo", revision: 10}
 - {from: "proposed", to: "active", at: "2026-10-28T11:01:27Z", actor: "human:timo", revision: 11}
+- {from: "active", to: "implemented", at: "2026-10-29T00:14:01Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
 ## Problem
 

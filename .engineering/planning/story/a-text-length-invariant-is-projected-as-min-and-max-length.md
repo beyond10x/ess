@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-text-length-invariant-is-projected-as-min-and-max-length
 kind: story
-status: active
+status: implemented
 title: A text-length invariant (.count against a literal) is published as minLength and maxLength
 summary: value.count and field.count bounds on a String lower to minLength and maxLength; utf8_bytes stays an annotation
 refs:
@@ -31,10 +31,11 @@ scope:
   path: docs/design/types-only-realizations.md
 - confidence: inferred
   path: website/docs/guides/specify/fields-and-invariants.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-28T11:01:20Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-10-28T11:01:20Z", actor: "human:timo", revision: 10}
+- {from: "active", to: "implemented", at: "2026-10-29T00:13:50Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, executor: "agent:ess-issues-lead", correlation: "ess-issues-1"}
 ---
 ## Fit review
 

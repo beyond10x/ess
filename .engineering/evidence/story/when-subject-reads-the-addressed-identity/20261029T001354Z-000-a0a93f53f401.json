@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-29T00:13:54Z",
+  "actor": "human:timo",
+  "artifact": "story:when-subject-reads-the-addressed-identity",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ess-domain subject_guard_input, adversary_ess_issues_1_u2 passed; local gate D171 EXIT=0 on d6174f931",
+    "reference": "commit:d6174f931"
+  }
+}

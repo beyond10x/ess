@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-29T00:14:09Z",
+  "actor": "human:timo",
+  "artifact": "story:role-input-drift-tells-a-caller-from-an-implementation",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ess-composition roles (an_implementation_missing_a_contract_input_drifts); ess-cli compose_roles passed; local gate D171 EXIT=0 on d6174f931",
+    "reference": "commit:d6174f931"
+  }
+}
