@@ -8,7 +8,7 @@ summary: Generated Rust obligation contracts omit view order_by, misprint an emp
 tags:
 - ess-batch-7
 - ess-next
-revision: 3
+revision: 4
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -73,7 +73,8 @@ obligation from the contract that `ess generate synthesize --target rust` writes
    `any_of: [""]`. As printed, the guard reads as one that never holds. The contract also leaves out
    that input-guarded refusals answer before not-found and wrong-state, though the suite pins that
    order.
-3. `trimmed` strips ASCII whitespace only, and the contract does not say so. A synthesized outcome
-   scenario sends `"  "`-like input with a non-ASCII space and expects acceptance, while Rust's
-   `str::trim` treats it as empty. An authored scenario for the no-break-space case is refused with
+3. `trimmed` strips ASCII whitespace only, and the contract does not say so. As reported: "A synthesized
+   outcome scenario sends "  " and expects acceptance, while Rust `str::trim` treats the same input
+   as empty." Which space characters the input holds is not clear from the report; the fit review
+   confirms it. An authored scenario for the no-break-space case is refused with
    ESS-AUTHOR-041.
