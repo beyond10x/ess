@@ -6,9 +6,10 @@ status: draft
 title: A form with an empty required input sends no command
 summary: Neither renderer enforces required command inputs, and ess-ui-test has no step asserting that no command was sent (0.77.0)
 tags:
+- ess-batch-4
 - ess-next
 - ess-ui
-revision: 3
+revision: 4
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status

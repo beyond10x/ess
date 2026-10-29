@@ -6,9 +6,10 @@ status: draft
 title: A record action in the terminal renderer sees its row
 summary: 'ess-ui-tui leaves row out of scope: a row.<key> bind sends null and a row-guarded action does not act; React differs (0.77.0)'
 tags:
+- ess-batch-4
 - ess-next
 - ess-ui
-revision: 3
+revision: 4
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status

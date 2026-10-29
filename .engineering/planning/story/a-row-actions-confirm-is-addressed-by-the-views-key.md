@@ -6,9 +6,10 @@ status: draft
 title: A row action's inline confirm is addressed by the view's key
 summary: ess-ui-tui addresses row confirms by live.match or id and ignores reads.key, so a view without id cannot reach its open confirm (0.77.0)
 tags:
+- ess-batch-5
 - ess-next
 - ess-ui
-revision: 3
+revision: 4
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status

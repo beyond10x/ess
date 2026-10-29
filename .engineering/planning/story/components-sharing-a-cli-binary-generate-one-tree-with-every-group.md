@@ -6,8 +6,9 @@ status: draft
 title: Components sharing a CLI binary generate one tree with every group
 summary: clap synthesis keeps only the last component group when several components declare the same binary; validate passes it (0.77.0)
 tags:
+- ess-batch-4
 - ess-next
-revision: 3
+revision: 4
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status

@@ -6,9 +6,10 @@ status: draft
 title: UI component diagnostics cite their own view and reader
 summary: ESS-COMPONENT-005 cites one file:line for every unplaced view; overlay_params flags a parameter only the submission reads (0.77.0)
 tags:
+- ess-batch-5
 - ess-next
 - ess-ui
-revision: 3
+revision: 4
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
