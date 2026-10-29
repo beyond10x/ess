@@ -57,6 +57,10 @@ pub const DOCS: &str = "/docs";
 /// ([`Binding::servable`]).
 pub const RESERVED: [&str; 2] = [OPENAPI, DOCS];
 
+/// The `Content-Type` a served answer writes for an outcome an `ess-http/1` binding answers
+/// `encoding: text`: the string field's value alone, UTF-8.
+pub const TEXT_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
+
 /// Whether a request for the concrete `path` would match a route whose template is `segments`: as
 /// many segments, each literal equal and each variable taking whatever is there. The overlap rule
 /// of `ESS-HTTP-011`, with one side a path rather than a template.

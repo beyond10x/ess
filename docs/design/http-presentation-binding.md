@@ -329,6 +329,18 @@ A bare body carries no `outcome` and no `published`. A caller of such a route se
 through status, body shape and headers, and sees no published event. That is what the protocol
 says, and stage 3 counts what it costs.
 
+An outcome's `encoding` says how its body is written:
+
+| `encoding` | for | wire |
+|---|---|---|
+| `json` (default) | any body | the body as JSON, `application/json` |
+| `text` | `response.<field>` naming a `String` field (a newtype of one counts) | the string alone, its UTF-8 bytes, `Content-Type: text/plain; charset=utf-8`; `OpenAPI` writes the field's schema under `text/plain` |
+
+`text` beside any other body, on a field of another type, or under `errors` is refused
+(`ESS-HTTP-024`), as is any word but `json` and `text`. Compiled IR writes `encoding` only when it
+is `text`. An adopter asked for a token endpoint that answers a bare string
+(`story:ess-http-admits-text-bodies-route-refusals-empty-bodies-and-array-views`).
+
 ### Status per outcome
 
 `status` is an integer. An outcome the binding does not list keeps `outcome_status`
@@ -351,7 +363,26 @@ says, and stage 3 counts what it costs.
   `invalid_scope` on one `302`, both `parameters: {error: error.wire}`, compile, and two outcomes
   reporting one error do not. Two redirects whose always-written names are equal, or where each
   always-written name of one is one the other may write, are otherwise refused. Otherwise a reader,
-  and the stage-3 target, cannot say which branch was taken.
+  and the stage-3 target, cannot say which branch was taken. Two outcomes the route declares
+  `alike` (below) are not such a pair.
+
+A command route may declare outcomes the service answers the same way `alike`: a list of groups,
+each of two or more of the command's outcome names, such as `alike: [[fetched, inline]]`. Each
+member keeps its own declared answer and states its own status (answer 16); the group says the
+caller is not meant to tell them apart. Every member needs a declared answer, listed under
+`outcomes:` or covered by `errors:`, and the members' answers must be equal: `status`, `body`,
+`encoding`, `headers` and `redirect`. A group whose answers differ is refused, naming the first
+key that differs, and so is one the wire already tells apart: `envelope` bodies (the `outcome`
+member names the branch), `{<member>: error}` bodies under distinct error wire names, or
+redirects one of which always writes a parameter the other never does (`ESS-HTTP-025`). An
+unknown name, a name in two groups or twice in one, a group of one, a name with no declared
+answer, and `alike` on a view are refused (`ESS-HTTP-022`). Compiled IR writes `alike` only when
+present, each group's names in name order and the groups in the order of their first names.
+`OpenAPI` writes one response for the status, `x-ess-outcomes` naming every member, and one
+schema for the group where a `oneOf` would hold equal ones. An upsert whose `created` and
+`replaced` both answer `200` with the stored resource is the case an adopter asked for
+(`story:two-outcomes-answered-alike-may-share-a-status-and-body`); a success and an error may be
+alike only on a status both may answer, a redirect.
 
 A command route may also carry `errors:`, one answer (`status`, `body`, `headers`, `redirect`, the
 keys of a listed outcome) for every outcome with `error` it does not list under `outcomes:`. It
@@ -424,10 +455,10 @@ keeps today's answer.
 |---|---|---|
 | `ESS-HTTP-020` | an encoding outside the set; `form` or `json` on `get`; `query` on anything but `get` or `delete`; `request:` on a view; `unknown: ignore` with `json`, or an `unknown` value outside `refuse` and `ignore` | `routes[i].request.encoding` or `routes[i].request.unknown` |
 | `ESS-HTTP-021` | a `form` or `query` field whose type has no flat spelling (struct, nested list, map, `Json`) | the field and its type |
-| `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view; `errors:` on a view, or on a route whose command has no outcome with `error` that `outcomes:` leaves unlisted | `routes[i].outcomes.<name>` or `routes[i].errors` |
+| `ESS-HTTP-022` | an `outcomes:` key that is not an outcome of the command, or `outcomes:` on a view; `errors:` on a view, or on a route whose command has no outcome with `error` that `outcomes:` leaves unlisted; `alike:` on a view, or a group of one, a name that is not an outcome of the command, one in two groups or twice in one, or one with no declared answer | `routes[i].outcomes.<name>`, `routes[i].errors` or `routes[i].alike` |
 | `ESS-HTTP-023` | a status outside `100..=599`, in a class the outcome may not use, or a `3xx` other than `301`, `302`, `303`, `307` and `308` | the outcome, the status, the class |
-| `ESS-HTTP-024` | a body form not admitted for the outcome or operation: `response` or `response.<field>` on an outcome without `returns: true` or with `error`, and so under `errors`; `response.<field>` naming no response field or an `Optional` one, or a source other than `response.<field>` as a body; `{…: error}` without `error`; `{…: {literal: …}}` on an outcome; a body other than `none` on `204` or beside a `redirect`; `single` or `rows` on a command, or an outcome form on a view; `single` on a paged view; a `<member>` that is empty or equals the wire name of one of the error's fields | the outcome (or `routes[i].body`) and the form |
-| `ESS-HTTP-025` | two outcomes on one status that the bodies cannot tell apart, an unlisted outcome counted at its derived status with `envelope`, unless both declare a `redirect` and one always writes (its source not `Optional`) a parameter name the other never writes, or both write one parameter name from `error.wire` with distinct error wire names; a `refusals:` override on a route the binding names, on the status of an outcome of its command, with a body that does not tell the two apart (answer 24) | both outcomes and the status (for an override, `refusals.<key>`, the route and the outcomes) |
+| `ESS-HTTP-024` | a body form not admitted for the outcome or operation: `response` or `response.<field>` on an outcome without `returns: true` or with `error`, and so under `errors`; `response.<field>` naming no response field or an `Optional` one, or a source other than `response.<field>` as a body; `{…: error}` without `error`; `{…: {literal: …}}` on an outcome; a body other than `none` on `204` or beside a `redirect`; `single` or `rows` on a command, or an outcome form on a view; `single` on a paged view; a `<member>` that is empty or equals the wire name of one of the error's fields; an `encoding` other than `json` and `text`, or `text` beside any body but `response.<field>`, on a field that is not a `String`, or under `errors` | the outcome (or `routes[i].body`) and the form, or `….encoding` |
+| `ESS-HTTP-025` | two outcomes on one status that the bodies cannot tell apart, an unlisted outcome counted at its derived status with `envelope`, unless both declare a `redirect` and one always writes (its source not `Optional`) a parameter name the other never writes, or both write one parameter name from `error.wire` with distinct error wire names; a `refusals:` override on a route the binding names, on the status of an outcome of its command, with a body that does not tell the two apart (answer 24); an `alike:` group whose answers differ, or that the wire tells apart (`envelope` bodies, error objects under distinct wire names, redirects told apart as above); two outcomes in one group are never a pair | both outcomes and the status (for an override, `refusals.<key>`, the route and the outcomes; for a group, `routes[i].alike`, the group and the first key that differs) |
 | `ESS-HTTP-026` | a header name that is not a token, a header the server (`Connection`), the encoding (`Content-Type`, `Content-Encoding`, `Content-Length`, `Transfer-Encoding`) or `redirect` (`Location`) owns, a literal that is not a field value, `error.wire` whose wire name is not a field value, a header declared twice ignoring case, a source that names no field or names a non-scalar, a source the outcome cannot supply (`response.` without `returns: true`, `error.` without `error`), `error.wire` on an outcome whose error declares a field named `wire`, or any `source` in a `refusals:` header | the header and the source |
 | `ESS-HTTP-027` | a challenge whose scheme or param name is not a token, a param declared twice, a literal param or a param reading `error.wire` whose text no quoted string carries, a challenge under any header but `WWW-Authenticate`, or a declared `401` (outcome or refusal) without a `WWW-Authenticate` challenge | the header, the param |
 | `ESS-HTTP-028` | `redirect` without a `3xx` status, a `3xx` without `redirect`, a `location` that is not a `String` or a newtype of `String`, or is `Optional`, or that reads `error.wire`; a `mode` absent or outside the set, a parameter name that is not one or more RFC 3986 `unreserved` characters, a parameter declared twice, a parameter source that names no field, names a non-scalar or that the outcome cannot supply | the outcome and the key |
@@ -480,7 +511,9 @@ same bytes.
 | `routes[].outcomes.<outcome>` | an object per listed outcome of the command, keyed by its local name | absent: the outcome keeps `outcome_status` and `envelope` | k2 |
 | `routes[].outcomes.<outcome>.status` | an integer; **required** in a listed outcome | always written | k2 |
 | `routes[].outcomes.<outcome>.body` | `envelope`, `response`, `response.<field>`, `none`, `{<member>: error}` | `envelope`, omitted | k2; `response.<field>` 0.69.0 |
+| `routes[].outcomes.<outcome>.encoding` | `json`, `text` (with `response.<field>` naming a `String` field) | `json`, omitted | 0.77.0 |
 | `routes[].errors` | one answer with the keys of a listed outcome, for every outcome with `error` the route does not list | absent, omitted | 0.69.0 |
+| `routes[].alike` | a list of groups, each two or more outcome names of the command whose declared answers are equal ("Status per outcome") | absent, omitted; each group in name order, the groups in the order of their first names | 0.77.0 |
 | `routes[].body` (view route) | `rows`, `single` | `rows`, omitted | k2 |
 | `routes[].empty.status` (view route) | an integer, `4xx`; **required** with `single`, and the only key of `empty` | written with `single` | k2 |
 | `refusals.<key>` | `malformed`, `not_granted`, `unfinished` | absent: today's answer | k2 |
@@ -674,7 +707,11 @@ ess verify conform run --path MODEL --target http --http server-http.yaml \
 
 - **Command.** Encode the input per the route, send it to the declared method and path, and map
   status, body and headers back to the outcome. Stage 2's distinguishability rule
-  (`ESS-HTTP-025`) is what makes that mapping total.
+  (`ESS-HTTP-025`) is what makes that mapping total. An answer a route declares `alike` maps to
+  the set of its group's outcomes, not to one: a scenario expecting any outcome of the set passes,
+  and the report says which outcomes the wire did not tell apart. No HTTP conformance target
+  exists yet, so this is the design, and the two generated servers' tests carry the proof that
+  both outcomes are answered alike.
 - **View.** Send the parameters as path segments and a query string, and read `rows` or `single`.
 - **What a bare body cannot show.** Events a branch published, and a response the protocol does
   not return. A scenario that asserts one of these is counted as unobservable on this target, not as
@@ -689,7 +726,8 @@ Formats: the `ess-conformance/*` documents do not change. `--target` gains one v
 
 - The `http:` key on a command or view in `ess/N`. The binding replaces it.
 - Any key in `ess/N`, `ess-realization` or `ess-transport` that carries a route.
-- Non-JSON response bodies, and partial-segment path templates, in `ess-http/1`.
+- Non-JSON response bodies in `ess-http/1`, except one: a `String` response field answered
+  `encoding: text` ("Response body per outcome"). Partial-segment path templates.
 - `--http` with an artifact that cannot honour it: `ess ui`, the clap, web and TypeScript targets,
   and any `--kind` other than `openapi`. Each refuses it by name rather than ignoring it.
 - Authentication: the binding states a status and a challenge, not how a caller proves who it is.

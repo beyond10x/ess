@@ -13,6 +13,7 @@ use std::fmt::Write as _;
 use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedComponent, ResolvedField, ResolvedView};
 use ess_gen::ess_http::{
     self, AnswerSource, Body, Encoding, Header, Param, RedirectMode, RefusalBody, RefusalKey,
+    ResponseEncoding,
 };
 use ess_gen::http::{self, Served};
 
@@ -1361,6 +1362,41 @@ fn outcome_answer(
     out.push_str("\t}\n\treturn nil, nil\n}\n");
 }
 
+/// The answer of an outcome whose body is one response `field`, bare: as JSON, or with
+/// `encoding: text` its string value alone, read into `bodyText` by a line pushed onto `arm`.
+fn field_answer(
+    command: &ResolvedCommand,
+    field: &str,
+    declared: &ess_http::Outcome,
+    arm: &mut String,
+) -> String {
+    let status = declared.status;
+    let wire = command
+        .response
+        .iter()
+        .find(|declared| declared.name == field)
+        .map_or(field, ess_gen::schema::wire_field_name);
+    if declared.encoding == ResponseEncoding::Text {
+        // The media type is written inline rather than as a constant beside `mediaJSON`, so a
+        // server whose binding answers no text keeps its bytes.
+        let _ = writeln!(
+            arm,
+            "\t\tbodyText, _ := memberOf(reply, {}).(string)",
+            go_string(wire)
+        );
+        format!(
+            "response{{status: {status}, contentType: {}, body: bodyText}}",
+            go_string(http::TEXT_CONTENT_TYPE)
+        )
+    } else {
+        format!(
+            "response{{status: {status}, contentType: mediaJSON, body: bare(memberOf(reply, \
+             {}))}}",
+            go_string(wire)
+        )
+    }
+}
+
 /// One listed outcome's arm of `declared*`: its body, its headers and its redirect, as Go
 /// statements building `answer`.
 fn outcome_arm(
@@ -1372,6 +1408,7 @@ fn outcome_arm(
     let error = outcome.error.as_ref().map(|handle| ir.error(handle));
     let wire_name = error.map(|error| error.naming.wire_or(&error.name).to_owned());
     let status = declared.status;
+    let mut arm = String::new();
     let body = match &declared.body {
         Body::Envelope => {
             format!("response{{status: {status}, contentType: mediaJSON, body: envelope}}")
@@ -1379,18 +1416,7 @@ fn outcome_arm(
         Body::Response => {
             format!("response{{status: {status}, contentType: mediaJSON, body: bare(reply)}}")
         }
-        Body::ResponseField(field) => {
-            let wire = command
-                .response
-                .iter()
-                .find(|declared| declared.name == *field)
-                .map_or(field.as_str(), ess_gen::schema::wire_field_name);
-            format!(
-                "response{{status: {status}, contentType: mediaJSON, body: \
-                 bare(memberOf(reply, {}))}}",
-                go_string(wire)
-            )
-        }
+        Body::ResponseField(field) => field_answer(command, field, declared, &mut arm),
         Body::None => format!("response{{status: {status}}}"),
         Body::Error { member } => format!(
             "response{{status: {status}, contentType: mediaJSON, body: errorObject({}, {}, \
@@ -1399,7 +1425,7 @@ fn outcome_arm(
             go_string(wire_name.as_deref().unwrap_or_default())
         ),
     };
-    let mut arm = format!("\t\tanswer := {body}\n");
+    let _ = writeln!(arm, "\t\tanswer := {body}");
     let text = |source: &AnswerSource| source_text(command, error, wire_name.as_deref(), source);
     for (name, header) in &declared.headers {
         let name = go_string(name);

@@ -22,6 +22,7 @@ use std::fmt::Write as _;
 use ess_compiler::ir::{ResolvedCommand, ResolvedField, ResolvedView};
 use ess_gen::ess_http::{
     self, AnswerSource, Body, Encoding, Header, Param, RedirectMode, RefusalBody, RefusalKey,
+    ResponseEncoding,
 };
 use ess_gen::http::{self, Served};
 
@@ -973,6 +974,16 @@ fn outcome_arm(
         Body::Response => {
             format!("http::Response::new({status}, http::JSON, http::bare(response))")
         }
+        // A string field answered `encoding: text`: its value alone, not JSON. The media type is
+        // written inline rather than as a constant beside `JSON`, so a server whose binding
+        // answers no text keeps its bytes.
+        Body::ResponseField(field) if declared.encoding == ResponseEncoding::Text => format!(
+            "http::Response::new({status}, {:?}, match response.and_then(|response| \
+             response.member({:?})) {{ Some(crate::json::Value::Text(text)) => text.clone(), _ => \
+             String::new() }})",
+            http::TEXT_CONTENT_TYPE,
+            response_wire(command, field)
+        ),
         Body::ResponseField(field) => format!(
             "http::Response::new({status}, http::JSON, http::bare(response.and_then(|response| \
              response.member({:?}))))",

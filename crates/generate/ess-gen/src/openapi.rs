@@ -213,6 +213,8 @@
 //! | `outcomes.<o>.status` | the outcome is answered under that status instead of the derived one |
 //! | `body: response` | the command's `{command}.Result`, bare: no `outcome`, no `published` |
 //! | `body: response.<field>` | `{command}.{outcome}.Response` is that response field's schema alone |
+//! | `encoding: text` | that schema is written under `text/plain` instead of `application/json` |
+//! | `alike` | a group's members share one response at their status, `x-ess-outcomes` naming each, with one schema, the first member's, where a `oneOf` would hold equal ones |
 //! | `errors` | each outcome with `error` the route does not list is described as if listed with that answer |
 //! | `body: {<member>: error}` | `{command}.{outcome}.Response` is the error object: `<member>` a `const` of the error's wire name beside the error's fields; two on one status are told apart by a discriminator on `<member>` |
 //! | `body: none` | no content |
@@ -260,6 +262,10 @@ const VERSION: &str = "3.1.0";
 /// The one media type. The model describes payloads as typed fields, and nothing in it selects an
 /// encoding, so there is exactly one and it is the one every other projection here uses.
 const MEDIA_TYPE: &str = "application/json";
+
+/// The response media type of an outcome an `ess-http/1` binding answers `encoding: text`: one
+/// string field, its value alone, and only because a binding says so.
+const TEXT_MEDIA_TYPE: &str = "text/plain";
 
 /// The request media type of an `ess-http/1` route encoded `form` (RFC 6749 §4.1.3, Appendix B):
 /// the only place a request is not [`MEDIA_TYPE`], and only because a binding says so.
@@ -1274,10 +1280,12 @@ enum Answer<'a> {
 }
 
 /// One `oneOf` member of a response, and what tells it apart from the others where a
-/// discriminator can: the property, its value and the member's pointer.
+/// discriminator can: the property, its value and the member's pointer. `text` holds a string
+/// field an outcome answers `encoding: text`, written under [`TEXT_MEDIA_TYPE`].
 struct Member {
     schema: Value,
     discriminated: Option<(String, String, String)>,
+    text: bool,
 }
 
 /// One response per status a command whose route an `ess-http/1` binding answers its own way
@@ -1343,7 +1351,7 @@ fn bound_responses(
     by_status
         .into_iter()
         .map(|(status, answers)| {
-            let response = bound_response(ir, Some(command), &status, &answers, true);
+            let response = bound_response(ir, Some(command), &status, &answers, true, &route.alike);
             (status, response)
         })
         .collect()
@@ -1402,7 +1410,7 @@ fn bound_view_responses<'a>(
     by_status
         .into_iter()
         .map(|(status, answers)| {
-            let response = bound_response(ir, None, &status, &answers, false);
+            let response = bound_response(ir, None, &status, &answers, false, &[]);
             (status, response)
         })
         .collect()
@@ -1426,6 +1434,7 @@ impl Rendered {
             member: schema.map(|schema| Member {
                 schema,
                 discriminated: None,
+                text: false,
             }),
             label: String::new(),
             headers: BTreeMap::new(),
@@ -1442,23 +1451,53 @@ impl Rendered {
 /// `outcome` between envelopes, `<member>` between error objects. A standard refusal's body
 /// beside them is told apart by its own closed members, and the discriminator is then left out,
 /// because `OpenAPI` reads one only over pointers.
+///
+/// Outcomes a route declares `alike` answer one body, so a group is one member, its first
+/// outcome's, and the description says the answer does not tell them apart. A body answered
+/// `encoding: text` is written under its own media type.
 fn bound_response(
     ir: &EssIr,
     command: Option<&ResolvedCommand>,
     status: &str,
     answers: &[Answer<'_>],
     outcomes: bool,
+    alike: &[Vec<String>],
 ) -> Response {
     let mut members: Vec<Member> = Vec::new();
     let mut headers: Vec<(String, BTreeMap<String, HeaderDoc>)> = Vec::new();
     let mut unlisted: Vec<String> = Vec::new();
     let mut sentences: Vec<String> = Vec::new();
+    // The groups of outcomes declared alike whose one body is already a member.
+    let mut written_groups: Vec<usize> = Vec::new();
     for answer in answers {
         let rendered = rendered(ir, command, status, answer);
-        members.extend(rendered.member);
+        let group = match answer {
+            Answer::Outcome(outcome, Some(_)) => alike
+                .iter()
+                .position(|group| group.iter().any(|name| *name == outcome.name.as_str())),
+            _ => None,
+        };
+        match group {
+            Some(group) if written_groups.contains(&group) => {}
+            Some(group) => {
+                written_groups.push(group);
+                members.extend(rendered.member);
+            }
+            None => members.extend(rendered.member),
+        }
         headers.push((rendered.label, rendered.headers));
         sentences.extend(rendered.sentence);
         unlisted.extend(rendered.unlisted);
+    }
+    for group in written_groups {
+        let named: Vec<String> = alike[group]
+            .iter()
+            .map(|name| format!("`{name}`"))
+            .collect();
+        sentences.push(format!(
+            "Outcomes {} are declared alike: one answer, which does not tell them apart.",
+            list(&named)
+        ));
     }
     if !unlisted.is_empty() {
         sentences.insert(
@@ -1478,7 +1517,7 @@ fn bound_response(
     Response {
         description: sentences.join(" "),
         headers: merged_headers(headers),
-        content: one_of(members).map(content),
+        content: by_media_type(members),
         outcomes: outcomes.then(|| {
             answers
                 .iter()
@@ -1515,6 +1554,7 @@ fn rendered(
                         "properties": {member: {"type": "string", "const": text}},
                     }),
                     discriminated: None,
+                    text: false,
                 }),
             },
             label: format!("the `{key}` refusal"),
@@ -1585,14 +1625,17 @@ fn rendered_outcome(
         ess_http::Body::Envelope => Some(Member {
             schema: json!({"$ref": key}),
             discriminated: Some((OUTCOME.to_owned(), outcome.name.to_string(), key)),
+            text: false,
         }),
         ess_http::Body::Response => Some(Member {
             schema: json!({"$ref": reference(&format!("{}.Result", command.name))}),
             discriminated: None,
+            text: false,
         }),
         ess_http::Body::ResponseField(_) => Some(Member {
             schema: json!({"$ref": key}),
             discriminated: None,
+            text: listed.is_some_and(|listed| listed.encoding == ess_http::ResponseEncoding::Text),
         }),
         ess_http::Body::Error { member } => Some(Member {
             schema: json!({"$ref": key}),
@@ -1604,6 +1647,7 @@ fn rendered_outcome(
                     key,
                 )
             }),
+            text: false,
         }),
         ess_http::Body::None => None,
     };
@@ -1623,6 +1667,20 @@ fn rendered_outcome(
         sentence: listed.map(|listed| listed_sentence(ir, outcome, listed, status)),
         unlisted: listed.is_none().then(|| format!("`{}`", outcome.name)),
     }
+}
+
+/// The content of a response whose answers have these bodies: none, or one media type per
+/// encoding they are written in, each holding [`one_of`] its members.
+fn by_media_type(members: Vec<Member>) -> Option<BTreeMap<String, MediaType>> {
+    let (text, json): (Vec<Member>, Vec<Member>) =
+        members.into_iter().partition(|member| member.text);
+    let mut out = BTreeMap::new();
+    for (media_type, members) in [(MEDIA_TYPE, json), (TEXT_MEDIA_TYPE, text)] {
+        if let Some(schema) = one_of(members) {
+            out.extend(content_as(media_type, schema));
+        }
+    }
+    (!out.is_empty()).then_some(out)
 }
 
 /// The schema of a response whose answers have these bodies: none, one, or a `oneOf` of them.
@@ -1682,6 +1740,14 @@ fn listed_sentence(
         ess_http::Body::Response => "the command's response, bare: no `outcome` names the branch \
                                      and no `published` lists what it published."
             .to_owned(),
+        ess_http::Body::ResponseField(field)
+            if listed.encoding == ess_http::ResponseEncoding::Text =>
+        {
+            format!(
+                "the command's response field `{field}` as text: the string alone, \
+                 `{TEXT_MEDIA_TYPE}`, not JSON."
+            )
+        }
         ess_http::Body::ResponseField(field) => format!(
             "the command's response field `{field}`, bare: its value alone, with no object around \
              it."

@@ -613,12 +613,88 @@ pub struct OutcomeSpec {
     /// The body; absent, `envelope`.
     #[serde(default)]
     pub body: Option<BodySpec>,
+    /// How the body is written, `json` or `text`, as written. Read as text so that one outside the
+    /// set is refused with a code and a path (`ESS-HTTP-024`) rather than as a parse error; absent,
+    /// `json`.
+    #[serde(default)]
+    pub encoding: Option<String>,
     /// Response headers by name, as written; absent, none.
     #[serde(default)]
     pub headers: Option<Entries<HeaderSpec>>,
     /// Where a `3xx` outcome sends the caller; required on one, refused on any other.
     #[serde(default)]
     pub redirect: Option<RedirectSpec>,
+}
+
+/// How a declared outcome writes its body (`docs/design/http-presentation-binding.md`, "Response
+/// body per outcome"); `json` is the default and compiled IR omits it.
+///
+/// Declared in the order the format lists them.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ResponseEncoding {
+    /// `application/json`, ESS's own: every body form.
+    #[default]
+    Json,
+    /// `text/plain; charset=utf-8`: the characters of one `String` response field, unquoted. Only
+    /// a `response.<field>` body whose field is a `String` or a newtype of one is written so.
+    Text,
+}
+
+impl ResponseEncoding {
+    /// Every encoding, in the order the format lists them.
+    pub const ALL: [Self; 2] = [Self::Json, Self::Text];
+
+    /// The encoding as a binding spells it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Json => "json",
+            Self::Text => "text",
+        }
+    }
+
+    /// The encoding a binding spells `text`, if it is one: exactly, in lower case.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|encoding| encoding.as_str() == text)
+    }
+
+    // `skip_serializing_if` passes the field by reference.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+impl fmt::Display for ResponseEncoding {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Reads an outcome's `encoding` of compiled IR, refusing `json` written out: compiled IR omits it.
+fn omitted_json<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<ResponseEncoding, D::Error> {
+    let encoding = <ResponseEncoding as serde::Deserialize>::deserialize(deserializer)?;
+    if encoding.is_default() {
+        return Err(serde::de::Error::custom(
+            "an outcome's `encoding` is `json`, its default, which compiled IR omits",
+        ));
+    }
+    Ok(encoding)
 }
 
 /// One listed outcome, compiled.
@@ -634,6 +710,14 @@ pub struct Outcome {
         deserialize_with = "omitted_envelope"
     )]
     pub body: Body,
+    /// How the body is written; omitted when it is `json`. `text` only beside a
+    /// `response.<field>` body.
+    #[serde(
+        default,
+        skip_serializing_if = "ResponseEncoding::is_default",
+        deserialize_with = "omitted_json"
+    )]
+    pub encoding: ResponseEncoding,
     /// Response headers by name, in name order, each name as authored. Omitted when empty.
     #[serde(
         default,
@@ -1273,6 +1357,20 @@ fn canonical_outcomes<'de, D: serde::Deserializer<'de>>(
     canonical_map(deserializer, "outcomes")
 }
 
+/// Reads a route's `alike` of compiled IR, refusing it written empty: compiled IR omits it. The
+/// order of its groups and names is [`answer_invariants`]' to check.
+fn canonical_alike<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Vec<String>>, D::Error> {
+    let groups = <Vec<Vec<String>> as serde::Deserialize>::deserialize(deserializer)?;
+    if groups.is_empty() {
+        return Err(serde::de::Error::custom(
+            "`alike` is empty; compiled IR omits a route's `alike` when it holds no group",
+        ));
+    }
+    Ok(groups)
+}
+
 fn canonical_refusals<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<BTreeMap<RefusalKey, Refusal>, D::Error> {
@@ -1379,6 +1477,10 @@ pub struct RouteSpec {
     /// `outcomes`, as if listed under each; absent, each keeps its derived status and the envelope.
     #[serde(default)]
     pub errors: Option<OutcomeSpec>,
+    /// Groups of a command's outcomes the route answers alike, each two or more local names of
+    /// outcomes with one declared answer, so that the wire need not tell them apart; absent, none.
+    #[serde(default)]
+    pub alike: Option<Vec<Vec<String>>>,
     /// A view route's body, `rows` or `single`; absent, `rows`.
     #[serde(default)]
     pub body: Option<BodySpec>,
@@ -1922,6 +2024,15 @@ pub struct Route {
     /// outcome keeps its derived status and the envelope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub errors: Option<Outcome>,
+    /// The groups of a command's outcomes the route answers alike: each two or more local names in
+    /// name order, every one with one declared answer, the groups ordered by their first name.
+    /// Absent when empty, and always absent on a view.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "canonical_alike"
+    )]
+    pub alike: Vec<Vec<String>>,
     /// A view route's body. Absent when it is `rows`, and always absent on a command.
     #[serde(
         default,
@@ -2074,7 +2185,11 @@ impl HttpIr {
     /// beside `json`; `outcomes` on a view, or `body` or `empty` on a command; `outcomes` or `refusals` out of key
     /// order or empty; an outcome status outside `100..=599`, a `1xx` or a `3xx` other than the
     /// [`REDIRECTS`]; an outcome body that is `envelope` written out, a literal, a view's body, an
-    /// error object under an empty member, or anything but `none` on `204`; a view body `rows`
+    /// error object under an empty member, or anything but `none` on `204`; an outcome `encoding`
+    /// `json` written out, or `text` beside any body but `response.<field>`; `alike` on a view,
+    /// written empty, a group of fewer than two names, a name in two groups or twice, names out of
+    /// name order or groups out of the order of their first names, a name no listed outcome or
+    /// `errors` answers, or a group whose answers differ or hold an `envelope`; a view body `rows`
     /// written out, `single` without `empty` or `empty` without `single`, or an `empty` status
     /// outside `4xx`; a refusal key outside `malformed`, `not_granted` and `unfinished`, a refusal
     /// status outside its class (`4xx`, `4xx`, `5xx`), or a refusal body other than `none` or one
@@ -2099,7 +2214,9 @@ impl HttpIr {
     ///
     /// What needs the specification is not checked: that each operation, field and outcome exists,
     /// its type, the `get` input, an outcome's status class and body against its error and
-    /// `returns`, the distinguishability of outcomes and overridden refusals on one status, a
+    /// `returns`, whether a `text` field is a `String`, whether an `alike` name is an outcome of
+    /// the command and whether error objects alike share one wire name, the distinguishability of
+    /// outcomes and overridden refusals on one status, a
     /// `single` view's identity selection and paging, whether the outcome supplies each header,
     /// param and redirect source and its type, and collisions on each component's surface.
     /// A reader that needs those compiles the authored binding instead.
@@ -2345,6 +2462,12 @@ fn answer_invariants(route: &Route, at: &str) -> Result<(), String> {
                     route.operation
                 ));
             }
+            if !route.alike.is_empty() {
+                return Err(format!(
+                    "`{at}.alike` is on {}; a view has no outcomes to answer alike",
+                    route.operation
+                ));
+            }
             match (route.body, route.empty) {
                 (ViewBody::Single, None) => Err(format!(
                     "`{at}.body` is `single`, and `{at}.empty` is missing; compiled IR writes \
@@ -2395,17 +2518,92 @@ fn answer_invariants(route: &Route, at: &str) -> Result<(), String> {
                 }
                 outcome_invariants(errors, &key)?;
             }
-            Ok(())
+            alike_invariants(route, at)
         }
     }
 }
 
+/// The invariants of one compiled command route's `alike` (see [`HttpIr::from_json`]): each group
+/// two or more names in name order, a name in one group once, the groups ordered by their first
+/// name, and every name with a declared answer (under `outcomes`, else `errors`), one answer for
+/// the whole group and never `envelope`. That a name is an outcome of the command, and that
+/// `errors` covers it, needs the specification.
+fn alike_invariants(route: &Route, at: &str) -> Result<(), String> {
+    let key = format!("{at}.alike");
+    let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
+    for (index, group) in route.alike.iter().enumerate() {
+        let at = format!("{key}[{index}]");
+        if group.len() < 2 {
+            return Err(format!(
+                "`{at}` names {} outcome; compiled IR writes a group of two or more",
+                group.len()
+            ));
+        }
+        for name in group {
+            if let Some(first) = seen.insert(name, index) {
+                return Err(format!(
+                    "`{at}` names `{name}`, which `{key}[{first}]` names too; compiled IR names an \
+                     outcome once in `alike`"
+                ));
+            }
+        }
+        if out_of_order(group, Ord::cmp).is_some() {
+            return Err(format!(
+                "`{at}` is out of canonical order: compiled IR writes a group's names in name \
+                 order"
+            ));
+        }
+    }
+    if let Some(index) = out_of_order(&route.alike, |left, right| left[0].cmp(&right[0])) {
+        return Err(format!(
+            "`{key}[{index}]` is out of canonical order: compiled IR orders the groups of `alike` \
+             by their first name"
+        ));
+    }
+    for (index, group) in route.alike.iter().enumerate() {
+        let at = format!("{key}[{index}]");
+        let mut answers = Vec::new();
+        for name in group {
+            let Some(answer) = route.outcomes.get(name).or(route.errors.as_ref()) else {
+                return Err(format!(
+                    "`{at}` names `{name}`, which has no declared answer: it is not under \
+                     `outcomes`, and the route declares no `errors`"
+                ));
+            };
+            answers.push((name, answer));
+        }
+        let (first, answer) = answers[0];
+        if let Some((other, _)) = answers.iter().find(|(_, other)| *other != answer) {
+            return Err(format!(
+                "`{at}`: the answers of `{first}` and `{other}` differ; compiled IR groups only \
+                 outcomes with one declared answer"
+            ));
+        }
+        if answer.body == Body::Envelope {
+            return Err(format!(
+                "`{at}` answers `envelope`, whose `outcome` member tells the outcomes apart; \
+                 compiled IR groups only outcomes the wire cannot tell apart"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// The invariants of one compiled outcome's answer at `key` (see [`HttpIr::from_json`]): a status
-/// an outcome may answer, an error object under a named member, `none` on `204` and beside a
-/// redirect, a redirect exactly on a redirect status, and its headers.
+/// an outcome may answer, an error object under a named member, `text` only beside a
+/// `response.<field>` body, `none` on `204` and beside a redirect, a redirect exactly on a
+/// redirect status, and its headers.
 fn outcome_invariants(outcome: &Outcome, key: &str) -> Result<(), String> {
     if let Some(reason) = status_reason(i64::from(outcome.status)) {
         return Err(format!("`{key}.status`: {reason}"));
+    }
+    if outcome.encoding == ResponseEncoding::Text && !matches!(outcome.body, Body::ResponseField(_))
+    {
+        return Err(format!(
+            "`{key}.encoding` is `text` beside body `{}`; compiled IR writes `text` only beside \
+             a `response.<field>` body",
+            outcome.body
+        ));
     }
     if let Body::Error { member } = &outcome.body {
         if member.is_empty() {
@@ -2758,10 +2956,10 @@ impl Refusals {
 /// | `ESS-HTTP-014` | a command on `get` with an input field no variable of the path maps, unless its request is encoded `query` |
 /// | `ESS-HTTP-020` | at `routes[i].request.encoding`: an encoding outside `json`, `form` and `query`, `json` or `form` written on a `get` command, or `query` on a method other than `get` and `delete`; at `routes[i].request.unknown`: a value outside `refuse` and `ignore`, or `ignore` with a `json` body; at `routes[i].request`: `request` on a view |
 /// | `ESS-HTTP-021` | at `routes[i].request.encoding`: a `form` or `query` request carrying an input field whose type has no flat spelling, naming the field and its type. A flat field is a scalar (a primitive other than `Json`, an enum, or a newtype of a scalar), an `Optional` scalar or a `List` of scalars; a field mapped to the path is not carried |
-/// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view; at `routes[i].errors`: `errors` on a view, or on a command none of whose outcomes reports an error without being listed under `outcomes` |
+/// | `ESS-HTTP-022` | at `routes[i].outcomes.<name>`: a key that is not the local name of an outcome of the command, or one listed twice; at `routes[i].outcomes`: `outcomes` on a view; at `routes[i].errors`: `errors` on a view, or on a command none of whose outcomes reports an error without being listed under `outcomes`; at `routes[i].alike`: `alike` on a view, a group of fewer than two names, a name that is not the local name of an outcome of the command, one in two groups or twice in one, or one with no declared answer (neither listed under `outcomes` nor covered by `errors`) |
 /// | `ESS-HTTP-023` | at `routes[i].outcomes.<name>.status`, or `routes[i].errors.status` once for each outcome `errors` covers: a status outside `100..=599`, a `1xx`, a `3xx` other than `301`, `302`, `303`, `307` and `308`, a `2xx` on an outcome with an error, or a `4xx` or `5xx` on one without |
-/// | `ESS-HTTP-024` | at `routes[i].outcomes.<name>.body`, or `routes[i].errors.body` once for each outcome `errors` covers: a word no body form spells, `response` or `response.<field>` on an outcome without `returns: true` or with an error, `response.<field>` naming no field of the response or an `Optional` one, `input.<field>`, `error.<field>` or `error.wire` as a body, `{<member>: error}` on one without an error, under an empty `<member>` or one equal to the wire name of a field of the error, a literal body, `rows` or `single`, or any body but `none` on `204` when that status compiled, or beside a `redirect` on a redirect status; at `routes[i].body`: `body` on a command, a body other than `rows` and `single` on a view, or `single` on a paged view |
-/// | `ESS-HTTP-025` | at `routes[i].outcomes.<name>`, or `routes[i].errors` for an outcome `errors` covers: two outcomes of the command on one status whose bodies do not tell them apart (both `envelope`, or both `{<member>: error}` on one member with distinct error wire names, do) and whose redirects do not either (both declare one and one always writes a parameter, its source not `Optional`, the other never writes, do), an outcome `errors` covers counted at the status and body of `errors`, any other the route does not list at its derived status ([`status::outcome_status`]) with `envelope`. Reported once, at the first listed outcome in document order, then the first covered one in declaration order, naming the others and the status; a pair already named together is not reported again, and an outcome left with none is not reported; at `refusals.<key>`: an override on a route the binding names, on the status of an outcome of its command, whose body does not tell the two apart (only `{<member>: {literal: <text>}}` beside `{<member>: error}` on one member, the text differing from the error's wire name, does), once per route, naming the route, the outcomes and the status |
+/// | `ESS-HTTP-024` | at `routes[i].outcomes.<name>.body`, or `routes[i].errors.body` once for each outcome `errors` covers: a word no body form spells, `response` or `response.<field>` on an outcome without `returns: true` or with an error, `response.<field>` naming no field of the response or an `Optional` one, `input.<field>`, `error.<field>` or `error.wire` as a body, `{<member>: error}` on one without an error, under an empty `<member>` or one equal to the wire name of a field of the error, a literal body, `rows` or `single`, or any body but `none` on `204` when that status compiled, or beside a `redirect` on a redirect status; at `routes[i].body`: `body` on a command, a body other than `rows` and `single` on a view, or `single` on a paged view; at `routes[i].outcomes.<name>.encoding`, or `routes[i].errors.encoding` once for each outcome `errors` covers: a word other than `json` and `text`, or `text` beside any body but `response.<field>` or on a field that is not a `String` (a newtype of one counts) |
+/// | `ESS-HTTP-025` | at `routes[i].outcomes.<name>`, or `routes[i].errors` for an outcome `errors` covers: two outcomes of the command on one status whose bodies do not tell them apart (both `envelope`, or both `{<member>: error}` on one member with distinct error wire names, do) and whose redirects do not either (both declare one and one always writes a parameter, its source not `Optional`, the other never writes, do), an outcome `errors` covers counted at the status and body of `errors`, any other the route does not list at its derived status ([`status::outcome_status`]) with `envelope`. Reported once, at the first listed outcome in document order, then the first covered one in declaration order, naming the others and the status; a pair already named together is not reported again, and an outcome left with none is not reported; at `refusals.<key>`: an override on a route the binding names, on the status of an outcome of its command, whose body does not tell the two apart (only `{<member>: {literal: <text>}}` beside `{<member>: error}` on one member, the text differing from the error's wire name, does), once per route, naming the route, the outcomes and the status; two outcomes in one `alike` group are not a pair; at `routes[i].alike`: a group whose answers differ (the first differing key among `status`, `body`, `encoding`, `headers` and `redirect` named), or that the wire tells apart: `envelope` bodies, `{<member>: error}` bodies under distinct error wire names, or redirects one of which always writes a parameter the other never does |
 /// | `ESS-HTTP-026` | at `routes[i].outcomes.<name>.headers.<Name>`, `routes[i].errors.headers.<Name>` (once for each outcome `errors` covers) or `refusals.<key>.headers.<Name>`: a name that is not an RFC 9110 token; `Content-Type`, `Content-Length`, `Transfer-Encoding` or `Location` in any case, which the encoding and `redirect` write; a name declared again ignoring case; a literal that is not a field value (visible US-ASCII, spaces and tabs, no space or tab at either end); a source outside `input.<field>`, `response.<field>`, `error.<field>` and `error.wire`, naming no field, naming one of a type other than a scalar or an `Optional` scalar, or one the outcome cannot supply (`response.` without `returns: true`, `error.` without an error), or `error.wire` where the error declares a field named `wire`; any source in a standard refusal's header. At `….challenge.params.<param>`: the same source refusals for a sourced challenge param |
 /// | `ESS-HTTP-027` | at `….headers.<Name>`: a challenge under any header but `WWW-Authenticate`; at `….challenge.scheme`: a scheme that is not a token; at `….challenge.params.<param>`: a param name that is not a token, one declared again ignoring case, or a literal a quoted string cannot carry; at `….headers`: an outcome or standard refusal on `401` without a `WWW-Authenticate` challenge (one refused for its scheme or params counts as declared) |
 /// | `ESS-HTTP-028` | at `routes[i].outcomes.<name>.redirect` or `routes[i].errors.redirect` (once for each outcome `errors` covers): a `redirect` on a compiled status other than `301`, `302`, `303`, `307` and `308`, or one of those without a `redirect`; at `….redirect.location`: a source the outcome cannot supply (as for `ESS-HTTP-026`), or of a type other than `String` or a newtype of `String`, `Optional` included; at `….redirect.mode`: none, or one outside `query` and `fragment`; at `….redirect.parameters.<name>`: a parameter written twice, or a source refused as a header source is |
@@ -2799,7 +2997,7 @@ pub fn compile(
 /// | code | refused |
 /// |---|---|
 /// | `ESS-HTTP-003` | at `refines`: a value that is not `sha256:` and 64 lower-case hex digits; `refines` given and no refined binding supplied; the supplied binding's byte digest differs; the refined binding itself refines (a refinement of a refinement is refused in `/1`); or a refined binding supplied to a document that refines nothing |
-/// | `ESS-HTTP-012` | at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding` or `routes[i].request.unknown`: a refined route's request restated with another value, a default written out or left out counting as that default; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none) |
+/// | `ESS-HTTP-012` | at `routes[i].method` or `routes[i].path`: a method or path the refined binding fixed is changed, or a fixed path left open; at `routes[i].request.encoding` or `routes[i].request.unknown`: a refined route's request restated with another value, a default written out or left out counting as that default; at `routes[i].outcomes.<name>`, `routes[i].errors`, `routes[i].body` or `routes[i].empty`: a refined route's outcome, `errors` (its headers and redirect included), view body or empty answer added, dropped or restated with another status or body, by the same counting; at `routes[i].outcomes.<name>.headers` or `….redirect`: an outcome both list whose headers or redirect differ, compared in name order with an empty map counting as none; at `refusals.<key>`: a standard refusal added, dropped or changed; at `refusals.<key>.headers`: one both declare whose headers differ; at `routes`: a route of the refined binding is dropped; at `routes[i].operation_id`: an operation id the refined route fixes changed or left out (one may be added where the refined route has none); at `routes[i].outcomes.<name>`: an outcome both list restated with another `encoding`, `json` written out or left out counting as `json`; at `routes[i].alike`: the groups added, dropped or restated, each compared in name order |
 ///
 /// `servers` is not compared: each server binding states its own deployment.
 ///
@@ -3400,8 +3598,59 @@ fn refusal_changes(spec: &HttpSpec, refined: &HttpSpec, refusals: &mut Refusals)
     }
 }
 
+/// Refuses a refined route whose `alike` groups differ from the refined binding's
+/// (`ESS-HTTP-012`), at `routes[i].alike`. Groups are compared as sets of sets: the order they are
+/// written in is not a change.
+fn alike_changes(
+    route: &RouteSpec,
+    fixed: &RouteSpec,
+    operation: &Operation,
+    [index, at]: [usize; 2],
+    refusals: &mut Refusals,
+) {
+    let groups = |route: &RouteSpec| -> Vec<Vec<String>> {
+        let mut groups: Vec<Vec<String>> = route
+            .alike
+            .iter()
+            .flatten()
+            .map(|group| {
+                let mut group = group.clone();
+                group.sort();
+                group
+            })
+            .collect();
+        groups.sort();
+        groups
+    };
+    let (new_groups, old_groups) = (groups(route), groups(fixed));
+    if new_groups != old_groups {
+        let shown = |groups: &[Vec<String>]| {
+            if groups.is_empty() {
+                "no `alike`".to_owned()
+            } else {
+                let written: Vec<String> = groups
+                    .iter()
+                    .map(|group| format!("[{}]", group.join(", ")))
+                    .collect();
+                format!("`alike: [{}]`", written.join(", "))
+            }
+        };
+        refusals.refuse(
+            "ESS-HTTP-012",
+            format!("routes[{index}].alike"),
+            format!(
+                "{operation} declares {} here, and at `routes[{at}]` the refined binding fixes \
+                 {}; a refinement restates the answers of every route it restates",
+                shown(&new_groups),
+                shown(&old_groups)
+            ),
+        );
+    }
+}
+
 /// Refuses a refined route whose answers are restated with another value (`ESS-HTTP-012`): each
-/// listed outcome at `routes[i].outcomes.<name>`, the view body at `routes[i].body` and the empty
+/// listed outcome at `routes[i].outcomes.<name>` (its encoding included), the groups of `alike` at
+/// `routes[i].alike`, the view body at `routes[i].body` and the empty
 /// answer at `routes[i].empty`. A default written out or left out counts as that default, so the
 /// comparison is over what compiles. Bodies are compared as written values, never as text, so that
 /// a word cannot spell another form.
@@ -3413,7 +3662,7 @@ fn answer_changes(
     at: usize,
     refusals: &mut Refusals,
 ) {
-    let listed = |route: &RouteSpec| -> BTreeMap<String, (i64, BodySpec)> {
+    let listed = |route: &RouteSpec| -> BTreeMap<String, (i64, BodySpec, String)> {
         let mut listed = BTreeMap::new();
         for (name, outcome) in route.outcomes.iter().flat_map(|entries| &entries.0) {
             listed.entry(name.clone()).or_insert_with(|| {
@@ -3421,17 +3670,23 @@ fn answer_changes(
                     .body
                     .clone()
                     .unwrap_or_else(|| Body::Envelope.spec());
-                (outcome.status, body)
+                let encoding = outcome
+                    .encoding
+                    .clone()
+                    .unwrap_or_else(|| ResponseEncoding::default().as_str().to_owned());
+                (outcome.status, body, encoding)
             });
         }
         listed
     };
     let (new, old) = (listed(route), listed(fixed));
     let names: std::collections::BTreeSet<&String> = new.keys().chain(old.keys()).collect();
-    let shown = |entry: Option<&(i64, BodySpec)>| {
+    let shown = |entry: Option<&(i64, BodySpec, String)>| {
         entry.map_or_else(
             || "is not listed".to_owned(),
-            |(status, body)| format!("answers `{status}` with `{body}`"),
+            |(status, body, encoding)| {
+                format!("answers `{status}` with `{body}`, encoded `{encoding}`")
+            },
         )
     };
     let (new_extras, old_extras) = (outcome_extras(route), outcome_extras(fixed));
@@ -3457,6 +3712,7 @@ fn answer_changes(
         extras_changes(name, here, there, operation, [index, at], refusals);
     }
     errors_changes(route, fixed, operation, [index, at], refusals);
+    alike_changes(route, fixed, operation, [index, at], refusals);
     let body = |route: &RouteSpec| {
         route
             .body
@@ -3783,6 +4039,7 @@ fn routes(
                     request,
                     outcomes: answers.outcomes,
                     errors: answers.errors,
+                    alike: answers.alike,
                     body: answers.body,
                     empty: answers.empty,
                 })
@@ -4341,6 +4598,7 @@ fn get_input(
 struct Answers {
     outcomes: BTreeMap<String, Outcome>,
     errors: Option<Outcome>,
+    alike: Vec<Vec<String>>,
     body: ViewBody,
     empty: Option<Empty>,
 }
@@ -4363,7 +4621,8 @@ fn answers(
                 Served::Command(command) => Some((target.ir, command)),
                 Served::View(_) => None,
             });
-            let (outcomes, errors) = outcomes(spec, operation, command, path, standard, refusals);
+            let (outcomes, errors, alike) =
+                outcomes(spec, operation, command, path, standard, refusals);
             if let Some(body) = &spec.body {
                 refusals.refuse(
                     "ESS-HTTP-024",
@@ -4387,6 +4646,7 @@ fn answers(
             Answers {
                 outcomes,
                 errors,
+                alike,
                 body: ViewBody::Rows,
                 empty: None,
             }
@@ -4419,10 +4679,10 @@ fn outcomes(
     path: &str,
     standard: &BTreeMap<RefusalKey, Refusal>,
     refusals: &mut Refusals,
-) -> (BTreeMap<String, Outcome>, Option<Outcome>) {
+) -> (BTreeMap<String, Outcome>, Option<Outcome>, Vec<Vec<String>>) {
     let mut compiled = BTreeMap::new();
     let Some((ir, command)) = command else {
-        return (compiled, None);
+        return (compiled, None, Vec::new());
     };
     // No `outcomes` lists none: every outcome keeps its derived answer, which a `refusals:`
     // override is still held apart from.
@@ -4467,22 +4727,234 @@ fn outcomes(
         }
     }
     let (errors, covered) = errors(spec, operation, ir, command, &seen, path, refusals);
-    distinguishable(
-        operation,
-        ir,
-        command,
-        &Declared {
-            compiled: &compiled,
-            listed: &listed,
-            written,
-            errors: errors.as_ref(),
-            covered: &covered,
-        },
-        path,
-        standard,
-        refusals,
-    );
-    (compiled, errors)
+    let groups = spec.alike.as_deref().unwrap_or_default();
+    let declared = Declared {
+        compiled: &compiled,
+        listed: &listed,
+        written,
+        errors: errors.as_ref(),
+        covered: &covered,
+        alike: groups,
+    };
+    let alike = alike(operation, ir, command, &declared, path, refusals);
+    distinguishable(operation, ir, command, &declared, path, standard, refusals);
+    (compiled, errors, alike)
+}
+
+/// A route's `alike`, checked: each group two or more outcomes of the command (`ESS-HTTP-022`),
+/// none in two groups or twice in one, each with a declared answer, listed under `outcomes` or
+/// covered by `errors` (`ESS-HTTP-022`); and in each group one answer the wire cannot tell apart
+/// (`ESS-HTTP-025`): the same status, body, encoding, headers and redirect, never `envelope`,
+/// whose `outcome` member names the outcome, never `{<member>: error}` under two error wire names,
+/// and never redirects whose parameters tell them apart. A member whose declared answer was
+/// refused is refused for that alone. Every refusal is at `routes[i].alike`, one per name or per
+/// group. Returns the groups as compiled IR writes them: names in name order, groups ordered by
+/// their first name.
+fn alike(
+    operation: &Operation,
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    declared: &Declared<'_>,
+    path: &str,
+    refusals: &mut Refusals,
+) -> Vec<Vec<String>> {
+    let at = format!("{path}.alike");
+    let written: std::collections::BTreeSet<&str> = declared
+        .written
+        .0
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect();
+    let mut placed: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut compiled: Vec<Vec<String>> = Vec::new();
+    for (index, group) in declared.alike.iter().enumerate() {
+        let shown = format!("`alike[{index}]` (`[{}]`)", group.join(", "));
+        if group.len() < 2 {
+            refusals.refuse(
+                "ESS-HTTP-022",
+                at.as_str(),
+                format!(
+                    "{shown} names {} outcome; a group of outcomes answered alike names two or \
+                     more",
+                    if group.is_empty() { "no" } else { "one" }
+                ),
+            );
+        }
+        let mut members: Vec<(&ResolvedOutcome, &Outcome)> = Vec::new();
+        let mut whole = group.len() >= 2;
+        for name in group {
+            let Some(outcome) = command
+                .outcomes
+                .iter()
+                .find(|outcome| outcome.name.as_str() == name)
+            else {
+                let outcomes: Vec<String> = command
+                    .outcomes
+                    .iter()
+                    .map(|outcome| format!("`{}`", outcome.name))
+                    .collect();
+                refusals.refuse(
+                    "ESS-HTTP-022",
+                    at.as_str(),
+                    format!(
+                        "{shown} names `{name}`, which is not an outcome of {operation}, whose \
+                         outcomes are {}",
+                        outcomes.join(", ")
+                    ),
+                );
+                whole = false;
+                continue;
+            };
+            if let Some(first) = placed.insert(name.as_str(), index) {
+                let why = if first == index {
+                    format!("{shown} names `{name}` twice; a group names each outcome once")
+                } else {
+                    format!(
+                        "`{name}` is in two groups, `alike[{first}]` and {shown}; an outcome is \
+                         answered alike with one group, so two groups sharing one are one group"
+                    )
+                };
+                refusals.refuse("ESS-HTTP-022", at.as_str(), why);
+                whole = false;
+                continue;
+            }
+            match declared.answer(name) {
+                Some(answer) => members.push((outcome, answer)),
+                // Its declared answer was refused, for itself.
+                None if written.contains(name.as_str())
+                    || declared.covered.contains(&name.as_str()) =>
+                {
+                    whole = false;
+                }
+                None => {
+                    let unless = if outcome.error.is_some() {
+                        ", and the route declares no `errors` to cover it"
+                    } else {
+                        ", and it reports no error for `errors` to cover"
+                    };
+                    refusals.refuse(
+                        "ESS-HTTP-022",
+                        at.as_str(),
+                        format!(
+                            "{shown} names `{name}`, which has no declared answer: it is not \
+                             listed under `outcomes`{unless}; outcomes are alike in the answer \
+                             the binding declares for each"
+                        ),
+                    );
+                    whole = false;
+                }
+            }
+        }
+        if whole {
+            if let Some(reason) = alike_reason(ir, command, &members) {
+                refusals.refuse("ESS-HTTP-025", at.as_str(), format!("{shown}: {reason}"));
+            }
+        }
+        let mut names = group.clone();
+        names.sort();
+        compiled.push(names);
+    }
+    compiled.sort();
+    compiled
+}
+
+/// Why the declared answers of one group of outcomes are not one answer the wire cannot tell
+/// apart, if they are not: the first key in which an answer differs from the first member's
+/// (`status`, `body`, `encoding`, `headers`, `redirect`), `envelope`, error objects under two error
+/// wire names, or redirects whose parameters tell two members apart.
+fn alike_reason(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    members: &[(&ResolvedOutcome, &Outcome)],
+) -> Option<String> {
+    let (first, answer) = *members.first()?;
+    for (other, theirs) in &members[1..] {
+        let key = [
+            ("status", answer.status != theirs.status),
+            ("body", answer.body != theirs.body),
+            ("encoding", answer.encoding != theirs.encoding),
+            ("headers", answer.headers != theirs.headers),
+            ("redirect", answer.redirect != theirs.redirect),
+        ]
+        .into_iter()
+        .find_map(|(key, differs)| differs.then_some(key));
+        if let Some(key) = key {
+            return Some(format!(
+                "outcomes `{}` and `{}` of `{}` are answered alike, and their declared answers \
+                 differ in `{key}`: `{}` answers `{}` with `{}`, `{}` answers `{}` with `{}`; \
+                 outcomes answered alike declare one answer",
+                first.name,
+                other.name,
+                command.name,
+                first.name,
+                answer.status,
+                answer.body,
+                other.name,
+                theirs.status,
+                theirs.body
+            ));
+        }
+    }
+    if answer.body == Body::Envelope {
+        return Some(format!(
+            "every member answers `{}` with `envelope`, whose `outcome` member names each \
+             outcome, so the wire tells them apart; outcomes answered alike answer a body that \
+             does not",
+            answer.status
+        ));
+    }
+    let wire = |outcome: &ResolvedOutcome| {
+        outcome.error.as_ref().map(|handle| {
+            let error = ir.error(handle);
+            error.naming.wire_or(&error.name)
+        })
+    };
+    for (index, (one, one_answer)) in members.iter().enumerate() {
+        for (two, two_answer) in &members[index + 1..] {
+            let (one_wire, two_wire) = (wire(one), wire(two));
+            if matches!(answer.body, Body::Error { .. }) && one_wire != two_wire {
+                return Some(format!(
+                    "`{}` and `{}` answer `{}` with `{}`, whose member holds the error wire name, \
+                     `{}` for one and `{}` for the other, so the wire tells them apart",
+                    one.name,
+                    two.name,
+                    answer.status,
+                    answer.body,
+                    one_wire.unwrap_or_default(),
+                    two_wire.unwrap_or_default()
+                ));
+            }
+            if let (Some(one_redirect), Some(two_redirect)) =
+                (&one_answer.redirect, &two_answer.redirect)
+            {
+                let one_written = Written::of(
+                    one_redirect,
+                    &Reader {
+                        ir,
+                        command,
+                        outcome: one,
+                    },
+                );
+                let two_written = Written::of(
+                    two_redirect,
+                    &Reader {
+                        ir,
+                        command,
+                        outcome: two,
+                    },
+                );
+                if one_written.apart(one_wire, &two_written, two_wire) {
+                    return Some(format!(
+                        "`{}` and `{}` redirect with parameters that tell them apart: one always \
+                         writes a parameter the other never writes, or both write one from \
+                         `error.wire` and their error wire names differ",
+                        one.name, two.name,
+                    ));
+                }
+            }
+        }
+    }
+    None
 }
 
 /// One outcome's answer as `written` declares it, at `at`, unless a key of it is refused: its
@@ -4518,6 +4990,13 @@ fn outcome_answer(
         command,
         outcome,
     };
+    let encoding = outcome_encoding(
+        written.encoding.as_deref(),
+        body.as_ref(),
+        &reader,
+        at,
+        refusals,
+    );
     let headers = answer_headers(
         written.headers.as_ref(),
         Some(&reader),
@@ -4526,14 +5005,68 @@ fn outcome_answer(
         refusals,
     );
     let redirect = outcome_redirect(written.redirect.as_ref(), status, &reader, at, refusals);
-    match (status, body, headers, redirect) {
-        (Some(status), Some(body), Ok(headers), Ok(redirect)) => Some(Outcome {
+    match (status, body, encoding, headers, redirect) {
+        (Some(status), Some(body), Some(encoding), Ok(headers), Ok(redirect)) => Some(Outcome {
             status,
             body,
+            encoding,
             headers,
             redirect,
         }),
         _ => None,
+    }
+}
+
+/// The outcome's encoding, unless it is refused (`ESS-HTTP-024`): a word outside `json` and
+/// `text`, or `text` beside any body but `response.<field>` whose field is a `String` or a newtype
+/// of one. `body` is the outcome's compiled body; one refused holds `text` to nothing more, so
+/// that one mistake is one refusal. Under `errors` the body is never a response field, so `text`
+/// is refused there for every outcome it covers.
+fn outcome_encoding(
+    written: Option<&str>,
+    body: Option<&Body>,
+    reader: &Reader<'_>,
+    at: &str,
+    refusals: &mut Refusals,
+) -> Option<ResponseEncoding> {
+    let Some(text) = written else {
+        return Some(ResponseEncoding::Json);
+    };
+    let key = format!("{at}.encoding");
+    let Some(encoding) = ResponseEncoding::parse(text) else {
+        refusals.refuse(
+            "ESS-HTTP-024",
+            key,
+            format!(
+                "`{text}` is not an encoding; an outcome's body is encoded `json` or `text`, in \
+                 lower case"
+            ),
+        );
+        return None;
+    };
+    let reason = match (encoding, body) {
+        (ResponseEncoding::Json, _) | (_, None) => None,
+        (ResponseEncoding::Text, Some(Body::ResponseField(field))) => {
+            match declared_type(&reader.command.response, field) {
+                Some(type_ref) if !string_type(type_ref, reader.ir) => Some(format!(
+                    "`encoding: text` writes the characters of a `String` response field, and \
+                     `response.{field}` has type `{type_ref}`"
+                )),
+                _ => None,
+            }
+        }
+        (ResponseEncoding::Text, Some(body)) => Some(format!(
+            "`encoding: text` writes the characters of one `String` response field, \
+             `response.<field>`, and outcome `{}` answers `{body}`",
+            reader.outcome.name
+        )),
+    };
+    match reason {
+        Some(reason) => {
+            refusals.refuse("ESS-HTTP-024", key, reason);
+            None
+        }
+        None => Some(encoding),
     }
 }
 
@@ -5296,14 +5829,16 @@ impl<'a> Written<'a> {
 
 /// What a command route declares of its outcomes' answers, as `ESS-HTTP-025` counts them: each
 /// listed outcome that compiled (`compiled`), in document order (`listed`), every key written under
-/// `outcomes` (`written`), and `errors`, when it compiled, with the outcomes it covers (`covered`,
-/// in declaration order, listed even when `errors` was refused).
+/// `outcomes` (`written`), `errors`, when it compiled, with the outcomes it covers (`covered`,
+/// in declaration order, listed even when `errors` was refused), and the groups of `alike` as
+/// written (`alike`).
 struct Declared<'d> {
     compiled: &'d BTreeMap<String, Outcome>,
     listed: &'d [&'d str],
     written: &'d Entries<OutcomeSpec>,
     errors: Option<&'d Outcome>,
     covered: &'d [&'d str],
+    alike: &'d [Vec<String>],
 }
 
 impl Declared<'_> {
@@ -5324,6 +5859,15 @@ impl Declared<'_> {
             "`envelope`, at its derived status, as it is not listed".to_owned()
         }
     }
+
+    /// Whether one group of `alike` names both outcomes: the binding declares them answered alike,
+    /// so `ESS-HTTP-025` does not ask the wire to tell them apart ([`alike`] holds the group to
+    /// one answer).
+    fn alike_pair(&self, one: &str, other: &str) -> bool {
+        self.alike.iter().any(|group| {
+            group.iter().any(|name| name == one) && group.iter().any(|name| name == other)
+        })
+    }
 }
 
 /// Refuses outcomes of one command on one status that the bodies cannot tell apart
@@ -5340,7 +5884,8 @@ impl Declared<'_> {
 /// order, then each outcome `errors` covers, in declaration order, is refused naming every outcome
 /// it cannot be told apart from, but a pair an earlier refusal already named together; one with
 /// nothing left to name is not refused, so outcomes no body tells apart are one refusal. A listed
-/// outcome is refused at `routes[i].outcomes.<name>`, a covered one at `routes[i].errors`.
+/// outcome is refused at `routes[i].outcomes.<name>`, a covered one at `routes[i].errors`. Two
+/// outcomes one group of `alike` names are not held apart: [`alike`] holds them to one answer.
 ///
 /// Each standard refusal the binding overrides (`standard`) is held to the same rule against every
 /// counted outcome, and refused at `refusals.<key>`, once per route, naming the route and the
@@ -5393,7 +5938,9 @@ fn distinguishable(
         };
         let others: Vec<&Counted<'_>> = counted
             .iter()
-            .filter(|other| other.0 != name && !apart(this, other))
+            .filter(|other| {
+                other.0 != name && !apart(this, other) && !declared.alike_pair(name, other.0)
+            })
             .filter(|other| {
                 !reported
                     .iter()
@@ -5525,8 +6072,8 @@ fn overridden(
     }
 }
 
-/// A view route lists no `outcomes` and declares no `errors` (`ESS-HTTP-022`): a view has no
-/// outcome to answer.
+/// A view route lists no `outcomes`, declares no `errors` and no `alike` (`ESS-HTTP-022`): a view
+/// has no outcome to answer.
 fn no_outcomes_on_a_view(
     spec: &RouteSpec,
     operation: &Operation,
@@ -5550,6 +6097,16 @@ fn no_outcomes_on_a_view(
             format!(
                 "{operation} has no error outcomes to answer: a view answers its rows, or one \
                  row with `body: single`"
+            ),
+        );
+    }
+    if spec.alike.is_some() {
+        refusals.refuse(
+            "ESS-HTTP-022",
+            format!("{path}.alike"),
+            format!(
+                "{operation} has no outcomes to answer alike: a view answers its rows, or one row \
+                 with `body: single`"
             ),
         );
     }
@@ -5656,6 +6213,7 @@ fn view_answers(
     Answers {
         outcomes: BTreeMap::new(),
         errors: None,
+        alike: Vec::new(),
         body: body.unwrap_or_default(),
         empty,
     }

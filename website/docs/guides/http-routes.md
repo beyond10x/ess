@@ -160,6 +160,12 @@ The document follows those keys on the routes that use them:
   `error` that `outcomes:` does not list, `external:` refusals among them, exactly as listing it
   under each one would. A listed outcome keeps its own answer, and the document describes each
   outcome `errors` covers at that status.
+- `encoding: text` beside `body: response.<field>` naming a `String` field answers that string
+  alone, `text/plain; charset=utf-8`, and the document describes it under `text/plain`.
+- `alike: [[fetched, inline]]` on a command route declares that the service answers those
+  outcomes the same way: their declared answers must be equal, and the document writes one response
+  for the status, its `x-ess-outcomes` naming both, with one schema. Without it, two outcomes whose
+  bodies do not tell them apart on one status are refused.
 - Declared headers are response `headers`, a `WWW-Authenticate` challenge among them, and a
   `redirect` answers a required `Location` header and no content.
 - A `single` view answers its one row at `200` and no content at its `empty` status.

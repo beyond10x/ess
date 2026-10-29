@@ -35,6 +35,10 @@ const AUTH: &str = include_str!("../../../specify/ess-http/tests/fixtures/auth.y
 /// an `external:` refusal and a `when:` refusal (`tests/bare_field_and_errors.rs` of `ess-http`).
 const TASKS: &str = include_str!("../../../specify/ess-http/tests/fixtures/tasks.yaml");
 
+/// A command with two successes that return one response and two `when:` refusals reporting one
+/// error (`tests/alike_and_text.rs` of `ess-http`).
+const NOTES: &str = include_str!("../../../specify/ess-http/tests/fixtures/notes.yaml");
+
 /// The items service's document as 0.60.0 generated it from [`ON_ONE_PATH`], its provenance
 /// digests written `SOURCE_DIGEST` and `CONTRACT_DIGEST`: the digests are of the compiled
 /// specification, which another ESS release may spell differently, while every other byte is the
@@ -944,4 +948,89 @@ fn errors_alone_makes_the_route_answered_by_the_binding() {
         sent["content"]["application/json"]["schema"]["$ref"],
         "#/components/schemas/catalog.tasks.SendTask.sent.Response"
     );
+}
+
+/// `CreateNote` on `post /api/notes`, with `keys` beside its path, in the notes service's
+/// document.
+fn notes(keys: &str) -> Value {
+    let ir = model_of("notes.yaml", NOTES);
+    let text = format!(
+        "type: ess-http/1\nspecification:\n  system: demo\n  version: v1\n  source_digest: \
+         sha256:{}\nroutes:\n  - command: demo.notes.CreateNote\n    method: post\n    path: \
+         /api/notes\n{keys}",
+        ir.source_digest()
+    );
+    let spec = ess_http::HttpSpec::from_yaml(&text).expect("parses");
+    let http = ess_http::compile(&spec, &ir, &derived(&ir))
+        .unwrap_or_else(|diagnostics| panic!("compiles: {diagnostics}"));
+    bound_document(
+        &ir,
+        Binding::new(http).expect("every route has a path"),
+        "notes-service",
+    )
+}
+
+/// The schema `schema` comes to once every `$ref` on the way is followed: a field of a newtype is
+/// a reference to the newtype's own schema.
+fn followed<'a>(document: &'a Value, schema: &'a Value) -> &'a Value {
+    let mut schema = schema;
+    while schema.get("$ref").is_some() {
+        schema = resolved(document, schema);
+    }
+    schema
+}
+
+#[test]
+fn outcomes_declared_alike_project_one_response() {
+    let document = notes(
+        "    outcomes:\n      fetched: {status: 201, body: response}\n      inline: {status: 201, body: response}\n    alike: [[fetched, inline]]\n",
+    );
+    let responses = &document["paths"]["/api/notes"]["post"]["responses"];
+    let created = &responses["201"];
+    assert_eq!(created["x-ess-outcomes"], json!(["fetched", "inline"]));
+    let schema = &created["content"]["application/json"]["schema"];
+    assert_eq!(
+        schema,
+        &json!({"$ref": "#/components/schemas/demo.notes.CreateNote.Result"}),
+        "one schema, no `oneOf`: {created}"
+    );
+
+    // A bare field and two error objects under one wire name are one schema each, too.
+    let document = notes(
+        "    outcomes:\n      fetched: {status: 200, body: response.note_id}\n      inline: {status: 200, body: response.note_id}\n      negative: {status: 400, body: {error: error}}\n      blank: {status: 400, body: {error: error}}\n    alike: [[blank, negative], [fetched, inline]]\n",
+    );
+    let responses = &document["paths"]["/api/notes"]["post"]["responses"];
+    assert_eq!(
+        responses["200"]["x-ess-outcomes"],
+        json!(["fetched", "inline"])
+    );
+    let field = &responses["200"]["content"]["application/json"]["schema"];
+    assert!(field.get("oneOf").is_none(), "{field}");
+    let field = followed(&document, field);
+    assert_eq!(field["type"], "string", "{field}");
+    assert_eq!(
+        responses["400"]["x-ess-outcomes"],
+        json!(["negative", "blank"])
+    );
+    let refused = &responses["400"]["content"]["application/json"]["schema"];
+    assert!(refused.get("oneOf").is_none(), "{refused}");
+    assert_eq!(
+        resolved(&document, refused)["properties"]["error"]["const"],
+        "refused"
+    );
+}
+
+#[test]
+fn a_text_outcome_projects_text_plain() {
+    let document = notes(
+        "    outcomes:\n      inline: {status: 201, body: response.note_id, encoding: text}\n",
+    );
+    let created = &document["paths"]["/api/notes"]["post"]["responses"]["201"];
+    assert_eq!(created["x-ess-outcomes"], json!(["inline"]));
+    assert_eq!(keys(&created["content"]), ["text/plain"], "{created}");
+    let schema = &created["content"]["text/plain"]["schema"];
+    let field = followed(&document, schema);
+    assert_eq!(field["type"], "string", "{field}");
+    let description = created["description"].as_str().expect("a description");
+    assert!(description.contains("as text"), "{description}");
 }
