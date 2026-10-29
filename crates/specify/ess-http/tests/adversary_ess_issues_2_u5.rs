@@ -279,3 +279,97 @@ fn a_view_route_states_its_own_refusals() {
         http.to_canonical_json()
     );
 }
+
+// --- pass 2: `alike` against the errors' fields and `error.wire` headers --------------------------
+
+/// `fixtures/notes.yaml` with `Refused` carrying `first` and a second error `Declined`, also
+/// travelling as `refused`, carrying `second`; `blank` reports `Declined`.
+fn two_errors(first: &str, second: &str) -> EssIr {
+    let model = NOTES
+        .replace(
+            "  - name: demo.notes.Refused\n    naming: {wire: refused}\n",
+            &format!(
+                "  - name: demo.notes.Refused\n    naming: {{wire: refused}}\n    fields:\n{first}  - name: demo.notes.Declined\n    naming: {{wire: refused}}\n    fields:\n{second}"
+            ),
+        )
+        .replace(
+            "      - name: blank\n        when: size == 0\n        error: demo.notes.Refused\n",
+            "      - name: blank\n        when: size == 0\n        error: demo.notes.Declined\n",
+        );
+    assert_ne!(model, NOTES);
+    model_of("notes.yaml", &model)
+}
+
+const ERROR_OBJECTS_ALIKE: &str = "    outcomes:\n      negative: {status: 409, body: {error: error}}\n      blank: {status: 409, body: {error: error}}\n    alike: [[negative, blank]]\n";
+
+/// Two errors whose fields are the same, by wire name, type and order, write one body: the group
+/// compiles. The fields' own names may differ where their wire names agree.
+#[test]
+fn alike_error_objects_over_errors_with_one_body_compile() {
+    for (first, second) in [
+        (
+            "      - {name: detail, type: String}\n      - {name: limit, type: Integer}\n",
+            "      - {name: detail, type: String}\n      - {name: limit, type: Integer}\n",
+        ),
+        (
+            "      - {name: detail, type: String}\n",
+            "      - {name: why, type: String, naming: {wire: detail}}\n",
+        ),
+    ] {
+        let ir = two_errors(first, second);
+        let result = compiled(&ir, "demo", &create(ERROR_OBJECTS_ALIKE));
+        assert_eq!(
+            located(&result),
+            [],
+            "{first} / {second}: {}",
+            worded(&result)
+        );
+    }
+}
+
+/// The same fields in another order, and a required field against an `Optional` one under one wire
+/// name, are refused: the first writes the members in another order, the second may leave one out.
+#[test]
+fn alike_error_objects_over_reordered_or_optional_fields_are_refused() {
+    for (first, second) in [
+        (
+            "      - {name: detail, type: String}\n      - {name: limit, type: Integer}\n",
+            "      - {name: limit, type: Integer}\n      - {name: detail, type: String}\n",
+        ),
+        (
+            "      - {name: detail, type: String}\n",
+            "      - {name: why, type: Optional<String>, naming: {wire: detail}}\n",
+        ),
+    ] {
+        let ir = two_errors(first, second);
+        let result = compiled(&ir, "demo", &create(ERROR_OBJECTS_ALIKE));
+        assert!(
+            located(&result).contains(&("ESS-HTTP-025", "routes[0].alike".to_owned())),
+            "{first} / {second}: {}",
+            worded(&result)
+        );
+    }
+}
+
+/// A header reading `error.wire` tells `too-large` from `negative` however it is accompanied: beside
+/// a literal header, and as a challenge param beside a literal param. Over one wire name it does not.
+#[test]
+fn alike_error_wire_beside_literals_is_refused_and_over_one_wire_name_compiles() {
+    let ir = model_of("notes.yaml", NOTES);
+    for keys in [
+        "    errors:\n      status: 409\n      body: none\n      headers:\n        X-Kind: {literal: refused}\n        X-Error: {source: error.wire}\n    alike: [[too-large, negative, blank]]\n",
+        "    errors:\n      status: 401\n      body: none\n      headers:\n        X-Kind: {literal: refused}\n        WWW-Authenticate:\n          challenge:\n            scheme: Bearer\n            params:\n              realm: {literal: notes}\n              error: {source: error.wire}\n    alike: [[too-large, negative, blank]]\n",
+    ] {
+        let result = compiled(&ir, "demo", &create(keys));
+        assert!(
+            located(&result).contains(&("ESS-HTTP-025", "routes[0].alike".to_owned())),
+            "{keys}: {}",
+            worded(&result)
+        );
+    }
+    // `negative` and `blank` both report `Refused`: `error.wire` writes `refused` for both.
+    let one_wire = "    outcomes:\n      negative:\n        status: 409\n        body: none\n        headers:\n          X-Kind: {literal: refused}\n          X-Error: {source: error.wire}\n      blank:\n        status: 409\n        body: none\n        headers:\n          X-Kind: {literal: refused}\n          X-Error: {source: error.wire}\n    alike: [[negative, blank]]\n";
+    let result = compiled(&ir, "demo", &create(one_wire));
+    assert_eq!(located(&result), [], "{}", worded(&result));
+    round_trips(&result.expect("compiles"));
+}

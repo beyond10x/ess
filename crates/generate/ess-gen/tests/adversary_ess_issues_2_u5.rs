@@ -98,16 +98,17 @@ fn admits(schema: &Value, body: &Value) -> bool {
             })
 }
 
-/// `negative` reports `Refused`, `blank` reports `Declined`; both travel as `refused`, and
-/// `Declined` carries a `reason` where `Refused` carries a `detail`. The route answers both
-/// `{error: error}` on `409`, declared `alike`, and `ess-http` admits the group. `blank`'s answer
-/// is `{"error": "refused", "reason": …}`: the one schema the response publishes must admit it.
+/// `negative` reports `Refused`, `blank` reports `Declined`; both travel as `refused`, and each
+/// carries one `String` field travelling as `detail` (`Declined`'s is named `why`). Their error
+/// objects are one body, so `ess-http` admits the group `alike` (errors whose fields differ are
+/// refused, `ess-http`'s `alike_error_objects_whose_errors_carry_different_fields_are_refused`).
+/// The one schema the `409` response publishes must admit what each member answers.
 #[test]
 fn an_alike_response_admits_every_members_body() {
     let model = NOTES
         .replace(
             "  - name: demo.notes.Refused\n    naming: {wire: refused}\n",
-            "  - name: demo.notes.Refused\n    naming: {wire: refused}\n    fields:\n      - {name: detail, type: String}\n  - name: demo.notes.Declined\n    naming: {wire: refused}\n    fields:\n      - {name: reason, type: String}\n",
+            "  - name: demo.notes.Refused\n    naming: {wire: refused}\n    fields:\n      - {name: detail, type: String}\n  - name: demo.notes.Declined\n    naming: {wire: refused}\n    fields:\n      - {name: why, type: String, naming: {wire: detail}}\n",
         )
         .replace(
             "      - name: blank\n        when: size == 0\n        error: demo.notes.Refused\n",
@@ -124,18 +125,25 @@ fn an_alike_response_admits_every_members_body() {
     let response = &document["paths"]["/api/notes"]["post"]["responses"]["409"];
     assert_eq!(response["x-ess-outcomes"], json!(["negative", "blank"]));
     let schema = &response["content"]["application/json"]["schema"];
-    let answered_by_blank = json!({"error": "refused", "reason": "empty"});
-    assert!(
-        alternatives(&document, schema)
-            .into_iter()
-            .any(|alternative| admits(alternative, &answered_by_blank)),
-        "the `409` response publishes no schema `blank`'s body {answered_by_blank} matches: \
-         {schema} -> {:#?}",
-        alternatives(&document, schema)
-            .into_iter()
-            .cloned()
-            .collect::<Vec<_>>()
-    );
+    assert!(schema.get("oneOf").is_none(), "one schema: {schema}");
+    // What `negative` and `blank` answer; a body under another member is not admitted.
+    for (body, admitted) in [
+        (json!({"error": "refused", "detail": "negative"}), true),
+        (json!({"error": "refused", "detail": "empty"}), true),
+        (json!({"error": "refused", "why": "empty"}), false),
+    ] {
+        assert_eq!(
+            alternatives(&document, schema)
+                .into_iter()
+                .any(|alternative| admits(alternative, &body)),
+            admitted,
+            "{body} against the `409` schema {schema} -> {:#?}",
+            alternatives(&document, schema)
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>()
+        );
+    }
 }
 
 /// A view route's own `not_granted` stands on that operation alone; another view keeps the
