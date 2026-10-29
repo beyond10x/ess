@@ -4973,17 +4973,16 @@ fn arranged(
     // "Subject borrowing and precedence"). An accepting branch naming no subject of its own that no
     // row set answers before (beyond10x/ess#552, [`row_set::routes`]) is still sent for a row
     // that exists, as the row-set arrangement sent it.
-    if row_set::uses(command)
+    if accepts_without_subject(outcome)
+        && row_set::uses(command)
         && !row_set::routes(ir.format(), command, outcome)
-        && outcome.subject.is_none()
-        && outcome.error.is_none()
-        && matches!(
-            outcome.condition,
-            ResolvedCondition::When { .. } | ResolvedCondition::Otherwise
-        )
     {
         return Ok((addressed_row(ir, command, actors, setup), input));
     }
+    // Existence answers before such a branch wherever a non-creating `unknown_instance:` is read
+    // first (beyond10x/ess#645), so the branch is reached only for a stored row.
+    let setup =
+        stored_where_unknown_first(ir, command, outcome, actors, setup, Distinction::PLAIN)?;
     Ok((setup, input))
 }
 
@@ -5340,14 +5339,65 @@ fn addressed_row(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     setup: Setup,
 ) -> Setup {
-    let Some(subject) = addressed(command) else {
-        return setup;
-    };
+    match addressed_held(ir, command, actors, &setup, Distinction::PLAIN) {
+        Some(Ok(arranged)) => joined(arranged, setup),
+        Some(Err(_)) | None => setup,
+    }
+}
+
+/// `true` for a branch that accepts without naming a subject of its own or refusing: a `when:` or
+/// the default, with no effect and no error.
+fn accepts_without_subject(outcome: &ResolvedOutcome) -> bool {
+    outcome.subject.is_none()
+        && outcome.error.is_none()
+        && matches!(
+            outcome.condition,
+            ResolvedCondition::When { .. } | ResolvedCondition::Otherwise
+        )
+}
+
+/// `setup` for `outcome` under `distinction`, with the row `command` addresses arranged where
+/// `outcome` accepts without a subject of its own and a non-creating `unknown_instance:` answers
+/// before it (beyond10x/ess#645): existence is read first, so only a stored row reaches it. Where
+/// no state of the addressed entity can be arranged, refused with the first cause [`held_row`]
+/// gave, since no unarranged send reaches the branch. Every other branch keeps `setup`.
+fn stored_where_unknown_first(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    setup: Setup,
+    distinction: Distinction,
+) -> Result<Setup, RefusalCause> {
+    if !accepts_without_subject(outcome)
+        || !existence::unknown_answers_before(ir.format(), command, outcome)
+    {
+        return Ok(setup);
+    }
+    match addressed_held(ir, command, actors, &setup, distinction) {
+        Some(Ok(arranged)) => Ok(joined(arranged, setup)),
+        Some(Err(cause)) => Err(cause),
+        None => Ok(setup),
+    }
+}
+
+/// The row [`addressed_row`] arranges under `distinction`, alone: `None` where `command`
+/// addresses no row through a supplied input or `setup` already names one, else the first state
+/// of the lifecycle's initial and then its declared states that [`held_row_in`] arranges, or the
+/// first cause it gave.
+fn addressed_held(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    setup: &Setup,
+    distinction: Distinction,
+) -> Option<Result<Setup, RefusalCause>> {
+    let subject = addressed(command)?;
     let ResolvedInstance::Supplied { field } = &subject.instance else {
-        return setup;
+        return None;
     };
     if setup.bound.contains_key(&field.name) {
-        return setup;
+        return None;
     }
     let lifecycle = &ir.entity(&subject.entity).lifecycle;
     let states = std::iter::once(&lifecycle.initial).chain(
@@ -5356,19 +5406,28 @@ fn addressed_row(
             .iter()
             .filter(|state| **state != lifecycle.initial),
     );
+    let mut first = None;
     for state in states {
-        let Ok(mut arranged) = held_row(ir, subject, state, actors, true) else {
-            continue;
-        };
-        arranged.steps.extend(setup.steps);
-        arranged.source.extend(setup.source);
-        for (name, instance) in setup.bound {
-            arranged.bound.entry(name).or_insert(instance);
+        match held_row_in(ir, subject, state, actors, true, distinction) {
+            Ok(arranged) => return Some(Ok(arranged)),
+            Err(cause) => {
+                first.get_or_insert(cause);
+            }
         }
-        arranged.unobserved.extend(setup.unobserved);
-        return arranged;
     }
-    setup
+    first.map(Err)
+}
+
+/// `arranged` followed by what `setup` already arranged: its steps after the row's, and its bound
+/// fields, sources and unobserved fields beside the row's.
+fn joined(mut arranged: Setup, setup: Setup) -> Setup {
+    arranged.steps.extend(setup.steps);
+    arranged.source.extend(setup.source);
+    for (name, instance) in setup.bound {
+        arranged.bound.entry(name).or_insert(instance);
+    }
+    arranged.unobserved.extend(setup.unobserved);
+    arranged
 }
 
 /// A row of `subject`'s entity resting in `held`, for a branch naming no subject of its own: sent
@@ -5380,6 +5439,18 @@ fn held_row(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     complete: bool,
 ) -> Result<Setup, RefusalCause> {
+    held_row_in(ir, subject, held, actors, complete, Distinction::PLAIN)
+}
+
+/// [`held_row`] under `distinction`, so a further witness's row is its own.
+fn held_row_in(
+    ir: &EssIr,
+    subject: &ResolvedSubject,
+    held: &StateName,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    complete: bool,
+    distinction: Distinction,
+) -> Result<Setup, RefusalCause> {
     let ResolvedInstance::Supplied { field } = &subject.instance else {
         return Err(RefusalCause::StrategyWithoutGuard {
             strategy: TestStrategy::InjectFault,
@@ -5390,7 +5461,7 @@ fn held_row(
         &subject.entity,
         std::slice::from_ref(held),
         actors,
-        Distinction::PLAIN,
+        distinction,
         &[],
     )
     .map_err(|reason| RefusalCause::InstanceRequired {
@@ -10526,6 +10597,7 @@ fn arranged_without_fallbacks(
     }
     let distinction = fallback_distinction(run);
     let setup = prepare_in(ir, outcome, actors, None, distinction)?;
+    let setup = stored_where_unknown_first(ir, command, outcome, actors, setup, distinction)?;
     let input = reach(ir, command, outcome, distinction)?;
     let input = existence::fresh_created_again(ir, command, outcome, input, run)?;
     let input = freshened(
@@ -10763,6 +10835,7 @@ fn arranged_with_union_variant(
     }
     let distinction = Distinction::further(UNION_VARIANT_WITNESS.div_ceil(lcm) * lcm + nth);
     let setup = prepare_in(ir, outcome, actors, None, distinction)?;
+    let setup = stored_where_unknown_first(ir, command, outcome, actors, setup, distinction)?;
     let input = reach(ir, command, outcome, distinction)?;
     let input = existence::fresh_created(ir, command, outcome, input, true)?;
     let input = freshened(
@@ -10802,6 +10875,7 @@ fn arranged_at_expression_point(
     }
     let distinction = expression_distinction(nth);
     let setup = prepare_in(ir, outcome, actors, None, distinction)?;
+    let setup = stored_where_unknown_first(ir, command, outcome, actors, setup, distinction)?;
     let input = reach(ir, command, outcome, distinction)?;
     let input = existence::fresh_created(ir, command, outcome, input, true)?;
     let mut input = freshened(

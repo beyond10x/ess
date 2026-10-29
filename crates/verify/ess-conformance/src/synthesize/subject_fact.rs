@@ -3857,7 +3857,17 @@ fn hinted(
     hints: &[Predicate],
     at: Distinction,
 ) -> Result<Option<Vec<BTreeMap<String, Node>>>, RefusalCause> {
-    let mapping = mapped(driver.outcome);
+    let mut mapping = mapped(driver.outcome);
+    // A hint over the row's identity steers the input the creating branch publishes it from: a
+    // related guard read off an input naming the row is decided on the identity the row is created
+    // under (beyond10x/ess#693).
+    if let Some(input) = super::existence::identity_input(driver.outcome)
+        .filter(|_| identity_read(ir, entity, hints))
+    {
+        mapping
+            .entry(ir.entity(entity).identity.name.as_str())
+            .or_insert(input);
+    }
     // A comparison with the command's input (ess/15) is decided by the input the branch under
     // test sends, not by the row an arranging branch leaves, so it steers nothing here. A leaf
     // over fields the branch sets to a literal is decided by that literal, not by any input, so
@@ -4588,6 +4598,24 @@ struct Profile {
     /// guard, rows the search merged before count apart and a chain of guarded moves exhausts
     /// the budget.
     moves: Vec<Decided>,
+    /// The identity the row was created under, where a hint reads the entity's identity
+    /// ([`identity_read`]): rows created under different identities decide every stored-field hint
+    /// alike and differ only here, and a guard on the input naming the row is decided on it
+    /// (beyond10x/ess#693). `None` wherever no hint reads the identity, as before.
+    identity: Option<String>,
+}
+
+/// Whether one of `hints` reads the identity of `entity`, which no stored field of it is named
+/// after: only a related guard's hint carried onto the row's identity does (beyond10x/ess#693).
+fn identity_read(ir: &EssIr, entity: &EntityHandle, hints: &[Predicate]) -> bool {
+    let declared = ir.entity(entity);
+    let name = declared.identity.name.as_str();
+    !declared.fields.iter().any(|field| field.name == name)
+        && hints.iter().any(|hint| {
+            hint.fact_paths()
+                .iter()
+                .any(|path| path.namespace() == name)
+        })
 }
 
 /// One three-valued answer, ordered so a search node can be keyed on it.
@@ -4670,6 +4698,12 @@ fn profile(
             .filter(|(_, from)| from.contains(&arrangement.state))
             .map(|(guard, _)| code(truth(guard)))
             .collect(),
+        identity: if identity_read(ir, entity, hints) {
+            super::related_guard::created_identity(ir, &arrangement.steps, &arrangement.instance)
+                .map(|identity| format!("{identity:?}"))
+        } else {
+            None
+        },
     }
 }
 
