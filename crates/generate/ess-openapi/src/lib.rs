@@ -501,6 +501,9 @@ struct Importer {
     references: BTreeSet<UnresolvedReference>,
     /// The source is `OpenAPI` 3.0: each schema is rewritten to its 3.1 form before it is read.
     openapi30: bool,
+    /// The document's `components/schemas` as written, so a nullable pair can follow a local
+    /// `$ref` to tell whether its member admits `null` by itself.
+    schemas: Map<String, Value>,
 }
 
 #[derive(Clone, Copy)]
@@ -536,6 +539,7 @@ impl Importer {
             refusals: Vec::new(),
             references: BTreeSet::new(),
             openapi30: false,
+            schemas: Map::new(),
         }
     }
 
@@ -570,6 +574,12 @@ impl Importer {
         if !self.refusals.is_empty() {
             return Err(self.refusals);
         }
+        self.schemas = root
+            .get("components")
+            .and_then(|components| components.get("schemas"))
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
         let service = self.service(root.get("info"));
         let types = self.types(root.get("components"));
         let operations = self.operations(root.get("paths"));
@@ -1046,7 +1056,7 @@ impl Importer {
             self.refusals.push(union_refusal(pointer, keyword));
             return None;
         };
-        if schema_admits_null(member) {
+        if schema_admits_null(member, &self.schemas, &mut BTreeSet::new()) {
             self.refusals.push(Refusal::new(
                 &at,
                 format!(
@@ -1529,8 +1539,13 @@ fn null_branch(value: &Value) -> Option<&Map<String, Value>> {
 }
 
 /// Whether the other member of a nullable pair admits `null` by itself, which would make the pair
-/// ambiguous. A `$ref` is not followed.
-fn schema_admits_null(value: &Value) -> bool {
+/// ambiguous. A local component reference is followed; one back into a schema already followed
+/// adds nothing, so a cycle ends.
+fn schema_admits_null(
+    value: &Value,
+    schemas: &Map<String, Value>,
+    followed: &mut BTreeSet<String>,
+) -> bool {
     let Some(object) = value.as_object() else {
         return value == &Value::Bool(true);
     };
@@ -1543,14 +1558,30 @@ fn schema_admits_null(value: &Value) -> bool {
         object
             .get(keyword)
             .and_then(Value::as_array)
-            .is_some_and(|branches| branches.iter().any(schema_admits_null))
+            .is_some_and(|branches| {
+                branches
+                    .iter()
+                    .any(|branch| schema_admits_null(branch, schemas, followed))
+            })
     });
+    let referenced_null = object
+        .get("$ref")
+        .and_then(Value::as_str)
+        .and_then(|reference| reference.strip_prefix("#/components/schemas/"))
+        .and_then(pointer_unescape)
+        .is_some_and(|name| {
+            followed.insert(name.clone())
+                && schemas
+                    .get(&name)
+                    .is_some_and(|target| schema_admits_null(target, schemas, followed))
+        });
     let annotations_only = !object.contains_key("$ref")
         && object
             .keys()
             .all(|key| key == "$schema" || KeywordContext::Schema.annotation(key));
     typed_null
         || union_null
+        || referenced_null
         || annotations_only
         || object.get("nullable") == Some(&Value::Bool(true))
         || object.get("const") == Some(&Value::Null)
