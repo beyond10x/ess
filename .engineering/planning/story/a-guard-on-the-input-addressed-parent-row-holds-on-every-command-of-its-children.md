@@ -10,7 +10,7 @@ tags:
 - ess-issues-3
 relations:
 - informed_by: story:every-guard-combination-validates-under-the-rule
-revision: 1
+revision: 2
 ---
 ## Problem
 
@@ -48,3 +48,29 @@ directory.
 - `when_subject:` beside a row-set `when_related:` validates.
 - A synthesized accepting scenario past a `when_subject:` refusal sends an input that satisfies
   none of the earlier refusals, and passes against the interpreted target.
+
+## Downstream update 2026-10-29
+
+The adopter's next release scopes its configurations view to the caller's tenant (the view takes
+a `tenant` parameter). Since then, the synthesized scenarios for the reader's `found` and the
+deleter's `deleted` arrange their configuration rows under fresh tenants on a task created under
+another tenant. The adopter's server answers those scenarios "not found", and the adopter lists
+them as rearranged in its conformance runner.
+
+Checked on the 0.77.0 head (84671d6) against the adopter's main at 2ad75d3. The steps are
+(command, input tenant):
+
+- `GetTaskPushNotificationConfig/outcome/found`: SendMessage `tenant`; three
+  CreateTaskPushNotificationConfig calls under `tenant-1`, `tenant-2` and `tenant-3`; then
+  GetTaskPushNotificationConfig with no tenant. Before the view took `tenant`, the three creates
+  sent no tenant.
+- `DeleteTaskPushNotificationConfig/outcome/deleted`: SendMessage under `tenant`, `tenant-1` and
+  `tenant-2`; five creates under `tenant-1` to `tenant-5`; then the delete with no tenant.
+- The interpreted target passes both, because the model leaves the parent-row tenant guard
+  unmapped, as described above. A target that enforces the rule refuses them.
+
+Added acceptance:
+
+- Synthesis arranges a child row under the tenant (or other input) its parent row was created
+  under, whenever the parent row's guard or a view parameter reads that input. It does not
+  diversify the input across tenants it never created a parent row under.
