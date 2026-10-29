@@ -11,7 +11,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T07:28:22Z", actor: "human:timo", revision: 2, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 - {from: "proposed", to: "active", at: "2026-10-29T07:28:22Z", actor: "human:timo", revision: 3, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
@@ -63,3 +63,48 @@ both hold stay `survived` or `unwitnessed` as today.
   `the_precedence_swap_class_reaches_exit_zero`.
 - Run: `cargo test -p ess-conformance --locked --test precedence_swap_disjoint_guards`; existing
   mutate test targets of the crate that touch `precedence-swap` stay green.
+
+## Downstream shapes
+
+The downstream report's inputs are all plain Boolean or plain enum (orchestrator, 2026-10-29). The
+unit also covers the report's shapes, with neutral names, each a test in
+`crates/verify/ess-conformance/tests/precedence_swap_disjoint_guards.rs`:
+
+- `a_pair_disjoint_on_one_boolean_beside_other_pins_is_equivalent`: `enumE == A, enumC == H,
+  boolP == false, boolQ == true` against `enumC == H, boolP == true, boolV == false`.
+- `a_pair_disjoint_on_an_enum_beside_variant_attributes_is_equivalent`: `enumF == X` against
+  `enumF == Y`, both with `opEnum.attr1 == true, opEnum.attr2 == false`.
+- `a_pair_disjoint_through_variant_attributes_is_equivalent`: `opEnum.attrA == true, boolI ==
+  true, boolH == false` against `opEnum.attrB == true, boolI == true, boolK == false`, where no
+  variant has both attributes true; the check reads the enum's variant table.
+- `a_pair_sharing_a_variant_with_both_attributes_is_not_equivalent`: the same pair where one
+  variant has both attributes true.
+- `a_pair_disjoint_through_a_disjunction_is_equivalent`: `opEnum.attr2 == true, boolS == true,
+  boolK == false` against `any: [opEnum.attr2 == false, boolS == false], boolI == true,
+  boolB == false`; every disjunct contradicts the other guard.
+
+The decision extends accordingly: the overlap is unsatisfiable when its decidable part is, where
+the decidable part includes enum-variant attributes (resolved over the variant table) and `any:`
+disjunctions (unsatisfiable when every disjunct is). The reason stays `unsatisfiable_guard`.
+
+## Downstream run on 0.76.0
+
+On 0.76.0 the downstream specification still has 12 precedence-swap survivors, none with a
+scenario that kills it. With neutral names, the shapes this issue covers are:
+
+- S1: `k == X and c == true and f == false and ...` against `k == X and f == true and g == false`,
+  disjoint on `f`, where `c` and `f` are read from the entity's stored state rather than from the
+  command's input.
+- S2: `op in [L] and op in [L] and e == Unavailable` against `op in [L] and op in [L] and
+  e == Incomplete`, disjoint on the enum `e`, with a duplicated conjunct.
+- S3: `p == R and q == S and s == true and ...` against `(p == C or q == M or s == false) and ...`,
+  where each alternative of the disjunction contradicts one conjunct of the other guard.
+- S4: `op in [about thirty values] and ...` against `op in [one value] and ...`, disjoint when the
+  single value is outside the list.
+
+The fix decides each of these as `equivalent` (`unsatisfiable_guard`) where the guards are provably
+disjoint.
+
+Out of scope here, a possible follow-up: swaps whose guards can both hold unless the model's
+declared invariants exclude it (for example a field whose value depends on another). Deciding
+equivalence under declared invariants is a separate change.

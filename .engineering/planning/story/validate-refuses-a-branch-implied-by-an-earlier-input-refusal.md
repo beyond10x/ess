@@ -11,7 +11,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T07:28:23Z", actor: "human:timo", revision: 2, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
 - {from: "proposed", to: "active", at: "2026-10-29T07:28:23Z", actor: "human:timo", revision: 3, executor: "agent:ess-issues-lead", correlation: "ess-issues-2"}
@@ -66,3 +66,11 @@ is narrower) is not refused.
   `an_undecidable_implication_is_not_refused`.
 - Run: `cargo test -p ess-domain --locked --test implied_input_guard`; the diagnostics pins and
   the conformance table tests stay green, and no committed example or corpus model is newly refused.
+
+## Downstream shape
+
+The downstream case (orchestrator, 2026-10-29), with neutral names: an earlier input-guarded
+refusal `enumE == A, boolP == false, boolQ == true`, then a later branch `enumE == A,
+boolP == false, boolQ == true, boolR == false`, a strict superset of the pins. Test:
+`crates/specify/ess-domain/tests/implied_input_guard.rs`,
+`a_later_branch_pinning_a_superset_is_unreachable`.
