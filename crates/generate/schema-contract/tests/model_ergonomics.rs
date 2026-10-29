@@ -469,7 +469,7 @@ mod generator_options {
     use super::generator_option_fixtures::{bundle_plan, declarations, open_schemas, shop_plan};
 
     /// Builds the generated crate and runs `test` against it.
-    fn build_and_test(realization: &Realization, name: &str, test: &str) {
+    pub(super) fn build_and_test(realization: &Realization, name: &str, test: &str) {
         let root = super::scratch(name);
         fs::create_dir_all(root.join("tests")).expect("tests");
         fs::write(
@@ -820,4 +820,63 @@ fn a_bundle_with_contains_is_still_refused() {
     let refused = Plan::from_bundle(&bundle, &roots).expect_err("realization refuses contains");
     let findings = format!("{refused:?}");
     assert!(findings.contains("contains"), "{findings}");
+}
+
+/// An imported integer realized at its format's width (beyond10x/ess#648) held in a built crate.
+/// The scenarios that need no build, and the Go module, are in `bundle_integer_formats.rs`.
+mod integer_format_widths {
+    use std::collections::BTreeSet;
+
+    use schema_contract::realize::{BundleOptions, Plan};
+
+    #[test]
+    fn the_decoder_refuses_a_value_outside_the_format_range() {
+        let roots = BTreeSet::from(["Counter".to_owned()]);
+        let bundle = schema_contract::bundle::import(
+            &serde_json::json!({"components": {"schemas": {"Counter": {
+                "type": "object",
+                "properties": {
+                    "wide": {"type": "integer", "format": "int64"},
+                    "narrow": {"type": "integer", "format": "int32"},
+                    "bounded": {"type": "integer", "minimum": 0, "maximum": 100}
+                },
+                "required": ["wide", "narrow", "bounded"],
+                "additionalProperties": false
+            }}}})
+            .to_string(),
+            &roots,
+            schema_contract::bundle::Dialect::Draft202012,
+        )
+        .unwrap();
+        let options = BundleOptions {
+            integer_format_widths: true,
+        };
+        let realization = Plan::from_bundle_with(&bundle, &roots, &options)
+            .unwrap()
+            .rust("counter_types")
+            .unwrap();
+        super::generator_options::build_and_test(
+            &realization,
+            "integer-format-widths",
+            r###"
+use counter_types::*;
+
+#[test]
+fn the_decoder_refuses_a_value_outside_the_format_range() {
+    let edge: Counter = serde_json::from_str(
+        r##"{"wide":9223372036854775807,"narrow":2147483647,"bounded":1}"##,
+    )
+    .unwrap();
+    assert_eq!((edge.wide, edge.narrow), (i64::MAX, i32::MAX));
+    for text in [
+        r##"{"wide":1,"narrow":2147483648,"bounded":1}"##,
+        r##"{"wide":9223372036854775808,"narrow":1,"bounded":1}"##,
+        r##"{"wide":1.5,"narrow":1,"bounded":1}"##,
+    ] {
+        assert!(serde_json::from_str::<Counter>(text).is_err(), "accepted {text}");
+    }
+}
+"###,
+        );
+    }
 }
