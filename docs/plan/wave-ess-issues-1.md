@@ -96,6 +96,8 @@ Two synthesis findings filed on 2026-10-29 were placed by D229 (`approval-record
   order-flip tie, error-swap payloads, actor grants and sites left unmutated. They join batch 7.
 - #712 (D236, a defect found while reproducing #710: grant/denied withheld beside a ranked view) joins
   batch 5 (`0.80.0`), moved there from batch 7 by D237 (`approval-record:d237-712-moves-to-batch-5`).
+- #713 (D242, `approval-record:d242-713-in-batch-5`) is a gap an adopter is blocked on: `ess generate ui` takes no
+  ess-http binding. It joins batch 5 (`0.80.0`) as a sixth unit.
 - #705 is a gap. It joins batch 7 beside D226's obligation-contract story. The exchange, language and suite-format batches listed above as 4 to 7 follow after
 it, in the same order.
 
