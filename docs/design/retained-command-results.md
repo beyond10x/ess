@@ -103,8 +103,10 @@ Add explicit bounded result-capture and replay-comparison steps to the suite's
 closed vocabulary. Their references bind the command, origin and snapshot key.
 Only a real successful observed result can be captured. Reject missing,
 overwritten, wrong-command or aliased snapshots. Deep-copy observed mutable
-values. Recursively refuse Binary64 in this replay response contract, including
-through named wrappers, structs and collections, and name the field that holds it.
+values. From `ess-conformance/62` (ordinary) and `/63` (coverage) a Binary64 is
+admitted at any depth and compared by its nearest binary64 under IEEE equality
+(`docs/design/model-binary64.md`); a suite labelled below 62 that carries one is
+refused by name.
 From `ess-conformance/58` (ordinary) and `/59` (declared coverage) a Decimal is
 admitted and compared by numeric value: `1.5` and `1.50` are one value and `1.25`
 another. A suite labelled below 58 that carries a Decimal in a retained result or
@@ -226,8 +228,9 @@ Before callbacks, refuse omitted/malformed descriptors, invalid identities,
 unknown or unrelated declarations, unsupported recursive observers, mismatched
 pairs/views/identity binding and new steps mislabeled as an old suite. The exact
 complete-subject profile shares retained-result resource and finite structural type bounds;
-Binary64 and reading observers refuse synthesis recursively, naming the field; a Decimal is
-compared by value from suite/58 or /59, as above. Newtype wrappers in a
+Reading observers refuse synthesis recursively, naming the field; a Decimal is
+compared by value from suite/58 or /59 and a Binary64 by its nearest binary64 from
+suite/62 or /63, as above. A complete subject identity is never a Binary64. Newtype wrappers in a
 complete subject may carry source invariants: this observation compares their actual represented
 values exactly and checks their structural type, without claiming to evaluate those invariants.
 Other constrained declarations still refuse. Retained-result response observations retain their

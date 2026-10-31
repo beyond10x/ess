@@ -1836,6 +1836,12 @@ fn project_list<'n>(
 /// question of an event's payload. One table, so that a payload and a command input cannot come to
 /// different conclusions about whether `1.5` is an `Integer`.
 pub(crate) fn primitive_value(primitive: Primitive, value: &Node) -> Option<FactValue> {
+    // A suite/62 value: any finite number, read by its nearest binary64
+    // (story:a-binary64-value-round-trips-through-a-conformance-suite). A `Node` number is finite
+    // by construction.
+    if let (Primitive::Binary64, Node::Number(number)) = (primitive, value) {
+        return Some(FactValue::Number(*number));
+    }
     primitive.admits(value)
 }
 

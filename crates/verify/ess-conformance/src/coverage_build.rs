@@ -583,6 +583,7 @@ fn authored_refusal(
     })
 }
 
+#[allow(clippy::too_many_lines)] // One ladder from the newest coverage major down; split, it reorders.
 fn coverage_version(
     ir: &EssIr,
     suite: &crate::ConformanceSuite,
@@ -629,83 +630,89 @@ fn coverage_version(
     let opened = crate::undeclared_fields::coverage_floor(suite).is_some();
     let constrained = crate::direct_response::constrained_coverage_floor(suite).is_some();
     let counted = crate::event_multiplicity::coverage_floor(suite).is_some();
-    crate::scenario::SuiteFormat::parse(if crate::member_paths::coverage_floor(suite).is_some() {
-        "ess-conformance/63"
-    } else if provided {
-        "ess-conformance/61"
-    } else if decimal {
-        "ess-conformance/59"
-    } else if reader {
-        "ess-conformance/57"
-    } else if referenced {
-        "ess-conformance/55"
-    } else if observed || awaited {
-        "ess-conformance/53"
-    } else if held {
-        "ess-conformance/51"
-    } else if opened {
-        "ess-conformance/49"
-    } else if constrained {
-        "ess-conformance/47"
-    } else if counted {
-        "ess-conformance/45"
-    } else if crate::synthesis_seeds::used_by(suite) {
-        "ess-conformance/43"
-    } else if crate::expression_format::coverage_floor(suite).is_some()
-        || crate::expression_format::text_lengths_used_by(ir, suite)
-    {
-        "ess-conformance/41"
-    } else if crate::conditional_measures::coverage_floor(ir, suite).is_some() {
-        "ess-conformance/39"
-    } else if crate::no_invocation::used_by(suite)
-        || crate::no_invocation::refused_in(inventory)
-        || crate::refusal_policy::used_by(suite)
-        || crate::refusal_policy::refused_in(inventory)
-    {
-        "ess-conformance/37"
-    } else if suite.provenance.scenario_initial_state.is_some()
-        || crate::one_time_response::used_by(suite)
-        || crate::view_grant::used_by(suite)
-    {
-        "ess-conformance/35"
-    } else if crate::structured_values::used_by(suite) {
-        "ess-conformance/33"
-    } else if crate::delivery_context::used_by(suite) {
-        "ess-conformance/31"
-    } else if crate::direct_response::used_by(suite) {
-        "ess-conformance/29"
-    } else if round_three {
-        "ess-conformance/27"
-    } else if crate::presence::used_by(suite) {
-        "ess-conformance/25"
-    } else if crate::outcome_shapes::used_by(suite) {
-        "ess-conformance/23"
-    } else if crate::text_match_format::case_fold_used_by(suite) {
-        "ess-conformance/21"
-    } else if crate::fixtures::used_by(suite) {
-        "ess-conformance/19"
-    } else if crate::aggregate::used_by(suite)
-        || inventory
-            .refused
-            .iter()
-            .any(|r| crate::aggregate::is_aggregate_refusal(&r.code))
-    {
-        "ess-conformance/17"
-    } else if crate::text_match_format::used_by(suite) {
-        "ess-conformance/15"
-    } else if crate::replay::used_by(suite) {
-        "ess-conformance/13"
-    } else if suite.requires_preservation_format() {
-        "ess-conformance/11"
-    } else if crate::response::used_by(suite) || crate::quoted_predicate_format::used_by(suite) {
-        "ess-conformance/9"
-    } else if suite.requires_extended_format()
-        || inventory.refused.iter().any(|r| r.code == "ESS-SYNTH-015")
-    {
-        "ess-conformance/7"
-    } else {
-        coverage::COVERAGE_SUITE_FORMAT
-    })
+    // A carried `Binary64` (suite/62, `crate::binary64_values`) shares the member-path pair.
+    crate::scenario::SuiteFormat::parse(
+        if crate::member_paths::coverage_floor(suite).is_some()
+            || crate::binary64_values::coverage_floor(ir).is_some()
+        {
+            "ess-conformance/63"
+        } else if provided {
+            "ess-conformance/61"
+        } else if decimal {
+            "ess-conformance/59"
+        } else if reader {
+            "ess-conformance/57"
+        } else if referenced {
+            "ess-conformance/55"
+        } else if observed || awaited {
+            "ess-conformance/53"
+        } else if held {
+            "ess-conformance/51"
+        } else if opened {
+            "ess-conformance/49"
+        } else if constrained {
+            "ess-conformance/47"
+        } else if counted {
+            "ess-conformance/45"
+        } else if crate::synthesis_seeds::used_by(suite) {
+            "ess-conformance/43"
+        } else if crate::expression_format::coverage_floor(suite).is_some()
+            || crate::expression_format::text_lengths_used_by(ir, suite)
+        {
+            "ess-conformance/41"
+        } else if crate::conditional_measures::coverage_floor(ir, suite).is_some() {
+            "ess-conformance/39"
+        } else if crate::no_invocation::used_by(suite)
+            || crate::no_invocation::refused_in(inventory)
+            || crate::refusal_policy::used_by(suite)
+            || crate::refusal_policy::refused_in(inventory)
+        {
+            "ess-conformance/37"
+        } else if suite.provenance.scenario_initial_state.is_some()
+            || crate::one_time_response::used_by(suite)
+            || crate::view_grant::used_by(suite)
+        {
+            "ess-conformance/35"
+        } else if crate::structured_values::used_by(suite) {
+            "ess-conformance/33"
+        } else if crate::delivery_context::used_by(suite) {
+            "ess-conformance/31"
+        } else if crate::direct_response::used_by(suite) {
+            "ess-conformance/29"
+        } else if round_three {
+            "ess-conformance/27"
+        } else if crate::presence::used_by(suite) {
+            "ess-conformance/25"
+        } else if crate::outcome_shapes::used_by(suite) {
+            "ess-conformance/23"
+        } else if crate::text_match_format::case_fold_used_by(suite) {
+            "ess-conformance/21"
+        } else if crate::fixtures::used_by(suite) {
+            "ess-conformance/19"
+        } else if crate::aggregate::used_by(suite)
+            || inventory
+                .refused
+                .iter()
+                .any(|r| crate::aggregate::is_aggregate_refusal(&r.code))
+        {
+            "ess-conformance/17"
+        } else if crate::text_match_format::used_by(suite) {
+            "ess-conformance/15"
+        } else if crate::replay::used_by(suite) {
+            "ess-conformance/13"
+        } else if suite.requires_preservation_format() {
+            "ess-conformance/11"
+        } else if crate::response::used_by(suite) || crate::quoted_predicate_format::used_by(suite)
+        {
+            "ess-conformance/9"
+        } else if suite.requires_extended_format()
+            || inventory.refused.iter().any(|r| r.code == "ESS-SYNTH-015")
+        {
+            "ess-conformance/7"
+        } else {
+            coverage::COVERAGE_SUITE_FORMAT
+        },
+    )
     .expect("constant suite version")
 }
 

@@ -119,6 +119,10 @@ func (shape subjectShape) validate() error {
 			if shape.optionalIdentity(field.Type, 0) {
 				return fmt.Errorf("complete subject identity is optional")
 			}
+			// An identity selects by exact equality; a Binary64 is not carried there.
+			if carries, err := shape.schema().carriesPrimitive("Binary64", field.Type, 0, map[string]bool{}); err != nil || carries {
+				return fmt.Errorf("complete subject identity cannot be Binary64")
+			}
 			return nil
 		}
 	}
@@ -256,7 +260,7 @@ func (r *run) snapshotCompleteSubject(index int, step Step) bool {
 	if err := shape.admitRow(row); err != nil {
 		return r.fail(index, "complete subject row: %v", err)
 	}
-	if !exactEqual(r.snapshots[step.View].complete, row) {
+	if !exactSchemaEqual(shape.Fields, shape.Declarations, r.snapshots[step.View].complete, row) {
 		return r.fail(index, "complete subject changed in %s", step.View)
 	}
 	return true
@@ -495,20 +499,26 @@ func exactDecimalMajor(value any, major int) error {
 }
 
 func (r replayObservation) carriesDecimal(source string, depth int, visited map[string]bool) (bool, error) {
+	return r.carriesPrimitive("Decimal", source, depth, visited)
+}
+
+// carriesPrimitive reports whether a value of source holds primitive, through every wrapper and
+// declaration.
+func (r replayObservation) carriesPrimitive(primitive, source string, depth int, visited map[string]bool) (bool, error) {
 	if depth > 128 {
 		return false, fmt.Errorf("replay type depth limit")
 	}
-	if source == "Decimal" {
+	if source == primitive {
 		return true, nil
 	}
 	if inner, ok := accessorOptional(source); ok {
-		return r.carriesDecimal(inner, depth+1, visited)
+		return r.carriesPrimitive(primitive, inner, depth+1, visited)
 	}
 	if inner, ok, err := accessorCollection(source); ok || err != nil {
 		if err != nil {
 			return false, err
 		}
-		return r.carriesDecimal(inner, depth+1, visited)
+		return r.carriesPrimitive(primitive, inner, depth+1, visited)
 	}
 	body, ok := r.Declarations[source]
 	if !ok || visited[source] {
@@ -535,7 +545,7 @@ func (r replayObservation) carriesDecimal(source string, depth int, visited map[
 		}
 	}
 	for _, child := range children {
-		carries, err := r.carriesDecimal(child, depth+1, visited)
+		carries, err := r.carriesPrimitive(primitive, child, depth+1, visited)
 		if err != nil || carries {
 			return carries, err
 		}
@@ -547,11 +557,8 @@ func (r replayObservation) exactType(source string, depth int, visited map[strin
 	if depth > 128 {
 		return fmt.Errorf("replay type depth limit")
 	}
-	// A Decimal is compared by numeric value (suite/58, exactDecimalMajor); a Binary64 has no
-	// exact observer contract yet.
-	if source == "Binary64" {
-		return fmt.Errorf("Binary64 replay results are unsupported")
-	}
+	// A Decimal is compared by numeric value (suite/58, exactDecimalMajor); a Binary64 by its
+	// nearest binary64 (suite/62, binary64Major and exactSchemaEqual).
 	if inner, ok := accessorOptional(source); ok {
 		return r.exactType(inner, depth+1, visited)
 	}
@@ -632,7 +639,7 @@ func (r replayObservation) compare(original, retry map[string]Node) error {
 	if err := r.admitResult(retry); err != nil {
 		return err
 	}
-	if !exactEqual(original, retry) {
+	if !exactSchemaEqual(r.Fields, r.Declarations, original, retry) {
 		return fmt.Errorf("retry differs from retained original response")
 	}
 	return nil
@@ -1037,4 +1044,216 @@ func admitReplaySteps(raw []any) error {
 		return fmt.Errorf("retained result has no complete subject comparison")
 	}
 	return nil
+}
+
+// binary64Major refuses a typed Binary64 record below suite/62
+// (story:a-binary64-value-round-trips-through-a-conformance-suite): an event shape's primitive
+// leaf, and a field or declaration of a retained result, a complete subject, a response
+// observation or a fixture contract that names a Binary64 through any wrapper. value is one step.
+func binary64Major(value any, major int) error {
+	if major >= 62 {
+		return nil
+	}
+	step, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	refused := fmt.Errorf("a Binary64 value requires suite/62 or /63")
+	for _, key := range []string{"shape", "capture", "response", "fixtures"} {
+		record, ok := step[key].(map[string]any)
+		if !ok {
+			continue
+		}
+		if key == "shape" {
+			if _, typed := record["fields"]; !typed {
+				for _, raw := range record {
+					leaf, ok := raw.(map[string]any)
+					if ok && leaf["holds"] == "primitive" && leaf["kind"] == "binary64" {
+						return refused
+					}
+				}
+				continue
+			}
+		}
+		for _, list := range []string{"fields", "targets"} {
+			fields, _ := record[list].([]any)
+			for _, raw := range fields {
+				field, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+				if source, ok := field["type"].(string); ok && mentionsBinary64(source) {
+					return refused
+				}
+			}
+		}
+		declarations, _ := record["declarations"].(map[string]any)
+		for _, raw := range declarations {
+			body, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if of, ok := body["of"].(string); ok && mentionsBinary64(of) {
+				return refused
+			}
+			fields, _ := body["fields"].([]any)
+			for _, raw := range fields {
+				if field, ok := raw.(map[string]any); ok {
+					if source, ok := field["type"].(string); ok && mentionsBinary64(source) {
+						return refused
+					}
+				}
+			}
+			if body["kind"] == "union" {
+				variants, _ := body["variants"].(map[string]any)
+				for _, variant := range variants {
+					if source, ok := variant.(string); ok && mentionsBinary64(source) {
+						return refused
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// mentionsBinary64 reports whether a type expression names Binary64 directly, through any wrapper.
+func mentionsBinary64(source string) bool {
+	for _, token := range strings.FieldsFunc(source, func(r rune) bool { return r == '<' || r == '>' || r == ',' || r == ' ' }) {
+		if token == "Binary64" {
+			return true
+		}
+	}
+	return false
+}
+
+// binary64Of is the nearest binary64 of a finite number token, and whether it has one.
+func binary64Of(value Node) (float64, bool) {
+	if number, ok := value.(json.Number); ok {
+		parsed, err := strconv.ParseFloat(string(number), 64)
+		return parsed, err == nil && !math.IsInf(parsed, 0) && !math.IsNaN(parsed)
+	}
+	parsed, ok := asNumber(value)
+	return parsed, ok && !math.IsInf(parsed, 0) && !math.IsNaN(parsed)
+}
+
+// exactSchemaEqual is exactEqual for one exact observer's fields: a field whose type reaches a
+// Binary64 compares it by its nearest binary64 under IEEE equality, so `1` and
+// `1.0000000000000000001` are one value and `-0` equals `0`; every other leaf compares exactly.
+func exactSchemaEqual(fields []replayField, declarations map[string]replayDeclaration, left, right map[string]Node) bool {
+	if exactEqual(left, right) {
+		return true
+	}
+	if len(left) != len(right) {
+		return false
+	}
+	for key, value := range left {
+		other, present := right[key]
+		if !present {
+			return false
+		}
+		source := ""
+		for _, field := range fields {
+			if field.Name == key {
+				source = field.Type
+			}
+		}
+		if !binary64Equal(declarations, source, value, other, 0) {
+			return false
+		}
+	}
+	return true
+}
+
+func binary64Equal(declarations map[string]replayDeclaration, source string, left, right Node, depth int) bool {
+	if exactEqual(left, right) {
+		return true
+	}
+	if depth > 128 || source == "" {
+		return false
+	}
+	if source == "Binary64" {
+		a, ok := binary64Of(left)
+		if !ok {
+			return false
+		}
+		b, ok := binary64Of(right)
+		return ok && a == b
+	}
+	if inner, ok := accessorOptional(source); ok {
+		if left == nil || right == nil {
+			return false
+		}
+		return binary64Equal(declarations, inner, left, right, depth+1)
+	}
+	if inner, ok, err := accessorCollection(source); ok && err == nil {
+		switch value := left.(type) {
+		case []any:
+			other, ok := right.([]any)
+			if !ok || len(value) != len(other) {
+				return false
+			}
+			for i, child := range value {
+				if !binary64Equal(declarations, inner, child, other[i], depth+1) {
+					return false
+				}
+			}
+			return true
+		case map[string]any:
+			other, ok := right.(map[string]any)
+			if !ok || len(value) != len(other) {
+				return false
+			}
+			for key, child := range value {
+				actual, present := other[key]
+				if !present || !binary64Equal(declarations, inner, child, actual, depth+1) {
+					return false
+				}
+			}
+			return true
+		}
+		return false
+	}
+	body, ok := declarations[source]
+	if !ok {
+		return false
+	}
+	if body.Kind == "newtype" {
+		return binary64Equal(declarations, body.Of, left, right, depth+1)
+	}
+	value, ok := left.(map[string]any)
+	other, ok2 := right.(map[string]any)
+	if !ok || !ok2 || len(value) != len(other) {
+		return false
+	}
+	member := map[string]string{}
+	switch body.Kind {
+	case "struct":
+		for _, field := range body.Fields {
+			member[field.Name] = field.Type
+		}
+	case "union":
+		if !exactEqual(value[body.Tag], other[body.Tag]) {
+			return false
+		}
+		label, _ := value[body.Tag].(string)
+		variants, err := unionVariants(body.Variants)
+		if err != nil || variants[label] == nil {
+			return false
+		}
+		for key := range value {
+			if key != body.Tag {
+				member[key] = *variants[label]
+			}
+		}
+	default:
+		return false
+	}
+	for key, child := range value {
+		actual, present := other[key]
+		if !present || !binary64Equal(declarations, member[key], child, actual, depth+1) {
+			return false
+		}
+	}
+	return true
 }

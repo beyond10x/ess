@@ -2854,6 +2854,7 @@ fn compare_subject(
 }
 
 /// A snapshot is an observation of one real row, including values synthesis cannot predict.
+#[allow(clippy::too_many_lines)] // One observation: select, admit, compare and record the row.
 fn snapshot_subject(
     view: &ViewRef,
     subject: Option<&BTreeMap<String, ScenarioValue>>,
@@ -2929,10 +2930,17 @@ fn snapshot_subject(
     }
     let unchanged = matches
         && (subject.is_some()
-            || run
-                .snapshots
-                .get(view)
-                .is_some_and(|(_, prior)| prior == rows[0]));
+            || run.snapshots.get(view).is_some_and(|(_, prior)| {
+                // A `Binary64` the row carries compares by its nearest binary64 (suite/62).
+                shape.map_or(prior == rows[0], |shape| {
+                    crate::binary64_values::same_row(
+                        &shape.fields,
+                        &shape.declarations,
+                        prior,
+                        rows[0],
+                    )
+                })
+            }));
     if unchanged {
         if subject.is_some() {
             run.snapshots

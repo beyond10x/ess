@@ -265,10 +265,14 @@ fn replay_envelope_refuses_old_labels_unknown_fields_and_unbound_or_overwritten_
         assert!(AdmittedSuite::from_suite(&bad).is_err(), "{mutation}");
     }
 }
+const BINARY64_STORY: &str = "story:a-binary64-value-round-trips-through-a-conformance-suite";
+
+/// Restated for story:a-binary64-value-round-trips-through-a-conformance-suite: a `Decimal` is
+/// compared by value from suite/58 (`decimal_retained_results_replay_by_value`), and a `Binary64`
+/// by its nearest binary64 from suite/62 (`binary64_exact_observers_replay_by_value`), so neither
+/// representation, at any depth, loses the replayed scenario any more.
 #[test]
 fn replay_response_refuses_floating_representations_recursively() {
-    // A `Decimal` is compared by value from suite/58 (`decimal_retained_results_replay_by_value`);
-    // a `Binary64` has no suite contract yet and stays refused.
     for ty in ["Binary64", "Optional<Binary64>", "List<Binary64>"] {
         let source = MODEL.replace("type: Integer}", &format!("type: '{ty}'}}"));
         let spec = Specification::assemble([(
@@ -279,13 +283,14 @@ fn replay_response_refuses_floating_representations_recursively() {
         let result =
             ess_conformance::synthesize::synthesize(&compile(&spec, &SourceMap::new()).unwrap());
         assert!(
-            !result.refusals.is_empty()
-                && !result
+            result.refusals.is_empty()
+                && result
                     .suite
                     .scenarios
                     .keys()
                     .any(|id| id.to_string().ends_with("/outcome/replayed")),
-            "{ty}"
+            "{BINARY64_STORY}: {ty}: {:?}",
+            result.refusals
         );
     }
 }
@@ -1730,10 +1735,12 @@ fn complementary_complete_views_observe_the_actual_subject() {
     assert_eq!(report.scenarios[0].status, Status::Passed);
 }
 
+/// Restated for story:a-binary64-value-round-trips-through-a-conformance-suite: a `Decimal` is
+/// observed by value from suite/58 (`a_decimal_published_by_a_view_keeps_the_wrong_state_scenario`)
+/// and a `Binary64` by its nearest binary64 from suite/62, so a complete subject publishing either
+/// keeps the replayed scenario and refuses nothing.
 #[test]
 fn unsupported_complete_subject_observers_refuse_by_name() {
-    // A `Decimal` is observed by value from suite/58
-    // (`a_decimal_published_by_a_view_keeps_the_wrong_state_scenario`); a `Binary64` is not.
     for ty in ["Binary64", "Optional<Binary64>", "List<Binary64>"] {
         let source = MODEL
             .replace(
@@ -1751,14 +1758,23 @@ fn unsupported_complete_subject_observers_refuse_by_name() {
         .unwrap();
         let result =
             ess_conformance::synthesize::synthesize(&compile(&spec, &SourceMap::new()).unwrap());
-        assert_ne!(result.refusals.len(), 0);
         assert!(
-            !result
+            result.refusals.is_empty(),
+            "{BINARY64_STORY}: {ty}: {:?}",
+            result.refusals
+        );
+        assert!(
+            result
                 .suite
                 .scenarios
                 .keys()
                 .any(|id| id.to_string().ends_with("/outcome/replayed")),
-            "{ty}"
+            "{BINARY64_STORY}: {ty}"
+        );
+        assert_eq!(
+            result.suite.provenance.suite_version.to_string(),
+            "ess-conformance/62",
+            "{BINARY64_STORY}: {ty}"
         );
     }
 }
@@ -2117,6 +2133,176 @@ fn decimal_retained_results_replay_by_value() {
         let refused = AdmittedSuite::from_json(&relabelled).unwrap_err();
         assert!(refused.to_string().contains("suite/58"), "{ty}: {refused}");
     }
+}
+
+/// The retained-result suite of [`MODEL`] with its `Integer` response of type `ty`, at suite/62.
+fn binary64_retained_suite(ty: &str) -> AdmittedSuite {
+    let source = MODEL.replace("type: Integer}", &format!("type: '{ty}'}}"));
+    let spec = Specification::assemble([(
+        Source::new("retained.yaml"),
+        RawSpecFile::parse(&source).unwrap(),
+    )])
+    .unwrap();
+    let result =
+        ess_conformance::synthesize::synthesize(&compile(&spec, &SourceMap::new()).unwrap());
+    assert!(
+        result.refusals.is_empty(),
+        "{BINARY64_STORY}: {ty}: {:?}",
+        result.refusals
+    );
+    let mut suite = result.suite;
+    suite
+        .scenarios
+        .retain(|id, _| id.to_string().ends_with("/outcome/replayed"));
+    assert_eq!(suite.scenarios.len(), 1, "{BINARY64_STORY}: {ty}");
+    assert_eq!(
+        suite.provenance.suite_version.to_string(),
+        "ess-conformance/62",
+        "{BINARY64_STORY}: {ty}"
+    );
+    let relabelled = suite
+        .to_canonical_json()
+        .unwrap_or_else(|error| panic!("{BINARY64_STORY}: {ty}: {error}"))
+        .replace("\"ess-conformance/62\"", "\"ess-conformance/60\"");
+    let refused = AdmittedSuite::from_json(&relabelled).unwrap_err();
+    assert!(
+        refused.to_string().contains("suite/62"),
+        "{BINARY64_STORY}: {ty}: a suite relabelled /60 is refused by its major: {refused}"
+    );
+    AdmittedSuite::from_suite(&suite).unwrap_or_else(|error| panic!("{BINARY64_STORY}: {error}"))
+}
+
+/// Both exact observers compare a `Binary64` at any depth by its nearest binary64: a retained
+/// result answered `1.5` and retried `1.50` passes and retried `1.25` fails, and a complete subject
+/// whose view re-spells `level` after a refusal passes while one that changes it fails.
+#[test]
+fn binary64_exact_observers_replay_by_value() {
+    const REFUSES: &str = "demo.gauge.Gauge/state/Closed/refuses/demo.gauge.CloseGauge";
+    for (ty, values) in [
+        ("Binary64", ["1.5", "1.50", "1.25"]),
+        ("Optional<Binary64>", ["1.5", "1.50", "1.25"]),
+        ("List<Binary64>", ["[1.5, 2]", "[1.50, 2.0]", "[1.5, 2.25]"]),
+        (
+            "Map<String, Binary64>",
+            [r#"{"a": 1.5}"#, r#"{"a": 1.50}"#, r#"{"a": 1.25}"#],
+        ),
+    ] {
+        let admitted = binary64_retained_suite(ty);
+        for (retry, status) in [(1, Status::Passed), (2, Status::Failed)] {
+            let target = DecimalBackend {
+                inner: Backend {
+                    mode: "valid",
+                    calls: Cell::new(0),
+                    queries: Cell::new(0),
+                },
+                values,
+                retry,
+            };
+            let report = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
+            assert_eq!(
+                report.scenarios[0].status, status,
+                "{BINARY64_STORY}: {ty} {}: {:?}",
+                values[retry], report.scenarios[0]
+            );
+        }
+    }
+    let ir = gauge("Binary64");
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    assert!(
+        synthesis.refusals.is_empty(),
+        "{BINARY64_STORY}: {:?}",
+        synthesis.refusals
+    );
+    assert_eq!(
+        synthesis.suite.provenance.suite_version.to_string(),
+        "ess-conformance/62",
+        "{BINARY64_STORY}"
+    );
+    let mut suite = synthesis.suite;
+    suite.scenarios.retain(|id, _| id.to_string() == REFUSES);
+    assert_eq!(suite.scenarios.len(), 1, "{BINARY64_STORY}: no `{REFUSES}`");
+    let admitted = AdmittedSuite::from_suite(&suite)
+        .unwrap_or_else(|error| panic!("{BINARY64_STORY}: {error}"));
+    for (mode, status) in [
+        ("valid", Status::Passed),
+        ("respelled", Status::Passed),
+        ("changed", Status::Failed),
+    ] {
+        let target = Gauges {
+            inner: ess_conformance::interpret::Interpreted::for_model(ir.clone()),
+            mode,
+            refused: Cell::new(false),
+        };
+        let report = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
+        assert_eq!(
+            report.scenarios[0].status, status,
+            "{BINARY64_STORY}: {mode}: {:?}",
+            report.scenarios[0]
+        );
+    }
+}
+
+/// One table of comparison vectors, read by the Rust runner here and by the generated Go runtime
+/// (`TestRetainedBinary64ComparesByValue`); the TypeScript runtime reads the same table in
+/// `src/ts/response.test.ts`. Each row is an original, a retry that is the same binary64 and a
+/// retry that is another.
+#[test]
+fn binary64_values_compare_by_value_in_every_runner() {
+    let admitted = binary64_retained_suite("Binary64");
+    for values in [
+        ["1", "1.0000000000000000001", "1.0000000000000002"],
+        ["-0.0", "0", "0.5"],
+        ["0.1", "0.10000000000000001", "0.30000000000000004"],
+        ["1E2", "100", "100.5"],
+        ["9007199254740993", "9007199254740992", "9007199254740996"],
+    ] {
+        for (retry, status) in [(1, Status::Passed), (2, Status::Failed)] {
+            let target = DecimalBackend {
+                inner: Backend {
+                    mode: "valid",
+                    calls: Cell::new(0),
+                    queries: Cell::new(0),
+                },
+                values,
+                retry,
+            };
+            let report = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
+            assert_eq!(
+                report.scenarios[0].status, status,
+                "{BINARY64_STORY}: {} then {}: {:?}",
+                values[0], values[retry], report.scenarios[0]
+            );
+        }
+    }
+    let root = support_scratch::Scratch::adopt(
+        std::env::temp_dir().join(format!("ess-retained-go-binary64-{}", std::process::id())),
+    );
+    emit_runtime(&root);
+    let result = std::process::Command::new("go")
+        .args([
+            "test",
+            "-count=1",
+            "-run",
+            "^TestRetainedBinary64ComparesByValue$",
+            "-v",
+            "./essconform",
+        ])
+        .env("GOWORK", "off")
+        .env("GOPROXY", "off")
+        .env("GOMAXPROCS", "2")
+        .current_dir(&root)
+        .output()
+        .expect("required Go toolchain executes retained-result witnesses");
+    let output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(
+        output.contains("--- PASS: TestRetainedBinary64ComparesByValue"),
+        "{BINARY64_STORY}: the Go runtime ran the table: {output}"
+    );
+    assert!(result.status.success(), "{BINARY64_STORY}: {output}");
 }
 
 #[test]

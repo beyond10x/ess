@@ -4868,7 +4868,7 @@ pub fn audit_with_authored<T: ConformanceTarget>(
     authored: &BTreeMap<crate::ScenarioId, crate::ConformanceScenario>,
 ) -> Result<MutationReport, AuditRefusal> {
     let baseline_ir = compile(documents.to_vec(), texts).map_err(AuditRefusal::Unloadable)?;
-    crate::admission::model(&baseline_ir)
+    crate::admission::model_without_binary64(&baseline_ir)
         .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
     let declaration = match known {
         None => None,
@@ -5731,7 +5731,7 @@ pub fn emit_with(
     declaration: Option<&str>,
 ) -> Result<Emission, AuditRefusal> {
     let baseline_ir = compile(documents.to_vec(), texts).map_err(AuditRefusal::Unloadable)?;
-    crate::admission::model(&baseline_ir)
+    crate::admission::model_without_binary64(&baseline_ir)
         .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
     let declaration = declaration
         .map(crate::known_failures::Declaration::from_json)

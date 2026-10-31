@@ -371,8 +371,6 @@ export function decodeRetainedCapture(value: unknown): RetainedCapture {
   if (capture.fields.length === 0 || capture.fields.length > 256) {
     throw new Error('replay schema resource limit');
   }
-  // Named before the type grammar, which does not know `Binary64` and would refuse it unnamed.
-  refuseBinary64(capture.fields, declarations);
   validateTypedFields([capture.fields], declarations);
   return capture;
 }
@@ -414,15 +412,138 @@ function exactFieldReaching(
   return fields.find((field) => reaches(field.type, 0))?.name;
 }
 
-/** Both exact observers refuse a `Binary64`, naming the field that reaches it. */
-function refuseBinary64(
-  fields: AccessorField[],
-  declarations: Record<string, SelectionDeclaration>,
-): void {
-  const field = exactFieldReaching(fields, declarations, 'Binary64');
-  if (field !== undefined) {
-    throw new Error(`field \`${field}\`: Binary64 replay results are unsupported`);
+/**
+ * Refuse a `Binary64` in an exact observer (a retained result's `capture` or a complete subject's
+ * `shape`) below suite/62, the pair that carries one
+ * (story:a-binary64-value-round-trips-through-a-conformance-suite).
+ */
+export function exactBinary64Major(value: unknown, major: number): void {
+  if (major >= 62) {
+    return;
   }
+  const schema =
+    isObject(value) && Object.hasOwn(value, 'identity_field')
+      ? decodeSubjectShape(value)
+      : decodeRetainedCapture(value);
+  if (exactFieldReaching(schema.fields, schema.declarations, 'Binary64') !== undefined) {
+    throw new Error('a Binary64 value requires suite/62 or /63');
+  }
+}
+
+/** A number's nearest binary64, or `null` for a value that is not a finite number token. */
+function binary64Of(value: Node): number | null {
+  if (value instanceof JsonNumber) {
+    return responseNumber(value) === null ? null : Number(value.toString());
+  }
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/** The schema an exact observation compares a `Binary64` under. */
+export interface ExactSchema {
+  fields: readonly { name: string; type: string }[];
+  declarations: Record<string, SelectionDeclaration>;
+}
+
+/** {@link exactObservationEqual} for one value of `type`. */
+function exactTypedEqual(
+  schema: ExactSchema,
+  type: string,
+  left: Node,
+  right: Node,
+  depth: number,
+): boolean {
+  if (responseEqual(left, right)) {
+    return true;
+  }
+  if (depth > 128) {
+    return false;
+  }
+  if (type === 'Binary64') {
+    const a = binary64Of(left);
+    const b = binary64Of(right);
+    return a !== null && b !== null && a === b;
+  }
+  const [inner, optional] = accessorOptional(type);
+  if (optional) {
+    return (
+      left !== null && right !== null && exactTypedEqual(schema, inner, left, right, depth + 1)
+    );
+  }
+  const [item, collection] = accessorCollection(type);
+  if (collection) {
+    if (Array.isArray(left)) {
+      return (
+        Array.isArray(right) &&
+        left.length === right.length &&
+        left.every((child, index) => exactTypedEqual(schema, item, child, right[index], depth + 1))
+      );
+    }
+    return membersEqual(left, right, () => item, schema, depth);
+  }
+  const declared = owned(schema.declarations, type);
+  if (declared === undefined) {
+    return false;
+  }
+  switch (declared.kind) {
+    case 'newtype':
+      return exactTypedEqual(schema, declared.of, left, right, depth + 1);
+    case 'struct':
+      return membersEqual(
+        left,
+        right,
+        (key) => (declared.fields ?? []).find((field) => field.name === key)?.type,
+        schema,
+        depth,
+      );
+    case 'union': {
+      if (!isObject(left) || !isObject(right)) {
+        return false;
+      }
+      const mine = left as Record<string, Node>;
+      const other = right as Record<string, Node>;
+      if (!responseEqual(owned(mine, declared.tag) ?? null, owned(other, declared.tag) ?? null)) {
+        return false;
+      }
+      const label = owned(mine, declared.tag);
+      const variants = (declared.variants ?? {}) as Record<string, string | null>;
+      const content = typeof label === 'string' ? owned(variants, label) : undefined;
+      return membersEqual(
+        left,
+        right,
+        (key) => (key === declared.tag ? undefined : (content ?? undefined)),
+        schema,
+        depth,
+      );
+    }
+    default:
+      return false;
+  }
+}
+
+function membersEqual(
+  left: Node,
+  right: Node,
+  member: (key: string) => string | undefined,
+  schema: ExactSchema,
+  depth: number,
+): boolean {
+  if (!isObject(left) || !isObject(right) || Array.isArray(left) || Array.isArray(right)) {
+    return false;
+  }
+  const mine = left as Record<string, Node>;
+  const other = right as Record<string, Node>;
+  if (Object.keys(mine).length !== Object.keys(other).length) {
+    return false;
+  }
+  return Object.keys(mine).every((key) => {
+    if (!Object.hasOwn(other, key)) {
+      return false;
+    }
+    const type = member(key);
+    return type === undefined
+      ? responseEqual(mine[key], other[key])
+      : exactTypedEqual(schema, type, mine[key], other[key], depth + 1);
+  });
 }
 
 /**
@@ -449,9 +570,24 @@ export function exactDecimalMajor(value: unknown, major: number): void {
  * The comparison of both exact observers: structural, every number by its exact value, so a
  * `Decimal` `1.5` equals `1.50` and `0.1` differs from `0.10000000000000001`. The Go runner
  * compares the same way; the Rust runner reads a non-integer through binary64.
+ *
+ * Under `schema`, a field whose type reaches a `Binary64` compares it by its nearest binary64
+ * under IEEE equality, so `1` equals `1.0000000000000000001` and `-0` equals `0` (suite/62).
  */
-export function exactObservationEqual(left: Node, right: Node): boolean {
-  return responseEqual(left, right);
+export function exactObservationEqual(left: Node, right: Node, schema?: ExactSchema): boolean {
+  if (responseEqual(left, right)) {
+    return true;
+  }
+  if (schema === undefined) {
+    return false;
+  }
+  return membersEqual(
+    left,
+    right,
+    (key) => schema.fields.find((field) => field.name === key)?.type,
+    schema,
+    -1,
+  );
 }
 
 /** Admit one retained-result observation: its grammar, then the checks decoding makes. */
@@ -592,7 +728,7 @@ export function retainedResult(
     }
     admitRetainedResponse(capture, saved.response);
     const replayed = admitRetainedResponse(capture, run.last.response);
-    if (!exactObservationEqual(saved.response, replayed)) {
+    if (!exactObservationEqual(saved.response, replayed, capture)) {
       throw new Error('retry result differs from retained original response');
     }
     return true;
@@ -646,7 +782,6 @@ export function admitSubjectShape(value: unknown): void {
 }
 
 function validateSubjectShape(shape: SubjectShape): void {
-  refuseBinary64(shape.fields, shape.declarations);
   validateTypedFields([shape.fields], shape.declarations);
   const identity = shape.fields.find((field) => field.name === shape.identityField);
   if (identity === undefined) {
@@ -661,6 +796,10 @@ function validateSubjectShape(shape: SubjectShape): void {
   };
   if (optional(identity.type, 0)) {
     throw new Error('complete subject identity cannot be optional');
+  }
+  // An identity selects by exact equality; a `Binary64` is not carried there.
+  if (exactFieldReaching([identity], shape.declarations, 'Binary64') !== undefined) {
+    throw new Error('complete subject identity cannot be Binary64');
   }
 }
 
@@ -842,7 +981,7 @@ function checkType(
     checkType(observation, item, used, stack, depth + 1, allowJson, input);
     return;
   }
-  if ((allowJson && source === 'Json') || (accessorPrimitive(source) && source !== 'Binary64')) {
+  if ((allowJson && source === 'Json') || accessorPrimitive(source)) {
     return;
   }
   const body = owned(observation.declarations, source);
@@ -1284,6 +1423,7 @@ export function responsePrimitiveAdmits(source: string, value: Node): boolean {
       return integer !== null && integer >= INT64_MIN && integer <= INT64_MAX;
     }
     case 'Decimal':
+    case 'Binary64':
       return responseNumber(value) !== null;
     case 'String':
     case 'Timestamp':

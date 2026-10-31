@@ -90,7 +90,7 @@ pub fn emit(
     ir: &EssIr,
     suite: &ConformanceSuite,
 ) -> Result<BTreeMap<String, Artifact>, crate::admission::AdmissionError> {
-    crate::admission::model(ir)?;
+    crate::admission::model_without_binary64(ir)?;
     response_replay_supported(suite)?;
     refusal_policy_supported(ir)?;
     let json = suite.to_canonical_json()?;

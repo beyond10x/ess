@@ -386,13 +386,7 @@ fn fixture_contract_rejects_recursive_unrelated_and_constrained_types() {
         panic!("fixture prelude")
     };
     let raw = serde_json::to_value(fixtures).unwrap();
-    for mutation in [
-        "recursive",
-        "unrelated",
-        "constraint",
-        "duplicate",
-        "binary64",
-    ] {
+    for mutation in ["recursive", "unrelated", "constraint", "duplicate"] {
         let mut changed = raw.clone();
         match mutation {
             "recursive" => {
@@ -411,7 +405,6 @@ fn fixture_contract_rejects_recursive_unrelated_and_constrained_types() {
                 let field = changed["fields"][0].clone();
                 changed["fields"].as_array_mut().unwrap().push(field);
             }
-            "binary64" => changed["fields"][0]["type"] = "Binary64".into(),
             _ => unreachable!(),
         }
         assert!(
@@ -419,6 +412,14 @@ fn fixture_contract_rejects_recursive_unrelated_and_constrained_types() {
             "{mutation}"
         );
     }
+    // Restated for story:a-binary64-value-round-trips-through-a-conformance-suite: a fixture
+    // contract carries a Binary64; the suite major (/62 or /63) decides at admission.
+    let mut changed = raw.clone();
+    changed["fields"][0]["type"] = "Binary64".into();
+    assert!(
+        serde_json::from_value::<ess_conformance::fixtures::Contract>(changed).is_ok(),
+        "story:a-binary64-value-round-trips-through-a-conformance-suite: binary64"
+    );
 }
 
 const AUTHORED: &str = r"

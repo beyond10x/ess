@@ -1132,9 +1132,6 @@ pub(crate) fn proof_base(
             ResolvedTypeRef::List { .. } => Some(Node::Seq(Vec::new())),
             ResolvedTypeRef::Map { .. } => Some(Node::Map(BTreeMap::new())),
             ResolvedTypeRef::Primitive { name } => {
-                if *name == Primitive::Binary64 {
-                    return None;
-                }
                 budget.charge(128).ok()?;
                 Some(primitive_value(
                     *name,
@@ -6171,9 +6168,9 @@ impl<'ir> Builder<'ir> {
     ///
     /// The key is [`map_key`]; the value is built at `<path>.0`, as a list's element is, and every
     /// further entry holds a copy of it under the key of the next instance. Where no entry can be
-    /// built — a `Decimal` key has no setup spelling, and a value type that refers to itself or
-    /// holds a `Binary64` has no finite witness — the map is `{}`, as it always was, and nothing
-    /// the attempt recorded is kept.
+    /// built — a `Decimal` or `Binary64` key has no setup spelling, and a value type that refers to
+    /// itself has no finite witness — the map is `{}`, as it always was, and nothing the attempt
+    /// recorded is kept.
     ///
     /// A map input's example (ess/33) is the value at the plain instance wherever no candidate
     /// chooses the map's size; the entry is still built, so what it records is kept.
@@ -6266,12 +6263,7 @@ impl<'ir> Builder<'ir> {
             }
             ResolvedTypeRef::List { of } => self.list(of, path, overrides, depth, record),
             ResolvedTypeRef::Map { .. } => Ok(self.map(type_ref, path, overrides, depth, record)),
-            ResolvedTypeRef::Primitive { name } => {
-                if *name == Primitive::Binary64 {
-                    return Err(WitnessGap { path: path.to_string(), type_ref: name.to_string(), reason: "requires a finite Binary64 conformance codec that this suite format does not admit" });
-                }
-                Ok(chosen(self.primitive(*name, path, record)))
-            }
+            ResolvedTypeRef::Primitive { name } => Ok(chosen(self.primitive(*name, path, record))),
             ResolvedTypeRef::Declared { name } => {
                 // Every declared type on the way down is known, so a map whose value reaches one
                 // is witnessed `{}` at once (beyond10x/ess#196) rather than at the depth limit.
@@ -6486,12 +6478,9 @@ impl Leaf {
     /// What a candidate may vary a primitive to.
     fn of_primitive(primitive: Primitive) -> Self {
         match primitive {
-            Primitive::Binary64 => {
-                unreachable!("Binary64 witnesses are refused before construction")
-            }
             Primitive::Boolean => Self::Bool,
             Primitive::Integer => Self::Number { integral: true },
-            Primitive::Decimal => Self::Number { integral: false },
+            Primitive::Decimal | Primitive::Binary64 => Self::Number { integral: false },
             Primitive::Timestamp => Self::Timestamp,
             Primitive::Json => Self::Json,
             Primitive::String | Primitive::Duration | Primitive::Uuid | Primitive::Bytes => {
@@ -6516,7 +6505,9 @@ fn primitive_value(primitive: Primitive, path: &FactPath, distinction: Distincti
     // silently rounded would be two instances nothing could tell apart.
     let ordinal = u32::try_from(nth).unwrap_or(u32::MAX);
     match primitive {
-        Primitive::Binary64 => unreachable!("Binary64 witnesses are refused before construction"),
+        // Half past the ordinal: a finite binary64 no integer spells, exact in every runner below
+        // 2^53 (story:a-binary64-value-round-trips-through-a-conformance-suite).
+        Primitive::Binary64 => Node::Number(number(BASE_NUMBER + f64::from(ordinal) + 0.5)),
         Primitive::Boolean => Node::Bool(BASE_BOOL != (nth % 2 == 1)),
         Primitive::Integer | Primitive::Decimal => {
             Node::Number(number(BASE_NUMBER + f64::from(ordinal)))
@@ -6561,6 +6552,7 @@ fn has_apart(primitive: Primitive) -> bool {
         Primitive::Timestamp
             | Primitive::Integer
             | Primitive::Decimal
+            | Primitive::Binary64
             | Primitive::Duration
             | Primitive::Bytes
     )
@@ -6601,6 +6593,11 @@ fn apart(primitive: Primitive, distinction: Distinction, ordinal: usize) -> Node
             let ordinal = f64::from(u32::try_from(nth).unwrap_or(u32::MAX));
             let step = f64::from(u32::try_from(step).unwrap_or(u32::MAX));
             Node::Number(number(BASE_NUMBER + ordinal + APART_NUMBER * step))
+        }
+        Primitive::Binary64 => {
+            let ordinal = f64::from(u32::try_from(nth).unwrap_or(u32::MAX));
+            let step = f64::from(u32::try_from(step).unwrap_or(u32::MAX));
+            Node::Number(number(BASE_NUMBER + ordinal + APART_NUMBER * step + 0.5))
         }
         Primitive::Duration => Node::Text(format!(
             "PT{}S",

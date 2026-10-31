@@ -338,7 +338,7 @@ fn compile(sources: &[SourceDocument]) -> Result<ess_compiler::EssIr> {
         .map_err(|_| Error::AdmissionRefused)?;
     let ir =
         ess_compiler::compile(&specification, &source_map).map_err(|_| Error::AdmissionRefused)?;
-    crate::admission::model(&ir).map_err(|_| Error::AdmissionRefused)?;
+    crate::admission::model_without_binary64(&ir).map_err(|_| Error::AdmissionRefused)?;
     Ok(ir)
 }
 fn check_provenance(ir: &ess_compiler::EssIr, execution: &Execution) -> Result<()> {

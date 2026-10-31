@@ -750,13 +750,15 @@ func TestRetainedDecimalComparesByValue(t *testing.T) {
 			t.Fatal(c.ty, ": a changed Decimal passed")
 		}
 	}
+	// Restated for story:a-binary64-value-round-trips-through-a-conformance-suite: the schema of a
+	// Binary64 retained result is admitted; its suite major decides whether a suite may carry it.
 	for _, ty := range []string{"Binary64", "List<Binary64>"} {
 		value := map[string]any{"snapshot": "original", "instance": "record", "identity": map[string]any{"kind": "event", "event": "retained.core.Seeded", "field": "record_id"}, "origin": map[string]any{"command": "retained.core.Seed", "outcome": "seeded"}, "replay": map[string]any{"command": "retained.core.Seed", "outcome": "replayed"}, "fields": []any{map[string]any{"name": "item", "type": ty}}, "declarations": map[string]any{}}
-		if err := admitReplay(value); err == nil {
-			t.Fatal(ty, ": a Binary64 retained result was admitted")
+		if err := admitReplay(value); err != nil {
+			t.Fatal(ty, ": story:a-binary64-value-round-trips-through-a-conformance-suite: a Binary64 retained result schema was refused: ", err)
 		}
 	}
-	for _, version := range []string{"ess-conformance/34", "ess-conformance/56", "ess-conformance/58"} {
+	for _, version := range []string{"ess-conformance/34", "ess-conformance/56", "ess-conformance/58", "ess-conformance/62"} {
 		for _, ty := range []string{"Decimal", "Binary64"} {
 			doc := retainedDocument(t)
 			doc["provenance"].(map[string]any)["suite_version"] = version
@@ -767,9 +769,40 @@ func TestRetainedDecimalComparesByValue(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, err = admitRunInput(string(raw))
-			if admitted := version == "ess-conformance/58" && ty == "Decimal"; (err == nil) != admitted {
-				t.Fatalf("%s %s: admitted=%v, error %v", version, ty, admitted, err)
+			admitted := version == "ess-conformance/58" && ty == "Decimal" || version == "ess-conformance/62"
+			if (err == nil) != admitted {
+				t.Fatalf("story:a-binary64-value-round-trips-through-a-conformance-suite: %s %s: admitted=%v, error %v", version, ty, admitted, err)
 			}
+		}
+	}
+}
+
+// A Binary64 in an exact observer is compared by its nearest binary64 under IEEE equality
+// (story:a-binary64-value-round-trips-through-a-conformance-suite): `1` and
+// `1.0000000000000000001` are one value, `-0` and `0` are one value, `9007199254740993` and
+// `9007199254740992` are one value, and `1` and `1.0000000000000002` are two. A token with no
+// finite binary64 image is refused.
+func TestRetainedBinary64ComparesByValue(t *testing.T) {
+	for _, ty := range []string{"Binary64", "Optional<Binary64>", "List<Binary64>"} {
+		contract := replayContract(t, ty, map[string]any{})
+		wrap := func(raw string) map[string]Node {
+			if ty == "List<Binary64>" {
+				return map[string]Node{"item": []any{json.Number(raw)}}
+			}
+			return map[string]Node{"item": json.Number(raw)}
+		}
+		for _, pair := range [][2]string{{"1.5", "1.50"}, {"1", "1.0"}, {"-0", "0"}, {"-0.0", "0"}, {"1E2", "100"}, {"0.1", "0.10000000000000001"}, {"1", "1.0000000000000000001"}, {"9007199254740993", "9007199254740992"}} {
+			if err := contract.compare(wrap(pair[0]), wrap(pair[1])); err != nil {
+				t.Errorf("%s: %s then %s: %v", ty, pair[0], pair[1], err)
+			}
+		}
+		for _, pair := range [][2]string{{"1.5", "1.25"}, {"1", "1.0000000000000002"}, {"0.1", "0.30000000000000004"}, {"9007199254740992", "9007199254740996"}} {
+			if err := contract.compare(wrap(pair[0]), wrap(pair[1])); err == nil {
+				t.Errorf("%s: %s then %s: two different binary64 values compared equal", ty, pair[0], pair[1])
+			}
+		}
+		if err := contract.compare(wrap("1"), wrap("1e400")); err == nil {
+			t.Errorf("%s: a token with no finite binary64 image was admitted", ty)
 		}
 	}
 }

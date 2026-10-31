@@ -4352,7 +4352,7 @@ func primitive(kind string, value Node) string {
 		if !ok || !integral(number) {
 			return mismatch()
 		}
-	case "decimal":
+	case "decimal", "binary64":
 		if _, ok := asNumber(value); !ok {
 			return mismatch()
 		}
@@ -5239,7 +5239,7 @@ func admitShape(value any, major int) error {
 		}
 		if kind == "primitive" {
 			switch f["kind"] {
-			case "string", "boolean", "integer", "decimal", "timestamp", "duration", "uuid", "bytes", "json":
+			case "string", "boolean", "integer", "decimal", "binary64", "timestamp", "duration", "uuid", "bytes", "json":
 			default:
 				return fmt.Errorf("unknown primitive")
 			}
@@ -5622,6 +5622,10 @@ func admitStep(value any, major int) error {
 	f, ok := value.(map[string]any)
 	if !ok {
 		return fmt.Errorf("step must be object")
+	}
+	// A typed Binary64 record is suite/62 and /63 vocabulary.
+	if err := binary64Major(f, major); err != nil {
+		return err
 	}
 	tag, err := text(f["step"])
 	if err != nil {
