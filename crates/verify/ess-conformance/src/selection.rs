@@ -635,6 +635,30 @@ pub(crate) fn validate_direct_response_value(
     .map_err(|error| error.code)
 }
 
+/// The direct-return check, naming where the value failed, as [`validate_fixture_value`] does: the
+/// code, then `at` and the path of the member or item that failed.
+pub(crate) fn validate_direct_response_value_at(
+    ty: &TypeRef,
+    value: Option<&Node>,
+    declarations: &BTreeMap<QualifiedName, Declaration>,
+    opened: &BTreeSet<QualifiedName>,
+    bytes: &mut usize,
+) -> Result<(), String> {
+    validate_value_inner(
+        ty,
+        value,
+        declarations,
+        opened,
+        bytes,
+        0,
+        ValueProfile::DirectResponse,
+    )
+    .map_err(|error| match error.path() {
+        path if path.is_empty() => error.code.to_owned(),
+        path => format!("{} at `{path}`", error.code),
+    })
+}
+
 /// Why a value was refused, and the members and items from the root down to where.
 ///
 /// The path is collected only on the way out of a failure, innermost member first, so a value

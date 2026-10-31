@@ -728,10 +728,10 @@ fn a_suite_without_a_decimal_observer_keeps_its_bytes() {
     );
     assert!(ess_conformance::AdmittedSuite::from_json(&json).is_ok());
     // A reader that admits no later major refuses /58 by its version, never by a step.
-    let later = ess_conformance::scenario::SuiteFormat::parse("ess-conformance/62").unwrap();
+    let later = ess_conformance::scenario::SuiteFormat::parse("ess-conformance/64").unwrap();
     assert!(!later.is_supported());
     let refused = ess_conformance::AdmittedSuite::from_json(
-        &json.replace("\"ess-conformance/58\"", "\"ess-conformance/62\""),
+        &json.replace("\"ess-conformance/58\"", "\"ess-conformance/64\""),
     )
     .unwrap_err();
     assert!(

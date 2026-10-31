@@ -51,6 +51,7 @@ import {
   admitDirectResponse,
   admitResponseConstraints,
   compareDirectResponse,
+  memberPathsMajor,
   responseConstraintsMajor,
   undeclaredFieldsMajor,
 } from './direct_response.js';
@@ -2837,7 +2838,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /61 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /63 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -7128,6 +7129,10 @@ const SUITE_MAJORS: { [version: string]: number } = {
   // execution. Cumulative over every major below, the exact-Decimal pair included.
   'ess-conformance/60': 60,
   'ess-conformance/61': 61,
+  // A response observation names a member by its dotted path. Cumulative over every major below,
+  // the provided-row pair included.
+  'ess-conformance/62': 62,
+  'ess-conformance/63': 63,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
@@ -7136,9 +7141,9 @@ const COVERAGE_MAJORS = new Set([
   // The coverage majors of the conditional measure, expression, seed-bearing and counted-claim
   // pairs, of the constrained-response and opened-response pairs, of the held-now pair and of the
   // pair carrying wrapped value-invariant observations and awaits, of the view-reference pair and
-  // of the pair whose one-time read cells read as their actor, of the exact-Decimal pair and of the
-  // pair whose entity fixtures name a provided row.
-  39, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61,
+  // of the pair whose one-time read cells read as their actor, of the exact-Decimal pair, of the
+  // pair whose entity fixtures name a provided row and of the response member-path pair.
+  39, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63,
 ]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
@@ -7177,7 +7182,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
   if (carriesCoverage !== coverageMajor(major)) {
-    throw new Error('coverage is required exactly for odd suite majors from /5 through /61');
+    throw new Error('coverage is required exactly for odd suite majors from /5 through /63');
   }
   expandCompactSuite(root, major);
   for (const key of ['system', 'specification_version', 'spec_digest', 'contract_digest']) {
@@ -8619,6 +8624,7 @@ export function admitStep(value: Node, major: number): void {
       case 'response':
         responseConstraintsMajor(held, major);
         undeclaredFieldsMajor(held, major);
+        if (tag === 'expect_direct_response') memberPathsMajor(held, major);
         if (tag === 'expect_direct_response') admitDirectResponse(held);
         else admitResponse(held, major);
         break;

@@ -1,0 +1,25 @@
+format: ess/22
+system: relay
+version: v1
+domain: relay.loop
+types:
+  - name: relay.loop.CheckpointId
+    kind: newtype
+    of: String
+    invariants: ['value == "cp-1"']
+  - name: relay.loop.Checkpoint
+    kind: struct
+    fields:
+      - {name: format, type: String}
+      - {name: checkpoint_id, type: relay.loop.CheckpointId}
+      - {name: call, type: String}
+commands:
+  - name: relay.loop.Defer
+    input:
+      - {name: call, type: String}
+    response:
+      - {name: stop, type: String}
+      - {name: checkpoint, type: relay.loop.Checkpoint}
+    outcomes:
+      - name: deferred
+        returns: true

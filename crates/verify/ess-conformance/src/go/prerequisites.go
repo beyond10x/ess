@@ -306,23 +306,107 @@ func admitDirectResponse(value any) (*directResponseObservation, error) {
 	observer := selectionObservation{Declarations: result.Declarations, responseMode: true, directMode: true}
 	count := 0
 	for name, value := range result.Expected {
-		found := false
-		for _, field := range result.Fields {
-			if field.Name == name {
-				found = true
-				if err = observer.validateValue(field.Type, value, true, &count, 0); err != nil {
-					return nil, err
-				}
-				if err = directPresence(field, value, true); err != nil {
-					return nil, err
-				}
-			}
+		// A member path (suite/62 and /63) is admitted at the type of the member it names.
+		field, e := directMember(result.Fields, result.Declarations, name)
+		if e != nil {
+			return nil, e
 		}
-		if !found {
-			return nil, fmt.Errorf("undeclared direct expected field")
+		if err = observer.validateValue(field.Type, value, true, &count, 0); err != nil {
+			return nil, err
+		}
+		if err = directPresence(field, value, true); err != nil {
+			return nil, err
 		}
 	}
 	return &result, nil
+}
+
+// directMember is the declared response member an expected key names: a field, or from suite/62 a
+// dotted path through struct members, with Optional and newtypes along it transparent. A path
+// through anything else names no member.
+func directMember(fields []accessorField, declarations map[string]selectionDeclaration, path string) (accessorField, error) {
+	segments := strings.Split(path, ".")
+	var member accessorField
+	found := false
+	for _, field := range fields {
+		if field.Name == segments[0] {
+			member, found = field, true
+		}
+	}
+	if !found {
+		return accessorField{}, fmt.Errorf("undeclared direct expected field")
+	}
+	for _, segment := range segments[1:] {
+		members, ok := directStruct(member.Type, declarations, 0)
+		if !ok {
+			return accessorField{}, fmt.Errorf("direct expected path goes through a value with no members")
+		}
+		found = false
+		for _, field := range members {
+			if field.Name == segment {
+				member, found = field, true
+			}
+		}
+		if !found {
+			return accessorField{}, fmt.Errorf("undeclared direct expected field")
+		}
+	}
+	return member, nil
+}
+
+// directStruct is the members of the struct source is, through Optional and newtypes.
+func directStruct(source string, declarations map[string]selectionDeclaration, depth int) ([]accessorField, bool) {
+	if depth > 32 {
+		return nil, false
+	}
+	if inner, optional := accessorOptional(source); optional {
+		return directStruct(inner, declarations, depth+1)
+	}
+	declaration, ok := declarations[source]
+	if !ok {
+		return nil, false
+	}
+	switch declaration.Kind {
+	case "newtype":
+		return directStruct(declaration.Of, declarations, depth+1)
+	case "struct":
+		return declaration.Fields, true
+	}
+	return nil, false
+}
+
+// directReach is the actual value an expected key names. A field is present when its key is; a
+// member path reaches nothing where a member along it is absent or null.
+func directReach(actual map[string]Node, path string) (Node, bool) {
+	segments := strings.Split(path, ".")
+	value, present := actual[segments[0]]
+	if len(segments) == 1 {
+		return value, present
+	}
+	for _, segment := range segments[1:] {
+		object, ok := value.(map[string]Node)
+		if !ok {
+			return nil, false
+		}
+		if value, present = object[segment]; !present {
+			return nil, false
+		}
+	}
+	return value, value != nil
+}
+
+// memberPathsMajor refuses a response observation naming a member by its path below suite/62.
+func memberPathsMajor(value any, major int) error {
+	if object, ok := value.(map[string]any); ok && major < 62 {
+		if expected, ok := object["expected"].(map[string]any); ok {
+			for key := range expected {
+				if strings.Contains(key, ".") {
+					return fmt.Errorf("a response member path requires suite/62 or /63")
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (r directResponseObservation) compare(actual map[string]Node) error {
@@ -361,14 +445,17 @@ func (r directResponseObservation) compare(actual map[string]Node) error {
 	// At an opened struct only the declared fields are compared; the target's extension members are
 	// never read (beyond10x/ess#500).
 	for name, value := range r.Expected {
-		actual, present := actual[name]
+		reached, present := directReach(actual, name)
 		sourceType := ""
-		for _, field := range r.Fields {
-			if field.Name == name {
-				sourceType = field.Type
-			}
+		if field, e := directMember(r.Fields, r.Declarations, name); e == nil {
+			sourceType = field.Type
 		}
-		if !present || !declaredEqual(r.Declarations, r.opened, sourceType, value, actual) {
+		// A member path compares that member alone; one absent or null along it is absent, which
+		// only a null literal claims.
+		if !present && value == nil && strings.Contains(name, ".") {
+			continue
+		}
+		if !present || !declaredEqual(r.Declarations, r.opened, sourceType, value, reached) {
 			return fmt.Errorf("response differs from declared literal")
 		}
 	}
