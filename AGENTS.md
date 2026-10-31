@@ -203,6 +203,10 @@ Set `ESS_TYPES_NODE` to a `node_modules` outside the checkout that holds `@types
 `ci.yml` installs (`npm install --prefix <dir> @types/node@26.3.0`): without it the TypeScript cases
 in `adversary_287_pass1` fail with `TS2688: Cannot find type definition file for 'node'` and
 `cargo test` stops at that target, so the binaries after it never run.
+`ess-synth`'s `integer_spellings` runs a Rust harness built once by `task integer-spellings-harness`
+(no test builds with cargo, `no_test_builds.rs`); `task test` and the CI shards set
+`ESS_INTEGER_SPELLINGS_HARNESS` to it, and a bare `cargo test -p ess-synth` needs that task run and
+the variable set, or its Rust cases fail naming the task.
 Put the JavaScript tools `ci.yml` installs globally on `PATH` too (`typescript@6.0.3`,
 `prettier@3.8.1`, `esbuild@0.28.2`, for example `npm install --prefix <dir>` and `<dir>/node_modules/.bin`
 first on `PATH`): without `esbuild` the generated React app's `npm run dev` and `npm run preview`

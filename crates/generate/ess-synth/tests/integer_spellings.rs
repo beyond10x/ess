@@ -13,6 +13,12 @@
 //! offline beside a harness that holds only storage and identities, and is reached through the
 //! route a request takes: the in-process dispatcher for Rust, a real socket for Go. The Go cases
 //! are skipped, and said out loud, where this machine has no `go`.
+//!
+//! The Rust harness is not built here: a test that runs cargo compiles a crate graph inside its
+//! lane (`crates/edge/ess-xtask/tests/no_test_builds.rs`). `task integer-spellings-harness`
+//! generates the Rust server from the model with `ess generate synthesize` and builds the harness
+//! once, before the test binaries run, and this test runs the binary [`HARNESS`] names. Without it
+//! the Rust cases fail, naming the task.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -40,58 +46,14 @@ use ess_primitives::node::Node;
 use ess_synth::{synthesize_for, Target};
 use serde_json::{json, Value};
 
-const MODEL: &str = "\
-format: ess/25
-system: demo
-version: v1
-domain: demo.board
-summary: A board holds a label, a size limit and the page it opens on.
-types:
-  - {name: demo.board.BoardId, kind: newtype, of: Uuid}
-entities:
-  - name: demo.board.Board
-    identity: {name: board_id, type: demo.board.BoardId}
-    fields:
-      - {name: label, type: String}
-      - {name: limit, type: Integer}
-      - {name: page, type: Optional<Integer>}
-    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
-events:
-  - name: demo.board.BoardOpened
-    fields: [{name: board_id, type: demo.board.BoardId}]
-actors:
-  - name: demo.board.Operator
-    may: [demo.board.Open]
-commands:
-  - name: demo.board.Open
-    input:
-      - {name: label, type: String}
-      - {name: limit, type: Integer}
-      - {name: page, type: Optional<Integer>}
-    outcomes:
-      - name: opened
-        creates: demo.board.Board
-        instance: board_id
-        emits: [demo.board.BoardOpened]
-        payload: {demo.board.BoardOpened: {board_id: {generated: true}}}
-        sets: {label: input.label, limit: input.limit, page: input.page}
-views:
-  - name: demo.board.Boards
-    source: demo.board.Board
-    consistency: read_your_writes
-    fields:
-      - {name: board_id, type: demo.board.BoardId}
-      - {name: label, type: String}
-      - {name: limit, type: Integer}
-      - {name: page, type: Optional<Integer>}
-components:
-  - component: board-service
-    summary: Opens boards and lists them.
-    owns: {domains: [demo.board]}
-    accepts: {commands: [demo.board.Open]}
-    publishes: {events: [demo.board.BoardOpened]}
-    reached_by: network
-";
+/// The model, read by `task integer-spellings-harness` too, which generates the Rust server the
+/// harness is built against from the same file. It is named `.yaml.in` so the walkers that read
+/// every repository model (`synthesis_suite_bytes_table.rs` and its kin) do not read it: it was
+/// this test's own model, inside this file, before the harness moved out.
+const MODEL: &str = include_str!("fixtures/integer-spellings/model.yaml.in");
+
+/// The variable naming the Rust harness `task integer-spellings-harness` built.
+const HARNESS: &str = "ESS_INTEGER_SPELLINGS_HARNESS";
 
 /// An authored scenario whose step states its integers as an author writes them.
 const AUTHORED: &str = "\
@@ -184,10 +146,40 @@ fn go(directory: &Path, arguments: &[&str]) -> Output {
 
 // ---- the generated servers, built once --------------------------------------------------------
 
-/// The harness built against the generated Rust server, and against the generated Go server where
-/// this machine has Go.
+/// The harness `task integer-spellings-harness` built against the generated Rust server, from the
+/// path [`HARNESS`] names.
+///
+/// A file that is not executable is made so: an uploaded CI artifact loses its mode bits, and the
+/// test shards receive the harness beside the nextest archives.
+fn rust_harness() -> PathBuf {
+    let Some(path) = std::env::var_os(HARNESS).map(PathBuf::from) else {
+        panic!(
+            "{HARNESS} is not set: run `task integer-spellings-harness` and set it to the binary \
+             that task names, or run the tests through `task test`, which does both"
+        );
+    };
+    let metadata = std::fs::metadata(&path).unwrap_or_else(|error| {
+        panic!(
+            "{HARNESS}={} names no harness ({error}): run `task integer-spellings-harness`",
+            path.display()
+        )
+    });
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut permissions = metadata.permissions();
+        if permissions.mode() & 0o111 == 0 {
+            permissions.set_mode(permissions.mode() | 0o755);
+            std::fs::set_permissions(&path, permissions).expect("the harness is made executable");
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = metadata;
+    path
+}
+
+/// The harness built against the generated Go server, where this machine has Go.
 struct Built {
-    rust: PathBuf,
     go: Option<PathBuf>,
 }
 
@@ -200,49 +192,6 @@ fn built() -> &'static Built {
         let _ = std::fs::remove_dir_all(&root);
         let kept = root.join("kept");
         std::fs::create_dir_all(&kept).expect("mkdir");
-
-        let synthesis = synthesize_for(&ir, Target::Rust).expect("the model synthesizes to Rust");
-        write_tree(&root.join("demo"), &synthesis);
-        let harness = root.join("harness");
-        std::fs::create_dir_all(harness.join("src")).expect("mkdir");
-        std::fs::write(
-            harness.join("Cargo.toml"),
-            "[package]\nname = \"integer-spellings-harness\"\nversion = \"0.0.0\"\nedition = \
-             \"2021\"\npublish = false\n\n[workspace]\n\n[[bin]]\nname = \"harness\"\npath = \
-             \"src/main.rs\"\n\n[dependencies]\ndemo-types = { path = \
-             \"../demo/crates/demo-types\" }\ndemo-server = { path = \
-             \"../demo/crates/demo-server\" }\nboard-service = { path = \
-             \"../demo/crates/board-service\" }\ndemo-system = { path = \
-             \"../demo/crates/demo-system\" }\n",
-        )
-        .expect("write");
-        std::fs::copy(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/fixtures/integer-spellings-harness/main.rs"),
-            harness.join("src/main.rs"),
-        )
-        .expect("the harness copies");
-        let target = root.join("target");
-        let output =
-            Command::new(std::env::var_os("CARGO").expect("Cargo supplies its executable"))
-                .args(["build", "--offline", "--quiet", "--target-dir"])
-                .arg(&target)
-                .current_dir(&harness)
-                .env_remove("CARGO_TARGET_DIR")
-                .env_remove("CARGO_ENCODED_RUSTFLAGS")
-                .env_remove("RUSTC_WRAPPER")
-                .env("CARGO_INCREMENTAL", "0")
-                .env("RUSTFLAGS", "-D warnings")
-                .output()
-                .expect("cargo runs");
-        assert!(
-            output.status.success(),
-            "the Rust harness builds: {}",
-            shown(&output)
-        );
-        std::fs::copy(target.join("debug/harness"), kept.join("rust")).expect("keep");
-        // The generated service is in the binary; its build tree is not needed again.
-        let _ = std::fs::remove_dir_all(&target);
 
         let go_binary = has_go().then(|| {
             let synthesis = synthesize_for(&ir, Target::Go).expect("the model synthesizes to Go");
@@ -274,10 +223,7 @@ fn built() -> &'static Built {
             );
             binary
         });
-        Built {
-            rust: kept.join("rust"),
-            go: go_binary,
-        }
+        Built { go: go_binary }
     })
 }
 
@@ -428,12 +374,12 @@ fn refuses_what_no_integer_holds(language: &str, binary: &Path) {
 
 #[test]
 fn the_rust_server_reads_an_integral_number_with_a_zero_fraction_as_the_integer() {
-    reads_whole_numbers("rust", &built().rust);
+    reads_whole_numbers("rust", &rust_harness());
 }
 
 #[test]
 fn the_rust_server_still_refuses_a_fraction_an_out_of_range_integer_and_a_hostile_exponent() {
-    refuses_what_no_integer_holds("rust", &built().rust);
+    refuses_what_no_integer_holds("rust", &rust_harness());
 }
 
 #[test]
@@ -629,7 +575,7 @@ fn the_synthesized_suite_passes_against_each_generated_server_with_inputs_forwar
     let ir = model();
     let suite = suite(&ir);
     let built = built();
-    let mut servers = vec![("rust", built.rust.clone())];
+    let mut servers = vec![("rust", rust_harness())];
     servers.extend(built.go.clone().map(|binary| ("go", binary)));
     for (server, binary) in servers {
         let verdicts = verdicts(&ir, &suite, &binary);
