@@ -1,12 +1,27 @@
 // Independently supplied values resolved before scenario activity.
 import { array, closed, goMarshal, isObject, SelectionObservation, strictJSON } from './runtime.js';
-import type { AccessorField, Node, SelectionDeclaration } from './runtime.js';
+import type { Node, SelectionDeclaration } from './runtime.js';
 import { admitTypedDeclarations, decodeDeclaration, validateFixtureTypes } from './response.js';
 
 export interface FixtureContract {
-  fields: AccessorField[];
+  fields: FixtureField[];
   declarations: Record<string, SelectionDeclaration>;
 }
+
+/**
+ * One fixture the provider answers: any value of `type`, or, where `entity` is set (suite/60 and
+ * /61, an entity the deployment provides), the identity of a row of `entity` resting in `state`,
+ * `type` being the entity's identity type.
+ */
+export interface FixtureField {
+  name: string;
+  type: string;
+  entity?: string;
+  state?: string;
+}
+
+/** The first suite major whose fixture may name a row the deployment provides. */
+export const ENTITY_FIXTURE_MAJOR = 60;
 
 export function fixtureName(value: unknown): asserts value is string {
   if (
@@ -18,14 +33,31 @@ export function fixtureName(value: unknown): asserts value is string {
   }
 }
 
-export function admitFixtures(value: unknown): FixtureContract {
+/**
+ * Admits one fixture contract. `major` is the suite's: below suite/60 a fixture names no entity.
+ * A caller re-reading a step `admitStep` already admitted under its major leaves it out.
+ */
+export function admitFixtures(value: unknown, major = Number.POSITIVE_INFINITY): FixtureContract {
   const root = closed(value, 'fields declarations', '');
   admitTypedDeclarations(root.declarations);
+  const optional = major >= ENTITY_FIXTURE_MAJOR ? 'entity state' : '';
   const fields = array(root.fields).map((raw) => {
-    const field = closed(raw, 'name type', '');
+    const field = closed(raw, 'name type', optional);
     fixtureName(field.name);
     if (typeof field.type !== 'string') throw new Error('fixture type must be text');
-    return { name: field.name, type: field.type };
+    const admitted: FixtureField = { name: field.name, type: field.type };
+    if (Object.hasOwn(field, 'entity') !== Object.hasOwn(field, 'state')) {
+      throw new Error(
+        `fixture ${field.name} names a provided row by its entity and its state together`,
+      );
+    }
+    if (Object.hasOwn(field, 'entity')) {
+      if (typeof field.entity !== 'string' || typeof field.state !== 'string')
+        throw new Error('fixture entity and state must be text');
+      admitted.entity = field.entity;
+      admitted.state = field.state;
+    }
+    return admitted;
   });
   const declarations = Object.fromEntries(
     Object.entries(root.declarations as Record<string, Node>).map(([key, body]) => [

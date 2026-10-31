@@ -2541,6 +2541,11 @@
             }
           ]
         },
+        "provided": {
+          "description": "Whether the deployment provides its rows (ess/33): `provided: true`.",
+          "default": false,
+          "type": "boolean"
+        },
         "relations": {
           "description": "What it owns and what it names.",
           "default": [],

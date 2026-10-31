@@ -33,7 +33,7 @@ use super::{
     EntitySpec, EssIr, EssSemanticRef, FactPath, InstanceNeed, OutcomeRef, Predicate,
     QualifiedName, RefusalCause, ResolvedCommand, ResolvedCondition, ResolvedEffect,
     ResolvedInstance, ResolvedOutcome, ResolvedPayloadValue, ResolvedSubject, ScenarioStep,
-    ScenarioValue, Setup, Truth, Unreachable, ViewExpectation, ViewRef, WitnessGap,
+    ScenarioValue, Setup, Truth, ViewExpectation, ViewRef, WitnessGap,
 };
 use ess_domain::command::OutcomeName;
 use ess_domain::entity::Cardinality;
@@ -5405,10 +5405,10 @@ pub(super) fn search_under<T>(
             },
         }
     }
-    Err(first.unwrap_or(RefusalCause::InstanceRequired {
+    Err(first.unwrap_or_else(|| RefusalCause::InstanceRequired {
         entity: EntityRef::from(entity),
         need: InstanceNeed::Updates,
-        reason: Unreachable::NothingCreates,
+        reason: super::provided::nothing_creates(ir, entity),
     }))
 }
 

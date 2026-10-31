@@ -715,3 +715,87 @@ fn source_declared_fixture_inputs_reach_requests_and_event_equalities() {
     );
     assert_eq!(equality["payload"]["email"], execute["input"]["email"]);
 }
+
+/// A command binding a link to a row of another entity, the input naming that row declared a
+/// target-provided fixture. A downstream deployment wrote it hoping the fixture would provide the
+/// row (story:a-fixture-may-be-a-row-the-deployment-already-holds).
+const RELATED_VIA: &str = r"
+format: ess/32
+system: linking
+version: v1
+domain: linking.links
+types:
+  - {name: linking.links.AppId, kind: newtype, of: Uuid}
+  - {name: linking.links.LinkId, kind: newtype, of: Uuid}
+entities:
+  - name: linking.links.App
+    identity: {name: app_id, type: linking.links.AppId}
+    fields: [{name: title, type: String}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: linking.links.Link
+    identity: {name: link_id, type: linking.links.LinkId}
+    fields: [{name: app_id, type: linking.links.AppId}]
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+errors:
+  - name: linking.links.AppNotFound
+    fields: [{name: app_id, type: linking.links.AppId}]
+events:
+  - name: linking.links.Linked
+    fields:
+      - {name: link_id, type: linking.links.LinkId}
+      - {name: app_id, type: linking.links.AppId}
+commands:
+  - name: linking.links.CreateLink
+    fixture_inputs: {app_id: existing-app}
+    input: [{name: app_id, type: linking.links.AppId}]
+    outcomes:
+      - name: unknown-app
+        when_related: {via: input.app_id, exists: false}
+        error: linking.links.AppNotFound
+        payload:
+          linking.links.AppNotFound: {app_id: input.app_id}
+      - name: linked
+        creates: linking.links.Link
+        instance: link_id
+        sets: {app_id: input.app_id}
+        emits: [linking.links.Linked]
+        payload:
+          linking.links.Linked: {link_id: {generated: true}, app_id: input.app_id}
+";
+
+/// `fixture_inputs:` over an input a `when_related: {via: input.<field>}` guard reads is refused,
+/// as a `when:` read is: the fixture value would decide whether the row exists, so synthesis sent
+/// it to the `exists: false` branch and the provider chose the branch
+/// (`docs/design/pre-execution-fixture-values.md`, story:a-fixture-may-be-a-row-the-deployment-already-holds).
+#[test]
+fn fixture_inputs_cannot_replace_a_related_row_via() {
+    let raw = RawSpecFile::parse(RELATED_VIA).expect("the model parses");
+    let errors = Specification::assemble([(Source::new("related.yaml"), raw)])
+        .expect_err("a fixture over a related row's identity is refused");
+    let refusal = errors
+        .as_slice()
+        .iter()
+        .find(|error| error.location.contains("fixture_inputs"))
+        .unwrap_or_else(|| panic!("the refusal names the fixture input: {errors}"));
+    assert_eq!(
+        refusal.code,
+        ess_primitives::error::ValidationCode::UnsupportedConstruct,
+        "{refusal:?}"
+    );
+    assert!(
+        refusal.location.ends_with("app_id"),
+        "the refusal sits at the fixture input: {refusal:?}"
+    );
+    assert!(
+        refusal
+            .message
+            .contains("cannot replace a field read by an outcome predicate"),
+        "{refusal:?}"
+    );
+
+    // Without the fixture binding the same model validates: the refusal is the binding's.
+    let unbound = RELATED_VIA.replace("    fixture_inputs: {app_id: existing-app}\n", "");
+    let raw = RawSpecFile::parse(&unbound).expect("the model parses");
+    Specification::assemble([(Source::new("related.yaml"), raw)])
+        .expect("the model without the fixture binding validates");
+}

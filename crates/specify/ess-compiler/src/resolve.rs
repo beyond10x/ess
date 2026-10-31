@@ -4251,6 +4251,7 @@ impl<'a> Resolver<'a> {
                     lifecycle,
                     invariants: entity.invariants,
                     naming: entity.naming,
+                    provided: entity.provided,
                 },
             );
         }
