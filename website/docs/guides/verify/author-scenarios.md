@@ -95,6 +95,9 @@ qualifies as conformance ([Opt into declared coverage](runners.md#opt-into-decla
 
 ## Expect the branch the input selects
 
+From `type: ess-scenario/6` a literal input its declared type refuses, at any depth, is
+`ESS-AUTHOR-015`: a decoder refuses it before the command runs. Below `/6` only its shape is checked.
+
 `validate` reads each act's literal input against the command's `when:` guards, in the order a
 conforming target answers them: input-guarded refusals first, the first declared of them; then
 accepting `when:` and external branches in declaration order; the default only where no `when:`

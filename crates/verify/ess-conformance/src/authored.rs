@@ -340,6 +340,12 @@ pub(crate) use diagnostic_catalogue;
 /// The format this module reads.
 pub const FORMAT: &str = "ess-scenario/1";
 
+/// The first scenario format whose acts' literal inputs are held to their declared types: the
+/// format that admits member paths in claims ([`crate::member_paths::SCENARIO_FORMAT`]). Below it
+/// such an input is shape-checked only, as it always was, so a document that compiled keeps
+/// compiling (an adopter report, wave D335).
+pub const TYPED_INPUTS_FORMAT: &str = crate::member_paths::SCENARIO_FORMAT;
+
 /// One file an author wrote, and where it was read from.
 ///
 /// Text rather than a path, because compiling is not reading: this crate holds no file system, the
@@ -2830,6 +2836,7 @@ pub(crate) fn compile_one(
         ),
         ir,
         paths: document.format == crate::member_paths::SCENARIO_FORMAT,
+        typed_inputs: document.format == TYPED_INPUTS_FORMAT,
         origin: &source.origin,
         id: id.clone(),
         refusals: Vec::new(),
@@ -3145,6 +3152,8 @@ struct Compiler<'a> {
     /// Whether a claim may name a member by its dotted path (`ess-scenario/6`,
     /// story:an-authored-claim-may-compare-a-nested-field).
     paths: bool,
+    /// Whether an act's literal input is held to its declared type ([`TYPED_INPUTS_FORMAT`]).
+    typed_inputs: bool,
     ir: &'a EssIr,
     origin: &'a str,
     id: ScenarioId,
@@ -3349,6 +3358,9 @@ impl<'a> Compiler<'a> {
                 &Surface::Input(command_ref.clone()),
                 Completeness::Total,
             );
+            if self.typed_inputs && self.refusals.len() == refused_before {
+                self.typed_input(&input, &input_fields, &command_ref);
+            }
             let sent = (self.refusals.len() == refused_before).then(|| input.clone());
             let step = ScenarioStep::ExecuteCommand {
                 caller,
@@ -4817,6 +4829,40 @@ impl<'a> Compiler<'a> {
             position: at.row.position(),
             fields: self.values(&at.fields, fields, &surface, Completeness::Partial),
         })
+    }
+
+    /// From [`TYPED_INPUTS_FORMAT`], each literal value an act sends that its field's declared type
+    /// refuses, at any depth (alphabet, prefix, invariants, a member's or element's own type), is
+    /// refused naming the field and the constraint. A generated decoder refuses such a value before
+    /// the command runs, so the outcome the act claims is one no implementation reaches. A value
+    /// bound from an instance, a fixture or an observation is not the author's literal, and is not
+    /// read here.
+    fn typed_input(
+        &mut self,
+        input: &BTreeMap<String, ScenarioValue>,
+        fields: &[ResolvedField],
+        command: &CommandRef,
+    ) {
+        for field in fields {
+            let Some(value) = input.get(&field.name).and_then(ScenarioValue::as_literal) else {
+                continue;
+            };
+            if let Err(error) = crate::input::validate_typed_value(self.ir, &field.type_ref, value)
+            {
+                let error = error
+                    .strip_suffix("; setup requires True")
+                    .unwrap_or(&error);
+                self.refuse(Cause::ValueRejected {
+                    surface: Surface::Input(command.clone()),
+                    detail: format!(
+                        "`{}` is outside its declared type {}: {error}; a decoder refuses it \
+                         before the command runs, so no implementation reaches the outcome the \
+                         act claims",
+                        field.name, field.type_ref
+                    ),
+                });
+            }
+        }
     }
 
     /// Values and references, checked against what the surface declares; a claim's member paths

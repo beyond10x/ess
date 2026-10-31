@@ -819,7 +819,9 @@ key, and an older `ess` refuses the header.
 `fields:` and a row's `contains`, `excludes` and `at`. Each path is compared alone; a nested value
 written whole is still compared whole. Event, error and row paths compile to suite/26 dotted keys,
 so their suites keep their format; a response path needs `ess-conformance/62`. Earlier versions
-refuse a dotted key as an undeclared field, and an older `ess` refuses the header.
+refuse a dotted key as an undeclared field, and an older `ess` refuses the header. From
+`ess-scenario/6` an act's literal input that its declared type refuses, at any depth, is
+`ESS-AUTHOR-015`; earlier versions check its shape only.
 
 ## `ess-normalization/` — normalization recipes
 
