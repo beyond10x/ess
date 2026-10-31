@@ -998,6 +998,15 @@ pub struct EntitySpec {
     /// What it is called on the wire and shown as.
     #[serde(skip_serializing_if = "Naming::is_empty")]
     pub naming: Naming,
+    /// Whether the deployment provides its rows (ess/33,
+    /// story:a-fixture-may-be-a-row-the-deployment-already-holds,
+    /// `docs/design/pre-execution-fixture-values.md` § Provided rows).
+    ///
+    /// The rows exist before any command of the specification runs, so no outcome need create one:
+    /// where conformance needs a row no declared outcome creates, it asks the target for one in a
+    /// state. `false`, the default, is the same document as leaving the key out.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub provided: bool,
 }
 
 impl EntitySpec {
@@ -1075,8 +1084,29 @@ impl EntitySpec {
             .collect()
     }
 
+    /// Checks the `provided:` key against the format that admits it (ess/33). A registry that
+    /// serves no specification, an entity validated on its own, records no format to check.
+    fn validate_provided(&self, format: Option<crate::system::FormatVersion>) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let Some(format) = format.filter(|_| self.provided) else {
+            return errors;
+        };
+        if format.major() < crate::system::FormatVersion::V33.major() {
+            errors.push(
+                ValidationError::at(
+                    ConstructRef::new(ConstructKind::Entity, self.name.to_string()).key("provided"),
+                    ValidationCode::UnsupportedFormatVersion,
+                    "`provided: true` on an entity requires specification format ess/33",
+                )
+                .with_hint("write `format: ess/33` on the source that declares the system"),
+            );
+        }
+        errors
+    }
+
     /// Checks the entity against the rest of the specification.
     ///
+    /// * the `provided:` key's format;
     /// * the identity type and every field type is declared;
     /// * every invariant reads only what this entity has: its fields, its identity and
     ///   [`EntitySpec::STATE`].
@@ -1084,7 +1114,7 @@ impl EntitySpec {
     /// The lifecycle is *not* re-checked here: it needs nothing but the document, so it is settled
     /// when [`RawEntitySpec`] is converted and an [`EntitySpec`] that failed it does not exist.
     pub fn validate(&self, registry: &TypeRegistry) -> ValidationErrors {
-        let mut errors = ValidationErrors::new();
+        let mut errors = self.validate_provided(registry.format());
         let location = format!("entity {}", self.name);
 
         errors.extend(registry.resolve(&self.identity.type_ref, &format!("{location}.identity")));
@@ -2092,6 +2122,9 @@ pub struct RawEntitySpec {
     /// A nested key is a small deviation; a specification that quietly means something else is not.
     #[serde(rename = "lifecycle")]
     pub states: RawStateMachine,
+    /// Whether the deployment provides its rows (ess/33): `provided: true`.
+    #[serde(default)]
+    pub provided: bool,
 }
 
 /// Where the invariant at `index` of entity `name` is: `entity <name>.invariants[<index>]`.
@@ -2133,6 +2166,7 @@ impl TryFrom<RawEntitySpec> for EntitySpec {
             states: raw.states.into(),
             invariants,
             naming: raw.naming,
+            provided: raw.provided,
         };
         let location = format!("entity {}", spec.name);
 

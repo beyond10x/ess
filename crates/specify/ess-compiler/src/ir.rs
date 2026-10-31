@@ -455,6 +455,14 @@ pub struct ResolvedEntity {
     pub relations: Vec<ResolvedRelation>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
+    /// Whether the deployment provides its rows (ess/33, `provided: true`,
+    /// `docs/design/pre-execution-fixture-values.md` § Provided rows): where no declared outcome
+    /// creates the row a scenario needs, conformance asks the target for one in a state.
+    ///
+    /// Left out of the serialised form when `false`, so a model that does not declare it keeps the
+    /// IR bytes it had before the key existed.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub provided: bool,
 }
 
 /// One relation an entity declares, with its target resolved.

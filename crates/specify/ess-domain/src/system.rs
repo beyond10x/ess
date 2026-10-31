@@ -52,7 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32,
+    27, 28, 29, 30, 31, 32, 33,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -350,6 +350,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
             "Two variants of one enum spelled alike on the wire, by name or by declared `wire:`, are refused as `conflicting_declaration`; below `ess/32` such an enum keeps validating (beyond10x/ess#639).",
         ],
     },
+    FormatHistoryEntry {
+        major: 33,
+        release: None,
+        added: &[
+            "An entity may declare `provided: true`: the deployment holds its rows, and no command of the specification need create one. Where synthesis needs a row of it that no declared outcome creates, the row a `when_related: {via: input.<field>}` guard reads, the scenario resolves an entity fixture `{name, type, entity, state}` before execution and sends its identity, and the `exists: false` branch is sent a fresh identity; such a suite is `ess-conformance/60` or `/61`. The interpreted target creates the row in the named state, and the generated Go and TypeScript runtimes pass the entity and the state to their provider. A subject, an owner or a view's population that needs a provided row nothing creates is refused by name, and so is a guard over a provided row's fields. Below `ess/33` the key is refused as `unsupported_format_version` naming `ess/33`; a model without it keeps its IR bytes (a downstream report, 2026-10-30).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -486,6 +494,9 @@ impl FormatVersion {
     /// struct declaring no fields (beyond10x/ess#649); a lifecycle state's wire spelling, and no
     /// two enum variants spelled alike (beyond10x/ess#639).
     pub const V32: Self = Self(32);
+    /// Structured input examples, rows a deployment provides, and lifecycle member summaries
+    /// (wave D325, downstream reports of 2026-10-30).
+    pub const V33: Self = Self(33);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

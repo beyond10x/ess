@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- An entity may declare `provided: true` from `ess/33`: the deployment holds its rows, and no command of the specification need create one. Below `ess/33` the key is refused as `unsupported_format_version` naming `ess/33`, and a model without it keeps its IR bytes. `ess verify diff` reports adding or removing the marker as an unclassified change, which the default gate fails (a downstream report, 2026-10-30).
+
 ### Fixed
 
 - `fixture_inputs:` is refused as `unsupported_construct` over every input a guard reads, not only over an input guard's own paths: the identity a `when_related: {via: input.<field>}` guard reads, an `all:` element's included, and an input a related row's `predicate:`, a row set's `where:` or `forall:`, or a `when_subject:` predicate compares. Such a binding validated before, so a value the target's provider chose decided the branch synthesis meant to witness (a downstream report, 2026-10-30).
