@@ -2,12 +2,14 @@
 format: aep.planning-md/3
 id: story:existence-family-sends-read-selection-plan
 kind: story
-status: draft
+status: archived
 title: The existence-family synthesis sends read the selection plan
 relations:
 - decomposes: epic:one-selection-plan
 - depends_on: story:synthesis-reads-selection-plan
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-31T23:45:02Z", actor: "human:timo", revision: 3}
 ---
 # Story: The existence-family synthesis sends read the selection plan
 
@@ -26,3 +28,7 @@ existence branch and three scenarios fail (RotateSecret `too-short`, RenewLease 
 - The three cases parked at `~/.cache/ess-selection-plan/w5-u3-scratch/adversary_selection_plan_w5_u3_pass1.parked.rs`
   pass, as a committed test.
 - The synthesis bytes tables do not move.
+
+## Triage (D338)
+
+Declined at the 2026-10-31 findings triage (orchestrator D338, operator approval relayed by host-monitor D53): no model reaches it under the real order; reopen if epic:one-selection-plan makes the order a model input.

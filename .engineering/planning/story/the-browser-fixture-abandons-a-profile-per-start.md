@@ -2,14 +2,16 @@
 format: aep.planning-md/3
 id: story:the-browser-fixture-abandons-a-profile-per-start
 kind: story
-status: draft
+status: archived
 title: The browser fixture abandons a profile per start
 scope:
 - confidence: inferred
   path: crates/edge/ess-cli/tests/replay_fidelity_browser.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-31T23:45:03Z", actor: "human:timo", revision: 5}
 ---
 # The browser fixture abandons a profile per start
 
@@ -43,3 +45,7 @@ a startup refusal's evidence directory still exists after the run that wrote it.
 - `crates/edge/ess-cli/tests/support/browser.rs` — `cited`
 - `crates/edge/ess-cli/tests/replay_fidelity_browser.rs` — `inferred`, if the per-call start is
   changed to a per-test one
+
+## Triage (D338)
+
+Declined at the 2026-10-31 findings triage (orchestrator D338, operator approval relayed by host-monitor D53): fixed by 9147bd426, whose ProfileScratch removes the profile on drop (read from the code, not run).

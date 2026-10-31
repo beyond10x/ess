@@ -2,14 +2,16 @@
 format: aep.planning-md/3
 id: story:a-cascade-witness-steers-inputs-states-and-chains-beside-its-rows
 kind: story
-status: draft
+status: archived
 title: A cascade witness steers per-input guards, copy-source states and relation chains beside its rows
 summary: Five shapes the batch-3 adversary found still refused ESS-SYNTH-001 after the cascade witness; no wrong scenario
 tags:
 - ess-issues-3
 relations:
 - informed_by: story:a-cascade-onto-rows-whose-creator-needs-the-subject-active-is-witnessed
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-31T23:45:01Z", actor: "human:timo", revision: 5}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -80,3 +82,7 @@ kept in a repro outside the repository.
    the rows are created only in that state, the refusal's new "answered first ... by" text points
    at a correct guard. The real gap is ordering: the rows are not created before the subject
    leaves the state. This predates U14.
+
+## Triage (D338)
+
+Declined at the 2026-10-31 findings triage (orchestrator D338, operator approval relayed by host-monitor D53): no wrong scenario and no downstream model named; reopen when a model hits it.
