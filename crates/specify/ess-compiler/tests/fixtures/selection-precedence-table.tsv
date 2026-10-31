@@ -1,4 +1,4 @@
-#	models=356	commands=714
+#	models=357	commands=716
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -178,6 +178,9 @@ crates/specify/ess-domain/tests/fixtures/outcome-groups/system.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/outcome-groups-twin/system.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/periodic.yaml	ir=b85c9b0327a1d3e5cfa3f3bc54e9098e219832f64cb3d870107e90ea31dc3051:4008
 crates/specify/ess-domain/tests/fixtures/periodic.yaml	example.poll.Refresh	default: refreshed
+crates/specify/ess-domain/tests/fixtures/structured-input-example.yaml	ir=c11652978ee1c9a89f11bcf5a46521b87105782ad6b8644329dfeacc284c283f:12707
+crates/specify/ess-domain/tests/fixtures/structured-input-example.yaml	demo.docs.CreateDoc	input_refusal: no-definition | default: created
+crates/specify/ess-domain/tests/fixtures/structured-input-example.yaml	demo.docs.ImportDoc	default: imported
 crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	ir=64397198ca8b3f008517dd368254e1bed8b6b71fa45cbe8467831ad52b805b73:12944
 crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	keypad.dial.Close	held_state: unnamed | default: closed
 crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	keypad.dial.Open	default: opened

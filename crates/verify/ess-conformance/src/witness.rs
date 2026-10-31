@@ -5680,8 +5680,12 @@ struct Builder<'ir> {
     /// which is never empty and is what a resize of an empty text cycles.
     plain_texts: BTreeMap<FactPath, String>,
     /// The authored `example:` of each command input, used as that input's base at
-    /// [`Distinction::PLAIN`] only.
+    /// [`Distinction::PLAIN`] only. A struct's example (ess/33) adds each declared member it names
+    /// here, at `<path>.<member>`, when the struct is built.
     examples: BTreeMap<FactPath, Node>,
+    /// The `Optional` members a struct's example (ess/33) leaves out, which the base leaves out
+    /// too.
+    left_out: BTreeSet<FactPath>,
     /// The invariants of every struct a recorded value is declared as, at any depth, each read
     /// moved under the path the struct is built at: `start < 5` of a `Window` at `window` reads
     /// `window.start < 5` (beyond10x/ess#234). What [`repair`] solves the base for.
@@ -5728,6 +5732,7 @@ impl<'ir> Builder<'ir> {
             strings: BTreeSet::new(),
             plain_texts: BTreeMap::new(),
             examples: BTreeMap::new(),
+            left_out: BTreeSet::new(),
             struct_invariants: Vec::new(),
             fixed: BTreeMap::new(),
             unrepaired: BTreeMap::new(),
@@ -5774,6 +5779,7 @@ impl<'ir> Builder<'ir> {
                     FactPath::new(name).ok().map(|path| (path, example.clone()))
                 })
                 .collect();
+            self.left_out.clear();
         }
         self.copied = copied_inputs(command);
         let mut input = BTreeMap::new();
@@ -5807,6 +5813,12 @@ impl<'ir> Builder<'ir> {
             match overrides.get(path) {
                 Some(Choice::Omit) => return Ok(None),
                 Some(Choice::Null) => return Ok(Some(Node::Null)),
+                // A member a struct's example (ess/33) leaves out, or writes `null`, is so in the
+                // base too.
+                None if self.left_out.contains(path) => return Ok(None),
+                None if matches!(self.examples.get(path), Some(Node::Null)) => {
+                    return Ok(Some(Node::Null))
+                }
                 _ => {}
             }
             // Absence is the base case of a type that refers to itself through `Optional`
@@ -6000,7 +6012,26 @@ impl<'ir> Builder<'ir> {
     /// built — a `Decimal` key has no setup spelling, and a value type that refers to itself or
     /// holds a `Binary64` has no finite witness — the map is `{}`, as it always was, and nothing
     /// the attempt recorded is kept.
+    ///
+    /// A map input's example (ess/33) is the value at the plain instance wherever no candidate
+    /// chooses the map's size; the entry is still built, so what it records is kept.
     fn map(
+        &mut self,
+        type_ref: &ResolvedTypeRef,
+        path: &FactPath,
+        overrides: &BTreeMap<FactPath, Choice>,
+        depth: usize,
+        record: bool,
+    ) -> Node {
+        let built = self.map_entries(type_ref, path, overrides, depth, record);
+        match (overrides.get(path), self.examples.get(path)) {
+            (None, Some(example)) => example.clone(),
+            _ => built,
+        }
+    }
+
+    /// [`map`](Self::map) without the example.
+    fn map_entries(
         &mut self,
         type_ref: &ResolvedTypeRef,
         path: &FactPath,
@@ -6239,18 +6270,53 @@ impl<'ir> Builder<'ir> {
                         }
                     }
                 }
-                let mut value = BTreeMap::new();
-                for field in fields {
-                    let child = path.child(&field.name);
-                    if let Some(inner) =
-                        self.member(&field.type_ref, &child, overrides, depth + 1, record)?
-                    {
-                        value.insert(field.name.clone(), inner);
-                    }
-                }
-                Ok(Node::Map(value))
+                self.struct_value(fields, path, overrides, depth, record)
             }
         }
+    }
+
+    /// One value of a struct declaring `fields`, at `path`.
+    ///
+    /// A struct's example (ess/33) is the base through its members: each declared one it names is
+    /// that member's example, so a guard reading it keeps its ladder, an `Optional` one it leaves
+    /// out is left out, and each undeclared one is carried as written.
+    fn struct_value(
+        &mut self,
+        fields: &[ess_compiler::ir::ResolvedField],
+        path: &FactPath,
+        overrides: &BTreeMap<FactPath, Choice>,
+        depth: usize,
+        record: bool,
+    ) -> Result<Node, WitnessGap> {
+        let example = self.examples.get(path).and_then(Node::as_map).cloned();
+        if let Some(example) = &example {
+            for field in fields {
+                let child = path.child(&field.name);
+                match example.get(&field.name) {
+                    Some(member) => {
+                        self.examples.entry(child).or_insert_with(|| member.clone());
+                    }
+                    None => {
+                        self.left_out.insert(child);
+                    }
+                }
+            }
+        }
+        let mut value = BTreeMap::new();
+        for field in fields {
+            let child = path.child(&field.name);
+            if let Some(inner) =
+                self.member(&field.type_ref, &child, overrides, depth + 1, record)?
+            {
+                value.insert(field.name.clone(), inner);
+            }
+        }
+        for (member, written) in example.into_iter().flatten() {
+            if !fields.iter().any(|field| field.name == member) {
+                value.insert(member, written);
+            }
+        }
+        Ok(Node::Map(value))
     }
 }
 

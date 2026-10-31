@@ -4,12 +4,17 @@
 
 ### Added
 
+- From `ess/33` an input whose type is a struct (open or closed), a `Map<…>` or `Json`, through any newtype or `Optional`, may carry an `example:`, and synthesis sends it at the plain instance (a downstream report, 2026-10-30). The example is held as a precondition literal is; an open struct's undeclared members are admitted and sent as written, in list example elements and precondition literals too, and a `Json` example is any value but `null`. A struct example reaches synthesis through its declared members, so a guard on one keeps the scenario that refutes it. A union example stays refused. Below `ess/33` each keeps its refusal, its hint naming `ess/33`; a model without such an example keeps its IR and suite bytes.
 - From `ess/33` a lifecycle transition may carry a one-line `summary:`, and a lifecycle state may carry one in its mapping form, `{name, wire?, summary?}` (a downstream report, 2026-10-30). A state's summary is the summary of its variant of `<Entity>.State`; guards, `moves:` and suites keep naming states and moves by name, and Entity Runtime lowering refuses a state only for a wire spelling. Below `ess/33` either is refused as `unsupported_format_version` naming `ess/33`; a lifecycle without one keeps its IR bytes. `ess verify diff` reports a moved state summary as the state enum's `variant-summary-changed` and a moved transition summary as `transition-summary-changed`, compatible, in `ess-diff/22`.
 
 ### Changed
 
 - A flat `summary:`, `wire:`, `display:` or `code:` on a named type is refused naming the spelling that reads it, `naming: {summary: …}`, rather than as an unknown field of the type's kind. A state written `{name: …}` with nothing beside its name is refused naming the bare form.
 - In the `ess-domain` library, `Transition` gains `summary`, and `RawState::Spelled` holds `wire: Option<String>` and gains `summary`. In the `ess-diff` library, `EntityChange` gains `TransitionSummaryChanged`.
+
+### Fixed
+
+- The interpreted target admits the members an open struct (`undeclared_fields: ignored`) does not declare in a command input, at every format, where it refused them as undeclared (a downstream report, 2026-10-30).
 
 ## [0.77.0] — 2026-10-29
 

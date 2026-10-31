@@ -989,6 +989,18 @@ fn setup_body(
             let Node::Map(values) = value else {
                 return Err("expected a struct mapping".into());
             };
+            // An open struct's undeclared members (`ess/24`) are neither checked nor refused.
+            let declared_only: BTreeMap<String, Node>;
+            let values = if ir.undeclared_fields(name).is_ignored() {
+                declared_only = values
+                    .iter()
+                    .filter(|(member, _)| fields.iter().any(|field| &field.name == *member))
+                    .map(|(member, value)| (member.clone(), value.clone()))
+                    .collect();
+                &declared_only
+            } else {
+                values
+            };
             let (facts, mut unresolved) = setup_fields(ir, fields, values, depth, budget)?;
             retain_validation(
                 &mut unresolved,
@@ -1710,42 +1722,62 @@ fn project_value(
                     }
                     _ => wrong(errors, format!("{name} as a mapping")),
                 },
-                ResolvedBody::Struct { fields, .. } => {
-                    let Some(entries) = value.as_map() else {
-                        wrong(errors, format!("{name} as a mapping"));
-                        return;
-                    };
-                    for field in fields {
-                        let child = path.child(&field.name);
-                        match entries.get(&field.name) {
-                            Some(inner) => {
-                                project(
-                                    ir,
-                                    &field.type_ref,
-                                    inner,
-                                    &child,
-                                    depth + 1,
-                                    facts,
-                                    errors,
-                                );
-                            }
-                            None if admits_absence(ir, &field.type_ref, 0) => {}
-                            None => errors.push(ShapeError::MissingField {
-                                at: path.to_string(),
-                                field: field.name.clone(),
-                            }),
-                        }
+                ResolvedBody::Struct { fields, .. } => match value.as_map() {
+                    Some(entries) => {
+                        project_struct(
+                            ir,
+                            &declared.name,
+                            fields,
+                            entries,
+                            path,
+                            depth,
+                            facts,
+                            errors,
+                        );
                     }
-                    for supplied in entries.keys() {
-                        if !fields.iter().any(|field| &field.name == supplied) {
-                            errors.push(ShapeError::UndeclaredField {
-                                at: path.to_string(),
-                                field: supplied.clone(),
-                            });
-                        }
-                    }
-                }
+                    None => wrong(errors, format!("{name} as a mapping")),
+                },
             }
+        }
+    }
+}
+
+/// Projects the members of a value of the struct `name` at `path`.
+#[allow(clippy::too_many_arguments)]
+fn project_struct(
+    ir: &EssIr,
+    name: &ess_domain::QualifiedName,
+    fields: &[ResolvedField],
+    entries: &BTreeMap<String, Node>,
+    path: &FactPath,
+    depth: usize,
+    facts: &mut FactStore,
+    errors: &mut Vec<ShapeError>,
+) {
+    for field in fields {
+        let child = path.child(&field.name);
+        match entries.get(&field.name) {
+            Some(inner) => {
+                project(ir, &field.type_ref, inner, &child, depth + 1, facts, errors);
+            }
+            None if admits_absence(ir, &field.type_ref, 0) => {}
+            None => errors.push(ShapeError::MissingField {
+                at: path.to_string(),
+                field: field.name.clone(),
+            }),
+        }
+    }
+    // An open struct is open wherever it is reached (`ess/24`): its undeclared members bind
+    // nothing and refuse nothing.
+    if ir.undeclared_fields(name).is_ignored() {
+        return;
+    }
+    for supplied in entries.keys() {
+        if !fields.iter().any(|field| &field.name == supplied) {
+            errors.push(ShapeError::UndeclaredField {
+                at: path.to_string(),
+                field: supplied.clone(),
+            });
         }
     }
 }
