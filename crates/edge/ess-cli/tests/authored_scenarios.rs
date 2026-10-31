@@ -549,5 +549,82 @@ fn a_nested_response_member_claim_validates_and_synthesizes() {
     assert!(!said.contains("invalid_input"), "{said}");
 }
 
+/// A command whose input is a code over a three-letter alphabet.
+const TYPED_INPUT_MODEL: &str = r#"format: ess/32
+system: demo
+version: v1
+domain: demo.codes
+types:
+  - name: demo.codes.Code
+    kind: newtype
+    of: String
+    alphabet: "abc"
+events:
+  - name: demo.codes.Recorded
+    fields: [{name: code, type: demo.codes.Code}]
+commands:
+  - name: demo.codes.Record
+    input:
+      - {name: code, type: demo.codes.Code}
+    outcomes:
+      - name: recorded
+        emits: [demo.codes.Recorded]
+        payload:
+          demo.codes.Recorded: {code: input.code}
+"#;
+
+/// A brand-free project: the code model, its `ess-inputs.yaml` and one scenario sending `code`.
+fn typed_input_project(format: &str, code: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join("scenarios")).unwrap();
+    fs::write(dir.path().join("system.yaml"), TYPED_INPUT_MODEL).unwrap();
+    fs::write(
+        dir.path().join("ess-inputs.yaml"),
+        "format: ess-inputs/1\nspecification:\n  - system.yaml\nscenarios:\n  - scenarios/record.yaml\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("scenarios/record.yaml"),
+        format!(
+            "type: {format}\ndomain: demo.codes\nscenario: record-a-code\nsummary: One code is \
+             recorded.\ntimeline:\n  - at: 2026-01-05T09:00:00Z\n    command: demo.codes.Record\n    \
+             input: {{code: {code}}}\n    outcome: recorded\n"
+        ),
+    )
+    .unwrap();
+    dir
+}
+
+/// story:identifier-guards-get-witnesses-and-authored-inputs-meet-their-type. From
+/// `ess-scenario/6`, `ess specify validate` refuses an authored act whose literal input its declared
+/// type refuses as ESS-AUTHOR-015 naming the field and the alphabet; the same file below `/6`, and
+/// an in-type input at `/6`, validate.
+#[test]
+fn an_out_of_type_authored_input_is_refused_by_author() {
+    let story = "story:identifier-guards-get-witnesses-and-authored-inputs-meet-their-type";
+    let refused = typed_input_project("ess-scenario/6", "abd");
+    let validated = ess_in(refused.path(), &["specify", "validate"]);
+    let said = shown(&validated);
+    assert_eq!(validated.status.code(), Some(1), "{story}: {said}");
+    assert_eq!(
+        said.matches("refusal[ESS-AUTHOR-015]").count(),
+        1,
+        "{story}: {said}"
+    );
+    for named in ["`code`", "not in the alphabet of demo.codes.Code"] {
+        assert!(said.contains(named), "{story}: {named}: {said}");
+    }
+    for (format, code) in [("ess-scenario/5", "abd"), ("ess-scenario/6", "cab")] {
+        let project = typed_input_project(format, code);
+        let validated = ess_in(project.path(), &["specify", "validate"]);
+        let said = shown(&validated);
+        assert_eq!(
+            validated.status.code(),
+            Some(0),
+            "{story}: {format} {code}: {said}"
+        );
+    }
+}
+
 #[path = "support/input_discovery_cases.rs"]
 mod input_discovery;

@@ -5,12 +5,19 @@
 ### Added
 
 - From `ess-scenario/6` an authored claim may name one member of a nested value by its dotted path, `checkpoint.checkpoint_id: cp-1`, in an act's `response:`, an event's `payload:`, an error's `fields:` and a view row's `contains`, `excludes` and `at`; each path is compared alone, through `Optional` and newtypes, and the members it does not name are not read (a downstream report). A path naming no member is refused as `ESS-AUTHOR-013` with the full path; a path through a list, map, union, enum or primitive, a reference at a path, and a path in `input:`, `setup:`, `caller:` or `params:` are refused by name. Below `ess-scenario/6` a dotted key is refused as an undeclared field, its help naming `ess-scenario/6`.
+- From `ess-scenario/6` an act's literal input that its declared type refuses, at any depth (an `alphabet:`, `prefix:` or invariant of the field's type, or of a member's or element's), is refused as `ESS-AUTHOR-015` naming the field and the constraint: a generated decoder refuses such a value before the command runs, so the act's outcome is one no implementation reaches (a downstream report, 2026-10-31). Below `ess-scenario/6` the input is checked for its shape only, as before, so every document that compiled keeps compiling.
 - Suite pair `ess-conformance/62` (ordinary) and `/63` (coverage): a response observation's `expected` may name a nested member by its dotted path. Cumulative over every major below; Rust, Go and TypeScript run both, older readers refuse them by version, and every reader refuses a response member path under a lower major. Event, error and row paths compile to suite/26 dotted keys, a path ending at a struct as its leaves, so those suites keep their format; a suite without a response path keeps its format and bytes.
 
 ### Fixed
 
 - A partial nested literal in an act's `response:` is refused as `ESS-AUTHOR-014`, naming each member it leaves out at its path, at every scenario header, where it was `ESS-AUTHOR-001` reading `invalid_input`; the help says a nested value is compared whole and names the path form (a downstream report).
 - Synthesis writes both branches of a `!=` or `==` guard that compares a text, `Uuid` or `Timestamp` input, or a struct member a structured example reaches, with the value its `example:` holds: the leaf is tried at its own witness beside the example, where no candidate refuted the comparison and the outcome was refused as unsatisfiable. A model without such a guard keeps its suite bytes.
+- Synthesis witnesses an input-guarded refusal beside held-state branches whose guards cover every value of another input, with no default branch: such a refusal answers before the held state and every accepting branch, so its witness is no longer required to miss their guards, where it was refused as `ESS-SYNTH-003` (a downstream report, 2026-10-31). A target that looks the row up before checking the input answers the wrong error and fails the scenario. A suite whose refusals were witnessed keeps its bytes.
+- Synthesis witnesses each byte-length child of an `any` over several text inputs whose type declares an `alphabet:` without wide characters: the long-text candidates are built from characters the alphabet admits, so the search bound is no longer spent on texts the type refuses, where the child was refused as `ESS-SYNTH-022` (a downstream report, 2026-10-31).
+
+### Changed
+
+- A refusal guard that only inputs outside their declared type meet (outside its `alphabet:`, `prefix:` or invariants) is refused as `ESS-SYNTH-003` naming the field, the type and the constraint, and saying that such an input is refused before the command and never sent. The predicate reference shows how to refuse a text holding anything but printable ASCII without a pattern (a downstream report, 2026-10-31).
 
 ## [0.78.0] — 2026-10-31
 

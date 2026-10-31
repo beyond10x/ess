@@ -343,3 +343,155 @@ fn which_branch_answers_section_states_the_order() {
          `tests/fixtures/held-state-input-refusal.yaml`, byte for byte:\n{section}"
     );
 }
+
+/// An input refusal beside held-state branches whose `when:` guards cover every value of an enum
+/// input, with no default branch (an adopter report, wave D335). The refusal answers before the
+/// held state and every accepting branch, so its witness need not step out of their guards; on
+/// 0.77.0 synthesis asked it to and refused the branch as `ESS-SYNTH-003`.
+const PARTITION: &str = include_str!("fixtures/input-refusal-beside-exhaustive-partition.yaml");
+
+const INVALID_ID: &str = "demo.dispatch.Settle/outcome/invalid-id";
+
+/// The fixture with the refusal guarding a plain text input rather than the record's identity.
+fn on_note() -> String {
+    let moved = PARTITION.replace(
+        "when: \"id.utf8_bytes == 0\"",
+        "when: \"note.utf8_bytes == 0\"",
+    );
+    assert_ne!(moved, PARTITION, "the refusal's guard moves to `note`");
+    moved
+}
+
+/// Each `Settle` the scenario sends: the literal text of `field`, where it has one, and the outcome
+/// the step after it requires.
+fn settles(scenario: &ConformanceScenario, field: &str) -> Vec<(Option<String>, Option<String>)> {
+    let mut out = Vec::new();
+    for (at, step) in scenario.steps.iter().enumerate() {
+        let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
+            continue;
+        };
+        if command.to_string() != "demo.dispatch.Settle" {
+            continue;
+        }
+        let text = match input.get(field).and_then(ScenarioValue::as_literal) {
+            Some(Node::Text(text)) => Some(text.clone()),
+            _ => None,
+        };
+        let required = scenario.steps.get(at + 1).and_then(|next| match next {
+            ScenarioStep::ExpectOutcome { outcome } => Some(outcome.outcome.to_string()),
+            _ => None,
+        });
+        out.push((text, required));
+    }
+    out
+}
+
+#[test]
+fn an_input_refusal_beside_an_exhaustive_held_state_partition_is_witnessed() {
+    for (model, field) in [(PARTITION.to_owned(), "id"), (on_note(), "note")] {
+        let result = synthesis(&model);
+        let about: Vec<_> = result
+            .refusals
+            .iter()
+            .filter(|refusal| refusal.to_string().contains("invalid-id"))
+            .collect();
+        assert!(
+            about.is_empty(),
+            "story:identifier-guards-get-witnesses-and-authored-inputs-meet-their-type: the \
+             refusal guarding `{field}` answers before every accepting branch, so it has a witness \
+             whatever `answer` is: {about:#?}"
+        );
+        let sent = settles(scenario(&result, INVALID_ID), field);
+        assert!(
+            sent.contains(&(Some(String::new()), Some("invalid-id".to_owned()))),
+            "the refusal's scenario sends an empty `{field}` and requires `invalid-id`: {sent:#?}"
+        );
+        let statuses = run(&result.suite, &Interpreted::for_model(ir(&model)));
+        assert_eq!(
+            not_passed(&statuses),
+            Vec::<&str>::new(),
+            "the interpreted model answers the refusal first and passes: {statuses:#?}"
+        );
+    }
+}
+
+#[test]
+fn a_target_that_looks_the_record_up_before_the_refusal_fails_its_scenario() {
+    let result = synthesis(PARTITION);
+    let statuses = run(
+        &result.suite,
+        &RecordFirst(Interpreted::for_model(ir(PARTITION))),
+    );
+    assert!(
+        not_passed(&statuses).contains(&INVALID_ID),
+        "answering `missing` for an empty identity fails the refusal's scenario: {statuses:#?}"
+    );
+}
+
+/// The interpreted model changed to look the record up before it checks the identity: an empty
+/// identity, which names no record, is answered `missing`.
+struct RecordFirst(Interpreted);
+
+impl ConformanceTarget for RecordFirst {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        self.0.identity()
+    }
+    fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.0.begin_scenario(scenario)
+    }
+    fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.0.end_scenario(scenario)
+    }
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        let empty = request.command.to_string() == "demo.dispatch.Settle"
+            && request.input.get("id") == Some(&Node::Text(String::new()));
+        let command = request.command.clone();
+        let mut result = self.0.execute_command(request)?;
+        if empty {
+            result.outcome = Some(OutcomeRef::new(
+                command,
+                OutcomeName::new("missing").expect("a name"),
+            ));
+            result.error = Some(DeclaredErrorValue::new(
+                "demo.dispatch.Missing"
+                    .parse::<ErrorRef>()
+                    .expect("an error"),
+            ));
+            result.direct_events.clear();
+        }
+        Ok(result)
+    }
+    fn execute_command_without_input(
+        &self,
+        request: AbsentInputRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        self.0.execute_command_without_input(request)
+    }
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        self.0.query_view(request)
+    }
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        self.0.observe_events(request)
+    }
+    fn configure_external_outcome(
+        &self,
+        request: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        self.0.configure_external_outcome(request)
+    }
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        self.0.redeliver_event(request)
+    }
+    fn observe_invocations(
+        &self,
+        request: InvocationObservationRequest,
+    ) -> Result<Vec<ObservedInvocation>, TargetError> {
+        self.0.observe_invocations(request)
+    }
+}

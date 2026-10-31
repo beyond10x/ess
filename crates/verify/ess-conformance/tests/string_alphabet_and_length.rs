@@ -534,3 +534,138 @@ fn a_value_object_whose_invariant_reads_a_length_is_asserted_on_the_row() {
     .is_some());
     assert!(asserts(&result.suite, "label.count <= 64"));
 }
+
+// ---- an identifier's guards under its declared type ------------------------------------------------
+
+const BYTE_LENGTH_ANY: &str = include_str!("fixtures/byte-length-any-under-alphabet.yaml");
+const OUTSIDE_TYPE: &str = include_str!("fixtures/refusal-guard-outside-input-type.yaml");
+const STORY: &str = "story:identifier-guards-get-witnesses-and-authored-inputs-meet-their-type";
+const PRINTABLE: &str =
+    " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+const INVALID_NAME: &str = "demo.names.Name/outcome/invalid-name";
+
+/// Every text the suite sends at `field` of `command`, in every scenario.
+fn every_sent(suite: &ConformanceSuite, command: &str, field: &str) -> Vec<String> {
+    suite
+        .scenarios
+        .values()
+        .flat_map(|scenario| sent(scenario, command, field))
+        .collect()
+}
+
+/// A byte-length child of an `any` over two fields of a printable-ASCII type is witnessed: the
+/// candidates that use up the search bound are not texts led by wide characters the alphabet
+/// refuses (an adopter report, wave D335).
+#[test]
+fn a_byte_length_child_is_witnessed_under_an_alphabet_without_wide_characters() {
+    let result = synthesis(BYTE_LENGTH_ANY);
+    let about = refusals_about(&result, INVALID_NAME);
+    assert!(
+        about
+            .iter()
+            .all(|refusal| !refusal.contains("ESS-SYNTH-022")),
+        "{STORY}: every child of the refusal's `any` is witnessed: {about:?}"
+    );
+    assert!(
+        scenario(&result.suite, INVALID_NAME).is_some(),
+        "{STORY}: {about:?}"
+    );
+    let in_alphabet = |text: &String| text.chars().all(|character| PRINTABLE.contains(character));
+    for field in ["name", "alias"] {
+        let sent = every_sent(&result.suite, "demo.names.Name", field);
+        assert!(
+            sent.iter().all(in_alphabet),
+            "{STORY}: every {field} sent is inside its alphabet: {sent:?}"
+        );
+        assert!(
+            sent.iter().any(|text| text.len() > 256),
+            "{STORY}: some {field} sent is over 256 bytes: {:?}",
+            sent.iter().map(String::len).collect::<Vec<_>>()
+        );
+    }
+}
+
+/// A refusal guard only values outside the input's declared type meet is refused naming that type:
+/// such a value is refused before the command and never sent (D336, option A).
+#[test]
+fn a_refusal_guard_its_input_type_excludes_names_the_type() {
+    let result = synthesis(OUTSIDE_TYPE);
+    let about = refusals_about(&result, "demo.codes.Record/outcome/invalid-code");
+    assert!(
+        about
+            .iter()
+            .any(|refusal| refusal.contains("ESS-SYNTH-003")),
+        "{STORY}: the guard stays unwitnessed: {about:?}"
+    );
+    for refusal in about
+        .iter()
+        .filter(|refusal| refusal.contains("ESS-SYNTH-003"))
+    {
+        assert!(
+            refusal.contains("its declared type demo.codes.Code refuses that value"),
+            "{STORY}: the refusal names the type that excludes the guard's inputs: {refusal}"
+        );
+        assert!(
+            refusal.contains("never sent"),
+            "{STORY}: the refusal says such an input is never sent: {refusal}"
+        );
+    }
+    let codes = every_sent(&result.suite, "demo.codes.Record", "code");
+    assert!(
+        codes.iter().all(|code| (1..=256).contains(&code.len())
+            && code.chars().all(|character| character.is_ascii_lowercase()
+                || character.is_ascii_digit()
+                || character == '-')),
+        "{STORY}: no code outside its declared type is sent: {codes:?}"
+    );
+}
+
+/// The predicate reference's idiom for "printable ASCII only" without a pattern — the byte length
+/// differs from the scalar count, or the text contains one of the 33 control characters — is
+/// witnessed child by child with no refusal (`website/docs/reference/predicates.md`, "Text shapes
+/// without patterns").
+#[test]
+fn the_printable_ascii_idiom_synthesizes_with_no_refusal() {
+    let result = synthesis(include_str!("fixtures/printable-ascii-key.yaml"));
+    assert!(
+        all_refusals(&result).is_empty(),
+        "{STORY}: {:?}",
+        all_refusals(&result)
+    );
+    let keys = every_sent(&result.suite, "demo.keys.Store", "key");
+    assert!(
+        keys.iter().any(|key| key.len() != key.chars().count()),
+        "{STORY}: a non-ASCII key is sent: {keys:?}"
+    );
+    for control in (0u8..0x20).chain([0x7f]).map(char::from) {
+        assert!(
+            keys.iter().any(|key| key.contains(control)),
+            "{STORY}: a key holding {control:?} is sent: {keys:?}"
+        );
+    }
+}
+
+/// The same guard over a type that admits its inputs is witnessed, so the type, not the guard, is
+/// what the refusal above names.
+#[test]
+fn the_same_guard_over_an_unconstrained_type_is_witnessed() {
+    let model = with(
+        OUTSIDE_TYPE,
+        "    alphabet: \"abcdefghijklmnopqrstuvwxyz0123456789-\"\n    invariants:\n      - \"value.utf8_bytes >= 1\"\n      - \"value.utf8_bytes <= 256\"\n",
+        "",
+    );
+    let result = synthesis(&model);
+    let id = "demo.codes.Record/outcome/invalid-code";
+    assert!(
+        scenario(&result.suite, id).is_some(),
+        "{STORY}: {:?}",
+        refusals_about(&result, id)
+    );
+    assert!(
+        all_refusals(&result)
+            .iter()
+            .all(|refusal| !refusal.contains("within the declared input types")),
+        "{STORY}: {:?}",
+        all_refusals(&result)
+    );
+}

@@ -1,0 +1,35 @@
+format: ess/32
+system: demo
+version: v1
+domain: demo.names
+summary: A refusal of either of two names that is empty, holds a space or is over 256 bytes.
+types:
+  - name: demo.names.Token
+    kind: newtype
+    of: String
+    alphabet: ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~'
+errors:
+  - {name: demo.names.InvalidName, fields: []}
+events:
+  - name: demo.names.Named
+    fields: [{name: name, type: demo.names.Token}]
+commands:
+  - name: demo.names.Name
+    input:
+      - {name: name, type: demo.names.Token}
+      - {name: alias, type: demo.names.Token}
+    outcomes:
+      - name: invalid-name
+        when:
+          any:
+            - "name.utf8_bytes == 0"
+            - {name: {contains: " "}}
+            - "name.utf8_bytes > 256"
+            - "alias.utf8_bytes == 0"
+            - {alias: {contains: " "}}
+            - "alias.utf8_bytes > 256"
+        error: demo.names.InvalidName
+      - name: named
+        emits: [demo.names.Named]
+        payload:
+          demo.names.Named: {name: input.name}
