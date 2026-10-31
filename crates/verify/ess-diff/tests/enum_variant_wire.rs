@@ -105,6 +105,53 @@ fn a_bare_variant_list_that_did_not_move_reports_nothing() {
     assert_eq!(diff(&model(BARE), &model(BARE)).unwrap().changes().len(), 0);
 }
 
+/// A lifecycle state's summary (`ess/33`, `story:a-transition-and-a-state-may-carry-a-summary`) is
+/// the summary of its variant of `<Entity>.State`, and a moved one is that variant's
+/// `variant-summary-changed`, reported once.
+#[test]
+fn a_moved_state_summary_is_the_state_variants_summary_change() {
+    let fixture = include_str!("../../../generate/ess-gen/tests/fixtures/state-wire.yaml");
+    let spelled = "states: [{name: Indexing, wire: indexing}, Ready]";
+    assert!(fixture.contains(spelled) && fixture.contains("format: ess/32\n"));
+    let compiled = |states: &str| {
+        let text = fixture
+            .replacen("format: ess/32\n", "format: ess/33\n", 1)
+            .replacen(spelled, states, 1);
+        let spec = Specification::assemble([(
+            Source::new("jobs.yaml"),
+            RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}")),
+        )])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+        let mut sources = SourceMap::new();
+        sources.insert("jobs.yaml", text.clone());
+        compile(&spec, &sources).unwrap_or_else(|errors| panic!("{errors}"))
+    };
+    for (before, after) in [
+        (
+            spelled,
+            "states: [{name: Indexing, wire: indexing}, {name: Ready, summary: Searchable}]",
+        ),
+        (
+            "states: [{name: Indexing, wire: indexing, summary: Being indexed}, Ready]",
+            "states: [{name: Indexing, wire: indexing, summary: Being written}, Ready]",
+        ),
+    ] {
+        let delta = diff(&compiled(before), &compiled(after)).unwrap();
+        assert_eq!(delta.changes().len(), 1, "{:?}", delta.changes());
+        assert!(
+            matches!(
+                &delta.changes()[0],
+                SemanticChange::Type {
+                    subject,
+                    changed: TypeChange::VariantSummaryChanged { .. },
+                } if subject.name().to_string() == "jobs.queue.Job.State"
+            ),
+            "{:?}",
+            delta.changes()[0]
+        );
+    }
+}
+
 /// A lifecycle state's wire name (`ess/32`, beyond10x/ess#639) changes the wire spelling of
 /// the variant of `<Entity>.State`, and is reported as that variant's change.
 #[test]

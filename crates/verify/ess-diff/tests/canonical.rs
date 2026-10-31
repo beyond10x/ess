@@ -561,6 +561,10 @@ fn component_changes() -> Vec<ComponentChange> {
 }
 
 /// One of every `EntityChange`.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one of every entity change, each named"
+)]
 fn entity_changes() -> Vec<EntityChange> {
     let (was, is) = pair();
     vec![
@@ -641,6 +645,11 @@ fn entity_changes() -> Vec<EntityChange> {
             transition: "t".to_owned(),
             before: was.clone(),
             after: is.clone(),
+        },
+        EntityChange::TransitionSummaryChanged {
+            transition: "t".to_owned(),
+            before: None,
+            after: Some(is.clone()),
         },
         EntityChange::InvariantsChanged {
             before: vec![was.clone()],
@@ -1202,4 +1211,73 @@ fn review_version_admission_refuses_new_vocabulary_in_legacy_envelopes() {
             .unwrap()
             .to_canonical_json()
     );
+}
+
+/// `story:a-transition-and-a-state-may-carry-a-summary`: a transition summary (`ess/33`) that is
+/// added, edited or dropped is `transition-summary-changed`, compatible on every dimension, and
+/// `ess-diff/22` vocabulary; before it the residual reported it as `unclassified-changed`.
+#[test]
+fn a_transition_summary_edit_is_compatible_documentation() {
+    const JOBS: &str = include_str!("../../../generate/ess-gen/tests/fixtures/state-wire.yaml");
+    const BARE: &str = "{name: finish, from: [Indexing], to: Ready}";
+    let compiled = |transition: &str| {
+        assert!(JOBS.contains(BARE) && JOBS.contains("format: ess/32\n"));
+        let text = JOBS
+            .replacen("format: ess/32\n", "format: ess/33\n", 1)
+            .replacen(BARE, transition, 1);
+        let spec = Specification::assemble([(
+            Source::new("jobs.yaml"),
+            RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}")),
+        )])
+        .unwrap_or_else(|errors| panic!("{errors}"));
+        compile(&spec, &SourceMap::new()).unwrap_or_else(|errors| panic!("{errors}"))
+    };
+    let written = "{name: finish, from: [Indexing], to: Ready, summary: The index is written}";
+    let edited = "{name: finish, from: [Indexing], to: Ready, summary: The job is searchable}";
+    for (before, after, expected) in [
+        (BARE, written, (None, Some("The index is written"))),
+        (
+            written,
+            edited,
+            (Some("The index is written"), Some("The job is searchable")),
+        ),
+        (written, BARE, (Some("The index is written"), None)),
+    ] {
+        let delta = ess_diff::classified(&compiled(before), &compiled(after)).unwrap();
+        let json = delta.to_canonical_json();
+        let ids: Vec<String> = delta
+            .changes()
+            .iter()
+            .map(|change| change.id().to_string())
+            .collect();
+        assert_eq!(
+            ids,
+            ["entity/jobs.queue.Job/transition-summary-changed/finish"],
+            "{json}"
+        );
+        let compatibility = delta
+            .compatibility_of(&delta.changes()[0].id())
+            .expect("classified");
+        assert_eq!(
+            [
+                compatibility.callers(),
+                compatibility.readers(),
+                compatibility.history()
+            ],
+            [ess_diff::Compatibility::Compatible; 3],
+            "{json}"
+        );
+        let document: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(document["format"], "ess-diff/22", "{json}");
+        let changed = &document["changes"][0]["change"]["changed"];
+        assert_eq!(changed["transition"], "finish", "{json}");
+        assert_eq!(changed["before"].as_str(), expected.0, "{json}");
+        assert_eq!(changed["after"].as_str(), expected.1, "{json}");
+        let raw: RawEssDelta =
+            serde_json::from_str(&json.replace("ess-diff/22", "ess-diff/21")).unwrap();
+        assert!(
+            EssDelta::try_from(raw).is_err(),
+            "ess-diff/21 cannot represent a transition summary"
+        );
+    }
 }

@@ -48,7 +48,7 @@ fn state_variants(ir: &ess_compiler::ir::EssIr) -> Vec<(String, String)> {
 
 #[test]
 fn a_bare_lifecycle_keeps_its_ir_bytes() {
-    for format in ["ess/4", "ess/32"] {
+    for format in ["ess/4", "ess/32", "ess/33"] {
         let ir = compiled(&MODEL.replace("format: ess/4", &format!("format: {format}")));
         let json: Value = serde_json::from_str(&ir.to_canonical_json()).expect("the IR is JSON");
         let mut lifecycles = Vec::new();
@@ -78,6 +78,65 @@ fn a_bare_lifecycle_keeps_its_ir_bytes() {
             "{format}: the state enum's variants stay bare names: {enums:?}"
         );
     }
+}
+
+/// `story:a-transition-and-a-state-may-carry-a-summary`: from `ess/33` a state's summary reaches
+/// its variant of `<Entity>.State` and a transition's summary reaches the lifecycle's transition.
+#[test]
+fn a_state_and_transition_summary_reach_the_ir() {
+    let text = MODEL
+        .replace("format: ess/4", "format: ess/33")
+        .replace(
+            "states: [Pending, Added, Gone]",
+            "states: [{name: Pending, summary: Waiting for the room}, Added, Gone]",
+        )
+        .replace(
+            "{name: join, from: [Pending, Added, Gone], to: Added}",
+            "{name: join, from: [Pending, Added, Gone], to: Added, summary: The room took the member}",
+        );
+    assert!(text.contains("summary: The room took the member"), "{text}");
+    let ir = compiled(&text);
+    let state = &ir.types()[&"demo.room.Member.State".parse().unwrap()];
+    let ResolvedBody::Enum { variants } = &state.body else {
+        panic!("the state type is an enum: {:?}", state.body);
+    };
+    assert_eq!(
+        variants
+            .iter()
+            .map(|variant| (
+                variant.name().to_owned(),
+                variant.wire().to_owned(),
+                variant.naming.summary.clone()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("Added".to_owned(), "Added".to_owned(), None),
+            ("Gone".to_owned(), "Gone".to_owned(), None),
+            (
+                "Pending".to_owned(),
+                "Pending".to_owned(),
+                Some("Waiting for the room".to_owned())
+            ),
+        ],
+    );
+    let member = &ir.entities()[&"demo.room.Member".parse().unwrap()];
+    let join = member
+        .lifecycle
+        .transition("join")
+        .expect("the transition is declared");
+    assert_eq!(join.summary.as_deref(), Some("The room took the member"));
+    let json: Value = serde_json::from_str(&ir.to_canonical_json()).expect("the IR is JSON");
+    let mut lifecycles = Vec::new();
+    holding(&json, "transitions", &mut lifecycles);
+    assert!(
+        lifecycles[0]["transitions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|transition| transition["summary"] == "The room took the member"),
+        "the canonical IR carries the transition's summary: {}",
+        lifecycles[0]
+    );
 }
 
 #[test]

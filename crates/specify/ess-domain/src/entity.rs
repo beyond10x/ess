@@ -291,6 +291,10 @@ pub struct Transition {
     pub from: BTreeSet<StateName>,
     /// The state it ends in.
     pub to: StateName,
+    /// One line about what the move is, for a reader of the specification (`ess/33`). Skipped
+    /// when absent, so a transition without one keeps its IR bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
 }
 
 impl Transition {
@@ -308,6 +312,7 @@ impl Transition {
             name: local_name(name.as_ref())?,
             from: from.into_iter().collect(),
             to,
+            summary: None,
         })
     }
 }
@@ -356,7 +361,8 @@ pub struct StateMachine {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub transitions: Vec<Transition>,
     /// The wire spelling of each state that declares one, `{name: Indexing, wire: indexing}`
-    /// (`ess/32`, beyond10x/ess#639).
+    /// (`ess/32`, beyond10x/ess#639), and the summary of each that declares one,
+    /// `{name: Indexing, summary: …}` (`ess/33`).
     ///
     /// Held beside [`states`](Self::states) rather than in it, so every reader of the declared
     /// names stays as it is: guards, `moves:`, suites and the interpreter name a state by its
@@ -1895,7 +1901,7 @@ fn names(items: impl Iterator<Item = String>) -> String {
 #[serde(deny_unknown_fields)]
 pub struct RawStateMachine {
     /// Every state the entity can be in, each a bare name or, from `ess/32`, a name with its wire
-    /// spelling.
+    /// spelling and, from `ess/33`, its summary.
     pub states: BTreeSet<RawState>,
     /// Where a new entity starts.
     pub initial: StateName,
@@ -1908,29 +1914,36 @@ pub struct RawStateMachine {
 }
 
 impl RawStateMachine {
-    /// A state written more than once with two different spellings, located under `location`.
+    /// A state written more than once with two different spellings or two different summaries,
+    /// located under `location`.
     ///
     /// A state written twice alike is one state, as it always was; written twice with two
-    /// spellings it is two claims about one state, and keeping either would drop the other
-    /// silently.
+    /// spellings or two summaries it is two claims about one state, and keeping either would drop
+    /// the other silently.
     pub(crate) fn conflicting_spellings(&self, location: &str) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
-        let mut spelled: BTreeMap<&StateName, Option<&str>> = BTreeMap::new();
+        let mut spelled: BTreeMap<&StateName, (Option<&str>, Option<&str>)> = BTreeMap::new();
         for state in &self.states {
             let (name, wire) = state.parts();
-            match spelled.get(name) {
-                Some(first) if *first != wire => errors.push(
+            let declared = (wire, state.summary());
+            let differs = match spelled.get(name) {
+                Some(first) if first.0 != declared.0 => Some("wire spellings"),
+                Some(first) if first.1 != declared.1 => Some("summaries"),
+                Some(_) => None,
+                None => {
+                    spelled.insert(name, declared);
+                    None
+                }
+            };
+            if let Some(what) = differs {
+                errors.push(
                     ValidationError::new(
                         ValidationCode::ConflictingDeclaration,
                         format!("{location}.states.{name}"),
-                        format!("`{name}` is declared twice with two different wire spellings"),
+                        format!("`{name}` is declared twice with two different {what}"),
                     )
                     .with_hint("declare the state once"),
-                ),
-                Some(_) => {}
-                None => {
-                    spelled.insert(name, wire);
-                }
+                );
             }
         }
         errors
@@ -1946,9 +1959,14 @@ impl From<RawStateMachine> for StateMachine {
                 RawState::Bare(name) => {
                     states.insert(name);
                 }
-                RawState::Spelled { name, wire } => {
+                RawState::Spelled {
+                    name,
+                    wire,
+                    summary,
+                } => {
                     naming.entry(name.clone()).or_insert_with(|| Naming {
-                        wire: Some(wire),
+                        wire,
+                        summary,
                         ..Naming::default()
                     });
                     states.insert(name);
@@ -1965,21 +1983,25 @@ impl From<RawStateMachine> for StateMachine {
     }
 }
 
-/// A lifecycle state as a document writes it: a bare name, or from `ess/32` a mapping that also
-/// declares its wire spelling, `{name: Indexing, wire: indexing}` (beyond10x/ess#639).
+/// A lifecycle state as a document writes it: a bare name, or a mapping that also declares its wire
+/// spelling, `{name: Indexing, wire: indexing}` from `ess/32` (beyond10x/ess#639), its summary,
+/// `{name: Indexing, summary: …}` from `ess/33`, or both.
 ///
-/// The mapping is read at every format, so a document below `ess/32` is refused at the state as
-/// `unsupported_format_version` naming `ess/32` rather than as a whole-file `invalid type: map`.
+/// The mapping is read at every format, so a document below the format a key needs is refused at
+/// the state as `unsupported_format_version` naming that format rather than as a whole-file
+/// `invalid type: map` or an unknown field.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RawState {
     /// A state named and nothing else.
     Bare(StateName),
-    /// A state with the spelling it carries on the wire.
+    /// A state with the spelling it carries on the wire, its summary, or both; never neither.
     Spelled {
         /// Its declared name, which every guard, transition and suite names it by.
         name: StateName,
-        /// What it is called on the wire.
-        wire: String,
+        /// What it is called on the wire (`ess/32`).
+        wire: Option<String>,
+        /// One line about what the state is (`ess/33`).
+        summary: Option<String>,
     },
 }
 
@@ -1988,20 +2010,55 @@ impl RawState {
     pub fn parts(&self) -> (&StateName, Option<&str>) {
         match self {
             Self::Bare(name) => (name, None),
-            Self::Spelled { name, wire } => (name, Some(wire)),
+            Self::Spelled { name, wire, .. } => (name, wire.as_deref()),
+        }
+    }
+
+    /// The summary, where one is declared (`ess/33`).
+    pub fn summary(&self) -> Option<&str> {
+        match self {
+            Self::Bare(_) => None,
+            Self::Spelled { summary, .. } => summary.as_deref(),
         }
     }
 }
 
-/// A lifecycle state with its wire spelling, `{name: Indexing, wire: indexing}`. `wire:` is
-/// required: a state with nothing to declare beside its name is written as the name.
+/// A lifecycle state in its mapping form, `{name: Indexing, wire: indexing, summary: …}`. At least
+/// one of `wire:` and `summary:` is required: a state with nothing to declare beside its name is
+/// written as the name.
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct SpelledState {
     /// The state's declared name.
     name: StateName,
     /// What the state is called on the wire (`ess/32`).
-    wire: String,
+    #[serde(default)]
+    #[schemars(with = "String")]
+    wire: Option<String>,
+    /// One line about what the state is (`ess/33`).
+    #[serde(default)]
+    #[schemars(with = "String")]
+    summary: Option<String>,
+}
+
+/// [`SpelledState`]'s published shape: the derived one, with `minProperties: 2`, so the schema
+/// refuses `{name: Ready}` as the parser does rather than admitting a mapping no reader takes.
+struct SpelledStateSchema;
+
+impl schemars::JsonSchema for SpelledStateSchema {
+    fn schema_name() -> String {
+        <SpelledState as schemars::JsonSchema>::schema_name()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        match <SpelledState as schemars::JsonSchema>::json_schema(generator) {
+            schemars::schema::Schema::Object(mut object) => {
+                object.object().min_properties = Some(2);
+                object.into()
+            }
+            boolean @ schemars::schema::Schema::Bool(_) => boolean,
+        }
+    }
 }
 
 impl<'de> serde::Deserialize<'de> for RawState {
@@ -2016,7 +2073,7 @@ impl<'de> serde::Deserialize<'de> for RawState {
             type Value = RawState;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("a state name, or a mapping carrying `name` and `wire`")
+                f.write_str("a state name, or a mapping carrying `name` and `wire` or `summary`")
             }
 
             fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
@@ -2027,11 +2084,24 @@ impl<'de> serde::Deserialize<'de> for RawState {
                 self,
                 map: A,
             ) -> Result<Self::Value, A::Error> {
-                let SpelledState { name, wire } =
-                    <SpelledState as serde::Deserialize>::deserialize(
-                        serde::de::value::MapAccessDeserializer::new(map),
-                    )?;
-                Ok(RawState::Spelled { name, wire })
+                let SpelledState {
+                    name,
+                    wire,
+                    summary,
+                } = <SpelledState as serde::Deserialize>::deserialize(
+                    serde::de::value::MapAccessDeserializer::new(map),
+                )?;
+                if wire.is_none() && summary.is_none() {
+                    return Err(serde::de::Error::custom(format!(
+                        "state `{name}` declares nothing beside its name: write the state as the \
+                         name, `{name}`, or declare its `wire:` or `summary:`"
+                    )));
+                }
+                Ok(RawState::Spelled {
+                    name,
+                    wire,
+                    summary,
+                })
             }
         }
 
@@ -2048,11 +2118,11 @@ impl schemars::JsonSchema for RawState {
         let mut schema = schemars::schema::SchemaObject::default();
         schema.subschemas().any_of = Some(vec![
             generator.subschema_for::<StateName>(),
-            generator.subschema_for::<SpelledState>(),
+            generator.subschema_for::<SpelledStateSchema>(),
         ]);
         schema.metadata().description = Some(
-            "A lifecycle state: a bare name, or from `ess/32` a mapping that also declares its \
-             wire spelling."
+            "A lifecycle state: a bare name, or a mapping that also declares its wire spelling \
+             (`ess/32`), its summary (`ess/33`), or both."
                 .to_owned(),
         );
         schema.into()

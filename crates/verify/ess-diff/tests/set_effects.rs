@@ -94,6 +94,43 @@ fn parking() -> (String, String) {
     (before, after)
 }
 
+/// An outcome embeds the whole transition it takes, summary included, in its subject's `moves:`,
+/// its `instances:` and its `affects:` entries. A transition summary (`ess/33`,
+/// `story:a-transition-and-a-state-may-carry-a-summary`) moved is reported once, as the entity's
+/// `transition-summary-changed`, and never again on an outcome whose two sides read alike.
+#[test]
+fn a_transition_summary_is_not_reported_again_on_the_outcomes_that_take_it() {
+    let (_, parked) = parking();
+    let before = parked.replacen("format: ess/22", "format: ess/33", 1);
+    let after = before
+        .replacen(
+            "{name: park, from: [Open], to: Parked}",
+            "{name: park, from: [Open], to: Parked, summary: Set aside}",
+            1,
+        )
+        .replacen(
+            "{name: end, from: [Open], to: Ended}",
+            "{name: end, from: [Open], to: Ended, summary: Closed for good}",
+            1,
+        );
+    assert!(after.contains("summary: Set aside") && after.contains("summary: Closed for good"));
+    let delta = diff(&ir(&before), &ir(&after)).unwrap();
+    let ids: Vec<String> = delta
+        .changes()
+        .iter()
+        .map(|change| change.id().to_string())
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            "entity/demo.desk.Session/transition-summary-changed/end",
+            "entity/demo.desk.Session/transition-summary-changed/park",
+        ],
+        "{}",
+        delta.to_canonical_json()
+    );
+}
+
 #[test]
 fn issue_229_a_move_added_to_an_affects_entry_is_set_effect_changed() {
     let (before, after) = parking();

@@ -38,7 +38,7 @@
 //!
 //! | change | decided as |
 //! |---|---|
-//! | display name, summary or example moved, a domain's included (`ess-diff/20`) | compatible everywhere: documentation |
+//! | display name, summary or example moved, a domain's included (`ess-diff/20`) and a lifecycle transition's (`ess-diff/22`, ess/33) | compatible everywhere: documentation |
 //! | a type widened (`expanded`) | breaking for readers of an output use; compatible for callers and history |
 //! | a type narrowed (`narrowed`) | breaking for callers of an input use and for stored history; compatible for readers |
 //! | a union variant gains or loses a required payload (ess/22) | breaking for every use: neither revision reads what the other writes |
@@ -832,6 +832,7 @@ fn documentation_only(change: &SemanticChange) -> bool {
                 | EntityChange::IdentitySummaryChanged { .. }
                 | EntityChange::FieldDisplayNameChanged { .. }
                 | EntityChange::FieldSummaryChanged { .. }
+                | EntityChange::TransitionSummaryChanged { .. }
                 | EntityChange::DisplayNameChanged { .. }
                 | EntityChange::SummaryChanged { .. }
         ),

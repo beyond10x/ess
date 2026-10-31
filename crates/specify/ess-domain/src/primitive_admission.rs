@@ -660,21 +660,15 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
             &format!("entity {}.fields", entity.name),
             &mut errors,
         );
-        // An older reader fails the mapping as `invalid type: map` for the whole file, with no
-        // line and no version hint (beyond10x/ess#639).
-        if format.major() < FormatVersion::V32.major() {
-            for state in entity.states.naming.keys() {
-                errors.push(
-                    ValidationError::new(
-                        ValidationCode::UnsupportedFormatVersion,
-                        format!("entity {}.states.{state}", entity.name),
-                        "a lifecycle state's wire spelling requires specification format ess/32",
-                    )
-                    .with_hint(format!(
-                        "declare `format: ess/32`, or write the state as `{state}`"
-                    )),
-                );
-            }
+        for (location, what, needs, instead) in lifecycle_members(entity, format) {
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UnsupportedFormatVersion,
+                    location,
+                    format!("{what} requires specification format {needs}"),
+                )
+                .with_hint(format!("declare `format: {needs}`, or {instead}")),
+            );
         }
     }
     for command in spec.commands().values() {
@@ -713,6 +707,54 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
         errors.extend(view.navigation_admission(spec, format));
     }
     errors
+}
+
+/// Every lifecycle member of `entity` that declares more than `format` admits, each as its
+/// location, what it declares, the format that admits it and what to write instead.
+///
+/// A state's wire spelling needs `ess/32` (beyond10x/ess#639), and a state's or a transition's
+/// summary `ess/33` (`story:a-transition-and-a-state-may-carry-a-summary`). The mapping is read at
+/// every format, so the refusal is located at the member rather than failing the whole file as an
+/// `invalid type: map` or an unknown field, with no line and no version hint.
+fn lifecycle_members(
+    entity: &crate::entity::EntitySpec,
+    format: FormatVersion,
+) -> Vec<(String, &'static str, &'static str, String)> {
+    let mut refused = Vec::new();
+    let below = |needs: FormatVersion| format.major() < needs.major();
+    let owner = format!("entity {}", entity.name);
+    for (state, naming) in &entity.states.naming {
+        let at = format!("{owner}.states.{state}");
+        if naming.wire.is_some() && below(FormatVersion::V32) {
+            refused.push((
+                at.clone(),
+                "a lifecycle state's wire spelling",
+                "ess/32",
+                format!("write the state as `{state}`"),
+            ));
+        }
+        if naming.summary.is_some() && below(FormatVersion::V33) {
+            refused.push((
+                at,
+                "a lifecycle state's summary",
+                "ess/33",
+                "drop the state's `summary:`".to_owned(),
+            ));
+        }
+    }
+    if below(FormatVersion::V33) {
+        for (index, transition) in entity.states.transitions.iter().enumerate() {
+            if transition.summary.is_some() {
+                refused.push((
+                    format!("{owner}.transitions[{index}]"),
+                    "a lifecycle transition's summary",
+                    "ess/33",
+                    format!("drop the summary of transition `{}`", transition.name),
+                ));
+            }
+        }
+    }
+    refused
 }
 
 /// The source-format gates of one view: its aggregate, absent values, paging, its answer for an

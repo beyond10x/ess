@@ -52,7 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32,
+    27, 28, 29, 30, 31, 32, 33,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -350,6 +350,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
             "Two variants of one enum spelled alike on the wire, by name or by declared `wire:`, are refused as `conflicting_declaration`; below `ess/32` such an enum keeps validating (beyond10x/ess#639).",
         ],
     },
+    FormatHistoryEntry {
+        major: 33,
+        release: None,
+        added: &[
+            "A lifecycle transition may carry a one-line `summary:`, `{name: release, from: [Held], to: Open, summary: …}`, and a lifecycle state may carry one in its mapping form, `{name: Held, summary: …}`, with or without `wire:`. A state's summary is the summary of its variant of `<Entity>.State`; guards, transitions, `moves:` and conformance suites keep naming states and moves by name, and a summary-only state is not refused as a wire spelling. One state declared twice with two summaries is refused as `conflicting_declaration`. Below `ess/33` either is refused as `unsupported_format_version` naming `ess/33`, at the state or the transition; a lifecycle without one keeps its IR bytes. `ess verify diff` reports a moved state summary as the state enum's `variant-summary-changed` and a moved transition summary as `transition-summary-changed`, compatible (a downstream report, 2026-10-30).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -486,6 +494,9 @@ impl FormatVersion {
     /// struct declaring no fields (beyond10x/ess#649); a lifecycle state's wire spelling, and no
     /// two enum variants spelled alike (beyond10x/ess#639).
     pub const V32: Self = Self(32);
+    /// Structured input examples, rows a deployment provides, and lifecycle member summaries
+    /// (wave D325, downstream reports of 2026-10-30).
+    pub const V33: Self = Self(33);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

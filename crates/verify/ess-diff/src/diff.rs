@@ -1424,6 +1424,52 @@ fn written_failure(binding: &ResolvedBinding) -> String {
     }
 }
 
+/// `transition` with its summary (`ess/33`) cleared.
+///
+/// An outcome embeds the whole [`Transition`](ess_domain::entity::Transition) it takes, in its
+/// subject's `moves:`, its `instances:` and its `affects:` entries. A transition's summary is
+/// documentation reported once, as the entity's `transition-summary-changed`; compared with it,
+/// every outcome taking the move would report the same edit again as a subject or set-effect
+/// change whose two sides read alike. The three readers below are every place an outcome holds one.
+fn summary_blind(transition: &mut ess_domain::entity::Transition) {
+    transition.summary = None;
+}
+
+/// [`summary_blind`] over an effect that may take a move.
+fn summary_blind_effect(effect: &mut ess_compiler::ir::ResolvedEffect) {
+    if let ess_compiler::ir::ResolvedEffect::Moves { transition } = effect {
+        summary_blind(transition);
+    }
+}
+
+/// An outcome's subject as the comparison reads it: [`summary_blind`].
+fn summary_blind_subject(subject: Option<&ResolvedSubject>) -> Option<ResolvedSubject> {
+    subject.cloned().map(|mut subject| {
+        summary_blind_effect(&mut subject.effect);
+        subject
+    })
+}
+
+/// An outcome's `instances:` and `affects:` as the comparison reads them: [`summary_blind`].
+fn summary_blind_set_effects(
+    outcome: &ResolvedOutcome,
+) -> (
+    Option<ess_compiler::ir::ResolvedSetSubject>,
+    Vec<ess_compiler::ir::ResolvedAffect>,
+) {
+    let mut instances = outcome.instances.clone();
+    if let Some(set) = &mut instances {
+        summary_blind_effect(&mut set.effect);
+    }
+    let mut affects = outcome.affects.clone();
+    for entry in &mut affects {
+        if let Some(transition) = &mut entry.moves {
+            summary_blind(transition);
+        }
+    }
+    (instances, affects)
+}
+
 /// A transition's route: every state it may start in, and the one it ends in.
 fn written_route(transition: &ess_domain::entity::Transition) -> String {
     let from: Vec<String> = transition.from.iter().map(ToString::to_string).collect();
@@ -1478,6 +1524,13 @@ fn lifecycle_changes(was: &StateMachine, is: &StateMachine, push: &mut impl FnMu
                         transition: (*name).to_owned(),
                         before: written_route(old),
                         after: written_route(new),
+                    });
+                }
+                if old.summary != new.summary {
+                    push(EntityChange::TransitionSummaryChanged {
+                        transition: (*name).to_owned(),
+                        before: old.summary.clone(),
+                        after: new.summary.clone(),
                     });
                 }
             }
@@ -1754,7 +1807,9 @@ fn outcome_changes(
                         after: written_outcome_condition(new),
                     });
                 }
-                if old.subject != new.subject {
+                if summary_blind_subject(old.subject.as_ref())
+                    != summary_blind_subject(new.subject.as_ref())
+                {
                     push(CommandChange::OutcomeSubjectChanged {
                         outcome: (*name).to_owned(),
                         before: old.subject.as_ref().map(written_subject),
@@ -2656,7 +2711,7 @@ fn outcome_state_changes(
             after: written_sets(&new.sets, new.identity_write(after)),
         });
     }
-    if old.instances != new.instances || old.affects != new.affects {
+    if summary_blind_set_effects(old) != summary_blind_set_effects(new) {
         push(CommandChange::OutcomeSetEffectChanged {
             outcome: name.to_owned(),
             before: written_set_effects(old),
@@ -2819,8 +2874,9 @@ fn residual_entity(declaration: &mut serde_json::Value) {
     residual_fields(declaration, "fields");
     remove_keys(declaration, &["state_type", "invariants", "relations"]);
     if let Some(lifecycle) = declaration.get_mut("lifecycle") {
-        // A state's wire spelling (`ess/32`, beyond10x/ess#639) is the spelling of its variant of
-        // `<Entity>.State`, compared there as `variant-wire-name-changed`.
+        // A state's wire spelling (`ess/32`, beyond10x/ess#639) and its summary (`ess/33`) are the
+        // spelling and the summary of its variant of `<Entity>.State`, compared there as
+        // `variant-wire-name-changed` and `variant-summary-changed`.
         remove_keys(lifecycle, &["initial", "states", "terminal", "naming"]);
         if let Some(transitions) = lifecycle
             .get_mut("transitions")
@@ -2828,7 +2884,8 @@ fn residual_entity(declaration: &mut serde_json::Value) {
         {
             for transition in transitions {
                 retain_residual_owner(transition, |transition| {
-                    remove_keys(transition, &["name", "from", "to"]);
+                    // `summary` is `transition-summary-changed` (`ess-diff/22`).
+                    remove_keys(transition, &["name", "from", "to", "summary"]);
                 });
             }
         }
