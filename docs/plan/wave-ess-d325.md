@@ -63,6 +63,6 @@ the release commit, the `queue/ess-0.78.0` pull request and its merge, the tag.
 
 | unit | stage | head |
 |---|---|---|
-| U1 | dispatched | — |
-| U2 | dispatched | — |
-| U3 | dispatched | — |
+| U1 | merged d36fcb59f; adversary F4 fixed in 61cbb58d2 | 0af2bf88f |
+| U2 | merged 83614b8dc; adversary F1, F2, F3, F5 fixed in 61cbb58d2 | 6475bf403 |
+| U3 | merged 93dd27e9c; no adversary finding | e66b0062d |
