@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-binary64-value-round-trips-through-a-conformance-suite
 kind: story
-status: draft
+status: active
 title: A Binary64 value round-trips through a conformance suite
 summary: 'Split from the Binary64 admission story: a reached Binary64 value is written by synthesis and compared by every runner under a stated suite contract.'
 tags:
@@ -11,7 +11,10 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 - informed_by: story:a-binary64-field-is-admitted-by-a-conformance-run
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-31T19:59:00Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-10-31T19:59:00Z", actor: "human:timo", revision: 4}
 ---
 ## Problem
 
