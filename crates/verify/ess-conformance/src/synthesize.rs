@@ -2881,7 +2881,7 @@ pub enum Unreachable {
     /// The deployment provides the entity's rows (`provided: true`, ess/33) and no outcome creates
     /// one. Synthesis takes such a row only as the related row a `when_related: {via:
     /// input.<field>}` guard reads, resolved as an entity fixture before execution
-    /// ([`provided`]); a subject, an owner or a view's population it would have to be is refused
+    /// (`synthesize/provided.rs`); a subject, an owner or a view's population it would have to be is refused
     /// here, by name.
     Provided,
     /// A provided row (`provided: true`) is read by a guard over its fields: the deployment holds
