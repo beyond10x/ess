@@ -52,7 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32,
+    27, 28, 29, 30, 31, 32, 33,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -350,6 +350,14 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
             "Two variants of one enum spelled alike on the wire, by name or by declared `wire:`, are refused as `conflicting_declaration`; below `ess/32` such an enum keeps validating (beyond10x/ess#639).",
         ],
     },
+    FormatHistoryEntry {
+        major: 33,
+        release: None,
+        added: &[
+            "An input whose type is a struct (open or closed), a `Map<…>` or `Json`, through any newtype or `Optional`, may carry an `example:`, held as a precondition's literal is: a struct names every required member, each of its type and true of the struct's invariants, a map names keys of its key type and values of its value type, and a `Json` example is any value but `null`. An open struct (`undeclared_fields: ignored`) admits members it does not declare and keeps them as written, as list example elements and precondition literals of one now do; a closed struct refuses them as `undeclared_reference`. A union example stays refused. Synthesis sends the example at the plain instance: a map or `Json` example as written, a struct example through its declared members, so a guard reading one keeps the scenario that refutes it, with undeclared members carried as written and an `Optional` member the example leaves out left out. Below `ess/33` each keeps its refusal, its hint naming `ess/33`; a model without such an example keeps its IR bytes (a downstream report, 2026-10-30).",
+        ],
+        stricter: &[],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -486,6 +494,9 @@ impl FormatVersion {
     /// struct declaring no fields (beyond10x/ess#649); a lifecycle state's wire spelling, and no
     /// two enum variants spelled alike (beyond10x/ess#639).
     pub const V32: Self = Self(32);
+    /// Structured input examples, rows a deployment provides, and lifecycle member summaries
+    /// (wave D325, downstream reports of 2026-10-30).
+    pub const V33: Self = Self(33);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

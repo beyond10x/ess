@@ -1,0 +1,79 @@
+format: ess/33
+system: demo
+version: v1
+domain: demo.docs
+types:
+  - name: demo.docs.Preset
+    kind: enum
+    variants: [blank, starter]
+  - name: demo.docs.DocId
+    kind: newtype
+    of: Uuid
+  - name: demo.docs.Body
+    kind: struct
+    undeclared_fields: ignored
+    fields: []
+  - name: demo.docs.Header
+    kind: struct
+    undeclared_fields: ignored
+    fields:
+      - {name: version, type: String}
+      - {name: note, type: "Optional<String>"}
+  - name: demo.docs.Limits
+    kind: struct
+    fields:
+      - {name: low, type: Integer}
+      - {name: high, type: Integer}
+  - name: demo.docs.Settings
+    kind: newtype
+    of: Json
+entities:
+  - name: demo.docs.Doc
+    identity: {name: doc_id, type: demo.docs.DocId}
+    fields:
+      - {name: name, type: String}
+    lifecycle: {initial: Draft, states: [Draft], terminal: [Draft]}
+errors:
+  - name: demo.docs.DefinitionMissing
+    fields:
+      - {name: name, type: String}
+events:
+  - name: demo.docs.DocCreated
+    fields:
+      - {name: doc_id, type: demo.docs.DocId}
+      - {name: name, type: String}
+commands:
+  - name: demo.docs.CreateDoc
+    input:
+      - {name: name, type: String}
+      - {name: body, type: "Optional<demo.docs.Body>", example: {version: "1", nodes: [{id: start, kind: entry}]}}
+      - {name: preset, type: "Optional<demo.docs.Preset>"}
+    outcomes:
+      - name: no-definition
+        when: {all: ["not defined(body)", "not defined(preset)"]}
+        error: demo.docs.DefinitionMissing
+        payload:
+          demo.docs.DefinitionMissing: {name: input.name}
+      - name: created
+        creates: demo.docs.Doc
+        instance: doc_id
+        sets: {name: input.name}
+        emits: [demo.docs.DocCreated]
+        payload:
+          demo.docs.DocCreated: {doc_id: {generated: true}, name: input.name}
+  - name: demo.docs.ImportDoc
+    input:
+      - {name: name, type: String}
+      - {name: header, type: demo.docs.Header, example: {version: "2", note: draft, origin: upload}}
+      - {name: limits, type: demo.docs.Limits, example: {low: 1, high: 5}}
+      - {name: labels, type: "Map<String, String>", example: {team: core}}
+      - {name: settings, type: demo.docs.Settings, example: {retries: 3, mode: fast}}
+      - {name: parts, type: "List<demo.docs.Body>", example: [{kind: intro}]}
+    outcomes:
+      - name: imported
+        creates: demo.docs.Doc
+        instance: doc_id
+        sets: {name: input.name}
+        emits: [demo.docs.DocCreated]
+        payload:
+          demo.docs.DocCreated: {doc_id: {generated: true}, name: input.name}

@@ -499,6 +499,78 @@ fn the_model_interpreter_passes_its_own_synthesized_suite() {
     }
 }
 
+/// A command taking `body` of the struct `catalog.orders.Draft`, open where `opened`, at `ess/24`.
+fn draft_input(opened: bool) -> String {
+    let key = if opened {
+        "    undeclared_fields: ignored\n"
+    } else {
+        ""
+    };
+    format!(
+        "format: ess/24
+system: catalog
+version: v1
+domain: catalog.orders
+types:
+  - name: catalog.orders.Draft
+    kind: struct
+{key}    fields:
+      - {{name: version, type: String}}
+commands:
+  - name: catalog.orders.PlaceOrder
+    input:
+      - {{name: body, type: catalog.orders.Draft}}
+    response:
+      - {{name: order_ref, type: String}}
+    outcomes:
+      - name: placed
+        returns: true
+"
+    )
+}
+
+#[test]
+fn an_open_struct_command_input_admits_undeclared_members_on_the_interpreted_target() {
+    for opened in [true, false] {
+        let text = draft_input(opened);
+        let suite = synthesize(&ir(&text)).suite;
+        let mut extended = 0;
+        let forged = edited(&suite, |document| {
+            for scenario in document["scenarios"].as_object_mut().unwrap().values_mut() {
+                for step in scenario["steps"].as_array_mut().unwrap() {
+                    if step["step"] == "execute_command" {
+                        step["input"]["body"]["value"]["extension"] = "x".into();
+                        extended += 1;
+                    }
+                }
+            }
+        });
+        assert!(extended > 0, "the suite executes the command");
+        let verdict = AdmittedSuite::from_json(&forged).map(|admitted| {
+            let run = Runner::for_suite(admitted.suite()).run_admitted(
+                &admitted,
+                &ess_conformance::interpret::Interpreted::for_model(ir(&text)),
+            );
+            run.scenarios
+                .iter()
+                .find(|result| result.scenario.to_string() == OUTCOME)
+                .expect("the outcome ran")
+                .clone()
+        });
+        if opened {
+            let result = verdict.unwrap_or_else(|error| panic!("admitted: {error}"));
+            assert_eq!(result.status, Status::Passed, "open: {result:#?}");
+        } else {
+            assert!(
+                verdict
+                    .as_ref()
+                    .map_or(true, |result| result.status != Status::Passed),
+                "a closed struct still refuses the member: {verdict:#?}"
+            );
+        }
+    }
+}
+
 // ---- formats and admission ------------------------------------------------------------------
 
 /// The suite's canonical JSON, edited.

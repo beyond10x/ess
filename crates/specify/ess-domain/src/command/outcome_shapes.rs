@@ -982,9 +982,12 @@ fn precondition_input(
             }
             continue;
         }
-        if let Err((code, message, hint)) =
-            super::precondition_literal_admitted(&spec.system().types, &input.type_ref, value)
-        {
+        if let Err((code, message, hint)) = super::precondition_literal_admitted(
+            &spec.system().types,
+            spec.system().format,
+            &input.type_ref,
+            value,
+        ) {
             // Written as a fixture reference for an input with no fixture, and no value of its
             // type either: the reference is what was meant, so its refusal is the one reported.
             if let Some(fixture) = written_fixture(value) {
