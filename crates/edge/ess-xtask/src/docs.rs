@@ -238,6 +238,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     // An exact observer compares a `Decimal` by value.
     ("ess-conformance", 58, None),
     ("ess-conformance", 59, None),
+    // An entity fixture names a row the deployment provides (`provided: true`).
+    ("ess-conformance", 60, None),
+    ("ess-conformance", 61, None),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),

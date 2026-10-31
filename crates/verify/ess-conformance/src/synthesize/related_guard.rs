@@ -4245,7 +4245,14 @@ fn with_row_where(
         subject_fact::grounded_on_input(ir, entity, fixed, &predicates),
     ]
     .concat();
+    // A row the deployment provides and no outcome creates is resolved as an entity fixture in
+    // each of its states (ess/33); one an outcome creates is arranged by it, as before.
     let search = |hints: &[Predicate], strict: bool, under: subject_fact::Under<'_>| {
+        if under.is_none() && super::provided::serves(ir, entity) {
+            return super::provided::search(ir, entity, Distinction::further(first), |node| {
+                selecting(node, strict)
+            });
+        }
         subject_fact::search_under(
             ir,
             entity,

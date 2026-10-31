@@ -5,6 +5,7 @@
 ### Added
 
 - An entity may declare `provided: true` from `ess/33`: the deployment holds its rows, and no command of the specification need create one. Below `ess/33` the key is refused as `unsupported_format_version` naming `ess/33`, and a model without it keeps its IR bytes. `ess verify diff` reports adding or removing the marker as an unclassified change, which the default gate fails (a downstream report, 2026-10-30).
+- Synthesis sends a provided row where a `when_related: {via: input.<field>}` guard reads one that no declared outcome creates: the scenario resolves an entity fixture `{name, type, entity, state}` before execution and sends its identity, and the `exists: false` branch is sent a fresh identity. Such a suite is `ess-conformance/60` (ordinary) or `/61` (declared coverage); every other suite keeps its format and bytes, and every reader refuses an entity fixture under a lower major. A subject, an owner or a view population that needs a provided row nothing creates, and a guard over a provided row's fields, are refused by name; no decoy row stands beside a provided one, which the synthesis notes say.
 
 ### Fixed
 

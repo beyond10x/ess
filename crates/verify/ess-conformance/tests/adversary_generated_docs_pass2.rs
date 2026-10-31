@@ -158,7 +158,7 @@ fn adversary2_direct_return_suite_emits_in_both_supported_runtimes() {
 /// Future majors still name the version, newest admitted major and target in their refusal.
 #[test]
 fn adversary2_unadmitted_version_refusal_names_the_version_and_the_limit() {
-    for major in [60, 61] {
+    for major in [62, 63] {
         for (target, error) in [
             ("Go", go(&empty_suite(major)).unwrap_err()),
             ("TypeScript", typescript(&empty_suite(major)).unwrap_err()),
@@ -171,13 +171,15 @@ fn adversary2_unadmitted_version_refusal_names_the_version_and_the_limit() {
             );
             for needle in [
                 format!("generated {target} runner"),
-                "`ess-conformance/59`".to_owned(),
+                "`ess-conformance/61`".to_owned(),
                 format!("`ess-conformance/{major}`"),
                 "regenerate using a supported suite version".to_owned(),
             ] {
                 assert!(
                     message.contains(&needle),
-                    "{target} /{major}: the refusal does not say {needle}: {message}"
+                    "{target} /{major}: the refusal does not say {needle} (the newest admitted \
+                     major is /61 since story:a-fixture-may-be-a-row-the-deployment-already-holds): \
+                     {message}"
                 );
             }
         }

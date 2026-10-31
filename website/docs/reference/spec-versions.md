@@ -752,6 +752,14 @@ TypeScript run it, older readers refuse these envelopes by version, and every re
 Decimal in an exact observer under a lower major. A `Binary64` there is still refused, and the
 refusal names the field. A suite without one keeps its earlier format and bytes.
 
+`ess-conformance/60` and `ess-conformance/61`, unreleased, let a fixture prelude name a row the
+deployment provides: an entity fixture `{name, type, entity, state}` of an `ess/33` entity marked
+`provided: true`. The target's provider makes or finds a row of the entity resting in the state and
+answers its identity before execution. A suite carrying one is written at 60 (ordinary) or 61
+(declared coverage); each implies every major below it, the 58/59 pair included. Rust, Go and
+TypeScript run it, older readers refuse these envelopes by version, and every reader refuses an
+entity fixture under a lower major. A suite without one keeps its earlier format and bytes.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named

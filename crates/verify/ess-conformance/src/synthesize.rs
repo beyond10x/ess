@@ -195,6 +195,7 @@ mod made;
 mod ordered_head;
 mod paging;
 pub(crate) mod precedence;
+mod provided;
 mod reference_integrity;
 mod refusal_policy;
 mod related;
@@ -378,6 +379,16 @@ pub enum Note {
         /// The fields copied, in the order first read.
         fields: Vec<String>,
     },
+    /// A scenario reads a row the deployment provides (`provided: true`, ess/33): it resolves the
+    /// row as an entity fixture before execution and sends its identity. No second row of that
+    /// entity is placed beside it as a decoy, since the deployment would have to provide that one
+    /// too, so a target reading another provided row than the one named is not failed by it.
+    ProvidedRelatedRow {
+        /// The scenario.
+        scenario: ScenarioId,
+        /// The entity whose row the deployment provides.
+        entity: QualifiedName,
+    },
     /// Every declared actor holds the grant for a command, so no actor is refused it and no
     /// `…/grant/denied` scenario is owed (beyond10x/ess#265). The coverage fact that stands in for
     /// the scenario a command some actor lacks the grant for gets.
@@ -544,6 +555,13 @@ impl fmt::Display for Note {
                     names.join(", ")
                 )
             }
+            Self::ProvidedRelatedRow { scenario, entity } => write!(
+                f,
+                "`{scenario}` reads a row of `{entity}`, which the deployment provides: it is \
+                 resolved as an entity fixture before execution, and no second provided row is \
+                 placed beside it, so a target reading another row of `{entity}` than the one \
+                 named is not failed by it"
+            ),
             Self::GrantedToEveryActor { .. }
             | Self::GrantDeniedUnwitnessed { .. }
             | Self::GrantRotationSkipped { .. }
@@ -2860,6 +2878,15 @@ pub enum Unreachable {
         /// The branches reading that row that the send would have to pass over.
         guards: Vec<OutcomeRef>,
     },
+    /// The deployment provides the entity's rows (`provided: true`, ess/33) and no outcome creates
+    /// one. Synthesis takes such a row only as the related row a `when_related: {via:
+    /// input.<field>}` guard reads, resolved as an entity fixture before execution
+    /// ([`provided`]); a subject, an owner or a view's population it would have to be is refused
+    /// here, by name.
+    Provided,
+    /// A provided row (`provided: true`) is read by a guard over its fields: the deployment holds
+    /// their values, so no lifecycle state the fixture names decides the branch.
+    ProvidedFields,
 }
 
 /// `guards` as a list in prose, or "the guards beside it" where there are none.
@@ -2918,6 +2945,15 @@ impl Unreachable {
                  from its own input (`sets: <field>: input.<field>`), or cover the state with an \
                  authored scenario (ess-scenario/1)"
             }
+            Self::Provided => {
+                "a provided row is sent as an entity fixture only where a `when_related: {via: \
+                 input.<field>}` guard reads it; cover this position with an authored scenario \
+                 (ess-scenario/1), or give some command outcome `creates:` for this entity"
+            }
+            Self::ProvidedFields => {
+                "guard a provided row by its existence or its lifecycle state, which the fixture \
+                 names, or cover the branch with an authored scenario (ess-scenario/1)"
+            }
         }
     }
 }
@@ -2927,6 +2963,15 @@ impl fmt::Display for Unreachable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NothingCreates => f.write_str("no outcome creates one"),
+            Self::Provided => f.write_str(
+                "the deployment provides its rows (`provided: true`), which synthesis sends only \
+                 as the row a `when_related:` guard reads through an input",
+            ),
+            Self::ProvidedFields => f.write_str(
+                "the deployment provides its rows (`provided: true`) and the guards read fields \
+                 of the row, whose values the deployment holds, so no lifecycle state of a \
+                 provided row decides them",
+            ),
             Self::NoPath { from } => {
                 write!(f, "no declared move reaches it from `{from}`")
             }
@@ -3126,6 +3171,10 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     // Read off the finished suite, so every path that builds a branch's scenario is held to it.
     let overlaps = unwitnessed_overlaps(ir, &synthesis.suite);
     synthesis.notes.extend(overlaps);
+    // Each scenario reading a row the deployment provides says so, and that no decoy stands beside
+    // it (ess/33).
+    let provided = provided::notes(&synthesis.suite);
+    synthesis.notes.extend(provided);
     disclosure::augment(ir, &mut synthesis);
     // A Binary64 position in a type nothing reaches refuses nothing; it is named, so a reader sees
     // what the run does not exercise.
@@ -3163,7 +3212,8 @@ fn about_scenario(note: &Note, id: &ScenarioId) -> bool {
         | Note::UnswappedCallers { scenario, .. }
         | Note::CrossCallerUnswapped { scenario, .. }
         | Note::CrossCallerUnwitnessed { scenario, .. }
-        | Note::UnaccompaniedRelatedCopy { scenario, .. } => scenario == id,
+        | Note::UnaccompaniedRelatedCopy { scenario, .. }
+        | Note::ProvidedRelatedRow { scenario, .. } => scenario == id,
         _ => false,
     }
 }
@@ -6564,7 +6614,7 @@ fn arrange(
         .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
         .peekable();
     if creators.peek().is_none() {
-        return Err(Unreachable::NothingCreates);
+        return Err(provided::nothing_creates(ir, entity));
     }
     let mut routed: Vec<(&Driver<'_>, Vec<Driver<'_>>)> = creators
         .filter_map(|creator| {
@@ -15431,10 +15481,12 @@ fn moving(
 fn bound_instances(steps: &[ScenarioStep]) -> BTreeSet<InstanceName> {
     steps
         .iter()
-        .filter_map(|step| match step {
+        .flat_map(|step| match step {
             ScenarioStep::CaptureInstance { instance, .. }
-            | ScenarioStep::EstablishEntity { instance, .. } => Some(instance.clone()),
-            _ => None,
+            | ScenarioStep::EstablishEntity { instance, .. } => vec![instance.clone()],
+            // A row the deployment provides is bound under its fixture's name (ess/33).
+            ScenarioStep::ResolveFixtures { fixtures } => provided::bound(fixtures),
+            _ => Vec::new(),
         })
         .collect()
 }

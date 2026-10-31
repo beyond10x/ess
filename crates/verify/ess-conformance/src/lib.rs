@@ -141,6 +141,7 @@ pub mod decision;
 pub mod defined_aggregates;
 pub mod delivery_context;
 pub mod direct_response;
+pub mod entity_fixtures;
 pub mod event_multiplicity;
 pub mod evidence;
 pub mod exact_decimal;
