@@ -11,7 +11,7 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 - informed_by: story:a-binary64-field-is-admitted-by-a-conformance-run
-revision: 1
+revision: 2
 ---
 ## Problem
 
@@ -28,3 +28,21 @@ publication decisions" does not state yet.
 - The exact observers that `story:a-view-may-publish-a-decimal` opens for `Decimal` admit
   `Binary64` under the same suite format pair, compared by value.
 - `docs/design/model-binary64.md` states the suite contract.
+
+## Second report: validate refuses a reached Binary64 once authored scenarios are listed (2026-10-25)
+
+Reported by the Loom specification session against ESS 0.69.0: `ess specify validate` refuses a
+`Binary64` field with `ESS-AUTHOR-036` once the specification lists authored scenarios; Loom's gate
+tests strip `scenarios:` from their copy as a workaround, and the specification itself types the
+value as `Decimal`.
+
+Triage on main (f692aab, 0.77.0), 2026-10-31: still refused. A copy of that specification with its
+four `Optional<Decimal>` confidences retyped to `Optional<Binary64>`, authored scenarios kept:
+
+```text
+refusal[ESS-AUTHOR-036]: model
+  command.….RecordSelection.input.confidence.of, command.….SelectAction.input.confidence.of, entity ….Selection.fields.confidence.of, entity ….SelectionRecord.fields.confidence.of: Binary64 requires a qualified conformance codec
+  help: use checked format-5 normalization; finite Binary64 conformance codecs are not implemented
+```
+
+This is the reached-`Binary64` half this story owns; wave D325 leaves it for the next wave.
