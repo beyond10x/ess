@@ -4845,25 +4845,24 @@ impl<'a> Compiler<'a> {
         fields: &[ResolvedField],
         command: &CommandRef,
     ) {
+        let mut found = Vec::new();
         for field in fields {
-            let Some(value) = input.get(&field.name).and_then(ScenarioValue::as_literal) else {
-                continue;
-            };
-            if let Err(error) = crate::input::validate_typed_value(self.ir, &field.type_ref, value)
-            {
-                let error = error
-                    .strip_suffix("; setup requires True")
-                    .unwrap_or(&error);
-                self.refuse(Cause::ValueRejected {
-                    surface: Surface::Input(command.clone()),
-                    detail: format!(
-                        "`{}` is outside its declared type {}: {error}; a decoder refuses it \
-                         before the command runs, so no implementation reaches the outcome the \
-                         act claims",
-                        field.name, field.type_ref
-                    ),
-                });
+            if let Some(value) = input.get(&field.name) {
+                out_of_type(self.ir, &field.type_ref, value, &field.name, 0, &mut found);
             }
+        }
+        for (path, declared, error) in found {
+            let error = error
+                .strip_suffix("; setup requires True")
+                .unwrap_or(&error);
+            self.refuse(Cause::ValueRejected {
+                surface: Surface::Input(command.clone()),
+                detail: format!(
+                    "`{path}` is outside its declared type {declared}: {error}; a decoder refuses \
+                     it before the command runs, so no implementation reaches the outcome the act \
+                     claims"
+                ),
+            });
         }
     }
 
@@ -5258,6 +5257,25 @@ impl<'a> Compiler<'a> {
                 if let Err(errors) = bind(self.ir, &member, &value, Completeness::Partial) {
                     self.member_shape(&errors, &surface);
                 }
+            }
+        }
+        // A field claimed whole and by a path names one member twice, as on the other claim
+        // surfaces ([`Self::split_paths`]): refused, the same way.
+        let paths = self.paths;
+        let mut both: BTreeSet<&str> = BTreeSet::new();
+        for path in expected
+            .keys()
+            .filter(|key| paths && crate::member_paths::is_path(key))
+        {
+            let field = path.split('.').next().unwrap_or_default();
+            if whole.contains_key(field) && both.insert(field) {
+                self.refuse(Cause::ValueRejected {
+                    surface: surface.clone(),
+                    detail: format!(
+                        "`{path}` and `{field}` both claim a member of `{field}`; claim `{field}` \
+                         whole or by its paths, not both"
+                    ),
+                });
             }
         }
         if let Err(errors) = bind(self.ir, fields, &whole, Completeness::Partial) {
@@ -5677,6 +5695,67 @@ impl<'a> Compiler<'a> {
                 detail: format!("`{value}` is not a variant of `{declared_by}`"),
             },
         }
+    }
+}
+
+// ---- an act's literal input held to its declared type (ess-scenario/6) -------------------------
+
+/// Each literal inside `value` that its declared type refuses, as its member path, the type it
+/// was held to, and why: the whole value where it is a literal, and each literal member or element
+/// of a struct, map or list that also holds a reference ([`ScenarioValue::Members`],
+/// [`ScenarioValue::List`]). A reference, a fixture or an observation is not the author's literal
+/// and is not read; nor is an invariant of a struct or list holding one, which reads the value
+/// the reference resolves to.
+fn out_of_type(
+    ir: &EssIr,
+    declared: &ResolvedTypeRef,
+    value: &ScenarioValue,
+    path: &str,
+    depth: usize,
+    found: &mut Vec<(String, ResolvedTypeRef, String)>,
+) {
+    if depth > ess_domain::types::MAX_TYPE_DEPTH {
+        return;
+    }
+    if let Some(literal) = value.as_literal() {
+        if let Err(error) = crate::input::validate_typed_value(ir, declared, literal) {
+            found.push((path.to_owned(), declared.clone(), error));
+        }
+        return;
+    }
+    let structure = match declared {
+        ResolvedTypeRef::Optional { of } => {
+            return out_of_type(ir, of, value, path, depth + 1, found);
+        }
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => {
+                return out_of_type(ir, of, value, path, depth + 1, found);
+            }
+            ResolvedBody::Struct { fields, .. } => Some(fields),
+            _ => None,
+        },
+        _ => None,
+    };
+    match (value, declared, structure) {
+        (ScenarioValue::List { items }, ResolvedTypeRef::List { of }, _) => {
+            for (index, item) in items.iter().enumerate() {
+                out_of_type(ir, of, item, &format!("{path}.{index}"), depth + 1, found);
+            }
+        }
+        (ScenarioValue::Members { members }, ResolvedTypeRef::Map { value: of, .. }, _) => {
+            for (key, member) in members {
+                out_of_type(ir, of, member, &format!("{path}.{key}"), depth + 1, found);
+            }
+        }
+        (ScenarioValue::Members { members }, _, Some(fields)) => {
+            for field in fields {
+                if let Some(member) = members.get(&field.name) {
+                    let at = format!("{path}.{}", field.name);
+                    out_of_type(ir, &field.type_ref, member, &at, depth + 1, found);
+                }
+            }
+        }
+        _ => {}
     }
 }
 

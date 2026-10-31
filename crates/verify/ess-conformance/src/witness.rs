@@ -955,18 +955,29 @@ fn search_with(
         }
         // A text or instant whose example is itself a literal the guard compares it with has that
         // literal left off its ladder, which excludes the base, and a text or instant ladder holds
-        // nothing but the guard's literals to refute the comparison with: the leaf's own witness
-        // is tried too, so `!=` and `==` against the example's value each keep their other side.
-        // A number, a boolean and an enum are tried at values beside their literals already. Only
-        // such a leaf gets it, so every other suite keeps its bytes.
-        if let (Leaf::Text | Leaf::Timestamp, Node::Text(example), Some(own)) =
+        // nothing but the guard's literals to refute the comparison with: one more value is tried,
+        // so `!=` and `==` against the example's value each keep their other side. It is the
+        // leaf's own witness, or the next instance's where the example is that witness, moved
+        // onto a value the leaf's type admits where the type refuses it (adversary pass 1 of
+        // story:a-text-inequality-against-an-example-is-refuted). A number, a boolean and an enum
+        // are tried at values beside their literals already. Only such a leaf gets it, so every
+        // other suite keeps its bytes.
+        if let (Leaf::Text | Leaf::Timestamp, Node::Text(example), Some(witnesses)) =
             (leaf, at_base, builder.unexampled.get(&path))
         {
             let on_literal = literals_at(&expanded, &path)
                 .iter()
                 .any(|literal| literal.as_text() == Some(example.as_str()));
-            if on_literal && own != at_base && !alternatives.contains(own) {
-                alternatives.push(own.clone());
+            if on_literal {
+                if let Some(other) = witnesses
+                    .iter()
+                    .filter(|witness| *witness != at_base)
+                    .find_map(|witness| admitted_witness(&builder, &path, witness, at_base))
+                {
+                    if !alternatives.contains(&other) {
+                        alternatives.push(other);
+                    }
+                }
             }
         }
         if !alternatives.is_empty() {
@@ -4486,6 +4497,38 @@ fn with_prefix(text: &str, prefix: &str) -> String {
 ///
 /// Without a value the type admits, no candidate survives [`admitted_inputs`] and no branch has a
 /// witness. The values tried are the type's own invariant literals, laid out as a guard's are.
+/// `witness` where the type of the leaf at `path` admits it; otherwise the first value of the
+/// [`invariant_ladders`] ladder drawn from `witness` as the leaf's base that the type admits and
+/// that is not `example`; `None` where there is neither.
+///
+/// A six-byte code whose example is `ABC123` has the witness `code`, which its type refuses; the
+/// ladder resizes it to six bytes, `codeco`, which refutes `code != "ABC123"` and is admitted.
+fn admitted_witness(
+    builder: &Builder<'_>,
+    path: &FactPath,
+    witness: &Node,
+    example: &Node,
+) -> Option<Node> {
+    let invariants = builder.invariants.get(path).map_or(&[][..], Vec::as_slice);
+    let alphabet = builder.alphabets.get(path);
+    if admits_base(invariants, alphabet, witness) {
+        return Some(witness.clone());
+    }
+    let mut probe = builder.clone();
+    probe.leaves.get_mut(path)?.1 = witness.clone();
+    let mut ladders = BTreeMap::new();
+    invariant_ladders(&probe, &mut ladders);
+    ladders
+        .remove(path)?
+        .into_iter()
+        .find_map(|choice| match choice {
+            Choice::Value(node) if &node != example && admits_base(invariants, alphabet, &node) => {
+                Some(node)
+            }
+            _ => None,
+        })
+}
+
 fn invariant_ladders(builder: &Builder<'_>, ladders: &mut BTreeMap<FactPath, Vec<Choice>>) {
     let value = FactPath::new("value").expect("the newtype pseudo-field is a fact path");
     for (path, invariants) in &builder.invariants {
@@ -5815,10 +5858,11 @@ struct Builder<'ir> {
     /// [`Distinction::PLAIN`] only. A struct's example (ess/33) adds each declared member it names
     /// here, at `<path>.<member>`, when the struct is built.
     examples: BTreeMap<FactPath, Node>,
-    /// The base each leaf an example replaced would have taken without it, by path: tried on the
-    /// leaf's ladder where the example is a literal a guard compares it with, so a `!=` against the
-    /// example's own value is still refuted by some candidate.
-    unexampled: BTreeMap<FactPath, Node>,
+    /// The base each leaf an example replaced would have taken without it, and the next
+    /// instance's, by path: tried on the leaf's ladder where the example is a literal a guard
+    /// compares it with, so a `!=` against the example's own value is still refuted by some
+    /// candidate.
+    unexampled: BTreeMap<FactPath, Vec<Node>>,
     /// The `Optional` members a struct's example (ess/33) leaves out, which the base leaves out
     /// too.
     left_out: BTreeSet<FactPath>,
@@ -5990,6 +6034,20 @@ impl<'ir> Builder<'ir> {
 
     /// The base of one primitive leaf, recorded: its path mapped into its alphabet (rule 2), or
     /// the input's example at the plain instance.
+    /// `base` spelt as the leaf at `path` declares: its prefix in front (ess/15), then mapped into
+    /// its alphabet (ess/11). Every character of the prefix is in the alphabet, which validation
+    /// holds, so mapping keeps it.
+    fn declared_spelling(&self, path: &FactPath, base: Node) -> Node {
+        let mut base = base;
+        if let (Node::Text(text), Some(prefix)) = (&base, self.prefixes.get(path)) {
+            base = Node::Text(with_prefix(text, prefix));
+        }
+        if let (Node::Text(text), Some(alphabet)) = (&base, self.alphabets.get(path)) {
+            base = Node::Text(into_alphabet(text, alphabet));
+        }
+        base
+    }
+
     fn primitive(&mut self, name: Primitive, path: &FactPath, record: bool) -> Node {
         let mut base = primitive_value(name, path, self.distinction);
         if self.optional_depth > 0 && has_apart(name) {
@@ -5997,14 +6055,7 @@ impl<'ir> Builder<'ir> {
             let ordinal = *self.apart_ordinals.entry(path.clone()).or_insert(next);
             base = apart(name, self.distinction, ordinal);
         }
-        // The prefix goes in front first, and the alphabet then maps the whole text: every
-        // character of the prefix is in the alphabet, which validation holds, so mapping keeps it.
-        if let (Node::Text(text), Some(prefix)) = (&base, self.prefixes.get(path)) {
-            base = Node::Text(with_prefix(text, prefix));
-        }
-        if let (Node::Text(text), Some(alphabet)) = (&base, self.alphabets.get(path)) {
-            base = Node::Text(into_alphabet(text, alphabet));
-        }
+        base = self.declared_spelling(path, base);
         if name == Primitive::String {
             if let Node::Text(plain) = &base {
                 self.plain_texts.insert(path.clone(), plain.clone());
@@ -6015,7 +6066,12 @@ impl<'ir> Builder<'ir> {
         }
         if let Some(example) = self.examples.get(path) {
             if record {
-                self.unexampled.insert(path.clone(), base);
+                // The next instance's witness too, for an example that is the leaf's own witness:
+                // `PT1S` for a `Duration` is both (adversary pass 1 of
+                // story:a-text-inequality-against-an-example-is-refuted).
+                let next = Distinction::further(self.distinction.get() + 1);
+                let next = self.declared_spelling(path, primitive_value(name, path, next));
+                self.unexampled.insert(path.clone(), vec![base, next]);
             }
             base = example.clone();
         }
