@@ -5176,7 +5176,7 @@ fn conform_web(
     let Ok((ir, original_sources)) = resolved_browser(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
-    ess_conformance::admission::model(&ir)?;
+    ess_conformance::admission::model_without_binary64(&ir)?;
     let sources = authored_sources(scenarios)?;
     let authoring = ess_conformance::authored::compile(&ir, &sources);
     let complete = authoring.is_complete();

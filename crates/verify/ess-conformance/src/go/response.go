@@ -161,7 +161,7 @@ func checkTypedGraph(declarations map[string]selectionDeclaration, source string
 		}
 		return checkTypedGraph(declarations, inner, used, stack, depth+1, input)
 	}
-	if source == "Json" || accessorPrimitive(source) && source != "Binary64" {
+	if source == "Json" || accessorPrimitive(source) {
 		return nil
 	}
 	body, ok := declarations[source]
@@ -601,7 +601,7 @@ func responsePrimitiveAdmits(source string, value Node) bool {
 	case "Integer":
 		number, ok := responseNumber(value)
 		return ok && number.IsInt() && number.Num().IsInt64()
-	case "Decimal":
+	case "Decimal", "Binary64":
 		_, ok := responseNumber(value)
 		return ok
 	case "String", "Timestamp", "Duration":

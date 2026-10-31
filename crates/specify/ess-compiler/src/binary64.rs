@@ -50,30 +50,81 @@ pub fn unreached_locations(ir: &EssIr) -> BTreeSet<String> {
         .collect()
 }
 
+/// The Binary64 positions of [`reached_uses`] that the conformance suite contract does not carry,
+/// in stable source order.
+///
+/// A suite carries a finite Binary64 in an entity's fields, a command's input and response, an
+/// event's and an error's fields, and a view's fields and row shape. It does not carry one in an
+/// entity's identity, a view's parameters, an actor's attributes, a binding's delivery context,
+/// mappings or selection, or a declared conversion: a position reached through any of those is
+/// listed here, even when a carried root reaches the same declared type.
+pub fn uncarried_uses(ir: &EssIr) -> BTreeMap<String, EssSemanticRef> {
+    let uncarried = types_reached_from(ir, Roots::Uncarried);
+    let mut prefixes = Vec::new();
+    for entity in ir.entities().values() {
+        prefixes.push(format!("entity {}.identity", entity.name));
+    }
+    for view in ir.views().values() {
+        prefixes.push(format!("view.{}.params.", view.name));
+    }
+    for actor in ir.actors().values() {
+        prefixes.push(format!("actor.{}.attributes.", actor.name));
+    }
+    reached_uses(ir)
+        .into_iter()
+        .filter(|(at, owner)| match owner {
+            EssSemanticRef::Type { name } => uncarried.contains(name.name()),
+            _ => prefixes
+                .iter()
+                .any(|prefix| at.starts_with(prefix.as_str())),
+        })
+        .collect()
+}
+
+/// Which roots a type closure starts from.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Roots {
+    /// Every root a conformance run reaches.
+    All,
+    /// Only the roots the suite contract does not carry a Binary64 through.
+    Uncarried,
+}
+
 /// The declared types a model's commands, events, errors, views, entities, actors, bindings and
 /// conversions reach, through every wrapper and declaration.
 fn reached_types(ir: &EssIr) -> BTreeSet<QualifiedName> {
+    types_reached_from(ir, Roots::All)
+}
+
+fn types_reached_from(ir: &EssIr, which: Roots) -> BTreeSet<QualifiedName> {
+    let all = which == Roots::All;
     let mut roots: Vec<&ResolvedTypeRef> = Vec::new();
     let mut named: Vec<&TypeHandle> = Vec::new();
     for entity in ir.entities().values() {
         roots.push(&entity.identity.type_ref);
-        roots.extend(entity.fields.iter().map(|field| &field.type_ref));
-        named.push(&entity.state_type);
+        if all {
+            roots.extend(entity.fields.iter().map(|field| &field.type_ref));
+            named.push(&entity.state_type);
+        }
     }
-    for command in ir.commands().values() {
-        roots.extend(command.input.iter().map(|field| &field.type_ref));
-        roots.extend(command.response.iter().map(|field| &field.type_ref));
-    }
-    for event in ir.events().values() {
-        roots.extend(event.fields.iter().map(|field| &field.type_ref));
-    }
-    for error in ir.errors().values() {
-        roots.extend(error.fields.iter().map(|field| &field.type_ref));
+    if all {
+        for command in ir.commands().values() {
+            roots.extend(command.input.iter().map(|field| &field.type_ref));
+            roots.extend(command.response.iter().map(|field| &field.type_ref));
+        }
+        for event in ir.events().values() {
+            roots.extend(event.fields.iter().map(|field| &field.type_ref));
+        }
+        for error in ir.errors().values() {
+            roots.extend(error.fields.iter().map(|field| &field.type_ref));
+        }
     }
     for view in ir.views().values() {
-        roots.extend(view.fields.iter().map(|field| &field.type_ref));
+        if all {
+            roots.extend(view.fields.iter().map(|field| &field.type_ref));
+            named.extend(view.shape.iter());
+        }
         roots.extend(view.params.iter().map(|field| &field.type_ref));
-        named.extend(view.shape.iter());
     }
     for actor in ir.actors().values() {
         roots.extend(actor.attributes.iter().map(|field| &field.type_ref));

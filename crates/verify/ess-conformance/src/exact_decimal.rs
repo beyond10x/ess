@@ -6,7 +6,8 @@
 //! and after. A reader below suite/[`ORDINARY`] refused such a shape at the step, so a suite
 //! carrying one is ordinary suite/[`ORDINARY`] or coverage suite/[`COVERAGE`], cumulative over
 //! every pair below, and every reader refuses it under a lower major. A suite without one keeps
-//! its earlier format and bytes. A `Binary64` stays refused in both observers.
+//! its earlier format and bytes. A `Binary64` is compared by its nearest binary64 from suite/62
+//! ([`crate::binary64_values`]).
 
 use crate::admission::AdmissionError;
 use crate::scenario::ScenarioStep;

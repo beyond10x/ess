@@ -518,14 +518,17 @@ fn an_unknown_component_is_refused_as_synthesize_refuses_it() {
 
 #[test]
 fn a_model_conformance_does_not_admit_is_named_not_counted() {
-    // `conform synthesize` refuses a model a command input of which reaches a finite `Binary64`
-    // outright; validate names why instead of reporting nothing owed.
+    // `conform synthesize` refuses a model an actor attribute of which reaches a finite `Binary64`
+    // outright; validate names why instead of reporting nothing owed. Restated for
+    // story:a-binary64-value-round-trips-through-a-conformance-suite: a command input reaching it
+    // is carried by suite/62 now, and an actor attribute is the position the suite contract
+    // still does not carry.
     let root = scratch("unadmitted");
     fs::write(
         root.join("system.yaml"),
-        NOTES.replace(
-            "{input}",
-            "      - {name: rate, type: Optional<demo.notes.Rate>}\n",
+        NOTES.replace("{input}", "").replace(
+            "commands:\n",
+            "actors:\n  - name: demo.notes.Writer\n    attributes: [{name: rate, type: Optional<demo.notes.Rate>}]\n    may: [demo.notes.AddNote]\ncommands:\n",
         ),
     )
     .unwrap();
@@ -596,6 +599,81 @@ views:
       - {name: note_id, type: demo.notes.NoteId}
       - {name: label, type: String}
 ";
+
+/// An authored scenario sending a `Binary64` the model's command input reaches.
+const RATE_AUTHORED: &str = "type: ess-scenario/1
+domain: demo.notes
+scenario: a-rate-is-sent
+summary: A note is added with a rate of one and a half per second.
+arrange:
+  - instance: note
+    entity: demo.notes.Note
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: demo.notes.AddNote
+    input:
+      label: first
+      rate: {per_second: 1.5}
+    outcome: added
+    capture: {instance: note, event: demo.notes.NoteAdded, field: note_id}
+";
+
+/// story:a-binary64-value-round-trips-through-a-conformance-suite: a command input reaching a
+/// `Binary64` is a position the suite contract carries, so validate owes nothing for it, and the
+/// conformance suite synthesized with an authored scenario sending `1.5` is suite/62 and holds it.
+#[test]
+fn a_reached_binary64_with_authored_scenarios_validates() {
+    const STORY: &str = "story:a-binary64-value-round-trips-through-a-conformance-suite";
+    let root = scratch("reached");
+    fs::write(
+        root.join("system.yaml"),
+        NOTES.replace(
+            "{input}",
+            "      - {name: rate, type: Optional<demo.notes.Rate>}\n",
+        ),
+    )
+    .unwrap();
+    let scenarios = scratch("reached-scenarios");
+    fs::write(scenarios.join("rate.yaml"), RATE_AUTHORED).unwrap();
+    let scenarios = scenarios.to_str().unwrap();
+
+    let (output, report) = validated(&root, &[]);
+    assert!(output.status.success(), "{STORY}: {output:?}");
+    assert!(
+        report["completeness"]["unsynthesizable"].is_null(),
+        "{STORY}: {report}"
+    );
+
+    let out = root.join("suite.json");
+    let printed = synthesized(
+        &root,
+        &["--scenarios", scenarios, "--out", out.to_str().unwrap()],
+    );
+    assert!(
+        printed.lines().last().unwrap().contains("(1 authored)"),
+        "{STORY}: {printed}"
+    );
+    assert!(
+        lines_after(&printed, "refused: ").is_empty(),
+        "{STORY}: {printed}"
+    );
+    let suite: Value = serde_json::from_str(
+        &fs::read_to_string(&out).unwrap_or_else(|error| panic!("{STORY}: {error}: {printed}")),
+    )
+    .unwrap();
+    assert_eq!(
+        suite["provenance"]["suite_version"], "ess-conformance/62",
+        "{STORY}"
+    );
+    assert!(
+        suite["scenarios"]
+            .as_object()
+            .unwrap()
+            .contains_key("demo.notes/authored/a-rate-is-sent"),
+        "{STORY}: {suite}"
+    );
+    assert!(suite.to_string().contains("1.5"), "{STORY}: {suite}");
+}
 
 #[test]
 fn an_unreached_binary64_type_is_noted_not_unsynthesizable() {

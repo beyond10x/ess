@@ -134,7 +134,7 @@ pub struct AdmittedReplay {
 impl AdmittedReplay {
     /// Pair a projection derived from the actual model with an admitted suite input.
     pub fn new(ir: &EssIr, input: &AdmittedInput) -> Result<Self, AdmissionError> {
-        crate::admission::model(ir)?;
+        crate::admission::model_without_binary64(ir)?;
         if ir.commands().values().any(|command| {
             command
                 .outcomes

@@ -268,6 +268,16 @@ impl ConformanceSuite {
         self.select_model_format_for(ir);
         // Counted event claims (beyond10x/ess#427): `/44` is cumulative over everything below.
         self.raise_for_counted_claims();
+        // A model that reaches a carried `Binary64` (suite/62, `crate::binary64_values`), whether
+        // or not a scenario of this suite spells one: the floor is the model's, so a suite of one
+        // model keeps one major.
+        if let Some(floor) = crate::binary64_values::ordinary_floor(ir) {
+            if self.provenance.suite_version.major() < floor {
+                self.provenance.suite_version =
+                    SuiteFormat::parse(&format!("ess-conformance/{floor}"))
+                        .expect("constant suite version");
+            }
+        }
     }
 
     /// [`select_fresh_format_for`](Self::select_fresh_format_for) before the counted-claim floor.
@@ -2091,10 +2101,6 @@ pub enum Holds {
     /// A primitive, after every newtype on the way down has been walked through.
     Primitive {
         /// Which one.
-        #[serde(
-            serialize_with = "crate::admission::serialize_primitive",
-            deserialize_with = "crate::admission::deserialize_primitive"
-        )]
         kind: Primitive,
     },
     /// One of a fixed set of names, as text.

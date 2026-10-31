@@ -58,23 +58,16 @@ fn binary64_sparse_model_refuses_every_unsupported_publication_route() {
         NOTES.replace("{input}", REACHED),
     )
     .unwrap();
+    // Restated for story:a-binary64-value-round-trips-through-a-conformance-suite: the conformance
+    // suite routes carry a finite Binary64 a command input reaches from suite/62
+    // (`a_reached_binary64_publishes_every_conformance_route`); whole-system code generation and
+    // the browser bundle still carry none and still refuse it.
     let operations: &[(&[&str], bool)] = &[
         (&["synthesize", "--target", "rust"], true),
         (&["synthesize", "--target", "go"], true),
         (&["synthesize", "--target", "web"], true),
         (&["synthesize", "--target", "clap"], true),
-        (
-            &["verify", "conform", "synthesize", "--target", "ir"],
-            false,
-        ),
-        (&["verify", "conform", "synthesize", "--target", "go"], true),
-        (
-            &["verify", "conform", "synthesize", "--target", "typescript"],
-            true,
-        ),
-        (&["verify", "conform", "author"], false),
         (&["verify", "conform", "web"], true),
-        (&["verify", "conform", "run", "--target", "billing"], false),
     ];
     for (index, (arguments, directory)) in operations.iter().enumerate() {
         for existing in [false, true] {
@@ -139,7 +132,87 @@ fn binary64_sparse_model_refuses_every_unsupported_publication_route() {
             }
         }
     }
-    eprintln!("18 actual CLI refusal executions preserved absent/existing destinations");
+    eprintln!("10 actual CLI refusal executions preserved absent/existing destinations");
+}
+
+/// story:a-binary64-value-round-trips-through-a-conformance-suite: with `Rate` reached through a
+/// command input, every conformance suite route publishes, each suite at /62, and the interpreted
+/// target passes the suite it synthesizes.
+#[test]
+fn a_reached_binary64_publishes_every_conformance_route() {
+    const STORY: &str = "story:a-binary64-value-round-trips-through-a-conformance-suite";
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../target/binary64-publication-reached")
+        .join(std::process::id().to_string());
+    fs::create_dir_all(root.join("spec")).unwrap();
+    fs::write(
+        root.join("spec/system.yaml"),
+        NOTES.replace("{input}", REACHED),
+    )
+    .unwrap();
+    let operations: &[(&[&str], &str)] = &[
+        (
+            &["verify", "conform", "synthesize", "--target", "ir"],
+            "--out",
+        ),
+        (
+            &["verify", "conform", "synthesize", "--target", "go"],
+            "--out",
+        ),
+        (
+            &["verify", "conform", "synthesize", "--target", "typescript"],
+            "--out",
+        ),
+        (&["verify", "conform", "author"], "--out"),
+        (
+            &[
+                "verify",
+                "conform",
+                "run",
+                "--target",
+                "interpreted",
+                "--report-format",
+                "2",
+            ],
+            "--report-out",
+        ),
+    ];
+    for (index, (arguments, destination)) in operations.iter().enumerate() {
+        let out = root.join(format!("out-{index}"));
+        let result = Command::new(env!("CARGO_BIN_EXE_ess"))
+            .args(*arguments)
+            .arg("--path")
+            .arg(root.join("spec"))
+            .arg(destination)
+            .arg(&out)
+            .output()
+            .unwrap();
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(
+            result.status.success(),
+            "{STORY}: {arguments:?}: {combined}"
+        );
+        assert!(
+            out.exists(),
+            "{STORY}: {arguments:?} wrote nothing: {combined}"
+        );
+        assert!(
+            !combined.contains("UnsupportedPrimitive"),
+            "{STORY}: {arguments:?}: {combined}"
+        );
+        if arguments.contains(&"ir") {
+            let suite = fs::read_to_string(&out).unwrap();
+            assert!(
+                suite.contains("\"ess-conformance/62\""),
+                "{STORY}: the suite is /62: {suite}"
+            );
+        }
+    }
+    eprintln!("5 conformance routes published a reached Binary64");
 }
 
 /// The adopter's reproduction: nothing reaches `Rate`, so every conformance route admits the model

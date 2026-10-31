@@ -130,6 +130,7 @@ pub mod admission;
 pub mod aggregate;
 pub mod aggregate_delta;
 pub mod authored;
+pub mod binary64_values;
 pub mod bounded_retry;
 pub mod caller_values;
 pub mod conditional_measures;

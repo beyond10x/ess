@@ -3271,10 +3271,11 @@ fn synthesize_invocations(models: &caller::InvocationModels<'_>, focus: Focus<'_
     let _remembered = made::remember(ir);
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
-    // A Binary64 nothing a scenario sends or reads reaches is noted, not refused (`synthesize_in`).
-    for (path, subject) in ess_compiler::binary64::reached_uses(ir) {
+    // A Binary64 nothing a scenario sends or reads reaches is noted, not refused (`synthesize_in`);
+    // one in a carried position is a suite/62 value (`crate::binary64_values`).
+    for (path, subject) in ess_compiler::binary64::uncarried_uses(ir) {
         refusals.push(Refusal { subject, scenario: None, stands: false, caused_by: None, cause: RefusalCause::NoWitness(WitnessGap {
-            path, type_ref: "Binary64".to_owned(), reason: "requires a qualified finite Binary64 suite and codec that this conformance format does not admit",
+            path, type_ref: "Binary64".to_owned(), reason: "is in a position the conformance suite does not carry a Binary64 in: an entity identity, a view parameter, an actor attribute, a binding or a conversion",
         }) });
     }
     if !refusals.is_empty() {

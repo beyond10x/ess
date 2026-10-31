@@ -489,7 +489,8 @@ fn pure_return_generators_preserve_supported_execution() {
 }
 
 #[test]
-fn pure_return_native_binary64_remains_explicitly_unsupported() {
+fn pure_return_native_binary64_is_carried() {
+    const STORY: &str = "story:a-binary64-value-round-trips-through-a-conformance-suite";
     let source = MODEL.replace("type: String", "type: Binary64");
     let spec = Specification::assemble([(
         Source::new("binary.yaml"),
@@ -497,12 +498,14 @@ fn pure_return_native_binary64_remains_explicitly_unsupported() {
     )])
     .unwrap();
     let model = compile(&spec, &SourceMap::new()).unwrap();
-    let result = authored::compile(&model, &[authored::Source::new("return.yaml", SCENARIO)]);
-    assert!(result.scenarios.is_empty());
-    assert!(matches!(
-        result.refusals[0].cause,
-        authored::Cause::UnsupportedBinary64 { .. }
-    ));
+    // Restated for the story: a direct return carries a finite Binary64 from suite/62, so the
+    // model is admitted and a numeric literal compiles.
+    let scenario = SCENARIO
+        .replace("value: actual", "value: 1.5")
+        .replace("label: nested", "label: 2.5");
+    let result = authored::compile(&model, &[authored::Source::new("return.yaml", &scenario)]);
+    assert!(result.refusals.is_empty(), "{STORY}: {:?}", result.refusals);
+    assert_eq!(result.scenarios.len(), 1, "{STORY}");
 }
 
 #[test]

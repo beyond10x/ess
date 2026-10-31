@@ -1,4 +1,4 @@
-//! Combined CLI and generated Go count publication refuses Binary64 before effects.
+//! CLI and generated Go count publication refuse a Binary64 record below suite/62 before effects.
 
 use ess_conformance::ConformanceSuite;
 use serde_json::{json, Value};
@@ -76,10 +76,25 @@ fn cli_binary64_model_and_original_suites_preserve_report_destinations_in_both_f
                     .arg(&destination);
                 let output = command.output().unwrap();
                 let text = record(&root, &label, &command, &output);
+                // Restated for story:a-binary64-value-round-trips-through-a-conformance-suite: the
+                // model carries its event's Binary64 in a suite/62, which runs under report
+                // format 2 and is refused under format 1 before publication; the suite/4 document
+                // recording a Binary64 is still refused by name.
+                if model && format == "2" {
+                    assert!(
+                        output.status.success(),
+                        "story:a-binary64-value-round-trips-through-a-conformance-suite: {label}: {text}"
+                    );
+                    continue;
+                }
                 assert!(!output.status.success(), "{label}: {text}");
-                assert!(text.contains("Binary64"), "{label}: {text}");
                 if model {
-                    assert!(text.contains("probe.data.Ratio"), "{text}");
+                    assert!(
+                        text.contains("--report-format 2"),
+                        "story:a-binary64-value-round-trips-through-a-conformance-suite: {label}: {text}"
+                    );
+                } else {
+                    assert!(text.contains("Binary64"), "{label}: {text}");
                 }
                 if existing {
                     assert_eq!(fs::read(&destination).unwrap(), b"owned report bytes\n");
@@ -198,9 +213,12 @@ func TestGuard(t *testing.T) { Run(t,func() Target {
                     String::from_utf8_lossy(&output.stderr)
                 );
                 assert!(!output.status.success(), "{label}: {text}");
+                // Restated for story:a-binary64-value-round-trips-through-a-conformance-suite: the
+                // suite/4 record is refused by its major before the leaf grammar reads it.
                 assert!(
-                    text.contains("suite admission") && text.contains("unknown primitive"),
-                    "{label}: {text}"
+                    text.contains("suite admission")
+                        && text.contains("a Binary64 value requires suite/62 or /63"),
+                    "story:a-binary64-value-round-trips-through-a-conformance-suite: {label}: {text}"
                 );
                 assert!(!marker.exists(), "{label} reached target factory");
                 if existing {

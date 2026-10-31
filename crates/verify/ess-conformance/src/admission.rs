@@ -1,7 +1,6 @@
 //! Original-byte admission for the frozen suite/1–4 execution vocabulary.
 use crate::count_json::Json;
-use crate::{scenario::SuiteFormat, ConformanceSuite, Holds, ScenarioStep};
-use ess_domain::Primitive;
+use crate::{scenario::SuiteFormat, ConformanceSuite, ScenarioStep};
 use ess_primitives::node::Node;
 use sha2::{Digest, Sha256};
 use std::fmt;
@@ -809,10 +808,23 @@ fn nested_response_metadata(field: &Json) -> Result<(), AdmissionError> {
 
 /// Check the model even when synthesis would omit unsupported fields or whole scenarios.
 ///
-/// A `Binary64` refuses it where a scenario could send or read one
-/// (`ess_compiler::binary64::reached_uses`); one in a type nothing reaches is noted by synthesis
-/// instead, and the structural inventory a codec reads is not this one.
+/// A `Binary64` refuses it where the suite contract does not carry one
+/// (`ess_compiler::binary64::uncarried_uses`: an entity's identity, a view's parameters, an
+/// actor's attributes, a binding or a conversion). One in a carried position is a finite value a
+/// suite/62 or /63 sends and compares ([`crate::binary64_values`]); one in a type nothing reaches
+/// is noted by synthesis. The structural inventory a codec reads is not this one.
 pub fn model(ir: &ess_compiler::EssIr) -> Result<(), AdmissionError> {
+    checked(
+        ess_compiler::binary64::uncarried_uses(ir)
+            .into_keys()
+            .collect(),
+    )
+}
+
+/// [`model`] for a route that carries no `Binary64` at all: a browser bundle, a mutation audit and
+/// a whole-system synthesis refuse every position a scenario could send or read
+/// (`ess_compiler::binary64::reached_uses`).
+pub fn model_without_binary64(ir: &ess_compiler::EssIr) -> Result<(), AdmissionError> {
     checked(
         ess_compiler::binary64::reached_uses(ir)
             .into_keys()
@@ -962,33 +974,10 @@ pub fn suite(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
             }
         }
     }
-    let mut found = Vec::new();
-    for (id, scenario) in &suite.scenarios {
-        for (index, step) in scenario.steps.iter().enumerate() {
-            // `expect_event_values` carries the same declared shape (beyond10x/ess#273 synthesizes
-            // one wherever an event carries a captured identity).
-            if let ScenarioStep::ExpectEvent { shape, .. }
-            | ScenarioStep::EventuallyEvent { shape, .. }
-            | ScenarioStep::ExpectEventValues { shape, .. } = step
-            {
-                for (name, leaf) in shape.leaves() {
-                    if matches!(
-                        leaf.holds,
-                        Holds::Primitive {
-                            kind: Primitive::Binary64
-                        }
-                    ) {
-                        found.push(format!(
-                            "/scenarios/{}/steps/{index}/shape/{}",
-                            escape(&id.to_string()),
-                            escape(name)
-                        ));
-                    }
-                }
-            }
-        }
-    }
-    checked(found)
+    // A typed `Binary64` record is suite/62 and /63 vocabulary
+    // (story:a-binary64-value-round-trips-through-a-conformance-suite); below it, each is refused
+    // at its own location.
+    crate::binary64_values::admit(suite)
 }
 
 /// Setup-specific structural admission; model constraints remain the target's obligation.
@@ -1166,34 +1155,10 @@ fn checked(locations: Vec<String>) -> Result<(), AdmissionError> {
             issues: locations.into_iter().map(|path| AdmissionIssue {
                 reason: "UnsupportedPrimitive",
                 path,
-                detail: "finite Binary64 is not admitted by the current conformance suite and codecs".into(),
+                detail: "a Binary64 this route does not carry: a suite carries one only in entity fields, command input and response, event and error fields, and view fields and row shape, and a browser bundle or a mutation audit carries none".into(),
             }).collect(),
         })
     }
-}
-
-#[allow(clippy::trivially_copy_pass_by_ref)] // Serde serialize_with requires a borrowed field.
-pub(crate) fn serialize_primitive<S: serde::Serializer>(
-    primitive: &Primitive,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    if *primitive == Primitive::Binary64 {
-        return Err(serde::ser::Error::custom(
-            "Binary64 is not admitted by this conformance suite format",
-        ));
-    }
-    serde::Serialize::serialize(primitive, serializer)
-}
-pub(crate) fn deserialize_primitive<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Primitive, D::Error> {
-    let primitive = <Primitive as serde::Deserialize>::deserialize(deserializer)?;
-    if primitive == Primitive::Binary64 {
-        return Err(serde::de::Error::custom(
-            "Binary64 is not admitted by this conformance suite format",
-        ));
-    }
-    Ok(primitive)
 }
 
 /// Borrow raw new plans before the structural JSON tree clones any of their contents.

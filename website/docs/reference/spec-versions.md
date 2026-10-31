@@ -759,8 +759,8 @@ numeric value, so `1.5` and `1.50` are one value and `1.25` another. Before, suc
 every wrong-state scenario of its entity. A suite carrying one is written at 58 (ordinary) or 59
 (declared coverage); each implies every major below it, the 56/57 pair included. Rust, Go and
 TypeScript run it, older readers refuse these envelopes by version, and every reader refuses a
-Decimal in an exact observer under a lower major. A `Binary64` there is still refused, and the
-refusal names the field. A suite without one keeps its earlier format and bytes.
+Decimal in an exact observer under a lower major. A `Binary64` there is carried from
+suite/62 (below). A suite without one keeps its earlier format and bytes.
 
 `ess-conformance/60` and `ess-conformance/61`, added in [0.78.0][r78], let a fixture prelude name a row the
 deployment provides: an entity fixture `{name, type, entity, state}` of an `ess/33` entity marked
@@ -777,6 +777,15 @@ pair included. Rust, Go and TypeScript run it, older readers refuse these envelo
 every reader refuses a response member path under a lower major. Event payload, error and row paths
 stay suite/26 dotted keys, which every reader of suite/26 already compares as paths. A suite
 without one keeps its earlier format and bytes.
+
+The same pair carries a finite `Binary64`: a model that reaches one in an entity's fields, a
+command's input or response, an event's or error's fields, or a view's fields or row shape writes
+its suites at 62 or 63, whether or not a scenario spells the value. Synthesis witnesses the `n`-th
+instance as `n + 0.5`; the exact observers compare a `Binary64` by its nearest binary64 under IEEE
+equality, and a token with no finite binary64 image is refused. Every reader refuses a `Binary64`
+record under a lower major (`UnsupportedPrimitive`, "a Binary64 value requires suite/62 or /63").
+A `Binary64` reached through an entity identity, a view parameter, an actor attribute, a binding or
+a conversion is still refused (`ESS-AUTHOR-036`), as is every `Binary64` in the browser player.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every

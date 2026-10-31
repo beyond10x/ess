@@ -4755,7 +4755,7 @@ export class ScenarioRun {
     // equals `1.50` (suite/58), as in the Go runner.
     const unchanged =
       shape !== undefined
-        ? exactObservationEqual(strictJSON(previous!.row), strictJSON(goMarshal(rows[0]!)))
+        ? exactObservationEqual(strictJSON(previous!.row), strictJSON(goMarshal(rows[0]!)), shape)
         : goMarshal(rows[0]!) === previous!.row;
     if (!unchanged)
       return this.fail(
@@ -6581,6 +6581,7 @@ export function primitive(kind: string, value: Node): string {
       break;
     }
     case 'decimal':
+    case 'binary64':
       if (!asNumber(value)[1]) {
         return mismatch();
       }
@@ -7921,6 +7922,7 @@ export function admitShape(value: Node, major = 21): void {
         case 'boolean':
         case 'integer':
         case 'decimal':
+        case 'binary64':
         case 'timestamp':
         case 'duration':
         case 'uuid':
@@ -8361,10 +8363,75 @@ export function admitPredicateConstraint(value: Node): void {
  */
 export const UNEXECUTED_STEPS: { [tag: string]: { major: number; what: string } } = {};
 
+/** Whether a type expression names `Binary64` directly, through any wrapper. */
+function mentionsBinary64(source: Node): boolean {
+  return typeof source === 'string' && source.split(/[<>, ]+/).includes('Binary64');
+}
+
+/**
+ * Refuse a typed `Binary64` record below suite/62
+ * (story:a-binary64-value-round-trips-through-a-conformance-suite): an event shape's primitive
+ * leaf, and a field or declaration of a retained result, a complete subject, a response
+ * observation or a fixture contract that names one through any wrapper. `step` is one step.
+ */
+function binary64Major(step: { [key: string]: Node }, major: number): void {
+  if (major >= 62) {
+    return;
+  }
+  const refused = (): never => {
+    throw new Error('a Binary64 value requires suite/62 or /63');
+  };
+  for (const key of ['shape', 'capture', 'response', 'fixtures']) {
+    const record = Object.hasOwn(step, key) ? step[key] : undefined;
+    if (record === undefined || !isObject(record)) {
+      continue;
+    }
+    if (key === 'shape' && !Object.hasOwn(record, 'fields')) {
+      for (const leaf of Object.values(record)) {
+        if (isObject(leaf) && leaf.holds === 'primitive' && leaf.kind === 'binary64') {
+          refused();
+        }
+      }
+      continue;
+    }
+    for (const list of ['fields', 'targets']) {
+      const fields = Object.hasOwn(record, list) ? record[list] : undefined;
+      for (const field of Array.isArray(fields) ? fields : []) {
+        if (isObject(field) && mentionsBinary64(field.type ?? null)) {
+          refused();
+        }
+      }
+    }
+    const declarations = Object.hasOwn(record, 'declarations') ? record.declarations : undefined;
+    for (const body of isObject(declarations ?? null) ? Object.values(declarations!) : []) {
+      if (!isObject(body)) {
+        continue;
+      }
+      if (mentionsBinary64(body.of ?? null)) {
+        refused();
+      }
+      for (const field of Array.isArray(body.fields) ? body.fields : []) {
+        if (isObject(field) && mentionsBinary64(field.type ?? null)) {
+          refused();
+        }
+      }
+      if (body.kind === 'union' && isObject(body.variants ?? null)) {
+        for (const variant of Object.values(body.variants as { [key: string]: Node })) {
+          if (mentionsBinary64(variant)) {
+            refused();
+          }
+        }
+      }
+    }
+  }
+}
+
 export function admitStep(value: Node, major: number): void {
   if (!isObject(value)) {
     throw new Error('step must be object');
   }
+  // A typed Binary64 record is suite/62 and /63 vocabulary.
+  binary64Major(value, major);
   const tag = text(value.step);
   let required = 'step';
   let optional = '';

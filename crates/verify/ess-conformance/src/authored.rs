@@ -1028,9 +1028,9 @@ impl fmt::Display for Surface {
 /// instruction for neither.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cause {
-    /// The model needs a finite codec outside the current conformance contract.
+    /// The model holds a Binary64 where the conformance suite does not carry one.
     UnsupportedBinary64 {
-        /// Every unsupported model field/type position.
+        /// Every position the suite does not carry.
         locations: Vec<String>,
     },
     /// The file is not a document this format can read.
@@ -2337,9 +2337,11 @@ diagnostic_catalogue! {
             "An assertion's paths resolve, but its operands or quantified target are ill-typed.",
             "use compatible scalar operands and quantify only over a declared List or Map";
         Self::UnsupportedBinary64 { .. } => 36,
-            "The model needs a finite codec outside the current conformance contract.",
-            "use checked format-5 normalization; finite Binary64 conformance codecs are not \
-             implemented";
+            "The model holds a Binary64 where the conformance suite does not carry one.",
+            "a suite carries a finite Binary64 in an entity's fields, a command's input and response, \
+             an event's and an error's fields, and a view's fields and row shape; move it out of \
+             an entity identity, a view parameter, an actor attribute, a binding or a conversion, \
+             or use a Decimal there";
         Self::ExternalAnswerUnstated { .. } => 37,
             "An act claims what only an external answer it does not state satisfies.",
             "no input the act sends decides an external branch, so name the act's own one \
@@ -2415,7 +2417,7 @@ impl fmt::Display for Cause {
         match self {
             Self::UnsupportedBinary64 { locations } => write!(
                 f,
-                "{}: Binary64 requires a qualified conformance codec",
+                "{}: a Binary64 in a position the conformance suite does not carry",
                 locations.join(", ")
             ),
             Self::Unreadable { detail } => write!(f, "unreadable: {detail}"),
