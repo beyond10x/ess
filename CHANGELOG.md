@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Synthesis writes both branches of a `!=` or `==` guard that compares a text, `Uuid` or `Timestamp` input, or a struct member a structured example reaches, with the value its `example:` holds: the leaf is tried at its own witness beside the example, where no candidate refuted the comparison and the outcome was refused as unsatisfiable. A model without such a guard keeps its suite bytes.
+
 ## [0.78.0] — 2026-10-31
 
 ### Added

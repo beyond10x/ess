@@ -44,7 +44,9 @@
 //!    under `/`, before any alphabet maps it; a count resize keeps the prefix in front, and a
 //!    candidate that does not start with it is refused with every other value the type refuses.
 //!    **An input's
-//!    `example:`** is its base at the plain instance, for every leaf kind.
+//!    `example:`** is its base at the plain instance, for every leaf kind. A text or instant whose
+//!    example is a literal a guard compares it with is tried at its own witness as well, so a `!=`
+//!    against the example's value has a value that refutes it.
 //! 3. **Alternatives come from the guard, not from imagination.** The values a candidate varies are
 //!    the fact paths the guard actually reads, and the values it tries are the literals the guard
 //!    itself writes, one either side. `amount.amount > 0` is met by `1` and refuted by `0`, and
@@ -855,6 +857,22 @@ fn search_with(
         if let Some(original) = builder.unrepaired.get(&path) {
             if original != at_base && !alternatives.contains(original) {
                 alternatives.push(original.clone());
+            }
+        }
+        // A text or instant whose example is itself a literal the guard compares it with has that
+        // literal left off its ladder, which excludes the base, and a text or instant ladder holds
+        // nothing but the guard's literals to refute the comparison with: the leaf's own witness
+        // is tried too, so `!=` and `==` against the example's value each keep their other side.
+        // A number, a boolean and an enum are tried at values beside their literals already. Only
+        // such a leaf gets it, so every other suite keeps its bytes.
+        if let (Leaf::Text | Leaf::Timestamp, Node::Text(example), Some(own)) =
+            (leaf, at_base, builder.unexampled.get(&path))
+        {
+            let on_literal = literals_at(&expanded, &path)
+                .iter()
+                .any(|literal| literal.as_text() == Some(example.as_str()));
+            if on_literal && own != at_base && !alternatives.contains(own) {
+                alternatives.push(own.clone());
             }
         }
         if !alternatives.is_empty() {
@@ -5687,6 +5705,10 @@ struct Builder<'ir> {
     /// [`Distinction::PLAIN`] only. A struct's example (ess/33) adds each declared member it names
     /// here, at `<path>.<member>`, when the struct is built.
     examples: BTreeMap<FactPath, Node>,
+    /// The base each leaf an example replaced would have taken without it, by path: tried on the
+    /// leaf's ladder where the example is a literal a guard compares it with, so a `!=` against the
+    /// example's own value is still refuted by some candidate.
+    unexampled: BTreeMap<FactPath, Node>,
     /// The `Optional` members a struct's example (ess/33) leaves out, which the base leaves out
     /// too.
     left_out: BTreeSet<FactPath>,
@@ -5740,6 +5762,7 @@ impl<'ir> Builder<'ir> {
             strings: BTreeSet::new(),
             plain_texts: BTreeMap::new(),
             examples: BTreeMap::new(),
+            unexampled: BTreeMap::new(),
             left_out: BTreeSet::new(),
             read: BTreeSet::new(),
             struct_invariants: Vec::new(),
@@ -5881,6 +5904,9 @@ impl<'ir> Builder<'ir> {
             }
         }
         if let Some(example) = self.examples.get(path) {
+            if record {
+                self.unexampled.insert(path.clone(), base);
+            }
             base = example.clone();
         }
         let base = self.repaired(path, base, record);
