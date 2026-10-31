@@ -244,6 +244,23 @@ fixed when the suite is written, so an instance named under `caller:` has to be 
 `setup:`. A suite that reaches a caller attribute nothing supplied, such as one written by an
 older `ess`, reports the scenario `unsupported` with a reason naming the attribute.
 
+## Claim one member of a nested value
+
+A nested value in a claim is compared whole: `response: {checkpoint: {checkpoint_id: cp-1}}` is
+refused for the members it leaves out, named at their path (`ESS-AUTHOR-014`). From
+`type: ess-scenario/6` a claim names one member alone by its dotted path,
+`response: {checkpoint.checkpoint_id: cp-1}`, in an act's `response:`, an event's `payload:`, an
+error's `fields:` and a view row's `contains`, `excludes` and `at`. Each path is compared alone at
+the member's declared type, through `Optional` and newtypes; a member absent or null along it
+matches only `null`, and a path ending at a struct compares that struct whole.
+
+A path naming no member is `ESS-AUTHOR-013` with the full path, as is any dotted key under
+`ess-scenario/1` to `/5`. A path through a list, map, union, enum or primitive, a path in `input:`,
+`setup:`, `caller:` or `params:` (all sent whole), and a path beside a whole field claiming the same
+member are `ESS-AUTHOR-015`; a path holding a reference is `ESS-AUTHOR-021`. Event, error and row
+paths compile to suite/26 dotted keys, so their suites keep their format; a response path compiles
+to `expected` under `ess-conformance/62`, which an older reader refuses by its version.
+
 ## Establish backend state in an authored scenario
 
 `ess-scenario/2`, introduced in 0.23.0, supports typed setup for entities whose rows arrive

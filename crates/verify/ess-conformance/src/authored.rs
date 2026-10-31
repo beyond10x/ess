@@ -992,6 +992,8 @@ pub enum Surface {
         /// The command the act sends.
         command: CommandRef,
     },
+    /// A command's direct response (`response:`, ess-scenario/4).
+    Response(CommandRef),
 }
 
 impl fmt::Display for Surface {
@@ -1014,6 +1016,7 @@ impl fmt::Display for Surface {
                 f,
                 "the caller that sends `{command}` (the act names no `actor:`)"
             ),
+            Self::Response(command) => write!(f, "the response of `{command}`"),
         }
     }
 }
@@ -2206,9 +2209,10 @@ diagnostic_catalogue! {
         Self::UnsupportedFormat { .. } => 2,
             "The document claims a format this build does not implement.",
             "a scenario's `type:` is `ess-scenario/1`, `ess-scenario/2` for entity setup, \
-             `ess-scenario/3` for fixture values, `ess-scenario/4` for direct responses, or \
-             `ess-scenario/5` for caller values; a document in a repository-defined trace format \
-             is not a scenario input, so leave it out of `--scenarios` and `ess-inputs.yaml`";
+             `ess-scenario/3` for fixture values, `ess-scenario/4` for direct responses, \
+             `ess-scenario/5` for caller values, or `ess-scenario/6` for member paths in claims; \
+             a document in a repository-defined trace format is not a scenario input, so leave it \
+             out of `--scenarios` and `ess-inputs.yaml`";
         Self::Duplicate { .. } => 3,
             "Two files produce the same scenario id.",
             "two files name one scenario in one domain; rename one of them";
@@ -2245,11 +2249,14 @@ diagnostic_catalogue! {
         Self::UndeclaredField { .. } => 13,
             "A value is supplied under a name the surface does not declare.",
             "name a field the construct declares; the scenario and the model disagree about \
-             what it has";
+             what it has. A dotted key is a member path, which a claim reads from \
+             `ess-scenario/6` and nothing else reads";
         Self::MissingField { .. } => 14,
             "A declared field that has to be supplied is not.",
             "supply the field; a command is invoked with all of its input, and one left out is a \
-             call that could not be made";
+             call that could not be made. A nested value in a claim is compared whole, so write \
+             every member it declares, or from `ess-scenario/6` claim one member alone by its \
+             path, `member.leaf: value`";
         Self::ValueRejected { .. } => 15,
             "A value is not of the shape its declared type calls for.",
             "write a value of the type the model declares there";
@@ -2819,9 +2826,10 @@ pub(crate) fn compile_one(
         used_fixtures: BTreeSet::new(),
         fixture_format: matches!(
             document.format.as_str(),
-            "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5"
+            "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5" | "ess-scenario/6"
         ),
         ir,
+        paths: document.format == crate::member_paths::SCENARIO_FORMAT,
         origin: &source.origin,
         id: id.clone(),
         refusals: Vec::new(),
@@ -2876,7 +2884,12 @@ pub(crate) fn compile_one(
 fn is_scenario_format(format: &str) -> bool {
     matches!(
         format,
-        FORMAT | "ess-scenario/2" | "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5"
+        FORMAT
+            | "ess-scenario/2"
+            | "ess-scenario/3"
+            | "ess-scenario/4"
+            | "ess-scenario/5"
+            | "ess-scenario/6"
     )
 }
 
@@ -3077,7 +3090,7 @@ fn document_format_refusal(document: &Document) -> Option<Cause> {
     }
     if !matches!(
         document.format.as_str(),
-        "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5"
+        "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5" | "ess-scenario/6"
     ) && !document.fixtures.is_empty()
     {
         return Some(Cause::Unreadable {
@@ -3086,7 +3099,7 @@ fn document_format_refusal(document: &Document) -> Option<Cause> {
     }
     if !matches!(
         document.format.as_str(),
-        "ess-scenario/4" | "ess-scenario/5"
+        "ess-scenario/4" | "ess-scenario/5" | "ess-scenario/6"
     ) && document.timeline.iter().any(|act| act.response.is_some())
     {
         return Some(Cause::Unreadable {
@@ -3095,7 +3108,7 @@ fn document_format_refusal(document: &Document) -> Option<Cause> {
     }
     if !matches!(
         document.format.as_str(),
-        "ess-scenario/4" | "ess-scenario/5"
+        "ess-scenario/4" | "ess-scenario/5" | "ess-scenario/6"
     ) && document.timeline.iter().any(|act| act.refused.is_some())
     {
         return Some(Cause::Unreadable {
@@ -3104,8 +3117,10 @@ fn document_format_refusal(document: &Document) -> Option<Cause> {
     }
     // An older `ess` refuses `caller:` as an unknown key: a document that states one is a
     // document only this format can read, so its header says so and every earlier one refuses it.
-    if document.format != "ess-scenario/5"
-        && document.timeline.iter().any(|act| !act.caller.is_empty())
+    if !matches!(
+        document.format.as_str(),
+        "ess-scenario/5" | "ess-scenario/6"
+    ) && document.timeline.iter().any(|act| !act.caller.is_empty())
     {
         return Some(Cause::Unreadable {
             detail: "caller attribute values require type: ess-scenario/5".into(),
@@ -3127,6 +3142,9 @@ struct Compiler<'a> {
     fixtures: BTreeMap<FixtureName, ess_domain::TypeRef>,
     used_fixtures: BTreeSet<FixtureName>,
     fixture_format: bool,
+    /// Whether a claim may name a member by its dotted path (`ess-scenario/6`,
+    /// story:an-authored-claim-may-compare-a-nested-field).
+    paths: bool,
     ir: &'a EssIr,
     origin: &'a str,
     id: ScenarioId,
@@ -3212,6 +3230,21 @@ impl<'a> Compiler<'a> {
                     self.refuse(Cause::ValueRejected {
                         surface: Surface::Entity(entity),
                         detail: "duplicate qualified entity identity".into(),
+                    });
+                    continue;
+                }
+                if let Some(path) = setup
+                    .fields
+                    .keys()
+                    .find(|key| self.paths && crate::member_paths::is_path(key))
+                {
+                    let surface = Surface::Entity(entity);
+                    self.refuse(Cause::ValueRejected {
+                        detail: format!(
+                            "`{path}` is a member path, which only a claim reads; {surface} is \
+                             sent whole, each field with its whole value"
+                        ),
+                        surface,
                     });
                     continue;
                 }
@@ -3351,16 +3384,16 @@ impl<'a> Compiler<'a> {
                 .as_ref()
                 .and_then(|name| name.parse().ok())
                 .map(|name| OutcomeRef::new(command_ref.clone(), name));
-            match crate::direct_response::Observation::of(
-                self.ir,
-                command,
-                outcome,
-                act.response.clone().unwrap_or_default(),
-            ) {
-                Ok(response) => self
-                    .steps
-                    .push(ScenarioStep::ExpectDirectResponse { response }),
-                Err(detail) => self.refuse(Cause::Unreadable { detail }),
+            let expected = act.response.clone().unwrap_or_default();
+            let refused_before = self.refusals.len();
+            self.response_shape(&command_ref, &command.response, &expected);
+            if self.refusals.len() == refused_before {
+                match crate::direct_response::Observation::of(self.ir, command, outcome, expected) {
+                    Ok(response) => self
+                        .steps
+                        .push(ScenarioStep::ExpectDirectResponse { response }),
+                    Err(detail) => self.refuse(Cause::Unreadable { detail }),
+                }
             }
         }
         for claim in &act.events {
@@ -4360,11 +4393,8 @@ impl<'a> Compiler<'a> {
                         published: &it.outcome.payload,
                     })
                     .collect();
-                self.minted_claims(
-                    &Surface::Error(ErrorRef::new(name)),
-                    &claim.fields,
-                    &reporting,
-                );
+                let fields = self.folded(&claim.fields);
+                self.minted_claims(&Surface::Error(ErrorRef::new(name)), &fields, &reporting);
             }
         }
         for claim in &act.events {
@@ -4387,9 +4417,10 @@ impl<'a> Compiler<'a> {
                     published: &it.outcome.payload,
                 })
                 .collect();
+            let payload = self.folded(&claim.payload);
             self.minted_claims(
                 &Surface::Payload(EventRef::new(name)),
-                &claim.payload,
+                &payload,
                 &publishing,
             );
         }
@@ -4597,7 +4628,8 @@ impl<'a> Compiler<'a> {
                 .or(assertion.excludes.as_ref())
                 .or(assertion.at.as_ref().map(|at| &at.fields));
             if let Some(row) = row {
-                self.minted_row(&view, declared.source.name(), row);
+                let row = self.folded(row);
+                self.minted_row(&view, declared.source.name(), &row);
             }
         }
         let bound = self.values(
@@ -4787,8 +4819,25 @@ impl<'a> Compiler<'a> {
         })
     }
 
-    /// Values and references, checked against what the surface declares.
+    /// Values and references, checked against what the surface declares; a claim's member paths
+    /// (`ess-scenario/6`) are split out first and added as the literal leaves they name.
     fn values(
+        &mut self,
+        written: &BTreeMap<String, Written>,
+        fields: &[ResolvedField],
+        surface: &Surface,
+        completeness: Completeness,
+    ) -> BTreeMap<String, ScenarioValue> {
+        let (written, leaves) = self.split_paths(written, fields, surface);
+        let mut resolved = self.whole_values(&written, fields, surface, completeness);
+        for (field, node) in leaves {
+            resolved.insert(field, ScenarioValue::literal(node));
+        }
+        resolved
+    }
+
+    /// Values and references written field by field, checked against what the surface declares.
+    fn whole_values(
         &mut self,
         written: &BTreeMap<String, Written>,
         fields: &[ResolvedField],
@@ -5132,6 +5181,220 @@ impl<'a> Compiler<'a> {
         (slot, child, inner)
     }
 
+    /// Refuses an act's `response:` literal for a member it names that `fields`, the command's
+    /// response, does not declare, or leaves out of a nested value, naming the member at its path
+    /// (story:an-authored-claim-may-compare-a-nested-field). A nested value is compared whole, so
+    /// a partial one is refused at every header, the members it leaves out named; from
+    /// `ess-scenario/6` a dotted key names one member alone, and is held to the member it names.
+    /// Every other shape is left to the observation, which refuses it as before.
+    fn response_shape(
+        &mut self,
+        command: &CommandRef,
+        fields: &[ResolvedField],
+        expected: &BTreeMap<String, Node>,
+    ) {
+        let surface = Surface::Response(command.clone());
+        let mut whole = BTreeMap::new();
+        for (key, value) in expected {
+            if !(self.paths && crate::member_paths::is_path(key)) {
+                whole.insert(key.clone(), value.clone());
+                continue;
+            }
+            if let Some(type_ref) = self.path_member(fields, &surface, key) {
+                let member = [ResolvedField {
+                    name: key.clone(),
+                    type_ref,
+                    naming: ess_domain::Naming::default(),
+                }];
+                let value = BTreeMap::from([(key.clone(), value.clone())]);
+                if let Err(errors) = bind(self.ir, &member, &value, Completeness::Partial) {
+                    self.member_shape(&errors, &surface);
+                }
+            }
+        }
+        if let Err(errors) = bind(self.ir, fields, &whole, Completeness::Partial) {
+            self.member_shape(&errors, &surface);
+        }
+    }
+
+    /// The members a value names that its type does not declare, or leaves out, refused by name.
+    fn member_shape(&mut self, errors: &ShapeErrors, surface: &Surface) {
+        for error in errors.iter() {
+            let cause = match error {
+                ShapeError::MissingField { at, field } => Cause::MissingField {
+                    surface: surface.clone(),
+                    at: at.clone(),
+                    field: field.clone(),
+                },
+                ShapeError::UndeclaredField { at, field } => Cause::UndeclaredField {
+                    surface: surface.clone(),
+                    at: at.clone(),
+                    field: field.clone(),
+                },
+                _ => continue,
+            };
+            self.refuse(cause);
+        }
+    }
+
+    /// The declared type of the member the dotted `path` names among `fields`; `None`, refused,
+    /// where a segment names no declared member or the path goes through a value with no members.
+    fn path_member(
+        &mut self,
+        fields: &[ResolvedField],
+        surface: &Surface,
+        path: &str,
+    ) -> Option<ResolvedTypeRef> {
+        match crate::member_paths::member(self.ir, fields, path) {
+            Ok(type_ref) => Some(type_ref),
+            Err(crate::member_paths::Unreached::NoMember) => {
+                self.refuse(Cause::UndeclaredField {
+                    surface: surface.clone(),
+                    at: String::new(),
+                    field: path.to_owned(),
+                });
+                None
+            }
+            Err(crate::member_paths::Unreached::Through { at, holds }) => {
+                self.refuse(Cause::ValueRejected {
+                    surface: surface.clone(),
+                    detail: format!(
+                        "`{path}` goes through `{at}`, a {holds}, which has no members a path can \
+                         name; a path reads struct members only, so claim `{at}` whole"
+                    ),
+                });
+                None
+            }
+        }
+    }
+
+    /// `written` with its member paths split out (story:an-authored-claim-may-compare-a-nested-field).
+    ///
+    /// Below `ess-scenario/6` nothing is split: a dotted key stays, and the shape check that reads
+    /// it refuses it as an undeclared field. From `/6`, on a claim's surface (an event's payload,
+    /// an error's fields, a view row), each path is resolved through the declared struct members,
+    /// its literal checked at the member's type, and written as the leaves of the payload shape
+    /// ([`crate::member_paths::leaves`]); the second map holds them. Anywhere else a value is sent
+    /// whole, and a path is refused by name.
+    fn split_paths(
+        &mut self,
+        written: &BTreeMap<String, Written>,
+        fields: &[ResolvedField],
+        surface: &Surface,
+    ) -> (BTreeMap<String, Written>, BTreeMap<String, Node>) {
+        if !self.paths || !written.keys().any(|key| crate::member_paths::is_path(key)) {
+            return (written.clone(), BTreeMap::new());
+        }
+        let claim = matches!(
+            surface,
+            Surface::Payload(_) | Surface::Error(_) | Surface::Row(_)
+        );
+        let mut rest = BTreeMap::new();
+        let mut leaves = BTreeMap::new();
+        for (key, value) in written {
+            if !crate::member_paths::is_path(key) {
+                rest.insert(key.clone(), value.clone());
+                continue;
+            }
+            if !claim {
+                self.refuse(Cause::ValueRejected {
+                    surface: surface.clone(),
+                    detail: format!(
+                        "`{key}` is a member path, which only a claim reads; {surface} is sent \
+                         whole, each field with its whole value"
+                    ),
+                });
+                continue;
+            }
+            let Some(type_ref) = self.path_member(fields, surface, key) else {
+                continue;
+            };
+            let node = match value {
+                Written::Literal(node) if !holds_reference(node) => node,
+                Written::NonFinite(_) => {
+                    self.refuse(Cause::ValueRejected {
+                        surface: surface.clone(),
+                        detail: format!(
+                            "{key}: a NaN or an infinity is a value of no declared type, because \
+                             Decimal and Binary64 hold finite values only"
+                        ),
+                    });
+                    continue;
+                }
+                _ => {
+                    self.refuse(Cause::NotComparable {
+                        surface: surface.clone(),
+                        field: key.clone(),
+                    });
+                    continue;
+                }
+            };
+            let member = [ResolvedField {
+                name: key.clone(),
+                type_ref: type_ref.clone(),
+                naming: ess_domain::Naming::default(),
+            }];
+            if let Err(errors) = bind(
+                self.ir,
+                &member,
+                &BTreeMap::from([(key.clone(), node.clone())]),
+                Completeness::Partial,
+            ) {
+                self.shape(&errors, surface);
+                continue;
+            }
+            let mut written_leaves = BTreeMap::new();
+            crate::member_paths::leaves(
+                self.ir,
+                &type_ref,
+                key,
+                Some(node),
+                0,
+                &mut written_leaves,
+            );
+            for (leaf, value) in written_leaves {
+                if leaves.contains_key(&leaf) {
+                    self.refuse(Cause::ValueRejected {
+                        surface: surface.clone(),
+                        detail: format!("`{leaf}` is claimed by two paths; claim it once"),
+                    });
+                    continue;
+                }
+                leaves.insert(leaf, value);
+            }
+        }
+        let mut whole: BTreeSet<&str> = BTreeSet::new();
+        for leaf in leaves.keys() {
+            let field = leaf.split('.').next().unwrap_or_default();
+            if rest.contains_key(field) && whole.insert(field) {
+                self.refuse(Cause::ValueRejected {
+                    surface: surface.clone(),
+                    detail: format!(
+                        "`{leaf}` and `{field}` both claim a member of `{field}`; claim `{field}` \
+                         whole or by its paths, not both"
+                    ),
+                });
+            }
+        }
+        (rest, leaves)
+    }
+
+    /// `written` with each member path folded into the field it starts at, for a check that reads
+    /// fields whole; `written` itself below `ess-scenario/6`.
+    fn folded(&self, written: &BTreeMap<String, Written>) -> BTreeMap<String, Written> {
+        if !self.paths {
+            return written.clone();
+        }
+        crate::member_paths::nested(
+            written,
+            |value| match value {
+                Written::Literal(node) => Some(node),
+                _ => None,
+            },
+            Written::Literal,
+        )
+    }
+
     /// The literal half only, for a step that compares values the suite carries.
     fn literals(
         &mut self,
@@ -5139,6 +5402,8 @@ impl<'a> Compiler<'a> {
         fields: &[ResolvedField],
         surface: &Surface,
     ) -> BTreeMap<String, Node> {
+        let (written, leaves) = self.split_paths(written, fields, surface);
+        let written = &written;
         let mut literals = BTreeMap::new();
         for (field, value) in written {
             if let Written::NonFinite(found) = value {
@@ -5174,6 +5439,7 @@ impl<'a> Compiler<'a> {
         if let Err(errors) = bind(self.ir, fields, &literals, Completeness::Partial) {
             self.shape(&errors, surface);
         }
+        literals.extend(leaves);
         literals
     }
 

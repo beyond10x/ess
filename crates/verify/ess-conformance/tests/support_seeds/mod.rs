@@ -603,9 +603,9 @@ pub fn forgeries(good: &Value, authored: &Value, authored_id: &str) -> Vec<Forge
     // the wrapped value-invariant observation and the await vocabulary (beyond10x/ess#542) and /54
     // and /55 a view read through a reference (beyond10x/ess#564) and /56 and /57 one-time read
     // cells that read as their actor (beyond10x/ess#614), /58 and /59 a `Decimal` in an exact
-    // observer and /60 and /61 a row the deployment provides, each admitting seeds cumulatively, so
-    // the first unimplemented pair is /62 and /63.
-    for major in [62, 63, 99] {
+    // observer, /60 and /61 a row the deployment provides and /62 and /63 a response member path,
+    // each admitting seeds cumulatively, so the first unimplemented pair is /64 and /65.
+    for major in [64, 65, 99] {
         add(
             &format!("unimplemented-major-{major}"),
             "execution readers admit suite majors",

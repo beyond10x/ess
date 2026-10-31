@@ -541,13 +541,13 @@ fn coverage_suites_holding_a_reader_cell_are_57() {
 }
 
 #[test]
-fn the_first_unread_majors_are_62_and_63() {
-    for major in [56, 57, 58, 59, 60, 61] {
+fn the_first_unread_majors_are_64_and_65() {
+    for major in [56, 57, 58, 59, 60, 61, 62, 63] {
         assert!(SuiteFormat::parse(&format!("ess-conformance/{major}"))
             .unwrap()
             .is_supported());
     }
-    for major in [62, 63] {
+    for major in [64, 65] {
         assert!(!SuiteFormat::parse(&format!("ess-conformance/{major}"))
             .unwrap()
             .is_supported());

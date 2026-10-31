@@ -330,7 +330,7 @@ fn released_suite_formats_26_and_27_remain_supported_and_future_versions_refuse(
             "{version}"
         );
     }
-    assert!(!SuiteFormat::parse("ess-conformance/62")
+    assert!(!SuiteFormat::parse("ess-conformance/64")
         .unwrap()
         .is_supported());
 }
@@ -524,5 +524,241 @@ fn issue_179_an_implementation_publishing_another_lead_number_fails() {
     assert_eq!(
         failing(&suite(DIALER), Mode::WrongNumberOnTheEvent),
         vec![SET_LEAD.to_owned()]
+    );
+}
+
+// ---- authored member paths (story:an-authored-claim-may-compare-a-nested-field) ----------------
+
+/// A parcel is sent to an address the target stores and publishes whole, and refused with the
+/// address it could not reach.
+const PARCELS: &str = r"format: ess/22
+system: parcel
+version: v1
+domain: parcel.post
+types:
+  - {name: parcel.post.ParcelId, kind: newtype, of: Uuid}
+  - name: parcel.post.Region
+    kind: struct
+    fields:
+      - {name: code, type: String}
+      - {name: label, type: String}
+  - name: parcel.post.Address
+    kind: struct
+    fields:
+      - {name: city, type: String}
+      - {name: zip, type: String}
+      - {name: region, type: parcel.post.Region}
+entities:
+  - name: parcel.post.Parcel
+    identity: {name: parcel_id, type: parcel.post.ParcelId}
+    fields:
+      - {name: to, type: parcel.post.Address}
+    lifecycle: {initial: Sent, states: [Sent], terminal: [Sent]}
+errors:
+  - name: parcel.post.Undeliverable
+    fields:
+      - {name: to, type: parcel.post.Address}
+events:
+  - name: parcel.post.ParcelSent
+    fields:
+      - {name: parcel_id, type: parcel.post.ParcelId}
+      - {name: to, type: parcel.post.Address}
+commands:
+  - name: parcel.post.Send
+    input:
+      - {name: city, type: String}
+      - {name: zip, type: String}
+      - {name: region_code, type: String}
+      - {name: region_label, type: String}
+      - {name: hold, type: Boolean}
+    outcomes:
+      - name: undeliverable
+        when: hold == true
+        error: parcel.post.Undeliverable
+        payload:
+          parcel.post.Undeliverable:
+            to:
+              city: input.city
+              zip: input.zip
+              region: {code: input.region_code, label: input.region_label}
+      - name: sent
+        creates: parcel.post.Parcel
+        instance: parcel_id
+        emits: [parcel.post.ParcelSent]
+        payload:
+          parcel.post.ParcelSent:
+            parcel_id: {generated: true}
+            to:
+              city: input.city
+              zip: input.zip
+              region: {code: input.region_code, label: input.region_label}
+        sets:
+          to:
+            city: input.city
+            zip: input.zip
+            region: {code: input.region_code, label: input.region_label}
+views:
+  - name: parcel.post.Parcels
+    source: parcel.post.Parcel
+    consistency: read_your_writes
+    fields:
+      - {name: parcel_id, type: parcel.post.ParcelId}
+      - {name: to, type: parcel.post.Address}
+";
+
+/// Each claim names members of the address by path and leaves the zip, which it does not claim.
+const PARCEL_CLAIMS: &str = r"type: ess-scenario/6
+domain: parcel.post
+scenario: claims-name-members-of-the-address
+summary: An event, an error and a row are each claimed by members of the address, the zip unclaimed.
+arrange:
+  - instance: parcel
+    entity: parcel.post.Parcel
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: parcel.post.Send
+    input: {city: Lisbon, zip: '1000', region_code: PT, region_label: Lisboa, hold: false}
+    outcome: sent
+    events:
+      - event: parcel.post.ParcelSent
+        payload: {to.city: Lisbon, to.region: {code: PT, label: Lisboa}}
+    capture: {instance: parcel, event: parcel.post.ParcelSent, field: parcel_id}
+  - at: 2026-01-05T09:00:01Z
+    command: parcel.post.Send
+    input: {city: Nowhere, zip: '0000', region_code: XX, region_label: None, hold: true}
+    outcome: undeliverable
+    error: {name: parcel.post.Undeliverable, fields: {to.city: Nowhere}}
+assert:
+  - view: parcel.post.Parcels
+    contains: {parcel_id: {$instance: parcel}, to.city: Lisbon}
+";
+
+fn parcel_suite(scenario: &str) -> Result<ConformanceSuite, Vec<String>> {
+    let model = ir(PARCELS);
+    let authored = ess_conformance::authored::compile(
+        &model,
+        &[ess_conformance::authored::Source::new(
+            "claims.yaml",
+            scenario,
+        )],
+    );
+    if !authored.refusals.is_empty() {
+        return Err(authored.refusals.iter().map(ToString::to_string).collect());
+    }
+    let mut suite = ess_conformance::synthesize::synthesize(&model).suite;
+    suite.scenarios = authored.scenarios;
+    suite.select_fresh_format_for(&model);
+    Ok(suite)
+}
+
+fn interpreted(suite: &ConformanceSuite) -> Status {
+    let admitted = AdmittedSuite::from_suite(suite).unwrap_or_else(|error| panic!("{error}"));
+    let report = Runner::for_suite(admitted.suite())
+        .run_admitted(
+            &admitted,
+            &ess_conformance::interpret::Interpreted::for_model(ir(PARCELS)),
+        )
+        .into_report();
+    assert_eq!(report.scenarios.len(), 1, "{:#?}", report.scenarios);
+    report.scenarios[0].status
+}
+
+/// From `ess-scenario/6` an event payload, an error's fields and a view row may each name a member
+/// of a struct by its dotted path. Each compiles to the suite/26 dotted keys, a path ending at a
+/// struct written as its leaves, and holds while the target carries members the claim leaves out;
+/// a claim whose named member differs fails.
+#[test]
+fn an_authored_payload_error_and_row_claim_may_name_a_nested_member_by_path() {
+    let suite = parcel_suite(PARCEL_CLAIMS).unwrap_or_else(|refusals| panic!("{refusals:#?}"));
+    let scenario = suite.scenarios.values().next().unwrap();
+    let event = scenario
+        .steps
+        .iter()
+        .find_map(|step| match step {
+            ScenarioStep::ExpectEvent { payload, .. } => Some(payload.clone()),
+            _ => None,
+        })
+        .expect("the event claim compiles to expect_event");
+    assert_eq!(
+        event,
+        BTreeMap::from([
+            ("to.city".to_owned(), Node::Text("Lisbon".into())),
+            ("to.region.code".to_owned(), Node::Text("PT".into())),
+            ("to.region.label".to_owned(), Node::Text("Lisboa".into())),
+        ])
+    );
+    let error = scenario
+        .steps
+        .iter()
+        .find_map(|step| match step {
+            ScenarioStep::ExpectError { fields, .. } => Some(fields.clone()),
+            _ => None,
+        })
+        .expect("the error claim compiles to expect_error");
+    assert_eq!(
+        error,
+        BTreeMap::from([("to.city".to_owned(), Node::Text("Nowhere".into()))])
+    );
+    let row = scenario
+        .steps
+        .iter()
+        .find_map(|step| match step {
+            ScenarioStep::ExpectView {
+                expectation: ViewExpectation::Contains { fields },
+                ..
+            }
+            | ScenarioStep::EventuallyView {
+                expectation: ViewExpectation::Contains { fields },
+                ..
+            } => Some(fields.clone()),
+            _ => None,
+        })
+        .expect("the row claim compiles to a contains expectation");
+    assert_eq!(
+        row.get("to.city"),
+        Some(&ScenarioValue::literal(Node::Text("Lisbon".into())))
+    );
+
+    assert_eq!(interpreted(&suite), Status::Passed);
+
+    for (claimed, wrong) in [
+        ("payload: {to.city: Lisbon,", "payload: {to.city: Porto,"),
+        ("fields: {to.city: Nowhere}", "fields: {to.city: Elsewhere}"),
+        (
+            "contains: {parcel_id: {$instance: parcel}, to.city: Lisbon}",
+            "contains: {parcel_id: {$instance: parcel}, to.city: Porto}",
+        ),
+    ] {
+        assert!(PARCEL_CLAIMS.contains(claimed), "{claimed}");
+        let suite = parcel_suite(&PARCEL_CLAIMS.replace(claimed, wrong))
+            .unwrap_or_else(|refusals| panic!("{refusals:#?}"));
+        assert_eq!(interpreted(&suite), Status::Failed, "{wrong}");
+    }
+
+    // Below `/6` the same key is a field the payload does not declare, and the help names `/6`.
+    let below = parcel_suite(&PARCEL_CLAIMS.replace("ess-scenario/6", "ess-scenario/5"))
+        .expect_err("a member path needs ess-scenario/6");
+    assert!(
+        below.iter().all(|text| text.contains("ESS-AUTHOR-013")),
+        "{below:#?}"
+    );
+    assert!(
+        below
+            .iter()
+            .any(|text| text.contains("`to.city`") && text.contains("ess-scenario/6")),
+        "{below:#?}"
+    );
+
+    // An input is sent whole, so a path there is refused by name.
+    let input = parcel_suite(&PARCEL_CLAIMS.replace(
+        "input: {city: Lisbon, zip: '1000',",
+        "input: {city: Lisbon, zip: '1000', to.city: Lisbon,",
+    ))
+    .expect_err("an input path is refused");
+    assert!(
+        input
+            .iter()
+            .any(|text| text.contains("`to.city`") && text.contains("sent whole")),
+        "{input:#?}"
     );
 }

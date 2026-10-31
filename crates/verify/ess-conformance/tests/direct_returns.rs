@@ -674,3 +674,194 @@ fn pure_return_depth_allowance_does_not_expand_other_suite_positions() {
         assert_eq!(error.issues[0].detail, "JSON nesting exceeds 128");
     }
 }
+
+// ---- nested-member claims (story:an-authored-claim-may-compare-a-nested-field) -----------------
+
+const CHECKPOINT: &str = include_str!("fixtures/nested-response-checkpoint.yaml");
+const CHECKPOINT_SCENARIO: &str = include_str!("fixtures/nested-response-checkpoint-scenario.yaml");
+
+fn model(text: &str) -> ess_compiler::EssIr {
+    let spec = Specification::assemble([(
+        Source::new("model.yaml"),
+        RawSpecFile::parse(text).expect("the model parses"),
+    )])
+    .expect("the model validates");
+    compile(&spec, &SourceMap::new()).expect("the model compiles")
+}
+
+/// A literal that gives one member of a nested struct, at a header that compares a nested value
+/// whole, is refused for the members it leaves out, by name and at their path, with a help that
+/// says how to claim one member alone. Before this it was ESS-AUTHOR-001 `invalid_input`, with a
+/// help about the document's top-level keys.
+#[test]
+fn a_partial_nested_response_literal_names_its_missing_members() {
+    let partial = CHECKPOINT_SCENARIO
+        .replace("type: ess-scenario/6", "type: ess-scenario/4")
+        .replace(
+            "response: {checkpoint.checkpoint_id: cp-1}",
+            "response: {checkpoint: {checkpoint_id: cp-1}}",
+        );
+    let result = authored::compile(
+        &model(CHECKPOINT),
+        &[authored::Source::new("partial.yaml", partial)],
+    );
+    assert!(result.scenarios.is_empty());
+    let printed: Vec<String> = result.refusals.iter().map(ToString::to_string).collect();
+    assert_eq!(result.refusals.len(), 2, "{printed:#?}");
+    for refusal in &result.refusals {
+        assert_eq!(refusal.code().to_string(), "ESS-AUTHOR-014", "{printed:#?}");
+        let text = refusal.to_string();
+        assert!(
+            text.contains("the response of `relay.loop.Defer`"),
+            "{text}"
+        );
+        assert!(text.contains("at `checkpoint`"), "{text}");
+        assert!(!text.contains("invalid_input"), "{text}");
+        assert!(refusal.hint().contains("compared whole"), "{text}");
+        assert!(refusal.hint().contains("ess-scenario/6"), "{text}");
+    }
+    for member in ["`format`", "`call`"] {
+        assert!(
+            printed.iter().any(|text| text.contains(member)),
+            "{member}: {printed:#?}"
+        );
+    }
+}
+
+fn path_scenario(path: &str, value: &str, header: &str) -> String {
+    SCENARIO
+        .replace("type: ess-scenario/4", &format!("type: {header}"))
+        .replace(
+            "response: {value: actual, sequence: [1, 2, 2], item: {label: nested, ordinal: 9007199254740993}}",
+            &format!("response: {{{path}: {value}}}"),
+        )
+}
+
+fn path_suite() -> ConformanceSuite {
+    let model = ir();
+    let authored = authored::compile(
+        &model,
+        &[authored::Source::new(
+            "path.yaml",
+            path_scenario("item.label", "nested", "ess-scenario/6"),
+        )],
+    );
+    assert!(authored.refusals.is_empty(), "{:#?}", authored.refusals);
+    let mut suite = ess_conformance::synthesize(&model).suite;
+    suite.scenarios = authored.scenarios;
+    suite.select_fresh_format();
+    suite
+}
+
+fn run_path(response: BTreeMap<String, Node>) -> Status {
+    let admitted = AdmittedSuite::from_suite(&path_suite()).unwrap();
+    let library = Library {
+        response: Some(response),
+        calls: Cell::new(0),
+    };
+    let run = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &library);
+    assert_eq!(library.calls.get(), 1);
+    assert_eq!(run.scenarios.len(), 1);
+    run.scenarios[0].status
+}
+
+/// From `ess-scenario/6` a `response:` key may be a dotted path through struct members. It compiles
+/// to `expected["item.label"]` in an `ess-conformance/62` suite and compares that member alone: a
+/// return whose other members differ passes, one whose named member differs fails.
+#[test]
+fn a_response_literal_may_compare_one_nested_member_by_its_path() {
+    let suite = path_suite();
+    assert_eq!(suite.provenance.suite_version.major(), 62);
+    let bytes = suite.to_canonical_json().unwrap();
+    let document: serde_json::Value = serde_json::from_str(&bytes).unwrap();
+    let expected: Vec<_> = document["scenarios"]
+        .as_object()
+        .unwrap()
+        .values()
+        .flat_map(|scenario| scenario["steps"].as_array().unwrap().iter())
+        .filter(|step| step["step"] == "expect_direct_response")
+        .map(|step| step["response"]["expected"].clone())
+        .collect();
+    assert_eq!(
+        expected,
+        vec![serde_json::json!({"item.label": "nested"})],
+        "{bytes}"
+    );
+
+    assert_eq!(run_path(actual()), Status::Passed);
+
+    let mut other = actual();
+    let Node::Map(item) = other.get_mut("item").unwrap() else {
+        panic!("item is an object")
+    };
+    item.insert("ordinal".into(), Node::Number(7_i64.into()));
+    other.insert("value".into(), Node::Text("anything".into()));
+    assert_eq!(run_path(other), Status::Passed);
+
+    let mut differs = actual();
+    let Node::Map(item) = differs.get_mut("item").unwrap() else {
+        panic!("item is an object")
+    };
+    item.insert("label".into(), Node::Text("other".into()));
+    assert_eq!(run_path(differs), Status::Failed);
+}
+
+/// Below `ess-scenario/6` a dotted key stays ESS-AUTHOR-013, and its help names `/6`. From `/6` a
+/// path naming no member is ESS-AUTHOR-013 with the whole path, and one through a list is refused
+/// by name. A suite carrying a response path relabelled `ess-conformance/61` is refused by version
+/// before any target effect.
+#[test]
+fn a_response_path_is_refused_below_its_formats() {
+    let below = authored::compile(
+        &ir(),
+        &[authored::Source::new(
+            "below.yaml",
+            path_scenario("item.label", "nested", "ess-scenario/5"),
+        )],
+    );
+    assert!(below.scenarios.is_empty());
+    assert_eq!(below.refusals.len(), 1, "{:#?}", below.refusals);
+    assert_eq!(below.refusals[0].code().to_string(), "ESS-AUTHOR-013");
+    assert!(below.refusals[0].to_string().contains("`item.label`"));
+    assert!(below.refusals[0].hint().contains("ess-scenario/6"));
+
+    let misspelt = authored::compile(
+        &ir(),
+        &[authored::Source::new(
+            "misspelt.yaml",
+            path_scenario("item.lable", "nested", "ess-scenario/6"),
+        )],
+    );
+    assert_eq!(misspelt.refusals.len(), 1, "{:#?}", misspelt.refusals);
+    assert_eq!(misspelt.refusals[0].code().to_string(), "ESS-AUTHOR-013");
+    assert!(
+        misspelt.refusals[0].to_string().contains("`item.lable`"),
+        "{}",
+        misspelt.refusals[0]
+    );
+
+    let through = authored::compile(
+        &ir(),
+        &[authored::Source::new(
+            "through.yaml",
+            path_scenario("sequence.first", "1", "ess-scenario/6"),
+        )],
+    );
+    assert_eq!(through.refusals.len(), 1, "{:#?}", through.refusals);
+    let text = through.refusals[0].to_string();
+    assert!(text.contains("`sequence.first`"), "{text}");
+    assert!(text.contains("List<Integer>"), "{text}");
+
+    let mut older = path_suite();
+    older.provenance.suite_version =
+        ess_conformance::scenario::SuiteFormat::parse("ess-conformance/61").unwrap();
+    let error = AdmittedSuite::from_suite(&older).expect_err("/61 has no response member path");
+    assert!(
+        error
+            .issues
+            .iter()
+            .any(|issue| issue.reason == "UnsupportedVocabulary"
+                && issue.detail.contains("suite/62")),
+        "{error}"
+    );
+}

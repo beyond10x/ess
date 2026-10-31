@@ -242,6 +242,9 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     // An entity fixture names a row the deployment provides (`provided: true`).
     ("ess-conformance", 60, None),
     ("ess-conformance", 61, None),
+    // A response observation compares one nested member by its path.
+    ("ess-conformance", 62, None),
+    ("ess-conformance", 63, None),
     ("ess-composition", 1, Some("0.4.0")),
     ("ess-composition", 2, Some("0.38.0")),
     ("ess-composition", 3, Some("0.40.0")),
@@ -254,6 +257,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-scenario", 3, Some("0.35.0")),
     ("ess-scenario", 4, Some("0.39.0")),
     ("ess-scenario", 5, Some("0.59.0")),
+    ("ess-scenario", 6, None),
     ("ess-normalization", 1, Some("0.19.0")),
     ("ess-normalization", 2, Some("0.20.0")),
     ("ess-normalization", 3, Some("0.20.0")),

@@ -158,6 +158,7 @@ pub mod known_failures;
 pub mod lanes;
 pub mod leaf_payloads;
 pub mod linearize;
+pub mod member_paths;
 pub mod mutate;
 pub mod no_invocation;
 pub mod now_offset;

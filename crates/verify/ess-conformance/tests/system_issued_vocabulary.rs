@@ -179,18 +179,18 @@ fn malformed_await_steps_are_refused() {
 }
 
 #[test]
-fn suite_53_requires_coverage_and_62_is_unsupported() {
+fn suite_53_requires_coverage_and_64_is_unsupported() {
     let refused = admit(&document(53, &steps())).expect_err("coverage is required at /53");
-    assert!(refused.contains("through /61"), "{refused}");
+    assert!(refused.contains("through /63"), "{refused}");
     for major in [52, 53] {
         assert!(SuiteFormat::parse(&format!("ess-conformance/{major}"))
             .unwrap()
             .is_supported());
     }
-    assert!(!SuiteFormat::parse("ess-conformance/62")
+    assert!(!SuiteFormat::parse("ess-conformance/64")
         .unwrap()
         .is_supported());
-    let refused = admit(&document(62, &json!([]))).expect_err("/62 is unsupported");
+    let refused = admit(&document(64, &json!([]))).expect_err("/64 is unsupported");
     assert!(refused.contains("UnsupportedSuiteVersion"), "{refused}");
 }
 

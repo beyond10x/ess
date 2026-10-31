@@ -1,0 +1,10 @@
+type: ess-scenario/6
+domain: relay.loop
+scenario: defer-returns-its-checkpoint
+summary: A deferred call returns the checkpoint it resumes from, whatever else the checkpoint carries.
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: relay.loop.Defer
+    input: {call: lookup}
+    outcome: deferred
+    response: {checkpoint.checkpoint_id: cp-1}

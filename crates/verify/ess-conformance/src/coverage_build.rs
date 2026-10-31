@@ -618,7 +618,8 @@ fn coverage_version(
     let reader = crate::one_time_reader::coverage_floor(suite).is_some();
     // A `Decimal` in an exact observer is cumulative over every pair below, the reader one included.
     let decimal = crate::exact_decimal::coverage_floor(suite).is_some();
-    // A row the deployment provides is cumulative over every pair below, the decimal one included.
+    // A row the deployment provides is cumulative over every pair below, the decimal one included,
+    // and a response member path over every pair below it, the provided one included.
     let provided = crate::entity_fixtures::coverage_floor(suite).is_some();
     let held = crate::hold_now::coverage_floor(suite).is_some();
     // A system-issued command's await vocabulary (beyond10x/ess#542) is cumulative over every
@@ -628,7 +629,9 @@ fn coverage_version(
     let opened = crate::undeclared_fields::coverage_floor(suite).is_some();
     let constrained = crate::direct_response::constrained_coverage_floor(suite).is_some();
     let counted = crate::event_multiplicity::coverage_floor(suite).is_some();
-    crate::scenario::SuiteFormat::parse(if provided {
+    crate::scenario::SuiteFormat::parse(if crate::member_paths::coverage_floor(suite).is_some() {
+        "ess-conformance/63"
+    } else if provided {
         "ess-conformance/61"
     } else if decimal {
         "ess-conformance/59"
