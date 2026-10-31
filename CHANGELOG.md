@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `fixture_inputs:` is refused as `unsupported_construct` over every input a guard reads, not only over an input guard's own paths: the identity a `when_related: {via: input.<field>}` guard reads, an `all:` element's included, and an input a related row's `predicate:`, a row set's `where:` or `forall:`, or a `when_subject:` predicate compares. Such a binding validated before, so a value the target's provider chose decided the branch synthesis meant to witness (a downstream report, 2026-10-30).
+
 ## [0.77.0] — 2026-10-29
 
 ### Added
