@@ -285,7 +285,7 @@ beyond10x/ess#426 and #448: a YAML boolean written as an enum variant is refused
 binding's `where` are typed sites, and add nothing here.
 
 `entity.rs` rose from 4 to 5 typed sites with beyond10x/ess#437: the advisory on a stored field that
-implies a relation is sited at `entity <name>.fields.<field>`, a warning rather than a refusal.
+implies a relation is sited at `entity <name>.fields.<field>`, a warning rather than a refusal. It rose to 6 with `provided: true` (`ess/33`): the format refusal is sited at `entity <name>.provided`.
 
 `binding.rs` rose from 35 to 36 string-located sites with beyond10x/ess#445: a binding constant is
 refused by the rule `sets:` types a literal by, raised at the mapping entry's own dotted location
@@ -345,7 +345,7 @@ binding.rs 36 0
 command.rs 15 66
 component.rs 15 9
 domain.rs 5 0
-entity.rs 19 5
+entity.rs 19 6
 expression.rs 1 0
 outcome_group.rs 17 0
 primitive_admission.rs 18 8
