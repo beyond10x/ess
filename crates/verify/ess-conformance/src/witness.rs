@@ -652,7 +652,92 @@ fn search_uncached(
     distinction: Distinction,
     between: bool,
 ) -> Searched {
-    search_with(ir, command, guards, distinction, between, Goals::Every)
+    search_with(
+        ir,
+        command,
+        guards,
+        distinction,
+        between,
+        Goals::Every,
+        Admission::Typed,
+    )
+}
+
+/// Why no input the walk sends satisfies `guards`, where its declared types are the reason: the
+/// first candidate the walk builds that satisfies every guard, named with the field its declared
+/// type refuses and what that type says. `None` where no candidate satisfies them, or where one a
+/// declared type admits does, so the types are not the reason.
+///
+/// A constraint of an input's declared type (alphabet, prefix, invariants) is a precondition: a
+/// generated decoder refuses a value outside it before the command runs, so synthesis never sends
+/// one. A refusal guard that only such a value meets is unwitnessable, and the refusal says so
+/// rather than leaving the reader to find the type (an adopter report, wave D335).
+///
+/// # Errors
+///
+/// [`WitnessGap`] when some field of the input has no safe value at all.
+pub(crate) fn excluded_by_type(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guards: &[&Predicate],
+) -> Result<Option<String>, WitnessGap> {
+    let (inputs, _, _) = search_with(
+        ir,
+        command,
+        guards,
+        Distinction::PLAIN,
+        false,
+        Goals::Satisfied,
+        Admission::Raw,
+    )?;
+    let satisfies = |input: &BTreeMap<String, Node>| {
+        crate::input::flatten(ir, command, input).is_ok_and(|facts| {
+            guards
+                .iter()
+                .all(|guard| matches!(facts.decide(guard), Decision::Satisfied))
+        })
+    };
+    let meeting: Vec<&BTreeMap<String, Node>> =
+        inputs.iter().filter(|input| satisfies(input)).collect();
+    let refused = |input: &BTreeMap<String, Node>| {
+        command.input.iter().find_map(|field| {
+            let value = input.get(&field.name)?;
+            let error = crate::input::validate_typed_value(ir, &field.type_ref, value).err()?;
+            Some((field, value.clone(), error))
+        })
+    };
+    if meeting.iter().any(|input| refused(input).is_none()) {
+        return Ok(None);
+    }
+    Ok(meeting
+        .first()
+        .and_then(|input| refused(input))
+        .map(|(field, value, error)| {
+            // Inside the backticks the refusal quotes its predicate in, so written without them.
+            let error = error
+                .strip_suffix("; setup requires True")
+                .unwrap_or(&error)
+                .replace('`', "");
+            let value = match value.as_text() {
+                Some(text) if text.len() > 32 => format!("a text of {} bytes", text.len()),
+                Some(text) => format!("{text:?}"),
+                None => format!("{value:?}"),
+            };
+            format!(
+                "{} = {value} meets it, but its declared type {} refuses that value ({error}); an \
+             input outside its declared type is refused before the command and never sent",
+                field.name, field.type_ref
+            )
+        }))
+}
+
+/// Whether [`search_with`] keeps only the candidates every field's declared type admits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Admission {
+    /// Only inputs a generated decoder accepts: every candidate that is sent.
+    Typed,
+    /// Every candidate the walk builds, to say why none was admitted ([`excluded_by_type`]).
+    Raw,
 }
 
 /// The candidates for one goal: the walk [`candidates`] tries, then, where the walk was cut short,
@@ -673,8 +758,15 @@ pub(crate) fn solving(
     goal: &Predicate,
     distinction: Distinction,
 ) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
-    let (mut inputs, _, _) =
-        search_with(ir, command, &[goal], distinction, false, Goals::Satisfied)?;
+    let (mut inputs, _, _) = search_with(
+        ir,
+        command,
+        &[goal],
+        distinction,
+        false,
+        Goals::Satisfied,
+        Admission::Typed,
+    )?;
     let satisfied = |input: &BTreeMap<String, Node>| {
         crate::input::flatten(ir, command, input)
             .is_ok_and(|facts| matches!(facts.decide(goal), Decision::Satisfied))
@@ -749,6 +841,7 @@ fn search_with(
     distinction: Distinction,
     between: bool,
     goals: Goals,
+    admission: Admission,
 ) -> Searched {
     let mut added = false;
     // How many goals the guard-directed search gave up at its step bound ([`MAX_DIRECTED_STEPS`]).
@@ -807,7 +900,8 @@ fn search_with(
         presence_omits.entry(path).or_insert(Choice::Omit);
     }
 
-    if !between {
+    // A finite partition answers admitted inputs only; the raw walk is the ladders below.
+    if !between && admission == Admission::Typed {
         if let Some(inputs) = finite_partition(ir, command, guards, &mut builder, &presence_omits)?
         {
             return Ok((
@@ -954,6 +1048,9 @@ fn search_with(
             Directed::new(&mut builder, command, guards, &ladders, goals).solve()?;
         cut = gave_up;
         extend_paired(&mut builder, command, &solved, &presence_omits, &mut inputs)?;
+    }
+    if admission == Admission::Raw {
+        return Ok((inputs, added, cut));
     }
     let inputs = admitted_inputs(ir, command, inputs);
     Ok((
@@ -3938,6 +4035,11 @@ fn byte_lengths(guards: &[&Predicate]) -> BTreeMap<FactPath, Vec<usize>> {
 /// where only that does — and then in the text's own characters, so a target that counts anything
 /// but bytes decides a witnessed branch differently, and an alphabet that admits neither still has
 /// the text's own characters, which [`admitted_inputs`] keeps.
+///
+/// Under a declared alphabet only the variants it admits join the ladder. A variant it refuses is
+/// never sent, and on the ladder it took a candidate's place: two such texts beside each other cut
+/// the bounded search before it reached the plain variant one guard child needs (`name.utf8_bytes >
+/// 256` beside `alias`'s own children, refused as `ESS-SYNTH-022`; an adopter report, wave D335).
 fn text_bytes_ladder(
     builder: &Builder<'_>,
     path: &FactPath,
@@ -3951,6 +4053,10 @@ fn text_bytes_ladder(
         .plain_texts
         .get(path)
         .map_or(base.as_str(), String::as_str);
+    let alphabet = builder.alphabets.get(path);
+    let admitted = |text: &str| {
+        alphabet.is_none_or(|alphabet| text.chars().all(|character| alphabet.contains(character)))
+    };
     let ladder = ladders.entry(path.clone()).or_default();
     let mut sources = vec![base.clone()];
     sources.extend(ladder.iter().filter_map(|choice| match choice {
@@ -3960,6 +4066,9 @@ fn text_bytes_ladder(
     for source in &sources {
         for &length in lengths {
             for text in resize_bytes(source, length, plain) {
+                if !admitted(&text) {
+                    continue;
+                }
                 let node = Node::Text(text);
                 if node != Node::Text(base.clone())
                     && !ladder.contains(&Choice::Value(node.clone()))
@@ -4140,6 +4249,10 @@ fn wide_first(
             wide.push(input);
         }
     }
+    // Only an input its declared types admit leads: one [`admitted_inputs`] drops later is never
+    // sent, and in front it pushed a sendable candidate past [`MAX_CANDIDATES`] (an alphabet that
+    // admits no wide scalar; an adopter report, wave D335).
+    let mut wide = admitted_inputs(builder.ir, command, wide);
     if !wide.is_empty() {
         inputs.retain(|input| !wide.contains(input));
         wide.append(inputs);

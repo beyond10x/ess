@@ -1,0 +1,60 @@
+format: ess/32
+system: demo
+version: v1
+domain: demo.keys
+summary: A refusal of a key holding a character outside printable ASCII, written without a pattern.
+errors:
+  - name: demo.keys.InvalidKey
+    summary: The key holds a character outside printable ASCII.
+    fields: []
+events:
+  - name: demo.keys.Stored
+    fields:
+      - {name: key, type: String}
+commands:
+  - name: demo.keys.Store
+    input:
+      - {name: key, type: String}
+    outcomes:
+      - name: invalid-key
+        when:
+          any:
+            - "key.utf8_bytes != key.count"
+            - {key: {contains: "\x00"}}
+            - {key: {contains: "\x01"}}
+            - {key: {contains: "\x02"}}
+            - {key: {contains: "\x03"}}
+            - {key: {contains: "\x04"}}
+            - {key: {contains: "\x05"}}
+            - {key: {contains: "\x06"}}
+            - {key: {contains: "\x07"}}
+            - {key: {contains: "\x08"}}
+            - {key: {contains: "\x09"}}
+            - {key: {contains: "\x0a"}}
+            - {key: {contains: "\x0b"}}
+            - {key: {contains: "\x0c"}}
+            - {key: {contains: "\x0d"}}
+            - {key: {contains: "\x0e"}}
+            - {key: {contains: "\x0f"}}
+            - {key: {contains: "\x10"}}
+            - {key: {contains: "\x11"}}
+            - {key: {contains: "\x12"}}
+            - {key: {contains: "\x13"}}
+            - {key: {contains: "\x14"}}
+            - {key: {contains: "\x15"}}
+            - {key: {contains: "\x16"}}
+            - {key: {contains: "\x17"}}
+            - {key: {contains: "\x18"}}
+            - {key: {contains: "\x19"}}
+            - {key: {contains: "\x1a"}}
+            - {key: {contains: "\x1b"}}
+            - {key: {contains: "\x1c"}}
+            - {key: {contains: "\x1d"}}
+            - {key: {contains: "\x1e"}}
+            - {key: {contains: "\x1f"}}
+            - {key: {contains: "\x7f"}}
+        error: demo.keys.InvalidKey
+      - name: stored
+        emits: [demo.keys.Stored]
+        payload:
+          demo.keys.Stored: {key: input.key}

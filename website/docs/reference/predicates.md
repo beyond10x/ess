@@ -1163,6 +1163,28 @@ when:
   sku: {matches: "^GB-[0-9]{6}$"}
 ```
 
+A refusal of a text holding anything but printable ASCII needs no pattern either. A character past
+ASCII makes the byte length differ from the scalar count (from `ess/22`), and the 33 control
+characters are listed one `contains` each:
+
+```text
+- name: invalid-key
+  when:
+    any:
+      - "key.utf8_bytes != key.count"
+      - {key: {contains: "\x00"}}
+      - {key: {contains: "\x01"}}
+      # ... one per control character, through "\x1f"
+      - {key: {contains: "\x7f"}}
+  error: demo.keys.InvalidKey
+```
+
+Synthesis witnesses each child alone, so a target that misses one of them fails a scenario. Where
+the rule holds of every value of the type, rather than of one command's input, `alphabet:` on the
+newtype says it instead: a value outside a type's alphabet, prefix or invariants is refused before
+the command runs and never sent, so a refusal guard only such a value meets is refused as
+`ESS-SYNTH-003`, naming the type.
+
 What these do not state is a position-dependent character class, such as "six digits after the
 prefix". A pattern predicate would need a portable dialect with a parser of ESS's own, a
 translation for every runner, and a matching text and a near miss for every pattern. A regular

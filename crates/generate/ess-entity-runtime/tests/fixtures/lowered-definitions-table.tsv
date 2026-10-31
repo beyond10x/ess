@@ -1,4 +1,4 @@
-#	models=434	lines=603
+#	models=438	lines=607
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -161,6 +161,7 @@ crates/verify/ess-conformance/tests/fixtures/binding-refusal-policy-swapped-call
 crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/binding-set-guard/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-trigger-shares-row-guard/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/byte-length-any-under-alphabet.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/caller-addressed-identity.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/caller-binding-refusal/attr/system.yaml	ASSEMBLE
@@ -235,6 +236,7 @@ crates/verify/ess-conformance/tests/fixtures/held-state-input-refusal.yaml	sessi
 crates/verify/ess-conformance/tests/fixtures/identity-changing-updates.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/identity-changing-updates.yaml	vault-service	REFUSED	246bf3414169176a94a483df4088c7569a189a586e3d5b81d16587d0409a82bb:1677
 crates/verify/ess-conformance/tests/fixtures/input-guard-overlap.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/input-refusal-beside-exhaustive-partition.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/keypad.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/list-of-references.yaml	components=0
@@ -277,9 +279,11 @@ crates/verify/ess-conformance/tests/fixtures/owned-subject.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/period-bounded-views.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/predicate-refusal-policy-arranged-row/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/printable-ascii-key.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/provided-related-row.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/recursive-fixtures/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/refusal-guard-outside-input-type.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/refusal-pair-overlap.yaml	components=1
 crates/verify/ess-conformance/tests/fixtures/refusal-pair-overlap.yaml	hold	demo.hold.Hold	definition=c2c277358726cc95f7eb1a2b39c784af8d21bbb313638407f2514702686c533a:2301
 crates/verify/ess-conformance/tests/fixtures/refusal-pair-overlap.yaml	hold	demo.hold.Hold	create	invalid-code, pause-refused, placed

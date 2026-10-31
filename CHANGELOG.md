@@ -5,6 +5,12 @@
 ### Fixed
 
 - Synthesis writes both branches of a `!=` or `==` guard that compares a text, `Uuid` or `Timestamp` input, or a struct member a structured example reaches, with the value its `example:` holds: the leaf is tried at its own witness beside the example, where no candidate refuted the comparison and the outcome was refused as unsatisfiable. A model without such a guard keeps its suite bytes.
+- Synthesis witnesses an input-guarded refusal beside held-state branches whose guards cover every value of another input, with no default branch: such a refusal answers before the held state and every accepting branch, so its witness is no longer required to miss their guards, where it was refused as `ESS-SYNTH-003` (a downstream report, 2026-10-31). A target that looks the row up before checking the input answers the wrong error and fails the scenario. A suite whose refusals were witnessed keeps its bytes.
+- Synthesis witnesses each byte-length child of an `any` over several text inputs whose type declares an `alphabet:` without wide characters: the long-text candidates are built from characters the alphabet admits, so the search bound is no longer spent on texts the type refuses, where the child was refused as `ESS-SYNTH-022` (a downstream report, 2026-10-31).
+
+### Changed
+
+- A refusal guard that only inputs outside their declared type meet (outside its `alphabet:`, `prefix:` or invariants) is refused as `ESS-SYNTH-003` naming the field, the type and the constraint, and saying that such an input is refused before the command and never sent. The predicate reference shows how to refuse a text holding anything but printable ASCII without a pattern (a downstream report, 2026-10-31).
 
 ## [0.78.0] — 2026-10-31
 

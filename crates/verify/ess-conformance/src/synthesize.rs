@@ -8132,21 +8132,44 @@ fn reach(
             return Ok(input);
         }
     }
-    for inputs in searched_candidates(ir, command, searches, distinction) {
-        let inputs = inputs?;
-        for input in &inputs {
-            let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
-            if admits_plain(ir.format(), command, outcome, &facts, &guards, satisfy)? {
-                return Ok(input.clone());
+    // An input-guarded refusal is searched under the precedence order where the first search finds
+    // nothing: it answers before every accepting branch, so its witness need not refute them.
+    // Beside a default the two rules are one, so the search is not run twice.
+    let undefaulted = command
+        .outcomes
+        .iter()
+        .all(|other| other.test_strategy != TestStrategy::DefaultBranch);
+    let passes: &[Refute] = if satisfy && undefaulted && is_input_guarded_refusal(outcome) {
+        &[Refute::Siblings, Refute::AnsweredFirst]
+    } else {
+        &[Refute::Siblings]
+    };
+    for &refute in passes {
+        for inputs in searched_candidates(ir, command, searches.clone(), distinction) {
+            let inputs = inputs?;
+            for input in &inputs {
+                let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+                if admits_plain(
+                    ir.format(),
+                    command,
+                    outcome,
+                    &facts,
+                    &guards,
+                    satisfy,
+                    refute,
+                )? {
+                    return Ok(input.clone());
+                }
+                if refute == Refute::Siblings && satisfy && decides(&facts, &guards, true)? {
+                    shadow.record(ir.format(), command, outcome, &facts)?;
+                }
             }
-            if satisfy && decides(&facts, &guards, true)? {
-                shadow.record(ir.format(), command, outcome, &facts)?;
-            }
+            tried = tried.max(inputs.len());
         }
-        tried = tried.max(inputs.len());
     }
-    let predicate = shadow
-        .rendered(&guards)
+    let shadowed = shadow.rendered(&guards);
+    let predicate = shadowed
+        .clone()
         .unwrap_or_else(|| rendered(&guards, satisfy));
     // A `distinct` over a finite key domain too small for the length its guards require has no
     // witness at all, which is the named no-witness refusal rather than an unsatisfied search.
@@ -8154,6 +8177,17 @@ fn reach(
         return Err(RefusalCause::NoWitness(gap));
     }
     let cut = searches_cut_short(ir, command, &goal_sets, distinction);
+    // A guard only inputs outside their declared type meet says so, naming the type: such an input
+    // is refused before the command and never sent, so the guard is unwitnessable as written.
+    let predicate = match (satisfy, shadowed) {
+        (true, None) => match crate::witness::excluded_by_type(ir, command, &guards) {
+            Ok(Some(excluded)) => {
+                format!("{predicate}, within the declared input types ({excluded})")
+            }
+            _ => predicate,
+        },
+        _ => predicate,
+    };
     Err(unsatisfied(&guards, predicate, tried, cut))
 }
 
@@ -8175,7 +8209,15 @@ pub(super) fn reach_pinned(
             return Ok(false);
         }
         let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
-        admits_plain(ir.format(), command, outcome, &facts, &guards, satisfy)
+        admits_plain(
+            ir.format(),
+            command,
+            outcome,
+            &facts,
+            &guards,
+            satisfy,
+            Refute::AnsweredFirst,
+        )
     };
     if selects(&mut input)? {
         return Ok(Some(input));
@@ -8229,7 +8271,16 @@ fn outside_later_refusals(
         let inputs = inputs.ok()?;
         for input in inputs {
             let facts = flatten(ir, command, &input).ok()?;
-            if admits_plain(ir.format(), command, outcome, &facts, guards, true).ok()?
+            if admits_plain(
+                ir.format(),
+                command,
+                outcome,
+                &facts,
+                guards,
+                true,
+                Refute::Siblings,
+            )
+            .ok()?
                 && decides(&facts, &later, false).ok()?
             {
                 return Some(input);
@@ -8636,7 +8687,15 @@ fn selects_branch(
         return selected_in_state(ir.format(), command, outcome, held, &facts);
     }
     let (guards, satisfy) = plain_guards(command, outcome)?;
-    admits_plain(ir.format(), command, outcome, &facts, &guards, satisfy)
+    admits_plain(
+        ir.format(),
+        command,
+        outcome,
+        &facts,
+        &guards,
+        satisfy,
+        Refute::AnsweredFirst,
+    )
 }
 
 /// The guards a stateless branch's input is decided against, and whether it must satisfy them
@@ -8694,6 +8753,13 @@ fn plain_guards<'c>(
 /// exists (beyond10x/ess#178): such a refusal is taken before any accepting branch it overlaps, so
 /// an input satisfying both reaches the refusal, and a scenario requiring the accepting branch for
 /// it would fail a target that honours the precedence.
+///
+/// Without a default, `refute` says what an input-guarded refusal's witness refutes besides:
+/// [`Refute::Siblings`] every sibling guard, the search there always was, and
+/// [`Refute::AnsweredFirst`] only the refusals the plan answers before it, which is all the
+/// precedence order asks of it — every accepting branch and every held-state predicate is read
+/// after it. A refusal beside accepting guards that cover every input in some held state has no
+/// [`Refute::Siblings`] witness at all (an adopter report, wave D335).
 fn admits_plain(
     format: ess_domain::system::FormatVersion,
     command: &ResolvedCommand,
@@ -8701,6 +8767,7 @@ fn admits_plain(
     facts: &crate::InputFacts<'_>,
     guards: &[&Predicate],
     satisfy: bool,
+    refute: Refute,
 ) -> Result<bool, RefusalCause> {
     if !decides(facts, guards, satisfy)? {
         return Ok(false);
@@ -8708,38 +8775,55 @@ fn admits_plain(
     if !satisfy {
         return Ok(true);
     }
-    let others: Vec<_> = if command
+    let undefaulted = command
         .outcomes
         .iter()
-        .all(|other| other.test_strategy != TestStrategy::DefaultBranch)
-    {
-        // A refusal the plan reads after an input-guarded refusal never answers before it, so it
-        // is not refuted (beyond10x/ess#227 adversary pass 1).
-        let after: Vec<&OutcomeName> = later_refusals(format, command, outcome)
-            .map(|after| &after.name)
-            .collect();
-        let later = |other: &ResolvedOutcome| after.contains(&&other.name);
-        command
-            .outcomes
-            .iter()
-            .filter(|other| other.name != outcome.name && !later(other))
-            .filter_map(when)
-            .collect()
-    } else if outcome.error.is_none() || is_input_guarded_refusal(outcome) {
-        // An input-guarded refusal refutes the refusals declared before it: of two an input
-        // selects, the first declared answers ([`sibling_refusals`]). A branch is not reached by an
-        // input an accepting `when:` branch the plan reads before it claims (beyond10x/ess#217).
-        // Under the precedence order that is none for a refusal.
-        if claimed_by(facts, &earlier_accepting(format, command, outcome)) {
-            return Ok(false);
-        }
-        sibling_refusals(format, command, outcome)
-            .filter_map(when)
-            .collect()
-    } else {
-        Vec::new()
-    };
+        .all(|other| other.test_strategy != TestStrategy::DefaultBranch);
+    let others: Vec<_> =
+        if undefaulted && refute == Refute::AnsweredFirst && is_input_guarded_refusal(outcome) {
+            sibling_refusals(format, command, outcome)
+                .filter_map(when)
+                .collect()
+        } else if undefaulted {
+            // A refusal the plan reads after an input-guarded refusal never answers before it, so it
+            // is not refuted (beyond10x/ess#227 adversary pass 1).
+            let after: Vec<&OutcomeName> = later_refusals(format, command, outcome)
+                .map(|after| &after.name)
+                .collect();
+            let later = |other: &ResolvedOutcome| after.contains(&&other.name);
+            command
+                .outcomes
+                .iter()
+                .filter(|other| other.name != outcome.name && !later(other))
+                .filter_map(when)
+                .collect()
+        } else if outcome.error.is_none() || is_input_guarded_refusal(outcome) {
+            // An input-guarded refusal refutes the refusals declared before it: of two an input
+            // selects, the first declared answers ([`sibling_refusals`]). A branch is not reached by an
+            // input an accepting `when:` branch the plan reads before it claims (beyond10x/ess#217).
+            // Under the precedence order that is none for a refusal.
+            if claimed_by(facts, &earlier_accepting(format, command, outcome)) {
+                return Ok(false);
+            }
+            sibling_refusals(format, command, outcome)
+                .filter_map(when)
+                .collect()
+        } else {
+            Vec::new()
+        };
     decides(facts, &others, false)
+}
+
+/// What an input-guarded refusal's witness refutes in a command with no default
+/// ([`admits_plain`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Refute {
+    /// Every sibling guard but the refusals read after it: the first search, kept so that every
+    /// witness it finds stays the one it was.
+    Siblings,
+    /// Only the refusals the precedence plan answers before it. Admits every input
+    /// [`Refute::Siblings`] admits, and more.
+    AnsweredFirst,
 }
 
 /// `true` when this candidate does what the strategy asks of every guard.

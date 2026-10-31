@@ -1,4 +1,4 @@
-#	models=359	commands=719
+#	models=363	commands=724
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -371,6 +371,8 @@ crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	ir=e40145284
 crates/verify/ess-conformance/tests/fixtures/binding-selection.yaml	selection.core.Receive	default: received
 crates/verify/ess-conformance/tests/fixtures/binding-set-guard/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/binding-trigger-shares-row-guard/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/byte-length-any-under-alphabet.yaml	ir=206f69a7b66b6a6ec3940462f174b10ee9b1e06139ab2125558b38cccfa27c4f:4609
+crates/verify/ess-conformance/tests/fixtures/byte-length-any-under-alphabet.yaml	demo.names.Name	input_refusal: invalid-name | default: named
 crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	ir=c70108e884d461d0b5d57218c577ecd3f1001f142e78d6d7ba8c8204025c96ea:19560
 crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	demo.releases.Deploy	input_refusal: frozen | existence: unknown-release-to-deploy | held_state: deployed, not-deployable | default: too-early
 crates/verify/ess-conformance/tests/fixtures/calendar-windows.yaml	demo.releases.Maintain	accepting: allowed | default: outside-maintenance
@@ -631,6 +633,9 @@ crates/verify/ess-conformance/tests/fixtures/identity-changing-updates.yaml	demo
 crates/verify/ess-conformance/tests/fixtures/input-guard-overlap.yaml	ir=b1fa60bf70a77d4331480349b9b1f31e34b39a21c745cc1c0d618028cbc4da57:9921
 crates/verify/ess-conformance/tests/fixtures/input-guard-overlap.yaml	demo.tickets.OpenTicket	default: opened
 crates/verify/ess-conformance/tests/fixtures/input-guard-overlap.yaml	demo.tickets.SetTicketOpen	input_refusal: id-required | accepting: closed | default: reopened
+crates/verify/ess-conformance/tests/fixtures/input-refusal-beside-exhaustive-partition.yaml	ir=3187f33d54fa10e2abbdd412bdcc10a46234c7db2e5b3af9c4678ff5997c4a18:11530
+crates/verify/ess-conformance/tests/fixtures/input-refusal-beside-exhaustive-partition.yaml	demo.dispatch.Open	existence: duplicate | default: opened
+crates/verify/ess-conformance/tests/fixtures/input-refusal-beside-exhaustive-partition.yaml	demo.dispatch.Settle	input_refusal: invalid-id | existence: missing | held_state: finished, dropped, wrong-phase
 crates/verify/ess-conformance/tests/fixtures/keypad.yaml	ir=0ad9edc8208a2c3bee8b3a61a0d98d9e08aeb698f4a5314e214c13bd06fa2e81:4139
 crates/verify/ess-conformance/tests/fixtures/keypad.yaml	keypad.dial.SendKeys	input_refusal: too-long | default: sent
 crates/verify/ess-conformance/tests/fixtures/latest-correlated-record.yaml	ir=e5ca03db93153d0c79df03994437ff2e2df16254751811567682bdf24fba4717:28645
@@ -760,6 +765,8 @@ crates/verify/ess-conformance/tests/fixtures/period-bounded-views.yaml	demo.ledg
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	ir=a72e2b9589365db395dd0b717d7122a2b48082857d07d87ae657595c9b4d58d2:4387
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	fixturetest.session.Open	default: opened
 crates/verify/ess-conformance/tests/fixtures/predicate-refusal-policy-arranged-row/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/printable-ascii-key.yaml	ir=6b06dee15a9b0e4c34bdbeefb4627c5c6413913c27d1b581131938580716d472:7222
+crates/verify/ess-conformance/tests/fixtures/printable-ascii-key.yaml	demo.keys.Store	input_refusal: invalid-key | default: stored
 crates/verify/ess-conformance/tests/fixtures/provided-related-row.yaml	ir=34b00b4c52e00a6c98874d2f23f221f640043251ce849346877612916273c510:8726
 crates/verify/ess-conformance/tests/fixtures/provided-related-row.yaml	linking.links.CreateLink	present_related: unknown-app | default: linked
 crates/verify/ess-conformance/tests/fixtures/recursive-fixtures/system.yaml	ASSEMBLE
@@ -768,6 +775,8 @@ crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	demo.secr
 crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	demo.secrets.Register	default: registered
 crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	demo.secrets.Revoke	held_state: not-active | default: revoked
 crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	demo.secrets.RotateSecret	input_refusal: too-short | held_state: rotated | default: not-configured
+crates/verify/ess-conformance/tests/fixtures/refusal-guard-outside-input-type.yaml	ir=976d99480dd474d20f3358ae469fddc753baf7c56fd46c1aa14d0d5549c6664b:4157
+crates/verify/ess-conformance/tests/fixtures/refusal-guard-outside-input-type.yaml	demo.codes.Record	input_refusal: invalid-code | default: recorded
 crates/verify/ess-conformance/tests/fixtures/refusal-pair-overlap.yaml	ir=19dbcc439bd33b135b95baaf1ad583c51d7ac6e86786d7a886f05293f23c9749:5712
 crates/verify/ess-conformance/tests/fixtures/refusal-pair-overlap.yaml	demo.hold.Place	input_refusal: invalid-code, pause-refused | default: placed
 crates/verify/ess-conformance/tests/fixtures/refusal-policy.yaml	ir=f5c34b4e85fdc53f6d5e0b3cd2465131ece5f35f5480d7201d72c51836497d25:9215
