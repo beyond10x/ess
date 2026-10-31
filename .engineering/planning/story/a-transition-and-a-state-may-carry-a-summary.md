@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-transition-and-a-state-may-carry-a-summary
 kind: story
-status: active
+status: implemented
 title: A lifecycle transition and a lifecycle state may carry a summary
 summary: 'Transitions and states take no summary in any form, and a flat summary: on an enum type is refused without pointing at naming: (harness, 0.77.0).'
 tags:
@@ -36,10 +36,11 @@ scope:
   path: schemas/generated/ess.schema.json
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-31T11:37:42Z", actor: "human:timo", revision: 15}
 - {from: "proposed", to: "active", at: "2026-10-31T11:37:42Z", actor: "human:timo", revision: 16}
+- {from: "active", to: "implemented", at: "2026-10-31T15:19:37Z", actor: "human:timo", revision: 17, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 

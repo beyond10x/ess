@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-31T15:19:37Z",
+  "actor": "human:timo",
+  "artifact": "story:a-transition-and-a-state-may-carry-a-summary",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "D325 local gate on integration/ess-d325 c6656a1d1: fmt-check, projection-check, clippy and full tests of the touched crates (ess-conformance lib and wave targets), test-xtask; release checks green",
+    "reference": "commit:c6656a1d1"
+  }
+}

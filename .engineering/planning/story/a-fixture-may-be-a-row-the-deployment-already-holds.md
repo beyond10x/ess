@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-fixture-may-be-a-row-the-deployment-already-holds
 kind: story
-status: active
+status: implemented
 title: A fixture may be a row of an entity the specification does not create
 summary: 'No fixture provider for an external record a command binds to: ESS-CF-TARGET on the interpreted target, ESS-SYNTH-004 in synthesis (downstream deployment, 0.77.0).'
 tags:
@@ -46,10 +46,11 @@ scope:
   path: docs/design/pre-execution-fixture-values.md
 - confidence: inferred
   path: schemas/generated/ess.schema.json
-revision: 21
+revision: 22
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-31T11:37:41Z", actor: "human:timo", revision: 20}
 - {from: "proposed", to: "active", at: "2026-10-31T11:37:42Z", actor: "human:timo", revision: 21}
+- {from: "active", to: "implemented", at: "2026-10-31T15:19:37Z", actor: "human:timo", revision: 22, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 

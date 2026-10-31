@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-structured-input-may-carry-a-fixed-example
 kind: story
-status: active
+status: implemented
 title: An open-struct or Json input may carry a fixed example that synthesis sends
 summary: 'Accepted conformance steps cannot carry a fixed valid structured input; synthesis invents one and example: is refused (downstream deployment, 0.77.0).'
 tags:
@@ -34,10 +34,11 @@ scope:
   path: schemas/generated/ess.schema.json
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-31T11:37:41Z", actor: "human:timo", revision: 14}
 - {from: "proposed", to: "active", at: "2026-10-31T11:37:41Z", actor: "human:timo", revision: 15}
+- {from: "active", to: "implemented", at: "2026-10-31T15:19:36Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 
