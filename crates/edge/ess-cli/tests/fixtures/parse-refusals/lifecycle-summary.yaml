@@ -1,0 +1,55 @@
+format: ess/33
+system: probe
+version: v1
+domain: probe.task
+summary: A task whose lifecycle states and moves may each carry a one-line summary.
+types:
+  - name: probe.task.TaskId
+    kind: newtype
+    of: String
+  - name: probe.task.Tool
+    kind: enum
+    variants: [read, write]
+entities:
+  - name: probe.task.Task
+    identity:
+      name: task_id
+      type: probe.task.TaskId
+    fields:
+      - {name: turns, type: Integer, summary: How many turns the task took}
+      - {name: tool, type: 'Optional<probe.task.Tool>'}
+    lifecycle:
+      initial: Waiting
+      states: [Waiting, Stopped]
+      terminal: [Stopped]
+      transitions:
+        - {name: complete, from: [Waiting], to: Stopped}
+events:
+  - name: probe.task.Started
+    fields:
+      - {name: task_id, type: probe.task.TaskId}
+  - name: probe.task.Completed
+    fields:
+      - {name: task_id, type: probe.task.TaskId}
+commands:
+  - name: probe.task.Start
+    input:
+      - {name: task_id, type: probe.task.TaskId}
+    outcomes:
+      - name: started
+        creates: probe.task.Task
+        instance: task_id
+        sets: {turns: 0}
+        emits: [probe.task.Started]
+        payload:
+          probe.task.Started: {task_id: input.task_id}
+  - name: probe.task.Complete
+    input:
+      - {name: task_id, type: probe.task.TaskId}
+    outcomes:
+      - name: completed
+        moves: probe.task.Task.complete
+        instance: task_id
+        emits: [probe.task.Completed]
+        payload:
+          probe.task.Completed: {task_id: input.task_id}

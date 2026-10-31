@@ -1006,7 +1006,7 @@
       ]
     },
     "LifecycleState": {
-      "description": "A lifecycle state: a bare name, or from `ess/32` a mapping that also declares its wire spelling.",
+      "description": "A lifecycle state: a bare name, or a mapping that also declares its wire spelling (`ess/32`), its summary (`ess/33`), or both.",
       "anyOf": [
         {
           "$ref": "#/definitions/StateName"
@@ -3598,7 +3598,7 @@
           ]
         },
         "states": {
-          "description": "Every state the entity can be in, each a bare name or, from `ess/32`, a name with its wire spelling.",
+          "description": "Every state the entity can be in, each a bare name or, from `ess/32`, a name with its wire spelling and, from `ess/33`, its summary.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/LifecycleState"
@@ -4306,11 +4306,11 @@
       "additionalProperties": false
     },
     "SpelledState": {
-      "description": "A lifecycle state with its wire spelling, `{name: Indexing, wire: indexing}`. `wire:` is required: a state with nothing to declare beside its name is written as the name.",
+      "description": "A lifecycle state in its mapping form, `{name: Indexing, wire: indexing, summary: …}`. At least one of `wire:` and `summary:` is required: a state with nothing to declare beside its name is written as the name.",
       "type": "object",
+      "minProperties": 2,
       "required": [
-        "name",
-        "wire"
+        "name"
       ],
       "properties": {
         "name": {
@@ -4321,8 +4321,14 @@
             }
           ]
         },
+        "summary": {
+          "description": "One line about what the state is (`ess/33`).",
+          "default": null,
+          "type": "string"
+        },
         "wire": {
           "description": "What the state is called on the wire (`ess/32`).",
+          "default": null,
           "type": "string"
         }
       },
@@ -4354,6 +4360,13 @@
           "description": "Its own name, such as `IssueInvoice`.",
           "type": "string",
           "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+        },
+        "summary": {
+          "description": "One line about what the move is, for a reader of the specification (`ess/33`). Skipped when absent, so a transition without one keeps its IR bytes.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "to": {
           "description": "The state it ends in.",
