@@ -1,4 +1,4 @@
-#	models=357	commands=716
+#	models=359	commands=719
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -11,6 +11,9 @@ crates/edge/ess-cli/tests/fixtures/implied-relation.yaml	probe.staff.AddPool	def
 crates/edge/ess-cli/tests/fixtures/parse-refusals/every-position.yaml	ir=d201a6b80f2790d3e66beab876b7f180afc40d1b0794522cbe9c3defa7275abe:13585
 crates/edge/ess-cli/tests/fixtures/parse-refusals/every-position.yaml	probe.item.Close	held_state: unlabelled | default: closed
 crates/edge/ess-cli/tests/fixtures/parse-refusals/every-position.yaml	probe.item.Create	related_row: no-owner | input_refusal: empty-label | accepting: unlabelled-owner | default: created
+crates/edge/ess-cli/tests/fixtures/parse-refusals/lifecycle-summary.yaml	ir=06981acf4d3f160f7457fd7becf62fcc856147cae9e620281c85f3316b010d33:7365
+crates/edge/ess-cli/tests/fixtures/parse-refusals/lifecycle-summary.yaml	probe.task.Complete	default: completed
+crates/edge/ess-cli/tests/fixtures/parse-refusals/lifecycle-summary.yaml	probe.task.Start	default: started
 crates/edge/ess-cli/tests/fixtures/parse-refusals/parse-plus-semantic.yaml	ASSEMBLE
 crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-compact.yaml	ASSEMBLE
 crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-filters.yaml	ASSEMBLE
@@ -757,6 +760,8 @@ crates/verify/ess-conformance/tests/fixtures/period-bounded-views.yaml	demo.ledg
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	ir=a72e2b9589365db395dd0b717d7122a2b48082857d07d87ae657595c9b4d58d2:4387
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	fixturetest.session.Open	default: opened
 crates/verify/ess-conformance/tests/fixtures/predicate-refusal-policy-arranged-row/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/provided-related-row.yaml	ir=34b00b4c52e00a6c98874d2f23f221f640043251ce849346877612916273c510:8726
+crates/verify/ess-conformance/tests/fixtures/provided-related-row.yaml	linking.links.CreateLink	present_related: unknown-app | default: linked
 crates/verify/ess-conformance/tests/fixtures/recursive-fixtures/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	ir=e2ab0a03303fd11f4809302a67dab7ae3a001f500f48905f96f2d67ae43c4836:15131
 crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	demo.secrets.Configure	held_state: not-pending | default: configured

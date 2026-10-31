@@ -1,4 +1,4 @@
-#	models=432	lines=601
+#	models=434	lines=603
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -6,6 +6,7 @@ crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repe
 crates/edge/ess-cli/tests/fixtures/entity-setup-model.yaml	components=0
 crates/edge/ess-cli/tests/fixtures/implied-relation.yaml	components=0
 crates/edge/ess-cli/tests/fixtures/parse-refusals/every-position.yaml	components=0
+crates/edge/ess-cli/tests/fixtures/parse-refusals/lifecycle-summary.yaml	components=0
 crates/edge/ess-cli/tests/fixtures/parse-refusals/parse-plus-semantic.yaml	ASSEMBLE
 crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-compact.yaml	ASSEMBLE
 crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-filters.yaml	ASSEMBLE
@@ -276,6 +277,7 @@ crates/verify/ess-conformance/tests/fixtures/owned-subject.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/period-bounded-views.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/predicate-refusal-policy-arranged-row/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/provided-related-row.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/recursive-fixtures/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/refusal-pair-overlap.yaml	components=1
