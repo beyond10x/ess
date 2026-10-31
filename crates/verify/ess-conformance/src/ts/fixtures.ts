@@ -23,6 +23,13 @@ export interface FixtureField {
 /** The first suite major whose fixture may name a row the deployment provides. */
 export const ENTITY_FIXTURE_MAJOR = 60;
 
+/**
+ * The grammars the Rust reader holds a provided row's entity and state to: a qualified name and
+ * one UpperCamelCase word, neither empty.
+ */
+const FIXTURE_ENTITY_NAME = /^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*)*$/;
+const FIXTURE_STATE_NAME = /^[A-Z][A-Za-z0-9]*$/;
+
 export function fixtureName(value: unknown): asserts value is string {
   if (
     typeof value !== 'string' ||
@@ -54,6 +61,11 @@ export function admitFixtures(value: unknown, major = Number.POSITIVE_INFINITY):
     if (Object.hasOwn(field, 'entity')) {
       if (typeof field.entity !== 'string' || typeof field.state !== 'string')
         throw new Error('fixture entity and state must be text');
+      if (!FIXTURE_ENTITY_NAME.test(field.entity) || !FIXTURE_STATE_NAME.test(field.state)) {
+        throw new Error(
+          `fixture ${field.name} names a provided row by an entity and a state that are not names`,
+        );
+      }
       admitted.entity = field.entity;
       admitted.state = field.state;
     }

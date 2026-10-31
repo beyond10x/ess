@@ -17,6 +17,21 @@ type FixtureField struct {
 // entityFixtureMajor is the first suite major whose fixture may name a row the deployment provides.
 const entityFixtureMajor = 60
 
+// The grammars the Rust reader holds a provided row's entity and state to: a qualified name and
+// one UpperCamelCase word, neither empty.
+var (
+	fixtureEntityName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*)*$`)
+	fixtureStateName  = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
+)
+
+// providedRow admits the entity and state of a fixture naming a provided row.
+func providedRow(name, entity, state string) error {
+	if !fixtureEntityName.MatchString(entity) || !fixtureStateName.MatchString(state) {
+		return fmt.Errorf("fixture %s names a provided row by an entity and a state that are not names", name)
+	}
+	return nil
+}
+
 // typed is the contract's fields as their type authority alone.
 func (c FixtureContract) typed() []accessorField {
 	fields := make([]accessorField, 0, len(c.Fields))
@@ -62,6 +77,11 @@ func (c FixtureContract) validate() error {
 		if (field.Entity == "") != (field.State == "") {
 			return fmt.Errorf("fixture %s names a provided row by its entity and its state together", field.Name)
 		}
+		if field.Entity != "" {
+			if err := providedRow(field.Name, field.Entity, field.State); err != nil {
+				return err
+			}
+		}
 	}
 	if err := validateFixtureTypes(c.typed(), c.Declarations); err != nil {
 		return err
@@ -104,11 +124,23 @@ func admitFixtures(value any, major int) error {
 		if _, err := text(field["type"]); err != nil {
 			return err
 		}
+		// An entity and a state are written together, each a name: an empty one names nothing.
+		held := []string{}
 		for _, key := range []string{"entity", "state"} {
-			if held, ok := field[key]; ok {
-				if _, err := text(held); err != nil {
+			if raw, ok := field[key]; ok {
+				name, err := text(raw)
+				if err != nil {
 					return err
 				}
+				held = append(held, name)
+			}
+		}
+		switch len(held) {
+		case 1:
+			return fmt.Errorf("fixture %v names a provided row by its entity and its state together", field["name"])
+		case 2:
+			if err := providedRow(field["name"].(string), held[0], held[1]); err != nil {
+				return err
 			}
 		}
 	}

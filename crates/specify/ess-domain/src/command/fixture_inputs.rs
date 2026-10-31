@@ -75,17 +75,27 @@ impl schemars::JsonSchema for FixtureName {
     }
 }
 
-/// Whether `predicate` reads the input field `field`: as a root (`when:`, the input guard beside
-/// another guard) or under `input.` (a predicate over a row, and from `ess/22` a `when:` too).
+/// Whether the input guard `predicate` (`when:`, alone or beside another guard) reads the input
+/// field `field`: as a root, or from `ess/22` under `input.`.
+fn input_guard_reads(predicate: &Predicate, field: &str) -> bool {
+    predicate
+        .fact_paths()
+        .iter()
+        .any(|path| path.namespace() == field)
+        || row_predicate_reads(predicate, field)
+}
+
+/// Whether a predicate over a row, a row set or the subject reads the input field `field`. Its
+/// roots are the row's stored fields, so only `input.<field>` reads the input: a stored field that
+/// shares the input's name is the row's own.
 ///
 /// A row whose entity declares a stored field named `input` reads `input.<member>` as its own
 /// field; a fixture binding over an input of that member's name is refused all the same, which
 /// asks only that the author drop the binding.
-fn predicate_reads(predicate: &Predicate, field: &str) -> bool {
+fn row_predicate_reads(predicate: &Predicate, field: &str) -> bool {
     predicate.fact_paths().iter().any(|path| {
-        path.namespace() == field
-            || (path.namespace() == super::subject_fact::INPUT_NAMESPACE
-                && path.segments().get(1).is_some_and(|read| read == field))
+        path.namespace() == super::subject_fact::INPUT_NAMESPACE
+            && path.segments().get(1).is_some_and(|read| read == field)
     })
 }
 
@@ -105,7 +115,7 @@ fn predicate_reads(predicate: &Predicate, field: &str) -> bool {
 fn read_by_a_guard(condition: &OutcomeCondition, field: &str) -> bool {
     if condition
         .predicate()
-        .is_some_and(|predicate| predicate_reads(predicate, field))
+        .is_some_and(|predicate| input_guard_reads(predicate, field))
     {
         return true;
     }
@@ -117,19 +127,21 @@ fn read_by_a_guard(condition: &OutcomeCondition, field: &str) -> bool {
             via_reads(via)
                 || test
                     .predicate()
-                    .is_some_and(|predicate| predicate_reads(predicate, field))
-                || also
-                    .iter()
-                    .any(|other| via_reads(&other.via) || predicate_reads(&other.predicate, field))
+                    .is_some_and(|predicate| row_predicate_reads(predicate, field))
+                || also.iter().any(|other| {
+                    via_reads(&other.via) || row_predicate_reads(&other.predicate, field)
+                })
         }
         OutcomeCondition::RelatedSet {
             selection, test, ..
         } => {
-            predicate_reads(&selection.filter, field)
-                || matches!(test, super::row_set::RowSetTest::Forall(body) if predicate_reads(body, field))
+            row_predicate_reads(&selection.filter, field)
+                || matches!(test, super::row_set::RowSetTest::Forall(body) if row_predicate_reads(body, field))
         }
         OutcomeCondition::SubjectPredicate { predicate, .. }
-        | OutcomeCondition::ExternalSubject { predicate, .. } => predicate_reads(predicate, field),
+        | OutcomeCondition::ExternalSubject { predicate, .. } => {
+            row_predicate_reads(predicate, field)
+        }
         _ => false,
     }
 }

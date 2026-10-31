@@ -356,7 +356,8 @@ pub fn exhausts(ir: &EssIr, command: &ResolvedCommand, guards: &[&Predicate]) ->
         Distinction::PLAIN,
         list_reads(guards),
         positional_reads(guards),
-    );
+    )
+    .reading(read_paths(guards));
     if builder.input(command, &BTreeMap::new()).is_err() {
         return false;
     }
@@ -713,7 +714,8 @@ fn goal_bounds(
         distinction,
         list_reads(&[goal]),
         positional_reads(&[goal]),
-    );
+    )
+    .reading(read_paths(&[goal]));
     builder.input(command, &BTreeMap::new()).ok()?;
     relative::Bounds::of(
         goal,
@@ -765,7 +767,8 @@ fn search_with(
         // The guards as written, not the rebound quantifier bodies: `tags.0` in a body is the
         // element a candidate may add, not a position the author read.
         positional_reads(guards),
-    );
+    )
+    .reading(read_paths(&expanded));
     // The base witness records every leaf the ladders below are built from; `enumerate` builds it
     // again as its first candidate.
     builder.input(command, &BTreeMap::new())?;
@@ -5118,7 +5121,8 @@ fn widened_solve(
         builder.distinction,
         expand,
         builder.positional.clone(),
-    );
+    )
+    .reading(builder.read.clone());
     // What the base already holds in place of its own witness (`ground_invariants`) holds on
     // the wider builder too.
     wider.fixed = builder.fixed.clone();
@@ -5686,6 +5690,10 @@ struct Builder<'ir> {
     /// The `Optional` members a struct's example (ess/33) leaves out, which the base leaves out
     /// too.
     left_out: BTreeSet<FactPath>,
+    /// The paths the guards being witnessed read. An `Optional` member a struct's example leaves
+    /// out, or writes `null`, is filled where one of them reaches it, as rule 1 fills any optional
+    /// a guard reads.
+    read: BTreeSet<FactPath>,
     /// The invariants of every struct a recorded value is declared as, at any depth, each read
     /// moved under the path the struct is built at: `start < 5` of a `Window` at `window` reads
     /// `window.start < 5` (beyond10x/ess#234). What [`repair`] solves the base for.
@@ -5733,12 +5741,19 @@ impl<'ir> Builder<'ir> {
             plain_texts: BTreeMap::new(),
             examples: BTreeMap::new(),
             left_out: BTreeSet::new(),
+            read: BTreeSet::new(),
             struct_invariants: Vec::new(),
             fixed: BTreeMap::new(),
             unrepaired: BTreeMap::new(),
             optional_depth: 0,
             apart_ordinals: BTreeMap::new(),
         }
+    }
+
+    /// This builder, filling the example-absent members `read` reaches ([`Builder::read`]).
+    fn reading(mut self, read: BTreeSet<FactPath>) -> Self {
+        self.read = read;
+        self
     }
 
     /// The value [`repair`] fixed the leaf at `path` to, where it fixed one.
@@ -5810,13 +5825,21 @@ impl<'ir> Builder<'ir> {
             if record {
                 self.optionals.insert(path.clone());
             }
+            // A member a struct's example (ess/33) leaves out, or writes `null`, is so in the
+            // base too, unless a guard reads it: rule 1 fills an optional a guard reads, so the
+            // guard is decided rather than `Unknown` and keeps its ladder.
+            let read = self
+                .read
+                .iter()
+                .any(|at| at.segments().starts_with(path.segments()));
+            if read && matches!(self.examples.get(path), Some(Node::Null)) {
+                self.examples.remove(path);
+            }
             match overrides.get(path) {
                 Some(Choice::Omit) => return Ok(None),
                 Some(Choice::Null) => return Ok(Some(Node::Null)),
-                // A member a struct's example (ess/33) leaves out, or writes `null`, is so in the
-                // base too.
-                None if self.left_out.contains(path) => return Ok(None),
-                None if matches!(self.examples.get(path), Some(Node::Null)) => {
+                None if !read && self.left_out.contains(path) => return Ok(None),
+                None if !read && matches!(self.examples.get(path), Some(Node::Null)) => {
                     return Ok(Some(Node::Null))
                 }
                 _ => {}
