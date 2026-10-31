@@ -1,0 +1,16 @@
+schema: b10x-change/v1
+id: ess/downstream-gaps-0.78.0
+repository: ess
+publishedAt: 2026-10-31T00:00:00Z
+title: Structured input examples, rows a deployment provides, and lifecycle summaries
+summary: >-
+  From ess/33 a struct, map or Json input may carry an example that synthesis sends as written. An
+  entity may declare that the deployment provides its rows; suites resolve such a row as an entity
+  fixture and the interpreted target creates it. Transitions and states may carry a summary.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.78.0
+  version: 0.78.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

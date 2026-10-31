@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.78.0] — 2026-10-31
+
 ### Added
 
 - From `ess/33` an input whose type is a struct (open or closed), a `Map<…>` or `Json`, through any newtype or `Optional`, may carry an `example:`, and synthesis sends it at the plain instance (a downstream report, 2026-10-30). The example is held as a precondition literal is; an open struct's undeclared members are admitted and sent as written, in list example elements and precondition literals too, and a `Json` example is any value but `null`. A struct example reaches synthesis through its declared members, so a guard on one keeps the scenario that refutes it. A union example stays refused. Below `ess/33` each keeps its refusal, its hint naming `ess/33`; a model without such an example keeps its IR and suite bytes.
@@ -20,6 +22,8 @@
 
 - The interpreted target admits the members an open struct (`undeclared_fields: ignored`) does not declare in a command input, at every format, where it refused them as undeclared (a downstream report, 2026-10-30).
 - `fixture_inputs:` is refused as `unsupported_construct` over every input a guard reads, not only over an input guard's own paths: the identity a `when_related: {via: input.<field>}` guard reads, an `all:` element's included, and an input a related row's `predicate:`, a row set's `where:` or `forall:`, or a `when_subject:` predicate compares. Such a binding validated before, so a value the target's provider chose decided the branch synthesis meant to witness (a downstream report, 2026-10-30).
+
+Language: 0 general, 3 one-to-one, 0 part (general share 0%; cumulative 16%).
 
 ## [0.77.0] — 2026-10-29
 
