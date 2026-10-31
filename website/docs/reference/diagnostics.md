@@ -131,7 +131,7 @@ refusal[ESS-AUTHOR-012]: `billing.invoice/authored/a-scenario` in a.yaml
 | Code | Meaning | Repair |
 |---|---|---|
 | `ESS-AUTHOR-001` | The file is not a document this format can read. | The document is YAML with the keys `type`, `domain`, `scenario` and `summary`; a key it does not know is refused rather than ignored. |
-| `ESS-AUTHOR-002` | The document claims a format this build does not implement. | A scenario's `type:` is `ess-scenario/1`, `ess-scenario/2` for entity setup, `ess-scenario/3` for fixture values, `ess-scenario/4` for direct responses, or `ess-scenario/5` for caller values; a document in a repository-defined trace format is not a scenario input, so leave it out of `--scenarios` and `ess-inputs.yaml`. |
+| `ESS-AUTHOR-002` | The document claims a format this build does not implement. | A scenario's `type:` is `ess-scenario/1`, `ess-scenario/2` for entity setup, `ess-scenario/3` for fixture values, `ess-scenario/4` for direct responses, `ess-scenario/5` for caller values, or `ess-scenario/6` for member paths in claims; a document in a repository-defined trace format is not a scenario input, so leave it out of `--scenarios` and `ess-inputs.yaml`. |
 | `ESS-AUTHOR-003` | Two files produce the same scenario id. | Two files name one scenario in one domain; rename one of them. |
 | `ESS-AUTHOR-004` | The model declares no such bounded context. | Name a bounded context the specification declares, or add it to the model. |
 | `ESS-AUTHOR-005` | The model declares no such entity. | Name an entity the specification declares; an authored scenario acts on the model's own instances and invents none. |
@@ -142,8 +142,8 @@ refusal[ESS-AUTHOR-012]: `billing.invoice/authored/a-scenario` in a.yaml
 | `ESS-AUTHOR-010` | The model declares no such event. | Name an event the specification declares. |
 | `ESS-AUTHOR-011` | The model declares no such error. | Name a declared error the specification declares. |
 | `ESS-AUTHOR-012` | The model declares no such view. | Name a view the specification declares. |
-| `ESS-AUTHOR-013` | A value is supplied under a name the surface does not declare. | Name a field the construct declares; the scenario and the model disagree about what it has. |
-| `ESS-AUTHOR-014` | A declared field that has to be supplied is not. | Supply the field; a command is invoked with all of its input, and one left out is a call that could not be made. |
+| `ESS-AUTHOR-013` | A value is supplied under a name the surface does not declare. | Name a field the construct declares; the scenario and the model disagree about what it has. A dotted key is a member path, which a claim reads from `ess-scenario/6` and nothing else reads. |
+| `ESS-AUTHOR-014` | A declared field that has to be supplied is not. | Supply the field; a command is invoked with all of its input, and one left out is a call that could not be made. A nested value in a claim is compared whole, so write every member it declares, or from `ess-scenario/6` claim one member alone by its path, `member.leaf: value`. |
 | `ESS-AUTHOR-015` | A value is not of the shape its declared type calls for. | Write a value of the type the model declares there. |
 | `ESS-AUTHOR-016` | A value names something a declared enum does not have as a variant. | Write one of the variants the enum declares; the set is closed. |
 | `ESS-AUTHOR-017` | A value names a lifecycle state the entity does not declare. | Write one of the states the entity's lifecycle declares. |

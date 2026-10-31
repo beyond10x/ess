@@ -142,8 +142,8 @@ export function admitDirectResponse(raw: Node): DirectResponse {
   // So it is admitted against the closed declarations.
   const closedContract: DirectResponse = { ...contract, openStructs: new Set() };
   for (const [key, expected] of Object.entries(contract.expected)) {
-    const declaration = fields.find((f) => f.name === key);
-    if (declaration === undefined) throw new Error('undeclared response literal');
+    // A member path (suite/62 and /63) is admitted at the type of the member it names.
+    const declaration = directMember(fields, declarations, key);
     validateValue(declaration.type, expected, true, closedContract, counter, 0);
     checkPresence(declaration, true, expected);
   }
@@ -283,12 +283,16 @@ export function compareDirectResponse(contract: DirectResponse, actual: Node): v
   // At an opened struct only the declared fields are compared; the target's extension members are
   // never read (beyond10x/ess#500).
   for (const [key, expected] of Object.entries(contract.expected)) {
-    const field = contract.fields.find((f) => f.name === key);
+    const field = directMember(contract.fields, contract.declarations, key);
+    const [present, reached] = directReach(actual, key);
+    // A member path compares that member alone; one absent or null along it is absent, which only
+    // a null literal claims.
+    if (!present && expected === null && key.includes('.')) continue;
     if (
-      !own(actual, key) ||
+      !present ||
       !declaredEqual(
-        field?.type ?? '',
-        actual[key],
+        field.type,
+        reached,
         expected,
         contract.declarations,
         contract.openStructs,
@@ -297,6 +301,71 @@ export function compareDirectResponse(contract: DirectResponse, actual: Node): v
     )
       throw new Error('response differs from literal');
   }
+}
+
+/**
+ * The declared response member an expected key names: a field, or from suite/62 a dotted path
+ * through struct members, with `Optional` and newtypes along it transparent. A path through
+ * anything else names no member.
+ */
+function directMember(
+  fields: Field[],
+  declarations: Record<string, SelectionDeclaration>,
+  path: string,
+): Field {
+  const [first, ...rest] = path.split('.');
+  let member = fields.find((f) => f.name === first);
+  if (member === undefined) throw new Error('undeclared response literal');
+  for (const segment of rest) {
+    const members = directStruct(member.type, declarations, 0);
+    if (members === undefined)
+      throw new Error('response literal path goes through a value with no members');
+    member = members.find((f) => f.name === segment);
+    if (member === undefined) throw new Error('undeclared response literal');
+  }
+  return member;
+}
+
+/** The members of the struct `source` is, through `Optional` and newtypes. */
+function directStruct(
+  source: string,
+  declarations: Record<string, SelectionDeclaration>,
+  depth: number,
+): Field[] | undefined {
+  if (depth > 32) return undefined;
+  const [inner, optional] = accessorOptional(source);
+  if (optional) return directStruct(inner, declarations, depth + 1);
+  if (!own(declarations, source)) return undefined;
+  const declaration = declarations[source] as SelectionDeclaration;
+  if (declaration.kind === 'newtype') return directStruct(declaration.of, declarations, depth + 1);
+  if (declaration.kind === 'struct') return declaration.fields as Field[];
+  return undefined;
+}
+
+/**
+ * The actual value an expected key names: a field is present when its key is; a member path
+ * reaches nothing where a member along it is absent or null.
+ */
+function directReach(actual: Record<string, Node>, path: string): [boolean, Node] {
+  const [first = '', ...rest] = path.split('.');
+  if (rest.length === 0) return [own(actual, first), actual[first]];
+  let value: Node = own(actual, first) ? actual[first] : undefined;
+  for (const segment of rest) {
+    if (!isObject(value) || !own(value, segment)) return [false, undefined];
+    value = value[segment];
+  }
+  return [value !== null && value !== undefined, value];
+}
+
+/** Refuse a response observation naming a member by its path below suite/62. */
+export function memberPathsMajor(value: Node, major: number): void {
+  if (
+    isObject(value) &&
+    isObject(value.expected) &&
+    Object.keys(value.expected).some((key) => key.includes('.')) &&
+    major < 62
+  )
+    throw new Error('a response member path requires suite/62 or /63');
 }
 
 /**
