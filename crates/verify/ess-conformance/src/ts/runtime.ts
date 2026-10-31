@@ -915,7 +915,7 @@ export function predicateNumbers(value: Node): Node {
  * catalogues, vector by vector.
  */
 const NEWEST_GENERATED_REFUSAL = 24;
-const NEWEST_AUTHORED_REFUSAL = 46;
+const NEWEST_AUTHORED_REFUSAL = 47;
 const CHECK_NOT_EMITTED = new Set([5, 11, 12, 14, 16, 17, 20, 21, 22]);
 
 export function coverageError(): Error {

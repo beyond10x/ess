@@ -139,7 +139,10 @@ func boolAt(value any, at string, expected string) (bool, error) {
 // integerAt is the whole number at this path.
 //
 // Read through json.Number, which is why the decoder is configured with UseNumber: the default
-// float64 loses whole numbers past 2^53, and an Integer in this model is 64 bits.
+// float64 loses whole numbers past 2^53, and an Integer in this model is 64 bits. A whole number
+// is read however it is spelt (3, 3.0, 30e-1, -0.0), as the published schema's integer reads it,
+// and decided on its decimal digits, never through a float; a fraction, or a magnitude past 64
+// bits, is refused.
 func integerAt(value any, at string, expected string) (int64, error) {
 	number, ok := value.(json.Number)
 	if !ok {
@@ -147,9 +150,66 @@ func integerAt(value any, at string, expected string) (int64, error) {
 	}
 	held, err := number.Int64()
 	if err != nil {
-		return 0, DecodeError{At: at, Expected: expected, Found: "the number " + number.String()}
+		var whole bool
+		if held, whole = wholeNumber(number.String()); !whole {
+			return 0, DecodeError{At: at, Expected: expected, Found: "the number " + number.String()}
+		}
 	}
 	return held, nil
+}
+
+// wholeNumber is the int64 a JSON number spelt with a fraction or an exponent denotes, when it
+// denotes one exactly. A number built by hand may hold anything, so a spelling outside the JSON
+// number grammar (a byte that is not a digit where a digit belongs, an empty group of digits) is
+// refused. The significant digits and their power of ten are read off the text, so a hostile
+// exponent (1e999999999) is refused by counting, without building digits.
+func wholeNumber(spelling string) (int64, bool) {
+	allDigits := func(part string) bool {
+		for _, digit := range []byte(part) {
+			if digit < '0' || digit > '9' {
+				return false
+			}
+		}
+		return part != ""
+	}
+	unsigned := strings.TrimPrefix(spelling, "-")
+	mantissa, exponent := unsigned, "0"
+	if index := strings.IndexAny(unsigned, "eE"); index >= 0 {
+		mantissa, exponent = unsigned[:index], unsigned[index+1:]
+	}
+	whole, fraction, pointed := strings.Cut(mantissa, ".")
+	sign, magnitude := int64(1), exponent
+	if strings.HasPrefix(exponent, "-") {
+		sign, magnitude = -1, exponent[1:]
+	} else if strings.HasPrefix(exponent, "+") {
+		magnitude = exponent[1:]
+	}
+	if !allDigits(whole) || (pointed && !allDigits(fraction)) || !allDigits(magnitude) {
+		return 0, false
+	}
+	// Bounded: past any power an int64 can carry, a larger exponent says nothing new.
+	scale := int64(0)
+	for _, digit := range []byte(magnitude) {
+		if scale < 1<<40 {
+			scale = scale*10 + int64(digit-'0')
+		}
+	}
+	digits := strings.TrimLeft(whole+fraction, "0")
+	significant := strings.TrimRight(digits, "0")
+	if significant == "" {
+		return 0, true
+	}
+	// The number is significant times ten to the power shift.
+	shift := sign*scale - int64(len(fraction)) + int64(len(digits)-len(significant))
+	if shift < 0 || int64(len(significant))+shift > 19 {
+		return 0, false
+	}
+	text := significant + strings.Repeat("0", int(shift))
+	if len(unsigned) < len(spelling) {
+		text = "-" + text
+	}
+	held, err := strconv.ParseInt(text, 10, 64)
+	return held, err == nil
 }
 
 // decimalAt is the decimal string at this path, in the published pattern: an optional -, digits

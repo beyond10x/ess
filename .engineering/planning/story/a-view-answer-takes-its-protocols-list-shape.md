@@ -9,7 +9,7 @@ tags:
 - ess-0.70.0
 relations:
 - decomposes: epic:downstream-reported-gaps
-revision: 2
+revision: 3
 ---
 ## Need
 
@@ -42,3 +42,20 @@ Minimal spec on 0.68.0 (a view over one entity with an optional parameter, bound
 ## Related 2026-10-23
 
 The bare array answer (N29, ess#673) is taken by `story:ess-http-admits-text-bodies-route-refusals-empty-bodies-and-array-views`; this story keeps the renamed rows member, cursor paging, row shaping and state wire values.
+
+## Downstream case 2026-10-29
+
+Reported again 2026-10-29 by the same adopter (wave 4, client crate, on ESS 0.75.0), in its own
+words: "synthesis emits no request type for a view's parameters, no page token or size, and no
+type for the paged answer, so both are declared here". The adopter hand-writes
+`ListTasksRequest` and `ListTasksResponse` in its client.
+
+On the 0.77.0 head (84671d6) the generated Rust view query still takes the view's parameters as
+function arguments (`crates/generate/ess-synth/src/rust/port.rs` `view_params`,
+`behaviour/query.rs`). There is no request type, no cursor paging and no paged-answer type. This
+is read from the source; the adopter's realization was not regenerated on 0.77.0. The acceptance
+above covers paging and the answer shape. A generated request type for a view's parameters is
+added to it:
+
+- A view with parameters generates a request type holding them, and a paged view generates
+  its answer type (rows, continuation token, page size), in Rust and Go.

@@ -1394,6 +1394,16 @@ pub enum Cause {
         /// What it claims besides, as written.
         claims: Vec<String>,
     },
+    /// A mapping in the document repeats a key.
+    ///
+    /// A map such as `input:` or `contains:` would keep the last of two equal keys without a
+    /// word, so the first value would never be sent or checked; the model reader refuses the same
+    /// repeat. A repeated document or step key is a struct field and stays [`Cause::Unreadable`].
+    RepeatedKey {
+        /// What the YAML reader said: the mapping's path, the key, and the mapping's line and
+        /// column.
+        detail: String,
+    },
 }
 
 /// Whether `code` is one a refusal of one authored file can carry: every cause [`Cause::code`]
@@ -2383,6 +2393,10 @@ diagnostic_catalogue! {
             "a refusal of the system's own step is checked as nothing issued within the bound, \
              none of its events published: state only the instance under `input:`, and drop \
              `error`, `response`, `events` and `capture`";
+        Self::RepeatedKey { .. } => 47,
+            "A mapping in the document repeats a key.",
+            "write each key once; YAML keeps only one of two equal keys, and which one is not \
+             the author's choice";
     }
 }
 
@@ -2398,6 +2412,7 @@ impl fmt::Display for Cause {
                 locations.join(", ")
             ),
             Self::Unreadable { detail } => write!(f, "unreadable: {detail}"),
+            Self::RepeatedKey { detail } => f.write_str(detail),
             Self::UnsupportedFormat { found } => {
                 write!(f, "`{found}` is not `{FORMAT}`")
             }
@@ -2871,8 +2886,14 @@ fn is_scenario_format(format: &str) -> bool {
 /// missing key, rather than for the first key `Document` does not know: an adopter's own trace
 /// format read as an ESS scenario with a misspelt `story:`. A `type:` that is not a plain string,
 /// and text that is not a mapping, are left to the full read and keep the refusal it gives.
+///
+/// A document the full read accepts is then held to the read as a value, which refuses a key
+/// repeated in any mapping: the full read keeps the last of two equal keys in every map it holds
+/// (`input:`, `contains:` and the others), so it cannot tell. A repeated document or step key is
+/// a struct field the full read already refuses, and keeps that refusal.
 fn read_document(ir: &EssIr, text: &str) -> Result<Document, Box<Cause>> {
-    if let Some(format) = header_type(text) {
+    let value = ess_yaml::from_str::<ess_yaml::Value>(text);
+    if let Some(format) = header_type(text, value.as_ref()) {
         match &format {
             Header::Untyped => {
                 return Err(Box::new(Cause::Unreadable {
@@ -2889,13 +2910,125 @@ fn read_document(ir: &EssIr, text: &str) -> Result<Document, Box<Cause>> {
     }
     // A fixture is declared in the specification's own type spellings, so a map keyed by one of
     // the model's newtypes (beyond10x/ess#143) reads here exactly as it did there.
-    map_key_newtypes(ir)
+    let document = map_key_newtypes(ir)
         .scope(|| ess_yaml::from_str(text))
         .map_err(|error| {
             Box::new(Cause::Unreadable {
                 detail: error.to_string(),
             })
-        })
+        })?;
+    // The one place a repeated key is answered: a refusal here, or a warning beside the compiled
+    // scenario should a repeat ever have to be admitted again.
+    if let Some(detail) = repeated_key(text, value.as_ref()) {
+        return Err(Box::new(Cause::RepeatedKey { detail }));
+    }
+    Ok(document)
+}
+
+/// What the reader says about a repeated mapping key, and `None` when it says nothing about one.
+///
+/// The YAML reader's own wording, as a model file's repeat gets it: the mapping's path, the key,
+/// and the line and column of the mapping (`timeline[0].input: duplicate entry with key "label"
+/// at line 12 column 12`). It has no position for either key.
+///
+/// The read as a value tells `1` from `"1"` and `true` from `"true"`, but a mapping the document
+/// reads as a map of strings does not: it keeps the second value of either pair. So a document
+/// the value read admits is read once more for its key texts, as such a map reads them.
+fn repeated_key(text: &str, value: Result<&ess_yaml::Value, &ess_yaml::Error>) -> Option<String> {
+    let detail = match value {
+        Err(error) => error.to_string(),
+        Ok(_) => ess_yaml::from_str::<KeyTexts>(text).err()?.to_string(),
+    };
+    detail.contains(REPEATED).then_some(detail)
+}
+
+/// The words the YAML reader opens a repeated key's message with, and so does [`KeyTexts`].
+const REPEATED: &str = "duplicate entry with key";
+
+/// A read of a document that refuses two keys of one mapping with the same text, whatever their
+/// YAML types, and keeps nothing. A key that is a collection reads as no string, and ends the read
+/// with an error that names no repeat.
+struct KeyTexts;
+
+impl<'de> serde::Deserialize<'de> for KeyTexts {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(KeyTextsVisitor)
+    }
+}
+
+struct KeyTextsVisitor;
+
+impl<'de> serde::de::Visitor<'de> for KeyTextsVisitor {
+    type Value = KeyTexts;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a YAML node")
+    }
+
+    fn visit_bool<E>(self, _: bool) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_i64<E>(self, _: i64) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_u64<E>(self, _: u64) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_i128<E>(self, _: i128) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_u128<E>(self, _: u128) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_f64<E>(self, _: f64) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_str<E>(self, _: &str) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_bytes<E>(self, _: &[u8]) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_unit<E>(self) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_none<E>(self) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_some<D: serde::Deserializer<'de>>(self, inner: D) -> Result<KeyTexts, D::Error> {
+        serde::Deserialize::deserialize(inner)
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut items: A) -> Result<KeyTexts, A::Error> {
+        while items.next_element::<KeyTexts>()?.is_some() {}
+        Ok(KeyTexts)
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<KeyTexts, A::Error> {
+        let mut seen = BTreeSet::new();
+        while let Some(text) = map.next_key::<String>()? {
+            if !seen.insert(text.clone()) {
+                return Err(serde::de::Error::custom(format!("{REPEATED} {text:?}")));
+            }
+            map.next_value::<KeyTexts>()?;
+        }
+        Ok(KeyTexts)
+    }
+
+    fn visit_enum<A: serde::de::EnumAccess<'de>>(self, tagged: A) -> Result<KeyTexts, A::Error> {
+        let (serde::de::IgnoredAny, inner) = tagged.variant()?;
+        serde::de::VariantAccess::newtype_variant::<KeyTexts>(inner)
+    }
 }
 
 /// What a mapping document says in its `type:` key, read before the rest of it.
@@ -2904,18 +3037,19 @@ enum Header {
     Untyped,
 }
 
-/// The header of a mapping document, and `None` when the text is not a mapping.
+/// The header of a mapping document, from its read as a value, and `None` when the text is not a
+/// mapping.
 ///
 /// A document that repeats a key anywhere fails the read as a value, so its `type:` is then read
 /// alone, every other key ignored: a trace repeating `then:` is still refused for its format. Such
 /// a document without a `type:` keeps the full read's refusal.
-fn header_type(text: &str) -> Option<Header> {
+fn header_type(text: &str, value: Result<&ess_yaml::Value, &ess_yaml::Error>) -> Option<Header> {
     #[derive(serde::Deserialize)]
     struct TypeOnly {
         #[serde(rename = "type")]
         format: Option<ess_yaml::Value>,
     }
-    match ess_yaml::from_str::<ess_yaml::Value>(text) {
+    match value {
         Ok(ess_yaml::Value::Mapping(header)) => Some(
             header
                 .get("type")

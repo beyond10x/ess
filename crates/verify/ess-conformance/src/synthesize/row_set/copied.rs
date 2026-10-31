@@ -25,9 +25,10 @@ use ess_primitives::facts::FactPath;
 use ess_primitives::predicate::{Predicate, Truth};
 
 use super::super::{
-    advance, arrange_toward_owned, candidates, created_bound, creator_bindings, map_paths, related,
-    route_from, selects_branch, subject_fact, under_owner, ActorRef, Arrangement, Determined,
-    Distinction, InstanceName, ScenarioValue,
+    advance, arrange_toward_beside, arrange_toward_owned, candidates, created_bound,
+    creator_bindings, creator_candidates, map_paths, related, related_guard, route_from,
+    selects_branch, subject_fact, under_owner, ActorRef, Arrangement, Determined, Distinction,
+    InstanceName, ScenarioValue, StateName,
 };
 use super::{Row, Rows};
 
@@ -420,6 +421,213 @@ pub(super) fn steered(
             ) else {
                 continue;
             };
+            let start = after_referenced(ir, &copies, &referenced, start);
+            let best = states
+                .iter()
+                .filter_map(|target| {
+                    let route = route_from(ir, entity, drivers, &start.state, target)?;
+                    advance(
+                        ir,
+                        entity,
+                        start.clone(),
+                        route,
+                        target,
+                        actors,
+                        distinction,
+                        &[],
+                    )
+                    .ok()
+                })
+                .filter(|reached| accept(reached))
+                .min_by_key(|reached| reached.steps.len());
+            if best.is_some() {
+                return best;
+            }
+        }
+    }
+    None
+}
+
+/// The related rows a copied key is read from, by the input naming each: what [`steered_held`]
+/// arranges first.
+type Referenced<'c> = BTreeMap<&'c str, Arrangement>;
+
+/// For every input in `toward`, a row of the entity it names holding each field it lists as the
+/// captured row there, arranged as a cascade's last try arranges its own rows
+/// ([`arrange_toward_beside`]) at the distinction `claim` gives it; `None` where one cannot be.
+fn referenced_held<'c>(
+    ir: &EssIr,
+    toward: &BTreeMap<&'c str, (&'c EntityHandle, BTreeMap<String, InstanceName>)>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    claim: &dyn Fn(&EntityHandle) -> Distinction,
+    (held, rows): (&BTreeMap<InstanceName, StateName>, &related_guard::HeldRows),
+) -> Option<Referenced<'c>> {
+    let mut out = BTreeMap::new();
+    for (input, (related, wanted)) in toward {
+        let holds = |row: &Arrangement| {
+            wanted.iter().all(|(field, instance)| {
+                matches!(
+                    row.settled.get(field).map(|held| &held.value),
+                    Some(ScenarioValue::Instance { instance: named }) if named == instance
+                )
+            })
+        };
+        let row = arrange_toward_beside(
+            ir,
+            related,
+            &Predicate::Always,
+            actors,
+            claim(related),
+            wanted,
+            (held, rows),
+            &holds,
+        )?;
+        out.insert(*input, row);
+    }
+    Some(out)
+}
+
+/// [`steered`] for a goal binding copied fields to captured rows rather than to literals: the rows
+/// a cascade moves (`where: run_id == input.run_id`), whose creator copies the filtered key from
+/// the row another input names (`run_id: {related: {via: input.generation_id, field: run_id}}`).
+/// Each such related row is arranged first holding the captured row in the field copied
+/// ([`referenced_held`]), the creator sent naming it, beside a row of its own in each other related
+/// input ([`related_guard::beside_bound`]), decided on every row it reads
+/// ([`related_guard::present_beside`]), and the row driven to the cheapest state `accept` takes.
+/// `fields` the creator writes from its input directly are bound as [`arrange_toward_beside`] binds
+/// them, and `steering` steers the rest of its input. `None` where no creator copies a field
+/// `fields` binds, or none lands a row `accept` takes.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+pub(in super::super) fn steered_held(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    steering: &Predicate,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (distinction, claim): (Distinction, &dyn Fn(&EntityHandle) -> Distinction),
+    fields: &BTreeMap<String, InstanceName>,
+    (held, rows): (&BTreeMap<InstanceName, StateName>, &related_guard::HeldRows),
+    accept: &dyn Fn(&Arrangement) -> bool,
+) -> Option<Arrangement> {
+    let drivers = &ir.drivers_of(entity);
+    let states = &ir.entity(entity).lifecycle.states;
+    for creator in drivers
+        .iter()
+        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+    {
+        let copies = copies(creator.outcome);
+        let mut toward: BTreeMap<&str, (&EntityHandle, BTreeMap<String, InstanceName>)> =
+            BTreeMap::new();
+        let mut direct: BTreeMap<String, InstanceName> = BTreeMap::new();
+        for (field, instance) in fields {
+            match copies.iter().find(|copy| copy.target == field) {
+                Some(copy) => {
+                    toward
+                        .entry(copy.input)
+                        .or_insert_with(|| (copy.entity, BTreeMap::new()))
+                        .1
+                        .insert(copy.field.to_owned(), instance.clone());
+                }
+                None => {
+                    direct.insert(field.clone(), instance.clone());
+                }
+            }
+        }
+        if toward.is_empty() {
+            continue;
+        }
+        let Some(referenced) = referenced_held(ir, &toward, actors, claim, (held, rows)) else {
+            continue;
+        };
+        let mut mapped: BTreeMap<&str, &str> = creator
+            .outcome
+            .sets
+            .iter()
+            .filter(|set| set.conversion.is_none())
+            .filter_map(|set| match &set.value {
+                ResolvedPayloadValue::InputField { field, .. } => {
+                    Some((set.target.as_str(), field.as_str()))
+                }
+                _ => None,
+            })
+            .collect();
+        let mut named = direct;
+        for copy in copies
+            .iter()
+            .filter(|copy| fields.contains_key(copy.target))
+        {
+            if let Some(row) = referenced.get(copy.input) {
+                mapped.insert(copy.target, copy.input);
+                named.insert(copy.target.to_owned(), row.instance.clone());
+            }
+        }
+        let (mut resting, mut known) = (held.clone(), rows.clone());
+        for row in referenced.values() {
+            resting.insert(row.instance.clone(), row.state.clone());
+            known.insert(row.instance.clone(), row.settled.clone());
+        }
+        let Some(mut bound) = creator_bindings(ir, creator, &mapped, (&named, &resting), true)
+        else {
+            continue;
+        };
+        let routes = related_guard::routes(creator.command, creator.outcome);
+        let mut beside = Vec::new();
+        if routes
+            && related_guard::vias(creator.command)
+                .iter()
+                .any(|(field, _)| !bound.contains_key(*field))
+        {
+            let Some(arranged) = related_guard::beside_bound(
+                ir,
+                (creator.command, creator.outcome),
+                &bound,
+                actors,
+                distinction,
+            ) else {
+                continue;
+            };
+            for (field, row) in arranged {
+                bound.insert(field, row.instance.clone());
+                resting.insert(row.instance.clone(), row.state.clone());
+                known.insert(row.instance.clone(), row.settled.clone());
+                beside.push(row);
+            }
+        }
+        let rest = onto_input(creator.outcome, vec![steering.clone()]);
+        let Some(inputs) = creator_candidates(ir, creator, &rest, &[], distinction) else {
+            continue;
+        };
+        for input in inputs {
+            if selects_branch(ir, creator.command, creator.outcome, None, &input) != Ok(true)
+                || (routes
+                    && !related_guard::present_beside(
+                        ir,
+                        creator.command,
+                        &bound,
+                        (&resting, &known),
+                        &input,
+                    ))
+            {
+                continue;
+            }
+            let Ok(mut start) = created_bound(
+                ir,
+                entity,
+                creator,
+                actors,
+                distinction,
+                (None, false),
+                &bound,
+                &input,
+            ) else {
+                continue;
+            };
+            let mut steps = Vec::new();
+            for row in &beside {
+                steps.extend(row.steps.iter().cloned());
+                start.source.extend(row.source.iter().cloned());
+            }
+            steps.append(&mut start.steps);
+            start.steps = steps;
             let start = after_referenced(ir, &copies, &referenced, start);
             let best = states
                 .iter()

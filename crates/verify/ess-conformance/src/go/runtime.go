@@ -59,7 +59,7 @@ import (
 // tests/coverage_refusal_catalogue.rs holds all three to the Rust catalogues, vector by vector.
 const (
 	newestGeneratedRefusal = 24
-	newestAuthoredRefusal  = 46
+	newestAuthoredRefusal  = 47
 )
 
 var checkNotEmitted = map[int]bool{5: true, 11: true, 12: true, 14: true, 16: true, 17: true, 20: true, 21: true, 22: true}
