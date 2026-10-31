@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.78.0 — 2026-10-31
+
+### Structured input examples, rows a deployment provides, and lifecycle summaries
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/structured-examples-and-provided-rows) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.78.0)
+
+From ess/33 a struct, map or Json input may carry an example that synthesis sends as written. An entity may declare that the deployment provides its rows; suites resolve such a row as an entity fixture and the interpreted target creates it. Transitions and states may carry a summary.
+
 ## 0.77.0 — 2026-10-29
 
 ### HTTP bindings group alike outcomes, OpenAPI import widens, and validate refuses unreachable branches

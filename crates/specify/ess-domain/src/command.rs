@@ -6104,7 +6104,8 @@ impl CommandSpec {
                 continue;
             };
             if let Err((code, message, hint)) =
-                list_example_admitted(types, &field.type_ref, example)
+                structured_example_admitted(types, &field.type_ref, example)
+                    .or_else(|| list_example_admitted(types, &field.type_ref, example))
                     .unwrap_or_else(|| example_admitted(types, &field.type_ref, example))
             {
                 errors.push(
@@ -6154,8 +6155,98 @@ fn list_example_admitted(
         );
     }
     Some(
-        precondition_literal_admitted(types, declared, example)
+        literal_admitted(types, declared, example, LiteralRules::example(types))
             .map_err(|(code, message, _)| (code, message, LIST)),
+    )
+}
+
+/// What a literal checker admits that a precondition's literal below `ess/33` does not.
+#[derive(Clone, Copy)]
+struct LiteralRules {
+    /// An open struct's (`undeclared_fields: ignored`) members it does not declare, kept as
+    /// written (ess/33).
+    open_structs: bool,
+    /// A `Json` value, any but `null`: an `example:` only, which no target compares by (ess/33).
+    json: bool,
+}
+
+impl LiteralRules {
+    /// A precondition's literal in a document of `format`: an open struct is open from `ess/33`.
+    fn precondition(format: crate::system::FormatVersion) -> Self {
+        Self {
+            open_structs: format.major() >= crate::system::FormatVersion::V33.major(),
+            json: false,
+        }
+    }
+
+    /// An `example:`, or an element of a list one: an open struct is open and `Json` admitted from
+    /// `ess/33`.
+    fn example(types: &TypeRegistry) -> Self {
+        let from = structured_examples(types);
+        Self {
+            open_structs: from,
+            json: from,
+        }
+    }
+}
+
+/// Whether the document is at `ess/33` or later, or declares no format.
+fn structured_examples(types: &TypeRegistry) -> bool {
+    types
+        .format()
+        .is_none_or(|format| format.major() >= crate::system::FormatVersion::V33.major())
+}
+
+/// An `example:` on an input whose terminal type is a struct, a `Map` or `Json`, through any
+/// newtype or `Optional` (ess/33), or a union; `None` for every other input and for `null`, which
+/// [`list_example_admitted`] and [`example_admitted`] answer.
+///
+/// From `ess/33` the example is held as a precondition's literal is, with an open struct's
+/// undeclared members admitted and a `Json` one any value but `null`; a union stays refused by
+/// name, there being no union literal to hold it to. Below it the refusal [`example_admitted`]
+/// gives keeps its message, its hint naming `ess/33`, and a union keeps the refusal it had.
+fn structured_example_admitted(
+    types: &TypeRegistry,
+    declared: &TypeRef,
+    example: &Node,
+) -> Option<Result<(), ExampleRefusal>> {
+    const STRUCTURED: &str = "a struct, map or Json example is a value of the input's type: a \
+                              struct names every member it requires and an open one may name \
+                              more, a map holds values of its value type, and Json is any value \
+                              but null";
+    const BELOW: &str = "an example sits on a scalar or list input below ess/33; declare \
+                         `format: ess/33` to give a struct, map or Json input one";
+    if matches!(example, Node::Null) {
+        return None;
+    }
+    let from = structured_examples(types);
+    match &types.newtype_layers(declared).terminal {
+        TypeRef::Map(..) | TypeRef::Primitive(Primitive::Json) => {}
+        TypeRef::Named(name) => match types.get(name).map(|named| &named.body) {
+            Some(crate::types::TypeBody::Struct { .. }) => {}
+            Some(crate::types::TypeBody::Union { .. }) if from => {
+                return Some(Err((
+                    ValidationCode::TypeMismatch,
+                    format!(
+                        "`{declared}` reaches the union `{name}`, which an example does not \
+                         carry: there is no union literal to hold it to"
+                    ),
+                    "leave `example:` out of a union input",
+                )))
+            }
+            _ => return None,
+        },
+        _ => return None,
+    }
+    if !from {
+        return Some(
+            example_admitted(types, declared, example)
+                .map_err(|(code, message, _)| (code, message, BELOW)),
+        );
+    }
+    Some(
+        literal_admitted(types, declared, example, LiteralRules::example(types))
+            .map_err(|(code, message, _)| (code, message, STRUCTURED)),
     )
 }
 
@@ -6250,11 +6341,23 @@ fn example_admitted(
 /// key primitive, a struct naming only its declared fields and every required one and holding its
 /// invariants, or `null` where the type is optional. Each scalar leaf is held exactly as an
 /// `example:` is, by [`example_admitted`], so a `Binary64` leaf stays refused; a `Json` leaf and a
-/// union are refused too, because neither has one literal spelling a target compares by.
+/// union are refused too, because neither has one literal spelling a target compares by. From
+/// `ess/33`, the document's `format`, an open struct also admits the members it does not declare.
 pub(crate) fn precondition_literal_admitted(
+    types: &TypeRegistry,
+    format: crate::system::FormatVersion,
+    declared: &TypeRef,
+    literal: &Node,
+) -> Result<(), ExampleRefusal> {
+    literal_admitted(types, declared, literal, LiteralRules::precondition(format))
+}
+
+/// [`precondition_literal_admitted`] under `rules`, which an `example:` widens.
+fn literal_admitted(
     types: &TypeRegistry,
     declared: &TypeRef,
     literal: &Node,
+    rules: LiteralRules,
 ) -> Result<(), ExampleRefusal> {
     const STRUCTURED: &str = "a precondition literal is a value of the input's type: a scalar as \
                               for `example:`, a list, map or struct of them, or `null` where it \
@@ -6271,12 +6374,14 @@ pub(crate) fn precondition_literal_admitted(
             ))
         };
     }
-    let structured = matches!(layers.terminal, TypeRef::List(_) | TypeRef::Map(..))
-        || matches!(&layers.terminal, TypeRef::Named(name) if matches!(
-            types.get(name).map(|named| &named.body),
-            Some(crate::types::TypeBody::Struct { .. })
-        ));
-    precondition_terminal_admitted(types, declared, &layers.terminal, literal)?;
+    let structured = matches!(
+        layers.terminal,
+        TypeRef::List(_) | TypeRef::Map(..) | TypeRef::Primitive(Primitive::Json)
+    ) || matches!(&layers.terminal, TypeRef::Named(name) if matches!(
+        types.get(name).map(|named| &named.body),
+        Some(crate::types::TypeBody::Struct { .. })
+    ));
+    precondition_terminal_admitted(types, declared, &layers.terminal, literal, rules)?;
     // A scalar's newtype layers are held by `example_admitted`; a structured value's are held here,
     // over the whole literal read as `value`, as the setup reader holds them.
     if structured {
@@ -6299,6 +6404,7 @@ fn precondition_terminal_admitted(
     declared: &TypeRef,
     terminal: &TypeRef,
     literal: &Node,
+    rules: LiteralRules,
 ) -> Result<(), ExampleRefusal> {
     const STRUCTURED: &str = "a precondition literal is a value of the input's type: a scalar as \
                               for `example:`, a list, map or struct of them, or `null` where it \
@@ -6309,6 +6415,8 @@ fn precondition_terminal_admitted(
         move |(code, message, hint): ExampleRefusal| (code, format!("{at}: {message}"), hint)
     };
     match terminal {
+        // Any value: `null` is refused before the terminal is reached unless it is optional.
+        TypeRef::Primitive(Primitive::Json) if rules.json => Ok(()),
         TypeRef::Primitive(Primitive::Json) => mismatch(
             format!(
                 "`{declared}` is a Json, which a precondition literal does not carry: it has no \
@@ -6324,7 +6432,7 @@ fn precondition_terminal_admitted(
                 );
             };
             for (index, item) in items.iter().enumerate() {
-                precondition_literal_admitted(types, element, item)
+                literal_admitted(types, element, item, rules)
                     .map_err(within(format!("element {index}")))?;
             }
             Ok(())
@@ -6348,15 +6456,27 @@ fn precondition_terminal_admitted(
                         STRUCTURED,
                     );
                 }
-                precondition_literal_admitted(types, value, entry)
+                literal_admitted(types, value, entry, rules)
                     .map_err(within(format!("key `{spelling}`")))?;
             }
             Ok(())
         }
         TypeRef::Named(name) => match types.get(name).map(|named| &named.body) {
             Some(crate::types::TypeBody::Struct {
-                fields, invariants, ..
-            }) => struct_literal_admitted(types, declared, fields, invariants, literal),
+                fields,
+                invariants,
+                undeclared_fields,
+                ..
+            }) => struct_literal_admitted(
+                types,
+                declared,
+                fields,
+                invariants,
+                literal,
+                rules,
+                rules.open_structs
+                    && crate::types::UndeclaredFields::of(*undeclared_fields).is_ignored(),
+            ),
             Some(crate::types::TypeBody::Union { .. }) => mismatch(
                 format!(
                     "`{declared}` reaches the union `{name}`, which a precondition literal does \
@@ -6371,7 +6491,8 @@ fn precondition_terminal_admitted(
     }
 }
 
-/// A struct literal: only declared fields, every required one, each held to its type, and the
+/// A struct literal: only declared fields, or any where `open` (an open struct from `ess/33`, its
+/// undeclared members kept as written), every required one, each held to its type, and the
 /// struct's invariants not false over the scalar fields it writes.
 fn struct_literal_admitted(
     types: &TypeRegistry,
@@ -6379,6 +6500,8 @@ fn struct_literal_admitted(
     fields: &[Field],
     invariants: &[crate::entity::Invariant],
     literal: &Node,
+    rules: LiteralRules,
+    open: bool,
 ) -> Result<(), ExampleRefusal> {
     let Node::Map(entries) = literal else {
         return Err((
@@ -6389,7 +6512,7 @@ fn struct_literal_admitted(
     };
     if let Some(unknown) = entries
         .keys()
-        .find(|key| !fields.iter().any(|field| &field.name == *key))
+        .find(|key| !open && !fields.iter().any(|field| &field.name == *key))
     {
         return Err((
             ValidationCode::UndeclaredReference,
@@ -6411,7 +6534,7 @@ fn struct_literal_admitted(
                 "write every field the struct does not declare Optional",
             ));
         };
-        precondition_literal_admitted(types, &field.type_ref, value).map_err(
+        literal_admitted(types, &field.type_ref, value, rules).map_err(
             |(code, message, hint)| (code, format!("field `{}`: {message}", field.name), hint),
         )?;
     }

@@ -450,6 +450,10 @@ impl SemanticChange {
                 changed: ViewChange::FieldSourceChanged { .. },
                 ..
             } => FIELD_SOURCE_DELTA_FORMAT,
+            Self::Entity {
+                changed: EntityChange::TransitionSummaryChanged { .. },
+                ..
+            } => TRANSITION_SUMMARY_DELTA_FORMAT,
             Self::Actor {
                 changed: ActorChange::SystemChanged { .. },
                 ..
@@ -851,6 +855,14 @@ pub const DOMAIN_NAMING_DELTA_FORMAT: u32 = 20;
 /// Above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT) too, so a delta
 /// that carries one is classified even when nobody asked.
 pub const FIELD_SOURCE_DELTA_FORMAT: u32 = 21;
+
+/// The first delta format whose vocabulary has `transition-summary-changed` on an entity: a
+/// lifecycle transition's `summary:` added, dropped or edited (`ess/33`,
+/// `story:a-transition-and-a-state-may-carry-a-summary`).
+///
+/// Above [`CLASSIFIED_DELTA_FORMAT`](crate::compatibility::CLASSIFIED_DELTA_FORMAT) too, so a delta
+/// that carries one is classified even when nobody asked.
+pub const TRANSITION_SUMMARY_DELTA_FORMAT: u32 = 22;
 
 /// A domain entered in, or dropped from, the system's `domains:` list.
 ///
@@ -2210,6 +2222,19 @@ pub enum EntityChange {
         /// The route it takes.
         after: String,
     },
+    /// A declared move's one-line summary (`ess/33`) was added, dropped or edited
+    /// (`ess-diff/22`). Documentation only.
+    ///
+    /// A state's summary has no kind here: it is the summary of the state's variant of
+    /// `<Entity>.State`, reported there as `variant-summary-changed`.
+    TransitionSummaryChanged {
+        /// The move's own name.
+        transition: String,
+        /// What it said.
+        before: Option<String>,
+        /// What it says.
+        after: Option<String>,
+    },
     /// What must hold of every instance at rest differs.
     ///
     /// **That they differ, never which is stronger** — gap register D-1's boundary, and the change
@@ -2279,6 +2304,7 @@ impl EntityChange {
             Self::TransitionAdded { .. } => "transition-added",
             Self::TransitionRemoved { .. } => "transition-removed",
             Self::TransitionRouteChanged { .. } => "transition-route-changed",
+            Self::TransitionSummaryChanged { .. } => "transition-summary-changed",
             Self::InvariantsChanged { .. } => "invariants-changed",
             Self::WireNameChanged { .. } => "wire-name-changed",
             Self::DisplayNameChanged { .. } => "display-name-changed",
@@ -2298,7 +2324,8 @@ impl EntityChange {
             Self::TerminalAdded { state } | Self::TerminalRemoved { state } => Some(state.clone()),
             Self::TransitionAdded { transition }
             | Self::TransitionRemoved { transition }
-            | Self::TransitionRouteChanged { transition, .. } => Some(transition.clone()),
+            | Self::TransitionRouteChanged { transition, .. }
+            | Self::TransitionSummaryChanged { transition, .. } => Some(transition.clone()),
             _ => None,
         }
     }
@@ -2373,6 +2400,15 @@ impl EntityChange {
                 before,
                 after,
             } => format!("move `{transition}` goes {after}, went {before}"),
+            Self::TransitionSummaryChanged {
+                transition,
+                before,
+                after,
+            } => format!(
+                "move `{transition}` summary {} → {}",
+                optional(before.as_ref()),
+                optional(after.as_ref())
+            ),
             Self::InvariantsChanged { before, after } => format!(
                 "invariants [{}] → [{}]",
                 before.join("; "),

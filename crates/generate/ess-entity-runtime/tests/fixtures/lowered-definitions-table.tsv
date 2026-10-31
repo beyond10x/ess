@@ -1,4 +1,4 @@
-#	models=431	lines=600
+#	models=434	lines=603
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -6,6 +6,7 @@ crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repe
 crates/edge/ess-cli/tests/fixtures/entity-setup-model.yaml	components=0
 crates/edge/ess-cli/tests/fixtures/implied-relation.yaml	components=0
 crates/edge/ess-cli/tests/fixtures/parse-refusals/every-position.yaml	components=0
+crates/edge/ess-cli/tests/fixtures/parse-refusals/lifecycle-summary.yaml	components=0
 crates/edge/ess-cli/tests/fixtures/parse-refusals/parse-plus-semantic.yaml	ASSEMBLE
 crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-compact.yaml	ASSEMBLE
 crates/edge/ess-cli/tests/fixtures/parse-refusals/two-unparsable-filters.yaml	ASSEMBLE
@@ -92,6 +93,7 @@ crates/specify/ess-domain/tests/fixtures/outcome-groups/system.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/outcome-groups-twin/system.yaml	ASSEMBLE
 crates/specify/ess-domain/tests/fixtures/periodic.yaml	components=1
 crates/specify/ess-domain/tests/fixtures/periodic.yaml	poll-service	REFUSED	245e40cdfd45267bd813f15d4e7faa455b46fd172988d1303f2ad9d0f9bb80eb:342
+crates/specify/ess-domain/tests/fixtures/structured-input-example.yaml	components=0
 crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	components=0
 crates/specify/ess-http/tests/fixtures/auth.yaml	components=1
 crates/specify/ess-http/tests/fixtures/auth.yaml	auth-service	REFUSED	e96828b8c5343da0b4344369da4de42f90f082703f6185eab0ae44012b173204:861
@@ -275,6 +277,7 @@ crates/verify/ess-conformance/tests/fixtures/owned-subject.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/period-bounded-views.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/pre-execution-fixtures.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/predicate-refusal-policy-arranged-row/system.yaml	ASSEMBLE
+crates/verify/ess-conformance/tests/fixtures/provided-related-row.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/recursive-fixtures/system.yaml	ASSEMBLE
 crates/verify/ess-conformance/tests/fixtures/refusal-beside-state.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/refusal-pair-overlap.yaml	components=1
@@ -588,7 +591,7 @@ system-dir:models/toolchain	infra	toolchain.infra.Observation	create	refused, co
 system-dir:models/toolchain	infra	toolchain.infra.Observation	toolchain.infra.ImportObservation	refused, imported, wrong-state
 system-dir:models/toolchain	release-automation	REFUSED	fca88a6cb61e25f86e28e8a69b4bf8ee5aadc05cb16ff6e4a728fb0ef5f0e657:375
 system-dir:models/toolchain	specify	toolchain.specify.Declaration	definition=f008c7ec58b6b8996de589cd7e5ce17e0cc8ba0610e93e9ac4e1f24d786ff2aa:1384
-system-dir:models/toolchain	specify	toolchain.specify.Model	definition=6f3bbe2ddd63fe9fe54594238bca5860bafa7e71a9bf6d514de948f25fa3c395:7174
+system-dir:models/toolchain	specify	toolchain.specify.Model	definition=e35ad9da3080d46de03bbb101a0d25834c876969203a4821146dd7f7a7977256:7192
 system-dir:models/toolchain	specify	toolchain.specify.Model	create	refused, selected
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.CompileModel	refused, compiled, wrong-state
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.ResolveModel	refused, resolved, wrong-state

@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-31T14:37:34Z",
+  "actor": "human:timo",
+  "artifact": "story:a-transition-and-a-state-may-carry-a-summary",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:ess-d325-wave-adversary-pass-1",
+    "review": "review-result:ess-d325-wave-adversary-pass-1",
+    "outcome": "fixed"
+  }
+}

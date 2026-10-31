@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.78.0](#structured-input-examples-rows-a-deployment-provides-and-lifecycle-summaries) | Structured input examples, rows a deployment provides, and lifecycle summaries | capability | notable |
 | [0.77.0](#http-bindings-group-alike-outcomes-openapi-import-widens-and-validate-refuses-unreachable-branches) | HTTP bindings group alike outcomes, OpenAPI import widens, and validate refuses unreachable branches | capability | notable |
 | [0.76.0](#schemas-publish-entity-binary64-length-and-distinct-invariants-and-composition-compares-events-and-constraints) | Schemas publish entity, Binary64, length and distinct invariants, and composition compares events and constraints | capability | notable |
 | [0.75.0](#a-seed-says-it-does-not-serve-a-set-moves-filter-and-the-workspace-compiles-on-rust-185) | A seed says it does not serve a set move's filter, and the workspace compiles on rust 1.85 | capability | notable |
@@ -88,6 +89,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.78.0 — 2026-10-31
+
+### Structured input examples, rows a deployment provides, and lifecycle summaries
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.78.0)
+
+From ess/33 a struct, map or Json input may carry an example that synthesis sends as written. An entity may declare that the deployment provides its rows; suites resolve such a row as an entity fixture and the interpreted target creates it. Transitions and states may carry a summary.
 
 ## 0.77.0 — 2026-10-29
 

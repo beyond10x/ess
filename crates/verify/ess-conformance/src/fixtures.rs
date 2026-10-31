@@ -2,12 +2,16 @@
 //!
 //! `docs/design/pre-execution-fixture-values.md` is the binding design. The format authority lives
 //! here: a fixture prelude or a resolved event-value assertion is carried by ordinary
-//! suite/[`ORDINARY`] and coverage suite/[`COVERAGE`], and each implies every major below it.
-use crate::scenario::{ConformanceSuite, EventRef, ScenarioId, ScenarioStep, ScenarioValue};
+//! suite/[`ORDINARY`] and coverage suite/[`COVERAGE`], and each implies every major below it. A
+//! fixture naming a row the deployment provides, [`FixtureField::entity`], is
+//! [`crate::entity_fixtures`]' vocabulary.
+use crate::scenario::{
+    ConformanceScenario, ConformanceSuite, EventRef, ScenarioId, ScenarioStep, ScenarioValue,
+};
 use crate::selection::Declaration;
 use ess_compiler::ir::EssIr;
 use ess_compiler::ir::{ResolvedOutcome, ResolvedPayloadValue};
-use ess_domain::{command::fixture_inputs::FixtureName, Field, QualifiedName, TypeRef};
+use ess_domain::{command::fixture_inputs::FixtureName, Field, QualifiedName, StateName, TypeRef};
 use ess_primitives::node::Node;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -38,6 +42,42 @@ pub struct FixtureField {
     /// The source-owned type of the value.
     #[serde(rename = "type")]
     pub type_ref: TypeRef,
+    /// The entity whose row the deployment provides (suite/[`crate::entity_fixtures::ORDINARY`],
+    /// `provided: true`): the value is the identity of a row of it resting in [`Self::state`],
+    /// and [`Self::type_ref`] is the entity's identity type. `None` for a type-only fixture.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity: Option<QualifiedName>,
+    /// The lifecycle state the provided row rests in; present exactly with [`Self::entity`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<StateName>,
+}
+
+impl FixtureField {
+    /// A type-only fixture: any value of `type_ref`.
+    pub fn typed(name: FixtureName, type_ref: TypeRef) -> Self {
+        Self {
+            name,
+            type_ref,
+            entity: None,
+            state: None,
+        }
+    }
+
+    /// The identity of a row of `entity` the deployment provides, resting in `state`.
+    pub fn provided(
+        ir: &EssIr,
+        name: FixtureName,
+        entity: &QualifiedName,
+        state: StateName,
+    ) -> Self {
+        let identity = &ir.entities()[entity].identity;
+        Self {
+            name,
+            type_ref: crate::accessor::unresolve(&identity.type_ref),
+            entity: Some(entity.clone()),
+            state: Some(state),
+        }
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -63,10 +103,18 @@ impl TryFrom<RawContract> for Contract {
 impl Contract {
     /// Compile the declared types without asking a target what its values should be.
     pub fn of(ir: &EssIr, fields: BTreeMap<FixtureName, TypeRef>) -> Result<Self, String> {
-        let fields: Vec<_> = fields
-            .into_iter()
-            .map(|(name, type_ref)| FixtureField { name, type_ref })
-            .collect();
+        Self::of_fields(
+            ir,
+            fields
+                .into_iter()
+                .map(|(name, type_ref)| FixtureField::typed(name, type_ref))
+                .collect(),
+        )
+    }
+
+    /// [`Self::of`] over fields that may name a row the deployment provides, in name order.
+    pub fn of_fields(ir: &EssIr, mut fields: Vec<FixtureField>) -> Result<Self, String> {
+        fields.sort_by(|left, right| left.name.cmp(&right.name));
         let typed: Vec<_> = fields
             .iter()
             .map(|field| Field::new(field.name.as_str(), field.type_ref.clone()))
@@ -88,6 +136,16 @@ impl Contract {
     pub fn validate(&self) -> Result<(), String> {
         if self.fields.is_empty() || self.fields.len() > 256 || self.declarations.len() > 4096 {
             return Err("fixture field/declaration bound".into());
+        }
+        if let Some(field) = self
+            .fields
+            .iter()
+            .find(|field| field.entity.is_some() != field.state.is_some())
+        {
+            return Err(format!(
+                "fixture {} names a provided row by its entity and its state together",
+                field.name
+            ));
         }
         let typed: Vec<_> = self
             .fields
@@ -153,77 +211,189 @@ pub(crate) fn event_values(
 }
 
 /// Add one prelude from source-declared command input types after assembling each scenario.
+///
+/// A row the deployment provides was arranged as an inline [`ScenarioStep::ResolveFixtures`] of
+/// entity fixtures where the scenario needed it ([`provided_rows`]); those are lifted into the one
+/// prelude here, beside the type-only fixtures the inputs name.
 pub(crate) fn install(ir: &EssIr, suite: &mut ConformanceSuite) -> Vec<(ScenarioId, String)> {
     let mut refused = Vec::new();
     for (id, scenario) in &mut suite.scenarios {
-        let result = (|| {
-            let mut fields = BTreeMap::new();
-            for step in &scenario.steps {
-                let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
-                    continue;
-                };
-                let declared = ir
-                    .commands()
-                    .get(command.name())
-                    .ok_or("fixture command is undeclared")?;
-                for outcome in &declared.outcomes {
-                    for payload in &outcome.payload {
-                        for field in &payload.fields {
-                            if let ResolvedPayloadValue::InputField { field: source, .. } =
-                                &field.value
-                            {
-                                if field.conversion.is_some()
-                                    && matches!(
-                                        input.get(source),
-                                        Some(ScenarioValue::Fixture { .. })
-                                    )
-                                {
-                                    return Err(format!("fixture input {source} needs an unsupported payload conversion"));
-                                }
-                            }
-                        }
-                    }
-                }
-                for field in declared.fixture_inputs.keys() {
-                    if matches!(input.get(field), Some(ScenarioValue::Instance { .. })) {
-                        return Err(format!(
-                            "fixture input {field} conflicts with a scenario-owned instance"
-                        ));
-                    }
-                }
-                for (field, value) in input {
-                    let ScenarioValue::Fixture { fixture } = value else {
-                        continue;
-                    };
-                    let ty = declared
-                        .input
-                        .iter()
-                        .find(|f| f.name == *field)
-                        .ok_or("fixture input field is undeclared")?;
-                    let ty = crate::accessor::unresolve(&ty.type_ref);
-                    if let Some(prior) = fields.insert(fixture.clone(), ty.clone()) {
-                        if prior != ty {
-                            return Err(format!(
-                                "fixture {fixture} has incompatible declared types"
-                            ));
-                        }
-                    }
-                }
+        match prelude(ir, scenario) {
+            Ok(Some((mut steps, fixtures))) => {
+                steps.insert(0, ScenarioStep::ResolveFixtures { fixtures });
+                scenario.steps = steps;
             }
-            if fields.is_empty() {
-                return Ok(None);
-            }
-            Contract::of(ir, fields).map(Some)
-        })();
-        match result {
-            Ok(Some(fixtures)) => scenario
-                .steps
-                .insert(0, ScenarioStep::ResolveFixtures { fixtures }),
             Ok(None) => {}
             Err(reason) => refused.push((id.clone(), reason)),
         }
     }
     refused
+}
+
+/// The scenario's steps with every provided row it names sent as its fixture, and the one
+/// fixture prelude they need; `None` where they need none.
+fn prelude(
+    ir: &EssIr,
+    scenario: &ConformanceScenario,
+) -> Result<Option<(Vec<ScenarioStep>, Contract)>, String> {
+    let (steps, provided) = provided_rows(scenario)?;
+    let mut fields: BTreeMap<FixtureName, FixtureField> = provided
+        .into_iter()
+        .map(|field| (field.name.clone(), field))
+        .collect();
+    for step in &steps {
+        let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
+            continue;
+        };
+        let declared = ir
+            .commands()
+            .get(command.name())
+            .ok_or("fixture command is undeclared")?;
+        for outcome in &declared.outcomes {
+            for payload in &outcome.payload {
+                for field in &payload.fields {
+                    if let ResolvedPayloadValue::InputField { field: source, .. } = &field.value {
+                        if field.conversion.is_some()
+                            && matches!(input.get(source), Some(ScenarioValue::Fixture { .. }))
+                        {
+                            return Err(format!(
+                                "fixture input {source} needs an unsupported payload conversion"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        for field in declared.fixture_inputs.keys() {
+            if matches!(input.get(field), Some(ScenarioValue::Instance { .. })) {
+                return Err(format!(
+                    "fixture input {field} conflicts with a scenario-owned instance"
+                ));
+            }
+        }
+        for (field, value) in input {
+            let ScenarioValue::Fixture { fixture } = value else {
+                continue;
+            };
+            let ty = declared
+                .input
+                .iter()
+                .find(|f| f.name == *field)
+                .ok_or("fixture input field is undeclared")?;
+            let ty = crate::accessor::unresolve(&ty.type_ref);
+            match fields.get(fixture) {
+                // A provided row's identity is sent wherever the input takes it, `Optional` too.
+                Some(held) if held.entity.is_some() => {
+                    if !assignable(&held.type_ref, &ty) {
+                        return Err(format!(
+                            "fixture {fixture}, a provided row's identity, is sent as {field}, \
+                             which does not take its type"
+                        ));
+                    }
+                }
+                Some(held) => {
+                    if held.type_ref != ty {
+                        return Err(format!("fixture {fixture} has incompatible declared types"));
+                    }
+                }
+                None => {
+                    fields.insert(fixture.clone(), FixtureField::typed(fixture.clone(), ty));
+                }
+            }
+        }
+    }
+    let referenced: BTreeSet<&str> = steps
+        .iter()
+        .flat_map(values)
+        .filter_map(|value| match value {
+            ScenarioValue::Fixture { fixture } => Some(fixture.as_str()),
+            _ => None,
+        })
+        .collect();
+    // A provided row no value names is not needed by the scenario, and a prelude declares
+    // exactly the names it references.
+    fields.retain(|name, _| referenced.contains(name.as_str()));
+    if fields.is_empty() {
+        return Ok(None);
+    }
+    let contract = Contract::of_fields(ir, fields.into_values().collect())?;
+    Ok(Some((steps, contract)))
+}
+
+/// The scenario's steps without the rows the deployment provides that its arrangement placed
+/// inline, each value naming one of them as an instance rewritten to name its fixture, and those
+/// rows as entity fixtures.
+///
+/// A row is named by its fixture wherever [`values`] reads a value: the positions a fixture may
+/// stand in. A provided row named anywhere else (inside a list or a struct, or a view expectation
+/// keyed by identity) refuses the scenario, naming the row, as nothing would bind its name.
+fn provided_rows(
+    scenario: &ConformanceScenario,
+) -> Result<(Vec<ScenarioStep>, Vec<FixtureField>), String> {
+    let mut rows: BTreeMap<FixtureName, FixtureField> = BTreeMap::new();
+    let mut steps = Vec::with_capacity(scenario.steps.len());
+    for step in &scenario.steps {
+        match step {
+            ScenarioStep::ResolveFixtures { fixtures }
+                if fixtures.fields.iter().all(|field| field.entity.is_some()) =>
+            {
+                for field in &fixtures.fields {
+                    if rows.get(&field.name).is_some_and(|held| held != field) {
+                        return Err(format!(
+                            "fixture {} names two different provided rows",
+                            field.name
+                        ));
+                    }
+                    rows.insert(field.name.clone(), field.clone());
+                }
+            }
+            other => steps.push(other.clone()),
+        }
+    }
+    if rows.is_empty() {
+        return Ok((steps, Vec::new()));
+    }
+    let names: BTreeSet<&str> = rows.keys().map(FixtureName::as_str).collect();
+    for step in &mut steps {
+        for value in values_mut(step) {
+            let ScenarioValue::Instance { instance } = value else {
+                continue;
+            };
+            if names.contains(instance.as_str()) {
+                let fixture = FixtureName::new(instance.as_str()).map_err(|e| e.to_string())?;
+                *value = ScenarioValue::Fixture { fixture };
+            }
+        }
+    }
+    if let Some(name) = steps.iter().find_map(|step| names_instance(step, &names)) {
+        return Err(format!(
+            "the provided row `{name}` is named where no fixture value is read"
+        ));
+    }
+    Ok((steps, rows.into_values().collect()))
+}
+
+/// The first instance in `names` a step still names, at any depth.
+fn names_instance(step: &ScenarioStep, names: &BTreeSet<&str>) -> Option<String> {
+    fn scan(value: &serde_json::Value, names: &BTreeSet<&str>) -> Option<String> {
+        match value {
+            serde_json::Value::Object(map) => {
+                let instance_kind =
+                    map.get("kind").and_then(serde_json::Value::as_str) == Some("instance");
+                instance_kind
+                    .then(|| map.get("instance").and_then(serde_json::Value::as_str))
+                    .flatten()
+                    .filter(|name| names.contains(name))
+                    .map(str::to_owned)
+                    .or_else(|| map.values().find_map(|inner| scan(inner, names)))
+            }
+            serde_json::Value::Array(items) => items.iter().find_map(|inner| scan(inner, names)),
+            _ => None,
+        }
+    }
+    serde_json::to_value(step)
+        .ok()
+        .and_then(|value| scan(&value, names))
 }
 
 /// Whether the suite needs the pre-execution fixture vocabulary.
@@ -329,6 +499,46 @@ fn values(step: &ScenarioStep) -> Vec<&ScenarioValue> {
             | ViewExpectation::At { fields, .. } => result.extend(fields.values()),
             _ => {}
         }
+    }
+    result
+}
+
+/// [`values`], to write: the positions a fixture value may stand in.
+fn values_mut(step: &mut ScenarioStep) -> Vec<&mut ScenarioValue> {
+    use crate::scenario::ViewExpectation;
+    let mut result = Vec::new();
+    match step {
+        ScenarioStep::ExecuteCommand { input, .. }
+        | ScenarioStep::ExpectInvocation { input, .. } => result.extend(input.values_mut()),
+        ScenarioStep::ExpectEventValues { payload, .. } => result.extend(payload.values_mut()),
+        ScenarioStep::SnapshotSubject { subject, .. }
+        | ScenarioStep::SnapshotCompleteSubject { subject, .. } => {
+            result.extend(subject.values_mut());
+        }
+        ScenarioStep::QueryView { params, .. }
+        | ScenarioStep::ExpectHalt { params, .. }
+        | ScenarioStep::EventuallyHalt { params, .. } => result.extend(params.values_mut()),
+        ScenarioStep::EventuallyView {
+            params,
+            expectation,
+            ..
+        } => {
+            result.extend(params.values_mut());
+            if let ViewExpectation::Contains { fields }
+            | ViewExpectation::Excludes { fields }
+            | ViewExpectation::At { fields, .. } = expectation
+            {
+                result.extend(fields.values_mut());
+            }
+        }
+        ScenarioStep::ExpectView {
+            expectation:
+                ViewExpectation::Contains { fields }
+                | ViewExpectation::Excludes { fields }
+                | ViewExpectation::At { fields, .. },
+            ..
+        } => result.extend(fields.values_mut()),
+        _ => {}
     }
     result
 }

@@ -1055,7 +1055,14 @@ impl Projector<'_> {
             }
             for state in &entity.lifecycle.states {
                 let wire = entity.lifecycle.wire(state);
-                if entity.lifecycle.naming.contains_key(state) {
+                // A state's summary (`ess/33`) is documentation and lowers as the bare state; only
+                // a wire spelling has nothing to lower to.
+                if entity
+                    .lifecycle
+                    .naming
+                    .get(state)
+                    .is_some_and(|naming| naming.wire.is_some())
+                {
                     self.diagnostic(
                         LoweringCode::StateWireNameUnsupported,
                         format!("{name}.lifecycle.states.{state}"),

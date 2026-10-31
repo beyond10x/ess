@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [0.78.0] — 2026-10-31
+
+### Added
+
+- From `ess/33` an input whose type is a struct (open or closed), a `Map<…>` or `Json`, through any newtype or `Optional`, may carry an `example:`, and synthesis sends it at the plain instance (a downstream report, 2026-10-30). The example is held as a precondition literal is; an open struct's undeclared members are admitted and sent as written, in list example elements and precondition literals too, and a `Json` example is any value but `null`. A struct example reaches synthesis through its declared members, so a guard on one keeps the scenario that refutes it. A union example stays refused. Below `ess/33` each keeps its refusal, its hint naming `ess/33`; a model without such an example keeps its IR and suite bytes.
+- An entity may declare `provided: true` from `ess/33`: the deployment holds its rows, and no command of the specification need create one. Below `ess/33` the key is refused as `unsupported_format_version` naming `ess/33`, and a model without it keeps its IR bytes. `ess verify diff` reports adding or removing the marker as an unclassified change, which the default gate fails (a downstream report, 2026-10-30).
+- Synthesis sends a provided row where a `when_related: {via: input.<field>}` guard reads one that no declared outcome creates: the scenario resolves an entity fixture `{name, type, entity, state}` before execution and sends its identity, and the `exists: false` branch is sent a fresh identity. Such a suite is `ess-conformance/60` (ordinary) or `/61` (declared coverage); every other suite keeps its format and bytes, and every reader refuses an entity fixture under a lower major. A subject, an owner or a view population that needs a provided row nothing creates, and a guard over a provided row's fields, are refused by name; no decoy row stands beside a provided one, which the synthesis notes say.
+- The interpreted target answers an entity fixture by creating a row of the entity, in the state the fixture names, before the scenario begins, so `ess verify conform run --target interpreted` passes both branches of a related guard over a provided row; a type-only fixture stays unsupported there.
+- The generated Go and TypeScript conformance runtimes admit an entity fixture from `ess-conformance/60` and pass its `entity` and `state` to the provider (`FixtureField` in Go, `FixtureField` in TypeScript), which answers the identity of a row of that entity resting in that state; under a lower major the keys are refused as unknown.
+- From `ess/33` a lifecycle transition may carry a one-line `summary:`, and a lifecycle state may carry one in its mapping form, `{name, wire?, summary?}` (a downstream report, 2026-10-30). A state's summary is the summary of its variant of `<Entity>.State`; guards, `moves:` and suites keep naming states and moves by name, and Entity Runtime lowering refuses a state only for a wire spelling. Below `ess/33` either is refused as `unsupported_format_version` naming `ess/33`; a lifecycle without one keeps its IR bytes. `ess verify diff` reports a moved state summary as the state enum's `variant-summary-changed` and a moved transition summary as `transition-summary-changed`, compatible, in `ess-diff/22`.
+
+### Changed
+
+- A flat `summary:`, `wire:`, `display:` or `code:` on a named type is refused naming the spelling that reads it, `naming: {summary: …}`, rather than as an unknown field of the type's kind. A state written `{name: …}` with nothing beside its name is refused naming the bare form.
+- In the `ess-domain` library, `Transition` gains `summary`, and `RawState::Spelled` holds `wire: Option<String>` and gains `summary`. In the `ess-diff` library, `EntityChange` gains `TransitionSummaryChanged`.
+
+### Fixed
+
+- The interpreted target admits the members an open struct (`undeclared_fields: ignored`) does not declare in a command input, at every format, where it refused them as undeclared (a downstream report, 2026-10-30).
+- `fixture_inputs:` is refused as `unsupported_construct` over every input a guard reads, not only over an input guard's own paths: the identity a `when_related: {via: input.<field>}` guard reads, an `all:` element's included, and an input a related row's `predicate:`, a row set's `where:` or `forall:`, or a `when_subject:` predicate compares. Such a binding validated before, so a value the target's provider chose decided the branch synthesis meant to witness (a downstream report, 2026-10-30).
+
+Language: 0 general, 3 one-to-one, 0 part (general share 0%; cumulative 16%).
+
 ## [0.77.0] — 2026-10-29
 
 ### Added

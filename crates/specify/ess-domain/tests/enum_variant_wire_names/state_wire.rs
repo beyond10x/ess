@@ -113,3 +113,122 @@ fn two_enum_variants_with_one_wire_spelling_still_validate_below_ess_32() {
     let spec = assemble(&model("ess/31", SHARED)).expect("below ess/32 the enum keeps validating");
     assert_eq!(variants_of(&spec).len(), 2);
 }
+
+const TRANSITION: &str = "{name: finish, from: [Indexing], to: Ready}";
+
+/// The fixture under `ess/<format>`, its states written as `states` and its one transition as
+/// `transition` (`story:a-transition-and-a-state-may-carry-a-summary`).
+fn summarised(format: u32, states: &str, transition: &str) -> String {
+    assert!(FIXTURE.contains(TRANSITION));
+    lifecycle(format, states).replacen(TRANSITION, transition, 1)
+}
+
+const SUMMARISED_STATES: &str =
+    "[{name: Indexing, wire: indexing, summary: Being indexed}, {name: Ready, summary: Searchable}]";
+const SUMMARISED_TRANSITION: &str =
+    "{name: finish, from: [Indexing], to: Ready, summary: The index is written}";
+
+#[test]
+fn a_lifecycle_state_and_transition_carry_a_summary_from_ess_33() {
+    let spec = assemble(&summarised(33, SUMMARISED_STATES, SUMMARISED_TRANSITION))
+        .expect("ess/33 admits a summary on a state and on a transition");
+    let job = &spec.entities()[&"jobs.queue.Job".parse().unwrap()];
+    assert_eq!(
+        job.states.transitions[0].summary.as_deref(),
+        Some("The index is written"),
+        "the transition keeps its summary"
+    );
+    let ready = StateName::new("Ready").unwrap();
+    assert!(
+        job.states.states.contains(&ready),
+        "{:?}",
+        job.states.states
+    );
+    assert_eq!(
+        job.states.wire(&ready),
+        "Ready",
+        "a summary-only state declares no wire spelling"
+    );
+    let state_type = job.state_type();
+    let TypeBody::Enum { variants } = &state_type.body else {
+        panic!("the state type is an enum: {state_type:?}");
+    };
+    assert_eq!(
+        variants
+            .iter()
+            .map(|variant| (
+                variant.name(),
+                variant.wire(),
+                variant.naming.summary.as_deref()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("Indexing", "indexing", Some("Being indexed")),
+            ("Ready", "Ready", Some("Searchable")),
+        ],
+        "each state's summary reaches its variant of the state enum"
+    );
+}
+
+#[test]
+fn a_lifecycle_summary_below_ess_33_is_refused_naming_ess_33() {
+    for (states, transition, located) in [
+        (
+            "[Indexing, {name: Ready, summary: Searchable}]",
+            TRANSITION,
+            "jobs.queue.Job.states.Ready",
+        ),
+        (
+            "[{name: Indexing, wire: indexing, summary: Being indexed}, Ready]",
+            TRANSITION,
+            "jobs.queue.Job.states.Indexing",
+        ),
+        (
+            "[Indexing, Ready]",
+            SUMMARISED_TRANSITION,
+            "jobs.queue.Job.transitions[0]",
+        ),
+    ] {
+        let errors = assemble(&summarised(32, states, transition))
+            .expect_err("a lifecycle summary is not admitted below ess/33");
+        assert!(
+            errors.contains(&ValidationCode::UnsupportedFormatVersion.to_string()),
+            "{states} {transition}: {errors}"
+        );
+        assert!(errors.contains("ess/33"), "names the format: {errors}");
+        assert!(errors.contains(located), "located at {located}: {errors}");
+        assert!(
+            !errors.contains("unknown field"),
+            "no whole-file parse error: {errors}"
+        );
+        assert!(
+            !errors.contains("requires specification format ess/32"),
+            "an ess/32 document spells a state's wire name: {errors}"
+        );
+    }
+}
+
+#[test]
+fn one_state_with_two_summaries_is_refused() {
+    let errors = assemble(&summarised(
+        33,
+        "[Indexing, {name: Ready, summary: Searchable}, {name: Ready, summary: Done}]",
+        TRANSITION,
+    ))
+    .expect_err("two summaries of one state are two claims about it");
+    assert!(
+        errors.contains(&ValidationCode::ConflictingDeclaration.to_string()),
+        "{errors}"
+    );
+    assert!(errors.contains("jobs.queue.Job.states.Ready"), "{errors}");
+}
+
+#[test]
+fn a_state_mapping_with_nothing_beside_its_name_is_refused_naming_the_bare_form() {
+    let errors = assemble(&summarised(33, "[Indexing, {name: Ready}]", TRANSITION))
+        .expect_err("a state with nothing to declare is written as its name");
+    assert!(
+        errors.contains("write the state as the name"),
+        "names the bare form: {errors}"
+    );
+}

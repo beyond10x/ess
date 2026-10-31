@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-31T14:37:34Z",
+  "actor": "human:timo",
+  "artifact": "story:a-fixture-may-be-a-row-the-deployment-already-holds",
+  "kind": "story",
+  "revision": 21,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:ess-d325-wave-adversary-pass-1",
+    "review": "review-result:ess-d325-wave-adversary-pass-1",
+    "outcome": "fixed"
+  }
+}
