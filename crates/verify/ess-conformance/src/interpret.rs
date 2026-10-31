@@ -74,6 +74,7 @@ mod command;
 pub mod execute;
 mod facts;
 mod protected;
+mod provided;
 mod response;
 mod setup;
 pub mod values;
@@ -115,6 +116,9 @@ pub struct Interpreted {
     model: Option<EssIr>,
     scenario: RefCell<Scenario>,
     clock: Option<Clock>,
+    /// The rows a scenario's entity fixtures named, created before it begins
+    /// ([`fixture_values`](ConformanceTarget::fixture_values)), with the scenario they are for.
+    provided: RefCell<Option<(crate::scenario::ScenarioId, Store)>>,
 }
 
 /// The caller-owned command clock ([`Interpreted::with_command_clock`]).
@@ -186,6 +190,7 @@ impl Interpreted {
             model: Some(model),
             scenario: RefCell::default(),
             clock: None,
+            provided: RefCell::default(),
         }
     }
 
@@ -342,11 +347,27 @@ impl ConformanceTarget for Interpreted {
             scenario.scenario
         ))?;
         *self.scenario.borrow_mut() = Scenario::default();
+        // The rows this scenario's entity fixtures named are held from its start, and every view
+        // reads them, as upstream data an explicit setup establishes is.
+        let pending = self.provided.borrow_mut().take();
+        if let Some((_, store)) = pending.filter(|(id, _)| *id == scenario.scenario) {
+            let mut held = self.scenario.borrow_mut();
+            held.projection_versions.push((0, store.clone()));
+            held.store = store;
+        }
         self.scenario
             .borrow_mut()
             .facts
             .open(scenario.correlation.clone());
         Ok(())
+    }
+
+    fn fixture_values(
+        &self,
+        scenario: &ScenarioContext,
+        contract: &crate::fixtures::Contract,
+    ) -> Result<std::collections::BTreeMap<String, ess_primitives::node::Node>, TargetError> {
+        self.provide_rows(scenario, contract)
     }
 
     fn deliver_event(

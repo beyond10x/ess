@@ -499,6 +499,78 @@ fn the_model_interpreter_passes_its_own_synthesized_suite() {
     }
 }
 
+/// A command taking `body` of the struct `catalog.orders.Draft`, open where `opened`, at `ess/24`.
+fn draft_input(opened: bool) -> String {
+    let key = if opened {
+        "    undeclared_fields: ignored\n"
+    } else {
+        ""
+    };
+    format!(
+        "format: ess/24
+system: catalog
+version: v1
+domain: catalog.orders
+types:
+  - name: catalog.orders.Draft
+    kind: struct
+{key}    fields:
+      - {{name: version, type: String}}
+commands:
+  - name: catalog.orders.PlaceOrder
+    input:
+      - {{name: body, type: catalog.orders.Draft}}
+    response:
+      - {{name: order_ref, type: String}}
+    outcomes:
+      - name: placed
+        returns: true
+"
+    )
+}
+
+#[test]
+fn an_open_struct_command_input_admits_undeclared_members_on_the_interpreted_target() {
+    for opened in [true, false] {
+        let text = draft_input(opened);
+        let suite = synthesize(&ir(&text)).suite;
+        let mut extended = 0;
+        let forged = edited(&suite, |document| {
+            for scenario in document["scenarios"].as_object_mut().unwrap().values_mut() {
+                for step in scenario["steps"].as_array_mut().unwrap() {
+                    if step["step"] == "execute_command" {
+                        step["input"]["body"]["value"]["extension"] = "x".into();
+                        extended += 1;
+                    }
+                }
+            }
+        });
+        assert!(extended > 0, "the suite executes the command");
+        let verdict = AdmittedSuite::from_json(&forged).map(|admitted| {
+            let run = Runner::for_suite(admitted.suite()).run_admitted(
+                &admitted,
+                &ess_conformance::interpret::Interpreted::for_model(ir(&text)),
+            );
+            run.scenarios
+                .iter()
+                .find(|result| result.scenario.to_string() == OUTCOME)
+                .expect("the outcome ran")
+                .clone()
+        });
+        if opened {
+            let result = verdict.unwrap_or_else(|error| panic!("admitted: {error}"));
+            assert_eq!(result.status, Status::Passed, "open: {result:#?}");
+        } else {
+            assert!(
+                verdict
+                    .as_ref()
+                    .map_or(true, |result| result.status != Status::Passed),
+                "a closed struct still refuses the member: {verdict:#?}"
+            );
+        }
+    }
+}
+
 // ---- formats and admission ------------------------------------------------------------------
 
 /// The suite's canonical JSON, edited.
@@ -539,15 +611,16 @@ fn a_reader_of_48_refuses_a_later_major_by_version() {
     // `/50` is the cumulative `hold_now` major above it (beyond10x/ess#586), `/52` the cumulative
     // wrapped value-invariant and await major above that (beyond10x/ess#542), `/54` the view-reference
     // major above that (beyond10x/ess#564), `/56` the one-time reader major above that
-    // (beyond10x/ess#614), `/58` the exact-Decimal major above that; `/60` is the first no reader
-    // implements.
+    // (beyond10x/ess#614), `/58` the exact-Decimal major above that, `/60` the provided-row major
+    // above that; `/62` is the first no reader implements.
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 50)).is_ok());
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 52)).is_ok());
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 54)).is_ok());
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 56)).is_ok());
     assert!(AdmittedSuite::from_json(&relabelled(&suite, 58)).is_ok());
-    let Err(error) = AdmittedSuite::from_json(&relabelled(&suite, 60)) else {
-        panic!("no reader implements suite/60");
+    assert!(AdmittedSuite::from_json(&relabelled(&suite, 60)).is_ok());
+    let Err(error) = AdmittedSuite::from_json(&relabelled(&suite, 62)) else {
+        panic!("no reader implements suite/62");
     };
     assert!(
         error
@@ -685,13 +758,13 @@ fn an_older_go_reader_refuses_a_suite_48_by_version() {
     let runtime = directory.join("essconform/runtime.go");
     let text = std::fs::read_to_string(&runtime).unwrap();
     assert!(
-        text.contains("const newestSuiteMajor = 59\n"),
+        text.contains("const newestSuiteMajor = 61\n"),
         "the runtime reads /53"
     );
     std::fs::write(
         &runtime,
         text.replace(
-            "const newestSuiteMajor = 59\n",
+            "const newestSuiteMajor = 61\n",
             "const newestSuiteMajor = 47\n",
         ),
     )

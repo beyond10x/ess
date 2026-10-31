@@ -685,6 +685,9 @@ const READER_VERSIONS = [
   // Cumulative: the exact-Decimal pair.
   'ess-conformance/58',
   'ess-conformance/59',
+  // Cumulative: the pair whose entity fixtures name a row the deployment provides.
+  'ess-conformance/60',
+  'ess-conformance/61',
 ];
 
 export function admitDisclosureId(

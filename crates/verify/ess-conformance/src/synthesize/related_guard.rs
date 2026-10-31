@@ -1065,6 +1065,22 @@ fn beside_row(
     let truth = |node: &Arrangement| {
         leaves_to(ir, (command, outcome), (via.field(), entity, node), None).unwrap_or(Truth::False)
     };
+    // A row the deployment provides and no outcome creates is an entity fixture of its own, as the
+    // row the scenario is arranged around is (ess/33): a second input names a second provided row.
+    if super::provided::serves(ir, entity) {
+        let provided = |takes: &dyn Fn(Truth) -> bool| {
+            super::provided::search(ir, entity, Distinction::further(at), |node| {
+                Ok(takes(truth(node)).then_some(()))
+            })
+            .ok()
+            .map(|(row, ())| row)
+        };
+        return provided(&|held| held == Truth::True).or_else(|| {
+            (!strict)
+                .then(|| provided(&|held| held != Truth::False))
+                .flatten()
+        });
+    }
     search_rows(ir, entity, actors, (at, None), &predicates, |node| {
         Ok(truth(node) == Truth::True)
     })
@@ -4245,7 +4261,14 @@ fn with_row_where(
         subject_fact::grounded_on_input(ir, entity, fixed, &predicates),
     ]
     .concat();
+    // A row the deployment provides and no outcome creates is resolved as an entity fixture in
+    // each of its states (ess/33); one an outcome creates is arranged by it, as before.
     let search = |hints: &[Predicate], strict: bool, under: subject_fact::Under<'_>| {
+        if under.is_none() && super::provided::serves(ir, entity) {
+            return super::provided::search(ir, entity, Distinction::further(first), |node| {
+                selecting(node, strict)
+            });
+        }
         subject_fact::search_under(
             ir,
             entity,

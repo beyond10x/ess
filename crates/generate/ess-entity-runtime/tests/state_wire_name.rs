@@ -20,9 +20,14 @@ use ess_synth::SynthesisPlan;
 
 /// The contract fixture under `ess/32`, `Child`'s one state written as `states`.
 fn contract(states: &str) -> EssIr {
+    contract_at("ess/32", states)
+}
+
+/// The contract fixture under `format`, `Child`'s one state written as `states`.
+fn contract_at(format: &str, states: &str) -> EssIr {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");
     let changes = [
-        ("system.yaml", "format: ess/4", "format: ess/32".to_owned()),
+        ("system.yaml", "format: ess/4", format!("format: {format}")),
         (
             "domains/local.yaml",
             "      states: [Active]\n",
@@ -103,6 +108,35 @@ fn a_state_wire_name_is_refused_by_name() {
         refused[0].message.contains("`active`"),
         "{}",
         refused[0].message
+    );
+}
+
+/// A state carrying only a summary (`ess/33`, `story:a-transition-and-a-state-may-carry-a-summary`)
+/// declares no wire spelling, so it is not refused as one.
+#[test]
+fn a_summary_only_state_is_not_refused_as_a_wire_spelling() {
+    let summarised = diagnostics(&contract_at(
+        "ess/33",
+        "[{name: Active, summary: Holding its owner}]",
+    ));
+    assert!(
+        summarised
+            .iter()
+            .all(|diagnostic| diagnostic.code != LoweringCode::StateWireNameUnsupported),
+        "{summarised:#?}"
+    );
+    let spelled = diagnostics(&contract_at(
+        "ess/33",
+        "[{name: Active, wire: active, summary: Holding its owner}]",
+    ));
+    assert_eq!(
+        spelled
+            .iter()
+            .filter(|diagnostic| diagnostic.code == LoweringCode::StateWireNameUnsupported)
+            .count(),
+        1,
+        "a state with a wire spelling and a summary is still refused for the spelling: \
+         {spelled:#?}"
     );
 }
 

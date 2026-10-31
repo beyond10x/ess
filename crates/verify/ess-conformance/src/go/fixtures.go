@@ -1,7 +1,44 @@
 // FixtureContract is source-owned type authority, resolved before scenario activity.
 type FixtureContract struct {
-	Fields       []accessorField                 `json:"fields"`
+	Fields       []FixtureField                  `json:"fields"`
 	Declarations map[string]selectionDeclaration `json:"declarations"`
+}
+
+// FixtureField is one fixture the provider answers: any value of Type, or, where Entity is set
+// (suite/60 and /61, an entity the deployment provides), the identity of a row of Entity resting
+// in State, Type being the entity's identity type.
+type FixtureField struct {
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Entity string `json:"entity,omitempty"`
+	State  string `json:"state,omitempty"`
+}
+
+// entityFixtureMajor is the first suite major whose fixture may name a row the deployment provides.
+const entityFixtureMajor = 60
+
+// The grammars the Rust reader holds a provided row's entity and state to: a qualified name and
+// one UpperCamelCase word, neither empty.
+var (
+	fixtureEntityName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*)*$`)
+	fixtureStateName  = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
+)
+
+// providedRow admits the entity and state of a fixture naming a provided row.
+func providedRow(name, entity, state string) error {
+	if !fixtureEntityName.MatchString(entity) || !fixtureStateName.MatchString(state) {
+		return fmt.Errorf("fixture %s names a provided row by an entity and a state that are not names", name)
+	}
+	return nil
+}
+
+// typed is the contract's fields as their type authority alone.
+func (c FixtureContract) typed() []accessorField {
+	fields := make([]accessorField, 0, len(c.Fields))
+	for _, field := range c.Fields {
+		fields = append(fields, accessorField{Name: field.Name, Type: field.Type})
+	}
+	return fields
 }
 
 // FixtureProvider supplies independently provisioned values. It owns provisioning cleanup.
@@ -37,8 +74,16 @@ func (c FixtureContract) validate() error {
 		if err := fixtureName(field.Name); err != nil {
 			return err
 		}
+		if (field.Entity == "") != (field.State == "") {
+			return fmt.Errorf("fixture %s names a provided row by its entity and its state together", field.Name)
+		}
+		if field.Entity != "" {
+			if err := providedRow(field.Name, field.Entity, field.State); err != nil {
+				return err
+			}
+		}
 	}
-	if err := validateFixtureTypes(c.Fields, c.Declarations); err != nil {
+	if err := validateFixtureTypes(c.typed(), c.Declarations); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(c)
@@ -51,7 +96,7 @@ func (c FixtureContract) validate() error {
 	return nil
 }
 
-func admitFixtures(value any) error {
+func admitFixtures(value any, major int) error {
 	root, err := closed(value, "fields declarations", "")
 	if err != nil {
 		return err
@@ -63,8 +108,13 @@ func admitFixtures(value any) error {
 	if err != nil {
 		return err
 	}
+	// From suite/60 a fixture may name a row the deployment provides, by its entity and state.
+	optional := ""
+	if major >= entityFixtureMajor {
+		optional = "entity state"
+	}
 	for _, raw := range fields {
-		field, err := closed(raw, "name type", "")
+		field, err := closed(raw, "name type", optional)
 		if err != nil {
 			return err
 		}
@@ -73,6 +123,25 @@ func admitFixtures(value any) error {
 		}
 		if _, err := text(field["type"]); err != nil {
 			return err
+		}
+		// An entity and a state are written together, each a name: an empty one names nothing.
+		held := []string{}
+		for _, key := range []string{"entity", "state"} {
+			if raw, ok := field[key]; ok {
+				name, err := text(raw)
+				if err != nil {
+					return err
+				}
+				held = append(held, name)
+			}
+		}
+		switch len(held) {
+		case 1:
+			return fmt.Errorf("fixture %v names a provided row by its entity and its state together", field["name"])
+		case 2:
+			if err := providedRow(field["name"].(string), held[0], held[1]); err != nil {
+				return err
+			}
 		}
 	}
 	raw, err := json.Marshal(value)

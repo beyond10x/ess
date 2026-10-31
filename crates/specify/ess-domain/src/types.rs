@@ -2236,18 +2236,77 @@ impl RawNamedType {
 /// name, an unparsable invariant, a key the model does not know — so the only question left when
 /// it is converted is whether the invariants read fields the type has.
 #[derive(Debug, Clone, serde::Deserialize)]
+#[serde(from = "WrittenNamedType")]
 pub struct RawNamedType {
     /// Its stable identity.
     pub name: QualifiedName,
     /// What it is made of.
-    #[serde(flatten)]
     pub body: RawTypeBody,
     /// What it is called on the wire and shown as.
-    #[serde(default)]
     pub naming: Naming,
     /// Optional closed clock-reading attachment.
-    #[serde(default, deserialize_with = "deserialize_reading")]
     pub reading: Option<crate::reading::ReadingContract>,
+}
+
+/// A named type as a document writes it: [`RawNamedType`], and a refusal for each key of
+/// [`Naming`] written flat beside the kind.
+///
+/// A struct field and an enum variant take a flat `summary:`, so the flat form is easy to write on
+/// the type too, and the body's own refusal ("expected `variants` or `attributes`") never named
+/// the spelling that reads it. Each key is refused while it is read, naming `naming: {<key>: …}`
+/// (`story:a-transition-and-a-state-may-carry-a-summary`); none is ever stored.
+#[derive(serde::Deserialize)]
+struct WrittenNamedType {
+    name: QualifiedName,
+    #[serde(flatten)]
+    body: RawTypeBody,
+    #[serde(default)]
+    naming: Naming,
+    #[serde(default, deserialize_with = "deserialize_reading")]
+    reading: Option<crate::reading::ReadingContract>,
+    #[serde(default, rename = "wire", deserialize_with = "flat_wire")]
+    _wire: (),
+    #[serde(default, rename = "display", deserialize_with = "flat_display")]
+    _display: (),
+    #[serde(default, rename = "summary", deserialize_with = "flat_summary")]
+    _summary: (),
+    #[serde(default, rename = "code", deserialize_with = "flat_code")]
+    _code: (),
+}
+
+impl From<WrittenNamedType> for RawNamedType {
+    fn from(written: WrittenNamedType) -> Self {
+        Self {
+            name: written.name,
+            body: written.body,
+            naming: written.naming,
+            reading: written.reading,
+        }
+    }
+}
+
+/// The refusal of `key`, a key of [`Naming`], written flat on a named type.
+fn flat_naming<E: serde::de::Error>(key: &str) -> E {
+    E::custom(format!(
+        "`{key}` is not a key of a named type: a type's {key} is written under its naming, \
+         `naming: {{{key}: …}}`"
+    ))
+}
+
+fn flat_wire<'de, D: serde::Deserializer<'de>>(_: D) -> Result<(), D::Error> {
+    Err(flat_naming("wire"))
+}
+
+fn flat_display<'de, D: serde::Deserializer<'de>>(_: D) -> Result<(), D::Error> {
+    Err(flat_naming("display"))
+}
+
+fn flat_summary<'de, D: serde::Deserializer<'de>>(_: D) -> Result<(), D::Error> {
+    Err(flat_naming("summary"))
+}
+
+fn flat_code<'de, D: serde::Deserializer<'de>>(_: D) -> Result<(), D::Error> {
+    Err(flat_naming("code"))
 }
 
 fn deserialize_reading<'de, D: serde::Deserializer<'de>>(

@@ -1,0 +1,58 @@
+format: ess/33
+system: linking
+version: v1
+domain: linking.links
+summary: A link names an app the deployment already holds; no command of the specification creates one.
+types:
+  - {name: linking.links.AppId, kind: newtype, of: Uuid}
+  - {name: linking.links.LinkId, kind: newtype, of: Uuid}
+entities:
+  - name: linking.links.App
+    provided: true
+    identity: {name: app_id, type: linking.links.AppId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: linking.links.Link
+    identity: {name: link_id, type: linking.links.LinkId}
+    fields:
+      - {name: app_id, type: linking.links.AppId}
+    relations:
+      - {name: app, kind: references, target: linking.links.App, cardinality: one, via: app_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+errors:
+  - name: linking.links.AppNotFound
+    fields:
+      - {name: app_id, type: linking.links.AppId}
+events:
+  - name: linking.links.Linked
+    fields:
+      - {name: link_id, type: linking.links.LinkId}
+      - {name: app_id, type: linking.links.AppId}
+commands:
+  - name: linking.links.CreateLink
+    input:
+      - {name: app_id, type: linking.links.AppId}
+    outcomes:
+      - name: unknown-app
+        when_related: {via: input.app_id, exists: false}
+        error: linking.links.AppNotFound
+        payload:
+          linking.links.AppNotFound: {app_id: input.app_id}
+      - name: linked
+        creates: linking.links.Link
+        instance: link_id
+        sets:
+          app_id: input.app_id
+        emits: [linking.links.Linked]
+        payload:
+          linking.links.Linked:
+            link_id: {generated: true}
+            app_id: input.app_id
+views:
+  - name: linking.links.Links
+    source: linking.links.Link
+    consistency: read_your_writes
+    fields:
+      - {name: link_id, type: linking.links.LinkId}
+      - {name: app_id, type: linking.links.AppId}

@@ -652,3 +652,158 @@ fn adversary_h_a_view_field_from_is_cited_at_its_line_beside_a_lifecycle_transit
         validated.output
     );
 }
+
+/// `story:a-transition-and-a-state-may-carry-a-summary`: the one-line variants a downstream
+/// specification reported, rewritten over a minimal task lifecycle. Each differs from the base
+/// fixture by one line.
+const LIFECYCLE: &str = "lifecycle-summary.yaml";
+const STATES: &str = "      states: [Waiting, Stopped]\n";
+const TRANSITION: &str = "        - {name: complete, from: [Waiting], to: Stopped}\n";
+const ENUM: &str = "    kind: enum\n    variants: [read, write]\n";
+
+/// The variant `name`, written under `format`.
+fn variant(name: &str, format: &str) -> String {
+    let base = replaced(
+        &fixture(LIFECYCLE),
+        "format: ess/33\n",
+        &format!("format: {format}\n"),
+    );
+    match name {
+        "control" => base,
+        "transition" => replaced(
+            &base,
+            TRANSITION,
+            "        - {name: complete, from: [Waiting], to: Stopped, summary: 'the task ends'}\n",
+        ),
+        "transition-naming" => replaced(
+            &base,
+            TRANSITION,
+            "        - {name: complete, from: [Waiting], to: Stopped, naming: {summary: 'the task \
+             ends'}}\n",
+        ),
+        "state" => replaced(
+            &base,
+            STATES,
+            "      states: [{name: Waiting, summary: 'blocked on a reply'}, Stopped]\n",
+        ),
+        "state-naming" => replaced(
+            &base,
+            STATES,
+            "      states: [{name: Waiting, naming: {summary: 'blocked on a reply'}}, Stopped]\n",
+        ),
+        "enum-type" => replaced(
+            &base,
+            ENUM,
+            "    kind: enum\n    summary: 'the tools'\n    variants: [read, write]\n",
+        ),
+        "enum-type-naming" => replaced(
+            &base,
+            ENUM,
+            "    kind: enum\n    naming: {summary: 'the tools'}\n    variants: [read, write]\n",
+        ),
+        "enum-variant" => replaced(
+            &base,
+            ENUM,
+            "    kind: enum\n    variants: [{name: read, summary: 'reads only'}, write]\n",
+        ),
+        other => panic!("no variant {other}"),
+    }
+}
+
+#[test]
+fn the_lifecycle_summary_reproduction_validates_from_ess_33() {
+    for name in [
+        "control",
+        "transition",
+        "state",
+        "enum-type-naming",
+        "enum-variant",
+    ] {
+        let validated = validate(LIFECYCLE, &variant(name, "ess/33"));
+        assert_eq!(
+            validated.code,
+            Some(0),
+            "{name} validates under ess/33:\n{}",
+            validated.output
+        );
+    }
+    for (name, located) in [
+        ("transition", "entity probe.task.Task.transitions[0]"),
+        ("state", "entity probe.task.Task.states.Waiting"),
+    ] {
+        let validated = validate(LIFECYCLE, &variant(name, "ess/32"));
+        assert_eq!(validated.code, Some(1), "{name}:\n{}", validated.output);
+        let found = validated.at("unsupported_format_version", located);
+        assert_eq!(
+            found.len(),
+            1,
+            "{name} is refused at {located}:\n{}",
+            validated.output
+        );
+        assert!(found[0].contains("ess/33"), "names ess/33: {}", found[0]);
+    }
+    for format in ["ess/32", "ess/33"] {
+        for name in ["transition-naming", "state-naming"] {
+            let validated = validate(LIFECYCLE, &variant(name, format));
+            assert_eq!(
+                validated.code,
+                Some(1),
+                "{name} under {format} stays refused: one spelling for one idea:\n{}",
+                validated.output
+            );
+            assert!(
+                validated
+                    .problems
+                    .iter()
+                    .any(|problem| problem.contains("unknown field `naming`")),
+                "{name} under {format}:\n{}",
+                validated.output
+            );
+        }
+    }
+}
+
+#[test]
+fn a_flat_summary_on_a_type_names_naming() {
+    let validated = validate(LIFECYCLE, &variant("enum-type", "ess/33"));
+    assert_eq!(validated.code, Some(1), "{}", validated.output);
+    assert_eq!(validated.problems.len(), 1, "{}", validated.output);
+    assert!(
+        validated.problems[0].contains("naming: {summary: …}"),
+        "the refusal names the spelling that reads it: {}",
+        validated.problems[0]
+    );
+    for key in ["wire", "display", "code"] {
+        let text = replaced(
+            &fixture(LIFECYCLE),
+            ENUM,
+            &format!("    kind: enum\n    {key}: tools\n    variants: [read, write]\n"),
+        );
+        let validated = validate(LIFECYCLE, &text);
+        assert_eq!(validated.code, Some(1), "{key}: {}", validated.output);
+        assert!(
+            validated
+                .problems
+                .iter()
+                .any(|problem| problem.contains(&format!("naming: {{{key}: …}}"))),
+            "{key}: {}",
+            validated.output
+        );
+    }
+    let validated = validate(
+        LIFECYCLE,
+        &replaced(
+            &fixture(LIFECYCLE),
+            "    kind: newtype\n    of: String\n",
+            "    kind: newtype\n    of: String\n    summary: the task's key\n",
+        ),
+    );
+    assert!(
+        validated
+            .problems
+            .iter()
+            .any(|problem| problem.contains("naming: {summary: …}")),
+        "a newtype names it too: {}",
+        validated.output
+    );
+}

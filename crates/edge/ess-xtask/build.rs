@@ -125,7 +125,7 @@ fn write_profile(root: &Path, out: &str) {
             .output()
             .expect("tool version");
         assert!(identity.status.success(), "tool version refused");
-        tools.insert(key,serde_json::json!({"path":path,"sha256":hash(&fs::read(&path).expect("tool bytes")),"version":String::from_utf8(identity.stdout).expect("tool version UTF8")}));
+        tools.insert(key,serde_json::json!({"path":path,"sha256":hash(&tool_bytes(&path)),"version":String::from_utf8(identity.stdout).expect("tool version UTF8")}));
     }
     bundled_linkers(&mut tools);
     let mut configuration = BTreeMap::new();
@@ -154,6 +154,23 @@ fn write_profile(root: &Path, out: &str) {
     }
     fs::write(Path::new(&out).join("consumer-build.json"),serde_json::to_vec(&serde_json::json!({"environment":environment,"tools":tools,"cargo_configuration":configuration})).expect("build profile serialization")).expect("build profile write");
 }
+/// The bytes of the tool Cargo names. Cargo may name it bare (`rustc`), as it does on a runner
+/// whose toolchain it finds on `PATH`; such a name is read where `PATH` resolves it, so the record
+/// keeps Cargo's own spelling and hashes the program that spelling runs.
+fn tool_bytes(path: &str) -> Vec<u8> {
+    if Path::new(path).components().count() > 1 {
+        return fs::read(path).expect("tool bytes");
+    }
+    let search = std::env::var_os("PATH").expect("PATH for a bare tool name");
+    std::env::split_paths(&search)
+        .map(|directory| directory.join(path))
+        .find(|candidate| candidate.is_file())
+        .map_or_else(
+            || panic!("tool bytes: `{path}` is on no PATH directory"),
+            |found| fs::read(found).expect("tool bytes"),
+        )
+}
+
 fn bundled_linkers(tools: &mut BTreeMap<&str, serde_json::Value>) {
     let sysroot = Command::new(tools["RUSTC"]["path"].as_str().expect("rustc path"))
         .args(["--print", "sysroot"])

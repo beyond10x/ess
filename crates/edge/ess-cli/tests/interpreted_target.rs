@@ -433,3 +433,53 @@ fn the_interpreted_target_refuses_a_missing_or_foreign_model() {
         "{stderr}"
     );
 }
+
+/// story:a-fixture-may-be-a-row-the-deployment-already-holds: a model whose related row the
+/// deployment provides (`provided: true`) synthesizes with no refusal, and the interpreted target,
+/// as that deployment, creates the row the entity fixture names: both branches pass and nothing is
+/// unsupported.
+#[test]
+fn the_interpreted_target_provides_a_row_the_specification_does_not_create() {
+    let model = specification(
+        &std::fs::read_to_string(
+            root().join("crates/verify/ess-conformance/tests/fixtures/provided-related-row.yaml"),
+        )
+        .expect("the provided-row fixture is read"),
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_ess"))
+        .current_dir(root())
+        .args([
+            "verify",
+            "conform",
+            "run",
+            "--target",
+            "interpreted",
+            "--path",
+        ])
+        .arg(model.path())
+        .args(["--report-format", "2", "--format", "json"])
+        .output()
+        .expect("the `ess` binary runs");
+    let stderr = unwrapped(&output.stderr);
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|error| panic!("a report is rendered ({error}): {stderr}"));
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    let scenarios = report["scenarios"].as_array().expect("scenarios");
+    let ran: Vec<(&str, &str)> = scenarios
+        .iter()
+        .map(|scenario| {
+            (
+                scenario["scenario"].as_str().expect("a scenario id"),
+                scenario["status"].as_str().expect("a status"),
+            )
+        })
+        .collect();
+    assert_eq!(
+        ran,
+        [
+            ("linking.links.CreateLink/outcome/linked", "passed"),
+            ("linking.links.CreateLink/outcome/unknown-app", "passed"),
+        ],
+        "{report:#}"
+    );
+}
