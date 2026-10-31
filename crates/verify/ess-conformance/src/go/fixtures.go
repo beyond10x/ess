@@ -1,7 +1,29 @@
 // FixtureContract is source-owned type authority, resolved before scenario activity.
 type FixtureContract struct {
-	Fields       []accessorField                 `json:"fields"`
+	Fields       []FixtureField                  `json:"fields"`
 	Declarations map[string]selectionDeclaration `json:"declarations"`
+}
+
+// FixtureField is one fixture the provider answers: any value of Type, or, where Entity is set
+// (suite/60 and /61, an entity the deployment provides), the identity of a row of Entity resting
+// in State, Type being the entity's identity type.
+type FixtureField struct {
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Entity string `json:"entity,omitempty"`
+	State  string `json:"state,omitempty"`
+}
+
+// entityFixtureMajor is the first suite major whose fixture may name a row the deployment provides.
+const entityFixtureMajor = 60
+
+// typed is the contract's fields as their type authority alone.
+func (c FixtureContract) typed() []accessorField {
+	fields := make([]accessorField, 0, len(c.Fields))
+	for _, field := range c.Fields {
+		fields = append(fields, accessorField{Name: field.Name, Type: field.Type})
+	}
+	return fields
 }
 
 // FixtureProvider supplies independently provisioned values. It owns provisioning cleanup.
@@ -37,8 +59,11 @@ func (c FixtureContract) validate() error {
 		if err := fixtureName(field.Name); err != nil {
 			return err
 		}
+		if (field.Entity == "") != (field.State == "") {
+			return fmt.Errorf("fixture %s names a provided row by its entity and its state together", field.Name)
+		}
 	}
-	if err := validateFixtureTypes(c.Fields, c.Declarations); err != nil {
+	if err := validateFixtureTypes(c.typed(), c.Declarations); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(c)
@@ -51,7 +76,7 @@ func (c FixtureContract) validate() error {
 	return nil
 }
 
-func admitFixtures(value any) error {
+func admitFixtures(value any, major int) error {
 	root, err := closed(value, "fields declarations", "")
 	if err != nil {
 		return err
@@ -63,8 +88,13 @@ func admitFixtures(value any) error {
 	if err != nil {
 		return err
 	}
+	// From suite/60 a fixture may name a row the deployment provides, by its entity and state.
+	optional := ""
+	if major >= entityFixtureMajor {
+		optional = "entity state"
+	}
 	for _, raw := range fields {
-		field, err := closed(raw, "name type", "")
+		field, err := closed(raw, "name type", optional)
 		if err != nil {
 			return err
 		}
@@ -73,6 +103,13 @@ func admitFixtures(value any) error {
 		}
 		if _, err := text(field["type"]); err != nil {
 			return err
+		}
+		for _, key := range []string{"entity", "state"} {
+			if held, ok := field[key]; ok {
+				if _, err := text(held); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	raw, err := json.Marshal(value)

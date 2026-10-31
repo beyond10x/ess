@@ -5872,7 +5872,7 @@ func admitStep(value any, major int) error {
 				err = exactDecimalMajor(v, major)
 			}
 		case "fixtures":
-			err = admitFixtures(v)
+			err = admitFixtures(v, major)
 		case "response":
 			if tag == "expect_direct_response" {
 				_, err = admitDirectResponse(v)

@@ -8614,7 +8614,7 @@ export function admitStep(value: Node, major: number): void {
     }
     switch (key) {
       case 'fixtures':
-        admitFixtures(held);
+        admitFixtures(held, major);
         break;
       case 'response':
         responseConstraintsMajor(held, major);
