@@ -74,11 +74,64 @@ fn all_commands_with_short_names_generates() {
         .go("notes", "example.invalid/notes")
         .expect("go")
         .declarations;
-    assert!(go.contains("type CreateInput struct"), "{go}");
-    assert!(go.contains("type NotesRow struct"), "{go}");
     let typescript = short.typescript().declarations;
-    assert!(typescript.contains("CreateResponse"), "{typescript}");
-    assert!(typescript.contains("SummariesRow"), "{typescript}");
+    for name in ["CreateInput", "CreateResponse", "PinInput", "NotesRow"] {
+        assert!(go.contains(&format!("\ntype {name} struct")), "{go}");
+        assert!(
+            typescript.contains(&format!("\nexport type {name} = {{")),
+            "{typescript}"
+        );
+    }
+    // The shaped view's row names the declared type it answers.
+    assert!(go.contains("\ntype SummariesRow "), "{go}");
+    assert!(
+        typescript.contains("\nexport type SummariesRow = "),
+        "{typescript}"
+    );
+    for output in [&go, &typescript] {
+        assert!(!output.contains("DemoNotes"), "{output}");
+    }
+}
+
+/// Declared types whose concept segment is a body member: `response`, and `row` as a newtype over
+/// a declared struct, whose definition is a reference like a shaped view's row. Each keeps its
+/// last segment whether selected or only reached.
+const MEMBER_NAMED_TYPES: &str = r"format: ess/22
+system: demo
+version: v1
+domain: demo.notes
+types:
+  - name: demo.notes.Summary
+    kind: struct
+    fields:
+      - {name: title, type: String}
+  - {name: demo.notes.response, kind: newtype, of: String}
+  - {name: demo.notes.row, kind: newtype, of: demo.notes.Summary}
+  - name: demo.notes.Holder
+    kind: struct
+    fields:
+      - {name: answer, type: demo.notes.response}
+      - {name: line, type: demo.notes.row}
+";
+
+#[test]
+fn a_type_named_like_a_body_member_keeps_its_last_segment() {
+    let ir = ir(&[("types.yaml", MEMBER_NAMED_TYPES)]);
+    for roots in [
+        &["demo.notes.Holder"][..],
+        &["demo.notes.Holder", "demo.notes.response", "demo.notes.row"][..],
+    ] {
+        let roots: BTreeSet<String> = roots.iter().map(|root| (*root).to_owned()).collect();
+        let selection =
+            ModelTypes::select(&ir, &roots).unwrap_or_else(|errors| panic!("{errors:?}"));
+        let short = Plan::from_model(&selection)
+            .expect("plan")
+            .with_short_names()
+            .unwrap_or_else(|refused| panic!("{refused}"));
+        let declarations = short.declarations();
+        assert_eq!(declarations["demo.notes.response"], "Response", "{roots:?}");
+        assert_eq!(declarations["demo.notes.row"], "Row", "{roots:?}");
+    }
 }
 
 #[test]
