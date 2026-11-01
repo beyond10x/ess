@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-refusal-records-the-document-it-was-read-from
 kind: story
-status: active
+status: implemented
 title: A refusal records the document it was read from
 relations:
 - serves: vision:O2
@@ -17,10 +17,11 @@ scope:
   path: crates/specify/ess-domain/src/spec.rs
 - confidence: inferred
   path: docs/design/review-typed-diagnostics.md
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-01T20:19:27Z", actor: "human:timo", revision: 13}
 - {from: "proposed", to: "active", at: "2026-11-01T20:19:28Z", actor: "human:timo", revision: 14}
+- {from: "active", to: "implemented", at: "2026-11-01T22:57:34Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 # A refusal records the document it was read from
 
@@ -66,3 +67,7 @@ Re-derived 2026-11-01 by `story-scoper` on `78d58fb47` (ESS 0.81.0). Every line 
 - **Serialized bytes, `ValidationCode`, design-page counts:** none move, so `task test-xtask` is not needed — inferred
 - **Confidence:** high on the sites; medium on the design (the rule that a refusal pushed while a file is read is about that file is unproven; the implementor proves it with a cross-file case where the first copy fails its own conversion)
 - **Would collide with:** units touching `ess-compiler` `resolve.rs` `Locator`/`bridge`/`needles_from_tokens`; `ess-domain` `spec.rs` `assemble`, the absorb loop or `record`/`declare`; or `ess-cli` `load.rs` — inferred
+
+## Delivered
+
+D357, 2026-11-01: unit c48b427f4 and c536cce11 (merged bc308e48e), fix round df9b2c6ed (merged 63b55e5e8). Assembly records the file each refusal was made in, including the set-effect passes and the outcome-group expansion that run before any file is read, and the file each kept declaration came from; `diagnose_traced` cites from that record and searches for the line only inside that file; `ess specify validate` uses it on the refused path in text and `--format json`. Adversary pass 1: F1 (pre-read refusals cited at the kept copy) and F2 (doc drift) fixed; its 3 ess-compiler cases are committed. The compile and advise paths still use the name search.

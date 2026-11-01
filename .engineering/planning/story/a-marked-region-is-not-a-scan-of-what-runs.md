@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-marked-region-is-not-a-scan-of-what-runs
 kind: story
-status: active
+status: implemented
 title: A marked region is not a scan of what runs
 relations:
 - serves: vision:O2
@@ -13,10 +13,11 @@ scope:
   path: crates/edge/ess-cli/tests/coverage_browser.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-01T20:19:28Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-01T20:19:28Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-11-01T22:57:36Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 # A marked region is not a scan of what runs
 
@@ -88,3 +89,7 @@ The story's line numbers are from an older file; the current ones are below.
 - **Confidence:** high for the surface; medium for the site count and defect-3 staleness
 - **Would collide with:** units touching `crates/edge/ess-cli/tests/support/browser.rs`, `coverage_browser.rs`, or `browser_startup_refusal_boundary.rs`
 - **Safety fact:** `support/browser.rs` is compiled only into test targets (`no_test_builds.rs:124` lists it `NEVER_ALLOWED`), so no shipped binary or format changes — inferred
+
+## Delivered
+
+D357, 2026-11-01: unit 14979ec9e (merged 5384b8f0c), fix round 7619c026d (merged 3e4eae45a). The guard `no_unaccounted_panic_site_can_end_a_start` scans the same-file call closure of `Browser::launch_program` (methods incl. generic ones, path-named functions, every method of a same-file trait impl of a named type, `Drop` impls) instead of a marked region, reads the path spellings of the panic forms, and refuses a source defining `macro_rules!`; the 18 sites it found on base are accounted for; a close frame or an error answer on `session.new` is a startup refusal at the session stage. Adversary pass 1: all seven findings fixed. Out of scope, a draft story: `story:a-browser-start-bounds-session-new-by-its-deadline`.

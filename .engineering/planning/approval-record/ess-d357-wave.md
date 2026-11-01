@@ -13,7 +13,7 @@ relations:
 - decides: story:concurrent-history-records-inputs
 - decides: story:a-no-view-arranged-half-probes-the-row-through-the-command
 - decides: story:binding-site-identity-comparisons
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-01T20:19:26Z", actor: "human:timo", revision: 2}
 ---
@@ -149,3 +149,9 @@ Host build slots the orchestrator relayed for this wave, 2026-11-01:
   end, peak `target/`, lowest /.
 - Orchestrator D361 (host-monitor), 2026-11-01: slot granted for the four adversary passes under the D137 terms; each pass runs in its unit tree, serially under the wave lock, `adversary_d357_uN_pass1` plus that unit's granted targets, 2-4G per tree and never over 15G; one line per pass to host-monitor.
 - Orchestrator D359 (host-monitor D138): hold from 20:34Z while the substrate D354 full gate ran; D360 go at 20:46:07Z with the U4 extension (the `ess` binary and suite regeneration, then 13 pin tests in ess-conformance, ess-cli and ess-diff).
+
+## Close
+
+Closed 2026-11-01. Five stories implemented (rows 22, 27, 10, 19, 12); one adversary pass and one fix round per unit; the local final gate green at 0a026cc15 after one fixture re-pin (the first failure on that cause).
+
+Out-of-scope rows (7): adopted 5 as draft stories (`story:a-no-view-held-state-refusal-probes-the-record`, `story:a-no-view-probe-tells-from-states-apart`, `story:a-refusal-witness-compares-its-trigger-identities`, `story:an-eventual-event-compares-a-captured-identity`, `story:a-browser-start-bounds-session-new-by-its-deadline`); declined 2 (`std::process::exit` and `abort` not among the guard's forms, now documented as excluded; a test comment naming an earlier table's stage); duplicates 0.

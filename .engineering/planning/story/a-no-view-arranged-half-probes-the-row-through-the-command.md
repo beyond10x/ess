@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-no-view-arranged-half-probes-the-row-through-the-command
 kind: story
-status: active
+status: implemented
 title: A no-view arranged half probes the row through the command
 relations:
 - serves: vision:O2
@@ -13,10 +13,11 @@ scope:
   path: crates/verify/ess-conformance/tests/adversary_arrangement_pass2.rs
 - confidence: cited
   path: docs/design/outcome-shapes.md
-revision: 5
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-01T20:19:29Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-01T20:19:30Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-01T22:57:39Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 # Story: a no-view arranged half probes the row through the command
 
@@ -48,3 +49,7 @@ Derived 2026-11-01 by `story-scoper` against `integration/ess-d357` at 78d58fb47
 - **Confidence:** high for the source site and the test; medium for "no pinned bytes move"
 - **Would collide with:** units editing `synthesize/existence.rs` `:329-498`, `tests/adversary_arrangement_pass2.rs`, or `docs/design/outcome-shapes.md` §Precedence (`:276-290`)
 - **Not in this story:** `held_state_refusals` falls back the same way without a view (`existence.rs:613-618`); one committed model reaches it (`tests/fixtures/occurrence-clock-offers.yaml`, `demo.offers.AcceptOffer/outcome/malformed`) — cited
+
+## Delivered
+
+D357, 2026-11-01: unit 1188481a0 (merged 7d209d37f), fix round 1962a5ff0 (merged 4b43f8608). With no identity view, the arranged half of an input refusal sends, after the refused send, a valid input of the first branch that addresses the record from its arranged state, and requires that branch; with no such branch the scenario is withdrawn and refused `ESS-SYNTH-001` naming the branches tried. Committed models keep their suite bytes. Adversary pass 1: F2 (first branch only) fixed; F1 (a move between two states the branch runs from) narrowed in the text and left to `story:a-no-view-probe-tells-from-states-apart`. Also left: `story:a-no-view-held-state-refusal-probes-the-record`.

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:concurrent-history-records-inputs
 kind: story
-status: active
+status: implemented
 title: A concurrent history records each command's input
 summary: ess-history records no inputs, so a Linearizable verdict can be wrong for an input-dependent fault
 relations:
@@ -12,10 +12,11 @@ relations:
 scope:
 - confidence: inferred
   path: crates/edge/ess-cli/tests/check_history.rs
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-01T20:19:29Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-01T20:19:29Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-11-01T22:57:37Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 # Story: a concurrent history records each command's input
 
@@ -61,3 +62,7 @@ This replaces the 2026-09-28 scope: that scope's surfaces were changed by beyond
 - **Confidence:** high — the tree's commits, tests and a run of the checker show the behaviour; only where the remaining test goes is a choice
 - **Would collide with:** only units that append tests to `crates/edge/ess-cli/tests/check_history.rs`. The format, checker and writer surfaces are not touched
 - **Safety fact:** the checker already gives `Violation` for an `accepted` answer to `amount: -5` with the input recorded, and `Linearizable` without it. The installed `ess` 0.80.0 was run on probe histories (exit 1 and exit 0). `git diff --stat 0.80.0 HEAD` is empty for `history.rs`, `linearize.rs` and `interpret/`, so HEAD should behave the same; not run on HEAD — inferred for HEAD
+
+## Delivered
+
+D357, 2026-11-01: the behaviour shipped as `ess-history/3` (c85a3be56, c5ef2ede2); unit ea4f64592 (merged 5384b8f0c) adds the regression case to `crates/edge/ess-cli/tests/check_history.rs`: a target that answered `accepted` to an input the model refuses gives `Violation` when the input is recorded and `Linearizable` when it is not. Adversary pass 1 confirmed the format is not the cause (the format-3 history without its input reads as `Linearizable`); that case is committed.
