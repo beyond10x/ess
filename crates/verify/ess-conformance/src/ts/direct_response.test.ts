@@ -8,6 +8,7 @@ import test from 'node:test';
 import {
   admitDirectResponse,
   compareDirectResponse,
+  memberPathsMajor,
   undeclaredFieldsMajor,
 } from './direct_response.js';
 import { admitResponse, compareResponse, decodeResponseObservation } from './response.js';
@@ -139,4 +140,39 @@ test('an opened response payload observation is admitted from suite/48 only', ()
   assert.throws(() => admitResponse(document, 47), /suite\/48 or \/49/);
   admitResponse(document, 48);
   assert.throws(() => decodeResponseObservation(mapped({ undeclared_fields: 'refused' })));
+});
+
+// A response member path (suite/62 and /63, story:an-authored-claim-may-compare-a-nested-field)
+// compares the member it names alone, and every reader refuses it below suite/62.
+test('a response member path compares one member and is refused below suite/62', () => {
+  const document = direct({
+    fields: [{ name: 'checkpoint', type: 'relay.loop.Checkpoint' }],
+    declarations: {
+      'relay.loop.Checkpoint': {
+        kind: 'struct',
+        fields: [
+          { name: 'checkpoint_id', type: 'String' },
+          { name: 'call', type: 'String' },
+        ],
+      },
+    },
+    expected: { 'checkpoint.checkpoint_id': 'cp-1' },
+  });
+  const contract = admitDirectResponse(document);
+  compareDirectResponse(contract, { checkpoint: { checkpoint_id: 'cp-1', call: 'lookup' } });
+  assert.throws(
+    () =>
+      compareDirectResponse(contract, { checkpoint: { checkpoint_id: 'cp-2', call: 'lookup' } }),
+    /differs/,
+  );
+  assert.throws(() => memberPathsMajor(document, 61), /suite\/62 or \/63/);
+  memberPathsMajor(document, 62);
+  assert.throws(
+    () => admitDirectResponse({ ...document, expected: { 'checkpoint.call_id': 'c' } }),
+    /undeclared/,
+  );
+  assert.throws(
+    () => admitDirectResponse({ ...document, expected: { 'checkpoint.call.length': 1 } }),
+    /no members/,
+  );
 });

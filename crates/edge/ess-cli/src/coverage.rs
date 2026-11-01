@@ -166,6 +166,8 @@ pub(super) fn web(
     let Ok((ir, original_sources)) = super::resolved_browser(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
+    // The browser player carries no `Binary64`; it is refused by name before anything is built.
+    ess_conformance::admission::model_without_binary64(&ir)?;
     let admitted = fresh(&ir, scenarios, None, true)?;
     let artifacts = ess_conformance::web::emit_product(
         &original_sources,

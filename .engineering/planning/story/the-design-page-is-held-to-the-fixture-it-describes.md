@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-design-page-is-held-to-the-fixture-it-describes
 kind: story
-status: draft
+status: archived
 title: The design page is held to the fixture it describes
 scope:
 - confidence: inferred
@@ -11,7 +11,9 @@ scope:
   path: crates/specify/ess-compiler/tests/typed_diagnostics.rs
 - confidence: cited
   path: docs/design/review-typed-diagnostics.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-31T23:45:03Z", actor: "human:timo", revision: 6}
 ---
 # The design page is held to the fixture it describes
 
@@ -57,3 +59,7 @@ by something that runs, and that check goes red when the fixture changes and the
 - `crates/edge/ess-xtask/tests/layout.rs` — `inferred`, if the citation half is taken there
 - `crates/specify/ess-compiler/tests/typed_diagnostics.rs` — `inferred`, if the behavioural half is
   taken as a test
+
+## Triage (D338)
+
+Declined at the 2026-10-31 findings triage (orchestrator D338, operator approval relayed by host-monitor D53): the behavioural half is held by crates/specify/ess-compiler/tests/design_page_matches_the_fixture.rs; checking line citations is a repository-wide tool, not this story.

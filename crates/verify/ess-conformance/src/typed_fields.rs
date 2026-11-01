@@ -296,12 +296,7 @@ fn check_type(
             }
             check_type(declarations, value, used, walk, depth + 1)?;
         }
-        TypeRef::Primitive(ess_domain::Primitive::Binary64) => {
-            return Err(match walk.position {
-                Position::Response => "response Binary64 observation is not admitted".into(),
-                Position::Input => "fixture input Binary64 value is not admitted".into(),
-            })
-        }
+        // A `Binary64` is a suite/62 value (`crate::binary64_values`).
         TypeRef::Primitive(_) => {}
     }
     Ok(())

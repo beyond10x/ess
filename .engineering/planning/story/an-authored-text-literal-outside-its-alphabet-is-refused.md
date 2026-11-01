@@ -6,7 +6,7 @@ status: draft
 title: ESS refuses an authored text literal that is outside its field's alphabet
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 ---
 ## Finding
 
@@ -49,3 +49,7 @@ out of scope (deciding that a guard implies the invariant is not decidable in ge
 validation test under `crates/specify/ess-domain/tests/` (a literal `sets:` breaking an entity
 invariant is refused naming the branch; an input-derived value is accepted); `task test-xtask` if a
 new `ValidationCode` is added.
+
+## Triage (D338)
+
+Adopted at the 2026-10-31 findings triage (orchestrator D338, operator approval relayed by host-monitor D53), narrowed to the entity-invariant half: a `sets:` literal that breaks an entity invariant (`capacity > 0` with `sets: {capacity: 0}`) passes `ess specify validate`, and the lowered Entity Runtime rule then refuses that branch on every request. The alphabet half looks held by `layered_literal` since 0.60.0 (inferred, `crates/specify/ess-domain/src/command.rs`, beyond10x/ess#533).

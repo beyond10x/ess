@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/downstream-gaps-0.79.0
+repository: ess
+publishedAt: 2026-11-01T00:00:00Z
+title: Nested-member claims, Binary64 in conformance suites, and typed authored inputs
+summary: >-
+  From ess-scenario/6 a claim may name a nested member by its dotted path, and an authored literal
+  input its type refuses is refused at any depth. Suites /62 and /63 carry a response member path
+  and a finite Binary64, compared by IEEE equality in Rust, Go and TypeScript. Synthesis refutes an
+  inequality against an example.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.79.0
+  version: 0.79.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

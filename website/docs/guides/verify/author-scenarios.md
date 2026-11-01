@@ -54,6 +54,11 @@ refused now rather than at the first run that reaches it. The act checks on this
 (`ESS-AUTHOR-037` and the others) apply the same way. Use it in a pre-commit or CI step that only
 checks scenario files, and run the result like any other suite.
 
+A key written twice in one mapping, such as `label` twice in a step's `input:` or `$instance`
+twice inside a `contains:` field, is refused as `ESS-AUTHOR-047`, as a model file's repeat is:
+YAML keeps only one of the two values, so the other would never be sent or checked. The refusal
+names the mapping's path, the key, and the line of the mapping.
+
 ## Run a chosen subset of a coverage suite
 
 `ess verify conform select` narrows a coverage suite (`--suite-format 5`, or the `/7` and `/9`
@@ -89,6 +94,9 @@ A subset passing is not the whole suite passing: only a nonempty, complete, all-
 qualifies as conformance ([Opt into declared coverage](runners.md#opt-into-declared-coverage)).
 
 ## Expect the branch the input selects
+
+From `type: ess-scenario/6` a literal input its declared type refuses, at any depth, is
+`ESS-AUTHOR-015`: a decoder refuses it before the command runs. Below `/6` only its shape is checked.
 
 `validate` reads each act's literal input against the command's `when:` guards, in the order a
 conforming target answers them: input-guarded refusals first, the first declared of them; then
@@ -238,6 +246,23 @@ A captured identity is chosen by the target while the scenario runs, and a calle
 fixed when the suite is written, so an instance named under `caller:` has to be arranged with
 `setup:`. A suite that reaches a caller attribute nothing supplied, such as one written by an
 older `ess`, reports the scenario `unsupported` with a reason naming the attribute.
+
+## Claim one member of a nested value
+
+A nested value in a claim is compared whole: `response: {checkpoint: {checkpoint_id: cp-1}}` is
+refused for the members it leaves out, named at their path (`ESS-AUTHOR-014`). From
+`type: ess-scenario/6` a claim names one member alone by its dotted path,
+`response: {checkpoint.checkpoint_id: cp-1}`, in an act's `response:`, an event's `payload:`, an
+error's `fields:` and a view row's `contains`, `excludes` and `at`. Each path is compared alone at
+the member's declared type, through `Optional` and newtypes; a member absent or null along it
+matches only `null`, and a path ending at a struct compares that struct whole.
+
+A path naming no member is `ESS-AUTHOR-013` with the full path, as is any dotted key under
+`ess-scenario/1` to `/5`. A path through a list, map, union, enum or primitive, a path in `input:`,
+`setup:`, `caller:` or `params:` (all sent whole), and a path beside a whole field claiming the same
+member are `ESS-AUTHOR-015`; a path holding a reference is `ESS-AUTHOR-021`. Event, error and row
+paths compile to suite/26 dotted keys, so their suites keep their format; a response path compiles
+to `expected` under `ess-conformance/62`, which an older reader refuses by its version.
 
 ## Establish backend state in an authored scenario
 

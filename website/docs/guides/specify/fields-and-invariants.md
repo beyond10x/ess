@@ -340,8 +340,13 @@ floating value.
 
 Binary64 values are executed through
 [normalization recipes](../generate-artifacts.md#binary64-inputs-and-integer-conversion) (`ess-normalization/5`).
-Standalone structural Rust/Go codecs and whole-system/conformance targets
-refuse Binary64; TypeScript structural output reports the finite codec obligation.
+Standalone structural Rust/Go codecs and whole-system targets refuse Binary64;
+TypeScript structural output reports the finite codec obligation. A conformance
+suite carries a Binary64 in an entity's fields, a command's input and response, an
+event's and an error's fields, and a view's fields, from `ess-conformance/62`. An
+authored scenario writes a Binary64 literal below 2^53 in magnitude; a larger one
+is refused as `ESS-AUTHOR-015`, because a view row carries no type and compares an
+integer exactly.
 Adding a Binary64 type to a model selected in full therefore requires checking
 every intended target's support before adopting it.
 

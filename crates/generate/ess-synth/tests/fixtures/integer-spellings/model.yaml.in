@@ -1,0 +1,50 @@
+format: ess/25
+system: demo
+version: v1
+domain: demo.board
+summary: A board holds a label, a size limit and the page it opens on.
+types:
+  - {name: demo.board.BoardId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.board.Board
+    identity: {name: board_id, type: demo.board.BoardId}
+    fields:
+      - {name: label, type: String}
+      - {name: limit, type: Integer}
+      - {name: page, type: Optional<Integer>}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+events:
+  - name: demo.board.BoardOpened
+    fields: [{name: board_id, type: demo.board.BoardId}]
+actors:
+  - name: demo.board.Operator
+    may: [demo.board.Open]
+commands:
+  - name: demo.board.Open
+    input:
+      - {name: label, type: String}
+      - {name: limit, type: Integer}
+      - {name: page, type: Optional<Integer>}
+    outcomes:
+      - name: opened
+        creates: demo.board.Board
+        instance: board_id
+        emits: [demo.board.BoardOpened]
+        payload: {demo.board.BoardOpened: {board_id: {generated: true}}}
+        sets: {label: input.label, limit: input.limit, page: input.page}
+views:
+  - name: demo.board.Boards
+    source: demo.board.Board
+    consistency: read_your_writes
+    fields:
+      - {name: board_id, type: demo.board.BoardId}
+      - {name: label, type: String}
+      - {name: limit, type: Integer}
+      - {name: page, type: Optional<Integer>}
+components:
+  - component: board-service
+    summary: Opens boards and lists them.
+    owns: {domains: [demo.board]}
+    accepts: {commands: [demo.board.Open]}
+    publishes: {events: [demo.board.BoardOpened]}
+    reached_by: network

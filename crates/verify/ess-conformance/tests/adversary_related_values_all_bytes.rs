@@ -27,7 +27,11 @@
 //! observed at wrapped positions, recursive ones refused by name (unit U5, 63a581f88, and the
 //! review fix a422cac9d). IR digests did not move. On the 0.70.0 integration branch the suite and
 //! refusal digests of `generated-views` are re-pinned to the bytes table: a `Decimal` in a complete
-//! subject is observed (suite/58), so its one refusal became a scenario (unit E, 44268b2d6).
+//! subject is observed (suite/58), so its one refusal became a scenario (unit E, 44268b2d6). On the
+//! 0.79.0 integration branch the suite and refusal digests of `text-length-positions` are re-pinned
+//! to the bytes table: a finite `Binary64` is carried through a suite at /62 and /63, so its one
+//! whole-model refusal became scenarios (unit U3, 915fe1fca,
+//! story:a-binary64-value-round-trips-through-a-conformance-suite).
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 

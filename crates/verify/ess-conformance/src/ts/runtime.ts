@@ -51,6 +51,7 @@ import {
   admitDirectResponse,
   admitResponseConstraints,
   compareDirectResponse,
+  memberPathsMajor,
   responseConstraintsMajor,
   undeclaredFieldsMajor,
 } from './direct_response.js';
@@ -94,11 +95,13 @@ import {
   retainedResult,
   admitSubjectRow,
   admitSubjectShape,
+  compareExact,
   decodeSubjectShape,
   decodeResponseObservation,
   exactDecimalMajor,
   exactObservationEqual,
   expectResponsePayload,
+  numberValue,
   responsePrimitiveAdmits,
   responseEqual,
   snapshotResponseResult,
@@ -915,7 +918,7 @@ export function predicateNumbers(value: Node): Node {
  * catalogues, vector by vector.
  */
 const NEWEST_GENERATED_REFUSAL = 24;
-const NEWEST_AUTHORED_REFUSAL = 46;
+const NEWEST_AUTHORED_REFUSAL = 47;
 const CHECK_NOT_EMITTED = new Set([5, 11, 12, 14, 16, 17, 20, 21, 22]);
 
 export function coverageError(): Error {
@@ -2837,7 +2840,7 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
-    throw new Error('suite/8 through /61 require explicit ESS_REPORT_FORMAT=2 before execution');
+    throw new Error('suite/8 through /63 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -4754,7 +4757,7 @@ export class ScenarioRun {
     // equals `1.50` (suite/58), as in the Go runner.
     const unchanged =
       shape !== undefined
-        ? exactObservationEqual(strictJSON(previous!.row), strictJSON(goMarshal(rows[0]!)))
+        ? exactObservationEqual(strictJSON(previous!.row), strictJSON(goMarshal(rows[0]!)), shape)
         : goMarshal(rows[0]!) === previous!.row;
     if (!unchanged)
       return this.fail(
@@ -6037,15 +6040,16 @@ export class ScenarioRun {
  * (beyond10x/ess#179). A field name holds no dot, so an older suite reads exactly as before. A path
  * that finds nothing, because the leaf or a struct above it was not written or is null, is the leaf
  * holding nothing, which is what a wanted `null` asks about. The Rust runner's `matches` and
- * `carried_at`, rule for rule.
+ * `carried_at`, rule for rule. A number compares by valueEqual, as the Go runtime's `equal` and
+ * Rust's `Node` equality compare one.
  */
 export function matches(row: { [field: string]: Node }, want: { [field: string]: Node }): boolean {
-  return fieldsMatch(row, want, equal);
+  return fieldsMatch(row, want, valueEqual);
 }
 
 /**
  * matches for a view row or the fields of an error, whose struct members compare by sameValue. An
- * observed event, invocation or subject identity is compared exactly by matches.
+ * observed event, invocation or subject identity is compared whole by matches.
  */
 export function rowMatches(
   row: { [field: string]: Node },
@@ -6104,7 +6108,41 @@ export function sameValue(actual: Node, expected: Node): boolean {
       actual.every((item, index) => sameValue(item, expected[index]))
     );
   }
-  return equal(actual, expected);
+  return valueEqual(actual, expected);
+}
+
+/**
+ * equal, except that a number is compared by the value Rust's `Node` and Go's `numberValue` give
+ * it rather than by its exact decimal: an integer exactly, any other number by its nearest
+ * binary64. A payload, a row or an input assertion carries no type, so a `Binary64` the target
+ * answers as `1.50000000000000000001` is the `1.5` the suite wrote
+ * (story:a-binary64-value-round-trips-through-a-conformance-suite).
+ */
+export function valueEqual(left: Node, right: Node): boolean {
+  if (isNumberNode(left) || isNumberNode(right)) {
+    const a = numberValue(left);
+    const b = numberValue(right);
+    return a !== null && b !== null && compareExact(a, b) === 0;
+  }
+  if (Array.isArray(left)) {
+    return (
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((item, index) => valueEqual(item, right[index]))
+    );
+  }
+  if (isObject(left)) {
+    return (
+      isObject(right) &&
+      Object.keys(left).length === Object.keys(right).length &&
+      Object.keys(left).every((key) => valueEqual(left[key], right[key]))
+    );
+  }
+  return equal(left, right);
+}
+
+function isNumberNode(value: Node): boolean {
+  return value instanceof JsonNumber || typeof value === 'number';
 }
 
 /**
@@ -6580,6 +6618,7 @@ export function primitive(kind: string, value: Node): string {
       break;
     }
     case 'decimal':
+    case 'binary64':
       if (!asNumber(value)[1]) {
         return mismatch();
       }
@@ -7128,6 +7167,10 @@ const SUITE_MAJORS: { [version: string]: number } = {
   // execution. Cumulative over every major below, the exact-Decimal pair included.
   'ess-conformance/60': 60,
   'ess-conformance/61': 61,
+  // A response observation names a member by its dotted path. Cumulative over every major below,
+  // the provided-row pair included.
+  'ess-conformance/62': 62,
+  'ess-conformance/63': 63,
 };
 
 /** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
@@ -7136,9 +7179,9 @@ const COVERAGE_MAJORS = new Set([
   // The coverage majors of the conditional measure, expression, seed-bearing and counted-claim
   // pairs, of the constrained-response and opened-response pairs, of the held-now pair and of the
   // pair carrying wrapped value-invariant observations and awaits, of the view-reference pair and
-  // of the pair whose one-time read cells read as their actor, of the exact-Decimal pair and of the
-  // pair whose entity fixtures name a provided row.
-  39, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61,
+  // of the pair whose one-time read cells read as their actor, of the exact-Decimal pair, of the
+  // pair whose entity fixtures name a provided row and of the response member-path pair.
+  39, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63,
 ]);
 
 /** coverageMajor reports whether a suite major carries a coverage inventory. */
@@ -7177,7 +7220,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
   if (carriesCoverage !== coverageMajor(major)) {
-    throw new Error('coverage is required exactly for odd suite majors from /5 through /61');
+    throw new Error('coverage is required exactly for odd suite majors from /5 through /63');
   }
   expandCompactSuite(root, major);
   for (const key of ['system', 'specification_version', 'spec_digest', 'contract_digest']) {
@@ -7916,6 +7959,7 @@ export function admitShape(value: Node, major = 21): void {
         case 'boolean':
         case 'integer':
         case 'decimal':
+        case 'binary64':
         case 'timestamp':
         case 'duration':
         case 'uuid':
@@ -8356,10 +8400,75 @@ export function admitPredicateConstraint(value: Node): void {
  */
 export const UNEXECUTED_STEPS: { [tag: string]: { major: number; what: string } } = {};
 
+/** Whether a type expression names `Binary64` directly, through any wrapper. */
+function mentionsBinary64(source: Node): boolean {
+  return typeof source === 'string' && source.split(/[<>, ]+/).includes('Binary64');
+}
+
+/**
+ * Refuse a typed `Binary64` record below suite/62
+ * (story:a-binary64-value-round-trips-through-a-conformance-suite): an event shape's primitive
+ * leaf, and a field or declaration of a retained result, a complete subject, a response
+ * observation or a fixture contract that names one through any wrapper. `step` is one step.
+ */
+function binary64Major(step: { [key: string]: Node }, major: number): void {
+  if (major >= 62) {
+    return;
+  }
+  const refused = (): never => {
+    throw new Error('a Binary64 value requires suite/62 or /63');
+  };
+  for (const key of ['shape', 'capture', 'response', 'fixtures']) {
+    const record = Object.hasOwn(step, key) ? step[key] : undefined;
+    if (record === undefined || !isObject(record)) {
+      continue;
+    }
+    if (key === 'shape' && !Object.hasOwn(record, 'fields')) {
+      for (const leaf of Object.values(record)) {
+        if (isObject(leaf) && leaf.holds === 'primitive' && leaf.kind === 'binary64') {
+          refused();
+        }
+      }
+      continue;
+    }
+    for (const list of ['fields', 'targets']) {
+      const fields = Object.hasOwn(record, list) ? record[list] : undefined;
+      for (const field of Array.isArray(fields) ? fields : []) {
+        if (isObject(field) && mentionsBinary64(field.type ?? null)) {
+          refused();
+        }
+      }
+    }
+    const declarations = Object.hasOwn(record, 'declarations') ? record.declarations : undefined;
+    for (const body of isObject(declarations ?? null) ? Object.values(declarations!) : []) {
+      if (!isObject(body)) {
+        continue;
+      }
+      if (mentionsBinary64(body.of ?? null)) {
+        refused();
+      }
+      for (const field of Array.isArray(body.fields) ? body.fields : []) {
+        if (isObject(field) && mentionsBinary64(field.type ?? null)) {
+          refused();
+        }
+      }
+      if (body.kind === 'union' && isObject(body.variants ?? null)) {
+        for (const variant of Object.values(body.variants as { [key: string]: Node })) {
+          if (mentionsBinary64(variant)) {
+            refused();
+          }
+        }
+      }
+    }
+  }
+}
+
 export function admitStep(value: Node, major: number): void {
   if (!isObject(value)) {
     throw new Error('step must be object');
   }
+  // A typed Binary64 record is suite/62 and /63 vocabulary.
+  binary64Major(value, major);
   const tag = text(value.step);
   let required = 'step';
   let optional = '';
@@ -8619,6 +8728,7 @@ export function admitStep(value: Node, major: number): void {
       case 'response':
         responseConstraintsMajor(held, major);
         undeclaredFieldsMajor(held, major);
+        if (tag === 'expect_direct_response') memberPathsMajor(held, major);
         if (tag === 'expect_direct_response') admitDirectResponse(held);
         else admitResponse(held, major);
         break;

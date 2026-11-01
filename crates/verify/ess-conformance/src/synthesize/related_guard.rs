@@ -593,6 +593,71 @@ fn present_on(
         })
 }
 
+/// Every row `command`'s input names that `bound` leaves unnamed, each the input field naming it
+/// and a row of its entity on which no branch over it answers before `outcome` whatever the input
+/// ([`beside_row`]), arranged on its own in the driven blocks of `distinction`, as
+/// [`drive_several`] arranges the rows beside the one it drives. For the creator of a cascade's
+/// rows sent naming a captured row in one input and a row it reads through another input the
+/// cascade's filter does not bind: a generation started on the run a cancellation moves needs a
+/// node of its own beside it. `None` where `bound` names every row the command reads, where one is
+/// read through anything but an input, and where no bounded arrangement holds such a row.
+pub(super) fn beside_bound(
+    ir: &EssIr,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+) -> Option<Vec<(String, Arrangement)>> {
+    if stored::field(command).is_some() {
+        return None;
+    }
+    let unbound: Vec<(&ResolvedRelatedVia, &EntityHandle)> = rows(command)
+        .into_iter()
+        .filter(|(via, _)| !bound.contains_key(via.field()))
+        .collect();
+    if unbound.is_empty()
+        || unbound.len() > 4
+        || unbound
+            .iter()
+            .any(|(via, _)| !matches!(via, ResolvedRelatedVia::Input { .. }))
+    {
+        return None;
+    }
+    unbound
+        .into_iter()
+        .enumerate()
+        .map(|(index, (via, entity))| {
+            let at = block_start(BESIDE_DRIVEN + index, distinction);
+            beside_row(ir, (command, outcome), (via, entity), actors, (at, true))
+                .map(|row| (via.field().to_owned(), row))
+        })
+        .collect()
+}
+
+/// [`present_for`] over every row `command` reads, each the captured row `bound` names with the
+/// values `rows` settled for it, at every format: the creator of a cascade's rows sent beside rows
+/// [`beside_bound`] arranged, whose values are all known, so no format gate is needed.
+pub(super) fn present_beside(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    (held, rows): (
+        &BTreeMap<crate::scenario::InstanceName, super::StateName>,
+        &HeldRows,
+    ),
+    input: &BTreeMap<String, Node>,
+) -> bool {
+    stored::field(command).is_none()
+        && present_on(
+            ir,
+            command,
+            bound,
+            (held, rows),
+            input,
+            &self::rows(command),
+        )
+}
+
 /// The input guards that steer a creator's candidates toward one [`present_for`] admits: each
 /// refusal's comparisons with the input grounded on the values `rows` settled for the captured
 /// row `bound` names, and each presence test of the input it reads. Empty where that row's values
@@ -3098,12 +3163,25 @@ fn arranged_at(
     let mut sends = Vec::new();
     let mut lonely = false;
     let input = if is_absent(outcome) {
+        // A guard over a row beside is decided on the identity that row was created under, which
+        // is what every send naming it carries (beyond10x/ess#693).
+        let guards: Vec<&Predicate> = command.outcomes.iter().filter_map(input_guard).collect();
+        let read_beside: Vec<&Beside<'_>> = others
+            .iter()
+            .filter(|other| guards_read(&guards, other.via))
+            .collect();
+        let on_beside = |input: &mut BTreeMap<String, Node>| {
+            for other in &read_beside {
+                on_row(ir, input, other.via, &other.row);
+            }
+        };
         let (input, each) = missing_sends(
             ir,
             command,
             outcome,
             without_row_each(ir, command, entity, field, distinction)?,
             (field, distinction),
+            &on_beside,
         )?;
         // Rows of the entity exist, each carrying an identity other than the one sent — but for a
         // singleton entity, which has no identity but the one (beyond10x/ess#287).
@@ -3521,8 +3599,26 @@ fn surround(
     // other row's, and one away from a multiple of `BLOCK`, so an enum reads another variant there.
     let base = first + BLOCK * (COMPANION - OWN);
     let branch = (command, outcome, entity);
-    let [before, after] = [(base - 1, Side::Below), (base + 1, Side::Above)]
-        .map(|(at, side)| companion(ir, branch, actors, at, input, (row, copied), side));
+    // A row beside the named one created under the identity the named row was created under is a
+    // second row under one identity, which no target holds: it is not arranged. Only a row the
+    // search steered onto an identity a guard reads meets one there (beyond10x/ess#693).
+    let held = created_identity(ir, &row.steps, &row.instance);
+    let apart = |beside: Option<Arrangement>| {
+        beside.filter(|beside| {
+            held.is_none() || created_identity(ir, &beside.steps, &beside.instance) != held
+        })
+    };
+    let [before, after] = [(base - 1, Side::Below), (base + 1, Side::Above)].map(|(at, side)| {
+        apart(companion(
+            ir,
+            branch,
+            actors,
+            at,
+            input,
+            (row, copied),
+            side,
+        ))
+    });
     let lonely = !copied.is_empty() && before.is_none() && after.is_none();
     let owner = super::owner_of_row(ir, entity, &row.settled).map(|(_, owner)| owner.clone());
     let mut named = row.steps.clone();
@@ -3548,7 +3644,7 @@ fn surround(
             steps.append(&mut named);
             source.extend(row.source.iter().cloned());
         }
-        if let Some(decoy) = decoy(ir, branch, actors, at, input, (row, copied)) {
+        if let Some(decoy) = apart(decoy(ir, branch, actors, at, input, (row, copied))) {
             steps.extend(decoy.steps);
             source.extend(decoy.source);
         }
@@ -3832,7 +3928,7 @@ fn without_row(
         .first()
         .and_then(|input| input.get(field).cloned())
         .ok_or_else(unarranged)?;
-    unclaimed(ir, command, (field, &fresh), distinction)
+    unclaimed(ir, command, (field, &fresh), distinction, &|_| {})
 }
 
 /// Whether the command's precedence plan reads a missing row the input names after the addressed
@@ -3927,6 +4023,7 @@ fn missing_sends<'c>(
     outcome: &'c ResolvedOutcome,
     inputs: Vec<BTreeMap<String, Node>>,
     (field, distinction): (&str, Distinction),
+    decided: &dyn Fn(&mut BTreeMap<String, Node>),
 ) -> Result<
     (
         BTreeMap<String, Node>,
@@ -3934,6 +4031,16 @@ fn missing_sends<'c>(
     ),
     RefusalCause,
 > {
+    // Each input is decided on the rows beside it names, as it is sent; one that comes out as an
+    // input already held is the same send, and is not written twice (beyond10x/ess#693).
+    let mut held: Vec<BTreeMap<String, Node>> = Vec::with_capacity(inputs.len());
+    for mut input in inputs {
+        decided(&mut input);
+        if !held.contains(&input) {
+            held.push(input);
+        }
+    }
+    let inputs = held;
     if !missing_late(ir, command) {
         let mut each = inputs.into_iter();
         let own = each.next().ok_or_else(unarranged)?;
@@ -3951,7 +4058,7 @@ fn missing_sends<'c>(
             .first()
             .and_then(|(input, _)| input.get(field).cloned())
             .ok_or_else(unarranged)?;
-        unclaimed(ir, command, (field, &fresh), distinction)?
+        unclaimed(ir, command, (field, &fresh), distinction, decided)?
     };
     Ok((
         own,
@@ -3969,9 +4076,11 @@ fn unclaimed(
     command: &ResolvedCommand,
     (field, fresh): (&str, &Node),
     distinction: Distinction,
+    decided: &dyn Fn(&mut BTreeMap<String, Node>),
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
     for mut input in candidates(ir, command, &[], distinction).map_err(RefusalCause::NoWitness)? {
         input.insert(field.to_owned(), fresh.clone());
+        decided(&mut input);
         if input_refusal_taking(ir, command, &input)?.is_none() {
             return Ok(input);
         }
@@ -4162,6 +4271,11 @@ fn with_row_where(
     if let Some(refusal) = subject_fact::now_uncarried(ir, entity, &predicates, false) {
         return Err(refusal);
     }
+    // The input field this row is sent through, where an input guard reads it: the send names the
+    // row, so the guard reads the identity the row was created under (beyond10x/ess#693).
+    let own_via = read(command)
+        .map(|(via, _)| via)
+        .filter(|via| guards_read(&guards, via));
     let first = block_start(base, distinction);
     // The rows beside this one (beyond10x/ess#283): their comparisons with the input are tried
     // too, and an input is taken only where each leaves the branch to answer.
@@ -4222,7 +4336,9 @@ fn with_row_where(
         if !admits(node) {
             return Ok(None);
         }
-        let takes = |input: &BTreeMap<String, Node>| {
+        // The input as it is sent: every field naming a row whose identity a guard reads holds
+        // that row's identity — this row's, and each row's beside it (beyond10x/ess#693).
+        let decides = |input: &BTreeMap<String, Node>| {
             meets(node, input)
                 && around.is_none_or(|around| around.admits(ir, input))
                 && chooses(ir, command, outcome, entity, node, input)
@@ -4236,12 +4352,52 @@ fn with_row_where(
                         input,
                     ))
         };
+        let takes = |input: &BTreeMap<String, Node>| {
+            let mut input = input.clone();
+            if let Some(via) = own_via {
+                on_row(ir, &mut input, via, node);
+            }
+            let rows = around.map_or(&[][..], |around| around.rows);
+            let mut same = input.clone();
+            for other in rows {
+                if guards_read(&guards, other.via) {
+                    on_row(ir, &mut input, other.via, &other.row);
+                }
+            }
+            if decides(&input) {
+                return Some(input);
+            }
+            // A guard reading this row's input beside another input naming a row of the same
+            // entity, `input.app_id == input.peer_id`, may need one row named through both: the
+            // send naming this row through each such input is tried too, where the branch is left
+            // to answer on this row read through it (beyond10x/ess#693).
+            own_via.and_then(|_| created_identity(ir, &node.steps, &node.instance))?;
+            let mut renamed = Vec::new();
+            for other in rows {
+                if !guards_read(&guards, other.via) {
+                    continue;
+                }
+                if other.entity == entity {
+                    on_row(ir, &mut same, other.via, node);
+                    renamed.push(other.via.field());
+                } else {
+                    on_row(ir, &mut same, other.via, &other.row);
+                }
+            }
+            (!renamed.is_empty()
+                && decides(&same)
+                && renamed.iter().all(|field| {
+                    leaves_to(ir, (command, outcome), (field, entity, node), Some(&same))
+                        .is_ok_and(|truth| truth == Truth::True)
+                }))
+            .then_some(same)
+        };
         let found = if let Some(chosen) = chosen {
-            takes(chosen).then(|| chosen.clone())
+            takes(chosen)
         } else {
             searched_inputs(node, &[])?
                 .into_iter()
-                .find(|input| takes(input))
+                .find_map(|input| takes(&input))
         };
         // A row's guard testing whether an Optional input is sent is decided only on an input
         // that leaves it out, which the plain inputs never do: those inputs are tried where the
@@ -4252,15 +4408,44 @@ fn with_row_where(
         Ok(searched_inputs(node, &presence)
             .unwrap_or_default()
             .into_iter()
-            .find(|input| takes(input)))
+            .find_map(|input| takes(&input)))
     };
     // The row is steered toward the values the decided input fields hold, beside the command's own
     // predicates (beyond10x/ess#521); with none decided, the hints are those predicates alone.
+    // An input guard over the field the row is sent through is carried onto the row's identity, so
+    // a row on either side of it is tried (beyond10x/ess#693).
     let hints = [
         predicates.clone(),
         subject_fact::grounded_on_input(ir, entity, fixed, &predicates),
+        own_via.map_or_else(Vec::new, |via| on_identity(ir, entity, &guards, via)),
     ]
     .concat();
+    // A search that finds no row meeting the guards decided on the identities sent — this row's,
+    // and each row's beside it — is refused naming them (beyond10x/ess#693).
+    let sent_as: Vec<&str> = own_via
+        .into_iter()
+        .chain(
+            around
+                .map_or(&[][..], |around| around.rows)
+                .iter()
+                .map(|other| other.via)
+                .filter(|via| guards_read(&guards, via)),
+        )
+        .map(ResolvedRelatedVia::field)
+        .collect();
+    let decided: Vec<String> = sent_as
+        .iter()
+        .flat_map(|field| reading_only(&guards, field))
+        .map(|guard| format!("`{guard}`"))
+        .collect();
+    let label = if decided.is_empty() {
+        "related row".to_owned()
+    } else {
+        format!(
+            "related row, its input decided on the rows sent under {},",
+            decided.join(" and ")
+        )
+    };
     // A row the deployment provides and no outcome creates is resolved as an entity fixture in
     // each of its states (ess/33); one an outcome creates is arranged by it, as before.
     let search = |hints: &[Predicate], strict: bool, under: subject_fact::Under<'_>| {
@@ -4274,7 +4459,7 @@ fn with_row_where(
             entity,
             actors,
             hints,
-            (Distinction::further(first), "related row"),
+            (Distinction::further(first), label.as_str()),
             arranging,
             under,
             |node| selecting(node, strict),
@@ -4323,6 +4508,100 @@ fn with_row_where(
         Err(cause) => retry_under(ir, entity, (pins, known), cause, run)?,
     };
     Ok((row, first, input))
+}
+
+/// Whether one of `guards`, the command's input guards, reads the input field `via` names a row
+/// through. A row read through a stored field is named by no input, so no input guard reads it.
+fn guards_read(guards: &[&Predicate], via: &ResolvedRelatedVia) -> bool {
+    let ResolvedRelatedVia::Input { field, .. } = via else {
+        return false;
+    };
+    guards.iter().any(|guard| {
+        guard
+            .fact_paths()
+            .iter()
+            .any(|path| path.namespace() == field)
+    })
+}
+
+/// `input` with the field `via` reads holding the identity `row` was created under, as the send
+/// naming `row` carries it (beyond10x/ess#693); unchanged where the target mints that identity.
+fn on_row(
+    ir: &EssIr,
+    input: &mut BTreeMap<String, Node>,
+    via: &ResolvedRelatedVia,
+    row: &Arrangement,
+) {
+    if let Some(identity) = created_identity(ir, &row.steps, &row.instance) {
+        input.insert(via.field().to_owned(), identity);
+    }
+}
+
+/// Every one of `guards` reading only the input field `via`, read over the identity of `entity`
+/// instead: `kind == b` over the input becomes `kind == b` over the row, so a row search steered
+/// by it tries rows on both sides of the guard (beyond10x/ess#693).
+fn on_identity(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    guards: &[&Predicate],
+    via: &ResolvedRelatedVia,
+) -> Vec<Predicate> {
+    let field = via.field();
+    let identity = &ir.entity(entity).identity.name;
+    let onto = |path: &FactPath| {
+        let mut segments = vec![identity.clone()];
+        segments.extend(path.segments()[1..].iter().cloned());
+        FactPath::from_segments(segments)
+    };
+    reading_only(guards, field)
+        .map(|guard| super::map_paths(guard, &onto))
+        .collect()
+}
+
+/// Every one of `guards` whose facts are all of the input field `field`.
+fn reading_only<'g>(
+    guards: &'g [&'g Predicate],
+    field: &'g str,
+) -> impl Iterator<Item = &'g Predicate> + 'g {
+    guards.iter().copied().filter(move |guard| {
+        let paths = guard.fact_paths();
+        !paths.is_empty() && paths.iter().all(|path| path.namespace() == field)
+    })
+}
+
+/// The identity the row captured as `instance` was created under, where its creating step sent it
+/// as a literal: the value the creating branch publishes as the new row's identity, read off the
+/// arrangement's own steps through [`super::determined_payload`], scalar and struct alike
+/// (beyond10x/ess#693). `None` where the target mints it, or no step of `steps` captured it.
+pub(super) fn created_identity(
+    ir: &EssIr,
+    steps: &[super::ScenarioStep],
+    instance: &crate::scenario::InstanceName,
+) -> Option<Node> {
+    use super::ScenarioStep;
+    let at = steps.iter().position(|step| {
+        matches!(step, ScenarioStep::CaptureInstance { instance: captured, .. } if captured == instance)
+    })?;
+    let ScenarioStep::CaptureInstance { event, field, .. } = &steps[at] else {
+        return None;
+    };
+    let (input, sent) = steps[..at].iter().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand { input, command, .. } => Some((input, command)),
+        _ => None,
+    })?;
+    let taken = steps[..at].iter().rev().find_map(|step| match step {
+        ScenarioStep::ExpectOutcome { outcome } => Some(outcome),
+        _ => None,
+    })?;
+    let command = ir
+        .commands()
+        .values()
+        .find(|command| super::CommandRef::new(command.name.clone()) == *sent)?;
+    let branch = command
+        .outcomes
+        .iter()
+        .find(|branch| branch.name == taken.outcome)?;
+    super::determined_payload(ir, branch, event, input, &BTreeMap::new()).remove(field)
 }
 
 /// The search of [`with_row`] again, filed under an owner, after the plain one found no row:

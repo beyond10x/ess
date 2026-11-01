@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-authored-claim-may-compare-a-nested-field
 kind: story
-status: draft
+status: implemented
 title: An authored scenario may compare a nested field
 summary: Nested-field comparison is refused with ESS-AUTHOR-014/013 (a2a wave 1, G6).
 tags:
@@ -12,7 +12,12 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 4
+- informed_by: story:an-authored-event-claim-names-a-struct-leaf
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-31T19:58:59Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-10-31T19:58:59Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-11-01T01:28:07Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 
@@ -156,3 +161,16 @@ existing byte's meaning and reuses the spelling guards and suite/26 already use)
   `a_nested_response_member_claim_validates_and_synthesizes` (the brand-free stop/checkpoint
   specification: validate exit 0 and 0 refusals; the partial-map variant exit 1 with 014 naming
   `format` and `call`).
+
+## Revision (wave D335, 2026-10-31)
+
+G4 moved from D325 to wave D335 (`approval-record:ess-d335-next-adopter-gaps`). ESS 0.78.0 took
+`ess-conformance/60` and `/61` for entity fixtures, so the response paths above go in `expected`
+under `ess-conformance/62` (`/63` with declared coverage); `ess-scenario/6` is unchanged. Read
+`/60` and `/61` in the Decisions and Acceptance above as `/62` and `/63`, and "the suite relabelled
+`/58`" as "the suite relabelled `/61`".
+
+This unit also carries the first acceptance line of
+`story:an-authored-event-claim-names-a-struct-leaf` (an authored event payload may name a struct
+leaf by a dotted key). Its second line, a struct literal that claims only the leaves it writes, is
+option A of the fit review above and stays rejected.

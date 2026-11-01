@@ -688,6 +688,9 @@ const READER_VERSIONS = [
   // Cumulative: the pair whose entity fixtures name a row the deployment provides.
   'ess-conformance/60',
   'ess-conformance/61',
+  // Cumulative: the pair whose response observations name a member by its path.
+  'ess-conformance/62',
+  'ess-conformance/63',
 ];
 
 export function admitDisclosureId(

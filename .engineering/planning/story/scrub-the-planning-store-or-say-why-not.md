@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scrub-the-planning-store-or-say-why-not
 kind: story
-status: draft
+status: archived
 title: The reason for leaving the planning store unscanned was false; decide again on the real numbers
 relations:
 - serves: vision:O2
@@ -12,7 +12,9 @@ scope:
   path: .engineering/planning
 - confidence: cited
   path: crates/edge/ess-xtask/tests/host_paths.rs
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-31T23:45:02Z", actor: "human:timo", revision: 5}
 ---
 ## Why this exists
 
@@ -63,3 +65,7 @@ a reader can check.
 60 tracked files, 87 journal lines, 699 unread files, 65,838 findings, `examined == 699` with no
 file skipped — all confirmed twice, by the story's own grep and by the lane's transcribed detector.
 No carrying tree exists outside `.engineering/`.
+
+## Triage (D338)
+
+Declined at the 2026-10-31 findings triage (orchestrator D338, operator approval relayed by host-monitor D53): closed by the store migration; a search for home-directory paths in the planning store on main finds no file.

@@ -145,7 +145,7 @@ fn invalid_source_paths(dir: &Path, source: &str) -> Vec<PathBuf> {
     bad
 }
 #[test]
-fn coverage_cli_refuses_binary64_model_before_each_new_production_surface() {
+fn coverage_cli_publishes_a_carried_binary64_and_the_player_refuses_it() {
     let dir = directory("binary64");
     let model = dir.join("model");
     fs::create_dir_all(&model).unwrap();
@@ -183,12 +183,30 @@ fn coverage_cli_refuses_binary64_model_before_each_new_production_surface() {
             args.extend(["--scenarios", scenarios.to_str().unwrap()]);
         }
         let output = recorded(&dir, route, &args);
-        assert!(!output.status.success(), "{output:?}");
-        assert!(
-            String::from_utf8_lossy(&output.stderr).contains("Binary64"),
-            "{output:?}"
-        );
-        assert!(!destination.exists());
+        // Restated for story:a-binary64-value-round-trips-through-a-conformance-suite: an event
+        // field carries a Binary64 from suite/62 and /63, so every coverage route but the browser
+        // player publishes; the player still refuses it by name and writes nothing.
+        if route == "web" {
+            assert!(!output.status.success(), "{output:?}");
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("Binary64"),
+                "story:a-binary64-value-round-trips-through-a-conformance-suite: {output:?}"
+            );
+            assert!(!destination.exists());
+        } else {
+            assert!(
+                destination.exists(),
+                "story:a-binary64-value-round-trips-through-a-conformance-suite: {route}: {output:?}"
+            );
+            if route == "synthesize" {
+                assert!(
+                    fs::read_to_string(&destination)
+                        .unwrap()
+                        .contains("\"ess-conformance/63\""),
+                    "story:a-binary64-value-round-trips-through-a-conformance-suite: /63"
+                );
+            }
+        }
     }
     let destination = dir.join("go-out");
     let output = recorded(
@@ -207,8 +225,11 @@ fn coverage_cli_refuses_binary64_model_before_each_new_production_surface() {
             destination.to_str().unwrap(),
         ],
     );
-    assert!(!output.status.success(), "{output:?}");
-    assert!(!destination.exists());
+    assert!(
+        output.status.success(),
+        "story:a-binary64-value-round-trips-through-a-conformance-suite: {output:?}"
+    );
+    assert!(destination.exists());
 }
 fn directory(name: &str) -> TemporaryDirectory {
     TemporaryDirectory::create(&format!("ess-coverage-cli-{name}")).unwrap()

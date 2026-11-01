@@ -962,3 +962,753 @@ fn a_cascade_set_effect_refusal_carries_its_own_help() {
     let help = refusal.hint();
     assert!(!help.contains(fallback) && help.contains("move"), "{help}");
 }
+
+/// Cancelling a run cancels its generations. A generation is started only by `StartGeneration`,
+/// whose refusals the cases below put above its creating branch: the run it names missing or not
+/// active, the node it names missing. The node is a second related row the cascade's filter does
+/// not mention.
+const GRAPH: &str = r"format: ess/25
+system: demo
+version: v1
+domain: demo.graph
+types:
+  - {name: demo.graph.RunId, kind: newtype, of: Uuid}
+  - {name: demo.graph.NodeId, kind: newtype, of: Uuid}
+  - {name: demo.graph.GenerationId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.graph.Node
+    identity: {name: node_id, type: demo.graph.NodeId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Ready
+      states: [Ready]
+      terminal: [Ready]
+      transitions: []
+  - name: demo.graph.Run
+    identity: {name: run_id, type: demo.graph.RunId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Active
+      states: [Active, Cancelled]
+      terminal: [Cancelled]
+      transitions:
+        - {name: cancel, from: [Active], to: Cancelled}
+  - name: demo.graph.Generation
+    identity: {name: generation_id, type: demo.graph.GenerationId}
+    fields:
+      - {name: run_id, type: demo.graph.RunId}
+      - {name: node_id, type: demo.graph.NodeId}
+    relations:
+      - {name: run, kind: references, target: demo.graph.Run, cardinality: one, via: run_id}
+      - {name: node, kind: references, target: demo.graph.Node, cardinality: one, via: node_id}
+    lifecycle:
+      initial: Running
+      states: [Running, Cancelled]
+      terminal: [Cancelled]
+      transitions:
+        - {name: cancel, from: [Running], to: Cancelled}
+errors:
+  - {name: demo.graph.RunNotFound, fields: []}
+  - {name: demo.graph.RunNotActive, fields: []}
+  - {name: demo.graph.NodeNotFound, fields: []}
+  - {name: demo.graph.WrongState, fields: []}
+events:
+  - name: demo.graph.NodeAdded
+    fields: [{name: node_id, type: demo.graph.NodeId}]
+  - name: demo.graph.RunStarted
+    fields: [{name: run_id, type: demo.graph.RunId}]
+  - name: demo.graph.GenerationStarted
+    fields: [{name: generation_id, type: demo.graph.GenerationId}]
+  - name: demo.graph.RunCancelled
+    fields: [{name: run_id, type: demo.graph.RunId}]
+actors:
+  - name: demo.graph.Operator
+    may: [demo.graph.AddNode, demo.graph.StartRun, demo.graph.StartGeneration, demo.graph.CancelRun]
+commands:
+  - name: demo.graph.AddNode
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: added
+        creates: demo.graph.Node
+        instance: node_id
+        emits: [demo.graph.NodeAdded]
+        payload: {demo.graph.NodeAdded: {node_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: demo.graph.StartRun
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: started
+        creates: demo.graph.Run
+        instance: run_id
+        emits: [demo.graph.RunStarted]
+        payload: {demo.graph.RunStarted: {run_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: demo.graph.StartGeneration
+    input:
+      - {name: run_id, type: demo.graph.RunId}
+      - {name: node_id, type: demo.graph.NodeId}
+    outcomes:
+      - name: started
+        creates: demo.graph.Generation
+        instance: generation_id
+        emits: [demo.graph.GenerationStarted]
+        payload: {demo.graph.GenerationStarted: {generation_id: {generated: true}}}
+        sets: {run_id: input.run_id, node_id: input.node_id}
+  - name: demo.graph.CancelRun
+    input:
+      - {name: run_id, type: demo.graph.RunId}
+    outcomes:
+      - name: cancelled
+        moves: demo.graph.Run.cancel
+        instance: run_id
+        emits: [demo.graph.RunCancelled]
+        payload: {demo.graph.RunCancelled: {run_id: input.run_id}}
+        affects:
+          - entity: demo.graph.Generation
+            where: run_id == input.run_id
+            moves: demo.graph.Generation.cancel
+      - {name: wrong-state, wrong_state: true, error: demo.graph.WrongState}
+views:
+  - name: demo.graph.Generations
+    source: demo.graph.Generation
+    consistency: read_your_writes
+    fields:
+      - {name: generation_id, type: demo.graph.GenerationId}
+      - {name: run_id, type: demo.graph.RunId}
+      - {name: state, type: demo.graph.Generation.State}
+  - name: demo.graph.Runs
+    source: demo.graph.Run
+    consistency: read_your_writes
+    fields:
+      - {name: run_id, type: demo.graph.RunId}
+      - {name: state, type: demo.graph.Run.State}
+";
+
+const RUN_CANCELLED: &str = "demo.graph.CancelRun/outcome/cancelled";
+
+/// A missing run refused before `started`.
+const UNKNOWN_RUN: &str = "      - name: unknown-run
+        when_related: {via: input.run_id, exists: false}
+        error: demo.graph.RunNotFound
+";
+
+/// A run that is not active refused before `started`: the state the cancellation needs it in.
+const RUN_NOT_ACTIVE: &str = "      - name: run-not-active
+        when_related: {via: input.run_id, predicate: state != Active}
+        error: demo.graph.RunNotActive
+";
+
+/// An active run refused before `started`: no generation of a run a cancellation names can start.
+const RUN_ACTIVE: &str = "      - name: run-not-active
+        when_related: {via: input.run_id, predicate: state == Active}
+        error: demo.graph.RunNotActive
+";
+
+/// A missing node refused before `started`: a second related row the cascade's filter leaves out.
+const UNKNOWN_NODE: &str = "      - name: unknown-node
+        when_related: {via: input.node_id, exists: false}
+        error: demo.graph.NodeNotFound
+";
+
+/// [`GRAPH`] with `refusals` declared above `StartGeneration`'s creating branch.
+fn graph(refusals: &[&str]) -> String {
+    let at = "      - name: started\n        creates: demo.graph.Generation\n";
+    assert!(GRAPH.contains(at));
+    GRAPH.replacen(at, &format!("{}{at}", refusals.concat()), 1)
+}
+
+/// `model` at `format: <format>`.
+fn at_format(model: &str, format: &str) -> String {
+    let line = "format: ess/25\n";
+    assert!(model.starts_with(line));
+    model.replacen(line, &format!("format: {format}\n"), 1)
+}
+
+/// `model` with a node created only under an existing pipeline: `AddNode` refuses a missing one
+/// first, so the node the cascade's rows need is itself arranged behind a guard of its own.
+fn with_pipeline(model: &str) -> String {
+    let edits = [
+        (
+            "  - {name: demo.graph.NodeId, kind: newtype, of: Uuid}\n",
+            "  - {name: demo.graph.NodeId, kind: newtype, of: Uuid}
+  - {name: demo.graph.PipelineId, kind: newtype, of: Uuid}
+",
+        ),
+        (
+            "entities:\n  - name: demo.graph.Node\n    identity: {name: node_id, type: demo.graph.NodeId}
+    fields:
+      - {name: label, type: String}
+",
+            "entities:
+  - name: demo.graph.Pipeline
+    identity: {name: pipeline_id, type: demo.graph.PipelineId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Ready, states: [Ready], terminal: [Ready]}
+  - name: demo.graph.Node
+    identity: {name: node_id, type: demo.graph.NodeId}
+    fields:
+      - {name: label, type: String}
+      - {name: pipeline_id, type: demo.graph.PipelineId}
+    relations:
+      - {name: pipeline, kind: references, target: demo.graph.Pipeline, cardinality: one, via: pipeline_id}
+",
+        ),
+        (
+            "errors:\n",
+            "errors:\n  - {name: demo.graph.PipelineNotFound, fields: []}\n",
+        ),
+        (
+            "events:\n",
+            "events:
+  - name: demo.graph.PipelineCreated
+    fields: [{name: pipeline_id, type: demo.graph.PipelineId}]
+",
+        ),
+        (
+            "    may: [demo.graph.AddNode,",
+            "    may: [demo.graph.CreatePipeline, demo.graph.AddNode,",
+        ),
+        (
+            "commands:
+  - name: demo.graph.AddNode
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: added
+",
+            "commands:
+  - name: demo.graph.CreatePipeline
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: created
+        creates: demo.graph.Pipeline
+        instance: pipeline_id
+        emits: [demo.graph.PipelineCreated]
+        payload: {demo.graph.PipelineCreated: {pipeline_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: demo.graph.AddNode
+    input:
+      - {name: label, type: String}
+      - {name: pipeline_id, type: demo.graph.PipelineId}
+    outcomes:
+      - name: unknown-pipeline
+        when_related: {via: input.pipeline_id, exists: false}
+        error: demo.graph.PipelineNotFound
+      - name: added
+",
+        ),
+        (
+            "        payload: {demo.graph.NodeAdded: {node_id: {generated: true}}}
+        sets: {label: input.label}
+",
+            "        payload: {demo.graph.NodeAdded: {node_id: {generated: true}}}
+        sets: {label: input.label, pipeline_id: input.pipeline_id}
+",
+        ),
+    ];
+    edits.iter().fold(model.to_owned(), |model, (from, to)| {
+        assert!(model.contains(from), "{from}");
+        model.replacen(from, to, 1)
+    })
+}
+
+/// The `affects:` entry of [`GRAPH`]'s cancellation over generations.
+const GENERATION_ENTRY: &str = "          - entity: demo.graph.Generation
+            where: run_id == input.run_id
+            moves: demo.graph.Generation.cancel
+";
+
+/// The `affects:` entry the two-entry shape adds over segments.
+const SEGMENT_ENTRY: &str = "          - entity: demo.graph.Segment
+            where: run_id == input.run_id
+            moves: demo.graph.Segment.cancel
+";
+
+/// `model` with `entry` left out of its cancellation: a target that skips that move. `command`,
+/// moving `entity` by `transition` on the row its input names, takes the transition instead, so
+/// the model stays admitted.
+fn skipping_entry(
+    model: &str,
+    entry: &str,
+    (entity, id, command, event): (&str, &str, &str, &str),
+) -> String {
+    let may = "demo.graph.CancelRun]\n";
+    let views = "views:\n";
+    assert!(model.contains(entry) && model.contains(may) && model.contains(views));
+    let unique = !model
+        .replacen(entry, "", 1)
+        .contains("        affects:\n          -");
+    let model = if unique {
+        model.replacen(&format!("        affects:\n{entry}"), "", 1)
+    } else {
+        model.replacen(entry, "", 1)
+    };
+    model
+        .replacen(
+            may,
+            &format!("demo.graph.CancelRun, demo.graph.{command}]\n"),
+            1,
+        )
+        .replacen(
+            views,
+            &format!(
+                "  - name: demo.graph.{command}
+    input: [{{name: {id}, type: demo.graph.{entity}Id}}]
+    outcomes:
+      - name: cancelled
+        moves: demo.graph.{entity}.cancel
+        instance: {id}
+        emits: [demo.graph.{event}]
+        payload: {{demo.graph.{event}: {{{id}: input.{id}}}}}
+      - {{name: not-running, wrong_state: true, error: demo.graph.WrongState}}
+views:
+"
+            ),
+            1,
+        )
+}
+
+/// The generation entry's target-side move: entity, identity, command and the event it emits.
+const SKIP_GENERATION: (&str, &str, &str, &str) = (
+    "Generation",
+    "generation_id",
+    "CancelGeneration",
+    "GenerationStarted",
+);
+/// The segment entry's, as [`SKIP_GENERATION`].
+const SKIP_SEGMENT: (&str, &str, &str, &str) =
+    ("Segment", "segment_id", "CancelSegment", "SegmentAppended");
+
+/// How many steps of `scenario` before its last send of `last` send `command`.
+fn sends_before(scenario: &ConformanceScenario, command: &str, last: &str) -> usize {
+    let is = |step: &ScenarioStep, name: &str| {
+        matches!(step, ScenarioStep::ExecuteCommand { command: sent, .. }
+            if sent.to_string() == name)
+    };
+    let end = scenario
+        .steps
+        .iter()
+        .rposition(|step| is(step, last))
+        .unwrap_or_else(|| panic!("{last} is never sent: {:#?}", scenario.steps));
+    scenario.steps[..end]
+        .iter()
+        .filter(|step| is(step, command))
+        .count()
+}
+
+/// `model` synthesizes with no refusal; its scenario `id` sends each command of `before` at least
+/// as often as it names before its last send of `last`; the suite passes the interpreter; and the
+/// scenario fails against every model of `skips`.
+fn witnessed_on(model: &str, (id, last): (&str, &str), before: &[(&str, usize)], skips: &[String]) {
+    let ir = ir_of(model);
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    assert_eq!(causes(&synthesis), Vec::<String>::new(), "{model}");
+    let witness = scenario(&synthesis.suite, id);
+    for (command, least) in before {
+        assert!(
+            sends_before(witness, command, last) >= *least,
+            "{command} at least {least} times: {:#?}",
+            witness.steps
+        );
+    }
+    let statuses = run(
+        &synthesis.suite,
+        &ess_conformance::interpret::Interpreted::for_model(ir),
+    );
+    assert_eq!(not_passed(&statuses), Vec::<&str>::new(), "{statuses:#?}");
+    for skipping in skips {
+        let skipped = run(
+            &synthesis.suite,
+            &ess_conformance::interpret::Interpreted::for_model(ir_of(skipping)),
+        );
+        assert_eq!(skipped.get(id), Some(&Status::Failed), "{skipped:#?}");
+    }
+}
+
+/// [`witnessed_on`] for a [`GRAPH`] model's cancellation over generations.
+fn run_cascade_witnessed(model: &str) {
+    witnessed_on(
+        model,
+        (RUN_CANCELLED, "demo.graph.CancelRun"),
+        &[("demo.graph.AddNode", 1), ("demo.graph.StartGeneration", 3)],
+        &[skipping_entry(model, GENERATION_ENTRY, SKIP_GENERATION)],
+    );
+}
+
+#[test]
+fn a_cascade_onto_rows_whose_creator_needs_the_subject_active_and_a_second_row_is_witnessed() {
+    let model = graph(&[UNKNOWN_RUN, RUN_NOT_ACTIVE, UNKNOWN_NODE]);
+    run_cascade_witnessed(&model);
+    run_cascade_witnessed(&at_format(&model, "ess/32"));
+}
+
+#[test]
+fn a_cascade_onto_rows_whose_creator_guards_only_a_second_row_is_witnessed() {
+    run_cascade_witnessed(&graph(&[UNKNOWN_NODE]));
+}
+
+#[test]
+fn a_cascade_arranges_a_second_row_created_behind_its_own_guard() {
+    let model = with_pipeline(&graph(&[UNKNOWN_RUN, RUN_NOT_ACTIVE, UNKNOWN_NODE]));
+    run_cascade_witnessed(&model);
+    let synthesis = synthesis_of(&model);
+    assert!(
+        sends_before(
+            scenario(&synthesis.suite, RUN_CANCELLED),
+            "demo.graph.CreatePipeline",
+            "demo.graph.CancelRun"
+        ) >= 1
+    );
+}
+
+/// The refusal of `id` in `model`'s synthesis, where no scenario `id` is written.
+fn refusal_of(model: &str, id: &str) -> ess_conformance::synthesize::Refusal {
+    let synthesis = synthesis_of(model);
+    assert!(
+        !synthesis
+            .suite
+            .scenarios
+            .keys()
+            .any(|key| key.to_string() == id),
+        "no scenario a skipping target passes"
+    );
+    synthesis
+        .refusals
+        .iter()
+        .find(|refusal| refusal.to_string().contains(id))
+        .cloned()
+        .unwrap_or_else(|| panic!("{:#?}", causes(&synthesis)))
+}
+
+#[test]
+fn a_cascade_refusal_names_the_guard_that_answers_first() {
+    let refusal = refusal_of(
+        &graph(&[UNKNOWN_RUN, RUN_ACTIVE, UNKNOWN_NODE]),
+        RUN_CANCELLED,
+    );
+    assert_eq!(refusal.code().to_string(), "ESS-SYNTH-001", "{refusal}");
+    let cause = refusal.cause.to_string();
+    assert!(
+        cause.contains("demo.graph.StartGeneration/started")
+            && cause.contains("cancelled.affects[0]")
+            && cause.contains("run-not-active"),
+        "{cause}"
+    );
+    let feed = undriven();
+    let cause = feed.cause.to_string();
+    assert!(
+        cause.contains("cascade.feed.Post/posted") && cause.contains("open-feed"),
+        "{cause}"
+    );
+    let help = "narrow the guard that answers before it there, or cover the branch with an \
+                authored scenario";
+    assert!(refusal.hint().contains(help), "{}", refusal.hint());
+    assert!(feed.hint().contains(help), "{}", feed.hint());
+}
+
+/// Closing a group closes its seats. A seat is issued under a tier and copies its group from the
+/// tier, so the cascade's filtered key is the tier's, not the issuing command's input.
+const SEATS: &str = r"format: ess/25
+system: demo
+version: v1
+domain: demo.seats
+types:
+  - {name: demo.seats.TierId, kind: newtype, of: Uuid}
+  - {name: demo.seats.SeatId, kind: newtype, of: Uuid}
+  - {name: demo.seats.GroupId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.seats.Group
+    identity: {name: group_id, type: demo.seats.GroupId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+  - name: demo.seats.Tier
+    identity: {name: tier_id, type: demo.seats.TierId}
+    fields:
+      - {name: group_id, type: demo.seats.GroupId}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+  - name: demo.seats.Seat
+    identity: {name: seat_id, type: demo.seats.SeatId}
+    fields:
+      - {name: tier_id, type: demo.seats.TierId}
+      - {name: group_id, type: demo.seats.GroupId}
+    relations:
+      - {name: tier, kind: references, target: demo.seats.Tier, cardinality: one, via: tier_id}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+errors:
+  - {name: demo.seats.TierNotFound, fields: []}
+  - {name: demo.seats.GroupNotFound, fields: []}
+  - {name: demo.seats.WrongState, fields: []}
+events:
+  - name: demo.seats.GroupOpened
+    fields: [{name: group_id, type: demo.seats.GroupId}]
+  - name: demo.seats.TierDefined
+    fields: [{name: tier_id, type: demo.seats.TierId}]
+  - name: demo.seats.Issued
+    fields: [{name: seat_id, type: demo.seats.SeatId}]
+  - name: demo.seats.GroupClosed
+    fields: [{name: group_id, type: demo.seats.GroupId}]
+actors:
+  - name: demo.seats.Operator
+    may: [demo.seats.OpenGroup, demo.seats.DefineTier, demo.seats.Issue, demo.seats.CloseGroup]
+commands:
+  - name: demo.seats.OpenGroup
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: demo.seats.Group
+        instance: group_id
+        emits: [demo.seats.GroupOpened]
+        payload: {demo.seats.GroupOpened: {group_id: {generated: true}}}
+        sets: {label: input.label}
+  - name: demo.seats.DefineTier
+    input:
+      - {name: group_id, type: demo.seats.GroupId}
+    outcomes:
+      - name: defined
+        creates: demo.seats.Tier
+        instance: tier_id
+        emits: [demo.seats.TierDefined]
+        payload: {demo.seats.TierDefined: {tier_id: {generated: true}}}
+        sets: {group_id: input.group_id}
+  - name: demo.seats.Issue
+    input:
+      - {name: tier_id, type: demo.seats.TierId}
+    outcomes:
+      - name: unknown-tier
+        when_related: {via: input.tier_id, exists: false}
+        error: demo.seats.TierNotFound
+      - name: issued
+        creates: demo.seats.Seat
+        instance: seat_id
+        emits: [demo.seats.Issued]
+        payload: {demo.seats.Issued: {seat_id: {generated: true}}}
+        sets:
+          tier_id: input.tier_id
+          group_id: {related: {via: input.tier_id, field: group_id}}
+  - name: demo.seats.CloseGroup
+    input:
+      - {name: group_id, type: demo.seats.GroupId}
+    outcomes:
+      - name: closed
+        moves: demo.seats.Group.close
+        instance: group_id
+        emits: [demo.seats.GroupClosed]
+        payload: {demo.seats.GroupClosed: {group_id: input.group_id}}
+        affects:
+          - entity: demo.seats.Seat
+            where: group_id == input.group_id
+            moves: demo.seats.Seat.close
+      - {name: wrong-state, wrong_state: true, error: demo.seats.WrongState}
+views:
+  - name: demo.seats.Seats
+    source: demo.seats.Seat
+    consistency: read_your_writes
+    fields:
+      - {name: seat_id, type: demo.seats.SeatId}
+      - {name: group_id, type: demo.seats.GroupId}
+      - {name: state, type: demo.seats.Seat.State}
+  - name: demo.seats.Groups
+    source: demo.seats.Group
+    consistency: read_your_writes
+    fields:
+      - {name: group_id, type: demo.seats.GroupId}
+      - {name: state, type: demo.seats.Group.State}
+";
+
+const GROUP_CLOSED: &str = "demo.seats.CloseGroup/outcome/closed";
+
+const UNKNOWN_TIER: &str = "      - name: unknown-tier
+        when_related: {via: input.tier_id, exists: false}
+        error: demo.seats.TierNotFound
+";
+
+/// `model` with the cancellation's `affects:` entry left out and `CloseSeat` taking the move.
+fn skipping_seats(model: &str) -> String {
+    let entry = "        affects:
+          - entity: demo.seats.Seat
+            where: group_id == input.group_id
+            moves: demo.seats.Seat.close
+";
+    let may = "demo.seats.CloseGroup]\n";
+    let views = "views:\n";
+    assert!(model.contains(entry) && model.contains(may) && model.contains(views));
+    model
+        .replacen(entry, "", 1)
+        .replacen(may, "demo.seats.CloseGroup, demo.seats.CloseSeat]\n", 1)
+        .replacen(
+            views,
+            "  - name: demo.seats.CloseSeat
+    input: [{name: seat_id, type: demo.seats.SeatId}]
+    outcomes:
+      - name: closed
+        moves: demo.seats.Seat.close
+        instance: seat_id
+        emits: [demo.seats.Issued]
+        payload: {demo.seats.Issued: {seat_id: input.seat_id}}
+      - {name: not-open, wrong_state: true, error: demo.seats.WrongState}
+views:
+",
+            1,
+        )
+}
+
+#[test]
+fn a_cascade_onto_rows_whose_filtered_key_is_copied_from_a_related_row_is_witnessed() {
+    assert!(SEATS.contains(UNKNOWN_TIER));
+    for model in [SEATS.to_owned(), SEATS.replacen(UNKNOWN_TIER, "", 1)] {
+        witnessed_on(
+            &model,
+            (GROUP_CLOSED, "demo.seats.CloseGroup"),
+            &[("demo.seats.DefineTier", 1), ("demo.seats.Issue", 3)],
+            &[skipping_seats(&model)],
+        );
+    }
+}
+
+#[test]
+fn a_cascade_onto_copied_key_rows_names_the_creator_where_no_related_row_can_be_arranged() {
+    let defined = "      - name: defined\n        creates: demo.seats.Tier\n";
+    let guarded = "      - name: unknown-group
+        when_related: {via: input.group_id, exists: false}
+        error: demo.seats.GroupNotFound
+      - name: open-group
+        when_related: {via: input.group_id, predicate: state == Open}
+        error: demo.seats.WrongState
+";
+    assert!(SEATS.contains(defined));
+    let model = SEATS
+        .replacen(defined, &format!("{guarded}{defined}"), 1)
+        .replacen(
+            "      - {name: group_id, type: demo.seats.GroupId}\n    lifecycle: {initial: Open, states: [Open], terminal: [Open]}\n",
+            "      - {name: group_id, type: demo.seats.GroupId}
+    relations:
+      - {name: group, kind: references, target: demo.seats.Group, cardinality: one, via: group_id}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open]}
+",
+            1,
+        );
+    assert!(model.contains("name: group, kind: references"));
+    let refusal = refusal_of(&model, GROUP_CLOSED);
+    assert_eq!(refusal.code().to_string(), "ESS-SYNTH-001", "{refusal}");
+    let cause = refusal.cause.to_string();
+    assert!(
+        cause.contains("demo.seats.Issue/issued") && cause.contains("closed.affects[0]"),
+        "{cause}"
+    );
+}
+
+/// [`GRAPH`] in the reported shape: the cancellation's second entry moves segments, whose creator
+/// copies the run from the generation it appends to.
+fn two_entries(model: &str) -> String {
+    let edits = [
+        (
+            "  - {name: demo.graph.GenerationId, kind: newtype, of: Uuid}\n",
+            "  - {name: demo.graph.GenerationId, kind: newtype, of: Uuid}
+  - {name: demo.graph.SegmentId, kind: newtype, of: Uuid}
+",
+        ),
+        (
+            "errors:\n",
+            "  - name: demo.graph.Segment
+    identity: {name: segment_id, type: demo.graph.SegmentId}
+    fields:
+      - {name: generation_id, type: demo.graph.GenerationId}
+      - {name: run_id, type: demo.graph.RunId}
+    relations:
+      - {name: generation, kind: references, target: demo.graph.Generation, cardinality: one, via: generation_id}
+    lifecycle:
+      initial: Open
+      states: [Open, Cancelled]
+      terminal: [Cancelled]
+      transitions:
+        - {name: cancel, from: [Open], to: Cancelled}
+errors:
+  - {name: demo.graph.GenerationNotFound, fields: []}
+",
+        ),
+        (
+            "events:\n",
+            "events:
+  - name: demo.graph.SegmentAppended
+    fields: [{name: segment_id, type: demo.graph.SegmentId}]
+",
+        ),
+        (
+            "demo.graph.StartGeneration, demo.graph.CancelRun]\n",
+            "demo.graph.StartGeneration, demo.graph.AppendSegment, demo.graph.CancelRun]\n",
+        ),
+        (
+            "  - name: demo.graph.CancelRun\n",
+            "  - name: demo.graph.AppendSegment
+    input:
+      - {name: generation_id, type: demo.graph.GenerationId}
+    outcomes:
+      - name: unknown-generation
+        when_related: {via: input.generation_id, exists: false}
+        error: demo.graph.GenerationNotFound
+      - name: appended
+        creates: demo.graph.Segment
+        instance: segment_id
+        emits: [demo.graph.SegmentAppended]
+        payload: {demo.graph.SegmentAppended: {segment_id: {generated: true}}}
+        sets:
+          generation_id: input.generation_id
+          run_id: {related: {via: input.generation_id, field: run_id}}
+  - name: demo.graph.CancelRun
+",
+        ),
+        (GENERATION_ENTRY, &format!("{GENERATION_ENTRY}{SEGMENT_ENTRY}")),
+        (
+            "views:\n",
+            "views:
+  - name: demo.graph.Segments
+    source: demo.graph.Segment
+    consistency: read_your_writes
+    fields:
+      - {name: segment_id, type: demo.graph.SegmentId}
+      - {name: run_id, type: demo.graph.RunId}
+      - {name: state, type: demo.graph.Segment.State}
+",
+        ),
+    ];
+    edits.iter().fold(model.to_owned(), |model, (from, to)| {
+        assert!(model.contains(from), "{from}");
+        model.replacen(from, to, 1)
+    })
+}
+
+#[test]
+fn a_cascade_with_both_entries_of_the_reported_shape_is_witnessed() {
+    let model = two_entries(&graph(&[UNKNOWN_RUN, RUN_NOT_ACTIVE, UNKNOWN_NODE]));
+    witnessed_on(
+        &model,
+        (RUN_CANCELLED, "demo.graph.CancelRun"),
+        &[
+            ("demo.graph.AddNode", 1),
+            ("demo.graph.StartGeneration", 3),
+            ("demo.graph.AppendSegment", 3),
+        ],
+        &[
+            skipping_entry(&model, GENERATION_ENTRY, SKIP_GENERATION),
+            skipping_entry(&model, SEGMENT_ENTRY, SKIP_SEGMENT),
+        ],
+    );
+}

@@ -340,6 +340,12 @@ pub(crate) use diagnostic_catalogue;
 /// The format this module reads.
 pub const FORMAT: &str = "ess-scenario/1";
 
+/// The first scenario format whose acts' literal inputs are held to their declared types: the
+/// format that admits member paths in claims ([`crate::member_paths::SCENARIO_FORMAT`]). Below it
+/// such an input is shape-checked only, as it always was, so a document that compiled keeps
+/// compiling (an adopter report, wave D335).
+pub const TYPED_INPUTS_FORMAT: &str = crate::member_paths::SCENARIO_FORMAT;
+
 /// One file an author wrote, and where it was read from.
 ///
 /// Text rather than a path, because compiling is not reading: this crate holds no file system, the
@@ -992,6 +998,8 @@ pub enum Surface {
         /// The command the act sends.
         command: CommandRef,
     },
+    /// A command's direct response (`response:`, ess-scenario/4).
+    Response(CommandRef),
 }
 
 impl fmt::Display for Surface {
@@ -1014,6 +1022,7 @@ impl fmt::Display for Surface {
                 f,
                 "the caller that sends `{command}` (the act names no `actor:`)"
             ),
+            Self::Response(command) => write!(f, "the response of `{command}`"),
         }
     }
 }
@@ -1025,9 +1034,9 @@ impl fmt::Display for Surface {
 /// instruction for neither.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cause {
-    /// The model needs a finite codec outside the current conformance contract.
+    /// The model holds a Binary64 where the conformance suite does not carry one.
     UnsupportedBinary64 {
-        /// Every unsupported model field/type position.
+        /// Every position the suite does not carry.
         locations: Vec<String>,
     },
     /// The file is not a document this format can read.
@@ -1393,6 +1402,16 @@ pub enum Cause {
         outcome: String,
         /// What it claims besides, as written.
         claims: Vec<String>,
+    },
+    /// A mapping in the document repeats a key.
+    ///
+    /// A map such as `input:` or `contains:` would keep the last of two equal keys without a
+    /// word, so the first value would never be sent or checked; the model reader refuses the same
+    /// repeat. A repeated document or step key is a struct field and stays [`Cause::Unreadable`].
+    RepeatedKey {
+        /// What the YAML reader said: the mapping's path, the key, and the mapping's line and
+        /// column.
+        detail: String,
     },
 }
 
@@ -2196,9 +2215,10 @@ diagnostic_catalogue! {
         Self::UnsupportedFormat { .. } => 2,
             "The document claims a format this build does not implement.",
             "a scenario's `type:` is `ess-scenario/1`, `ess-scenario/2` for entity setup, \
-             `ess-scenario/3` for fixture values, `ess-scenario/4` for direct responses, or \
-             `ess-scenario/5` for caller values; a document in a repository-defined trace format \
-             is not a scenario input, so leave it out of `--scenarios` and `ess-inputs.yaml`";
+             `ess-scenario/3` for fixture values, `ess-scenario/4` for direct responses, \
+             `ess-scenario/5` for caller values, or `ess-scenario/6` for member paths in claims; \
+             a document in a repository-defined trace format is not a scenario input, so leave it \
+             out of `--scenarios` and `ess-inputs.yaml`";
         Self::Duplicate { .. } => 3,
             "Two files produce the same scenario id.",
             "two files name one scenario in one domain; rename one of them";
@@ -2235,11 +2255,14 @@ diagnostic_catalogue! {
         Self::UndeclaredField { .. } => 13,
             "A value is supplied under a name the surface does not declare.",
             "name a field the construct declares; the scenario and the model disagree about \
-             what it has";
+             what it has. A dotted key is a member path, which a claim reads from \
+             `ess-scenario/6` and nothing else reads";
         Self::MissingField { .. } => 14,
             "A declared field that has to be supplied is not.",
             "supply the field; a command is invoked with all of its input, and one left out is a \
-             call that could not be made";
+             call that could not be made. A nested value in a claim is compared whole, so write \
+             every member it declares, or from `ess-scenario/6` claim one member alone by its \
+             path, `member.leaf: value`";
         Self::ValueRejected { .. } => 15,
             "A value is not of the shape its declared type calls for.",
             "write a value of the type the model declares there";
@@ -2320,9 +2343,11 @@ diagnostic_catalogue! {
             "An assertion's paths resolve, but its operands or quantified target are ill-typed.",
             "use compatible scalar operands and quantify only over a declared List or Map";
         Self::UnsupportedBinary64 { .. } => 36,
-            "The model needs a finite codec outside the current conformance contract.",
-            "use checked format-5 normalization; finite Binary64 conformance codecs are not \
-             implemented";
+            "The model holds a Binary64 where the conformance suite does not carry one.",
+            "a suite carries a finite Binary64 in an entity's fields, a command's input and response, \
+             an event's and an error's fields, and a view's fields and row shape; move it out of \
+             an entity identity, a view parameter, an actor attribute, a binding or a conversion, \
+             or use a Decimal there";
         Self::ExternalAnswerUnstated { .. } => 37,
             "An act claims what only an external answer it does not state satisfies.",
             "no input the act sends decides an external branch, so name the act's own one \
@@ -2383,6 +2408,10 @@ diagnostic_catalogue! {
             "a refusal of the system's own step is checked as nothing issued within the bound, \
              none of its events published: state only the instance under `input:`, and drop \
              `error`, `response`, `events` and `capture`";
+        Self::RepeatedKey { .. } => 47,
+            "A mapping in the document repeats a key.",
+            "write each key once; YAML keeps only one of two equal keys, and which one is not \
+             the author's choice";
     }
 }
 
@@ -2394,10 +2423,11 @@ impl fmt::Display for Cause {
         match self {
             Self::UnsupportedBinary64 { locations } => write!(
                 f,
-                "{}: Binary64 requires a qualified conformance codec",
+                "{}: a Binary64 in a position the conformance suite does not carry",
                 locations.join(", ")
             ),
             Self::Unreadable { detail } => write!(f, "unreadable: {detail}"),
+            Self::RepeatedKey { detail } => f.write_str(detail),
             Self::UnsupportedFormat { found } => {
                 write!(f, "`{found}` is not `{FORMAT}`")
             }
@@ -2804,9 +2834,11 @@ pub(crate) fn compile_one(
         used_fixtures: BTreeSet::new(),
         fixture_format: matches!(
             document.format.as_str(),
-            "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5"
+            "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5" | "ess-scenario/6"
         ),
         ir,
+        paths: document.format == crate::member_paths::SCENARIO_FORMAT,
+        typed_inputs: document.format == TYPED_INPUTS_FORMAT,
         origin: &source.origin,
         id: id.clone(),
         refusals: Vec::new(),
@@ -2861,7 +2893,12 @@ pub(crate) fn compile_one(
 fn is_scenario_format(format: &str) -> bool {
     matches!(
         format,
-        FORMAT | "ess-scenario/2" | "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5"
+        FORMAT
+            | "ess-scenario/2"
+            | "ess-scenario/3"
+            | "ess-scenario/4"
+            | "ess-scenario/5"
+            | "ess-scenario/6"
     )
 }
 
@@ -2871,8 +2908,14 @@ fn is_scenario_format(format: &str) -> bool {
 /// missing key, rather than for the first key `Document` does not know: an adopter's own trace
 /// format read as an ESS scenario with a misspelt `story:`. A `type:` that is not a plain string,
 /// and text that is not a mapping, are left to the full read and keep the refusal it gives.
+///
+/// A document the full read accepts is then held to the read as a value, which refuses a key
+/// repeated in any mapping: the full read keeps the last of two equal keys in every map it holds
+/// (`input:`, `contains:` and the others), so it cannot tell. A repeated document or step key is
+/// a struct field the full read already refuses, and keeps that refusal.
 fn read_document(ir: &EssIr, text: &str) -> Result<Document, Box<Cause>> {
-    if let Some(format) = header_type(text) {
+    let value = ess_yaml::from_str::<ess_yaml::Value>(text);
+    if let Some(format) = header_type(text, value.as_ref()) {
         match &format {
             Header::Untyped => {
                 return Err(Box::new(Cause::Unreadable {
@@ -2889,13 +2932,125 @@ fn read_document(ir: &EssIr, text: &str) -> Result<Document, Box<Cause>> {
     }
     // A fixture is declared in the specification's own type spellings, so a map keyed by one of
     // the model's newtypes (beyond10x/ess#143) reads here exactly as it did there.
-    map_key_newtypes(ir)
+    let document = map_key_newtypes(ir)
         .scope(|| ess_yaml::from_str(text))
         .map_err(|error| {
             Box::new(Cause::Unreadable {
                 detail: error.to_string(),
             })
-        })
+        })?;
+    // The one place a repeated key is answered: a refusal here, or a warning beside the compiled
+    // scenario should a repeat ever have to be admitted again.
+    if let Some(detail) = repeated_key(text, value.as_ref()) {
+        return Err(Box::new(Cause::RepeatedKey { detail }));
+    }
+    Ok(document)
+}
+
+/// What the reader says about a repeated mapping key, and `None` when it says nothing about one.
+///
+/// The YAML reader's own wording, as a model file's repeat gets it: the mapping's path, the key,
+/// and the line and column of the mapping (`timeline[0].input: duplicate entry with key "label"
+/// at line 12 column 12`). It has no position for either key.
+///
+/// The read as a value tells `1` from `"1"` and `true` from `"true"`, but a mapping the document
+/// reads as a map of strings does not: it keeps the second value of either pair. So a document
+/// the value read admits is read once more for its key texts, as such a map reads them.
+fn repeated_key(text: &str, value: Result<&ess_yaml::Value, &ess_yaml::Error>) -> Option<String> {
+    let detail = match value {
+        Err(error) => error.to_string(),
+        Ok(_) => ess_yaml::from_str::<KeyTexts>(text).err()?.to_string(),
+    };
+    detail.contains(REPEATED).then_some(detail)
+}
+
+/// The words the YAML reader opens a repeated key's message with, and so does [`KeyTexts`].
+const REPEATED: &str = "duplicate entry with key";
+
+/// A read of a document that refuses two keys of one mapping with the same text, whatever their
+/// YAML types, and keeps nothing. A key that is a collection reads as no string, and ends the read
+/// with an error that names no repeat.
+struct KeyTexts;
+
+impl<'de> serde::Deserialize<'de> for KeyTexts {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(KeyTextsVisitor)
+    }
+}
+
+struct KeyTextsVisitor;
+
+impl<'de> serde::de::Visitor<'de> for KeyTextsVisitor {
+    type Value = KeyTexts;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a YAML node")
+    }
+
+    fn visit_bool<E>(self, _: bool) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_i64<E>(self, _: i64) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_u64<E>(self, _: u64) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_i128<E>(self, _: i128) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_u128<E>(self, _: u128) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_f64<E>(self, _: f64) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_str<E>(self, _: &str) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_bytes<E>(self, _: &[u8]) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_unit<E>(self) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_none<E>(self) -> Result<KeyTexts, E> {
+        Ok(KeyTexts)
+    }
+
+    fn visit_some<D: serde::Deserializer<'de>>(self, inner: D) -> Result<KeyTexts, D::Error> {
+        serde::Deserialize::deserialize(inner)
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut items: A) -> Result<KeyTexts, A::Error> {
+        while items.next_element::<KeyTexts>()?.is_some() {}
+        Ok(KeyTexts)
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<KeyTexts, A::Error> {
+        let mut seen = BTreeSet::new();
+        while let Some(text) = map.next_key::<String>()? {
+            if !seen.insert(text.clone()) {
+                return Err(serde::de::Error::custom(format!("{REPEATED} {text:?}")));
+            }
+            map.next_value::<KeyTexts>()?;
+        }
+        Ok(KeyTexts)
+    }
+
+    fn visit_enum<A: serde::de::EnumAccess<'de>>(self, tagged: A) -> Result<KeyTexts, A::Error> {
+        let (serde::de::IgnoredAny, inner) = tagged.variant()?;
+        serde::de::VariantAccess::newtype_variant::<KeyTexts>(inner)
+    }
 }
 
 /// What a mapping document says in its `type:` key, read before the rest of it.
@@ -2904,18 +3059,19 @@ enum Header {
     Untyped,
 }
 
-/// The header of a mapping document, and `None` when the text is not a mapping.
+/// The header of a mapping document, from its read as a value, and `None` when the text is not a
+/// mapping.
 ///
 /// A document that repeats a key anywhere fails the read as a value, so its `type:` is then read
 /// alone, every other key ignored: a trace repeating `then:` is still refused for its format. Such
 /// a document without a `type:` keeps the full read's refusal.
-fn header_type(text: &str) -> Option<Header> {
+fn header_type(text: &str, value: Result<&ess_yaml::Value, &ess_yaml::Error>) -> Option<Header> {
     #[derive(serde::Deserialize)]
     struct TypeOnly {
         #[serde(rename = "type")]
         format: Option<ess_yaml::Value>,
     }
-    match ess_yaml::from_str::<ess_yaml::Value>(text) {
+    match value {
         Ok(ess_yaml::Value::Mapping(header)) => Some(
             header
                 .get("type")
@@ -2943,7 +3099,7 @@ fn document_format_refusal(document: &Document) -> Option<Cause> {
     }
     if !matches!(
         document.format.as_str(),
-        "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5"
+        "ess-scenario/3" | "ess-scenario/4" | "ess-scenario/5" | "ess-scenario/6"
     ) && !document.fixtures.is_empty()
     {
         return Some(Cause::Unreadable {
@@ -2952,7 +3108,7 @@ fn document_format_refusal(document: &Document) -> Option<Cause> {
     }
     if !matches!(
         document.format.as_str(),
-        "ess-scenario/4" | "ess-scenario/5"
+        "ess-scenario/4" | "ess-scenario/5" | "ess-scenario/6"
     ) && document.timeline.iter().any(|act| act.response.is_some())
     {
         return Some(Cause::Unreadable {
@@ -2961,7 +3117,7 @@ fn document_format_refusal(document: &Document) -> Option<Cause> {
     }
     if !matches!(
         document.format.as_str(),
-        "ess-scenario/4" | "ess-scenario/5"
+        "ess-scenario/4" | "ess-scenario/5" | "ess-scenario/6"
     ) && document.timeline.iter().any(|act| act.refused.is_some())
     {
         return Some(Cause::Unreadable {
@@ -2970,8 +3126,10 @@ fn document_format_refusal(document: &Document) -> Option<Cause> {
     }
     // An older `ess` refuses `caller:` as an unknown key: a document that states one is a
     // document only this format can read, so its header says so and every earlier one refuses it.
-    if document.format != "ess-scenario/5"
-        && document.timeline.iter().any(|act| !act.caller.is_empty())
+    if !matches!(
+        document.format.as_str(),
+        "ess-scenario/5" | "ess-scenario/6"
+    ) && document.timeline.iter().any(|act| !act.caller.is_empty())
     {
         return Some(Cause::Unreadable {
             detail: "caller attribute values require type: ess-scenario/5".into(),
@@ -2993,6 +3151,11 @@ struct Compiler<'a> {
     fixtures: BTreeMap<FixtureName, ess_domain::TypeRef>,
     used_fixtures: BTreeSet<FixtureName>,
     fixture_format: bool,
+    /// Whether a claim may name a member by its dotted path (`ess-scenario/6`,
+    /// story:an-authored-claim-may-compare-a-nested-field).
+    paths: bool,
+    /// Whether an act's literal input is held to its declared type ([`TYPED_INPUTS_FORMAT`]).
+    typed_inputs: bool,
     ir: &'a EssIr,
     origin: &'a str,
     id: ScenarioId,
@@ -3078,6 +3241,21 @@ impl<'a> Compiler<'a> {
                     self.refuse(Cause::ValueRejected {
                         surface: Surface::Entity(entity),
                         detail: "duplicate qualified entity identity".into(),
+                    });
+                    continue;
+                }
+                if let Some(path) = setup
+                    .fields
+                    .keys()
+                    .find(|key| self.paths && crate::member_paths::is_path(key))
+                {
+                    let surface = Surface::Entity(entity);
+                    self.refuse(Cause::ValueRejected {
+                        detail: format!(
+                            "`{path}` is a member path, which only a claim reads; {surface} is \
+                             sent whole, each field with its whole value"
+                        ),
+                        surface,
                     });
                     continue;
                 }
@@ -3182,6 +3360,9 @@ impl<'a> Compiler<'a> {
                 &Surface::Input(command_ref.clone()),
                 Completeness::Total,
             );
+            if self.typed_inputs && self.refusals.len() == refused_before {
+                self.typed_input(&input, &input_fields, &command_ref);
+            }
             let sent = (self.refusals.len() == refused_before).then(|| input.clone());
             let step = ScenarioStep::ExecuteCommand {
                 caller,
@@ -3217,16 +3398,16 @@ impl<'a> Compiler<'a> {
                 .as_ref()
                 .and_then(|name| name.parse().ok())
                 .map(|name| OutcomeRef::new(command_ref.clone(), name));
-            match crate::direct_response::Observation::of(
-                self.ir,
-                command,
-                outcome,
-                act.response.clone().unwrap_or_default(),
-            ) {
-                Ok(response) => self
-                    .steps
-                    .push(ScenarioStep::ExpectDirectResponse { response }),
-                Err(detail) => self.refuse(Cause::Unreadable { detail }),
+            let expected = act.response.clone().unwrap_or_default();
+            let refused_before = self.refusals.len();
+            self.response_shape(&command_ref, &command.response, &expected);
+            if self.refusals.len() == refused_before {
+                match crate::direct_response::Observation::of(self.ir, command, outcome, expected) {
+                    Ok(response) => self
+                        .steps
+                        .push(ScenarioStep::ExpectDirectResponse { response }),
+                    Err(detail) => self.refuse(Cause::Unreadable { detail }),
+                }
             }
         }
         for claim in &act.events {
@@ -4226,11 +4407,8 @@ impl<'a> Compiler<'a> {
                         published: &it.outcome.payload,
                     })
                     .collect();
-                self.minted_claims(
-                    &Surface::Error(ErrorRef::new(name)),
-                    &claim.fields,
-                    &reporting,
-                );
+                let fields = self.folded(&claim.fields);
+                self.minted_claims(&Surface::Error(ErrorRef::new(name)), &fields, &reporting);
             }
         }
         for claim in &act.events {
@@ -4253,9 +4431,10 @@ impl<'a> Compiler<'a> {
                     published: &it.outcome.payload,
                 })
                 .collect();
+            let payload = self.folded(&claim.payload);
             self.minted_claims(
                 &Surface::Payload(EventRef::new(name)),
-                &claim.payload,
+                &payload,
                 &publishing,
             );
         }
@@ -4463,7 +4642,8 @@ impl<'a> Compiler<'a> {
                 .or(assertion.excludes.as_ref())
                 .or(assertion.at.as_ref().map(|at| &at.fields));
             if let Some(row) = row {
-                self.minted_row(&view, declared.source.name(), row);
+                let row = self.folded(row);
+                self.minted_row(&view, declared.source.name(), &row);
             }
         }
         let bound = self.values(
@@ -4653,8 +4833,58 @@ impl<'a> Compiler<'a> {
         })
     }
 
-    /// Values and references, checked against what the surface declares.
+    /// From [`TYPED_INPUTS_FORMAT`], each literal value an act sends that its field's declared type
+    /// refuses, at any depth (alphabet, prefix, invariants, a member's or element's own type), is
+    /// refused naming the field and the constraint. A generated decoder refuses such a value before
+    /// the command runs, so the outcome the act claims is one no implementation reaches. A value
+    /// bound from an instance, a fixture or an observation is not the author's literal, and is not
+    /// read here.
+    fn typed_input(
+        &mut self,
+        input: &BTreeMap<String, ScenarioValue>,
+        fields: &[ResolvedField],
+        command: &CommandRef,
+    ) {
+        let mut found = Vec::new();
+        for field in fields {
+            if let Some(value) = input.get(&field.name) {
+                out_of_type(self.ir, &field.type_ref, value, &field.name, 0, &mut found);
+            }
+        }
+        for (path, declared, error) in found {
+            let error = error
+                .strip_suffix("; setup requires True")
+                .unwrap_or(&error);
+            self.refuse(Cause::ValueRejected {
+                surface: Surface::Input(command.clone()),
+                detail: format!(
+                    "`{path}` is outside its declared type {declared}: {error}; a decoder refuses \
+                     it before the command runs, so no implementation reaches the outcome the act \
+                     claims"
+                ),
+            });
+        }
+    }
+
+    /// Values and references, checked against what the surface declares; a claim's member paths
+    /// (`ess-scenario/6`) are split out first and added as the literal leaves they name.
     fn values(
+        &mut self,
+        written: &BTreeMap<String, Written>,
+        fields: &[ResolvedField],
+        surface: &Surface,
+        completeness: Completeness,
+    ) -> BTreeMap<String, ScenarioValue> {
+        let (written, leaves) = self.split_paths(written, fields, surface);
+        let mut resolved = self.whole_values(&written, fields, surface, completeness);
+        for (field, node) in leaves {
+            resolved.insert(field, ScenarioValue::literal(node));
+        }
+        resolved
+    }
+
+    /// Values and references written field by field, checked against what the surface declares.
+    fn whole_values(
         &mut self,
         written: &BTreeMap<String, Written>,
         fields: &[ResolvedField],
@@ -4759,6 +4989,7 @@ impl<'a> Compiler<'a> {
                 self.shape(&errors, surface);
             }
         }
+        self.binary64_limit(&remaining, &literals, surface);
         for (field, node) in literals {
             let value = structured
                 .remove(&field)
@@ -4998,6 +5229,238 @@ impl<'a> Compiler<'a> {
         (slot, child, inner)
     }
 
+    /// Refuses an act's `response:` literal for a member it names that `fields`, the command's
+    /// response, does not declare, or leaves out of a nested value, naming the member at its path
+    /// (story:an-authored-claim-may-compare-a-nested-field). A nested value is compared whole, so
+    /// a partial one is refused at every header, the members it leaves out named; from
+    /// `ess-scenario/6` a dotted key names one member alone, and is held to the member it names.
+    /// Every other shape is left to the observation, which refuses it as before.
+    fn response_shape(
+        &mut self,
+        command: &CommandRef,
+        fields: &[ResolvedField],
+        expected: &BTreeMap<String, Node>,
+    ) {
+        let surface = Surface::Response(command.clone());
+        let mut whole = BTreeMap::new();
+        for (key, value) in expected {
+            if !(self.paths && crate::member_paths::is_path(key)) {
+                whole.insert(key.clone(), value.clone());
+                continue;
+            }
+            if let Some(type_ref) = self.path_member(fields, &surface, key) {
+                let member = [ResolvedField {
+                    name: key.clone(),
+                    type_ref,
+                    naming: ess_domain::Naming::default(),
+                }];
+                let value = BTreeMap::from([(key.clone(), value.clone())]);
+                if let Err(errors) = bind(self.ir, &member, &value, Completeness::Partial) {
+                    self.member_shape(&errors, &surface);
+                }
+                self.binary64_limit(&member, &value, &surface);
+            }
+        }
+        // A field claimed whole and by a path names one member twice, as on the other claim
+        // surfaces ([`Self::split_paths`]): refused, the same way.
+        let paths = self.paths;
+        let mut both: BTreeSet<&str> = BTreeSet::new();
+        for path in expected
+            .keys()
+            .filter(|key| paths && crate::member_paths::is_path(key))
+        {
+            let field = path.split('.').next().unwrap_or_default();
+            if whole.contains_key(field) && both.insert(field) {
+                self.refuse(Cause::ValueRejected {
+                    surface: surface.clone(),
+                    detail: format!(
+                        "`{path}` and `{field}` both claim a member of `{field}`; claim `{field}` \
+                         whole or by its paths, not both"
+                    ),
+                });
+            }
+        }
+        if let Err(errors) = bind(self.ir, fields, &whole, Completeness::Partial) {
+            self.member_shape(&errors, &surface);
+        }
+        self.binary64_limit(fields, &whole, &surface);
+    }
+
+    /// The members a value names that its type does not declare, or leaves out, refused by name.
+    fn member_shape(&mut self, errors: &ShapeErrors, surface: &Surface) {
+        for error in errors.iter() {
+            let cause = match error {
+                ShapeError::MissingField { at, field } => Cause::MissingField {
+                    surface: surface.clone(),
+                    at: at.clone(),
+                    field: field.clone(),
+                },
+                ShapeError::UndeclaredField { at, field } => Cause::UndeclaredField {
+                    surface: surface.clone(),
+                    at: at.clone(),
+                    field: field.clone(),
+                },
+                _ => continue,
+            };
+            self.refuse(cause);
+        }
+    }
+
+    /// The declared type of the member the dotted `path` names among `fields`; `None`, refused,
+    /// where a segment names no declared member or the path goes through a value with no members.
+    fn path_member(
+        &mut self,
+        fields: &[ResolvedField],
+        surface: &Surface,
+        path: &str,
+    ) -> Option<ResolvedTypeRef> {
+        match crate::member_paths::member(self.ir, fields, path) {
+            Ok(type_ref) => Some(type_ref),
+            Err(crate::member_paths::Unreached::NoMember) => {
+                self.refuse(Cause::UndeclaredField {
+                    surface: surface.clone(),
+                    at: String::new(),
+                    field: path.to_owned(),
+                });
+                None
+            }
+            Err(crate::member_paths::Unreached::Through { at, holds }) => {
+                self.refuse(Cause::ValueRejected {
+                    surface: surface.clone(),
+                    detail: format!(
+                        "`{path}` goes through `{at}`, a {holds}, which has no members a path can \
+                         name; a path reads struct members only, so claim `{at}` whole"
+                    ),
+                });
+                None
+            }
+        }
+    }
+
+    /// `written` with its member paths split out (story:an-authored-claim-may-compare-a-nested-field).
+    ///
+    /// Below `ess-scenario/6` nothing is split: a dotted key stays, and the shape check that reads
+    /// it refuses it as an undeclared field. From `/6`, on a claim's surface (an event's payload,
+    /// an error's fields, a view row), each path is resolved through the declared struct members,
+    /// its literal checked at the member's type, and written as the leaves of the payload shape
+    /// ([`crate::member_paths::leaves`]); the second map holds them. Anywhere else a value is sent
+    /// whole, and a path is refused by name.
+    fn split_paths(
+        &mut self,
+        written: &BTreeMap<String, Written>,
+        fields: &[ResolvedField],
+        surface: &Surface,
+    ) -> (BTreeMap<String, Written>, BTreeMap<String, Node>) {
+        if !self.paths || !written.keys().any(|key| crate::member_paths::is_path(key)) {
+            return (written.clone(), BTreeMap::new());
+        }
+        let claim = matches!(
+            surface,
+            Surface::Payload(_) | Surface::Error(_) | Surface::Row(_)
+        );
+        let mut rest = BTreeMap::new();
+        let mut leaves = BTreeMap::new();
+        for (key, value) in written {
+            if !crate::member_paths::is_path(key) {
+                rest.insert(key.clone(), value.clone());
+                continue;
+            }
+            if !claim {
+                self.refuse(Cause::ValueRejected {
+                    surface: surface.clone(),
+                    detail: format!(
+                        "`{key}` is a member path, which only a claim reads; {surface} is sent \
+                         whole, each field with its whole value"
+                    ),
+                });
+                continue;
+            }
+            let Some(type_ref) = self.path_member(fields, surface, key) else {
+                continue;
+            };
+            let node = match value {
+                Written::Literal(node) if !holds_reference(node) => node,
+                Written::NonFinite(_) => {
+                    self.refuse(Cause::ValueRejected {
+                        surface: surface.clone(),
+                        detail: format!(
+                            "{key}: a NaN or an infinity is a value of no declared type, because \
+                             Decimal and Binary64 hold finite values only"
+                        ),
+                    });
+                    continue;
+                }
+                _ => {
+                    self.refuse(Cause::NotComparable {
+                        surface: surface.clone(),
+                        field: key.clone(),
+                    });
+                    continue;
+                }
+            };
+            let member = [ResolvedField {
+                name: key.clone(),
+                type_ref: type_ref.clone(),
+                naming: ess_domain::Naming::default(),
+            }];
+            let value = BTreeMap::from([(key.clone(), node.clone())]);
+            if let Err(errors) = bind(self.ir, &member, &value, Completeness::Partial) {
+                self.shape(&errors, surface);
+                continue;
+            }
+            self.binary64_limit(&member, &value, surface);
+            let mut written_leaves = BTreeMap::new();
+            crate::member_paths::leaves(
+                self.ir,
+                &type_ref,
+                key,
+                Some(node),
+                0,
+                &mut written_leaves,
+            );
+            for (leaf, value) in written_leaves {
+                if leaves.contains_key(&leaf) {
+                    self.refuse(Cause::ValueRejected {
+                        surface: surface.clone(),
+                        detail: format!("`{leaf}` is claimed by two paths; claim it once"),
+                    });
+                    continue;
+                }
+                leaves.insert(leaf, value);
+            }
+        }
+        let mut whole: BTreeSet<&str> = BTreeSet::new();
+        for leaf in leaves.keys() {
+            let field = leaf.split('.').next().unwrap_or_default();
+            if rest.contains_key(field) && whole.insert(field) {
+                self.refuse(Cause::ValueRejected {
+                    surface: surface.clone(),
+                    detail: format!(
+                        "`{leaf}` and `{field}` both claim a member of `{field}`; claim `{field}` \
+                         whole or by its paths, not both"
+                    ),
+                });
+            }
+        }
+        (rest, leaves)
+    }
+
+    /// `written` with each member path folded into the field it starts at, for a check that reads
+    /// fields whole; `written` itself below `ess-scenario/6`.
+    fn folded(&self, written: &BTreeMap<String, Written>) -> BTreeMap<String, Written> {
+        if !self.paths {
+            return written.clone();
+        }
+        crate::member_paths::nested(
+            written,
+            |value| match value {
+                Written::Literal(node) => Some(node),
+                _ => None,
+            },
+            Written::Literal,
+        )
+    }
+
     /// The literal half only, for a step that compares values the suite carries.
     fn literals(
         &mut self,
@@ -5005,6 +5468,8 @@ impl<'a> Compiler<'a> {
         fields: &[ResolvedField],
         surface: &Surface,
     ) -> BTreeMap<String, Node> {
+        let (written, leaves) = self.split_paths(written, fields, surface);
+        let written = &written;
         let mut literals = BTreeMap::new();
         for (field, value) in written {
             if let Written::NonFinite(found) = value {
@@ -5040,7 +5505,45 @@ impl<'a> Compiler<'a> {
         if let Err(errors) = bind(self.ir, fields, &literals, Completeness::Partial) {
             self.shape(&errors, surface);
         }
+        self.binary64_limit(fields, &literals, surface);
+        literals.extend(leaves);
         literals
+    }
+
+    /// Refuses each `Binary64` literal `values` holds at or past 2^53 in magnitude
+    /// ([`crate::binary64_values::AUTHORED_LIMIT`]), naming where it stands and the number
+    /// (story:a-binary64-value-round-trips-through-a-conformance-suite).
+    fn binary64_limit(
+        &mut self,
+        fields: &[ResolvedField],
+        values: &BTreeMap<String, Node>,
+        surface: &Surface,
+    ) {
+        for field in fields {
+            let Some(value) = values.get(&field.name) else {
+                continue;
+            };
+            let mut found = Vec::new();
+            crate::binary64_values::past_authored_limit(
+                self.ir,
+                &field.type_ref,
+                value,
+                &field.name,
+                0,
+                &mut found,
+            );
+            for (at, number) in found {
+                let number = serde_json::to_string(&number).unwrap_or_default();
+                self.refuse(Cause::ValueRejected {
+                    surface: surface.clone(),
+                    detail: format!(
+                        "{at}: `{number}` is a Binary64 of magnitude 2^53 or more, where a binary64 \
+                         no longer holds every integer and a suite compares an integer token \
+                         exactly; write a value below 9007199254740992 in magnitude"
+                    ),
+                });
+            }
+        }
     }
 
     /// Refuses each NaN or infinity declared `field` holds (beyond10x/ess#676), naming the number
@@ -5229,6 +5732,67 @@ impl<'a> Compiler<'a> {
                 detail: format!("`{value}` is not a variant of `{declared_by}`"),
             },
         }
+    }
+}
+
+// ---- an act's literal input held to its declared type (ess-scenario/6) -------------------------
+
+/// Each literal inside `value` that its declared type refuses, as its member path, the type it
+/// was held to, and why: the whole value where it is a literal, and each literal member or element
+/// of a struct, map or list that also holds a reference ([`ScenarioValue::Members`],
+/// [`ScenarioValue::List`]). A reference, a fixture or an observation is not the author's literal
+/// and is not read; nor is an invariant of a struct or list holding one, which reads the value
+/// the reference resolves to.
+fn out_of_type(
+    ir: &EssIr,
+    declared: &ResolvedTypeRef,
+    value: &ScenarioValue,
+    path: &str,
+    depth: usize,
+    found: &mut Vec<(String, ResolvedTypeRef, String)>,
+) {
+    if depth > ess_domain::types::MAX_TYPE_DEPTH {
+        return;
+    }
+    if let Some(literal) = value.as_literal() {
+        if let Err(error) = crate::input::validate_typed_value(ir, declared, literal) {
+            found.push((path.to_owned(), declared.clone(), error));
+        }
+        return;
+    }
+    let structure = match declared {
+        ResolvedTypeRef::Optional { of } => {
+            return out_of_type(ir, of, value, path, depth + 1, found);
+        }
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => {
+                return out_of_type(ir, of, value, path, depth + 1, found);
+            }
+            ResolvedBody::Struct { fields, .. } => Some(fields),
+            _ => None,
+        },
+        _ => None,
+    };
+    match (value, declared, structure) {
+        (ScenarioValue::List { items }, ResolvedTypeRef::List { of }, _) => {
+            for (index, item) in items.iter().enumerate() {
+                out_of_type(ir, of, item, &format!("{path}.{index}"), depth + 1, found);
+            }
+        }
+        (ScenarioValue::Members { members }, ResolvedTypeRef::Map { value: of, .. }, _) => {
+            for (key, member) in members {
+                out_of_type(ir, of, member, &format!("{path}.{key}"), depth + 1, found);
+            }
+        }
+        (ScenarioValue::Members { members }, _, Some(fields)) => {
+            for field in fields {
+                if let Some(member) = members.get(&field.name) {
+                    let at = format!("{path}.{}", field.name);
+                    out_of_type(ir, &field.type_ref, member, &at, depth + 1, found);
+                }
+            }
+        }
+        _ => {}
     }
 }
 

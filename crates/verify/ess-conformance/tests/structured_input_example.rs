@@ -170,9 +170,8 @@ fn a_struct_or_json_input_with_an_example_is_sent_as_the_example() {
         }
     }
     // A guard over a declared member keeps the scenario that refutes it, which carries the
-    // undeclared member still. The guard names the refused version: a text ladder tries the
-    // guard's literals, so a `!=` against the example's own value has nothing to refute it with, as
-    // for a scalar input's example.
+    // undeclared member still. A `!=` against the example's own value is held in
+    // `example_inequality.rs`.
     let example = "{version: \"1\", origin: upload}";
     let result = synthesized(&submit(
         VERSIONED,

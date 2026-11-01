@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-01T01:28:12Z",
+  "actor": "human:timo",
+  "artifact": "story:an-integer-literal-is-written-into-the-suite-as-an-integer",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "D335 local gate on integration/ess-d335 7691763: fmt-check, projection-check, clippy and tests of touched crates, ess-conformance lib and wave targets, test-xtask; release checks green",
+    "reference": "commit:769176320b48350e594856732705865c778d7895"
+  }
+}

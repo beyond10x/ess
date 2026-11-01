@@ -14,6 +14,7 @@ import {
   admitSubjectShape,
   compareResponse,
   decodeResponseObservation,
+  exactBinary64Major,
   exactDecimalMajor,
   exactObservationEqual,
   expectResponsePayload,
@@ -234,15 +235,9 @@ test('a map key that is not String is refused', () => {
   decodeResponseObservation(typed('Map<String, String>'));
 });
 
-test('Binary64 is not a response type', () => {
-  assert.throws(
-    () => decodeResponseObservation(typed('Binary64')),
-    /missing\/recursive response type/,
-  );
-  assert.throws(
-    () => decodeResponseObservation(typed('List<Binary64>')),
-    /missing\/recursive response type/,
-  );
+test('Binary64 is a response type (restated for story:a-binary64-value-round-trips-through-a-conformance-suite)', () => {
+  decodeResponseObservation(typed('Binary64'));
+  decodeResponseObservation(typed('List<Binary64>'));
 });
 
 test('a declaration that does not exist, or reaches itself, is refused', () => {
@@ -803,7 +798,12 @@ test('responsePrimitiveAdmits answers what the Go admitter answers', () => {
   assert.equal(responsePrimitiveAdmits('Uuid', 'not-a-uuid'), false);
   assert.equal(responsePrimitiveAdmits('Bytes', 'AAAA'), true);
   assert.equal(responsePrimitiveAdmits('Bytes', 'AA=A'), false);
-  assert.equal(responsePrimitiveAdmits('Binary64', new JsonNumber('1')), false);
+  // story:a-binary64-value-round-trips-through-a-conformance-suite: a finite token is a Binary64;
+  // a token with no finite binary64 image is not.
+  assert.equal(responsePrimitiveAdmits('Binary64', new JsonNumber('1')), true);
+  assert.equal(responsePrimitiveAdmits('Binary64', new JsonNumber('1.5')), true);
+  assert.equal(responsePrimitiveAdmits('Binary64', new JsonNumber('1e400')), false);
+  assert.equal(responsePrimitiveAdmits('Binary64', 'x'), false);
   assert.equal(responsePrimitiveAdmits('billing.Receipt', 'x'), false);
 });
 
@@ -860,7 +860,7 @@ const READING = {
   'retained.core.Reading': { kind: 'struct', fields: [{ name: 'value', type: 'Decimal' }] },
 };
 
-test('both exact observers admit a Decimal from suite/58 and refuse a Binary64', () => {
+test('both exact observers admit a Decimal from suite/58 and a Binary64 from suite/62', () => {
   for (const [type, declarations] of [
     ['Decimal', {}],
     ['Optional<Decimal>', {}],
@@ -883,10 +883,64 @@ test('both exact observers admit a Decimal from suite/58 and refuse a Binary64',
   }
   exactDecimalMajor(retainedWire('Integer'), 34);
   exactDecimalMajor(subjectWire('Integer'), 34);
+  // Restated for story:a-binary64-value-round-trips-through-a-conformance-suite: both observers
+  // admit a Binary64 schema, and its suite major decides: /62 and /63 carry it, every lower one
+  // refuses it by name.
   for (const type of ['Binary64', 'List<Binary64>']) {
-    assert.throws(() => admitRetainedCapture(retainedWire(type)), /Binary64/);
-    assert.throws(() => admitSubjectShape(subjectWire(type)), /Binary64/);
+    admitRetainedCapture(retainedWire(type));
+    admitSubjectShape(subjectWire(type));
+    exactBinary64Major(retainedWire(type), 62);
+    exactBinary64Major(subjectWire(type), 63);
+    for (const major of [34, 58, 61]) {
+      assert.throws(
+        () => exactBinary64Major(retainedWire(type), major),
+        /a Binary64 value requires suite\/62 or \/63/,
+      );
+      assert.throws(
+        () => exactBinary64Major(subjectWire(type), major),
+        /a Binary64 value requires suite\/62 or \/63/,
+      );
+    }
   }
+  exactBinary64Major(retainedWire('Decimal'), 58);
+});
+
+// story:a-binary64-value-round-trips-through-a-conformance-suite: the comparison vectors the Rust
+// runner and the Go runtime read (`binary64_values_compare_by_value_in_every_runner`).
+test('an exact observation compares a Binary64 by its nearest binary64', () => {
+  const token = (raw: string): Node => new JsonNumber(raw);
+  for (const type of ['Binary64', 'Optional<Binary64>', 'List<Binary64>']) {
+    const schema = { fields: [{ name: 'item', type }], declarations: {} };
+    const wrap = (raw: string): Node =>
+      type === 'List<Binary64>' ? { item: [token(raw)] } : { item: token(raw) };
+    const same = (left: string, right: string): boolean =>
+      exactObservationEqual(wrap(left), wrap(right), schema);
+    for (const [left, right] of [
+      ['1.5', '1.50'],
+      ['1', '1.0'],
+      ['-0', '0'],
+      ['-0.0', '0'],
+      ['1E2', '100'],
+      ['0.1', '0.10000000000000001'],
+      ['1', '1.0000000000000000001'],
+      ['9007199254740993', '9007199254740992'],
+    ]) {
+      assert.equal(same(left!, right!), true, `${type}: ${left} then ${right}`);
+    }
+    for (const [left, right] of [
+      ['1.5', '1.25'],
+      ['1', '1.0000000000000002'],
+      ['0.1', '0.30000000000000004'],
+      ['9007199254740992', '9007199254740996'],
+    ]) {
+      assert.equal(same(left!, right!), false, `${type}: ${left} then ${right}`);
+    }
+  }
+  // Without a schema naming the Binary64, the comparison stays exact, as a Decimal's is.
+  assert.equal(
+    exactObservationEqual({ item: token('1') }, { item: token('1.0000000000000000001') }),
+    false,
+  );
 });
 
 test('an exact observation compares a Decimal by value', () => {

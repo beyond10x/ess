@@ -1453,6 +1453,11 @@ fn a_value_the_declared_type_does_not_admit_is_refused_where_it_sits() {
 /// A command taking a `Decimal` and an `Optional<Decimal>`, for the non-finite cases
 /// (beyond10x/ess#676).
 fn metered() -> EssIr {
+    metered_as("Decimal")
+}
+
+/// [`metered`] with `primitive` in place of each `Decimal`.
+fn metered_as(primitive: &str) -> EssIr {
     let text = "format: ess/15
 system: meter
 version: v1
@@ -1474,8 +1479,9 @@ commands:
 actors:
   - name: meter.reading.Reader
     may: [meter.reading.Record]
-";
-    let raw = RawSpecFile::parse(text).expect("well formed");
+"
+    .replace("Decimal", primitive);
+    let raw = RawSpecFile::parse(&text).expect("well formed");
     let specification = Specification::assemble([(SpecSource::new("meter.yaml"), raw)])
         .unwrap_or_else(|errors| panic!("meter validates:\n{errors}"));
     compile(&specification, &SourceMap::new())
@@ -1554,6 +1560,56 @@ fn a_non_finite_scenario_literal_is_refused_with_the_reason() {
             "{message}"
         );
         assert!(!message.contains("found null"), "{message}");
+    }
+}
+
+/// A view row carries no declared type in a suite, so every runner compares an integer token there
+/// exactly, and past 2^53 an implementation holding an `f64` answers a different integer for the
+/// one it was sent. An authored `Binary64` literal is held below 2^53 in magnitude, refused by
+/// name (`docs/design/model-binary64.md` § Authored values); a `Decimal` keeps every integer.
+#[test]
+fn a_binary64_literal_at_or_past_two_to_the_53_is_refused_by_name() {
+    const STORY: &str = "story:a-binary64-value-round-trips-through-a-conformance-suite";
+    let binary64 = metered_as("Binary64");
+    for admitted in [
+        "{value: 1.5}",
+        "{value: 9007199254740991}",
+        "{value: -9007199254740991, limit: 0.5}",
+    ] {
+        let authoring = authoring(&binary64, &metered_act(admitted));
+        assert!(
+            authoring.refusals.is_empty(),
+            "{STORY}: {admitted} is below 2^53: {:?}",
+            authoring.refusals
+        );
+    }
+    let decimal = metered();
+    assert!(
+        authoring(&decimal, &metered_act("{value: 9007199254740993}"))
+            .refusals
+            .is_empty(),
+        "{STORY}: a Decimal integer is compared exactly everywhere, so it has no such limit"
+    );
+    for (input, names, number) in [
+        ("{value: 9007199254740992}", "value", "9007199254740992"),
+        ("{value: -9007199254740993}", "value", "-9007199254740993"),
+        ("{value: 1.5, limit: 1e300}", "limit", "1e300"),
+    ] {
+        let refused = refusal(&binary64, &metered_act(input));
+        let message = refused.to_string();
+        assert_eq!(
+            refused.code().to_string(),
+            "ESS-AUTHOR-015",
+            "{STORY}: {message}"
+        );
+        assert!(
+            message.contains(&format!("{names}: `")),
+            "{STORY}: {names:?} in {message}"
+        );
+        assert!(
+            message.contains("magnitude 2^53 or more"),
+            "{STORY}: {number} in {message}"
+        );
     }
 }
 
@@ -2690,5 +2746,129 @@ fn a_nested_value_still_fails_against_an_absent_member_and_null_against_a_value(
             Status::Failed,
             "stored `{stored}`, asserted `{asserted}`: {report}"
         );
+    }
+}
+
+// ---- an act's literal input held to its declared type (ess-scenario/6) --------------------------
+
+/// A command whose input carries a constrained text at the top and inside a list of structs.
+const TYPED_INPUT_MODEL: &str = r#"
+format: ess/32
+system: demo
+version: v1
+domain: demo.codes
+types:
+  - name: demo.codes.Code
+    kind: newtype
+    of: String
+    alphabet: "abc"
+  - name: demo.codes.Label
+    kind: struct
+    fields:
+      - {name: code, type: demo.codes.Code}
+      - {name: weight, type: Integer}
+    invariants: ["weight >= 1"]
+events:
+  - name: demo.codes.Recorded
+    fields: [{name: code, type: demo.codes.Code}]
+commands:
+  - name: demo.codes.Record
+    input:
+      - {name: code, type: demo.codes.Code}
+      - {name: labels, type: "List<demo.codes.Label>"}
+    outcomes:
+      - name: recorded
+        emits: [demo.codes.Recorded]
+        payload:
+          demo.codes.Recorded: {code: input.code}
+"#;
+
+/// One act sending `code` and `labels` as written, under the scenario format `format`.
+fn typed_input_scenario(format: &str, code: &str, labels: &str) -> String {
+    format!(
+        "type: {format}\n\
+         domain: demo.codes\n\
+         scenario: record-a-code\n\
+         summary: One code is recorded.\n\
+         timeline:\n  \
+         - at: 2026-01-05T09:00:00Z\n    \
+         command: demo.codes.Record\n    \
+         input: {{code: {code}, labels: {labels}}}\n    \
+         outcome: recorded\n"
+    )
+}
+
+const TYPED_INPUT_STORY: &str =
+    "story:identifier-guards-get-witnesses-and-authored-inputs-meet-their-type";
+
+/// The inputs outside their declared type, each with the field and the constraint its refusal
+/// names: at the top, and a member of a struct inside a list.
+const OUT_OF_TYPE_INPUTS: [(&str, &str, &str, &str); 3] = [
+    (
+        "abd",
+        "[{code: abc, weight: 1}]",
+        "`code`",
+        "not in the alphabet of demo.codes.Code",
+    ),
+    ("abc", "[{code: abc, weight: 0}]", "`labels`", "weight >= 1"),
+    (
+        "abc",
+        "[{code: xyz, weight: 1}]",
+        "`labels`",
+        "not in the alphabet of demo.codes.Code",
+    ),
+];
+
+/// From `ess-scenario/6` an act's literal input that its declared type refuses, at any depth, is
+/// ESS-AUTHOR-015 naming the field and the constraint: a generated decoder refuses such a value
+/// before the command runs, so the scenario would claim an outcome no implementation reaches.
+#[test]
+fn an_authored_input_outside_its_declared_type_is_refused_from_scenario_6() {
+    let ir = fixture(TYPED_INPUT_MODEL);
+    let admitted = authoring(
+        &ir,
+        &typed_input_scenario("ess-scenario/6", "abc", "[{code: cab, weight: 2}]"),
+    );
+    assert!(
+        admitted.is_complete(),
+        "{TYPED_INPUT_STORY}: an in-type input compiles: {:?}",
+        admitted.refusals
+    );
+    for (code, labels, field, constraint) in OUT_OF_TYPE_INPUTS {
+        let text = typed_input_scenario("ess-scenario/6", code, labels);
+        let refused = refusal(&ir, &text);
+        let printed = refused.to_string();
+        assert_eq!(
+            refused.code().to_string(),
+            "ESS-AUTHOR-015",
+            "{TYPED_INPUT_STORY}: {printed}"
+        );
+        assert!(
+            matches!(&refused.cause, Cause::ValueRejected { .. }),
+            "{TYPED_INPUT_STORY}: {printed}"
+        );
+        for named in [field, constraint, "demo.codes.Record"] {
+            assert!(
+                printed.contains(named),
+                "{TYPED_INPUT_STORY}: the refusal names {named}: {printed}"
+            );
+        }
+    }
+}
+
+/// Below `ess-scenario/6` an out-of-type literal input still compiles as it did, so no document that
+/// compiles today is refused by this release.
+#[test]
+fn below_scenario_6_an_out_of_type_input_still_compiles() {
+    let ir = fixture(TYPED_INPUT_MODEL);
+    for format in ["ess-scenario/1", "ess-scenario/5"] {
+        for (code, labels, _, _) in OUT_OF_TYPE_INPUTS {
+            let compiled = authoring(&ir, &typed_input_scenario(format, code, labels));
+            assert!(
+                compiled.is_complete(),
+                "{TYPED_INPUT_STORY}: {format} keeps compiling {code} {labels}: {:?}",
+                compiled.refusals
+            );
+        }
     }
 }

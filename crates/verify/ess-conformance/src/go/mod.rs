@@ -426,7 +426,7 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
 
 /// The newest suite major the generated Go runtime admits and executes.
 /// Keep this with `newestSuiteMajor` in the embedded runtime; TypeScript owns its admission cap.
-pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 61;
+pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 63;
 
 /// Whether the generated runtimes admit `major`: `/1` through `/37`, the conditional aggregate
 /// measure pair `/38` and `/39` (beyond10x/ess#363), the expression pair `/40` and `/41`, the
@@ -438,8 +438,9 @@ pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 61;
 /// its await vocabulary (beyond10x/ess#542), and the pair `/54` and `/55`: a view read through a
 /// reference of its source (beyond10x/ess#564), the pair `/56` and `/57`, whose one-time read
 /// cells read as the actor they name (beyond10x/ess#614), the pair `/58` and `/59`, whose exact
-/// observers compare a `Decimal` by value, and the pair `/60` and `/61`, whose entity fixtures
-/// name a row the deployment provides.
+/// observers compare a `Decimal` by value, the pair `/60` and `/61`, whose entity fixtures name a
+/// row the deployment provides, and the pair `/62` and `/63`, whose response observations name a
+/// member by its path.
 pub(crate) fn admitted_major(major: u32) -> bool {
     (1..=37).contains(&major)
         || crate::conditional_measures::ADMITTED.contains(&major)
@@ -455,12 +456,13 @@ pub(crate) fn admitted_major(major: u32) -> bool {
         || crate::one_time_reader::ADMITTED.contains(&major)
         || crate::exact_decimal::ADMITTED.contains(&major)
         || crate::entity_fixtures::ADMITTED.contains(&major)
+        || crate::member_paths::ADMITTED.contains(&major)
 }
 
 /// The refusal both emitters write for a suite major their runtime does not admit.
 pub(crate) fn unadmitted_message(target: &str, version: crate::scenario::SuiteFormat) -> String {
     format!(
-        "the generated {target} runner admits suite versions up to `ess-conformance/61`, and \
+        "the generated {target} runner admits suite versions up to `ess-conformance/63`, and \
          would refuse `{version}`; regenerate using a supported suite version"
     )
 }

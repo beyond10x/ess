@@ -230,6 +230,10 @@ failures use `ess-target-failure/2`. Rust/Web retain their existing failure/1 by
 All four use located `missing-representation` causes and preserve neutral plans.
 
 Conformance retains its current suite format and explicitly refuses Binary64.
+(Superseded for the positions it carries by
+[§ Suite contract for a reached Binary64](#suite-contract-for-a-reached-binary64-suite62-and-63):
+from `ess-conformance/62` a suite carries a reached Binary64 value. The rest of this
+paragraph still describes every route and position that section leaves outside.)
 The compiler inventory guards model producers and CLI routes, including sparse
 models whose unsupported fields never reach a scenario. Direct suite admission
 guards Go/Web emission, canonical serialization and runner execution before
@@ -245,3 +249,155 @@ format 4 freezes recipe and Rust/Go runtime templates. Complete eight-file-map
 fixtures cover Rust/Go for each old recipe version. Format 5 retains format-4 raw
 input dependencies/helpers and target-report/3, binding the new semantics through
 its recipe version and digest. Generator version fields remain truthful.
+
+## Suite contract for a reached Binary64 (suite/62 and /63)
+
+Binding design for `story:a-binary64-value-round-trips-through-a-conformance-suite`. It is the
+"separately coordinated suite-format change" § Format and old-reader consequences asks for, and
+it answers the one question § Admission, equality and conformance publication decisions left
+open: how synthesis writes a reached `Binary64`, how every runner compares it, and which suite
+format carries it.
+
+### What the contract carries
+
+A reached `Binary64` position (`ess_compiler::binary64::reached_uses`) is **carried** when
+everything that reaches it is one of these roots, or a declared type in their closure:
+
+- an entity's fields (not its identity);
+- a command's input or response;
+- an event's fields, or an error's fields;
+- a view's fields or row shape (not its parameters).
+
+Every other reached position is **uncarried**: an entity identity, a view parameter, an actor
+attribute, a binding's delivery context, mapping or selection, or a declared conversion, and a
+declared type any of those reaches, even where a carried root reaches it as well. Each of these
+is a key, a lookup or a delivery route rather than a value a runner compares, and each needs its
+own decision about `-0` against `0` and about token spelling, as `Map<Binary64, V>` keys do
+(§ Value and wire policy). `ess_compiler::binary64::uncarried_uses` lists them. Model admission
+(`ess_conformance::admission::model`, used by synthesis, authoring, coverage, `conform run` and
+validate completeness) refuses exactly those, with `UnsupportedPrimitive` and their paths, and
+authoring keeps refusing them as `ESS-AUTHOR-036`. That code's help names the carried roots.
+
+Routes outside the contract keep refusing every reached position, with unchanged messages and no
+artifact: the browser player, its replay and its execution bundle (`ess verify conform web`), the
+mutation run, and whole-system `ess synthesize --target rust|go|web|clap`.
+`admission::model_without_binary64` is that refusal; it is the inventory `admission::model` used
+before this section. No route writes a partial artifact set.
+
+Inside a carried model, three observers still do not read a `Binary64`: an accessor or selection
+projection, an aggregate over a `Binary64` scalar, and the wrapped value-invariant observer. A
+scenario that needs one is refused on its own (`ESS-SYNTH-001`, naming the field), and the rest of
+the suite is written.
+
+### Writing a value
+
+- **Witness.** The `n`-th instance of a `Binary64` leaf is `n + 0.5` (`1.5`, `2.5`, …). It is
+  non-integral and exact in binary64, and Rust's serializer, Go's `encoding/json` and ECMAScript
+  spell it the same way, so no runner's formatter decides a verdict. A candidate drawn from a
+  guard's literals would be the binary64 nearest to it, but a guard has no `Binary64` literal (the
+  domain refuses one), so the candidates are the witness, `0` and `-1`. Synthesis therefore writes
+  no `Binary64` whose magnitude is `2^53` or more (every such binary64 is an integer).
+- **Token.** The suite writes the value through the existing `Node` serializer: the shortest
+  decimal that round-trips the binary64, with `.0` on an integral value (`1.5`, `0.0`, `-0.0`,
+  `1e-7`). No new spelling is introduced, and no other primitive's bytes move.
+- **Authored values.** An authored scenario's number at a `Binary64` input or setup field is read
+  as it is today; a non-finite one is refused by the existing non-finite check. A number of
+  magnitude `2^53` or more at a `Binary64` leaf, in an input, a setup field or a claim, is refused
+  as `ESS-AUTHOR-015`, naming its path and the number. A view row and an error's fields carry no
+  declared type in a suite, so every runner compares an integer token there exactly, as an
+  `Integer` has to be compared. Below `2^53` that is also the binary64 rule, because every integer
+  there is its own binary64. Past it, an implementation that holds an `f64` may answer
+  `9007199254740992` for `9007199254740993`. A `Decimal` has no such limit. An authored
+  `-0.0` keeps its sign in the suite. `sets:`, `payload:`, `example:` and precondition literals
+  still have no `Binary64` spelling (the domain's `Primitive::admits` table is unchanged); the
+  suite codec admits a finite number at a `Binary64` position in its own arm
+  (`ess_conformance::input::primitive_value`).
+
+### Comparing a value
+
+Two tokens at a `Binary64` position are one value when the binary64 nearest to each, ties to
+even, are equal under IEEE comparison: `1.5`, `1.50` and `15e-1` are one value, `0`, `-0` and
+`-0.0` are one value, `0.1` and `0.10000000000000001` are one value, and `1.5` and `1.25` are two.
+There is no epsilon. The suite never claims a sign of zero.
+
+- **Rust** (`Runner::run`, `--target interpreted`, and any implementation running the `ir`
+  suite) compares with `Node` number equality. That is this rule for every value synthesis
+  writes. A non-integral token is read as the canonical decimal of the binary64 it rounds to
+  (`Number::parse_decimal`, `Repr::of_binary64`). An integer token is compared exactly, and for
+  an expected value below `2^53` in magnitude an integer token equals it exactly when its binary64
+  does. That is why synthesis writes nothing at or past `2^53`, and authoring refuses such a value
+  (§ Writing a value). A typed site (an event's `Holds`,
+  an exact observer's shape, a typed response or fixture shape) admits any finite number at a
+  `Binary64` leaf.
+- **Go** compares with `numberValue`, the same rule as Rust's `Number`. A typed response
+  observation admits a `Binary64` where `responseNumber` does: a finite binary64 image is
+  required, and underflow to zero is admitted.
+- **TypeScript** compares a view row, an error's fields, an event's payload and an invocation's
+  input (`rowMatches`, `matches`, both through `valueEqual`) with `numberValue`, the same rule as
+  Go's. Those assertions carry no declared type, so a `Decimal` there is read the same way, as it
+  already is in Rust and Go. The exact observers below keep the exact decimal reading of a
+  `JsonNumber` (`responseEqual`). No site compares with `Object.is`.
+  `JSON.stringify` writes `-0` as `0` when the runner sends an input. That changes no verdict,
+  because the two are one value.
+- **Exact observers.** The complete subject a refusal leaves unchanged and the retained result a
+  retry returns admit a `Binary64` at any depth (`ExactShape::check_type`, Go `exactType`,
+  TypeScript `checkType`). They compare a `Decimal` by its exact rational value, so a typed
+  comparison reads the observer's schema and compares each `Binary64` it reaches by the rule above:
+  `binary64_values::same_row` in Rust, `exactSchemaEqual` in Go and `exactObservationEqual` with
+  its schema in TypeScript. `9007199254740993` and `9007199254740992` are one value there, as are
+  `1` and `1.0000000000000000001`. Every other leaf keeps its exact comparison. Each observer
+  compares the target with itself, so nothing writes an expected `Binary64` there. A complete
+  subject's identity selects the row by exact equality and is never a `Binary64`: a shape whose
+  identity reaches one is refused.
+
+### Overflow
+
+JSON has no NaN or infinity token, so a non-finite `Binary64` is a token whose nearest binary64 is
+infinite, such as `1e400` or `-1e400`. A token that underflows (`1e-400`) is a value, zero, and
+is admitted.
+
+- In a suite (a setup field, a command input, an expected value), Rust admission refuses the
+  token with its JSON path (`InvalidPayloadNumber`). The Go and TypeScript packages embed a suite
+  that Rust admitted when it emitted them.
+- In an answer, the Go and TypeScript runners fail the step where a typed observation (a response,
+  a retained result, a complete subject) reads a `Binary64`, naming the field: `responseNumber`
+  requires a finite binary64 image. The Rust runner's targets answer in `Node`,
+  which holds no non-finite number, so there the refusal belongs to the implementation's own
+  decoder, as § Value and wire policy requires of every Binary64 decoder.
+
+### Suite format
+
+A suite carrying a reached `Binary64` is ordinary `ess-conformance/62` or declared-coverage `/63`,
+the wave's shared pair, cumulative over every pair below it. The floor is set by the model. A
+fresh suite from a model with a carried position is raised to `/62` (`/63`), whether or not a
+given scenario sends that field, because the target answers `Binary64` numbers in the responses,
+rows and payloads of every scenario that touches those owners. A model with no carried position
+keeps its format and its bytes. `--suite-format 4|5` still chooses ordinary or coverage only; a
+floor only raises.
+
+The Decimal pair (`/58`, `/59`) is not reused, because released readers that admit `/58` to `/61`
+do not refuse such a suite uniformly. They refuse a `binary64` `Holds` record when they
+deserialize it, and a `Binary64` exact shape at the step. A `Binary64` written as an untyped
+number (an input, a view row, a setup field) they run under their own number rules. Labelling it
+`/58` would publish a new primitive through a contract that does not name it (§ Admission,
+equality and conformance publication decisions).
+
+Below `/62`:
+
+- A suite labelled lower that records a `Binary64` (a `Holds` record of kind `binary64`, or a
+  `Binary64` type in an exact-observer, typed-response or fixture shape) is refused at admission
+  with `UnsupportedPrimitive` at its JSON Pointer: "a Binary64 value requires suite/62 or /63"
+  (`binary64_values::admit`). A one-time response origin's schema counts too. This applies on every
+  route that executes, emits or writes it: `AdmittedSuite::from_json`, `Runner::run` and
+  `try_run` before any clock or target effect, `go::emit`, the TypeScript emitter, and
+  `ConformanceSuite::to_canonical_json`. The generated Go and TypeScript runners refuse such a
+  record below `/62` themselves (`binary64Major`, at the top of step admission; TypeScript also
+  exports `exactBinary64Major` for one exact observer).
+- A released reader (0.78.x and older, newest `/61`) refuses a `/62` suite by its version.
+- The serde layer no longer refuses the `binary64` spelling, because it has no version to judge
+  by. A DTO read (`ConformanceSuite::from_json`, `serde_json::from_str`) parses the record, and
+  admission is the boundary.
+
+What does not change: no source format (`ess/33` stays the newest), no normalization recipe, no
+IR or model bytes, no domain admission table, and no whole-system codec (`ess-synth` is
+untouched).

@@ -69,7 +69,7 @@ A wave is at most four units (the orchestrator's process rule), so the S and M i
 |---|---|---|---|
 | 1 | U1, U2, U3, U4 | #685, #686, #687, #688, #643, #644, #664, #665, #671, #666 (option A fixture), #651, #653 | no two share a source file; U1 and U4 share regenerated projections (U1 merges first, the integration branch regenerates on conflict), U1 and U2 share a guide page, and the integration branch writes every `CHANGELOG.md` entry; decided by D133, D137, D138 |
 | 2 | U5, U6, U7, U8, U9, U10 | #652, #673, #647, #648, #661, #659, #703, #702 | U5 needs U4; U6 and U7 need U1 (`realize.rs`); D135 may take #648 or #661 out; U9 and U10 are two downstream defects D186 added over the four-unit cap |
-| 3 | U11, U12, the two #554 synthesis stories | #645, #693, #694 | U11 after `0.75.0` (`synthesize.rs`) |
+| 3 | U13, U14, U15, U11 | #645, #693, and four downstream defects without an issue | D214: consumer-blocked defects first; U12 (#694) and the two #554 synthesis stories move to a later batch |
 | 4 | exchange wave 1: the exchange in the specification, its projections, its conformance, the WebSocket binding | #650 | `epic:messages-are-exchanged-independent-of-the-wire`; moves `ess/N` |
 | 5 | exchange wave 2: HTTP upgrade key, broker binding, JSON-RPC binding; the sourceless view (first cut) | #650, #674 | the same `ess/N` as batch 4 when both land in one release |
 | 6 | the language batch | #636, #640, #642, #498, #678, #637 (tag half), #638 | one source format opened once |
@@ -78,6 +78,28 @@ A wave is at most four units (the orchestrator's process rule), so the S and M i
 | 8+ | the epic remainders | #554, #560, #561, #564 | decomposed per story |
 
 A unit of batches 1-3 that turns out to need a new `ess/N` leaves for a format batch.
+
+Revised 2026-10-29 by D220 (`approval-record:d220-batch-4-after-0780`). Batch 4, which starts after
+`0.78.0`, holds four units: U16 (`service_forward` over commands and views, plus the Timestamp,
+Decimal and Uuid CLI primitives), U17 (components sharing a CLI binary), U18 (required form inputs)
+and U19 (a record action's row scope). D225 (`approval-record:d225-batch-5-and-6-after-0790`) sets
+the batches after it. Batch 5 (`0.80.0`) has four units: React tokens and themes; badge tone with
+account menu `sets` and `navigate`; the row confirm key; the Uuid path segment. Batch 6 holds the
+minor findings. The stories carry the tags `ess-batch-5` and `ess-batch-6`.
+
+Two synthesis findings filed on 2026-10-29 were placed by D229 (`approval-record:d229-u20-in-batch-4-and-705-in-batch-7`):
+- #706 is a defect. It joins batch 4 as U20, its fifth unit, over the cap as D186 allowed for batch 2.
+  Batch 4 is the earliest batch not yet gated.
+- #707 (D232, `approval-record:d232-707-is-u21-in-batch-4`) is a defect: the generated Rust server admits
+  bodies its served OpenAPI refuses. It joins batch 4 as U21, its sixth unit.
+- #708 to #711 (D234, `approval-record:d234-mutate-limits-in-batch-7`) are four mutation-audit gaps: the
+  order-flip tie, error-swap payloads, actor grants and sites left unmutated. They join batch 7.
+- #712 (D236, a defect found while reproducing #710: grant/denied withheld beside a ranked view) joins
+  batch 5 (`0.80.0`), moved there from batch 7 by D237 (`approval-record:d237-712-moves-to-batch-5`).
+- #713 (D242, `approval-record:d242-713-in-batch-5`) is a gap an adopter is blocked on: `ess generate ui` takes no
+  ess-http binding. It joins batch 5 (`0.80.0`) as a sixth unit.
+- #705 is a gap. It joins batch 7 beside D226's obligation-contract story. The exchange, language and suite-format batches listed above as 4 to 7 follow after
+it, in the same order.
 
 ## Units (batches 1-3)
 
@@ -95,6 +117,9 @@ A unit of batches 1-3 that turns out to need a new `ess/N` leaves for a format b
 | U10 unreachable-branch | #702 | validate-refuses-a-branch-implied-by-an-earlier-input-refusal | ess-domain (`command.rs`) | U9 (tests in ess-conformance) |
 | U11 synthesis-order | #645, #693 | new | ess-conformance synthesis | orchestrator 0.75.0 (`synthesize.rs`) |
 | U12 cli-flags | #694 | new | ess-cli-contract, ess-cli-project | none |
+| U13 parent-row-guard | none (downstream) | a-guard-on-the-input-addressed-parent-row-holds-on-every-command-of-its-children | ess-conformance synthesis | U11, U14 (synthesis arrangement) |
+| U14 cascade-witness | none (downstream) | a-cascade-onto-rows-whose-creator-needs-the-subject-active-is-witnessed | ess-conformance synthesis | U11, U13 |
+| U15 scenario-reading | none (downstream) | a-scenario-with-a-repeated-key-is-refused; an-integer-literal-is-written-into-the-suite-as-an-integer | authored scenario reader, ess-synth | none |
 
 ## Builds
 
@@ -103,6 +128,8 @@ Every unit tree of a batch builds into one shared `CARGO_TARGET_DIR` for that wa
 The trees share one layout, so cargo names a workspace crate's artifacts the same in every tree and judges freshness by mtime: a sibling tree's newer build of a crate counts as current in another tree (observed 2026-10-28, units U1 and U4). The wave wrapper therefore touches every tracked file of a tree when the previous build came from a different tree, so the workspace crates are rebuilt from that tree's sources; registry dependencies stay shared. Results produced in the shared target before that guard are re-run.
 
 `cargo test` names each `--test` target as its own argument. Builds start only at 40 GB free or more; a build stops when the shared target passes 30 GB or `/` drops under 25 GB free. When a unit merges, the coordinator runs `cargo clean -p` for the crates it changed and `worktree finish --discard-cache` on its tree.
+
+From batch 3 on (operator rule, 2026-10-29), every tree builds into its own `target/` inside the checkout and no target is shared between trees. One ESS tree builds at a time under one lock; a build does not start under 25 GB free and stops when its tree's target passes 20 GB or `/` drops under 25 GB free. A unit tree is finished with `worktree finish --discard-cache --archive` as soon as it merges.
 
 ## Commits this wave makes
 
@@ -127,8 +154,11 @@ tree exists and no implementor has run (nothing builds before the `0.75.0` tag).
 | U8 synth-field-names | released in 0.77.0 (batch 2) | #659 accept, redesigned: response fields get their own allocation scope in Rust and web; field `naming.code` becomes the draft follow-up `story:a-field-naming-code-chooses-its-identifier-in-rust-and-go` |
 | U9 precedence-swap | released in 0.77.0 (batch 2) | #703 accept (D186): a precedence swap of guards no input selects together is `equivalent` (`unsatisfiable_guard`), naming the contradicting part; an enum compared only by equality or membership is decided over its named variants plus one stand-in; downstream shapes S1-S4 decided, S5-S7 (equivalence under declared invariants) a possible follow-up |
 | U10 unreachable-branch | released in 0.77.0 (batch 2) | #702 accept (D186): validate refuses a `when:` branch implied by an earlier input-guarded refusal as `unreachable_branch`; the D177 replay found no adopter refused, so it ships as a refusal |
-| U11 synthesis-order | not started | #645 accept as proposed, edits `synthesize.rs` `arranged` (collides with 0.75.0); #693 accept as proposed, stays in `synthesize/related_guard.rs` |
+| U11 synthesis-order | batch 3 (D214) | #645 accept as proposed, edits `synthesize.rs` `arranged` (collides with 0.75.0); #693 accept as proposed, stays in `synthesize/related_guard.rs` |
 | U12 cli-flags | not started | #694 gaps 1-2 accept, redesigned: `flag` over a required Boolean, `repeated` over a required `List<T>`, in ess-cli/1 and /2 with no format bump; gap 3 decline with the idiom plus a clearer refusal |
+| U13 parent-row-guard | batch 3 (D214), prep | downstream: a tenant guard on the input-addressed parent row is unmapped or starves the reader's `found`; synthesis arranges child rows under tenants no parent row was created under |
+| U14 cascade-witness | batch 3 (D214), prep | downstream: a cascade onto rows whose creator needs the subject active is refused ESS-SYNTH-001 |
+| U15 scenario-reading | batch 3 (D214), prep | downstream: a repeated key in an authored scenario is accepted, last value wins; an authored Integer literal reaches the suite as `1.0` |
 
 ## Decisions for the operator
 

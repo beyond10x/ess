@@ -232,11 +232,13 @@ impl ConformanceSuite {
     /// (beyond10x/ess#542), and to suite/54 when a scenario reads a view through a reference of its
     /// source (beyond10x/ess#564), to suite/56 when a one-time read cell names its reader
     /// (beyond10x/ess#614), to suite/58 when an exact observer carries a `Decimal`, and to suite/60
-    /// when a fixture prelude names a row the deployment provides. Each pair
+    /// when a fixture prelude names a row the deployment provides, and to suite/62 when a response
+    /// observation names a member by its path. Each pair
     /// is cumulative over every major below it, so nothing
     /// may lower it.
     fn raise_for_counted_claims(&mut self) {
-        let floor = crate::entity_fixtures::ordinary_floor(self)
+        let floor = crate::member_paths::ordinary_floor(self)
+            .or_else(|| crate::entity_fixtures::ordinary_floor(self))
             .or_else(|| crate::exact_decimal::ordinary_floor(self))
             .or_else(|| crate::one_time_reader::ordinary_floor(self))
             .or_else(|| crate::view_reference::ordinary_floor(self))
@@ -266,6 +268,16 @@ impl ConformanceSuite {
         self.select_model_format_for(ir);
         // Counted event claims (beyond10x/ess#427): `/44` is cumulative over everything below.
         self.raise_for_counted_claims();
+        // A model that reaches a carried `Binary64` (suite/62, `crate::binary64_values`), whether
+        // or not a scenario of this suite spells one: the floor is the model's, so a suite of one
+        // model keeps one major.
+        if let Some(floor) = crate::binary64_values::ordinary_floor(ir) {
+            if self.provenance.suite_version.major() < floor {
+                self.provenance.suite_version =
+                    SuiteFormat::parse(&format!("ess-conformance/{floor}"))
+                        .expect("constant suite version");
+            }
+        }
     }
 
     /// [`select_fresh_format_for`](Self::select_fresh_format_for) before the counted-claim floor.
@@ -546,7 +558,7 @@ impl SuiteProvenance {
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
     27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
-    51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61,
+    51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -2089,10 +2101,6 @@ pub enum Holds {
     /// A primitive, after every newtype on the way down has been walked through.
     Primitive {
         /// Which one.
-        #[serde(
-            serialize_with = "crate::admission::serialize_primitive",
-            deserialize_with = "crate::admission::deserialize_primitive"
-        )]
         kind: Primitive,
     },
     /// One of a fixed set of names, as text.
@@ -3593,12 +3601,14 @@ mod tests {
             "ess-conformance/59",
             "ess-conformance/60",
             "ess-conformance/61",
+            "ess-conformance/62",
+            "ess-conformance/63",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/62").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/64").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

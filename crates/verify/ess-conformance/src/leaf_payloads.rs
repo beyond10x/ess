@@ -46,13 +46,19 @@ fn in_expectation(expectation: &ViewExpectation) -> bool {
     }
 }
 
-/// Whether any event payload or view row expectation of the suite names a leaf by a dotted path.
+/// Whether any event payload, error or view row expectation of the suite names a leaf by a dotted
+/// path.
 pub fn used_by(suite: &ConformanceSuite) -> bool {
     suite.scenarios.values().any(|scenario| {
         scenario.steps.iter().any(|step| match step {
             ScenarioStep::ExpectEvent { payload, .. }
             | ScenarioStep::EventuallyEvent { payload, .. } => dotted(payload),
             ScenarioStep::ExpectEventValues { payload, .. } => dotted(payload),
+            // An error's fields name a member by its path from `ess-scenario/6`
+            // (story:an-authored-claim-may-compare-a-nested-field). No released reader of this
+            // pair fails a conforming target on one: each reads the key as a path, or reads no
+            // error field.
+            ScenarioStep::ExpectError { fields, .. } => dotted(fields),
             ScenarioStep::ExpectView { expectation, .. }
             | ScenarioStep::EventuallyView { expectation, .. } => in_expectation(expectation),
             _ => false,

@@ -432,5 +432,199 @@ fn synthesize_help_describes_explicit_shallow_selection_without_a_default() {
     assert!(help.contains("subdirectories"), "{help}");
 }
 
+const CHECKPOINT: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/nested-response-checkpoint.yaml");
+const CHECKPOINT_SCENARIO: &str = include_str!(
+    "../../../verify/ess-conformance/tests/fixtures/nested-response-checkpoint-scenario.yaml"
+);
+
+/// A brand-free project: the stop/checkpoint model, its `ess-inputs.yaml` and one scenario.
+fn checkpoint_project(scenario: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join("scenarios")).unwrap();
+    fs::write(dir.path().join("system.yaml"), CHECKPOINT).unwrap();
+    fs::write(
+        dir.path().join("ess-inputs.yaml"),
+        "format: ess-inputs/1\nspecification:\n  - system.yaml\nscenarios:\n  - scenarios/defer.yaml\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("scenarios/defer.yaml"), scenario).unwrap();
+    dir
+}
+
+fn ess_in(directory: &Path, arguments: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_ess"))
+        .args(arguments)
+        .current_dir(directory)
+        .output()
+        .unwrap()
+}
+
+fn shown(output: &Output) -> String {
+    format!(
+        "exit {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
+
+/// story:an-authored-claim-may-compare-a-nested-field. A response claim naming one member of a
+/// nested struct by its path validates with no refusal, synthesizes beside the generated
+/// scenarios, and every scenario passes on the interpreted target, which carries members the claim
+/// leaves out. The same claim written as a partial map is refused ESS-AUTHOR-014 naming the
+/// members it leaves out.
+#[test]
+fn a_nested_response_member_claim_validates_and_synthesizes() {
+    let project = checkpoint_project(CHECKPOINT_SCENARIO);
+    let root = project.path();
+
+    let validated = ess_in(root, &["specify", "validate", "--format", "json"]);
+    let said = shown(&validated);
+    assert_eq!(validated.status.code(), Some(0), "{said}");
+    let report: serde_json::Value = serde_json::from_slice(&validated.stdout).unwrap();
+    assert_eq!(report["valid"], true, "{said}");
+    assert_eq!(report["scenarios"], 1, "{said}");
+    assert!(report.get("scenario_refusals").is_none(), "{said}");
+
+    let synthesized = ess_in(
+        root,
+        &[
+            "verify",
+            "conform",
+            "synthesize",
+            "--scenarios",
+            "scenarios",
+            "--out",
+            "suite.json",
+        ],
+    );
+    let said = shown(&synthesized);
+    assert_eq!(synthesized.status.code(), Some(0), "{said}");
+    let suite = fs::read_to_string(root.join("suite.json")).unwrap();
+    assert!(suite.contains("\"ess-conformance/62\""), "{suite}");
+    let compact = serde_json::from_str::<serde_json::Value>(&suite)
+        .unwrap()
+        .to_string();
+    assert!(
+        compact.contains("\"expected\":{\"checkpoint.checkpoint_id\":\"cp-1\"}"),
+        "{suite}"
+    );
+
+    let ran = ess_in(
+        root,
+        &[
+            "verify",
+            "conform",
+            "run",
+            "--target",
+            "interpreted",
+            "--path",
+            "system.yaml",
+            "--report-format",
+            "2",
+            "--suite",
+            "suite.json",
+        ],
+    );
+    let said = shown(&ran);
+    assert_eq!(ran.status.code(), Some(0), "{said}");
+    assert!(
+        said.contains("passed relay.loop/authored/defer-returns-its-checkpoint"),
+        "{said}"
+    );
+    println!("{said}");
+
+    let partial = checkpoint_project(&CHECKPOINT_SCENARIO.replace(
+        "response: {checkpoint.checkpoint_id: cp-1}",
+        "response: {checkpoint: {checkpoint_id: cp-1}}",
+    ));
+    let validated = ess_in(partial.path(), &["specify", "validate"]);
+    let said = shown(&validated);
+    assert_eq!(validated.status.code(), Some(1), "{said}");
+    assert_eq!(said.matches("refusal[ESS-AUTHOR-014]").count(), 2, "{said}");
+    for member in ["`format`", "`call`", "at `checkpoint`"] {
+        assert!(said.contains(member), "{member}: {said}");
+    }
+    assert!(!said.contains("invalid_input"), "{said}");
+}
+
+/// A command whose input is a code over a three-letter alphabet.
+const TYPED_INPUT_MODEL: &str = r#"format: ess/32
+system: demo
+version: v1
+domain: demo.codes
+types:
+  - name: demo.codes.Code
+    kind: newtype
+    of: String
+    alphabet: "abc"
+events:
+  - name: demo.codes.Recorded
+    fields: [{name: code, type: demo.codes.Code}]
+commands:
+  - name: demo.codes.Record
+    input:
+      - {name: code, type: demo.codes.Code}
+    outcomes:
+      - name: recorded
+        emits: [demo.codes.Recorded]
+        payload:
+          demo.codes.Recorded: {code: input.code}
+"#;
+
+/// A brand-free project: the code model, its `ess-inputs.yaml` and one scenario sending `code`.
+fn typed_input_project(format: &str, code: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join("scenarios")).unwrap();
+    fs::write(dir.path().join("system.yaml"), TYPED_INPUT_MODEL).unwrap();
+    fs::write(
+        dir.path().join("ess-inputs.yaml"),
+        "format: ess-inputs/1\nspecification:\n  - system.yaml\nscenarios:\n  - scenarios/record.yaml\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("scenarios/record.yaml"),
+        format!(
+            "type: {format}\ndomain: demo.codes\nscenario: record-a-code\nsummary: One code is \
+             recorded.\ntimeline:\n  - at: 2026-01-05T09:00:00Z\n    command: demo.codes.Record\n    \
+             input: {{code: {code}}}\n    outcome: recorded\n"
+        ),
+    )
+    .unwrap();
+    dir
+}
+
+/// story:identifier-guards-get-witnesses-and-authored-inputs-meet-their-type. From
+/// `ess-scenario/6`, `ess specify validate` refuses an authored act whose literal input its declared
+/// type refuses as ESS-AUTHOR-015 naming the field and the alphabet; the same file below `/6`, and
+/// an in-type input at `/6`, validate.
+#[test]
+fn an_out_of_type_authored_input_is_refused_by_author() {
+    let story = "story:identifier-guards-get-witnesses-and-authored-inputs-meet-their-type";
+    let refused = typed_input_project("ess-scenario/6", "abd");
+    let validated = ess_in(refused.path(), &["specify", "validate"]);
+    let said = shown(&validated);
+    assert_eq!(validated.status.code(), Some(1), "{story}: {said}");
+    assert_eq!(
+        said.matches("refusal[ESS-AUTHOR-015]").count(),
+        1,
+        "{story}: {said}"
+    );
+    for named in ["`code`", "not in the alphabet of demo.codes.Code"] {
+        assert!(said.contains(named), "{story}: {named}: {said}");
+    }
+    for (format, code) in [("ess-scenario/5", "abd"), ("ess-scenario/6", "cab")] {
+        let project = typed_input_project(format, code);
+        let validated = ess_in(project.path(), &["specify", "validate"]);
+        let said = shown(&validated);
+        assert_eq!(
+            validated.status.code(),
+            Some(0),
+            "{story}: {format} {code}: {said}"
+        );
+    }
+}
+
 #[path = "support/input_discovery_cases.rs"]
 mod input_discovery;

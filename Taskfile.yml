@@ -6,6 +6,9 @@ vars:
     --package ess-cli --package ess-kubernetes
   # Where the `test-archive-*` tasks write the nextest archives and the test shards read them.
   NEXTEST_ARCHIVES: target/nextest-archives
+  # The Rust harness `ess-synth`'s `integer_spellings` test runs, built once by
+  # `integer-spellings-harness` beside the archives, so it reaches the test shards with them.
+  INTEGER_SPELLINGS_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/integer-spellings-harness'
   # The feature-off cases a pull request runs, when `FEATURE_OFF=number-semantics`: every package
   # but ess-cli, ess-cli's unit tests, and the ess-cli binaries about number semantics — every one
   # whose source names `arbitrary_precision` among them, which `ci_lanes.rs` checks. The `main`
@@ -64,7 +67,10 @@ tasks:
       - cargo clippy --workspace --all-targets --locked -- -D warnings
 
   test:
+    env:
+      ESS_INTEGER_SPELLINGS_HARNESS: '{{.INTEGER_SPELLINGS_HARNESS}}'
     cmds:
+      - task: integer-spellings-harness
       - cargo test --workspace --exclude ess-xtask --locked
       # The workspace run has serde_json's `arbitrary_precision` on: entity-core enables it, and
       # ess-entity-runtime unifies it in. This run selects packages that do not depend on
@@ -88,6 +94,35 @@ tasks:
     cmds:
       - mkdir -p {{.NEXTEST_ARCHIVES}}
       - cargo nextest archive --workspace --exclude ess-xtask --locked --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst
+      - task: integer-spellings-harness
+
+  # A test that runs cargo builds a crate graph inside its lane
+  # (`crates/edge/ess-xtask/tests/no_test_builds.rs`), so the harness the `integer_spellings` test
+  # runs against the generated Rust server is built here, once, and handed to the test as
+  # ESS_INTEGER_SPELLINGS_HARNESS. `ess` is built with the workspace test build's features, so the
+  # archive's build of it is reused rather than built again without them.
+  integer-spellings-harness:
+    desc: Build the Rust harness ess-synth's integer_spellings test runs, at INTEGER_SPELLINGS_HARNESS.
+    vars:
+      WORK: target/integer-spellings-harness
+      FIXTURES: crates/generate/ess-synth/tests/fixtures
+    cmds:
+      - cargo build --workspace --exclude ess-xtask --locked --bin ess
+      - rm -rf {{.WORK}}
+      - mkdir -p {{.WORK}}/harness/src {{.NEXTEST_ARCHIVES}}
+      # The fixture is `.yaml.in` so no walker of the repository's models reads it; the copy in this
+      # build tree is the model the CLI reads.
+      - cp {{.FIXTURES}}/integer-spellings/model.yaml.in {{.WORK}}/model.yaml
+      - target/debug/ess generate synthesize --path {{.WORK}}/model.yaml --target rust --out {{.WORK}}/demo
+      - cp {{.FIXTURES}}/integer-spellings-harness/harness.toml {{.WORK}}/harness/Cargo.toml
+      - cp {{.FIXTURES}}/integer-spellings-harness/main.rs {{.WORK}}/harness/src/main.rs
+      - >-
+        env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS -u RUSTC_WRAPPER
+        CARGO_INCREMENTAL=0 RUSTFLAGS='-D warnings'
+        cargo build --offline --quiet --manifest-path {{.WORK}}/harness/Cargo.toml --target-dir {{.WORK}}/target
+      - cp {{.WORK}}/target/debug/harness {{.INTEGER_SPELLINGS_HARNESS}}
+      # The generated server is in the binary; its build tree is not needed again.
+      - rm -rf {{.WORK}}
 
   test-archive-feature-off:
     desc: Compile the feature-off test binaries into the nextest archive `test-feature-off` runs.
@@ -116,6 +151,8 @@ tasks:
     desc: Run one partition of the workspace test archive, e.g. `task test-shard SHARD=1/4`; needs `task test-archive-workspace`.
     requires:
       vars: [SHARD]
+    env:
+      ESS_INTEGER_SPELLINGS_HARNESS: '{{.INTEGER_SPELLINGS_HARNESS}}'
     cmds:
       - cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst --workspace-remap . --extract-to . --extract-overwrite --no-fail-fast --partition slice:{{.SHARD}}
 

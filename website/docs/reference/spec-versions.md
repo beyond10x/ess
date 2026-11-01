@@ -759,8 +759,8 @@ numeric value, so `1.5` and `1.50` are one value and `1.25` another. Before, suc
 every wrong-state scenario of its entity. A suite carrying one is written at 58 (ordinary) or 59
 (declared coverage); each implies every major below it, the 56/57 pair included. Rust, Go and
 TypeScript run it, older readers refuse these envelopes by version, and every reader refuses a
-Decimal in an exact observer under a lower major. A `Binary64` there is still refused, and the
-refusal names the field. A suite without one keeps its earlier format and bytes.
+Decimal in an exact observer under a lower major. A `Binary64` there is carried from
+suite/62 (below). A suite without one keeps its earlier format and bytes.
 
 `ess-conformance/60` and `ess-conformance/61`, added in [0.78.0][r78], let a fixture prelude name a row the
 deployment provides: an entity fixture `{name, type, entity, state}` of an `ess/33` entity marked
@@ -769,6 +769,23 @@ answers its identity before execution. A suite carrying one is written at 60 (or
 (declared coverage); each implies every major below it, the 58/59 pair included. Rust, Go and
 TypeScript run it, older readers refuse these envelopes by version, and every reader refuses an
 entity fixture under a lower major. A suite without one keeps its earlier format and bytes.
+
+`ess-conformance/62` and `ess-conformance/63`, added in [0.79.0][r79], let a response observation name one
+member of a nested value by its dotted path in `expected`, compared alone. A suite carrying one is
+written at 62 (ordinary) or 63 (declared coverage); each implies every major below it, the 60/61
+pair included. Rust, Go and TypeScript run it, older readers refuse these envelopes by version, and
+every reader refuses a response member path under a lower major. Event payload, error and row paths
+stay suite/26 dotted keys, which every reader of suite/26 already compares as paths. A suite
+without one keeps its earlier format and bytes.
+
+The same pair carries a finite `Binary64`: a model that reaches one in an entity's fields, a
+command's input or response, an event's or error's fields, or a view's fields or row shape writes
+its suites at 62 or 63, whether or not a scenario spells the value. Synthesis witnesses the `n`-th
+instance as `n + 0.5`; the exact observers compare a `Binary64` by its nearest binary64 under IEEE
+equality, and a token with no finite binary64 image is refused. Every reader refuses a `Binary64`
+record under a lower major (`UnsupportedPrimitive`, "a Binary64 value requires suite/62 or /63").
+A `Binary64` reached through an entity identity, a view parameter, an actor attribute, a binding or
+a conversion is still refused (`ESS-AUTHOR-036`), as is every `Binary64` in the browser player.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
@@ -806,6 +823,15 @@ instance arranged with `setup:`. The values compile into the step's suite/26 `ca
 format moves, and an act with no `caller:` keeps its suite's bytes. Earlier versions refuse the
 key, and an older `ess` refuses the header.
 
+`ess-scenario/6`, added in [0.79.0][r79], lets a claim name one member of a nested value by its dotted path,
+`checkpoint.checkpoint_id: cp-1`, in an act's `response:`, an event's `payload:`, an error's
+`fields:` and a row's `contains`, `excludes` and `at`. Each path is compared alone; a nested value
+written whole is still compared whole. Event, error and row paths compile to suite/26 dotted keys,
+so their suites keep their format; a response path needs `ess-conformance/62`. Earlier versions
+refuse a dotted key as an undeclared field, and an older `ess` refuses the header. From
+`ess-scenario/6` an act's literal input that its declared type refuses, at any depth, is
+`ESS-AUTHOR-015`; earlier versions check its shape only.
+
 ## `ess-normalization/` — normalization recipes
 
 | Version | Released in | What changed |
@@ -828,7 +854,7 @@ Generated maps for the earlier formats stay byte-identical at the same generator
 | `ess-impact/` | [0.19.0][r19] | `ess-impact/2` is the version [0.1.0][r1] shipped. `/3` versions the corrected dependency vocabulary and the embedded delta. |
 | `ess-conformance-run/` | [0.20.0][r20] | `/2` is the checked detailed run output. |
 | `ess-target-failure/` | [0.20.0][r20], [0.23.0][r23] | `/2`, then `/3` with the `accessor-resource` cause. |
-| `ess-scenario/` | [0.23.0][r23], [0.35.0][r35], [0.39.0][r39], [0.59.0][r59] | `/2` authored setup establishes typed, isolated backend entity rows. `/3`, added in [0.35.0][r35], adds typed `fixtures:` and `{$fixture: name}` references resolved before the scenario starts. `/4`, added in [0.39.0][r39], adds literal `response:` assertions on an act. `/5`, added in [0.59.0][r59], adds an act's `caller:` values. |
+| `ess-scenario/` | [0.23.0][r23], [0.35.0][r35], [0.39.0][r39], [0.59.0][r59] | `/2` authored setup establishes typed, isolated backend entity rows. `/3`, added in [0.35.0][r35], adds typed `fixtures:` and `{$fixture: name}` references resolved before the scenario starts. `/4`, added in [0.39.0][r39], adds literal `response:` assertions on an act. `/5`, added in [0.59.0][r59], adds an act's `caller:` values. `/6` lets a claim name one nested member by its dotted path. |
 | `infra-observation/` | [0.1.0][r1], [0.33.0][r33] | `/2` is a reduced, deliberately partial recovery profile, not a superset of `/1`. `/3` is the full scan with each Secret value recorded as `{"present": true}`: the key name, no digest, no length. `/1` wrote each value's unsalted SHA-256 and byte length, which confirm a guessed low-entropy secret to anyone holding the file. Same fields, new meaning, so a `/1` reader must reject `/3`; this build still reads `/1` and discards its digests. |
 | `infra-ir/` | [0.33.0][r33] | `/3` records each Secret key as present and nothing derived from its value, and is what every full observation with a Secret key compiles to, `/1` included. An IR without a Secret key keeps `/1` and its bytes. A persisted `/1` still reads, returned as `/3` with its Secret digests dropped and a different model digest, so nothing derived from it chains to the `/1` file's own digest; so drift reports a Secret's added and removed keys and never a changed value. An older reader refuses `/3`. |
 | `infra-drift/` | [0.33.0][r33] | `/2` is the namespace topology profile. `/3` is the full-scan comparison with one meaning changed: a Secret's `changed_keys` is always empty, so an empty list means the value is unknown, where under `/1` it meant not rotated. Serialize-only; `/1` documents already written keep their meaning. |
@@ -859,7 +885,7 @@ each end with the digest it was checked at. Refusals: `unknown_role_service`, `c
 `role_input_drift`. Earlier formats keep their meaning and bytes, and refuse `roles`, even empty,
 as an unknown field; an older reader refuses `/4`.
 
-`ess-composition/5`, unreleased. A `conformances` end may name an event, an error or a command's
+`ess-composition/5`, added in [0.76.0][r76]. A `conformances` end may name an event, an error or a command's
 input or response: exactly one of `type`, `event`, `error` or `command`, and a `command` end
 carries `part: input` or `part: response`. A payload end is compared as a struct with the
 payload's fields, against another payload or a struct type, by the same field rules, `reader:
@@ -1071,4 +1097,6 @@ published release that carries them.
 [r68]: https://github.com/beyond10x/ess/releases/tag/0.68.0
 [r69]: https://github.com/beyond10x/ess/releases/tag/0.69.0
 [r70]: https://github.com/beyond10x/ess/releases/tag/0.70.0
+[r76]: https://github.com/beyond10x/ess/releases/tag/0.76.0
 [r78]: https://github.com/beyond10x/ess/releases/tag/0.78.0
+[r79]: https://github.com/beyond10x/ess/releases/tag/0.79.0

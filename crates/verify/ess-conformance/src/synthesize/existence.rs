@@ -41,6 +41,22 @@ pub(super) fn creates_unknown(outcome: &ResolvedOutcome) -> bool {
             .is_some_and(|subject| subject.effect == ResolvedEffect::Creates)
 }
 
+/// `true` where the precedence plan of `command`, declared in source format `format`, reads a
+/// branch answering an identity no record carries without creating one (`unknown_instance:`
+/// refusing or accepting nothing) before `outcome`: `outcome` is then reached only for a row that
+/// is stored (beyond10x/ess#645).
+pub(super) fn unknown_answers_before(
+    format: ess_domain::system::FormatVersion,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> bool {
+    super::precedence::answers_before(format, command, outcome)
+        .into_iter()
+        .any(|branch| {
+            branch.condition == ResolvedCondition::UnknownInstance && !creates_unknown(branch)
+        })
+}
+
 /// `true` when an identity no record carries creates a record on this command, rather than being
 /// answered by a refusal or a no-op.
 pub(super) fn creates_on_unknown(command: &ResolvedCommand) -> bool {

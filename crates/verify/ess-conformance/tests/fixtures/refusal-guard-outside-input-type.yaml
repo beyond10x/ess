@@ -1,0 +1,34 @@
+format: ess/32
+system: demo
+version: v1
+domain: demo.codes
+summary: A refusal whose guard holds only of values the input's declared type excludes.
+types:
+  - name: demo.codes.Code
+    kind: newtype
+    of: String
+    alphabet: "abcdefghijklmnopqrstuvwxyz0123456789-"
+    invariants:
+      - "value.utf8_bytes >= 1"
+      - "value.utf8_bytes <= 256"
+errors:
+  - {name: demo.codes.InvalidCode, fields: []}
+events:
+  - name: demo.codes.Recorded
+    fields: [{name: code, type: demo.codes.Code}]
+commands:
+  - name: demo.codes.Record
+    input:
+      - {name: code, type: demo.codes.Code}
+    outcomes:
+      - name: invalid-code
+        when:
+          any:
+            - "code.utf8_bytes == 0"
+            - {code: {contains: " "}}
+            - "code.utf8_bytes > 256"
+        error: demo.codes.InvalidCode
+      - name: recorded
+        emits: [demo.codes.Recorded]
+        payload:
+          demo.codes.Recorded: {code: input.code}

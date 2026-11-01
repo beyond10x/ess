@@ -311,10 +311,23 @@ fn typed_binary64_suites_refuse_serialization_emission_and_target_effects() {
         }
     }
     assert!(changed);
+    assert!(
+        suite.provenance.suite_version.major() < 62,
+        "{BINARY64_STORY}: the worked example is below the Binary64 pair"
+    );
     let errors = suite.to_canonical_json().unwrap_err();
     assert_eq!(errors.issues.len(), 1);
     assert!(errors.issues[0].path.ends_with("/shape/ratio~1a~0b"));
-    assert!(serde_json::to_string(&suite).is_err());
+    assert_eq!(errors.issues[0].reason, "UnsupportedPrimitive");
+    assert!(
+        errors.issues[0].detail.contains("suite/62 or /63"),
+        "{BINARY64_STORY}: below the pair the step is refused by its major: {errors}"
+    );
+    // Raw serde no longer refuses a Binary64 kind: admission does, by the suite's major.
+    assert!(
+        serde_json::to_string(&suite).is_ok(),
+        "{BINARY64_STORY}: the unadmitted DTO serializes; admission refuses it"
+    );
     assert_eq!(ess_conformance::go::emit(&suite).unwrap_err(), errors);
     assert_eq!(ess_conformance::web::emit(&ir, &suite).unwrap_err(), errors);
     let runner = Runner::new(
@@ -332,8 +345,26 @@ fn typed_binary64_suites_refuse_serialization_emission_and_target_effects() {
     let original = worked_example(&ir).to_canonical_json().unwrap();
     assert!(original.contains("\"decimal\""));
     let forged = original.replace("\"decimal\"", "\"binary64\"");
-    assert!(ConformanceSuite::from_json(&forged).is_err());
-    assert!(serde_json::from_str::<ConformanceSuite>(&forged).is_err());
+    // The historical DTO parser is permissive; the admitted reader refuses the forged kind under
+    // the worked example's major.
+    assert!(
+        ConformanceSuite::from_json(&forged).is_ok(),
+        "{BINARY64_STORY}: the unadmitted DTO parses"
+    );
+    assert!(
+        serde_json::from_str::<ConformanceSuite>(&forged).is_ok(),
+        "{BINARY64_STORY}: the unadmitted DTO parses"
+    );
+    let refused = ess_conformance::AdmittedSuite::from_json(&forged).unwrap_err();
+    assert!(
+        !refused.issues.is_empty()
+            && refused
+                .issues
+                .iter()
+                .all(|issue| issue.reason == "UnsupportedPrimitive"
+                    && issue.detail.contains("suite/62 or /63")),
+        "{BINARY64_STORY}: {refused}"
+    );
 }
 
 #[test]
@@ -569,8 +600,13 @@ fn a_wrong_state_refusal_snapshots_a_top_level_decimal_subject() {
     }
 }
 
+/// Restated for story:a-binary64-value-round-trips-through-a-conformance-suite: until that story
+/// these four owners refused the model by the `Rate` position; each is a position the suite
+/// contract carries, so the model is admitted, synthesis writes a suite/62 suite with no refusal
+/// and no unreached note, and authoring refuses nothing.
 #[test]
-fn a_reached_binary64_still_refuses_by_name() {
+fn a_reached_binary64_in_a_carried_position_is_admitted() {
+    let story = BINARY64_STORY;
     let rate = "{name: rate, type: Optional<demo.notes.Rate>}";
     for (owner, text) in [
         (
@@ -609,37 +645,35 @@ fn a_reached_binary64_still_refuses_by_name() {
     ] {
         assert_ne!(text, UNREACHED, "{owner}: the replacement applied");
         let ir = notes_model(&text);
-        let path = "types.demo.notes.Rate.fields.per_second";
-        let errors = ess_conformance::admission::model(&ir).unwrap_err();
-        assert_eq!(errors.issues.len(), 1, "{owner}: {errors}");
-        assert_eq!(errors.issues[0].path, path, "{owner}");
+        ess_conformance::admission::model(&ir)
+            .unwrap_or_else(|errors| panic!("{story}: {owner}: {errors}"));
         let synthesis = ess_conformance::synthesize::synthesize(&ir);
-        assert!(synthesis.suite.is_empty(), "{owner}");
         assert!(
-            synthesis
-                .refusals
-                .iter()
-                .any(|refusal| refusal.to_string().contains(path)),
-            "{owner}: {:?}",
+            synthesis.refusals.is_empty(),
+            "{story}: {owner}: {:?}",
             synthesis.refusals
         );
+        assert!(!synthesis.suite.is_empty(), "{story}: {owner}");
+        assert_eq!(
+            synthesis.suite.provenance.suite_version.to_string(),
+            "ess-conformance/62",
+            "{story}: {owner}"
+        );
+        synthesis
+            .suite
+            .to_canonical_json()
+            .unwrap_or_else(|errors| panic!("{story}: {owner}: {errors}"));
         assert!(
             !synthesis
                 .notes
                 .iter()
                 .any(|note| note.to_string().contains("Binary64")),
-            "{owner}"
+            "{story}: {owner}"
         );
         let authored = ess_conformance::authored::compile(&ir, &[]);
         assert!(
-            matches!(
-                authored.refusals.as_slice(),
-                [refusal] if matches!(
-                    refusal.cause,
-                    ess_conformance::authored::Cause::UnsupportedBinary64 { .. }
-                )
-            ),
-            "{owner}: {:?}",
+            authored.refusals.is_empty(),
+            "{story}: {owner}: {:?}",
             authored.refusals
         );
     }
@@ -728,10 +762,10 @@ fn a_suite_without_a_decimal_observer_keeps_its_bytes() {
     );
     assert!(ess_conformance::AdmittedSuite::from_json(&json).is_ok());
     // A reader that admits no later major refuses /58 by its version, never by a step.
-    let later = ess_conformance::scenario::SuiteFormat::parse("ess-conformance/62").unwrap();
+    let later = ess_conformance::scenario::SuiteFormat::parse("ess-conformance/64").unwrap();
     assert!(!later.is_supported());
     let refused = ess_conformance::AdmittedSuite::from_json(
-        &json.replace("\"ess-conformance/58\"", "\"ess-conformance/62\""),
+        &json.replace("\"ess-conformance/58\"", "\"ess-conformance/64\""),
     )
     .unwrap_err();
     assert!(
@@ -739,6 +773,310 @@ fn a_suite_without_a_decimal_observer_keeps_its_bytes() {
             || refused.to_string().contains("suite major"),
         "{refused}"
     );
+}
+
+// ---- a finite Binary64 in a suite (story:a-binary64-value-round-trips-through-a-conformance-suite)
+
+const BINARY64_STORY: &str = "story:a-binary64-value-round-trips-through-a-conformance-suite";
+
+/// Every number a suite document states under a member named `name`, at any depth: a bare number,
+/// or the `value` of a literal scenario value.
+fn numbers_under(document: &serde_json::Value, name: &str, found: &mut Vec<f64>) {
+    match document {
+        serde_json::Value::Object(members) => {
+            for (key, value) in members {
+                if key == name {
+                    match value {
+                        serde_json::Value::Number(number) => found.extend(number.as_f64()),
+                        serde_json::Value::Object(literal) => {
+                            if let Some(serde_json::Value::Number(number)) = literal.get("value") {
+                                found.extend(number.as_f64());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                numbers_under(value, name, found);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                numbers_under(item, name, found);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// A gauge whose `level` is a `Binary64` the command sets and the view publishes: synthesis writes
+/// suite/62 with no refusal, sends a non-integral witness below 2^53, types the complete subject's
+/// `level` as `Binary64`, reads its own bytes back unchanged, and the interpreted target passes
+/// every scenario. The coverage inventory of the same model is suite/63. A browser bundle still
+/// refuses the model by name.
+#[test]
+fn a_reached_binary64_field_round_trips_through_a_suite() {
+    use ess_conformance::coverage::{Origins, Scope};
+    use ess_conformance::{report::Status, AdmittedSuite, Runner};
+    let story = BINARY64_STORY;
+    let ir = gauge("Binary64", true);
+    ess_conformance::admission::model(&ir).unwrap_or_else(|error| panic!("{story}: {error}"));
+    let synthesis = ess_conformance::synthesize::synthesize(&ir);
+    assert!(
+        synthesis.refusals.is_empty(),
+        "{story}: {:?}",
+        synthesis.refusals
+    );
+    assert!(!synthesis.suite.is_empty(), "{story}");
+    assert_eq!(
+        synthesis.suite.provenance.suite_version.to_string(),
+        "ess-conformance/62",
+        "{story}"
+    );
+    let json = synthesis
+        .suite
+        .to_canonical_json()
+        .unwrap_or_else(|error| panic!("{story}: {error}"));
+    let document: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let mut levels = Vec::new();
+    numbers_under(&document, "level", &mut levels);
+    assert!(
+        levels
+            .iter()
+            .any(|level| level.fract().total_cmp(&0.5).is_eq()),
+        "{story}: a non-integral witness is sent: {levels:?}"
+    );
+    assert!(
+        levels
+            .iter()
+            .all(|level| level.is_finite() && level.abs() < 9_007_199_254_740_992.0),
+        "{story}: every witness is finite and below 2^53: {levels:?}"
+    );
+    assert!(
+        json.contains("\"Binary64\""),
+        "{story}: an exact observer types `level` as Binary64"
+    );
+    let read =
+        ConformanceSuite::from_json(&json).unwrap_or_else(|error| panic!("{story}: {error}"));
+    assert_eq!(
+        read.to_canonical_json().unwrap(),
+        json,
+        "{story}: the bytes read back unchanged"
+    );
+    let admitted =
+        AdmittedSuite::from_json(&json).unwrap_or_else(|error| panic!("{story}: {error}"));
+    let target = ess_conformance::interpret::Interpreted::for_model(ir.clone());
+    let report = Runner::for_suite(admitted.suite()).run_admitted(&admitted, &target);
+    assert_eq!(report.scenarios.len(), synthesis.suite.len(), "{story}");
+    for scenario in &report.scenarios {
+        assert_eq!(scenario.status, Status::Passed, "{story}: {scenario:?}");
+    }
+    ess_conformance::go::emit(&synthesis.suite).unwrap_or_else(|error| panic!("{story}: {error}"));
+    let coverage =
+        ess_conformance::coverage_build::build(&ir, &[], Scope::System, Origins::Generated)
+            .unwrap_or_else(|error| panic!("{story}: {error}"));
+    assert_eq!(
+        coverage
+            .selected()
+            .suite()
+            .provenance
+            .suite_version
+            .to_string(),
+        "ess-conformance/63",
+        "{story}"
+    );
+    let browser = ess_conformance::web::emit(&ir, &synthesis.suite)
+        .expect_err("a browser bundle carries no Binary64");
+    assert_eq!(
+        browser,
+        ess_conformance::admission::model_without_binary64(&ir).unwrap_err(),
+        "{story}"
+    );
+}
+
+/// A model that reaches no `Binary64` keeps its suite format and bytes, each read on the base
+/// before the story: an `Integer` gauge, and the notes model whose `Rate` nothing reaches.
+#[test]
+fn a_suite_without_a_binary64_keeps_its_bytes() {
+    let story = BINARY64_STORY;
+    let expected = [
+        (
+            "Integer gauge",
+            "ess-conformance/34".to_owned(),
+            "f261e548f04518a9406fd98e1e7c1b7f6a8cf7c4a66385ab868c72e079ddd9f3".to_owned(),
+        ),
+        (
+            "unreached Rate",
+            "ess-conformance/34".to_owned(),
+            "572f58b7886d040009d038664503b9492f6e9c31b1cb39aedb4e1326606c6d53".to_owned(),
+        ),
+    ];
+    let actual = [
+        ("Integer gauge", gauge("Integer", true)),
+        ("unreached Rate", notes_model(UNREACHED)),
+    ]
+    .map(|(name, ir)| {
+        let synthesis = ess_conformance::synthesize::synthesize(&ir);
+        assert!(
+            synthesis.refusals.is_empty(),
+            "{story}: {name}: {:?}",
+            synthesis.refusals
+        );
+        let json = synthesis.suite.to_canonical_json().unwrap();
+        (
+            name,
+            synthesis.suite.provenance.suite_version.to_string(),
+            digest(json.as_bytes()),
+        )
+    });
+    assert_eq!(actual, expected, "{story}");
+}
+
+/// A `Binary64` where the suite contract carries none (an actor's attribute, a view's parameter)
+/// refuses the model at that position with `UnsupportedPrimitive`; synthesis refuses by the same
+/// path and writes nothing, and the authored refusal `ESS-AUTHOR-036` names the positions a suite
+/// does carry.
+#[test]
+fn binary64_outside_the_suite_contract_refuses_by_name() {
+    let story = BINARY64_STORY;
+    let cases = [
+        (
+            "actor attribute",
+            UNREACHED.replace(
+                "commands:\n",
+                "actors:\n  - name: demo.notes.Writer\n    attributes: [{name: rate, type: Binary64}]\n    may: [demo.notes.AddNote]\ncommands:\n",
+            ),
+            "actor.demo.notes.Writer.attributes.rate",
+        ),
+        // A view parameter of type Binary64 is not a case: no filter can read one (a Binary64 is
+        // no comparison operand), so validation refuses the parameter as unobservable first.
+        (
+            "actor attribute through a type an entity field also reaches",
+            UNREACHED
+                .replace(
+                    "    fields:\n      - {name: label, type: String}\n    lifecycle",
+                    "    fields:\n      - {name: label, type: String}\n      - {name: rate, type: Optional<demo.notes.Rate>}\n    lifecycle",
+                )
+                .replace(
+                    "commands:\n",
+                    "actors:\n  - name: demo.notes.Writer\n    attributes: [{name: rate, type: Optional<demo.notes.Rate>}]\n    may: [demo.notes.AddNote]\ncommands:\n",
+                ),
+            "types.demo.notes.Rate.fields.per_second",
+        ),
+    ];
+    for (owner, text, path) in cases {
+        assert_ne!(text, UNREACHED, "{owner}: the replacement applied");
+        let ir = notes_model(&text);
+        let errors = ess_conformance::admission::model(&ir)
+            .expect_err(&format!("{story}: {owner}: the model is refused"));
+        assert!(
+            errors
+                .issues
+                .iter()
+                .any(|issue| issue.path == path && issue.reason == "UnsupportedPrimitive"),
+            "{story}: {owner}: {errors}"
+        );
+        let synthesis = ess_conformance::synthesize::synthesize(&ir);
+        assert!(synthesis.suite.is_empty(), "{story}: {owner}");
+        assert!(
+            synthesis
+                .refusals
+                .iter()
+                .any(|refusal| refusal.to_string().contains(path)),
+            "{story}: {owner}: {:?}",
+            synthesis.refusals
+        );
+        let authored = ess_conformance::authored::compile(&ir, &[]);
+        let [refusal] = authored.refusals.as_slice() else {
+            panic!("{story}: {owner}: {:?}", authored.refusals)
+        };
+        assert!(
+            matches!(
+                &refusal.cause,
+                ess_conformance::authored::Cause::UnsupportedBinary64 { locations }
+                    if locations.iter().any(|at| at == path)
+            ),
+            "{story}: {owner}: {refusal:?}"
+        );
+        assert_eq!(
+            refusal.cause.code().to_string(),
+            "ESS-AUTHOR-036",
+            "{story}"
+        );
+        let hint = refusal.cause.hint();
+        for carried in ["entity", "command", "event", "error", "view"] {
+            assert!(
+                hint.contains(carried),
+                "{story}: the help names {carried}: {hint}"
+            );
+        }
+    }
+}
+
+/// A number with no finite binary64 image is refused by name, at its path, before target effects:
+/// the suite reader does not round `1e400` to infinity and send it.
+#[test]
+fn non_finite_binary64_is_refused_by_name() {
+    let story = BINARY64_STORY;
+    let synthesis = ess_conformance::synthesize::synthesize(&gauge("Binary64", true));
+    assert!(
+        synthesis.refusals.is_empty(),
+        "{story}: {:?}",
+        synthesis.refusals
+    );
+    let json = synthesis
+        .suite
+        .to_canonical_json()
+        .unwrap_or_else(|error| panic!("{story}: {error}"));
+    let mut document: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let mut replaced = 0;
+    replace_level(&mut document, &mut replaced);
+    assert!(replaced > 0, "{story}: a sent level was found");
+    let text = serde_json::to_string_pretty(&document)
+        .unwrap()
+        .replace("\"__non_finite__\"", "1e400");
+    let refused = ess_conformance::AdmittedSuite::from_json(&text)
+        .expect_err("a non-finite Binary64 is refused");
+    assert!(
+        refused
+            .issues
+            .iter()
+            .all(|issue| issue.reason == "InvalidPayloadNumber" && issue.path.contains("level")),
+        "{story}: {refused}"
+    );
+}
+
+/// Replaces every literal number sent as `level` with a marker the caller spells as `1e400`.
+fn replace_level(document: &mut serde_json::Value, replaced: &mut usize) {
+    match document {
+        serde_json::Value::Object(members) => {
+            for (key, value) in members.iter_mut() {
+                if key == "level" {
+                    if let serde_json::Value::Object(literal) = value {
+                        if literal
+                            .get("value")
+                            .is_some_and(serde_json::Value::is_number)
+                        {
+                            literal.insert("value".into(), "__non_finite__".into());
+                            *replaced += 1;
+                            continue;
+                        }
+                    }
+                    if value.is_number() {
+                        *value = "__non_finite__".into();
+                        *replaced += 1;
+                        continue;
+                    }
+                }
+                replace_level(value, replaced);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                replace_level(item, replaced);
+            }
+        }
+        _ => {}
+    }
 }
 
 // ---- the claims --------------------------------------------------------------------------------
@@ -1432,8 +1770,11 @@ fn contains_token(text: &str, token: &str) -> bool {
 }
 
 /// Adversary pass 1, unit e: the reachability closure. Each model reaches a `Binary64` through one
-/// further root or chain `ess_compiler::binary64::reached_uses` names; each must still refuse the
-/// model at that position and note nothing.
+/// further root or chain `ess_compiler::binary64::reached_uses` names, and none may be noted as
+/// unreached. Restated for story:a-binary64-value-round-trips-through-a-conformance-suite: a root
+/// the suite contract carries (a command's response, an error's fields, a nested struct, a union
+/// variant, a map value, a newtype in a struct) admits the model; an actor's attribute, which it
+/// does not carry, still refuses the model at that position.
 #[test]
 fn adversary_e_a_binary64_reached_through_every_root_still_refuses() {
     let input = "    input:\n      - {name: label, type: String}\n";
@@ -1502,9 +1843,24 @@ fn adversary_e_a_binary64_reached_through_every_root_still_refuses() {
     for (owner, text, path) in &cases {
         assert_ne!(text, UNREACHED, "{owner}: the replacement applied");
         let ir = notes_model(text);
-        match ess_conformance::admission::model(&ir) {
-            Ok(()) => wrong.push(format!("{owner}: admitted")),
-            Err(errors) => {
+        let carried = *owner != "actor attribute";
+        match (carried, ess_conformance::admission::model(&ir)) {
+            (true, Ok(())) => {
+                let synthesis = ess_conformance::synthesize::synthesize(&ir);
+                if !synthesis.refusals.is_empty() {
+                    wrong.push(format!(
+                        "{BINARY64_STORY}: {owner}: carried, yet synthesis refused: {:?}",
+                        synthesis.refusals
+                    ));
+                }
+            }
+            (true, Err(errors)) => {
+                wrong.push(format!(
+                    "{BINARY64_STORY}: {owner}: a carried root refused: {errors}"
+                ));
+            }
+            (false, Ok(())) => wrong.push(format!("{BINARY64_STORY}: {owner}: admitted")),
+            (false, Err(errors)) => {
                 if !errors.issues.iter().any(|issue| issue.path == *path) {
                     wrong.push(format!("{owner}: refused without `{path}`: {errors}"));
                 }

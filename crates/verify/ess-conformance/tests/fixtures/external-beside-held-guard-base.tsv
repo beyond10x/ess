@@ -47,7 +47,7 @@ crates/specify/ess-domain/tests/fixtures/lending/system.yaml	ASSEMBLE 85c94c3644
 crates/specify/ess-domain/tests/fixtures/outcome-groups/system.yaml	ASSEMBLE e81263926bcf9e3938ac:451
 crates/specify/ess-domain/tests/fixtures/outcome-groups-twin/system.yaml	ASSEMBLE e81263926bcf9e3938ac:451
 crates/specify/ess-domain/tests/fixtures/periodic.yaml	suite=15a17f755c76ca3b4c88:8935 refusals=e3b0c44298fc1c149afb:0 claimable=
-crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	suite=1fc3b8f3846fac6fbb2b:323 refusals=b364fba60dba0462e7c1:334 claimable=
+crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	suite=4396e0632c2955f3febf:26366 refusals=09a7f9efe74b5bfe99fd:1604 claimable=
 crates/specify/ess-service-contract/tests/fixtures/system.yaml	ASSEMBLE bfbe3990bccba3100311:459
 crates/specify/ess-service-contract/tests/selection-conversion-control-fixtures/system.yaml	ASSEMBLE fc1d658f1ab636a5e656:715
 crates/specify/ess-service-contract/tests/selection-conversion-fixtures/system.yaml	ASSEMBLE 1c74dd261e38c188dd5a:213

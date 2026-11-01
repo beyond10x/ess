@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance/src/target.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/interpreted_views.rs
-revision: 9
+revision: 10
 ---
 ## Need
 
@@ -122,3 +122,19 @@ unsupported inference.graph.AddSubgraphNode/outcome/added
 ```
 
 and the run exits 1. Probe (0.69.0 build, verified): with `requires` removed from `inference.graph.Nodes` only, 469 passed, 0 unsupported, exit 0. Same site, `crates/verify/ess-conformance/src/interpret/views.rs:476`; validate exits 0, so part (b), `story:a-required-field-no-creator-sets-is-refused-by-validate`, would have refused this one too.
+
+## Downstream case 2026-10-29
+
+On 2026-10-29 (orchestrator D194) a downstream adopter's suite still has one `unsupported`
+scenario on 0.76.0 and on the 0.77.0 head (84671d6b8), the outcome of a command that adds a node
+to a planned subgraph:
+
+```text
+unsupported inference.graph.AddSubgraphNode/outcome/added
+    ESS-CF-TARGET: cannot expose interpreted view: the model does not determine a complete typed view observation
+```
+
+Its message names no view and no field, which is the defect this story fixes. Once the field is
+named, the adopter can tell whether its model leaves a required view field unset or the
+interpreter cannot read a set one; the second would be its own story. The reproduction is kept
+out of this repository.

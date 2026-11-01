@@ -1,0 +1,75 @@
+format: ess/32
+system: demo
+version: v1
+domain: demo.dispatch
+summary: A refusal over a text input beside held-state branches whose guards cover every answer.
+types:
+  - {name: demo.dispatch.JobId, kind: newtype, of: String}
+  - {name: demo.dispatch.Answer, kind: enum, variants: [Accepted, Rejected]}
+entities:
+  - name: demo.dispatch.Job
+    identity: {name: id, type: demo.dispatch.JobId}
+    fields: []
+    lifecycle:
+      initial: Open
+      states: [Open, Done, Dropped]
+      terminal: [Done, Dropped]
+      transitions:
+        - {name: finish, from: [Open], to: Done}
+        - {name: drop, from: [Open], to: Dropped}
+errors:
+  - {name: demo.dispatch.InvalidId, fields: []}
+  - {name: demo.dispatch.Missing, fields: []}
+  - {name: demo.dispatch.Duplicate, fields: []}
+  - {name: demo.dispatch.WrongPhase, fields: []}
+events:
+  - name: demo.dispatch.Opened
+    fields: [{name: id, type: demo.dispatch.JobId}]
+  - name: demo.dispatch.Settled
+    fields: [{name: id, type: demo.dispatch.JobId}]
+commands:
+  - name: demo.dispatch.Open
+    input:
+      - {name: id, type: demo.dispatch.JobId}
+    outcomes:
+      - name: opened
+        creates: demo.dispatch.Job
+        instance: id
+        emits: [demo.dispatch.Opened]
+        payload:
+          demo.dispatch.Opened: {id: input.id}
+      - {name: duplicate, existing_instance: true, error: demo.dispatch.Duplicate}
+  - name: demo.dispatch.Settle
+    input:
+      - {name: id, type: demo.dispatch.JobId}
+      - {name: answer, type: demo.dispatch.Answer}
+      - {name: note, type: String}
+    outcomes:
+      - name: invalid-id
+        when: "id.utf8_bytes == 0"
+        error: demo.dispatch.InvalidId
+      - name: finished
+        when: answer == Accepted
+        when_subject_state: [Open]
+        moves: demo.dispatch.Job.finish
+        instance: id
+        emits: [demo.dispatch.Settled]
+        payload:
+          demo.dispatch.Settled: {id: input.id}
+      - name: dropped
+        when: answer == Rejected
+        when_subject_state: [Open]
+        moves: demo.dispatch.Job.drop
+        instance: id
+        emits: [demo.dispatch.Settled]
+        payload:
+          demo.dispatch.Settled: {id: input.id}
+      - {name: missing, unknown_instance: true, error: demo.dispatch.Missing}
+      - {name: wrong-phase, when_subject_state: [Done, Dropped], error: demo.dispatch.WrongPhase}
+views:
+  - name: demo.dispatch.Jobs
+    source: demo.dispatch.Job
+    consistency: read_your_writes
+    fields:
+      - {name: id, type: demo.dispatch.JobId}
+      - {name: state, type: demo.dispatch.Job.State}

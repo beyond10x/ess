@@ -71,6 +71,11 @@ impl SubjectShape {
         if self.optional(&identity.type_ref) {
             return Err("complete subject identity cannot be optional".into());
         }
+        // An identity selects by exact equality; a `Binary64` is not carried there
+        // (story:a-binary64-value-round-trips-through-a-conformance-suite).
+        if crate::binary64_values::reaches(&identity.type_ref, &self.declarations, 0) {
+            return Err("complete subject identity cannot be Binary64".into());
+        }
         if serde_json::to_vec(self)
             .map_err(|error| error.to_string())?
             .len()

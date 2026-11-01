@@ -44,7 +44,9 @@
 //!    under `/`, before any alphabet maps it; a count resize keeps the prefix in front, and a
 //!    candidate that does not start with it is refused with every other value the type refuses.
 //!    **An input's
-//!    `example:`** is its base at the plain instance, for every leaf kind.
+//!    `example:`** is its base at the plain instance, for every leaf kind. A text or instant whose
+//!    example is a literal a guard compares it with is tried at its own witness as well, so a `!=`
+//!    against the example's value has a value that refutes it.
 //! 3. **Alternatives come from the guard, not from imagination.** The values a candidate varies are
 //!    the fact paths the guard actually reads, and the values it tries are the literals the guard
 //!    itself writes, one either side. `amount.amount > 0` is met by `1` and refuted by `0`, and
@@ -650,7 +652,92 @@ fn search_uncached(
     distinction: Distinction,
     between: bool,
 ) -> Searched {
-    search_with(ir, command, guards, distinction, between, Goals::Every)
+    search_with(
+        ir,
+        command,
+        guards,
+        distinction,
+        between,
+        Goals::Every,
+        Admission::Typed,
+    )
+}
+
+/// Why no input the walk sends satisfies `guards`, where its declared types are the reason: the
+/// first candidate the walk builds that satisfies every guard, named with the field its declared
+/// type refuses and what that type says. `None` where no candidate satisfies them, or where one a
+/// declared type admits does, so the types are not the reason.
+///
+/// A constraint of an input's declared type (alphabet, prefix, invariants) is a precondition: a
+/// generated decoder refuses a value outside it before the command runs, so synthesis never sends
+/// one. A refusal guard that only such a value meets is unwitnessable, and the refusal says so
+/// rather than leaving the reader to find the type (an adopter report, wave D335).
+///
+/// # Errors
+///
+/// [`WitnessGap`] when some field of the input has no safe value at all.
+pub(crate) fn excluded_by_type(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guards: &[&Predicate],
+) -> Result<Option<String>, WitnessGap> {
+    let (inputs, _, _) = search_with(
+        ir,
+        command,
+        guards,
+        Distinction::PLAIN,
+        false,
+        Goals::Satisfied,
+        Admission::Raw,
+    )?;
+    let satisfies = |input: &BTreeMap<String, Node>| {
+        crate::input::flatten(ir, command, input).is_ok_and(|facts| {
+            guards
+                .iter()
+                .all(|guard| matches!(facts.decide(guard), Decision::Satisfied))
+        })
+    };
+    let meeting: Vec<&BTreeMap<String, Node>> =
+        inputs.iter().filter(|input| satisfies(input)).collect();
+    let refused = |input: &BTreeMap<String, Node>| {
+        command.input.iter().find_map(|field| {
+            let value = input.get(&field.name)?;
+            let error = crate::input::validate_typed_value(ir, &field.type_ref, value).err()?;
+            Some((field, value.clone(), error))
+        })
+    };
+    if meeting.iter().any(|input| refused(input).is_none()) {
+        return Ok(None);
+    }
+    Ok(meeting
+        .first()
+        .and_then(|input| refused(input))
+        .map(|(field, value, error)| {
+            // Inside the backticks the refusal quotes its predicate in, so written without them.
+            let error = error
+                .strip_suffix("; setup requires True")
+                .unwrap_or(&error)
+                .replace('`', "");
+            let value = match value.as_text() {
+                Some(text) if text.len() > 32 => format!("a text of {} bytes", text.len()),
+                Some(text) => format!("{text:?}"),
+                None => format!("{value:?}"),
+            };
+            format!(
+                "{} = {value} meets it, but its declared type {} refuses that value ({error}); an \
+             input outside its declared type is refused before the command and never sent",
+                field.name, field.type_ref
+            )
+        }))
+}
+
+/// Whether [`search_with`] keeps only the candidates every field's declared type admits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Admission {
+    /// Only inputs a generated decoder accepts: every candidate that is sent.
+    Typed,
+    /// Every candidate the walk builds, to say why none was admitted ([`excluded_by_type`]).
+    Raw,
 }
 
 /// The candidates for one goal: the walk [`candidates`] tries, then, where the walk was cut short,
@@ -671,8 +758,15 @@ pub(crate) fn solving(
     goal: &Predicate,
     distinction: Distinction,
 ) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
-    let (mut inputs, _, _) =
-        search_with(ir, command, &[goal], distinction, false, Goals::Satisfied)?;
+    let (mut inputs, _, _) = search_with(
+        ir,
+        command,
+        &[goal],
+        distinction,
+        false,
+        Goals::Satisfied,
+        Admission::Typed,
+    )?;
     let satisfied = |input: &BTreeMap<String, Node>| {
         crate::input::flatten(ir, command, input)
             .is_ok_and(|facts| matches!(facts.decide(goal), Decision::Satisfied))
@@ -747,6 +841,7 @@ fn search_with(
     distinction: Distinction,
     between: bool,
     goals: Goals,
+    admission: Admission,
 ) -> Searched {
     let mut added = false;
     // How many goals the guard-directed search gave up at its step bound ([`MAX_DIRECTED_STEPS`]).
@@ -805,7 +900,8 @@ fn search_with(
         presence_omits.entry(path).or_insert(Choice::Omit);
     }
 
-    if !between {
+    // A finite partition answers admitted inputs only; the raw walk is the ladders below.
+    if !between && admission == Admission::Typed {
         if let Some(inputs) = finite_partition(ir, command, guards, &mut builder, &presence_omits)?
         {
             return Ok((
@@ -855,6 +951,33 @@ fn search_with(
         if let Some(original) = builder.unrepaired.get(&path) {
             if original != at_base && !alternatives.contains(original) {
                 alternatives.push(original.clone());
+            }
+        }
+        // A text or instant whose example is itself a literal the guard compares it with has that
+        // literal left off its ladder, which excludes the base, and a text or instant ladder holds
+        // nothing but the guard's literals to refute the comparison with: one more value is tried,
+        // so `!=` and `==` against the example's value each keep their other side. It is the
+        // leaf's own witness, or the next instance's where the example is that witness, moved
+        // onto a value the leaf's type admits where the type refuses it (adversary pass 1 of
+        // story:a-text-inequality-against-an-example-is-refuted). A number, a boolean and an enum
+        // are tried at values beside their literals already. Only such a leaf gets it, so every
+        // other suite keeps its bytes.
+        if let (Leaf::Text | Leaf::Timestamp, Node::Text(example), Some(witnesses)) =
+            (leaf, at_base, builder.unexampled.get(&path))
+        {
+            let on_literal = literals_at(&expanded, &path)
+                .iter()
+                .any(|literal| literal.as_text() == Some(example.as_str()));
+            if on_literal {
+                if let Some(other) = witnesses
+                    .iter()
+                    .filter(|witness| *witness != at_base)
+                    .find_map(|witness| admitted_witness(&builder, &path, witness, at_base))
+                {
+                    if !alternatives.contains(&other) {
+                        alternatives.push(other);
+                    }
+                }
             }
         }
         if !alternatives.is_empty() {
@@ -937,6 +1060,9 @@ fn search_with(
         cut = gave_up;
         extend_paired(&mut builder, command, &solved, &presence_omits, &mut inputs)?;
     }
+    if admission == Admission::Raw {
+        return Ok((inputs, added, cut));
+    }
     let inputs = admitted_inputs(ir, command, inputs);
     Ok((
         within_invariants(&mut builder, command, &constrained, inputs)?,
@@ -1017,9 +1143,6 @@ pub(crate) fn proof_base(
             ResolvedTypeRef::List { .. } => Some(Node::Seq(Vec::new())),
             ResolvedTypeRef::Map { .. } => Some(Node::Map(BTreeMap::new())),
             ResolvedTypeRef::Primitive { name } => {
-                if *name == Primitive::Binary64 {
-                    return None;
-                }
                 budget.charge(128).ok()?;
                 Some(primitive_value(
                     *name,
@@ -3920,6 +4043,11 @@ fn byte_lengths(guards: &[&Predicate]) -> BTreeMap<FactPath, Vec<usize>> {
 /// where only that does — and then in the text's own characters, so a target that counts anything
 /// but bytes decides a witnessed branch differently, and an alphabet that admits neither still has
 /// the text's own characters, which [`admitted_inputs`] keeps.
+///
+/// Under a declared alphabet only the variants it admits join the ladder. A variant it refuses is
+/// never sent, and on the ladder it took a candidate's place: two such texts beside each other cut
+/// the bounded search before it reached the plain variant one guard child needs (`name.utf8_bytes >
+/// 256` beside `alias`'s own children, refused as `ESS-SYNTH-022`; an adopter report, wave D335).
 fn text_bytes_ladder(
     builder: &Builder<'_>,
     path: &FactPath,
@@ -3933,6 +4061,10 @@ fn text_bytes_ladder(
         .plain_texts
         .get(path)
         .map_or(base.as_str(), String::as_str);
+    let alphabet = builder.alphabets.get(path);
+    let admitted = |text: &str| {
+        alphabet.is_none_or(|alphabet| text.chars().all(|character| alphabet.contains(character)))
+    };
     let ladder = ladders.entry(path.clone()).or_default();
     let mut sources = vec![base.clone()];
     sources.extend(ladder.iter().filter_map(|choice| match choice {
@@ -3942,6 +4074,9 @@ fn text_bytes_ladder(
     for source in &sources {
         for &length in lengths {
             for text in resize_bytes(source, length, plain) {
+                if !admitted(&text) {
+                    continue;
+                }
                 let node = Node::Text(text);
                 if node != Node::Text(base.clone())
                     && !ladder.contains(&Choice::Value(node.clone()))
@@ -4122,6 +4257,10 @@ fn wide_first(
             wide.push(input);
         }
     }
+    // Only an input its declared types admit leads: one [`admitted_inputs`] drops later is never
+    // sent, and in front it pushed a sendable candidate past [`MAX_CANDIDATES`] (an alphabet that
+    // admits no wide scalar; an adopter report, wave D335).
+    let mut wide = admitted_inputs(builder.ir, command, wide);
     if !wide.is_empty() {
         inputs.retain(|input| !wide.contains(input));
         wide.append(inputs);
@@ -4358,6 +4497,38 @@ fn with_prefix(text: &str, prefix: &str) -> String {
 ///
 /// Without a value the type admits, no candidate survives [`admitted_inputs`] and no branch has a
 /// witness. The values tried are the type's own invariant literals, laid out as a guard's are.
+/// `witness` where the type of the leaf at `path` admits it; otherwise the first value of the
+/// [`invariant_ladders`] ladder drawn from `witness` as the leaf's base that the type admits and
+/// that is not `example`; `None` where there is neither.
+///
+/// A six-byte code whose example is `ABC123` has the witness `code`, which its type refuses; the
+/// ladder resizes it to six bytes, `codeco`, which refutes `code != "ABC123"` and is admitted.
+fn admitted_witness(
+    builder: &Builder<'_>,
+    path: &FactPath,
+    witness: &Node,
+    example: &Node,
+) -> Option<Node> {
+    let invariants = builder.invariants.get(path).map_or(&[][..], Vec::as_slice);
+    let alphabet = builder.alphabets.get(path);
+    if admits_base(invariants, alphabet, witness) {
+        return Some(witness.clone());
+    }
+    let mut probe = builder.clone();
+    probe.leaves.get_mut(path)?.1 = witness.clone();
+    let mut ladders = BTreeMap::new();
+    invariant_ladders(&probe, &mut ladders);
+    ladders
+        .remove(path)?
+        .into_iter()
+        .find_map(|choice| match choice {
+            Choice::Value(node) if &node != example && admits_base(invariants, alphabet, &node) => {
+                Some(node)
+            }
+            _ => None,
+        })
+}
+
 fn invariant_ladders(builder: &Builder<'_>, ladders: &mut BTreeMap<FactPath, Vec<Choice>>) {
     let value = FactPath::new("value").expect("the newtype pseudo-field is a fact path");
     for (path, invariants) in &builder.invariants {
@@ -5687,6 +5858,11 @@ struct Builder<'ir> {
     /// [`Distinction::PLAIN`] only. A struct's example (ess/33) adds each declared member it names
     /// here, at `<path>.<member>`, when the struct is built.
     examples: BTreeMap<FactPath, Node>,
+    /// The base each leaf an example replaced would have taken without it, and the next
+    /// instance's, by path: tried on the leaf's ladder where the example is a literal a guard
+    /// compares it with, so a `!=` against the example's own value is still refuted by some
+    /// candidate.
+    unexampled: BTreeMap<FactPath, Vec<Node>>,
     /// The `Optional` members a struct's example (ess/33) leaves out, which the base leaves out
     /// too.
     left_out: BTreeSet<FactPath>,
@@ -5740,6 +5916,7 @@ impl<'ir> Builder<'ir> {
             strings: BTreeSet::new(),
             plain_texts: BTreeMap::new(),
             examples: BTreeMap::new(),
+            unexampled: BTreeMap::new(),
             left_out: BTreeSet::new(),
             read: BTreeSet::new(),
             struct_invariants: Vec::new(),
@@ -5857,6 +6034,20 @@ impl<'ir> Builder<'ir> {
 
     /// The base of one primitive leaf, recorded: its path mapped into its alphabet (rule 2), or
     /// the input's example at the plain instance.
+    /// `base` spelt as the leaf at `path` declares: its prefix in front (ess/15), then mapped into
+    /// its alphabet (ess/11). Every character of the prefix is in the alphabet, which validation
+    /// holds, so mapping keeps it.
+    fn declared_spelling(&self, path: &FactPath, base: Node) -> Node {
+        let mut base = base;
+        if let (Node::Text(text), Some(prefix)) = (&base, self.prefixes.get(path)) {
+            base = Node::Text(with_prefix(text, prefix));
+        }
+        if let (Node::Text(text), Some(alphabet)) = (&base, self.alphabets.get(path)) {
+            base = Node::Text(into_alphabet(text, alphabet));
+        }
+        base
+    }
+
     fn primitive(&mut self, name: Primitive, path: &FactPath, record: bool) -> Node {
         let mut base = primitive_value(name, path, self.distinction);
         if self.optional_depth > 0 && has_apart(name) {
@@ -5864,14 +6055,7 @@ impl<'ir> Builder<'ir> {
             let ordinal = *self.apart_ordinals.entry(path.clone()).or_insert(next);
             base = apart(name, self.distinction, ordinal);
         }
-        // The prefix goes in front first, and the alphabet then maps the whole text: every
-        // character of the prefix is in the alphabet, which validation holds, so mapping keeps it.
-        if let (Node::Text(text), Some(prefix)) = (&base, self.prefixes.get(path)) {
-            base = Node::Text(with_prefix(text, prefix));
-        }
-        if let (Node::Text(text), Some(alphabet)) = (&base, self.alphabets.get(path)) {
-            base = Node::Text(into_alphabet(text, alphabet));
-        }
+        base = self.declared_spelling(path, base);
         if name == Primitive::String {
             if let Node::Text(plain) = &base {
                 self.plain_texts.insert(path.clone(), plain.clone());
@@ -5881,6 +6065,14 @@ impl<'ir> Builder<'ir> {
             }
         }
         if let Some(example) = self.examples.get(path) {
+            if record {
+                // The next instance's witness too, for an example that is the leaf's own witness:
+                // `PT1S` for a `Duration` is both (adversary pass 1 of
+                // story:a-text-inequality-against-an-example-is-refuted).
+                let next = Distinction::further(self.distinction.get() + 1);
+                let next = self.declared_spelling(path, primitive_value(name, path, next));
+                self.unexampled.insert(path.clone(), vec![base, next]);
+            }
             base = example.clone();
         }
         let base = self.repaired(path, base, record);
@@ -6032,9 +6224,9 @@ impl<'ir> Builder<'ir> {
     ///
     /// The key is [`map_key`]; the value is built at `<path>.0`, as a list's element is, and every
     /// further entry holds a copy of it under the key of the next instance. Where no entry can be
-    /// built — a `Decimal` key has no setup spelling, and a value type that refers to itself or
-    /// holds a `Binary64` has no finite witness — the map is `{}`, as it always was, and nothing
-    /// the attempt recorded is kept.
+    /// built — a `Decimal` or `Binary64` key has no setup spelling, and a value type that refers to
+    /// itself has no finite witness — the map is `{}`, as it always was, and nothing the attempt
+    /// recorded is kept.
     ///
     /// A map input's example (ess/33) is the value at the plain instance wherever no candidate
     /// chooses the map's size; the entry is still built, so what it records is kept.
@@ -6127,12 +6319,7 @@ impl<'ir> Builder<'ir> {
             }
             ResolvedTypeRef::List { of } => self.list(of, path, overrides, depth, record),
             ResolvedTypeRef::Map { .. } => Ok(self.map(type_ref, path, overrides, depth, record)),
-            ResolvedTypeRef::Primitive { name } => {
-                if *name == Primitive::Binary64 {
-                    return Err(WitnessGap { path: path.to_string(), type_ref: name.to_string(), reason: "requires a finite Binary64 conformance codec that this suite format does not admit" });
-                }
-                Ok(chosen(self.primitive(*name, path, record)))
-            }
+            ResolvedTypeRef::Primitive { name } => Ok(chosen(self.primitive(*name, path, record))),
             ResolvedTypeRef::Declared { name } => {
                 // Every declared type on the way down is known, so a map whose value reaches one
                 // is witnessed `{}` at once (beyond10x/ess#196) rather than at the depth limit.
@@ -6347,12 +6534,9 @@ impl Leaf {
     /// What a candidate may vary a primitive to.
     fn of_primitive(primitive: Primitive) -> Self {
         match primitive {
-            Primitive::Binary64 => {
-                unreachable!("Binary64 witnesses are refused before construction")
-            }
             Primitive::Boolean => Self::Bool,
             Primitive::Integer => Self::Number { integral: true },
-            Primitive::Decimal => Self::Number { integral: false },
+            Primitive::Decimal | Primitive::Binary64 => Self::Number { integral: false },
             Primitive::Timestamp => Self::Timestamp,
             Primitive::Json => Self::Json,
             Primitive::String | Primitive::Duration | Primitive::Uuid | Primitive::Bytes => {
@@ -6377,7 +6561,9 @@ fn primitive_value(primitive: Primitive, path: &FactPath, distinction: Distincti
     // silently rounded would be two instances nothing could tell apart.
     let ordinal = u32::try_from(nth).unwrap_or(u32::MAX);
     match primitive {
-        Primitive::Binary64 => unreachable!("Binary64 witnesses are refused before construction"),
+        // Half past the ordinal: a finite binary64 no integer spells, exact in every runner below
+        // 2^53 (story:a-binary64-value-round-trips-through-a-conformance-suite).
+        Primitive::Binary64 => Node::Number(number(BASE_NUMBER + f64::from(ordinal) + 0.5)),
         Primitive::Boolean => Node::Bool(BASE_BOOL != (nth % 2 == 1)),
         Primitive::Integer | Primitive::Decimal => {
             Node::Number(number(BASE_NUMBER + f64::from(ordinal)))
@@ -6422,6 +6608,7 @@ fn has_apart(primitive: Primitive) -> bool {
         Primitive::Timestamp
             | Primitive::Integer
             | Primitive::Decimal
+            | Primitive::Binary64
             | Primitive::Duration
             | Primitive::Bytes
     )
@@ -6462,6 +6649,11 @@ fn apart(primitive: Primitive, distinction: Distinction, ordinal: usize) -> Node
             let ordinal = f64::from(u32::try_from(nth).unwrap_or(u32::MAX));
             let step = f64::from(u32::try_from(step).unwrap_or(u32::MAX));
             Node::Number(number(BASE_NUMBER + ordinal + APART_NUMBER * step))
+        }
+        Primitive::Binary64 => {
+            let ordinal = f64::from(u32::try_from(nth).unwrap_or(u32::MAX));
+            let step = f64::from(u32::try_from(step).unwrap_or(u32::MAX));
+            Node::Number(number(BASE_NUMBER + ordinal + APART_NUMBER * step + 0.5))
         }
         Primitive::Duration => Node::Text(format!(
             "PT{}S",

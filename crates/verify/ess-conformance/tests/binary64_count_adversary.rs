@@ -113,7 +113,15 @@ fn both_fallible_runners_preserve_all_binary64_issues_before_effects() {
         .all(|issue| issue.reason == "UnsupportedPrimitive" && issue.detail.contains("Binary64")));
     assert_eq!(AdmittedSuite::from_suite(&suite).unwrap_err(), expected);
     assert_eq!(ess_conformance::go::emit(&suite).unwrap_err(), expected);
-    assert!(serde_json::to_string(&suite).is_err());
+    assert!(
+        serde_json::to_string(&suite).is_ok(),
+        "story:a-binary64-value-round-trips-through-a-conformance-suite: the unadmitted DTO \
+         serializes; admission refuses it by its major"
+    );
+    assert!(expected
+        .issues
+        .iter()
+        .all(|issue| issue.detail.contains("suite/62 or /63")));
     let clock = Cell::new(0);
     let target = UnreachableTarget(Cell::new(0));
     let runner = || {
@@ -130,26 +138,65 @@ fn both_fallible_runners_preserve_all_binary64_issues_before_effects() {
     eprintln!("four located issues retained; run and try_run refused with zero clock/identity/callback effects");
 }
 
+/// Restated for story:a-binary64-value-round-trips-through-a-conformance-suite: every ordinary
+/// major below suite/62 whose decimal control admits refuses the same shape holding a `Binary64`
+/// at admission, by its major; suite/62 admits it. Raw serde no longer refuses the kind: the
+/// historical DTO parses, and admission decides.
 #[test]
 fn original_byte_and_serde_admission_refuse_binary64_across_all_legacy_suite_majors() {
-    for major in 1..=4 {
+    const STORY: &str = "story:a-binary64-value-round-trips-through-a-conformance-suite";
+    let mut controls = Vec::new();
+    let mut refusals = 0;
+    for major in 1..=62 {
         for step in ["expect_event", "eventually_event"] {
             for optional in [false, true] {
                 let mut value = document();
                 value["provenance"]["suite_version"] = json!(format!("ess-conformance/{major}"));
+                // From suite/34 a suite states its empty initial state.
+                if major >= 34 {
+                    value["provenance"]["scenario_initial_state"] = json!("empty");
+                }
                 value["scenarios"][ID]["steps"] = json!([{"step":step,"event":"probe.data.Created","shape":{"ratio/a~b":{"holds":"primitive","kind":"decimal","optional":optional}}}]);
-                AdmittedSuite::from_json(&value.to_string()).expect("legacy control admits");
+                if AdmittedSuite::from_json(&value.to_string()).is_err() {
+                    continue;
+                }
+                controls.push(major);
                 value["scenarios"][ID]["steps"][0]["shape"]["ratio/a~b"]["kind"] =
                     json!("binary64");
                 let raw = value.to_string();
-                assert!(AdmittedSuite::from_json(&raw)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("Binary64"));
-                assert!(ConformanceSuite::from_json(&raw).is_err());
-                assert!(serde_json::from_str::<ConformanceSuite>(&raw).is_err());
+                if major < 62 {
+                    let refused = AdmittedSuite::from_json(&raw).unwrap_err();
+                    assert!(
+                        refused
+                            .issues
+                            .iter()
+                            .all(|issue| issue.reason == "UnsupportedPrimitive"
+                                && issue.detail.contains("suite/62 or /63")
+                                && issue.path.ends_with("/steps/0/shape/ratio~1a~0b")),
+                        "{STORY}: suite/{major}: {refused}"
+                    );
+                    refusals += 1;
+                } else {
+                    AdmittedSuite::from_json(&raw)
+                        .unwrap_or_else(|error| panic!("{STORY}: suite/{major}: {error}"));
+                }
+                assert!(
+                    ConformanceSuite::from_json(&raw).is_ok(),
+                    "{STORY}: the unadmitted DTO parses"
+                );
+                assert!(
+                    serde_json::from_str::<ConformanceSuite>(&raw).is_ok(),
+                    "{STORY}: the unadmitted DTO parses"
+                );
             }
         }
+    }
+    controls.dedup();
+    for major in [1, 2, 3, 4, 60, 62] {
+        assert!(
+            controls.contains(&major),
+            "{STORY}: the suite/{major} control admits: {controls:?}"
+        );
     }
     let mut value = document();
     value["provenance"]["suite_version"] = json!("ess-conformance/5");
@@ -167,7 +214,7 @@ fn original_byte_and_serde_admission_refuse_binary64_across_all_legacy_suite_maj
     assert!(runner().run(&dto, &target).is_err());
     assert!(runner().try_run(&dto, &target).is_err());
     assert_eq!((clock.get(), target.0.get()), (0, 0));
-    eprintln!("16 admitted decimal controls and 48 Binary64 reader refusals; both typed runners reject suite/5 before effects");
+    eprintln!("{} admitted decimal control majors and {refusals} Binary64 admission refusals below suite/62; both typed runners reject suite/5 before effects", controls.len());
 }
 
 /// Three Binary64 positions in one struct, and a command whose input is `{input}`.
@@ -248,32 +295,39 @@ fn unreached_model_positions_are_admitted_across_authored_synthesis_and_web_boun
     eprintln!("three unreached model positions admitted by the model, authored, synthesis and web boundaries, each noted");
 }
 
-/// The same positions reached through a command input refuse the model at every boundary.
+/// Restated for story:a-binary64-value-round-trips-through-a-conformance-suite: the same positions
+/// reached through a command input are a carried position. The model is admitted, authoring and
+/// synthesis refuse nothing and synthesis writes suite/62, while a browser bundle, which carries
+/// no `Binary64`, still refuses the model at all three positions before it is built.
 #[test]
 fn unified_model_issues_survive_authored_synthesis_and_web_boundaries() {
+    const STORY: &str = "story:a-binary64-value-round-trips-through-a-conformance-suite";
     let ir = values_model("      - {name: values, type: probe.data.Values}\n");
-    let expected = ess_conformance::admission::model(&ir).unwrap_err();
-    assert_eq!(expected.issues.len(), 3);
-    let paths = expected
-        .issues
-        .iter()
-        .map(|issue| issue.path.clone())
-        .collect::<Vec<_>>();
+    ess_conformance::admission::model(&ir).unwrap_or_else(|error| panic!("{STORY}: {error}"));
+    let expected = ess_conformance::admission::model_without_binary64(&ir).unwrap_err();
+    assert_eq!(expected.issues.len(), 3, "{STORY}: {expected}");
     let authoring = ess_conformance::authored::compile(&ir, &[]);
-    assert!(authoring.scenarios.is_empty());
-    assert_eq!(authoring.refusals.len(), 1);
-    let ess_conformance::authored::Cause::UnsupportedBinary64 { locations } =
-        &authoring.refusals[0].cause
-    else {
-        panic!("wrong refusal")
-    };
-    assert_eq!(locations, &paths);
+    assert!(
+        authoring.refusals.is_empty(),
+        "{STORY}: {:?}",
+        authoring.refusals
+    );
     let synthesis = ess_conformance::synthesize(&ir);
-    assert!(synthesis.suite.is_empty());
-    assert_eq!(synthesis.refusals.len(), 3);
+    assert!(
+        synthesis.refusals.is_empty(),
+        "{STORY}: {:?}",
+        synthesis.refusals
+    );
+    assert!(!synthesis.suite.is_empty(), "{STORY}");
+    assert_eq!(
+        synthesis.suite.provenance.suite_version.to_string(),
+        "ess-conformance/62",
+        "{STORY}"
+    );
     assert_eq!(
         ess_conformance::web::emit(&ir, &synthesis.suite).unwrap_err(),
-        expected
+        expected,
+        "{STORY}"
     );
-    eprintln!("three model positions retained through unified issues, authored cause, synthesis and prepublication web refusal");
+    eprintln!("three carried model positions admitted by the model, authored and synthesis boundaries; the browser bundle refuses all three");
 }

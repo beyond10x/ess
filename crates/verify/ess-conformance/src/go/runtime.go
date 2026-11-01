@@ -59,7 +59,7 @@ import (
 // tests/coverage_refusal_catalogue.rs holds all three to the Rust catalogues, vector by vector.
 const (
 	newestGeneratedRefusal = 24
-	newestAuthoredRefusal  = 46
+	newestAuthoredRefusal  = 47
 )
 
 var checkNotEmitted = map[int]bool{5: true, 11: true, 12: true, 14: true, 16: true, 17: true, 20: true, 21: true, 22: true}
@@ -101,7 +101,7 @@ func suiteReference(value any) error {
 //
 // Keep this aligned with the emitter's capability boundary. New majors require admission,
 // execution and report parity; changing this number alone supplies none of those semantics.
-const newestSuiteMajor = 61
+const newestSuiteMajor = 63
 
 // suiteMajorsNotRead are the majors below newestSuiteMajor that other work has allocated and this
 // runtime has no reader for yet. A suite labelled with one is refused by version, never read as
@@ -1890,7 +1890,7 @@ func Run(t *testing.T, newTarget func() Target) {
 		t.Fatalf("suite admission: %v", err)
 	}
 	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
-		t.Fatalf("suite/8 through /61 require explicit ESS_REPORT_FORMAT=2 before execution")
+		t.Fatalf("suite/8 through /63 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -4352,7 +4352,7 @@ func primitive(kind string, value Node) string {
 		if !ok || !integral(number) {
 			return mismatch()
 		}
-	case "decimal":
+	case "decimal", "binary64":
 		if _, ok := asNumber(value); !ok {
 			return mismatch()
 		}
@@ -5239,7 +5239,7 @@ func admitShape(value any, major int) error {
 		}
 		if kind == "primitive" {
 			switch f["kind"] {
-			case "string", "boolean", "integer", "decimal", "timestamp", "duration", "uuid", "bytes", "json":
+			case "string", "boolean", "integer", "decimal", "binary64", "timestamp", "duration", "uuid", "bytes", "json":
 			default:
 				return fmt.Errorf("unknown primitive")
 			}
@@ -5623,6 +5623,10 @@ func admitStep(value any, major int) error {
 	if !ok {
 		return fmt.Errorf("step must be object")
 	}
+	// A typed Binary64 record is suite/62 and /63 vocabulary.
+	if err := binary64Major(f, major); err != nil {
+		return err
+	}
 	tag, err := text(f["step"])
 	if err != nil {
 		return err
@@ -5881,6 +5885,9 @@ func admitStep(value any, major int) error {
 				}
 				if err == nil {
 					err = undeclaredFieldsMajor(v, major)
+				}
+				if err == nil {
+					err = memberPathsMajor(v, major)
 				}
 			} else {
 				err = admitResponse(v, major)

@@ -131,7 +131,7 @@ refusal[ESS-AUTHOR-012]: `billing.invoice/authored/a-scenario` in a.yaml
 | Code | Meaning | Repair |
 |---|---|---|
 | `ESS-AUTHOR-001` | The file is not a document this format can read. | The document is YAML with the keys `type`, `domain`, `scenario` and `summary`; a key it does not know is refused rather than ignored. |
-| `ESS-AUTHOR-002` | The document claims a format this build does not implement. | A scenario's `type:` is `ess-scenario/1`, `ess-scenario/2` for entity setup, `ess-scenario/3` for fixture values, `ess-scenario/4` for direct responses, or `ess-scenario/5` for caller values; a document in a repository-defined trace format is not a scenario input, so leave it out of `--scenarios` and `ess-inputs.yaml`. |
+| `ESS-AUTHOR-002` | The document claims a format this build does not implement. | A scenario's `type:` is `ess-scenario/1`, `ess-scenario/2` for entity setup, `ess-scenario/3` for fixture values, `ess-scenario/4` for direct responses, `ess-scenario/5` for caller values, or `ess-scenario/6` for member paths in claims; a document in a repository-defined trace format is not a scenario input, so leave it out of `--scenarios` and `ess-inputs.yaml`. |
 | `ESS-AUTHOR-003` | Two files produce the same scenario id. | Two files name one scenario in one domain; rename one of them. |
 | `ESS-AUTHOR-004` | The model declares no such bounded context. | Name a bounded context the specification declares, or add it to the model. |
 | `ESS-AUTHOR-005` | The model declares no such entity. | Name an entity the specification declares; an authored scenario acts on the model's own instances and invents none. |
@@ -142,8 +142,8 @@ refusal[ESS-AUTHOR-012]: `billing.invoice/authored/a-scenario` in a.yaml
 | `ESS-AUTHOR-010` | The model declares no such event. | Name an event the specification declares. |
 | `ESS-AUTHOR-011` | The model declares no such error. | Name a declared error the specification declares. |
 | `ESS-AUTHOR-012` | The model declares no such view. | Name a view the specification declares. |
-| `ESS-AUTHOR-013` | A value is supplied under a name the surface does not declare. | Name a field the construct declares; the scenario and the model disagree about what it has. |
-| `ESS-AUTHOR-014` | A declared field that has to be supplied is not. | Supply the field; a command is invoked with all of its input, and one left out is a call that could not be made. |
+| `ESS-AUTHOR-013` | A value is supplied under a name the surface does not declare. | Name a field the construct declares; the scenario and the model disagree about what it has. A dotted key is a member path, which a claim reads from `ess-scenario/6` and nothing else reads. |
+| `ESS-AUTHOR-014` | A declared field that has to be supplied is not. | Supply the field; a command is invoked with all of its input, and one left out is a call that could not be made. A nested value in a claim is compared whole, so write every member it declares, or from `ess-scenario/6` claim one member alone by its path, `member.leaf: value`. |
 | `ESS-AUTHOR-015` | A value is not of the shape its declared type calls for. | Write a value of the type the model declares there. |
 | `ESS-AUTHOR-016` | A value names something a declared enum does not have as a variant. | Write one of the variants the enum declares; the set is closed. |
 | `ESS-AUTHOR-017` | A value names a lifecycle state the entity does not declare. | Write one of the states the entity's lifecycle declares. |
@@ -165,7 +165,7 @@ refusal[ESS-AUTHOR-012]: `billing.invoice/authored/a-scenario` in a.yaml
 | `ESS-AUTHOR-033` | A window states other than exactly one bound. | State exactly one of `not_before`, `within` or `quiet` per window, and write a second window for a second claim. |
 | `ESS-AUTHOR-034` | An early stop is claimed after no rows at all. | Say how many rows the reader takes before it stops; a reader that takes none never sees a row and so never says stop, and what a source produced before being refused its first row is a different answer in two implementations that are both right. |
 | `ESS-AUTHOR-035` | An assertion's paths resolve, but its operands or quantified target are ill-typed. | Use compatible scalar operands and quantify only over a declared List or Map. |
-| `ESS-AUTHOR-036` | The model needs a finite codec outside the current conformance contract. | Use checked format-5 normalization; finite Binary64 conformance codecs are not implemented. |
+| `ESS-AUTHOR-036` | The model holds a Binary64 where the conformance suite does not carry one. | A suite carries a finite Binary64 in an entity's fields, a command's input and response, an event's and an error's fields, and a view's fields and row shape; move it out of an entity identity, a view parameter, an actor attribute, a binding or a conversion, or use a Decimal there. |
 | `ESS-AUTHOR-037` | An act claims what only an external answer it does not state satisfies. | No input the act sends decides an external branch, so name the act's own one under `outcome:` and the suite configures that answer for its call; an answer a command invoked through a binding must give cannot be stated in an authored act, so drop the claim there and leave it to synthesis. |
 | `ESS-AUTHOR-038` | An act expects the refusal an ungranted actor gets, and the actor holds the grant. | Act as an actor the specification does not grant the command, or drop `refused: not_granted` and claim what the command answers. |
 | `ESS-AUTHOR-039` | An act expects the refusal an ungranted actor gets, and names no actor or claims what only a command that ran answers. | A refused command takes no branch, reports no declared error and returns nothing: keep `actor:` beside `refused: not_granted`, drop `outcome`, `error`, `response`, `events` and `capture`, and list under `no_events:` what must not appear anywhere in the target's log after the refused send. |
@@ -176,6 +176,7 @@ refusal[ESS-AUTHOR-012]: `billing.invoice/authored/a-scenario` in a.yaml
 | `ESS-AUTHOR-044` | An act sends a command the system issues itself as a system actor. | No caller can be the system: name no `actor:`, and the act awaits the system's step; to check that an outside caller cannot issue it, name an actor the specification does not grant it, with `refused: not_granted`. |
 | `ESS-AUTHOR-045` | An act awaiting a command the system issues itself names no record to await it on. | State the input the outcomes name as `instance:` under `input:`, a literal or `{$instance: name}`; a step the system takes to create a record, or over rows with no subject, is not awaited in this release. |
 | `ESS-AUTHOR-046` | An act expects a refusal of a command the system issues itself and claims what only an issued command answers. | A refusal of the system's own step is checked as nothing issued within the bound, none of its events published: state only the instance under `input:`, and drop `error`, `response`, `events` and `capture`. |
+| `ESS-AUTHOR-047` | A mapping in the document repeats a key. | Write each key once; YAML keeps only one of two equal keys, and which one is not the author's choice. |
 
 ## Synthesis: `ESS-SYNTH`
 

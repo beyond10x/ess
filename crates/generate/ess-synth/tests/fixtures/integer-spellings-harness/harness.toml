@@ -1,0 +1,17 @@
+[package]
+name = "integer-spellings-harness"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "harness"
+path = "src/main.rs"
+
+[dependencies]
+demo-types = { path = "../demo/crates/demo-types" }
+demo-server = { path = "../demo/crates/demo-server" }
+board-service = { path = "../demo/crates/board-service" }
+demo-system = { path = "../demo/crates/demo-system" }
