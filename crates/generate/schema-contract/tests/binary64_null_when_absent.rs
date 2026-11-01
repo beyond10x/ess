@@ -191,48 +191,69 @@ fn realizes(selected: &ModelTypes, expected: &BTreeSet<String>, tests: &str) {
     );
 }
 
-/// What every generated-library case below uses: decode a body and read back what it writes, or
-/// see it refused.
+/// What every generated-library case below uses. A body round-trips only when the whole
+/// re-encoded document equals it, so a `null_when_absent` key the type drops fails, where indexing
+/// a `Value` would read the missing key as `null`. `binary64` reads a field through the finite
+/// Binary64 codec's type, so a plain float in its place does not compile, and `-0` keeps its sign.
 const WIRE: &str = r#"
 use lab_types::*;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
 
-fn decodes<T: DeserializeOwned + Serialize>(body: Value) -> Value {
+fn round_trips<T: DeserializeOwned + Serialize>(body: Value) -> T {
     let text = body.to_string();
     let decoded: T = serde_json::from_str(&text).unwrap_or_else(|error| panic!("{text}: {error}"));
-    serde_json::from_str(&serde_json::to_string(&decoded).unwrap()).unwrap()
+    let again: Value = serde_json::from_str(&serde_json::to_string(&decoded).unwrap()).unwrap();
+    assert_eq!(again, body, "{text} re-encodes as another document");
+    decoded
 }
 
-fn refuses<T: DeserializeOwned>(body: Value) {
-    assert!(serde_json::from_str::<T>(&body.to_string()).is_err(), "{body}");
+fn decodes<T: DeserializeOwned>(text: &str) -> T {
+    serde_json::from_str(text).unwrap_or_else(|error| panic!("{text}: {error}"))
 }
+
+fn refuses<T: DeserializeOwned>(text: &str) {
+    assert!(serde_json::from_str::<T>(text).is_err(), "{text}");
+}
+
+fn binary64(value: Option<EssBinary64>) -> Option<u64> {
+    value.map(|value| value.get().to_bits())
+}
+
+const NEGATIVE_ZERO: u64 = 0x8000_0000_0000_0000;
 "#;
 
-/// A `null_when_absent` response field decodes a number and a `null` and writes back what it read;
-/// the body without it is refused. The input decodes `EXAMPLE`, the body the `OpenAPI` projection
-/// publishes as the input's example, and the same body with a number.
+/// A `null_when_absent` response field decodes a number and a present `null`, each written back
+/// whole; the body without the key, a string and a token with no finite binary64 image (`1e400`)
+/// are refused. The input decodes `EXAMPLE`, the body the `OpenAPI` projection publishes as the
+/// input's example, and the same body with a number.
 const RESPONSE_WIRE: &str = r#"
 #[test]
 fn a_null_when_absent_response_field_decodes() {
-    for value in [json!(1.5), json!(null)] {
-        let body = json!({"sample_id": "s-1", "value": value});
-        assert_eq!(decodes::<DemoLabRecordResponse>(body)["value"], value);
-    }
-    let both = json!({"sample_id": "s-1", "value": 1.5, "spare": 2.5});
-    assert_eq!(decodes::<DemoLabRecordResponse>(both)["spare"], json!(2.5));
-    refuses::<DemoLabRecordResponse>(json!({"sample_id": "s-1"}));
-    refuses::<DemoLabRecordResponse>(json!({"sample_id": "s-1", "value": "1.5"}));
+    let present: DemoLabRecordResponse = round_trips(json!({"sample_id": "s-1", "value": 1.5}));
+    assert_eq!(binary64(present.value), Some(1.5f64.to_bits()));
+    let absent: DemoLabRecordResponse = round_trips(json!({"sample_id": "s-1", "value": null}));
+    assert_eq!(binary64(absent.value), None);
+    round_trips::<DemoLabRecordResponse>(json!({"sample_id": "s-1", "value": 1.5, "spare": 2.5}));
+    round_trips::<DemoLabRecordResponse>(json!({"sample_id": "s-1", "value": null, "spare": null}));
+    let zero: DemoLabRecordResponse = decodes("{\"sample_id\":\"s-1\",\"value\":-0}");
+    assert_eq!(binary64(zero.value), Some(NEGATIVE_ZERO));
+    refuses::<DemoLabRecordResponse>("{\"sample_id\":\"s-1\"}");
+    refuses::<DemoLabRecordResponse>("{\"sample_id\":\"s-1\",\"value\":\"1.5\"}");
+    refuses::<DemoLabRecordResponse>("{\"sample_id\":\"s-1\",\"value\":1e400}");
+    refuses::<DemoLabRecordResponse>("{\"sample_id\":\"s-1\",\"value\":null,\"spare\":1e400}");
 }
 
 #[test]
 fn the_published_input_example_decodes() {
     let example: Value = serde_json::from_str(EXAMPLE).unwrap();
     assert_eq!(example, json!({"sample_id": "s-1", "value": null}));
-    assert_eq!(decodes::<DemoLabRecordInput>(example.clone()), example);
-    let present = json!({"sample_id": "s-1", "value": 1.5});
-    assert_eq!(decodes::<DemoLabRecordInput>(present.clone()), present);
-    refuses::<DemoLabRecordInput>(json!({"sample_id": "s-1"}));
+    let decoded: DemoLabRecordInput = round_trips(example);
+    assert_eq!(binary64(decoded.value), None);
+    let present: DemoLabRecordInput = round_trips(json!({"sample_id": "s-1", "value": 1.5}));
+    assert_eq!(binary64(present.value), Some(1.5f64.to_bits()));
+    refuses::<DemoLabRecordInput>("{\"sample_id\":\"s-1\"}");
+    refuses::<DemoLabRecordInput>("{\"sample_id\":\"s-1\",\"value\":1e400}");
 }
 "#;
 
@@ -240,13 +261,19 @@ fn the_published_input_example_decodes() {
 const STRUCT_WIRE: &str = r#"
 #[test]
 fn a_null_when_absent_struct_field_decodes() {
-    for value in [json!(1.5), json!(null)] {
-        assert_eq!(decodes::<DemoLabReading>(json!({"value": value}))["value"], value);
-    }
-    let all = json!({"value": 1.5, "spare": 2.5, "plain": 3.5});
-    assert_eq!(decodes::<DemoLabReading>(all.clone()), all);
-    refuses::<DemoLabReading>(json!({"spare": 2.5}));
-    refuses::<DemoLabReading>(json!({"value": "1.5"}));
+    let present: DemoLabReading = round_trips(json!({"value": 1.5}));
+    assert_eq!(binary64(present.value), Some(1.5f64.to_bits()));
+    let absent: DemoLabReading = round_trips(json!({"value": null}));
+    assert_eq!(binary64(absent.value), None);
+    round_trips::<DemoLabReading>(json!({"value": 1.5, "spare": 2.5, "plain": 3.5}));
+    round_trips::<DemoLabReading>(json!({"value": null, "spare": null}));
+    let zero: DemoLabReading = decodes("{\"value\":-0}");
+    assert_eq!(binary64(zero.value), Some(NEGATIVE_ZERO));
+    refuses::<DemoLabReading>("{\"spare\":2.5}");
+    refuses::<DemoLabReading>("{\"value\":\"1.5\"}");
+    refuses::<DemoLabReading>("{\"value\":1e400}");
+    refuses::<DemoLabReading>("{\"value\":null,\"spare\":1e400}");
+    refuses::<DemoLabReading>("{\"value\":null,\"plain\":1e400}");
 }
 "#;
 

@@ -330,7 +330,8 @@ struct BodyRoot<'a> {
 }
 
 /// The body `root` names as `<command>.input`, `<command>.response` or `<view>.row`, if it names
-/// one: refused when it names a command's input `binding` publishes no body for.
+/// one: refused when it names a command's input `binding` publishes no body for, or the response
+/// of a command that declares none.
 fn body_root<'a>(
     ir: &'a EssIr,
     binding: Option<&Binding>,
@@ -365,9 +366,17 @@ fn body_root<'a>(
         RESPONSE_ROOT => {
             let command = command()?;
             // A command that declares no response has no response root, as
-            // `bound_command_roots` lists none for it: the name falls through to `unknown_root`.
+            // `bound_command_roots` lists none for it: refused as an unknown root that says why.
             if command.response.is_empty() {
-                return None;
+                return Some(Err(ModelTypeError {
+                    name: root.to_owned(),
+                    rule: "unknown_root",
+                    detail: format!(
+                        "command `{}` declares no response, so it has no `.{RESPONSE_ROOT}` \
+                         root; `--all-commands` leaves it out",
+                        command.name
+                    ),
+                }));
             }
             (
                 Message::of_response(command),
