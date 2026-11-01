@@ -521,6 +521,25 @@ fn unknown_by_absence(predicate: &Predicate, facts: &RowAndInput<'_>) -> bool {
         .all(|leaf| leaf.evaluate(facts) != Truth::Unknown || leaf.fact_paths().iter().any(absent))
 }
 
+/// `predicate` decided leaf by leaf, each leaf by `leaf` and `and`, `or` and `not` by Kleene's
+/// three-valued logic, as [`Predicate::evaluate`] combines them.
+///
+/// [`evaluate_row`] leaves a whole predicate `Unknown` where any field it reads holds a value
+/// synthesis does not know (a generated one); read leaf by leaf, that field leaves only its own
+/// leaves unknown, and the leaves with known values decide wherever they can.
+fn leafwise(predicate: &Predicate, leaf: &dyn Fn(&Predicate) -> Truth) -> Truth {
+    match predicate {
+        Predicate::All(children) => children
+            .iter()
+            .fold(Truth::True, |truth, child| truth.and(leafwise(child, leaf))),
+        Predicate::Any(children) => children
+            .iter()
+            .fold(Truth::False, |truth, child| truth.or(leafwise(child, leaf))),
+        Predicate::Not(inner) => leafwise(inner, leaf).not(),
+        other => leaf(other),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn evaluate_row(
     ir: &EssIr,
@@ -2480,7 +2499,10 @@ pub(super) fn input_selects(
 /// refuting: selected or not, the move is the wrong-state answer — while its stored guard decides
 /// on the row. One that is `Unknown` there because the row leaves a field it reads absent stops
 /// selection before the wrong-state answer, so the row must hold that field, unless `outcome` is
-/// declared before the sibling and selected first. And missing every sibling is not enough:
+/// declared before the sibling and selected first. A guard reading such a field counts as unknown
+/// unless the leaves with known values decide it ([`leafwise`]): a generated field leaves its own
+/// leaves unknown, and on the target it may leave the guard unknown too. And missing every sibling
+/// is not enough:
 /// `outcome`'s own stored guard holds on the row, since where it is false the next branch selected
 /// answers — an exempt sibling whose guards hold, or else the default — and that is the
 /// wrong-state answer only where it too moves the subject from another state
@@ -3292,8 +3314,13 @@ fn refusal_input_from(
     //   history == Pending` beside a preserving `waiting` default is sent only to a `Pending` row;
     // * no sibling exempt above is `Unknown` there for a field the row leaves absent, which stops
     //   selection (`OutcomeUnobservable`) before the wrong-state answer — unless `outcome`,
-    //   selected on the row, is declared before it and so taken first. An `Unknown` the arrangement
-    //   caused is decided by the target, and either way the move answers.
+    //   selected on the row, is declared before it and so taken first. A guard reading such a field
+    //   counts as stopping selection unless the leaves with known values decide it: a field the
+    //   target fills with a value synthesis does not know (a generated one) may leave it unknown
+    //   on the target as well, as `code == "zzz" or note == "x"` is wherever `code` is not `zzz`
+    //   (review-result:adversary-d350-u3-pass-1). A guard reading no empty field, `Unknown` here
+    //   only for such a value, is decided true or false by the target: true selects the sibling's
+    //   move from another state, false passes selection on to the branches the point above tests.
     //
     // Returned: whether the own guard lost the row, and the sibling guards left `Unknown` by
     // absence. Asked only of a candidate that otherwise serves, so a refusal it did not cause keeps
@@ -3320,8 +3347,18 @@ fn refusal_input_from(
                 as_guard,
             )
         };
+        // A field the row leaves empty: never written by the arrangement, or set to `null`.
+        let empty = |name: &str| match arrangement.settled.get(name) {
+            Some(determined) => determined.value.as_literal() == Some(&Node::Null),
+            None => arrangement.unwritten.contains(name),
+        };
         let absent = |predicate: &Predicate| {
-            truth(predicate, false) == Truth::Unknown && truth(predicate, true) == Truth::False
+            (truth(predicate, false) == Truth::Unknown && truth(predicate, true) == Truth::False)
+                || (predicate
+                    .fact_paths()
+                    .iter()
+                    .any(|path| empty(path.namespace()))
+                    && leafwise(predicate, &|leaf| truth(leaf, false)) == Truth::Unknown)
         };
         let own_truth = own_stored
             .as_ref()
