@@ -121,6 +121,13 @@ fn a_command_without_a_response_has_no_response_root_by_name_either() {
     assert_eq!(errors[0].name, "demo.notes.Pin.response");
     assert_eq!(errors[0].rule, "unknown_root", "{errors:?}");
     assert!(
+        errors[0]
+            .detail
+            .contains("command `demo.notes.Pin` declares no response"),
+        "the refusal says why the root is unknown: {}",
+        errors[0].detail
+    );
+    assert!(
         ModelTypes::select(&ir, &BTreeSet::from(["demo.notes.Pin.input".to_owned()])).is_ok(),
         "its input is still a root"
     );
