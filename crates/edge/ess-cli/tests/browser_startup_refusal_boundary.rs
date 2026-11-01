@@ -241,6 +241,127 @@ fn a_handshake_answered_404_forever_refuses_with_the_last_response_and_stderr() 
     }
 }
 
+/// A WebSocket close frame (opcode 8, status 1001 going away) on the first `session.new` is the
+/// protocol's own way of losing the socket, not a malformed answer, so it is a lost start too.
+/// Adversary pass 1 of D357 U2 (F6) found the fixture ending the start with its
+/// `unexpected WebSocket frame` defect assert instead.
+#[test]
+fn a_close_frame_on_the_first_session_round_trip_is_a_lost_start() {
+    let evidence = evidence_dir("close-frame");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") && request.len() < 8192 {
+            let mut byte = [0];
+            if stream.read_exact(&mut byte).is_err() {
+                return;
+            }
+            request.push(byte[0]);
+        }
+        let accepted = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\
+                        Connection: Upgrade\r\n\
+                        Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n";
+        if stream.write_all(accepted.as_bytes()).is_err() {
+            return;
+        }
+        // Read the whole masked `session.new` frame, then go away the way the protocol says to.
+        let mut header = [0; 2];
+        if stream.read_exact(&mut header).is_err() {
+            return;
+        }
+        let mut rest = vec![0; 4 + usize::from(header[1] & 0x7f)];
+        if stream.read_exact(&mut rest).is_err() {
+            return;
+        }
+        let _ = stream.write_all(&[0x88, 0x02, 0x03, 0xe9]);
+        std::thread::sleep(Duration::from_secs(2));
+    });
+    let program = announcing_stand_in(&evidence, port);
+    match startup_outcome(evidence.to_path_buf(), program, Duration::from_secs(5)) {
+        Err(panic) => panic!(
+            "story:a-marked-region-is-not-a-scan-of-what-runs: a browser that closed the \
+             WebSocket with a close frame during the first session.new lost the start, and \
+             the fixture panicked as a protocol defect instead of refusing with a stage and \
+             firefox.stderr: {panic}"
+        ),
+        Ok(Ok(())) => panic!("a closed session admitted a browser"),
+        Ok(Err(refusal)) => {
+            assert!(
+                refusal.starts_with("fixture environment refusal:"),
+                "{refusal}"
+            );
+            assert!(
+                refusal.contains("\n  stage:            session ("),
+                "{refusal}"
+            );
+        }
+    }
+}
+
+/// An error answer to the first `session.new` is a well-formed answer that the browser will not
+/// start a session, so the start is lost and the refusal names the answer (D357 U2, F7).
+#[test]
+fn an_error_answer_to_the_first_session_new_is_a_lost_start_that_names_it() {
+    let evidence = evidence_dir("session-error");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") && request.len() < 8192 {
+            let mut byte = [0];
+            if stream.read_exact(&mut byte).is_err() {
+                return;
+            }
+            request.push(byte[0]);
+        }
+        let accepted = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\
+                        Connection: Upgrade\r\n\
+                        Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n";
+        if stream.write_all(accepted.as_bytes()).is_err() {
+            return;
+        }
+        let mut header = [0; 2];
+        if stream.read_exact(&mut header).is_err() {
+            return;
+        }
+        let mut rest = vec![0; 4 + usize::from(header[1] & 0x7f)];
+        if stream.read_exact(&mut rest).is_err() {
+            return;
+        }
+        let body = br#"{"id":1,"type":"error","error":"session not created"}"#;
+        let mut frame = vec![0x81, u8::try_from(body.len()).unwrap()];
+        frame.extend_from_slice(body);
+        let _ = stream.write_all(&frame);
+        std::thread::sleep(Duration::from_secs(2));
+    });
+    let program = announcing_stand_in(&evidence, port);
+    match startup_outcome(evidence.to_path_buf(), program, Duration::from_secs(5)) {
+        Err(panic) => panic!(
+            "story:a-marked-region-is-not-a-scan-of-what-runs: an error answer to session.new \
+             is a lost start; the fixture panicked instead: {panic}"
+        ),
+        Ok(Ok(())) => panic!("an error answer admitted a session"),
+        Ok(Err(refusal)) => {
+            assert!(
+                refusal.starts_with("fixture environment refusal:"),
+                "{refusal}"
+            );
+            assert!(
+                refusal.contains("\n  stage:            session (")
+                    && refusal.contains("session not created"),
+                "{refusal}"
+            );
+        }
+    }
+}
+
 /// Completed non-404 responses are protocol evidence, not a missing startup.
 #[test]
 fn malformed_upgrade_responses_remain_protocol_defects() {
