@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Entity Runtime lowering no longer drops the `invariants:` and `prefix:` of a command input's type when no field of that type stores the input: an update holds them as operation preconditions over `$args.input.<field>`, and a creation, which has no precondition in entity-core, is refused as `InputInvariantUnsupported` naming the input.
+
 ## [0.79.0] — 2026-11-01
 
 ### Added
