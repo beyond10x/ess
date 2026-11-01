@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-01T21:26:41Z",
+  "actor": "human:timo",
+  "artifact": "story:a-marked-region-is-not-a-scan-of-what-runs",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-d357-u2-pass-1",
+    "reference": "fix commit 7619c026d, merged 3e4eae45a",
+    "review": "review-result:adversary-d357-u2-pass-1",
+    "outcome": "fixed"
+  }
+}

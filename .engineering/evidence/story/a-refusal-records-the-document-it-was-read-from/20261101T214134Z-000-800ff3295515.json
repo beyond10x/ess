@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-01T21:41:34Z",
+  "actor": "human:timo",
+  "artifact": "story:a-refusal-records-the-document-it-was-read-from",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-d357-u1-pass-1",
+    "reference": "fix commit df9b2c6ed, merged 63b55e5e8",
+    "review": "review-result:adversary-d357-u1-pass-1",
+    "outcome": "fixed"
+  }
+}
