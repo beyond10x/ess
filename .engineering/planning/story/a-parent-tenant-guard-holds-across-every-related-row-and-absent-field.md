@@ -9,7 +9,16 @@ tags:
 - ess-next
 relations:
 - informed_by: story:a-guard-on-the-input-addressed-parent-row-holds-on-every-command-of-its-children
-revision: 3
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/row_set.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+revision: 6
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -72,3 +81,14 @@ Found by the batch-3 adversary pass over the parent-row guard (U13). Both cases 
    witness sends a tenant to a parent created without one. The interpreted target decides the
    guard Unknown and reports the scenario Unsupported. Synthesis treats the absent field as not
    taken, so synthesis and the interpreter disagree.
+
+## Scope
+
+Derived 2026-11-01 by `aep:story-scoper` for wave D343 on 45a1beba7 (probes with ess 0.77.0). Every line is cited or inferred.
+
+- **Finding 1:** `crates/verify/ess-conformance/src/synthesize/row_set.rs` `prepare` (:3129-3162, `Arranging::HELD_UNDER` :3198) and `arrange_row` (:2309-2412, `held_subject` :2367-2377, binds only the owner link) — cited; `src/synthesize.rs` `arrange_toward_beside` (:12735) and the `CreatorPass::Beside` pass of `arrange_toward_with` (:12804-12880) already bind a creator's other related rows (`related_guard::beside_bound` :604, `present_beside` :640); calling them from the `held_subject` path is the likely fix — inferred. `guarded_creator` names only the first link's guard — inferred.
+- **Finding 2:** `src/synthesize/set_effects.rs` `subject_accepted` (:2977-3053, `decided` :2997) — cited; `subject_fact.rs` `guard_truth_with` (:497), `unknown_by_absence` (:511) turn Unknown-by-absence into False — cited. The interpreter is right as written (`interpret/execute/subject.rs:125-131`: Unknown is Undecidable, never a guess), so the change is on the synthesis side only — cited.
+- **Probes (0.77.0):** finding 2 reproduced (`DeleteChild/deleted` unsupported); finding 1 reproduced with the parent guard (found, deleted, created refused ESS-SYNTH-001/003); the no-parent-guard variant did not reproduce — probe models `a`, `b`, `c` kept outside the repository.
+- **Tests:** the batch-3 red cases were never committed; `tests/adversary_u13_batch3_pass1.rs` and `tests/parent_row_guard.rs` hold only the unit's own cases — cited.
+- **Confidence:** medium-high for finding 2, medium for finding 1.
+- **Would collide with:** a unit editing `src/synthesize.rs` (inferred, the beside pass), `row_set.rs` `prepare`/`arrange_row`, or `set_effects.rs` `subject_accepted`.
