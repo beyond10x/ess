@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ess generate types` realizes an `Optional<Binary64>` field declared `presence: null_when_absent` or `omitted_or_null`, in a declared struct and in a command's input or response root, as Rust and Go: its Binary64 location is the number member of the field's `anyOf [number, null]`, where it was the property and realization was refused as `model_binary64_layout`. The TypeScript report names its `model_binary64` obligation at that member.
+- `ess generate types --root <command>.response` on a command that declares no response is refused as `unknown_root`, as `--all-commands` leaves it out, where it generated an empty object type.
+
 ## [0.80.0] — 2026-11-01
 
 ### Added

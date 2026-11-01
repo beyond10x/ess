@@ -364,6 +364,11 @@ fn body_root<'a>(
         }
         RESPONSE_ROOT => {
             let command = command()?;
+            // A command that declares no response has no response root, as
+            // `bound_command_roots` lists none for it: the name falls through to `unknown_root`.
+            if command.response.is_empty() {
+                return None;
+            }
             (
                 Message::of_response(command),
                 CommandRef::new(command.name.clone()).into(),
@@ -510,10 +515,12 @@ fn numeric_locations(reference: &ResolvedTypeRef, at: &str, found: &mut BTreeSet
     }
 }
 
+/// A nullable field's number sits in its property's `anyOf [number, null]`, so each location is
+/// walked from the type the property projects ([`types::property_type`]), not the stripped one.
 fn fields_numeric_locations(at: &str, fields: &[ResolvedField], found: &mut BTreeSet<String>) {
     for field in fields {
         numeric_locations(
-            field.type_ref.required(),
+            types::property_type(field),
             &pointer(&format!("{at}/properties"), types::wire_name(field)),
             found,
         );
