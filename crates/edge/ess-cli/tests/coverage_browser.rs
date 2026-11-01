@@ -548,14 +548,22 @@ fn a_startup_refusal_attaches_the_stderr_firefox_actually_wrote() {
     }
 }
 
-/// The panic forms the startup guard reads on every line a start runs. A panic raised inside
-/// another file or crate, an index or slice out of bounds and an arithmetic overflow are not
-/// among them.
+/// The panic forms the startup guard reads on every line a start runs, the method forms also
+/// spelled as paths (a path form ending in a name matches only where no further name character
+/// follows, so `Option::unwrap_or` is not `Option::unwrap`). A panic raised inside another file or
+/// crate, an index or slice out of bounds, an arithmetic overflow, `process::exit` and `abort` are
+/// not among them.
 const PANIC_FORMS: &[&str] = &[
     ".unwrap()",
     ".unwrap_err()",
     ".expect(",
     ".expect_err(",
+    "Option::unwrap",
+    "Option::expect",
+    "Result::unwrap",
+    "Result::unwrap_err",
+    "Result::expect",
+    "Result::expect_err",
     "panic!",
     "assert!",
     "assert_eq!",
@@ -748,7 +756,6 @@ fn closing(tokens: &[Token<'_>], open: usize) -> Option<usize> {
     let (opens, closes) = match tokens[open].text {
         "{" => ("{", "}"),
         "(" => ("(", ")"),
-        "<" => ("<", ">"),
         _ => return None,
     };
     let mut depth = 0_usize;
@@ -765,6 +772,26 @@ fn closing(tokens: &[Token<'_>], open: usize) -> Option<usize> {
     None
 }
 
+/// The `>` that closes the generics opened by the `<` at `open`. The `>` of a `->` inside a bound
+/// (`F: Fn() -> u8`) closes nothing.
+fn generics_end(tokens: &[Token<'_>], open: usize) -> Option<usize> {
+    let mut depth = 0_usize;
+    for (index, token) in tokens.iter().enumerate().skip(open) {
+        match token.text {
+            "<" => depth += 1,
+            ">" if index > 0 && tokens[index - 1].text == "-" => {}
+            ">" => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn is_word(text: &str) -> bool {
     text.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
 }
@@ -772,9 +799,12 @@ fn is_word(text: &str) -> bool {
 /// One function the source declares with a body.
 struct Function {
     owner: Option<String>,
+    /// Declared inside an `impl Trait for Owner`.
+    in_trait_impl: bool,
     name: String,
     method: bool,
-    body: (usize, usize),
+    /// From the `fn` token to the closing brace: the signature names types too.
+    tokens: (usize, usize),
     lines: (usize, usize),
 }
 
@@ -823,6 +853,18 @@ fn startup_scan(source: &str) -> Result<StartupScan, String> {
     let text = |index: usize| tokens.get(index).map_or("", |token| token.text);
     let line = |index: usize| tokens.get(index).map_or(0, |token| token.line);
 
+    // A macro's body is no function, and its expansion runs wherever it is invoked.
+    if let Some(index) =
+        (0..tokens.len()).find(|&index| text(index) == "macro_rules" && text(index + 1) == "!")
+    {
+        return Err(format!(
+            "the source defines `macro_rules! {}` at line {}; the startup scan reads no macro \
+             body, so it refuses a source that defines one",
+            text(index + 2),
+            line(index)
+        ));
+    }
+
     // `impl` blocks, as (owner type, trait, first token, last token).
     let mut impls: Vec<(String, Option<String>, usize, usize)> = Vec::new();
     for index in 0..tokens.len() {
@@ -832,7 +874,7 @@ fn startup_scan(source: &str) -> Result<StartupScan, String> {
         }
         let mut at = index + 1;
         if text(at) == "<" {
-            at = closing(&tokens, at).ok_or("an impl's generics never close")? + 1;
+            at = generics_end(&tokens, at).ok_or("an impl's generics never close")? + 1;
         }
         let header_start = at;
         while at < tokens.len() && text(at) != "{" {
@@ -862,9 +904,13 @@ fn startup_scan(source: &str) -> Result<StartupScan, String> {
         if text(index) != "fn" || !is_word(text(index + 1)) {
             continue;
         }
-        let Some(open) = (index + 2..tokens.len()).find(|&at| text(at) == "(") else {
+        let mut open = index + 2;
+        if text(open) == "<" {
+            open = generics_end(&tokens, open).ok_or("a function's generics never close")? + 1;
+        }
+        if text(open) != "(" {
             continue;
-        };
+        }
         let close = closing(&tokens, open).ok_or("a parameter list never closes")?;
         let method = (open..close).any(|at| text(at) == "self");
         let Some(body) = (close..tokens.len()).find(|&at| matches!(text(at), "{" | ";")) else {
@@ -874,16 +920,16 @@ fn startup_scan(source: &str) -> Result<StartupScan, String> {
             continue;
         }
         let end = closing(&tokens, body).ok_or("a function body never closes")?;
-        let owner = impls
+        let within = impls
             .iter()
             .filter(|(_, _, first, last)| *first < index && index < *last)
-            .min_by_key(|(_, _, first, last)| last - first)
-            .map(|(owner, _, _, _)| owner.clone());
+            .min_by_key(|(_, _, first, last)| last - first);
         functions.push(Function {
-            owner,
+            owner: within.map(|(owner, _, _, _)| owner.clone()),
+            in_trait_impl: within.is_some_and(|(_, implemented, _, _)| implemented.is_some()),
             name: text(index + 1).to_owned(),
             method,
-            body: (body, end),
+            tokens: (index, end),
             lines: (line(index), line(end)),
         });
     }
@@ -896,7 +942,7 @@ fn startup_scan(source: &str) -> Result<StartupScan, String> {
         }
         let mut at = index + 2;
         if text(at) == "<" {
-            at = closing(&tokens, at).ok_or("a type's generics never close")? + 1;
+            at = generics_end(&tokens, at).ok_or("a type's generics never close")? + 1;
         }
         let end = if matches!(text(at), "{" | "(") {
             closing(&tokens, at).ok_or("a type's body never closes")?
@@ -905,13 +951,10 @@ fn startup_scan(source: &str) -> Result<StartupScan, String> {
         };
         types.push((text(index + 1).to_owned(), at, end));
     }
-    let dropped: Vec<&str> = impls
-        .iter()
-        .filter(|(_, implemented, _, _)| implemented.as_deref() == Some("Drop"))
-        .map(|(owner, _, _, _)| owner.as_str())
-        .collect();
-    let is_type =
-        |word: &str| dropped.contains(&word) || types.iter().any(|(name, _, _)| name == word);
+    let is_type = |word: &str| {
+        types.iter().any(|(name, _, _)| name == word)
+            || impls.iter().any(|(owner, _, _, _)| owner == word)
+    };
 
     let mut reached = vec![false; functions.len()];
     let mut named: Vec<String> = Vec::new();
@@ -924,7 +967,8 @@ fn startup_scan(source: &str) -> Result<StartupScan, String> {
         reached[start] = true;
         pending.push(start);
     }
-    // A type is named by the start: its `Drop` runs, and so do the `Drop`s of what it holds.
+    // A type is named by the start: every method of its trait impls runs (its `Drop`, a `Display`
+    // that `format!` calls, a `From` that `?` calls), and so do those of every type it holds.
     let name_type =
         |word: &str, named: &mut Vec<String>, pending: &mut Vec<usize>, reached: &mut [bool]| {
             let mut types_pending = vec![word.to_owned()];
@@ -935,8 +979,7 @@ fn startup_scan(source: &str) -> Result<StartupScan, String> {
                 named.push(word.clone());
                 for (index, function) in functions.iter().enumerate() {
                     if function.owner.as_deref() == Some(word.as_str())
-                        && function.name == "drop"
-                        && dropped.contains(&word.as_str())
+                        && function.in_trait_impl
                         && !reached[index]
                     {
                         reached[index] = true;
@@ -957,7 +1000,7 @@ fn startup_scan(source: &str) -> Result<StartupScan, String> {
         };
     while let Some(current) = pending.pop() {
         let owner = functions[current].owner.clone();
-        let (first, last) = functions[current].body;
+        let (first, last) = functions[current].tokens;
         let mut calls: Vec<usize> = Vec::new();
         for at in first..=last {
             let word = text(at);
@@ -984,13 +1027,21 @@ fn startup_scan(source: &str) -> Result<StartupScan, String> {
             };
             name_type(word, &mut named, &mut pending, &mut reached);
             if text(at + 1) == ":" && text(at + 2) == ":" && is_word(text(at + 3)) {
+                // `Type::f` is a function of a same-file type; any other prefix (`self::f`,
+                // `module::f`) may name a same-file free function.
                 let name = text(at + 3);
+                let of_type = is_type(word);
                 calls.extend(
                     functions
                         .iter()
                         .enumerate()
                         .filter(|(_, function)| {
-                            function.owner.as_deref() == Some(word) && function.name == name
+                            function.name == name
+                                && if of_type {
+                                    function.owner.as_deref() == Some(word)
+                                } else {
+                                    function.owner.is_none()
+                                }
                         })
                         .map(|(index, _)| index),
                 );
@@ -1037,10 +1088,16 @@ fn startup_scan(source: &str) -> Result<StartupScan, String> {
         .collect();
     run.sort_unstable();
     run.dedup();
+    let name_char = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let holds = |line: &str, form: &str| {
+        line.match_indices(form).any(|(at, _)| {
+            !form.ends_with(name_char) || !line[at + form.len()..].starts_with(name_char)
+        })
+    };
     let site = |number: usize| {
         code_lines
             .get(number.wrapping_sub(1))
-            .is_some_and(|line| PANIC_FORMS.iter().any(|form| line.contains(form)))
+            .is_some_and(|line| PANIC_FORMS.iter().any(|form| holds(line, form)))
     };
     let mut scan = StartupScan {
         reached: functions
@@ -1082,16 +1139,21 @@ fn startup_scan(source: &str) -> Result<StartupScan, String> {
 ///
 /// So this reads the compiler's own copy of `support/browser.rs` and follows what a start runs:
 /// from `Browser::launch` and `Browser::launch_program` (`STARTS`), every same-file function a
-/// reached body calls by `Self::f` or `Type::f`, every same-file method named in a `.f(` call (all
-/// of them, since the scan does not know the receiver's type), every same-file free function a
-/// body names, and the `Drop` of every same-file type a reached body names, directly or through
-/// what that type holds. Comments, strings and character literals are blanked first, so no text in
-/// them opens, closes or calls anything. Every line of every reached function, from its `fn` line
-/// to its closing brace, is read for `PANIC_FORMS`; a line holding one names `startup-path:
-/// harness` or `startup-path: defect` in a comment on that line or the one above, and a mark that
-/// names no such line is stale. A panic inside another file or crate, an index, an arithmetic
-/// overflow, and a call through a trait object or a function pointer the file never names are
-/// outside what it reads. The `the_startup_scan_*` cases hold the scan itself to synthetic sources.
+/// reached function calls by `Self::f` or `Type::f`; every same-file method, generic or not, named
+/// in a `.f(` call (all of them, since the scan does not know the receiver's type); every
+/// same-file free function a reached function names, bare or by a path whose prefix is not a
+/// same-file type (`self::f`, `module::f`); and every method of every same-file trait impl of each
+/// same-file type a reached function names in its signature or body, directly or through what
+/// that type holds: its `Drop`, and a `Display` or `From` that `format!` or `?` runs without
+/// spelling it. Comments, strings and character literals are blanked first, so no text in them
+/// opens, closes or calls anything. Every line of every reached function, from its `fn` line to
+/// its closing brace, is read for `PANIC_FORMS`; a line holding one names `startup-path: harness`
+/// or `startup-path: defect` in a comment on that line or the one above, and a mark that names no
+/// such line is stale. A source that defines a `macro_rules!` is refused, naming the macro,
+/// because the scan reads no macro body. A panic inside another file or crate, an index, an
+/// arithmetic overflow, `process::exit`, `abort`, and a call through a trait object or a function
+/// pointer the file never names are outside what it reads. The `the_startup_scan_*` cases hold the
+/// scan itself to synthetic sources.
 #[test]
 fn no_unaccounted_panic_site_can_end_a_start() {
     use std::fmt::Write as _;
@@ -1311,6 +1373,151 @@ fn a_startup_mark_is_read_from_a_comment_and_names_a_site_a_start_runs() {
             "{at}"
         );
     }
+}
+
+/// The start of every synthetic source below: `Browser::launch` calls `launch_program`, whose body
+/// is the case's own.
+fn synthetic_start(launch_program: &str, rest: &str) -> String {
+    format!(
+        "pub struct Browser;\nimpl Browser {{\n    pub fn launch() -> Result<Self, String> {{\n        \
+         Self::launch_program()\n    }}\n    pub fn launch_program() -> Result<Self, String> \
+         {{\n{launch_program}\n    }}\n}}\n{rest}"
+    )
+}
+
+/// Whether the scan reports the line of `source` holding `needle` as an unaccounted site.
+fn reported(source: &str, needle: &str) -> Result<bool, String> {
+    let number = source
+        .lines()
+        .position(|line| line.contains(needle))
+        .unwrap_or_else(|| panic!("{needle} is in the source"))
+        + 1;
+    let scan = startup_scan(source)?;
+    Ok(scan.unaccounted.iter().any(|(line, _)| *line == number))
+}
+
+/// Adversary pass 1 of D357 U2, F1: a method whose generics hold an `Fn(..)` bound was filed as an
+/// associated function, because the bound's parentheses were taken for its parameter list.
+#[test]
+fn the_startup_scan_reaches_a_method_whose_generics_hold_an_fn_bound() {
+    let source = "pub struct Browser;
+impl Browser {
+    pub fn launch() -> Result<Self, String> {
+        Self::launch_program()
+    }
+    pub fn launch_program() -> Result<Self, String> {
+        let mut browser = Self;
+        browser.retry(|| Ok(()))?;
+        Ok(browser)
+    }
+    fn retry<F: FnMut() -> Result<(), String>>(&mut self, mut attempt: F) -> Result<(), String> {
+        attempt()?;
+        let _ = None::<u8>.expect(\"AT_GENERIC_METHOD\");
+        Ok(())
+    }
+}
+";
+    assert_eq!(
+        reported(source, "AT_GENERIC_METHOD"),
+        Ok(true),
+        "story:a-marked-region-is-not-a-scan-of-what-runs: a method with an `Fn` bound"
+    );
+}
+
+/// F2: a free function a start names by a path whose prefix is not a same-file type.
+#[test]
+fn the_startup_scan_follows_a_free_function_named_by_a_module_path() {
+    let at_top = synthetic_start(
+        "        Err(self::refusal())",
+        "fn refusal() -> String {\n    let _ = None::<u8>.expect(\"AT_SELF_PATH\");\n    \
+         String::new()\n}\n",
+    );
+    let in_module = synthetic_start(
+        "        Err(give_up::refusal())",
+        "mod give_up {\n    pub fn refusal() -> String {\n        let _ = \
+         None::<u8>.expect(\"AT_MODULE_PATH\");\n        String::new()\n    }\n}\n",
+    );
+    for (source, needle) in [(at_top, "AT_SELF_PATH"), (in_module, "AT_MODULE_PATH")] {
+        assert_eq!(
+            reported(&source, needle),
+            Ok(true),
+            "story:a-marked-region-is-not-a-scan-of-what-runs: {needle}\n{source}"
+        );
+    }
+}
+
+/// F3: every method of a trait impl of a type a start names runs, whether or not the start spells
+/// the method: `Display::fmt` through `format!`, `From::from` through `?` on a return type.
+#[test]
+fn the_startup_scan_runs_every_trait_impl_of_a_type_the_start_names() {
+    let display = synthetic_start(
+        "        Err(format!(\"stage: {}\", Stage))",
+        "struct Stage;\nimpl std::fmt::Display for Stage {\n    fn fmt(&self, formatter: &mut \
+         std::fmt::Formatter<'_>) -> std::fmt::Result {\n        let _ = \
+         None::<u8>.expect(\"AT_DISPLAY\");\n        formatter.write_str(\"connect\")\n    }\n}\n",
+    );
+    let from = "pub struct Browser;
+pub struct Lost(String);
+impl From<std::io::Error> for Lost {
+    fn from(error: std::io::Error) -> Self {
+        let _ = None::<u8>.expect(\"AT_FROM\");
+        Self(error.to_string())
+    }
+}
+impl Browser {
+    pub fn launch() -> Result<Self, Lost> {
+        Self::launch_program()
+    }
+    pub fn launch_program() -> Result<Self, Lost> {
+        std::fs::read(\"evidence\")?;
+        Ok(Self)
+    }
+}
+"
+    .to_owned();
+    for (source, needle) in [(display, "AT_DISPLAY"), (from, "AT_FROM")] {
+        assert_eq!(
+            reported(&source, needle),
+            Ok(true),
+            "story:a-marked-region-is-not-a-scan-of-what-runs: {needle}\n{source}"
+        );
+    }
+}
+
+/// F4: a `macro_rules!` body is no function, so the scan does not read one; a source that defines
+/// one is refused, naming it, rather than read as if its expansions could not panic.
+#[test]
+fn the_startup_scan_refuses_a_source_that_defines_a_macro() {
+    let source = format!(
+        "macro_rules! give_up {{\n    ($why:expr) => {{\n        panic!(\"AT_MACRO {{}}\", \
+         $why)\n    }};\n}}\n{}",
+        synthetic_start("        give_up!(\"the session was lost\")", "")
+    );
+    let refusal = startup_scan(&source).map(|_| ()).unwrap_err();
+    assert!(
+        refusal.contains("macro_rules! give_up"),
+        "story:a-marked-region-is-not-a-scan-of-what-runs: {refusal}"
+    );
+}
+
+/// F5: the method forms spelled as paths are sites too; `Option::unwrap_or` is not.
+#[test]
+fn the_startup_scan_reads_a_panic_form_spelled_as_a_path() {
+    let source = synthetic_start(
+        "        let port = Option::expect(\"1\".parse::<u16>().ok(), \"AT_PATH_EXPECT\");\n        \
+         let ports = [Ok::<u16, String>(port)].into_iter().map(Result::unwrap).count(); // \
+         AT_PATH_MAP\n        let spare = Option::unwrap_or(None, ports); // AT_UNWRAP_OR\n        \
+         let _ = spare;\n        Ok(Self)",
+        "",
+    );
+    for needle in ["AT_PATH_EXPECT", "AT_PATH_MAP"] {
+        assert_eq!(
+            reported(&source, needle),
+            Ok(true),
+            "story:a-marked-region-is-not-a-scan-of-what-runs: {needle}\n{source}"
+        );
+    }
+    assert_eq!(reported(&source, "AT_UNWRAP_OR"), Ok(false), "{source}");
 }
 
 #[test]

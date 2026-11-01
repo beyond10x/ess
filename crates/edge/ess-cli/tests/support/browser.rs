@@ -309,8 +309,8 @@ pub enum Stage<'a> {
     Connect,
     /// The upgrade was lost before the deadline: a read, write or socket failure.
     Upgrade(&'a str),
-    /// The first `session.new` round trip was lost: a read, write or socket failure after the
-    /// upgrade, with the child still running.
+    /// The first `session.new` round trip was lost after the upgrade, with the child still
+    /// running: a read, write or socket failure, a close frame, or an error answer.
     Session(&'a str),
 }
 impl Stage<'_> {
@@ -486,8 +486,9 @@ impl Browser {
             evidence: evidence.to_path_buf(),
             _scratch: scratch,
         };
-        // The first session round trip is the last step of a start. A socket lost on it is a start
-        // this runner did not deliver; an answer that is not the protocol is a defect, in `exchange`.
+        // The first session round trip is the last step of a start. A socket lost on it, a close
+        // frame and an error answer are a start this runner did not deliver; an answer that is not
+        // the protocol is a defect, in `exchange`.
         let session = browser.exchange("session.new", &json!({"capabilities":{"alwaysMatch":{}}}));
         if let Err(error) = session {
             let reason = error.to_string();
@@ -716,9 +717,10 @@ impl Browser {
         self.exchange(method, params)
             .unwrap_or_else(|error| panic!("BiDi {method}: {error}"))
     }
-    /// Send one `BiDi` command and wait for its answer. A socket failure is returned, so that the
-    /// start's own `session.new` reports it as a lost start; an answer that is not the protocol
-    /// panics as a defect.
+    /// Send one `BiDi` command and wait for its answer. A socket failure, a close frame and an
+    /// error answer are returned, so that the start's own `session.new` reports each as a lost
+    /// start; a frame that is neither text, ping nor close, and a text frame that is not JSON, are
+    /// not the protocol and panic as a defect.
     fn exchange(&mut self, method: &str, params: &Value) -> std::io::Result<Value> {
         self.next += 1;
         let request = json!({"id":self.next,"method":method,"params":params});
@@ -731,6 +733,12 @@ impl Browser {
                 self.send(10, &payload)?;
                 continue;
             }
+            if opcode == 8 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionAborted,
+                    "the browser closed the WebSocket with a close frame",
+                ));
+            }
             // startup-path: defect
             assert_eq!(opcode, 1, "unexpected WebSocket frame");
             // startup-path: defect
@@ -738,8 +746,9 @@ impl Browser {
             // startup-path: harness
             writeln!(self.receipt, "{}", json!({"received":value})).unwrap();
             if value["id"].as_u64() == Some(self.next) {
-                // startup-path: defect
-                assert_ne!(value["type"], "error", "{value}");
+                if value["type"] == "error" {
+                    return Err(std::io::Error::other(format!("an error answer: {value}")));
+                }
                 return Ok(value["result"].clone());
             }
         }
