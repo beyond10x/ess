@@ -6,16 +6,16 @@
 //! generated Rust library to what the Binary64 location is for: the finite codec at the `anyOf`'s
 //! number member (a token past the binary64 range is refused, an integer token past 2^53 is read
 //! as the nearest binary64), and a `null` written back as a present key.
+//!
+//! The decoding cases run in the Binary64 wire corpus `binary64_structural.rs` builds once
+//! (`fixtures/binary64_wire_tests.rs.txt`, module `nullable`), because no test spawns a build of
+//! its own (`ess-xtask/tests/no_test_builds.rs`); this file holds what needs no build.
 
 #[allow(dead_code)]
 #[path = "fixtures/normalization_model.rs"]
 mod model;
 
 use std::collections::BTreeSet;
-use std::fs;
-use std::path::Path;
-use std::process::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use schema_contract::realize::Plan;
 use serde_json::json;
@@ -73,104 +73,11 @@ components:
     publishes: {events: [demo.lab.Recorded]}
 ";
 
-fn compile_and_test(manifest: &str, source: &str, tests: &str) {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
-        "adversary-d350-u1-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir_all(root.join("tests")).unwrap();
-    fs::write(root.join("Cargo.toml"), manifest).unwrap();
-    fs::write(root.join("types.rs"), source).unwrap();
-    fs::write(root.join("tests/wire.rs"), tests).unwrap();
-    let result = Command::new(env!("CARGO"))
-        .args(["test", "--offline", "--quiet", "--manifest-path"])
-        .arg(root.join("Cargo.toml"))
-        .env(
-            "CARGO_TARGET_DIR",
-            Path::new(env!("CARGO_TARGET_TMPDIR")).join("native-types-target"),
-        )
-        .output()
-        .unwrap();
-    assert!(
-        result.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&result.stdout),
-        String::from_utf8_lossy(&result.stderr)
-    );
-}
-
-const WIRE: &str = r##"
-use lab_types::*;
-use serde::{de::DeserializeOwned, Serialize};
-use serde_json::Value;
-
-fn written<T: DeserializeOwned + Serialize>(text: &str) -> String {
-    let decoded: T = serde_json::from_str(text).unwrap_or_else(|error| panic!("{text}: {error}"));
-    serde_json::to_string(&decoded).unwrap()
-}
-
-/// The body decodes and is written back as the same JSON document, keys and `null`s included.
-fn round_trips<T: DeserializeOwned + Serialize>(text: &str) {
-    let out = written::<T>(text);
-    let read: Value = serde_json::from_str(text).unwrap();
-    let back: Value = serde_json::from_str(&out).unwrap();
-    assert_eq!(back, read, "{text} was written back as {out}");
-}
-
-fn refuses<T: DeserializeOwned>(text: &str) {
-    assert!(serde_json::from_str::<T>(text).is_err(), "{text} decodes");
-}
-
-#[test]
-fn a_null_is_written_back_as_a_present_null() {
-    for text in [
-        r#"{"value":null}"#,
-        r#"{"value":null,"spare":null}"#,
-        r#"{"value":1.5,"spare":null,"plain":2.5}"#,
-    ] {
-        round_trips::<DemoLabReading>(text);
-    }
-    for text in [
-        r#"{"sample_id":"s-1","value":null}"#,
-        r#"{"sample_id":"s-1","value":null,"spare":null}"#,
-        r#"{"sample_id":"s-1","value":1.5}"#,
-    ] {
-        round_trips::<DemoLabRecordResponse>(text);
-    }
-    round_trips::<DemoLabRecordInput>(r#"{"sample_id":"s-1","value":null}"#);
-}
-
-#[test]
-fn a_nullable_member_refuses_a_token_past_the_binary64_range() {
-    refuses::<DemoLabReading>(r#"{"value":1e400}"#);
-    refuses::<DemoLabReading>(r#"{"value":null,"spare":-1e400}"#);
-    refuses::<DemoLabReading>(r#"{"value":null,"plain":1e400}"#);
-    refuses::<DemoLabRecordResponse>(r#"{"sample_id":"s-1","value":1e400}"#);
-    refuses::<DemoLabRecordResponse>(r#"{"sample_id":"s-1","value":null,"spare":1e400}"#);
-    refuses::<DemoLabRecordInput>(r#"{"sample_id":"s-1","value":1e400}"#);
-}
-
-#[test]
-fn a_nullable_member_reads_the_nearest_binary64() {
-    for (text, key) in [
-        (r#"{"value":9007199254740993}"#, "value"),
-        (r#"{"value":null,"spare":9007199254740993}"#, "spare"),
-        (r#"{"value":null,"plain":9007199254740993}"#, "plain"),
-    ] {
-        let out = written::<DemoLabReading>(text);
-        let back: Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(back[key].as_f64(), Some(9007199254740992.0), "{out}");
-        assert!(!out.contains("9007199254740993"), "{text} kept its exact token: {out}");
-    }
-    let out = written::<DemoLabRecordResponse>(r#"{"sample_id":"s-1","value":9007199254740993}"#);
-    assert!(!out.contains("9007199254740993"), "the response kept its exact token: {out}");
-}
-"##;
-
-/// The struct, the response and the input in one generated library, held to the Binary64 codec
-/// at each nullable member and to a `null` written back as a key.
+/// The struct, the response and the input in one generated library, each nullable member declared
+/// through the Binary64 codec. Decoding them (a `null` written back as a key, a token past the
+/// binary64 range refused, an integer past 2^53 read as the nearest binary64) runs in the Binary64
+/// wire corpus `binary64_structural.rs` builds once (`fixtures/binary64_wire_tests.rs.txt`, module
+/// `nullable`), so this file spawns no build of its own.
 #[test]
 fn nullable_binary64_members_decode_as_binary64_and_write_null_back() {
     let selected = model::selection(
@@ -184,8 +91,18 @@ fn nullable_binary64_members_decode_as_binary64_and_write_null_back() {
     let plan = Plan::from_model(&selected).unwrap_or_else(|refused| panic!("plan: {refused:?}"));
     let rust = plan
         .rust("lab_types")
-        .unwrap_or_else(|refused| panic!("Rust realization: {refused:?}"));
-    compile_and_test(&rust.supporting["Cargo.toml"], &rust.declarations, WIRE);
+        .unwrap_or_else(|refused| panic!("Rust realization: {refused:?}"))
+        .declarations;
+    for declared in [
+        "pub value: ::std::option::Option<EssBinary64>,",
+        "pub spare: EssPresence<::std::option::Option<EssBinary64>>,",
+        "pub plain: EssPresence<EssBinary64>,",
+    ] {
+        assert!(
+            rust.contains(declared),
+            "story:a-null-when-absent-binary64-field-realizes: no `{declared}` in\n{rust}"
+        );
+    }
 }
 
 /// A nullable member under a wire name that needs JSON Pointer escaping: the location escapes the
