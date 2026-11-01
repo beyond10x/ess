@@ -19,7 +19,7 @@ Nothing is lowered approximately. A construct that has no exact Entity Runtime f
 | primitive, `List`, `Map`, struct, enum, union and `Json` types; `Optional` members | `FieldDefinition`s; an `Optional` member is not `required` |
 | entity and type `invariants:` | named entity rules, one per invariant and per layer of a newtype chain |
 | `prefix:` on a newtype | a `starts_with` rule |
-| an `invariants:` or `prefix:` of an update's input type, or of an input stored in a field of that type | operation `preconditions` over `$args.input.<field>`, holding where an `Optional` input is absent; none where every accepting branch writes the input into a field of its type (a `sets:` entry or a creation's identity), whose entity rules hold on the row |
+| an `invariants:` or `prefix:` of an update's input type, or of an input every accepting branch stores in a field of that type | operation `preconditions` over `$args.input.<field>`, holding where an `Optional` input is absent, lowered typed as a guard is: a number ordering as `compare`, a `Timestamp` ordering as `before`/`after`; none where every accepting branch writes the input into a field of its type (a `sets:` entry or a creation's identity), whose entity rules hold on the row |
 | `alphabet:` | `alphabet` on each string field, argument and member it reaches; a newtype chain's alphabets intersected, in the outer one's order |
 | `.count` of a text | `<path>.count` on a declared `string`, its length in Unicode scalar values |
 | `relations:` | `RelationDefinition`s, with existence, cardinality and ownership binding obligations |
@@ -93,7 +93,8 @@ The last column says what lowering the construct would need. *entity-core* means
 | a re-key (`updates:` writing the identity, ess/23) | `IdentityChangeUnsupported` | entity-core: an operation that moves the instance it names to another identity |
 | a function of a fact in a guard (`sha256(…)`, `base64url(…)`, `ascii(…)`, ess/27) | `FunctionCallUnsupported` | entity-core: a digest and encoding operand: SHA-256, base64url, ASCII bytes |
 | a lifecycle state's wire spelling (`states: [{name, wire}]`, ess/32) | `StateWireNameUnsupported` | entity-core: a lifecycle state spelled apart from its name |
-| an `invariants:` or `prefix:` of a creation's input type, on an input no field of that type stores | `InputInvariantUnsupported` | entity-core: a precondition on the creation entrypoint; an outcome guard would change which branch answers |
+| an `invariants:` or `prefix:` of a creation's input type, on an input some accepting branch does not store in a field of that type | `InputInvariantUnsupported` | entity-core: a precondition on the creation entrypoint; an outcome guard would change which branch answers |
+| an ordering over text, or over a value not known to be a number or a `Timestamp`, in an `invariants:` of an input's type | `InputInvariantUnsupported` | entity-core: an ordering over text by its bytes; its `compare` orders numbers only and answers `Unknown` otherwise |
 
 ## Every code
 
@@ -142,6 +143,6 @@ A harness matches on the code. The construct is the one a diagnostic under that 
 | `IdentityChangeUnsupported` | a re-key (`updates:` writing the identity, ess/23) | An update writes the identity and re-keys its record. |
 | `FunctionCallUnsupported` | a function of a fact in a guard (`sha256(…)`, `base64url(…)`, `ascii(…)`, ess/27) | A guard reads a fact through a digest or encoding function. |
 | `StateWireNameUnsupported` | a lifecycle state's wire spelling (`states: [{name, wire}]`, ess/32) | A lifecycle state declares its wire spelling. |
-| `InputInvariantUnsupported` | an `invariants:` or `prefix:` of a creation's input type, on an input no field of that type stores | A creation's input type declares an invariant or a prefix, and the creation writes the input into no field of that type. |
+| `InputInvariantUnsupported` | an `invariants:` or `prefix:` of a creation's input type, on an input some accepting branch does not store in a field of that type | An input type's invariant or prefix is not held: on a creation whose accepting branches do not all store the input in a field of that type, or as an ordering Entity Runtime cannot decide over the input. |
 
 [ess-lowering-end]: #

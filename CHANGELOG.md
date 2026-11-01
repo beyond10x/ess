@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Entity Runtime lowering no longer drops the `invariants:` and `prefix:` of a command input's type when no field of that type stores the input: an update holds them as operation preconditions over `$args.input.<field>`, and a creation, which has no precondition in entity-core, is refused as `InputInvariantUnsupported` naming the input.
+- Entity Runtime lowering no longer drops the `invariants:` and `prefix:` of a command input's type unless every accepting branch stores the input in a field of that type: an update holds them as operation preconditions over `$args.input.<field>`, lowered as a guard is, so an ordering over a `Timestamp` becomes `before`/`after`; a creation, which has no precondition in entity-core, and an ordering over text, which entity-core cannot decide, are refused as `InputInvariantUnsupported` naming the input.
 
 ## [0.79.0] — 2026-11-01
 

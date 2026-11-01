@@ -557,9 +557,9 @@ system-dir:examples/oracle-fixture	order-service	oracle.order.Order	oracle.order
 system-dir:examples/oracle-fixture	order-service	oracle.order.Order	oracle.order.HoldOrder	held, wrong-state
 system-dir:examples/oracle-fixture	order-service	oracle.order.Order	oracle.order.ShipOrder	shipped, wrong-state
 system-dir:examples/revision-pair/after	components=1
-system-dir:examples/revision-pair/after	pricing-service	REFUSED	62c872138b44aff684fc051e2a3b87486c1cbe451900c06344e56ed18a23f23b:430
+system-dir:examples/revision-pair/after	pricing-service	REFUSED	f393b529bc44e11cd2606a00b36be1183e035e3f2f946de91b5d5db52b4647cb:462
 system-dir:examples/revision-pair/before	components=1
-system-dir:examples/revision-pair/before	pricing-service	REFUSED	62c872138b44aff684fc051e2a3b87486c1cbe451900c06344e56ed18a23f23b:430
+system-dir:examples/revision-pair/before	pricing-service	REFUSED	f393b529bc44e11cd2606a00b36be1183e035e3f2f946de91b5d5db52b4647cb:462
 system-dir:fuzz/readiness/expected/empty-domain/source	components=0
 system-dir:fuzz/readiness/expected/enum-referenced/source	components=0
 system-dir:fuzz/readiness/expected/enum-unreferenced/source	components=0
@@ -581,7 +581,7 @@ system-dir:models/output-ownership	components=0
 system-dir:models/protospec	components=0
 system-dir:models/recorded-log-adapter	components=0
 system-dir:models/toolchain	components=5
-system-dir:models/toolchain	generate	REFUSED	85640496d1bab542c0b86a865e44aa1c87124e1fbdb3a6601d2e23b49bf31fc6:1664
+system-dir:models/toolchain	generate	REFUSED	e610daddf63ba3008743b7882d194ce9a6da2ffa6cd17b888615d11f840d089f:1760
 system-dir:models/toolchain	infra	toolchain.infra.BindingCheck	definition=959532c2366d15a81eaf3b084134d03d93a3352a53e19d6d35eafecd8afd60de:4672
 system-dir:models/toolchain	infra	toolchain.infra.BindingCheck	create	started
 system-dir:models/toolchain	infra	toolchain.infra.BindingCheck	toolchain.infra.ConcludeBindingCheck	violated, unknown, satisfied, wrong-state
@@ -594,4 +594,4 @@ system-dir:models/toolchain	specify	toolchain.specify.Model	definition=cafca2a6d
 system-dir:models/toolchain	specify	toolchain.specify.Model	create	refused, selected
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.CompileModel	refused, compiled, wrong-state
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.ResolveModel	refused, resolved, wrong-state
-system-dir:models/toolchain	verify	REFUSED	a89f952660caf189f2d7bc0b951ec9543da97d98ad83593e9308de6ba51122f1:428
+system-dir:models/toolchain	verify	REFUSED	814338eeab0a6bd59612a9c8d4b1b5681021eabae03811a80dfd85a4184c7d92:460
