@@ -51,6 +51,7 @@ use super::{
 };
 use crate::witness::MAX_CANDIDATES;
 
+mod rewritten;
 pub(super) mod stored;
 
 /// The step between the blocks of distinctions the related rows are arranged at: the number
@@ -1803,14 +1804,45 @@ pub(super) fn wrong_state_overlap(
 /// existence answers that branch and fails. Its steps, the constructs they read, the input chosen
 /// on it, and the input field pointed at it. A command reading several rows, or reading its row
 /// through an Optional input or a stored field, is not arranged here.
+///
+/// Only a branch the precedence plan reads after the addressed row's existence is chosen: one read
+/// before it would answer the identity's own scenario. Where no predicate branch is read after
+/// existence, the row is arranged for the first branch after it that a present row and the input
+/// select, its default among them, so it selects nothing read first.
 pub(super) fn unknown_identity_overlap(
     ir: &EssIr,
     command: &ResolvedCommand,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<(Arrangement, BoundInput), RefusalCause> {
+    present_after(ir, command, actors, Phase::Existence, &[])
+}
+
+/// A present related row, and the input chosen on it, for the first branch the precedence plan
+/// reads after `phase` ([`unknown_identity_overlap`] names the choice), searched beside `known`,
+/// the steps arranged before it.
+fn present_after(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    phase: Phase,
+    known: &[super::ScenarioStep],
+) -> Result<(Arrangement, BoundInput), RefusalCause> {
     if several(command) || optional(command) || stored::field(command).is_some() {
         return Err(unarranged());
     }
+    let from = phase.position();
+    let later: BTreeSet<&ess_domain::command::OutcomeName> =
+        PrecedencePlan::new(command, ir.format())
+            .iter()
+            .filter(|(read, _)| read.position() > from)
+            .map(|(_, branch)| &branch.name)
+            .collect();
+    let after = || {
+        command
+            .outcomes
+            .iter()
+            .filter(|outcome| later.contains(&outcome.name))
+    };
     let holds = |outcome: &&ResolvedOutcome| {
         matches!(
             outcome.condition,
@@ -1820,12 +1852,18 @@ pub(super) fn unknown_identity_overlap(
             }
         )
     };
-    let chosen = command
-        .outcomes
-        .iter()
+    let chosen = after()
         .filter(holds)
         .find(|outcome| outcome.error.is_some())
-        .or_else(|| command.outcomes.iter().find(holds))
+        .or_else(|| after().find(holds))
+        .or_else(|| {
+            after().find(|outcome| {
+                matches!(
+                    outcome.condition,
+                    ResolvedCondition::When { .. } | ResolvedCondition::Otherwise
+                )
+            })
+        })
         .ok_or_else(unarranged)?;
     let (via, entity) = read(command).ok_or_else(unarranged)?;
     let (mut row, _, input) = with_row(
@@ -1838,11 +1876,69 @@ pub(super) fn unknown_identity_overlap(
         None,
         None,
         None,
-        (&BTreeMap::new(), &[], &BTreeMap::new()),
+        (&BTreeMap::new(), known, &BTreeMap::new()),
     )?;
     row.source.insert(entity_ref(entity));
     let bound = BTreeMap::from([(via.field().to_owned(), row.instance.clone())]);
     Ok((row, (input, bound)))
+}
+
+/// Whether the precedence plan reads the related row's `exists: false` before `phase`, and
+/// `attempt`, the branch a scenario's input is chosen for, is an external branch reached by its
+/// input alone ([`arranges_external`], beyond10x/ess#464), which names a related row nobody
+/// arranged: that branch would answer such a send before the phase the scenario proves.
+fn absent_before_external(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    attempt: &ResolvedOutcome,
+    phase: Phase,
+) -> bool {
+    let at = phase.position();
+    arranges_external(command, attempt)
+        && !optional(command)
+        && PrecedencePlan::new(command, ir.format())
+            .iter()
+            .any(|(read, branch)| is_absent(branch) && read.position() < at)
+}
+
+/// The related row a held-state refusal is sent beside where its input is chosen for an external
+/// branch and the row's `exists: false` is read before the held state
+/// ([`absent_before_external`]), while no present-related refusal is read between the held state
+/// and the accepting branches ([`orders_present_related_refusal`] arranges that case): a present
+/// row on which the first branch read after the held state is selected ([`present_after`]),
+/// arranged after `addressed`, its steps and constructs added to it. `None` for every other
+/// command and branch, whose refusal is reached as before (story
+/// `related-guard-wrong-state-beside-external`).
+pub(super) fn held_beside_external(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    attempt: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    addressed: &mut Arrangement,
+) -> Option<Result<BoundInput, RefusalCause>> {
+    absent_before_external(ir, command, attempt, Phase::HeldState).then(|| {
+        let (row, bound) = present_after(ir, command, actors, Phase::HeldState, &addressed.steps)?;
+        addressed.steps.extend(row.steps);
+        addressed.source.extend(row.source);
+        Ok(bound)
+    })
+}
+
+/// The related row an identity no row carries is sent beside where `attempt`, the branch the
+/// scenario's input is chosen for, is an external branch of the command, reached by its input
+/// alone ([`arranges_external`], beyond10x/ess#464): [`unknown_identity_overlap`]'s row, where the
+/// precedence plan reads the row's `exists: false` before the addressed row's existence (`ess/22`
+/// and before it, below the one rule), so an unarranged reference would answer that branch instead
+/// (story `related-guard-wrong-state-beside-external`). `None` for every other command and branch,
+/// whose scenario is reached as before.
+pub(super) fn unknown_beside_external(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    attempt: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Option<Result<(Arrangement, BoundInput), RefusalCause>> {
+    absent_before_external(ir, command, attempt, Phase::Existence)
+        .then(|| unknown_identity_overlap(ir, command, actors))
 }
 
 /// The first branch of the command acting on an existing row the input names, and that input.
@@ -4330,8 +4426,8 @@ fn with_row_where(
     };
     // On a row `admits` takes, the first input tried that selects `outcome` there — and, `strict`,
     // witnesses every quantifier over a stored collection element by element.
-    let selecting = |node: &Arrangement,
-                     strict: bool|
+    let selecting_on = |node: &Arrangement,
+                        strict: bool|
      -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
         if !admits(node) {
             return Ok(None);
@@ -4409,6 +4505,33 @@ fn with_row_where(
             .unwrap_or_default()
             .into_iter()
             .find_map(|input| takes(&input)))
+    };
+    // A row that selects `outcome` only through a step setting off a binding that writes what the
+    // guards read holds those values until the binding runs, and a target running it at once
+    // answers otherwise: it is passed over, and the first such binding named where nothing else
+    // is found ([`rewritten`]). The steps before the send are the row's own, the branch's own
+    // arrangement (`known`) and the rows beside.
+    let read = rewritten::read(ir, entity, &predicates);
+    let before: Vec<&[super::ScenarioStep]> = std::iter::once(known)
+        .chain(
+            around
+                .map_or(&[][..], |around| around.rows)
+                .iter()
+                .map(|other| other.row.steps.as_slice()),
+        )
+        .collect();
+    let passed: RefCell<Option<rewritten::Rewrite>> = RefCell::new(None);
+    let selecting = |node: &Arrangement,
+                     strict: bool|
+     -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
+        let found = selecting_on(node, strict)?;
+        if found.is_some() {
+            if let Some(rewrite) = rewritten::rewriting(ir, entity, &read, node, &before) {
+                passed.borrow_mut().get_or_insert(rewrite);
+                return Ok(None);
+            }
+        }
+        Ok(found)
     };
     // The row is steered toward the values the decided input fields hold, beside the command's own
     // predicates (beyond10x/ess#521); with none decided, the hints are those predicates alone.
@@ -4503,10 +4626,14 @@ fn with_row_where(
     // Where no pin speaks for one, a row of an owned entity is searched for under the row a search
     // is advancing that owns it ([`subject_fact::holding`], beyond10x/ess#553): the review a seal
     // stores, filed under the incident it seals, whose own commands read that incident.
-    let (row, input) = match run(None) {
-        Ok(found) => found,
-        Err(cause) => retry_under(ir, entity, (pins, known), cause, run)?,
+    let found = match run(None) {
+        Ok(found) => Ok(found),
+        Err(cause) => retry_under(ir, entity, (pins, known), cause, run),
     };
+    let (row, input) = found.map_err(|cause| match passed.take() {
+        Some(rewrite) => rewritten::refused(command, outcome, entity, &rewrite, &cause),
+        None => cause,
+    })?;
     Ok((row, first, input))
 }
 

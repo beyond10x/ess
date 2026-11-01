@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Synthesis no longer sends a `when_related:` branch for a related row that only a step setting off a binding selects, where that binding's command writes a field or the state the guard reads, or removes the row: the model interpreter runs the binding before the send and answers another branch. Such a row is passed over for one no binding rewrites, and where none is found the branch is refused as `ESS-SYNTH-003` naming the step, the binding and the command it invokes. A model whose bindings write nothing a related guard reads keeps its suite bytes.
+- A `when_related:` command whose input is chosen for an external branch, where the precedence plan reads the related row's `exists: false` before the addressed row's existence or held state (`ess/22` with `wrong_state:` beside an external branch, and under exchanged phase orders), sends its unknown-identity scenario and its held-state refusals beside a present related row that selects the first branch read after that phase, where it sent a reference no row carries and the target answered `exists: false` instead of the refusal. A model with such a command and no `wrong_state:` (in this repository `claim-search/related.yaml`) moves its suite bytes: its held-state refusals, which assert only that the command is refused, now name a present row, so the held state is what refuses them; every other model keeps its bytes.
+
 ## [0.80.0] — 2026-11-01
 
 ### Added
