@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- The arranged half of an input refusal on a command that addresses an existing record, where no identity view shows the arranged row, sends the addressing branch's own valid input for that record after the refused send and requires that branch, so a target that changes the record on refusal and publishes nothing fails it; it required only the error and no event, and such a target passed. Where that branch has no valid send, the scenario is withdrawn and refused as `ESS-SYNTH-001` naming the branch (beyond10x/ess#209). A model with an identity view keeps its suite bytes.
+- The arranged half of an input refusal on a command that addresses an existing record, where no identity view shows the arranged row, sends after the refused send a valid input for that record of the first branch that addresses it from the state it was arranged in, and requires that branch, so a target that moves the record on refusal out of every state that branch runs from, or otherwise changes what it answers, and publishes nothing fails it; it required only the error and no event, and such a target passed. A move between two states that branch runs from is still not seen. Where no such branch has a valid send, the scenario is withdrawn and refused as `ESS-SYNTH-001` naming the branches tried (beyond10x/ess#209). A model with an identity view keeps its suite bytes.
 
 ## [0.81.0] — 2026-11-01
 
