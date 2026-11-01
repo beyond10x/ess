@@ -14,7 +14,7 @@ relations:
 - decides: story:related-guard-wrong-state-beside-external
 - decides: story:wrong-state-witness-unknown-and-own-stored-guards
 - decides: story:the-published-schema-admits-the-name-aliases-the-parser-reads
-revision: 2
+revision: 3
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-01T13:05:38Z", actor: "human:timo", revision: 2}
 ---
@@ -130,3 +130,17 @@ Scratch root `~/.cache/ess-d350-wave/`; trees under the worktree manager's `b10x
 
 Pre-flight 2026-11-01: / 92G free of 848G; one other cargo process machine-wide; the earlier ess
 trees hold no `target/` (all 0 or 4K).
+
+## Build slots
+
+Host build slots the orchestrator relayed for this wave, 2026-11-01:
+
+- Host-monitor D132, relayed by the orchestrator: "go: host-monitor D132 granted your slot for U2,
+  U3 and U4 phase 2, on the targets and sizes you sent." Requested: U2 ess-conformance `--lib` and
+  14 named `--test` targets (estimated 8G of `target/`), U3 `--lib` and 9 named `--test` targets
+  (estimated 6G), U4 phase 2 `xtask schema` and ess-cli `schema*` tests (estimated 10G). U1 and U4
+  phase 1 build no ess-conformance and ran without a slot.
+- Terms: one build at a time through the host's build slot, debuginfo 0; before each command / at
+  80G free or more, at most one other cargo, the tree's `target/` under 15G; a step stops when / falls
+  under 70G while it runs; start, end, peak `target/` and lowest / are reported per step. The wave's
+  cargo wrapper enforces the checks and the in-step stop and records each step.
