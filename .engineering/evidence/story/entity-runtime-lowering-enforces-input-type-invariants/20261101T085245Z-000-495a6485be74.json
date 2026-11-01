@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-01T08:52:45Z",
+  "actor": "human:timo",
+  "artifact": "story:entity-runtime-lowering-enforces-input-type-invariants",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-entity-runtime --locked --test adversary_alphabet_count_pass1: base 1628ffb34 FAILED 7/9 (input-only invariant on creation not refused, on update not a precondition), unit 453cdd71a ok 10/10; lib+lowering+lowerable_subset+lowered_definitions_table+adversary_guards_lowering ok; verdict VERIFIED (D343 U2 scratch red.log vs gate2.log)"
+  }
+}
