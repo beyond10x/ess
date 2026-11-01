@@ -114,18 +114,68 @@ fn f2_a_binding_that_rewrites_the_arranged_row_is_followed() {
         ),
     ]);
     let synthesis = synthesize(&ir);
-    // The binding's refusal-policy scenario is now refused by name, which is this wave's part.
-    // The outcome scenario `Give/outcome/not-flagged` already failed on the released 0.72.0: the
-    // related-guard arrangement treats the row its steps leave as final and does not follow a
-    // binding those steps set off. Pinned as the one known failure until
-    // story:an-outcome-arrangement-follows-the-bindings-its-steps-set-off lands; that story
-    // empties this list.
+    // The binding's refusal-policy scenario is refused by name. The outcome scenario
+    // `Give/outcome/not-flagged` failed from 0.72.0 on, because the related-guard arrangement
+    // treated the row its steps leave as final; every row that selects it is arranged through
+    // `Lower`, whose binding writes the flag back, so it is now refused naming that binding.
     let failures = failing(&ir, &synthesis);
     assert_eq!(
-        failures.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["demo.d.Give/outcome/not-flagged"],
-        "{failures:#?}"
+        failures,
+        BTreeMap::new(),
+        "story:an-outcome-arrangement-follows-the-bindings-its-steps-set-off: no scenario whose \
+         arranged row a binding rewrites is sent"
     );
+    let refused: Vec<String> = refusals(&synthesis)
+        .into_iter()
+        .filter(|refusal| refusal.contains("`demo.d.Give/outcome/not-flagged`"))
+        .collect();
+    assert_eq!(refused.len(), 1, "{:#?}", refusals(&synthesis));
+    assert!(
+        refused[0].contains("ESS-SYNTH-003")
+            && refused[0].contains("`demo.d.Lower`")
+            && refused[0].contains("`raise-on-lowered`")
+            && refused[0].contains("`flag`"),
+        "story:an-outcome-arrangement-follows-the-bindings-its-steps-set-off: the refusal names \
+         the binding that rewrites the row: {}",
+        refused[0]
+    );
+}
+
+/// The same model with a second creator, `DefineLowered`, that creates a grant with `flag ==
+/// false` and publishes nothing a binding answers. The row `Lower` leaves is passed over, as
+/// above, and the search goes on to that creator: `Give/outcome/not-flagged` is synthesized on its
+/// row, names no `Lower`, and every scenario passes.
+#[test]
+fn f2_a_row_no_binding_rewrites_is_still_arranged() {
+    let components = include_str!("fixtures/adversary-0730/restoring-binding/components.yaml")
+        .replacen(
+            "demo.d.DefineGrant,",
+            "demo.d.DefineGrant, demo.d.DefineLowered,",
+            1,
+        );
+    let domain = include_str!("fixtures/adversary-0730/restoring-binding/domains/d.yaml").replacen(
+        "  - name: demo.d.Lower\n",
+        "  - name: demo.d.DefineLowered\n    input: []\n    outcomes:\n      - name: defined\n        creates: demo.d.Grant\n        instance: grant_id\n        emits: [demo.d.GrantDefined]\n        payload: {demo.d.GrantDefined: {grant_id: {generated: true}}}\n        sets: {flag: false}\n  - name: demo.d.Lower\n",
+        1,
+    );
+    assert!(domain.contains("demo.d.DefineLowered") && components.contains("DefineLowered"));
+    let ir = model(&[
+        ("system.yaml", &system("demo.d")),
+        ("components.yaml", &components),
+        ("domains/d.yaml", &domain),
+    ]);
+    let synthesis = synthesize(&ir);
+    let steps = steps_of(&synthesis, "demo.d.Give/outcome/not-flagged");
+    let sent: Vec<&str> = steps
+        .iter()
+        .filter(|step| step["step"] == "execute_command")
+        .filter_map(|step| step["command"].as_str())
+        .collect();
+    assert!(
+        sent.contains(&"demo.d.DefineLowered") && !sent.contains(&"demo.d.Lower"),
+        "story:an-outcome-arrangement-follows-the-bindings-its-steps-set-off: {steps:#?}"
+    );
+    assert_eq!(failing(&ir, &synthesis), BTreeMap::new());
 }
 
 /// F3 (U3). The fixture of `a_predicate_refusal_policy_is_forced_through_an_arranged_row`, with

@@ -7,6 +7,8 @@
 //!   present-related and accepting phases exchanged.
 //! * Every related-guard model of the unit's tests, synthesized and interpreted under each of
 //!   several exchanged phase orders, passes on the interpreter reading the same order.
+//! * `CheckPick` in ess/22 with `wrong_state:` beside the external `unlisted` (A4, A4b, A4c), open
+//!   until story:related-guard-wrong-state-beside-external closed them.
 //!
 //! The cases this pass left open are in `adversary_selection_plan_w5_u4_pass1_open.rs`, ignored.
 use std::collections::BTreeMap;
@@ -17,7 +19,7 @@ use ess_conformance::interpret::Interpreted;
 use ess_conformance::report::Status;
 use ess_conformance::scenario::ConformanceSuite;
 use ess_conformance::synthesize::Synthesis;
-use ess_conformance::{AdmittedSuite, ConformanceScenario, Runner};
+use ess_conformance::{AdmittedSuite, ConformanceScenario, Runner, ScenarioStep, ScenarioValue};
 use ess_domain::command::precedence::{with_phase_order, Phase};
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
@@ -418,4 +420,91 @@ fn a4d_desk_ess22_wrong_state_without_the_external_passes() {
     let model = ir(&text);
     let result = ess_conformance::synthesize::synthesize(&model);
     assert_eq!(not_passed(model, &result.suite), Vec::<String>::new());
+}
+
+/// The input field `field` of the last `command` send in `scenario`.
+fn last_sent(scenario: &ConformanceScenario, command: &str, field: &str) -> ScenarioValue {
+    scenario
+        .steps
+        .iter()
+        .rev()
+        .find_map(|step| match step {
+            ScenarioStep::ExecuteCommand {
+                command: sent,
+                input,
+                ..
+            } if sent.name().to_string() == command => Some(input[field].clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no send of {command}: {scenario:#?}"))
+}
+
+const STALE: &str = "      - name: stale
+        when_related:
+          via: input.list_id
+          predicate: revision != input.revision
+        error: demo.desk.Stale
+";
+
+/// [`DESK`] in ess/22 with `wrong_state:` and `stale` declared after the external `unlisted`: the
+/// plan reads `stale` at step 5, before `unlisted`, so the forced `unlisted` witness must refute it.
+fn desk22_stale_after_with_wrong_state() -> String {
+    let text = DESK.replace("format: ess/20", "format: ess/22");
+    let text = replaced(&text, STALE, "");
+    let text = replaced(
+        &text,
+        "      - name: accepted\n",
+        &format!("{STALE}      - {{name: wrong-state, wrong_state: true, error: demo.desk.NotPicked}}\n      - name: accepted\n"),
+    );
+    assert!(text.find("name: unlisted") < text.find("name: stale"));
+    text
+}
+
+/// A4 (moved here from the open cases when
+/// story:related-guard-wrong-state-beside-external closed it): every scenario of that model passes
+/// on the interpreter, in the real order and under each exchanged order.
+#[test]
+fn a4_desk_ess22_stale_after_external_beside_wrong_state_passes() {
+    let model = ir(&desk22_stale_after_with_wrong_state());
+    let result = ess_conformance::synthesize::synthesize(&model);
+    scenario(&result, "demo.desk.CheckPick/outcome/unlisted");
+    assert_eq!(
+        not_passed(model, &result.suite),
+        Vec::<String>::new(),
+        "story:related-guard-wrong-state-beside-external"
+    );
+    assert_eq!(
+        exchanged_failures(&desk22_stale_after_with_wrong_state()),
+        Vec::<String>::new(),
+        "story:related-guard-wrong-state-beside-external"
+    );
+}
+
+/// A4b (moved here with A4): the same with `stale` declared before the external: every scenario
+/// passes.
+#[test]
+fn a4b_desk_ess22_stale_before_external_beside_wrong_state_passes() {
+    let model = ir(&desk22_with_wrong_state());
+    let result = ess_conformance::synthesize::synthesize(&model);
+    assert_eq!(
+        not_passed(model, &result.suite),
+        Vec::<String>::new(),
+        "story:related-guard-wrong-state-beside-external"
+    );
+}
+
+/// A4c (moved here with A4): the `wrong-state` scenario of [`desk22_with_wrong_state`] names, in
+/// its last `CheckPick` send, a list an earlier step bound: a `list_id` no row carries is answered
+/// `no-list` at step 1, before the held state.
+#[test]
+fn a4c_desk_ess22_wrong_state_send_names_an_arranged_list() {
+    let model = ir(&desk22_with_wrong_state());
+    let result = ess_conformance::synthesize::synthesize(&model);
+    let wrong = scenario(&result, "demo.desk.CheckPick/outcome/wrong-state");
+    let sent = last_sent(wrong, "demo.desk.CheckPick", "list_id");
+    assert!(
+        matches!(sent, ScenarioValue::Instance { .. }),
+        "story:related-guard-wrong-state-beside-external: list_id sent as {sent:?}; steps: {:#?}",
+        wrong.steps
+    );
 }
