@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-01T10:20:28Z",
+  "actor": "human:timo",
+  "artifact": "story:an-identity-guard-below-unknown-instance-is-decided-on-the-row-sent",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-d343-u3-pass-1",
+    "reference": "3db8d0d84 merged 0459d1eba (F1, F4); F2, F3 out of scope",
+    "review": "review-result:adversary-d343-u3-pass-1",
+    "outcome": "fixed"
+  }
+}
