@@ -4338,19 +4338,10 @@ fn with_row_where(
         }
         // The input as it is sent: every field naming a row whose identity a guard reads holds
         // that row's identity — this row's, and each row's beside it (beyond10x/ess#693).
-        let takes = |input: &BTreeMap<String, Node>| {
-            let mut input = input.clone();
-            if let Some(via) = own_via {
-                on_row(ir, &mut input, via, node);
-            }
-            for other in around.map_or(&[][..], |around| around.rows) {
-                if guards_read(&guards, other.via) {
-                    on_row(ir, &mut input, other.via, &other.row);
-                }
-            }
-            (meets(node, &input)
-                && around.is_none_or(|around| around.admits(ir, &input))
-                && chooses(ir, command, outcome, entity, node, &input)
+        let decides = |input: &BTreeMap<String, Node>| {
+            meets(node, input)
+                && around.is_none_or(|around| around.admits(ir, input))
+                && chooses(ir, command, outcome, entity, node, input)
                 && (!strict
                     || subject_fact::witnesses_elements(
                         ir,
@@ -4358,9 +4349,48 @@ fn with_row_where(
                         entity,
                         &predicates,
                         node,
-                        &input,
-                    )))
-            .then_some(input)
+                        input,
+                    ))
+        };
+        let takes = |input: &BTreeMap<String, Node>| {
+            let mut input = input.clone();
+            if let Some(via) = own_via {
+                on_row(ir, &mut input, via, node);
+            }
+            let rows = around.map_or(&[][..], |around| around.rows);
+            let mut same = input.clone();
+            for other in rows {
+                if guards_read(&guards, other.via) {
+                    on_row(ir, &mut input, other.via, &other.row);
+                }
+            }
+            if decides(&input) {
+                return Some(input);
+            }
+            // A guard reading this row's input beside another input naming a row of the same
+            // entity, `input.app_id == input.peer_id`, may need one row named through both: the
+            // send naming this row through each such input is tried too, where the branch is left
+            // to answer on this row read through it (beyond10x/ess#693).
+            own_via.and_then(|_| created_identity(ir, &node.steps, &node.instance))?;
+            let mut renamed = Vec::new();
+            for other in rows {
+                if !guards_read(&guards, other.via) {
+                    continue;
+                }
+                if other.entity == entity {
+                    on_row(ir, &mut same, other.via, node);
+                    renamed.push(other.via.field());
+                } else {
+                    on_row(ir, &mut same, other.via, &other.row);
+                }
+            }
+            (!renamed.is_empty()
+                && decides(&same)
+                && renamed.iter().all(|field| {
+                    leaves_to(ir, (command, outcome), (field, entity, node), Some(&same))
+                        .is_ok_and(|truth| truth == Truth::True)
+                }))
+            .then_some(same)
         };
         let found = if let Some(chosen) = chosen {
             takes(chosen)

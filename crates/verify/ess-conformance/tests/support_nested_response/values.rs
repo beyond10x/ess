@@ -298,7 +298,7 @@ fn response_conversion_on_leaf_or_ancestor_is_an_explicit_synthesis_refusal() {
 }
 
 #[test]
-fn source_binary64_sibling_keeps_the_existing_explicit_model_refusal() {
+fn source_binary64_sibling_is_admitted_now_a_finite_binary64_round_trips() {
     let text = MODEL
         .replacen(
             "      - {name: value, type: Integer}",
@@ -310,7 +310,13 @@ fn source_binary64_sibling_keeps_the_existing_explicit_model_refusal() {
             "              value: {response: value}\n              real: {generated: true}",
         );
     let ir = super::model(&text.replace("ess/14", "ess/15"));
-    assert!(ess_conformance::admission::model(&ir).is_err());
+    let admitted = ess_conformance::admission::model(&ir);
+    assert!(
+        admitted.is_ok(),
+        "story:a-binary64-value-round-trips-through-a-conformance-suite: a finite Binary64 sibling \
+         was refused by admission before 0.79.0 and is admitted from it: {:?}",
+        admitted.err()
+    );
 }
 
 #[test]

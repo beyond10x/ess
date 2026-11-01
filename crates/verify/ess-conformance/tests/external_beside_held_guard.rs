@@ -866,6 +866,10 @@ fn unclaimed_external_witnesses_keep_their_bytes() {
 /// refusals, `Deploy/frozen` now listed last, the suite unchanged. The suite and refusals of
 /// `generated-views.yaml` were re-pinned on the 0.70.0 integration branch: a `Decimal` in a
 /// complete subject is observed (suite/58), so its one refusal became a scenario (unit E, 44268b2d6).
+/// The suite and refusals of `text-length-positions.yaml` were re-pinned on the 0.79.0 integration
+/// branch to the bytes table: a finite `Binary64` is carried through a suite at /62 and /63, so its
+/// one whole-model refusal became scenarios (unit U3, 915fe1fca,
+/// story:a-binary64-value-round-trips-through-a-conformance-suite).
 const BASE: &str = include_str!("fixtures/external-beside-held-guard-base.tsv");
 
 fn root() -> PathBuf {
