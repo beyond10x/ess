@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.81.0 — 2026-11-01
+
+### Nullable Binary64 fields in generated types, name aliases in the schema, and synthesis that follows bindings
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/nullable-binary64-and-binding-aware-synthesis) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.81.0)
+
+ess generate types realizes a nullable Optional\<Binary64> field and refuses a responseless command's response root by name. The schema admits the id: and component: name aliases. Synthesis follows bindings that rewrite a related row, sends refusals beside external branches to a present related row, and picks wrong-state rows with known stored guards.
+
 ## 0.80.0 — 2026-11-01
 
 ### HTTP-bound inputs and short names in generated types, and input-type rules in Entity Runtime

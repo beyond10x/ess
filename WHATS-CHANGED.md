@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.81.0](#nullable-binary64-fields-in-generated-types-name-aliases-in-the-schema-and-synthesis-that-follows-bindings) | Nullable Binary64 fields in generated types, name aliases in the schema, and synthesis that follows bindings | capability | notable |
 | [0.80.0](#http-bound-inputs-and-short-names-in-generated-types-and-input-type-rules-in-entity-runtime) | HTTP-bound inputs and short names in generated types, and input-type rules in Entity Runtime | capability | notable |
 | [0.79.0](#nested-member-claims-binary64-in-conformance-suites-and-typed-authored-inputs) | Nested-member claims, Binary64 in conformance suites, and typed authored inputs | capability | notable |
 | [0.78.0](#structured-input-examples-rows-a-deployment-provides-and-lifecycle-summaries) | Structured input examples, rows a deployment provides, and lifecycle summaries | capability | notable |
@@ -91,6 +92,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.81.0 — 2026-11-01
+
+### Nullable Binary64 fields in generated types, name aliases in the schema, and synthesis that follows bindings
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.81.0)
+
+ess generate types realizes a nullable Optional<Binary64> field and refuses a responseless command's response root by name. The schema admits the id: and component: name aliases. Synthesis follows bindings that rewrite a related row, sends refusals beside external branches to a present related row, and picks wrong-state rows with known stored guards.
 
 ## 0.80.0 — 2026-11-01
 
