@@ -548,6 +548,12 @@ pub enum LoweringCode {
     /// spells them apart, so a lowered definition would store and answer the declared name where
     /// the specification promises the wire spelling.
     StateWireNameUnsupported,
+    /// A creation's input type declares an invariant or a `prefix:` the creation does not hold by
+    /// writing the input into a field of that type. ESS admits an input only when its type's rules
+    /// hold; an entity-core creation has no precondition slot (`CreateDefinition`), and an outcome's
+    /// `when` would change which branch answers, so the rule would be dropped. An update's input
+    /// rules lower to the operation's preconditions over `$args.input.<field>`.
+    InputInvariantUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -1982,6 +1988,11 @@ impl Projector<'_> {
             },
             &format!("{command_path}.response"),
         );
+        let preconditions = self.input_type_rules(
+            command,
+            is_create,
+            is_create.then_some((&entity.identity.type_ref, &identities)),
+        );
 
         let mut compiled = Vec::new();
         let mut operation_fields = BTreeMap::new();
@@ -2168,7 +2179,7 @@ impl Projector<'_> {
                 OperationDefinition {
                     arguments,
                     transitions: Vec::new(),
-                    preconditions: Vec::new(),
+                    preconditions,
                     set: BTreeMap::new(),
                     emits: Vec::new(),
                     response: response_schema,
@@ -2177,6 +2188,62 @@ impl Projector<'_> {
             );
         }
         true
+    }
+
+    /// The rules of each input's type (its `invariants:` and `prefix:`, at every layer and member)
+    /// that no stored field holds, as rules over `$args.input.<field>`
+    /// (`story:entity-runtime-lowering-enforces-input-type-invariants`). ESS admits an input only
+    /// when its type's rules hold; the input schema carries its shape and alphabets only.
+    ///
+    /// An input every accepting branch writes into a field of its own type (a `sets:` entry, or a
+    /// creation's identity) needs none: the field's rules are the type's, entity-core checks them
+    /// on the row it writes, and a refusing branch answers before the operation's preconditions
+    /// are read either way. For an update the rest are the operation's preconditions. A creation
+    /// has no precondition slot, and an outcome's `when` would change which branch answers, so
+    /// each input carrying one is refused by name under
+    /// [`LoweringCode::InputInvariantUnsupported`] and nothing is returned for it.
+    fn input_type_rules(
+        &mut self,
+        command: &ResolvedCommand,
+        is_create: bool,
+        identity: Option<(&ResolvedTypeRef, &BTreeMap<OutcomeName, IdentityValue>)>,
+    ) -> Vec<RuleDefinition> {
+        let mut rules = Vec::new();
+        for field in &command.input {
+            if stored_on_every_accepting_branch(command, field, identity) {
+                continue;
+            }
+            let semantic_path = format!("{}.input.{}", command.name, field.name);
+            let before = rules.len();
+            self.lower_nominal_invariants(
+                &field.type_ref,
+                &format!("$args.input.{}", field.name),
+                Placement::root(field.type_ref.is_optional()),
+                &semantic_path,
+                &mut Vec::new(),
+                &mut rules,
+            );
+            if is_create && rules.len() > before {
+                let unheld = rules
+                    .split_off(before)
+                    .into_iter()
+                    .filter_map(|rule| rule.message)
+                    .map(|message| format!("`{message}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.diagnostic(
+                    LoweringCode::InputInvariantUnsupported,
+                    &semantic_path,
+                    format!(
+                        "the input's type requires {unheld}, which ESS checks before it admits the \
+                         input; an Entity Runtime creation has no precondition, no field of that \
+                         type stores the input on every accepting branch, and an outcome guard \
+                         would change which branch answers"
+                    ),
+                );
+            }
+        }
+        rules
     }
 
     fn schema_for_fields(
@@ -4011,6 +4078,49 @@ fn map_key(primitive: Primitive) -> MapKey {
             unreachable!("a Json value is refused as a map key while the document is read")
         }
     }
+}
+
+/// Whether every accepting branch of `command` writes the input `field` unchanged into a field of
+/// the input's own type — a `sets:` entry, or on a creation the identity `identity` names with its
+/// type and each branch's value — so the field's rules, the type's, hold on every row it writes. A
+/// command with no accepting branch stores nothing.
+fn stored_on_every_accepting_branch(
+    command: &ResolvedCommand,
+    field: &ResolvedField,
+    identity: Option<(&ResolvedTypeRef, &BTreeMap<OutcomeName, IdentityValue>)>,
+) -> bool {
+    fn bare(type_ref: &ResolvedTypeRef) -> &ResolvedTypeRef {
+        match type_ref {
+            ResolvedTypeRef::Optional { of } => of,
+            other => other,
+        }
+    }
+    let input_type = bare(&field.type_ref);
+    let mut accepting = command
+        .outcomes
+        .iter()
+        .filter(|outcome| outcome.error.is_none() && outcome.subject.is_some())
+        .peekable();
+    accepting.peek().is_some()
+        && accepting.all(|outcome| {
+            let in_identity = identity.is_some_and(|(type_ref, values)| {
+                bare(type_ref) == input_type
+                    && matches!(
+                        values.get(&outcome.name),
+                        Some(IdentityValue::InputField { field: read }) if *read == field.name
+                    )
+            });
+            in_identity
+                || outcome.sets.iter().any(|set| {
+                    set.conversion.is_none()
+                        && bare(&set.target_type) == input_type
+                        && matches!(
+                            &set.value,
+                            ResolvedPayloadValue::InputField { field: read, .. }
+                                if *read == field.name
+                        )
+                })
+        })
 }
 
 fn optional_guard(path: &str, condition: Condition) -> Condition {

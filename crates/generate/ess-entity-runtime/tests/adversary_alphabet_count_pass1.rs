@@ -189,11 +189,23 @@ fn run_arguments(binding: &CommandBinding) -> Value {
 
 /// What entity-core decides for `Run` creating a `Child`, with `input` merged over the defaults.
 fn create_child(lowered: &LoweredService, input: &Value) -> Result<Evaluation, CoreError> {
+    create_child_at(
+        lowered,
+        &json!("278f4f3a-c8b8-4e86-9a16-2c385910fc68"),
+        input,
+    )
+}
+
+/// [`create_child`] for the `Child` whose logical identity is `logical_id`.
+fn create_child_at(
+    lowered: &LoweredService,
+    logical_id: &Value,
+    input: &Value,
+) -> Result<Evaluation, CoreError> {
     let registry = registry(lowered);
     let runtime = Runtime::new(&registry);
     let binding = &lowered.bindings().commands()[&name("contract.local.Run")];
-    let logical_id = json!("278f4f3a-c8b8-4e86-9a16-2c385910fc68");
-    let storage_id = identity::address(FieldKind::String, &logical_id).expect("identity address");
+    let storage_id = identity::address(FieldKind::String, logical_id).expect("identity address");
     let mut arguments = run_arguments(binding);
     for (key, value) in input.as_object().expect("input is an object") {
         arguments["input"][key] = value.clone();
@@ -286,13 +298,19 @@ fn invoice_row(fields: &[(&str, Value)]) -> EntityInstance {
 /// What the lowered `CancelInvoice` takes for `row`, called with `sent` as the input `note`:
 /// `refused…` when `posted` is taken, `cancelled` when it is not.
 fn cancel_taken(lowered: &LoweredService, sent: &str, row: &EntityInstance) -> String {
+    cancel_with(
+        lowered,
+        &json!({"invoice_id": "b404a1e8-9360-4af5-a0ac-8a483adfa225", "note": sent}),
+        row,
+    )
+}
+
+/// What the lowered `CancelInvoice` takes for `row`, called with `input`.
+fn cancel_with(lowered: &LoweredService, input: &Value, row: &EntityInstance) -> String {
     let registry = registry(lowered);
     let runtime = Runtime::new(&registry);
     // `CancelInvoice` has no slot either branch fills before load, as `tests/lowering.rs` sends it.
-    let arguments = json!({
-        "input": {"invoice_id": "b404a1e8-9360-4af5-a0ac-8a483adfa225", "note": sent},
-        "bound": {}
-    });
+    let arguments = json!({"input": input, "bound": {}});
     match runtime.decide_before_load(
         &row.entity,
         row.version,
@@ -565,17 +583,13 @@ fn adv_a_response_alphabet_behind_an_optional_struct_member_is_refused_by_name()
     );
 }
 
-/// A String type's `value.count` invariant on an input the command does not store. ESS admits an
-/// input only when its type's invariants hold, so `"abcd"` is not a `Label`; the lowering puts a
-/// type's invariants on stored fields only (`lower_nominal_invariants` runs for the entity's
-/// identity and fields), so entity-core takes the creation with it.
-///
-/// That gap predates the alphabet and text-count lowering and covers every invariant of an
-/// unstored input's type, so it is `story:entity-runtime-lowering-enforces-input-type-invariants`.
-/// This case pins today's behaviour: the invariant is not enforced. When that story lands, flip it
-/// to assert that entity-core refuses `"abcd"` (or that the lowering refuses the rule by name).
+/// A String type's `value.count` invariant on an input a creation does not store. ESS admits an
+/// input only when its type's invariants hold, so `"abcd"` is not a `Label`. An entity-core creation
+/// has no precondition slot, and an outcome's `when` would change which branch answers, so the
+/// lowering refuses the rule by name rather than dropping it
+/// (`story:entity-runtime-lowering-enforces-input-type-invariants`).
 #[test]
-fn adv_an_input_only_text_length_invariant_is_dropped_by_the_lowering_today() {
+fn adv_an_input_only_text_length_invariant_on_a_creation_is_refused_by_name() {
     let ir = contract(&[
         (
             "domains/local.yaml",
@@ -594,20 +608,170 @@ fn adv_an_input_only_text_length_invariant_is_dropped_by_the_lowering_today() {
         Truth::False,
         "ESS: `abcd` is not a `Label`"
     );
+    let refused = lower_contract(&ir)
+        .err()
+        .unwrap_or_else(|| {
+            panic!(
+                "a creation's unstored input invariant is refused by name, never dropped \
+                 (story:entity-runtime-lowering-enforces-input-type-invariants)"
+            )
+        })
+        .into_vec();
+    assert_eq!(
+        refused
+            .iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.path.as_str()))
+            .collect::<Vec<_>>(),
+        [(
+            LoweringCode::InputInvariantUnsupported,
+            "contract.local.Run.input.label"
+        )],
+        "story:entity-runtime-lowering-enforces-input-type-invariants: {refused:#?}"
+    );
+}
+
+/// A creation that writes the input into a field of the input's own type holds the type's rules on
+/// every row it writes, as an entity rule: entity-core refuses `"abcd"` there, so the lowering
+/// keeps the creation (`story:entity-runtime-lowering-enforces-input-type-invariants`).
+#[test]
+fn adv_a_creation_input_stored_in_a_field_of_its_type_keeps_the_rule_on_the_row() {
+    let ir = contract(&[(
+        "domains/local.yaml",
+        SHARED,
+        "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n    invariants: [value.count <= 3]\n",
+    )])
+    .unwrap_or_else(|errors| panic!("the input compiles: {errors}"));
     let lowered = lower_contract(&ir).unwrap_or_else(|refused| {
         panic!(
-            "today the lowering drops an unstored input's type invariants rather than refusing \
-             them; if it now refuses them, \
-             story:entity-runtime-lowering-enforces-input-type-invariants has landed and this \
-             case flips: {refused:?}"
+            "`note` is stored into `Child.note: Shared` on the creation's one accepting branch, so \
+             its rule holds on the row: story:entity-runtime-lowering-enforces-input-type-invariants \
+             {refused:?}"
         )
     });
-    accepted(create_child(&lowered, &json!({"label": "abc"}))).expect("`abc` is a `Label`");
-    let outcome = create_child(&lowered, &json!({"label": "abcd"}));
+    accepted(create_child(&lowered, &json!({"note": "abc"}))).expect("`abc` is a `Shared`");
     assert!(
-        accepted(outcome).is_ok(),
-        "entity-core now refuses `label: \"abcd\"`, which ESS does not admit as a `Label`: \
-         story:entity-runtime-lowering-enforces-input-type-invariants has landed, so flip this case \
-         to assert the refusal"
+        accepted(create_child(&lowered, &json!({"note": "abcd"}))).is_err(),
+        "entity-core refuses `note: \"abcd\"`, which ESS does not admit as a `Shared`: \
+         story:entity-runtime-lowering-enforces-input-type-invariants"
+    );
+}
+
+/// A creation whose identity is the input holds the identity type's rules on the row it writes, so
+/// the lowering keeps it and entity-core refuses an identity ESS does not admit
+/// (`story:entity-runtime-lowering-enforces-input-type-invariants`).
+#[test]
+fn adv_a_creation_identity_taken_from_the_input_keeps_the_rule_on_the_row() {
+    let ir = contract(&[
+        (
+            "domains/local.yaml",
+            "  - name: contract.local.ChildId\n    kind: newtype\n    of: Uuid\n",
+            "  - name: contract.local.ChildId\n    kind: newtype\n    of: String\n    invariants: [value.count <= 3]\n",
+        ),
+        (
+            "domains/local.yaml",
+            "      - name: note\n        type: contract.local.Shared\n    response:",
+            "      - name: note\n        type: contract.local.Shared\n      - name: child_id\n        type: contract.local.ChildId\n    response:",
+        ),
+        (
+            "domains/local.yaml",
+            "            child_id: {generated: true}\n",
+            "            child_id: input.child_id\n",
+        ),
+        (
+            "wiring.yaml",
+            "      note: event.note\n    delivery: at_most_once",
+            "      note: event.note\n      child_id: abc\n    delivery: at_most_once",
+        ),
+    ])
+    .unwrap_or_else(|errors| panic!("the input compiles: {errors}"));
+    let lowered = lower_contract(&ir).unwrap_or_else(|refused| {
+        panic!(
+            "`child_id` is the created `Child`'s identity, so its rule holds on the row: \
+             story:entity-runtime-lowering-enforces-input-type-invariants {refused:?}"
+        )
+    });
+    accepted(create_child_at(
+        &lowered,
+        &json!("abc"),
+        &json!({"child_id": "abc"}),
+    ))
+    .expect("`abc` is a `ChildId`");
+    assert!(
+        accepted(create_child_at(
+            &lowered,
+            &json!("abcd"),
+            &json!({"child_id": "abcd"})
+        ))
+        .is_err(),
+        "entity-core refuses the identity `abcd`, which ESS does not admit as a `ChildId`: \
+         story:entity-runtime-lowering-enforces-input-type-invariants"
+    );
+}
+
+/// The billing example's `CancelInvoice` with an unstored `label: Optional<Label>` input, `Label`
+/// a String with `value.count <= 3`.
+fn labelled_cancel_ir() -> EssIr {
+    try_compile(
+        &billing_fixture(),
+        &[
+            ("system.yaml", "format: ess/1\n", "format: ess/15\n"),
+            (
+                "domains/email.yaml",
+                "            recipient: input.recipient\n",
+                "            recipient: input.recipient\n            message_id: {generated: true}\n",
+            ),
+            (
+                "domains/invoice.yaml",
+                "          billing.invoice.InvoiceCreated:\n",
+                "          billing.invoice.InvoiceCreated:\n            invoice_id: {generated: true}\n",
+            ),
+            (
+                "domains/invoice.yaml",
+                "types:\n",
+                "types:\n  - name: billing.invoice.Label\n    kind: newtype\n    of: String\n    invariants: [value.count <= 3]\n\n",
+            ),
+            (
+                "domains/invoice.yaml",
+                KEPT_INPUT,
+                "      - name: invoice_id\n        type: billing.invoice.InvoiceId\n      - name: label\n        type: Optional<billing.invoice.Label>\n\n    outcomes:\n      - name: cancelled\n",
+            ),
+        ],
+    )
+    .unwrap_or_else(|errors| panic!("the labelled cancel compiles: {errors}"))
+}
+
+/// An update has a precondition slot entity-core evaluates over the arguments, so an unstored
+/// input's type invariant lowers there: `"abcd"` is refused, `"abc"` and an absent `label` are not
+/// (`story:entity-runtime-lowering-enforces-input-type-invariants`).
+#[test]
+fn adv_an_update_holds_an_input_only_text_length_invariant_as_a_precondition() {
+    let lowered = lower_billing(&labelled_cancel_ir()).unwrap_or_else(|refused| {
+        panic!(
+            "an update's input invariant lowers to a precondition: \
+             story:entity-runtime-lowering-enforces-input-type-invariants {refused:?}"
+        )
+    });
+    let row = invoice_row(&[]);
+    let id = "b404a1e8-9360-4af5-a0ac-8a483adfa225";
+    assert_eq!(
+        cancel_with(&lowered, &json!({"invoice_id": id, "label": "abc"}), &row),
+        "cancelled",
+        "`abc` is a `Label`"
+    );
+    assert_eq!(
+        cancel_with(&lowered, &json!({"invoice_id": id}), &row),
+        "cancelled",
+        "an absent `Optional<Label>` holds every rule of `Label`"
+    );
+    assert_eq!(
+        ess_truth("value.count <= 3", &[("value", "abcd")]),
+        Truth::False,
+        "ESS: `abcd` is not a `Label`"
+    );
+    let taken = cancel_with(&lowered, &json!({"invoice_id": id, "label": "abcd"}), &row);
+    assert!(
+        taken.starts_with("error: PreconditionFailed"),
+        "entity-core refuses `label: \"abcd\"`, which ESS does not admit as a `Label` \
+         (story:entity-runtime-lowering-enforces-input-type-invariants): {taken}"
     );
 }
