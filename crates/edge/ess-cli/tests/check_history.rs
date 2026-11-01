@@ -307,6 +307,102 @@ fn lost_update_exits_1_the_reference_exits_0_and_a_spent_budget_exits_3() {
     assert_eq!(again.stdout, once_more.stdout);
 }
 
+/// `story:concurrent-history-records-inputs`: a target that accepts an input the model refuses is
+/// caught once the history records that input, and a history that does not still reads.
+///
+/// The model refuses `amount < 1` with an `error:` branch. The target answered `accepted` to
+/// `amount: -5`. With the input recorded (`ess-history/3`, with or without the call's events) the
+/// checker steps with exactly that input, which only `rejected` explains, so the verdict is
+/// `Violation`. The same call recorded without its input (`ess-history/1`) is still read, and the
+/// checker explains it with a candidate amount the model accepts, so it is `Linearizable`: the
+/// verdict that the recorded input exists to correct.
+#[test]
+fn an_accepted_input_the_model_refuses_is_a_violation_once_recorded_and_still_reads_without_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = r"
+format: ess/18
+system: pay
+version: v1
+domain: pay.core
+errors:
+  - {name: pay.core.InvalidAmount, summary: The amount is not positive.}
+events:
+  - {name: pay.core.Charged, fields: [{name: amount, type: Integer}]}
+commands:
+  - name: pay.core.Charge
+    input: [{name: amount, type: Integer}]
+    outcomes:
+      - name: accepted
+        when: amount >= 1
+        emits: [pay.core.Charged]
+        payload: {pay.core.Charged: {amount: input.amount}}
+      - name: rejected
+        error: pay.core.InvalidAmount
+";
+    let specification =
+        Specification::assemble([(Source::new("pay.yaml"), RawSpecFile::parse(source).unwrap())])
+            .unwrap();
+    let ir = compile(&specification, &SourceMap::new()).unwrap();
+    let digest = ess_conformance::scenario::SuiteProvenance::of(&ir).spec_digest;
+    let path = directory.path().join("pay.yaml");
+    std::fs::write(&path, source).unwrap();
+
+    let call = serde_json::json!({
+        "operation_id":"00000000-0000-4000-8000-000000000002", "client":0,
+        "command":"pay.core.Charge", "subject_key":"",
+        "invoked_at":1, "returned_at":2, "completion":"Returned", "outcome":"accepted"
+    });
+    let with_input = {
+        let mut it = call.clone();
+        it["input"] = serde_json::json!({"amount": -5});
+        it
+    };
+    let with_input_and_events = {
+        let mut it = with_input.clone();
+        it["events"] = serde_json::json!([{"event":"pay.core.Charged","payload":{"amount":-5}}]);
+        it["arranged"] = serde_json::json!([]);
+        it
+    };
+    for (name, format, operation, expected, verdict) in [
+        ("input", "ess-history/3", with_input, 1, "Violation"),
+        (
+            "input-and-events",
+            "ess-history/3",
+            with_input_and_events,
+            1,
+            "Violation",
+        ),
+        ("no-input", "ess-history/1", call, 0, "Linearizable"),
+    ] {
+        let document = serde_json::json!({
+            "format":format, "history_id":"00000000-0000-4000-8000-000000000001",
+            "spec_digest":digest, "seed":1, "clients":1, "operations":[operation]
+        });
+        let recorded = directory.path().join(format!("{name}.json"));
+        std::fs::write(&recorded, serde_json::to_vec(&document).unwrap()).unwrap();
+        let output = ess(&[
+            "verify",
+            "conform",
+            "check-history",
+            "--path",
+            path.to_str().unwrap(),
+            "--history",
+            recorded.to_str().unwrap(),
+        ]);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(
+            code(&output),
+            Some(expected),
+            "story:concurrent-history-records-inputs, {name} ({format}): {stdout}{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            stdout.starts_with(&format!("verdict: {verdict}\n")),
+            "story:concurrent-history-records-inputs, {name} ({format}): {stdout}"
+        );
+    }
+}
+
 #[test]
 fn a_history_recorded_against_another_specification_is_refused_with_exit_2() {
     let output = ess(&[
