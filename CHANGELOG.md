@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- A `when:` guard on the identity input of a row a branch is sent for, below a non-creating `unknown_instance:` or on the subject the branch acts on, is decided on the identity of the row the scenario arranges: the row's creator is steered onto an identity that keeps the branch, and where none does the branch is refused as `ESS-SYNTH-003` naming the guard, where the scenario was sent a row of another identity and the target answered another branch. A related row's boundary run that would create a second row under the identity such a guard steers it onto gives way to the next branch answering there, where the whole scenario was refused as `ESS-SYNTH-001` (beyond10x/ess#645, beyond10x/ess#693).
+- A `when:` guard on the identity input of a row a branch is sent for, below a non-creating `unknown_instance:` or on the subject the branch acts on, is decided on the identity of the row the scenario arranges, a compound guard by its identity parts: the row's creator is steered onto an identity that keeps the branch, and where none does the branch is refused as `ESS-SYNTH-003` naming the guard, where the scenario was sent a row of another identity and the target answered another branch. A related row's boundary run that would create a second row under the identity such a guard steers it onto gives way to the next branch answering there, where the whole scenario was refused as `ESS-SYNTH-001`. A boundary run that sends such an identity input another value, or after a `deletes:` branch removed the row, is sent a row of that identity, or is refused naming the guard and not sent, where it was sent an identity no row carries and the target answered `unknown` (beyond10x/ess#645, beyond10x/ess#693).
 
 ## [0.79.0] — 2026-11-01
 

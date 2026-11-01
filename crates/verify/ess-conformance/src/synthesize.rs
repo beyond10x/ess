@@ -5568,7 +5568,9 @@ fn identity_steered(
     (distinction, input): (Distinction, &BTreeMap<String, Node>),
 ) -> Result<Arrangement, RefusalCause> {
     let guards = input_guards(command);
-    let hints = related_guard::onto_identity(ir, entity, &guards, field);
+    // A compound guard steers by its identity parts (`related_guard::identity_parts`).
+    let parts = related_guard::identity_parts(&guards, field);
+    let hints = related_guard::onto_identity(ir, entity, &parts, field);
     let decided = guards
         .iter()
         .filter(|guard| {
@@ -17658,11 +17660,39 @@ fn boundaries(
         for field in primary.keys().filter(|field| !row.contains_key(*field)) {
             supplied.remove(field);
         }
-        if let Some(subject) = outcome
+        // A row moving the identity input a non-creating `unknown_instance:` answering first
+        // reads is sent a row created under that identity, or refused naming the guard and not
+        // sent: a literal identity no row carries is answered `unknown`
+        // (story:an-identity-guard-below-unknown-instance-is-decided-on-the-row-sent).
+        let prior = [steps, out.0.as_slice()].concat();
+        let identity_row = match identity_boundary_row(
+            ir,
+            command,
+            outcome,
+            actors,
+            (run, &row, &primary, &prior),
+            &mut taken,
+        ) {
+            Some(Ok(found)) => Some(found),
+            Some(Err(cause)) => {
+                refusals.push(Refusal::beside(id, cause));
+                continue;
+            }
+            None => None,
+        };
+        let transition = outcome
             .subject
             .as_ref()
-            .filter(|subject| subject.effect.transition().is_some())
-        {
+            .filter(|subject| subject.effect.transition().is_some());
+        if let Some((field, mut arrangement)) = identity_row {
+            models.mark(caller::InvocationPhase::Arrange, &mut arrangement.steps);
+            out.0.extend(arrangement.steps);
+            out.1.extend(arrangement.source);
+            if let (Some(subject), Some(before)) = (transition, &run.before) {
+                settled = with_held_state(ir, &arrangement.settled, &subject.entity, Some(before));
+            }
+            supplied.insert(field, ScenarioValue::instance(arrangement.instance));
+        } else if let Some(subject) = transition {
             let (Some(before), ResolvedInstance::Supplied { field }) =
                 (&run.before, &subject.instance)
             else {
@@ -17702,6 +17732,180 @@ fn boundaries(
     out.1.insert(outcome_ref.into());
     models.mark(caller::InvocationPhase::Act, &mut out.0);
     out
+}
+
+/// The row a further invocation of [`boundaries`] is sent where the boundary row moves the
+/// identity input a non-creating `unknown_instance:` answering first reads: a literal identity no
+/// row carries is answered `unknown`, so the run is sent a row created under exactly that identity,
+/// resting in `states`, its creator steered onto it as an identity guard's is (beyond10x/ess#693,
+/// story:an-identity-guard-below-unknown-instance-is-decided-on-the-row-sent). A row keeping the
+/// identity a `deletes:` branch has already removed is sent a fresh row its guards decide alike
+/// ([`identity_steered`]). `None` where the row keeps the identity of a row still held, or no such
+/// identity input is read; refused naming the guards on the identity input where no search
+/// reaches a row.
+fn identity_boundary_row(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (run, row, primary, prior): (
+        &Run,
+        &BTreeMap<String, Node>,
+        &BTreeMap<String, Node>,
+        &[ScenarioStep],
+    ),
+    taken: &mut BTreeSet<InstanceName>,
+) -> Option<Result<(String, Arrangement), RefusalCause>> {
+    if !existence::unknown_answers_before(ir.format(), command, outcome) {
+        return None;
+    }
+    let subject = outcome
+        .subject
+        .as_ref()
+        .filter(|subject| subject.effect != ResolvedEffect::Creates)
+        .or_else(|| addressed(command))?;
+    let ResolvedInstance::Supplied { field } = &subject.instance else {
+        return None;
+    };
+    let field = field.name.as_str();
+    if !matches!(run.input.get(field), Some(ScenarioValue::Instance { .. })) {
+        return None;
+    }
+    let value = row.get(field)?;
+    let moved = primary.get(field) != Some(value);
+    // A `deletes:` branch has removed the scenario's own row, so a row keeping its identity is
+    // sent a fresh one, as a `moves:` branch's is.
+    let deleted = outcome
+        .subject
+        .as_ref()
+        .is_some_and(|own| own.effect == ResolvedEffect::Deletes);
+    if !moved && !deleted {
+        return None;
+    }
+    let entity = &subject.entity;
+    let lifecycle = &ir.entity(entity).lifecycle;
+    let states: Vec<StateName> = match &run.before {
+        Some(before) => vec![before.clone()],
+        None => std::iter::once(&lifecycle.initial)
+            .chain(
+                lifecycle
+                    .states
+                    .iter()
+                    .filter(|state| **state != lifecycle.initial),
+            )
+            .cloned()
+            .collect(),
+    };
+    let decided = input_guards(command)
+        .iter()
+        .filter(|guard| {
+            guard
+                .fact_paths()
+                .iter()
+                .any(|path| path.namespace() == field)
+        })
+        .map(|guard| format!("`{guard}`"))
+        .collect::<Vec<_>>()
+        .join(" and ");
+    let refused = |cause: Option<RefusalCause>| {
+        let why = cause
+            .as_ref()
+            .map_or_else(String::new, |cause| format!(": {cause}"));
+        RefusalCause::GuardUnsatisfiable {
+            predicate: format!(
+                "`{entity}` row created as `{value}` for the boundary run of {decided}{why}"
+            ),
+            tried: 0,
+            cut: cause.map_or(0, |cause| cause.directed_cut()),
+        }
+    };
+    let name = &ir.entity(entity).name;
+    if !moved {
+        // Any identity deciding every input guard as the row does ([`identity_steered`]).
+        for nth in 1..=MAX_CANDIDATES {
+            if taken.contains(&instance_name(name, Distinction::further(nth))) {
+                continue;
+            }
+            match identity_steered(
+                ir,
+                command,
+                (entity, field),
+                &states,
+                actors,
+                (Distinction::further(nth), row),
+            ) {
+                Ok(arrangement) => {
+                    let names = bound_instances(&arrangement.steps);
+                    if names.is_disjoint(taken) {
+                        taken.extend(names);
+                        return Some(Ok((field.to_owned(), arrangement)));
+                    }
+                }
+                Err(cause) => return Some(Err(cause)),
+            }
+        }
+        return Some(Err(refused(None)));
+    }
+    let label = format!("row created as the boundary identity of {decided},");
+    Some(
+        match created_as(ir, (entity, value), &states, actors, (prior, &label), taken) {
+            Ok(Some(arrangement)) => Ok((field.to_owned(), arrangement)),
+            Ok(None) => Err(refused(None)),
+            Err(cause) => Err(refused(Some(cause))),
+        },
+    )
+}
+
+/// A row of `entity` created under exactly the identity `value`, resting in one of `states`, under
+/// an instance name `taken` does not hold, whose creation repeats no identity `prior` created
+/// ([`repeated_identity::repeats`]); its creator is steered by `identity == value` as an identity
+/// guard's is (beyond10x/ess#693). The search's own refusal, filed under `label`, where none is
+/// reached; `None` where `value` is no fact value or every instance name is taken.
+fn created_as(
+    ir: &EssIr,
+    (entity, value): (&EntityHandle, &Node),
+    states: &[StateName],
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    (prior, label): (&[ScenarioStep], &str),
+    taken: &mut BTreeSet<InstanceName>,
+) -> Result<Option<Arrangement>, RefusalCause> {
+    let Some(literal) = fact_value(value) else {
+        return Ok(None);
+    };
+    let identity = FactPath::from_segments([ir.entity(entity).identity.name.clone()]);
+    let hint = Predicate::compare(
+        Operand::Fact(identity),
+        ess_primitives::predicate::CompareOp::Eq,
+        Operand::Literal(literal),
+    );
+    let name = &ir.entity(entity).name;
+    for nth in 1..=MAX_CANDIDATES {
+        if taken.contains(&instance_name(name, Distinction::further(nth))) {
+            continue;
+        }
+        let (arrangement, ()) = subject_fact::search_within(
+            ir,
+            entity,
+            actors,
+            std::slice::from_ref(&hint),
+            Distinction::further(nth),
+            label,
+            &[],
+            |node| {
+                Ok((states.contains(&node.state)
+                    && related_guard::created_identity(ir, &node.steps, &node.instance).as_ref()
+                        == Some(value)
+                    && !repeated_identity::repeats(ir, &[prior, node.steps.as_slice()].concat()))
+                .then_some(()))
+            },
+        )?;
+        let names = bound_instances(&arrangement.steps);
+        if names.is_disjoint(taken) {
+            taken.extend(names);
+            return Ok(Some(arrangement));
+        }
+    }
+    Ok(None)
 }
 
 /// A purpose cut to one line, which is what [`ScenarioPurpose`] accepts.

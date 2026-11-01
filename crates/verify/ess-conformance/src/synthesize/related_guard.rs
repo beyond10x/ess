@@ -4569,6 +4569,36 @@ pub(super) fn onto_identity(
         .collect()
 }
 
+/// The parts of `guards` reading only the input field `field`: a guard that reads nothing else
+/// whole, else the parts of its `all:`, `any:` or `not:` that do, at any depth. A compound guard
+/// such as `{all: [note_id == keep, 'not defined(why)']}` then steers a row search by its identity
+/// part as the guard alone would; the search's goal still decides every guard on the row sent, so
+/// a part only names the values tried
+/// (story:an-identity-guard-below-unknown-instance-is-decided-on-the-row-sent).
+pub(super) fn identity_parts<'g>(guards: &[&'g Predicate], field: &str) -> Vec<&'g Predicate> {
+    fn parts<'g>(guard: &'g Predicate, field: &str, out: &mut Vec<&'g Predicate>) {
+        let paths = guard.fact_paths();
+        if !paths.is_empty() && paths.iter().all(|path| path.namespace() == field) {
+            out.push(guard);
+            return;
+        }
+        match guard {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    parts(child, field, out);
+                }
+            }
+            Predicate::Not(child) => parts(child, field, out),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for guard in guards {
+        parts(guard, field, &mut out);
+    }
+    out
+}
+
 /// Every one of `guards` whose facts are all of the input field `field`.
 fn reading_only<'g>(
     guards: &'g [&'g Predicate],
