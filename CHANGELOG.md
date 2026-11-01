@@ -5,6 +5,7 @@
 ### Fixed
 
 - The arranged half of an input refusal on a command that addresses an existing record, where no identity view shows the arranged row, sends the addressing branch's own valid input for that record after the refused send and requires that branch, so a target that changes the record on refusal and publishes nothing fails it; it required only the error and no event, and such a target passed. Where that branch has no valid send, the scenario is withdrawn and refused as `ESS-SYNTH-001` naming the branch (beyond10x/ess#209). A model with an identity view keeps its suite bytes.
+- Synthesized binding scenarios (flow, mapping, delivery, on-failure, a bounded retry's attempts and final failure, an unbounded retry selected per refusal, and a condition's negative witnesses) compare the identity fields of the trigger's event with the instances its invocation was sent, as command scenarios do since beyond10x/ess#273, so a target that publishes another identity in the event fails them; they passed it. A model whose binding triggers carry no captured instance into their event keeps its suite bytes.
 
 ## [0.81.0] — 2026-11-01
 

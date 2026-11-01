@@ -593,13 +593,23 @@ fn binding_drop_observes_one_failed_attempt() {
             "configure_external_outcome",
             "execute_command",
             "expect_outcome",
-            "expect_event",
+            "expect_event_values",
             "expect_every_invocation",
             "expect_invocation",
             "query_view",
             "expect_subject_unchanged",
         ],
         "{steps:#?}"
+    );
+    let kicked = &steps[8];
+    assert_eq!(
+        (
+            &kicked["payload"]["job_id"]["kind"],
+            &steps[4]["subject"]["job_id"]
+        ),
+        (&serde_json::json!("instance"), &kicked["payload"]["job_id"]),
+        "the trigger's `Kicked` compares the job it was sent, the row read before it \
+         (story:binding-site-identity-comparisons): {kicked}"
     );
     let every = &steps[9];
     assert!(

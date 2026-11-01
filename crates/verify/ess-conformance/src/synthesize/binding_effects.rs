@@ -3197,6 +3197,7 @@ pub(super) fn dropped(
     binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
     prepared: &Prepared<'_>,
+    trigger: super::Published<'_>,
     event: &EventRef,
 ) -> Built {
     let Some(row) = &prepared.row else {
@@ -3245,11 +3246,12 @@ pub(super) fn dropped(
     });
     steps.extend(prepared.invoke.iter().cloned());
     steps.extend(prepared.capture.iter().cloned());
-    steps.push(ScenarioStep::ExpectEvent {
-        event: event.clone(),
-        payload: BTreeMap::new(),
-        shape: payload_shape(ir, event),
-    });
+    steps.push(super::expect_trigger_event(
+        ir,
+        trigger,
+        (&prepared.setup, &prepared.invoke),
+        event,
+    ));
     // Every attempt carries the mapped input — a malformed retry beside a correct one fails here —
     steps.push(ScenarioStep::ExpectEveryInvocation {
         binding: bound.clone(),
