@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-01T21:16:35Z",
+  "actor": "human:timo",
+  "artifact": "story:a-refusal-records-the-document-it-was-read-from",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-compiler/-p ess-domain lanes + ess-cli validate_names_the_file_read_from, validate_parse_refusals (red: library 3 failed citing <document> vs dup_a.yaml; CLI 2 failed with the old load.rs; green 495 passed, 0 ignored)",
+    "reference": "unit log u1/scratch/cargo.log red runs (baseline) vs green runs (treatment); merged into integration/ess-d357"
+  }
+}

@@ -398,6 +398,7 @@ fn per_row_below_ess_25(event: &QualifiedName, at: String) -> ValidationError {
 pub(crate) fn refuse_per_row_events(
     files: &mut [(crate::system::Source, crate::spec::RawSpecFile)],
     errors: &mut ValidationErrors,
+    read: &mut crate::spec::Read,
 ) {
     let headers: Vec<Option<FormatVersion>> = files
         .iter()
@@ -408,7 +409,8 @@ pub(crate) fn refuse_per_row_events(
         return;
     };
     let below_25 = format.unwrap_or(FormatVersion::V1).major() < FormatVersion::V25.major();
-    for (_, file) in files.iter_mut() {
+    for (source, file) in files.iter_mut() {
+        crate::spec::mark(read, errors, Some(&*source));
         for command in &mut file.commands {
             for outcome in &mut command.outcomes {
                 if !below_25 && outcome.instances.is_some() {
@@ -2294,6 +2296,7 @@ pub(crate) fn refuse_below_ess_16(
     files: &mut [(crate::system::Source, crate::spec::RawSpecFile)],
     errors: &mut ValidationErrors,
     refused_moves: &mut std::collections::BTreeSet<QualifiedName>,
+    read: &mut crate::spec::Read,
 ) {
     let headers: Vec<Option<FormatVersion>> = files
         .iter()
@@ -2314,7 +2317,8 @@ pub(crate) fn refuse_below_ess_16(
         )
         .with_hint("declare `format: ess/16`")
     };
-    for (_, file) in files.iter_mut() {
+    for (source, file) in files.iter_mut() {
+        crate::spec::mark(read, errors, Some(&*source));
         for command in &mut file.commands {
             for outcome in &mut command.outcomes {
                 let at = format!("command.{}.outcomes.{}", command.name, outcome.name);
@@ -2378,6 +2382,7 @@ pub(crate) fn refuse_affect_moves(
     files: &mut [(crate::system::Source, crate::spec::RawSpecFile)],
     errors: &mut ValidationErrors,
     refused_moves: &mut std::collections::BTreeSet<QualifiedName>,
+    read: &mut crate::spec::Read,
 ) {
     let headers: Vec<Option<FormatVersion>> = files
         .iter()
@@ -2392,7 +2397,8 @@ pub(crate) fn refuse_affect_moves(
         return;
     }
     let below_22 = major < FormatVersion::V22.major();
-    for (_, file) in files.iter_mut() {
+    for (source, file) in files.iter_mut() {
+        crate::spec::mark(read, errors, Some(&*source));
         for command in &mut file.commands {
             for outcome in &mut command.outcomes {
                 for (index, affect) in outcome.affects.iter_mut().enumerate() {
@@ -2670,6 +2676,7 @@ fn deletion_shapes(
 pub(crate) fn refuse_deletions(
     files: &mut [(crate::system::Source, crate::spec::RawSpecFile)],
     errors: &mut ValidationErrors,
+    read: &mut crate::spec::Read,
 ) {
     let headers: Vec<Option<FormatVersion>> = files
         .iter()
@@ -2684,7 +2691,8 @@ pub(crate) fn refuse_deletions(
         return;
     }
     let below_23 = major < FormatVersion::V23.major();
-    for (_, file) in files.iter_mut() {
+    for (source, file) in files.iter_mut() {
+        crate::spec::mark(read, errors, Some(&*source));
         for command in &mut file.commands {
             for outcome in &mut command.outcomes {
                 let at = format!("command.{}.outcomes.{}", command.name, outcome.name);
@@ -2973,6 +2981,7 @@ pub(crate) fn refuse_each(
     files: &mut [(crate::system::Source, crate::spec::RawSpecFile)],
     errors: &mut ValidationErrors,
     refused_moves: &mut std::collections::BTreeSet<QualifiedName>,
+    read: &mut crate::spec::Read,
 ) {
     let headers: Vec<Option<FormatVersion>> = files
         .iter()
@@ -2988,7 +2997,8 @@ pub(crate) fn refuse_each(
     }
     let below_23 = major < FormatVersion::V23.major();
     let below_27 = major < FormatVersion::V27.major();
-    for (_, file) in files.iter_mut() {
+    for (source, file) in files.iter_mut() {
+        crate::spec::mark(read, errors, Some(&*source));
         for command in &mut file.commands {
             for outcome in &mut command.outcomes {
                 let name = outcome.name.as_str().to_owned();

@@ -18,14 +18,19 @@
 //! only inside the located declaration's list item — and `tests/trailing_key_guess_citations.rs`
 //! measures it.
 //!
-//! One case here is `#[ignore]`d against a filed story and names it at the attribute. A second was,
-//! until `story:a-masked-first-declaration-hides-a-duplicate-name` landed and it began to pass.
+//! Two cases here were `#[ignore]`d against filed stories, and both now pass: one since
+//! `story:a-masked-first-declaration-hides-a-duplicate-name` landed, the other since
+//! `story:a-refusal-records-the-document-it-was-read-from` did.
+//!
+//! The refusals are bridged the way `ess specify validate` bridges them: assembled with
+//! `Specification::assemble_traced` and cited with `diagnose_traced`, which read the file each
+//! refusal was read from off the assembly's own record before searching for anything.
 
-use ess_compiler::resolve::{diagnose_locating, Locator};
+use ess_compiler::resolve::{diagnose_locating, diagnose_traced, Locator};
 use ess_compiler::source::{Location, SourceMap};
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
-use ess_primitives::error::{ValidationCode, ValidationErrors};
+use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 
 // ---- a bad key needle, made unique by the change -------------------------------------------
 
@@ -86,32 +91,96 @@ fn spans(files: &[(&str, &str)]) -> Vec<(String, String, Option<Location>)> {
 
 /// The refusals and their spans, for cases that want to read the raw codes as well.
 fn refused(files: &[(&str, &str)]) -> (ValidationErrors, Vec<(String, String, Option<Location>)>) {
-    let errors = Specification::assemble(files.iter().map(|(label, text)| {
-        (
-            Source::new(*label),
-            RawSpecFile::parse(text).expect("the fixture is well formed YAML"),
-        )
-    }))
-    .expect_err("the fixture is refused on purpose");
+    let (errors, cited) = cited(files);
+    let spans = cited
+        .into_iter()
+        .map(|(_, path, source, located)| (path, source, located))
+        .collect();
+    (errors, spans)
+}
 
+/// Every refusal beside its span, `(refusal, document path, cited file, cited position)`, cited
+/// by `diagnose_traced` from the assembly's record.
+type Cited = (ValidationError, String, String, Option<Location>);
+
+fn cited(files: &[(&str, &str)]) -> (ValidationErrors, Vec<Cited>) {
+    let traced = Specification::assemble_traced(parsed(files))
+        .expect_err("the fixture is refused on purpose");
+    let (sources, labels) = sources(files);
+    let diagnostics = diagnose_traced(&traced, &sources, &labels);
+    let cited = pair(&traced.errors, &diagnostics);
+    (traced.errors, cited)
+}
+
+/// The same refusals cited by `diagnose_locating`, which only searches: the behaviour before
+/// `story:a-refusal-records-the-document-it-was-read-from`, and the premise of the cases below.
+fn searched(files: &[(&str, &str)]) -> Vec<Cited> {
+    let errors =
+        Specification::assemble(parsed(files)).expect_err("the fixture is refused on purpose");
+    let (sources, labels) = sources(files);
+    pair(&errors, &diagnose_locating(&errors, &sources, &labels))
+}
+
+fn parsed(files: &[(&str, &str)]) -> Vec<(Source, RawSpecFile)> {
+    files
+        .iter()
+        .map(|(label, text)| {
+            (
+                Source::new(*label),
+                RawSpecFile::parse(text).expect("the fixture is well formed YAML"),
+            )
+        })
+        .collect()
+}
+
+fn sources(files: &[(&str, &str)]) -> (SourceMap, Vec<String>) {
     let mut sources = SourceMap::new();
     let mut labels = Vec::new();
     for (label, text) in files {
         sources.insert(*label, *text);
         labels.push((*label).to_owned());
     }
-    let spans = diagnose_locating(&errors, &sources, &labels)
+    (sources, labels)
+}
+
+/// The bridge keeps one diagnostic per refusal, in order.
+fn pair(errors: &ValidationErrors, diagnostics: &ess_compiler::Diagnostics) -> Vec<Cited> {
+    assert_eq!(
+        errors.len(),
+        diagnostics.as_slice().len(),
+        "one per refusal"
+    );
+    errors
         .as_slice()
         .iter()
-        .map(|diagnostic| {
+        .zip(diagnostics.as_slice())
+        .map(|(error, diagnostic)| {
             let span = diagnostic
                 .span
                 .as_ref()
                 .expect("every bridged refusal spans");
-            (span.path.clone(), span.source.clone(), span.located)
+            (
+                error.clone(),
+                span.path.clone(),
+                span.source.clone(),
+                span.located,
+            )
         })
+        .collect()
+}
+
+/// The one refusal at `path`, with `code` when one is given, as `(cited file, cited position)`.
+fn one<'a>(
+    cited: &'a [Cited],
+    code: Option<ValidationCode>,
+    path: &str,
+) -> (&'a str, Option<Location>) {
+    let found: Vec<&Cited> = cited
+        .iter()
+        .filter(|(error, at, _, _)| code.is_none_or(|code| error.code == code) && at == path)
         .collect();
-    (errors, spans)
+    assert_eq!(found.len(), 1, "one refusal at `{path}`; cited: {cited:?}");
+    (found[0].2.as_str(), found[0].3)
 }
 
 /// The one span cited for `path`.
@@ -235,23 +304,22 @@ entities:
 /// variant is refused "with a stable refusal code, **the file it was read from**, and the variants
 /// that are declared".
 ///
-/// The file is not read from the refusal. Nothing in `ValidationError` records which document a
-/// refusal came from — it carries a code, a location string, a message and a hint — so the
-/// compiler recovers the file by searching for the declaration's name, and reports `<document>`
-/// whenever that search is not unique. `<document>` is not a file; it is the whole specification.
+/// Nothing in `ValidationError` records which document a refusal came from — it carries a code, a
+/// location string, a message and a hint — so the compiler used to recover the file by searching
+/// for the declaration's name, and reported `<document>` whenever that search was not unique.
+/// `<document>` is not a file; it is the whole specification.
 ///
 /// The ambiguity here is the plainest one there is: the same entity declared in two files, which
 /// ESS itself refuses with `DuplicateDeclaration` and which is therefore a state the compiler is
-/// built to be reached in. `whole_name` does not help — both occurrences are whole names — and
-/// this is a case the whole-name filter does not cover, rather than one it broke.
+/// built to be reached in. `whole_name` does not help — both occurrences are whole names.
 ///
-/// Ignored, not deleted, and not relaxed: closing it means recording the source document on
-/// `ValidationError` (`ess-primitives/src/error.rs`), which is a format-bearing change to a shared
-/// envelope and larger than the story this file shipped with.
+/// This was `#[ignore]`d until `story:a-refusal-records-the-document-it-was-read-from`. The file
+/// is still not on the refusal: `Specification::assemble_traced` returns, beside the refusals, which
+/// file it was reading when it pushed each one and which file every declaration it kept came from,
+/// and `diagnose_traced` reads that before it searches. The invariant is checked after assembly,
+/// against the copy assembly kept, so it is cited at that copy's file and searched for only there.
+/// The assertion is the one the ignored case carried.
 #[test]
-#[ignore = "story:a-refusal-records-the-document-it-was-read-from — ValidationError records no \
-            source document, so the file is recovered by a name search that degrades to \
-            `<document>` when the name is not unique"]
 fn an_undeclared_variant_refusal_names_the_file_it_was_read_from() {
     let files = [("dup_a.yaml", DUP_A), ("dup_b.yaml", DUP_B)];
     let (errors, spans) = refused(&files);
@@ -270,6 +338,167 @@ fn an_undeclared_variant_refusal_names_the_file_it_was_read_from() {
         "acceptance clause 1 asks for the file the invariant was read from; the surviving \
          declaration is dup_a.yaml's — cited: {spans:?}"
     );
+}
+
+/// `DUP_A` with its entity's lifecycle broken, so that copy fails its own conversion and assembly
+/// keeps the second one.
+fn broken_first_copy() -> String {
+    let broken = DUP_A.replace("      initial: Open\n", "      initial: Closed\n");
+    assert_ne!(broken, DUP_A, "the lifecycle line is in the fixture");
+    broken
+}
+
+/// `DUP_B` with `DUP_A`'s invariant, which names a variant `Channel` does not have.
+fn invariant_on_the_second_copy() -> String {
+    let with = DUP_B.replace(
+        "    lifecycle:\n",
+        "    invariants:\n      - channel == Fax\n    lifecycle:\n",
+    );
+    assert_ne!(with, DUP_B, "the lifecycle key is in the fixture");
+    with
+}
+
+/// The refusals of the broken lifecycle: of the entity, neither the duplicate nor the invariant.
+/// Their codes and paths are read off the refusals rather than assumed; an initial state nothing
+/// declares is refused, and so is the declared state it leaves unreachable.
+fn conversion_refusals(cited: &[Cited]) -> Vec<&Cited> {
+    let found: Vec<&Cited> = cited
+        .iter()
+        .filter(|(error, _, _, _)| {
+            error.code != ValidationCode::DuplicateDeclaration
+                && !error.location.contains(".invariants")
+                && error.location.starts_with("entity shop.probe.Order")
+        })
+        .collect();
+    assert!(
+        found
+            .iter()
+            .any(|(error, _, _, _)| error.code == ValidationCode::UnknownInitialState),
+        "the first copy fails its own conversion: {cited:?}"
+    );
+    found
+}
+
+/// The rule the change rests on, proved where it could be wrong: **a refusal pushed while a file
+/// was being read is about that file**, and one pushed after assembly is about the copy assembly
+/// kept — which is *not* the first copy when the first fails its own conversion.
+///
+/// Three kinds of refusal of `shop.probe.Order`, each about a different copy, and a name search that
+/// can tell none of them apart, because `name: shop.probe.Order` is written once in each file:
+///
+/// * the first copy's broken lifecycle, pushed while `dup_a.yaml` was read, is about that copy;
+/// * the `DuplicateDeclaration`, pushed while `dup_b.yaml` was read, is about that file's copy,
+///   the one declared *again*;
+/// * the invariant, checked after assembly, is on the copy assembly kept. `record` keeps the
+///   second copy here because the first did not convert, so it is `dup_b.yaml`'s, even though
+///   `dup_a.yaml` declares the name first.
+#[test]
+fn each_refusal_of_a_name_declared_in_two_files_names_the_copy_it_is_about() {
+    let first = broken_first_copy();
+    let second = invariant_on_the_second_copy();
+    let files = [
+        ("dup_a.yaml", first.as_str()),
+        ("dup_b.yaml", second.as_str()),
+    ];
+
+    // The premise: searching cannot tell the copies apart.
+    for (error, path, source, _) in &searched(&files) {
+        if error.location.starts_with("entity shop.probe.Order") {
+            assert_eq!(
+                source, "<document>",
+                "`name: shop.probe.Order` is written in both files, so the search finds no file \
+                 for `{path}`"
+            );
+        }
+    }
+
+    let (_, cited) = cited(&files);
+    for (_, path, source, located) in conversion_refusals(&cited) {
+        assert_eq!(
+            (source.as_str(), located.map(|at| at.line)),
+            (
+                "dup_a.yaml",
+                Some(line_ending_with(&first, "name: shop.probe.Order"))
+            ),
+            "`{path}` is refused while dup_a.yaml is read, and is about dup_a's copy: {cited:?}"
+        );
+    }
+    let (source, located) = one(
+        &cited,
+        Some(ValidationCode::DuplicateDeclaration),
+        "entity shop.probe.Order",
+    );
+    assert_eq!(
+        (source, located.map(|at| at.line)),
+        (
+            "dup_b.yaml",
+            Some(line_ending_with(&second, "name: shop.probe.Order"))
+        ),
+        "the name is declared again in dup_b.yaml: {cited:?}"
+    );
+    let (source, located) = one(&cited, None, "entity shop.probe.Order.invariants[0]");
+    assert_eq!(
+        (source, located.map(|at| at.line)),
+        (
+            "dup_b.yaml",
+            Some(line_ending_with(&second, "name: shop.probe.Order"))
+        ),
+        "the invariant is checked on the copy assembly kept, dup_b's, because dup_a's did not \
+         convert: {cited:?}"
+    );
+}
+
+/// The same refusals with both copies in one file: the file is named, and no line is,
+/// because the declaration is written twice in it and the honesty rule in `Locator` holds within
+/// one file as it does across several.
+#[test]
+fn a_name_declared_twice_in_one_file_names_the_file_and_no_line() {
+    let second = invariant_on_the_second_copy();
+    let entity = second
+        .split_once("entities:\n")
+        .expect("the second copy declares entities")
+        .1;
+    let both = format!("{}{entity}", broken_first_copy());
+    assert_eq!(
+        both.matches("  - name: shop.probe.Order\n").count(),
+        2,
+        "the premise: the entity is declared twice in the one file"
+    );
+    let files = [("only.yaml", both.as_str())];
+
+    for (error, path, source, _) in &searched(&files) {
+        if error.location.starts_with("entity shop.probe.Order") {
+            assert_eq!(
+                source, "<document>",
+                "the search finds no file for `{path}`"
+            );
+        }
+    }
+
+    let (_, cited) = cited(&files);
+    let about: Vec<&Cited> = cited
+        .iter()
+        .filter(|(error, _, _, _)| error.location.starts_with("entity shop.probe.Order"))
+        .collect();
+    assert!(
+        !conversion_refusals(&cited).is_empty()
+            && about
+                .iter()
+                .any(|(error, _, _, _)| error.code == ValidationCode::DuplicateDeclaration)
+            && about
+                .iter()
+                .any(|(_, path, _, _)| path == "entity shop.probe.Order.invariants[0]"),
+        "conversion, duplicate and invariant: {cited:?}"
+    );
+    for (error, path, source, located) in about {
+        assert_eq!(
+            (source.as_str(), *located),
+            ("only.yaml", None),
+            "`{path}` ({}) is about one of two copies in only.yaml; the file is known and the \
+             line is not: {cited:?}",
+            error.code.as_str()
+        );
+    }
 }
 
 // ---- a name declared twice, and accepted ---------------------------------------------------

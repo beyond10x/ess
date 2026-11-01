@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-01T21:05:12Z",
+  "actor": "human:timo",
+  "artifact": "story:a-marked-region-is-not-a-scan-of-what-runs",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-cli --locked --test coverage_browser --test browser_startup_refusal_boundary (VERIFIED: base fixture red, 18 unaccounted sites and a lost session.new socket panics; unit 17 and 6 passed)",
+    "reference": "unit log u2/scratch/cargo.log red run 20:32:36Z vs green run after 20:46Z; merged 5384b8f0c"
+  }
+}

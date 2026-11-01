@@ -51,7 +51,7 @@ use ess_domain::command::{PayloadSource, RelatedTest, RelatedVia};
 use ess_domain::component::{ComponentName, ComponentSpec};
 use ess_domain::entity::{EntitySpec, StateMachine};
 use ess_domain::name::QualifiedName;
-use ess_domain::spec::Specification;
+use ess_domain::spec::{Provenance, Specification, Traced};
 use ess_domain::system::Source;
 use ess_domain::topology::Workload;
 use ess_domain::types::{
@@ -59,7 +59,8 @@ use ess_domain::types::{
 };
 use ess_domain::view::ViewSpec;
 use ess_primitives::error::{
-    ConstructKind, ConstructRef, Segment, Site, SyntaxSpan, ValidationCode, ValidationErrors,
+    ConstructKind, ConstructRef, Segment, Site, SyntaxSpan, ValidationCode, ValidationError,
+    ValidationErrors,
 };
 
 use crate::diagnostic::{Code, Detail, Diagnostic, Diagnostics, Severity};
@@ -738,8 +739,14 @@ pub struct Locator<'a> {
     /// This removes the repeats. It does not make the search sublinear: *n* distinct needles still
     /// cost *n* passes over the sources, and fixing that needs a substring index rather than a
     /// cache.
-    located: RefCell<BTreeMap<String, Option<(String, Location)>>>,
+    ///
+    /// Keyed by the file the search was confined to as well as the needle: `None` is every file,
+    /// and a needle unique in one file need not be unique across all of them.
+    located: RefCell<Located>,
 }
+
+/// [`Locator::located`]: `(file the search was confined to, needle)` to the one place found.
+type Located = BTreeMap<(Option<String>, String), Option<(String, Location)>>;
 
 impl<'a> Locator<'a> {
     /// Searches these files.
@@ -771,13 +778,30 @@ impl<'a> Locator<'a> {
     /// Some paths have no declaration needle at all — `topology.workloads.<component>` is only
     /// ever the workload key — and dropping the guess there would cost the one right line.
     pub fn span(&self, path: impl Into<String>, needles: &[String]) -> Span {
+        self.span_within(None, path, needles)
+    }
+
+    /// [`Self::span`], searching only `within` when the file the refusal was read from is known
+    /// (`story:a-refusal-records-the-document-it-was-read-from`).
+    ///
+    /// The file is then the answer whatever the search finds: a needle that occurs nowhere in it,
+    /// or more than once, costs the line and never the file, and a match in another file is not
+    /// looked for, because the refusal is not about that file. Uniqueness is asked of that one
+    /// file, so a declaration written once in each of two files is located in the one it was read
+    /// from, and one written twice in one file still has no line.
+    fn span_within(
+        &self,
+        within: Option<&str>,
+        path: impl Into<String>,
+        needles: &[String],
+    ) -> Span {
         let path = path.into();
         let declaration = needles
             .iter()
             .filter(|needle| whole_name_matters(needle))
-            .find_map(|needle| self.unique(needle));
+            .find_map(|needle| self.unique(within, needle));
         for needle in needles {
-            let Some((source, location)) = self.unique(needle) else {
+            let Some((source, location)) = self.unique(within, needle) else {
                 continue;
             };
             if !whole_name_matters(needle)
@@ -797,23 +821,23 @@ impl<'a> Locator<'a> {
             };
         }
         Span {
-            source: Source::DOCUMENT.to_owned(),
+            source: within.unwrap_or(Source::DOCUMENT).to_owned(),
             path,
             located: None,
         }
     }
 
-    /// The one place `needle` occurs, or `None` when it occurs nowhere or more than once.
+    /// The one place `needle` occurs — in `within`, or across every file when that is `None` —
+    /// or `None` when it occurs nowhere or more than once.
     ///
-    /// Answered once per needle for the life of the locator; see [`Self::located`].
-    fn unique(&self, needle: &str) -> Option<(String, Location)> {
-        if let Some(remembered) = self.located.borrow().get(needle) {
+    /// Answered once per file and needle for the life of the locator; see [`Self::located`].
+    fn unique(&self, within: Option<&str>, needle: &str) -> Option<(String, Location)> {
+        let key = (within.map(str::to_owned), needle.to_owned());
+        if let Some(remembered) = self.located.borrow().get(&key) {
             return remembered.clone();
         }
-        let answer = self.scan(needle);
-        self.located
-            .borrow_mut()
-            .insert(needle.to_owned(), answer.clone());
+        let answer = self.scan(within, needle);
+        self.located.borrow_mut().insert(key, answer.clone());
         answer
     }
 
@@ -868,10 +892,14 @@ impl<'a> Locator<'a> {
         (first..end).contains(&(at.line - 1))
     }
 
-    /// [`Self::unique`], actually reading the files.
-    fn scan(&self, needle: &str) -> Option<(String, Location)> {
+    /// [`Self::unique`], actually reading the files: `within` alone, or every labelled file.
+    fn scan(&self, within: Option<&str>, needle: &str) -> Option<(String, Location)> {
+        let labels: Vec<&str> = match within {
+            Some(label) => vec![label],
+            None => self.labels.iter().map(String::as_str).collect(),
+        };
         let mut found: Option<(String, Location)> = None;
-        for label in &self.labels {
+        for label in labels {
             let Some(text) = self.sources.get(label) else {
                 continue;
             };
@@ -885,7 +913,7 @@ impl<'a> Locator<'a> {
             if occurrences.next().is_some() || found.is_some() {
                 return None;
             }
-            found = Some((label.clone(), location_of(text, index)));
+            found = Some((label.to_owned(), location_of(text, index)));
         }
         found
     }
@@ -994,6 +1022,50 @@ pub fn diagnose_locating(
     bridge(errors, &Locator::new(sources, files))
 }
 
+/// [`diagnose_locating`] for a refused [`Specification::assemble_traced`], citing each refusal
+/// against the file its [`Provenance`] says it was read from
+/// (`story:a-refusal-records-the-document-it-was-read-from`).
+///
+/// [`diagnose_locating`] finds the file by searching every file for the declaration's name, which
+/// cannot tell two copies of one name apart and answers `<document>` for both. Here the file comes
+/// from the assembly ([`read_from`]) and only the line is searched for, in that file alone. A
+/// refusal the record says nothing about is searched for as [`diagnose_locating`] searches, and a
+/// refusal whose producer gave its own position keeps it. The diagnostics are otherwise the same,
+/// one per refusal and in order.
+pub fn diagnose_traced(
+    traced: &Traced,
+    sources: &SourceMap,
+    files: &[impl AsRef<str>],
+) -> Diagnostics {
+    bridge_traced(
+        &traced.errors,
+        Some(&traced.provenance),
+        &Locator::new(sources, files),
+    )
+}
+
+/// The file the refusal at `index` was read from, by the assembly's own record: the file being
+/// read when it was pushed, else the file of the declaration it names that assembly kept.
+///
+/// The declaration is the refusal's [`Site`] where it has one, and otherwise its location's head
+/// token and the name after it, read as [`needles_from_tokens`] reads the declaration needle. A
+/// head that is not a kind assembly keeps (`spec`, a file label) names no kept declaration, and the
+/// answer is `None`.
+fn read_from(provenance: &Provenance, index: usize, error: &ValidationError) -> Option<String> {
+    if let Some(source) = provenance.read_while(index) {
+        return Some(source.to_string());
+    }
+    let kept = if let Some(site) = error.site() {
+        provenance.kept(site.construct.kind().as_str(), site.construct.name())
+    } else {
+        let tokens = split_path(&error.location);
+        let tokens: Vec<&str> = tokens.iter().map(String::as_str).collect();
+        let kind = tokens.first()?;
+        provenance.kept(kind, &declared_name(&tokens)?)
+    };
+    kept.map(ToString::to_string)
+}
+
 /// [`diagnose`], against a locator that already exists.
 ///
 /// Two paths, and the typed one is the one that is growing. A refusal built by
@@ -1004,16 +1076,32 @@ pub fn diagnose_locating(
 /// and is bridged exactly as before. The fallback stays until the inventory in
 /// `docs/design/review-typed-diagnostics.md` is empty.
 fn bridge(errors: &ValidationErrors, locator: &Locator<'_>) -> Diagnostics {
+    bridge_traced(errors, None, locator)
+}
+
+/// [`bridge`], with the assembly's record of which file each refusal was read from when there is
+/// one ([`diagnose_traced`]). Without one, every refusal is searched for across every file.
+fn bridge_traced(
+    errors: &ValidationErrors,
+    provenance: Option<&Provenance>,
+    locator: &Locator<'_>,
+) -> Diagnostics {
     let mut diagnostics = Diagnostics::new();
-    for error in errors.as_slice() {
+    for (index, error) in errors.as_slice().iter().enumerate() {
+        let within = provenance.and_then(|provenance| read_from(provenance, index, error));
+        let within = within.as_deref();
         let (mut family, span) = match error.site() {
             Some(site) => (
                 family_of_kind(site.construct.kind()),
-                span_of_site(site, locator),
+                span_of_site(site, within, locator),
             ),
             None => (
                 family_of(&error.location),
-                locator.span(error.location.clone(), &needles_for(&error.location)),
+                locator.span_within(
+                    within,
+                    error.location.clone(),
+                    &needles_for(&error.location),
+                ),
             ),
         };
         // A predicate that does not parse is located at its declaration and keeps the `SPEC`
@@ -1085,8 +1173,9 @@ fn read_family_spec(code: ValidationCode) -> bool {
 /// Where a sited refusal points.
 ///
 /// A producer that knows its parser position is believed; one that does not still gets the
-/// [`Locator`]'s search, driven by the construct rather than by the rendered string.
-fn span_of_site(site: &Site, locator: &Locator<'_>) -> Span {
+/// [`Locator`]'s search, driven by the construct rather than by the rendered string, and confined
+/// to `within` when the file it was read from is known.
+fn span_of_site(site: &Site, within: Option<&str>, locator: &Locator<'_>) -> Span {
     let path = site.construct.render();
     match &site.span {
         Some(SyntaxSpan {
@@ -1101,7 +1190,7 @@ fn span_of_site(site: &Site, locator: &Locator<'_>) -> Span {
                 column: *column,
             }),
         },
-        None => locator.span(path, &needles_of_site(&site.construct)),
+        None => locator.span_within(within, path, &needles_of_site(&site.construct)),
     }
 }
 
@@ -1409,20 +1498,26 @@ fn needles_from_tokens(tokens: &[&str]) -> Vec<String> {
         }
     }
 
-    // The declaration the path is about: everything after the layer, up to the first structural key.
+    if let Some(declared) = declared_name(tokens) {
+        needles.push(format!("name: {declared}"));
+        needles.push(format!("id: {declared}"));
+        needles.push(format!("component: {declared}"));
+    }
+    needles
+}
+
+/// The declaration a path is about: everything after the layer, up to the first structural key.
+///
+/// The name [`needles_from_tokens`] searches for, and the one [`read_from`] asks the assembly's
+/// record about, so the two cannot read one path as two declarations.
+fn declared_name(tokens: &[&str]) -> Option<String> {
     let declared: Vec<&str> = tokens
         .iter()
         .skip(1)
         .take_while(|token| !STRUCTURAL.contains(token))
         .copied()
         .collect();
-    if !declared.is_empty() {
-        let declared = declared.join(".");
-        needles.push(format!("name: {declared}"));
-        needles.push(format!("id: {declared}"));
-        needles.push(format!("component: {declared}"));
-    }
-    needles
+    (!declared.is_empty()).then(|| declared.join("."))
 }
 
 /// Resolves a specification, or reports every reason it does not resolve.

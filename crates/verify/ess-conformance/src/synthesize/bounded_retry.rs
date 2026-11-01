@@ -21,11 +21,11 @@ use std::num::NonZeroU32;
 use ess_compiler::ir::{EventHandle, ResolvedRetryBound};
 
 use super::{
-    accepting_component, binding_source, clipped, insert, payload_shape, run, ActorRef, BTreeMap,
-    BTreeSet, BindingAspect, BindingGap, BindingRef, Built, CommandRef, ConformanceScenario,
-    ConformanceSuite, EssIr, EssSemanticRef, EventRef, OutcomeRef, QualifiedName, Refusal,
-    RefusalCause, ResolvedBinding, ResolvedCommand, ResolvedFailure, ResolvedOutcome, Run,
-    ScenarioId, ScenarioStep, TestStrategy,
+    accepting_component, binding_source, clipped, expect_trigger_event, insert, run, ActorRef,
+    BTreeMap, BTreeSet, BindingAspect, BindingGap, BindingRef, Built, CommandRef,
+    ConformanceScenario, ConformanceSuite, EssIr, EssSemanticRef, EventRef, OutcomeRef, Published,
+    QualifiedName, Refusal, RefusalCause, ResolvedBinding, ResolvedCommand, ResolvedFailure,
+    ResolvedOutcome, Run, ScenarioId, ScenarioStep, TestStrategy,
 };
 
 /// `on-failure` for a bounded retry: a retried refusal forced on every attempt, and exactly
@@ -34,7 +34,7 @@ pub(super) fn exhausted(
     ir: &EssIr,
     binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
-    trigger: &Run,
+    trigger: Published<'_>,
     event: &EventRef,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Built {
@@ -51,11 +51,13 @@ pub(super) fn exhausted(
         command: command.clone(),
     })?;
     let attempts = NonZeroU32::new(bound.attempts).unwrap_or(NonZeroU32::MIN);
-    let alternative = clean_trigger(ir, binding, trigger, actors)?;
-    let trigger = alternative.as_ref().map_or(trigger, |(run, _)| run);
+    let alternative = clean_publisher(ir, binding, trigger.1, actors)?;
+    let trigger = alternative
+        .as_ref()
+        .map_or(trigger, |(run, published_by, _)| (*published_by, run));
     let (steps, mut source) =
         forced_run(ir, binding, invoked, trigger, event, forced, Some(attempts));
-    if let Some((_, extra)) = alternative {
+    if let Some((_, _, extra)) = alternative {
         source.extend(extra);
     }
     let text = format!(
@@ -72,7 +74,7 @@ pub(super) fn final_failure(
     ir: &EssIr,
     binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
-    trigger: &Run,
+    trigger: Published<'_>,
     event: &EventRef,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     source: &BTreeSet<EssSemanticRef>,
@@ -117,7 +119,7 @@ fn single_attempt(
     binding: &ResolvedBinding,
     bound: &ResolvedRetryBound,
     invoked: &ResolvedCommand,
-    trigger: &Run,
+    trigger: Published<'_>,
     event: &EventRef,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Built {
@@ -128,10 +130,12 @@ fn single_attempt(
     .ok_or(BindingGap::FinalUnforcible {
         command: command.clone(),
     })?;
-    let alternative = clean_trigger(ir, binding, trigger, actors)?;
-    let trigger = alternative.as_ref().map_or(trigger, |(run, _)| run);
+    let alternative = clean_publisher(ir, binding, trigger.1, actors)?;
+    let trigger = alternative
+        .as_ref()
+        .map_or(trigger, |(run, published_by, _)| (*published_by, run));
     let (steps, mut source) = forced_run(ir, binding, invoked, trigger, event, forced, None);
-    if let Some((_, extra)) = alternative {
+    if let Some((_, _, extra)) = alternative {
         source.extend(extra);
     }
     let text = format!(
@@ -156,6 +160,20 @@ pub(super) fn clean_trigger(
     trigger: &Run,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<Option<(Run, BTreeSet<EssSemanticRef>)>, BindingGap> {
+    Ok(clean_publisher(ir, binding, trigger, actors)?.map(|(run, _, source)| (run, source)))
+}
+
+/// Another publisher's run, the branch it takes, and what it depends on.
+type CleanPublisher<'ir> = (Run, &'ir ResolvedOutcome, BTreeSet<EssSemanticRef>);
+
+/// [`clean_trigger`], with the branch the other publisher takes, which says what its event
+/// carries.
+fn clean_publisher<'ir>(
+    ir: &'ir EssIr,
+    binding: &ResolvedBinding,
+    trigger: &Run,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<Option<CleanPublisher<'ir>>, BindingGap> {
     let handle = binding
         .cause
         .event()
@@ -182,7 +200,7 @@ pub(super) fn clean_trigger(
             };
             if !sets_off(&candidate.setup) {
                 let source = binding_source(ir, binding, command, outcome, &candidate);
-                return Ok(Some((candidate, source)));
+                return Ok(Some((candidate, outcome, source)));
             }
         }
     }
@@ -257,21 +275,23 @@ fn forced_run(
     ir: &EssIr,
     binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
-    trigger: &Run,
+    published: Published<'_>,
     event: &EventRef,
     forced: &ResolvedOutcome,
     times: Option<NonZeroU32>,
 ) -> (Vec<ScenarioStep>, BTreeSet<EssSemanticRef>) {
+    let (_, trigger) = published;
     let command = CommandRef::new(invoked.name.clone());
     let forced_ref = OutcomeRef::new(command.clone(), forced.name.clone());
     let mut steps = trigger.setup.clone();
     steps.push(force(forced_ref.clone(), times));
     steps.extend(trigger.invoke.iter().cloned());
-    steps.push(ScenarioStep::ExpectEvent {
-        event: event.clone(),
-        payload: BTreeMap::new(),
-        shape: payload_shape(ir, event),
-    });
+    steps.push(expect_trigger_event(
+        ir,
+        published,
+        super::as_run(trigger),
+        event,
+    ));
     steps.push(count(
         BindingRef::new(binding.name.clone()),
         command.clone(),

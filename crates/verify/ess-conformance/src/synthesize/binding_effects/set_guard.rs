@@ -110,6 +110,7 @@ pub(super) fn decided<'a>(
         reached: Err(unarranged(invoked, &selections)),
         row: None,
         source: BTreeSet::new(),
+        rewritten: BTreeMap::new(),
     }))
 }
 
@@ -241,6 +242,7 @@ fn arranged_for<'a>(
         reached: Ok(accepting),
         row: None,
         source: setup.source,
+        rewritten: BTreeMap::new(),
     })
 }
 
@@ -277,6 +279,7 @@ fn alone<'a>(
         reached: Ok(accepting),
         row: None,
         source: BTreeSet::new(),
+        rewritten: BTreeMap::new(),
     })
 }
 

@@ -54,7 +54,16 @@ pub(super) fn witnesses(
             outcome: rule.outcome.clone(),
         };
         let built = if matches!(rule.action, ResolvedRefusalAction::Retry { bound: None }) {
-            retried(ir, binding, policy, &rule.outcome, invoked, prepared, event)
+            retried(
+                ir,
+                binding,
+                policy,
+                &rule.outcome,
+                invoked,
+                prepared,
+                (published_by, trigger),
+                event,
+            )
         } else {
             witness(
                 ir,
@@ -449,6 +458,7 @@ fn unarranged(
 /// takes; the refusal forced once, then what that branch publishes, the row where it rests, and no
 /// escalation. Not a count: the arrangement may itself invoke the binding, and an unbounded retry
 /// promises the consequence, not a number.
+#[allow(clippy::too_many_arguments)]
 fn retried(
     ir: &EssIr,
     binding: &ResolvedBinding,
@@ -456,6 +466,7 @@ fn retried(
     outcome: &ess_domain::command::OutcomeName,
     invoked: &ResolvedCommand,
     prepared: &Result<super::binding_effects::Prepared<'_>, BindingGap>,
+    trigger: super::Published<'_>,
     event: &EventRef,
 ) -> Built {
     let forced_ref = forcible(ir.format(), invoked, outcome)?;
@@ -477,11 +488,12 @@ fn retried(
     steps.push(super::bounded_retry::force(forced_ref, None));
     steps.extend(prepared.invoke.iter().cloned());
     steps.extend(prepared.capture.iter().cloned());
-    steps.push(ScenarioStep::ExpectEvent {
-        event: event.clone(),
-        payload: BTreeMap::new(),
-        shape: payload_shape(ir, event),
-    });
+    steps.push(super::expect_trigger_event(
+        ir,
+        trigger,
+        prepared.sent(),
+        event,
+    ));
     steps.extend(published.iter().map(|event| ScenarioStep::EventuallyEvent {
         event: event.clone(),
         payload: BTreeMap::new(),
