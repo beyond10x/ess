@@ -587,6 +587,67 @@ test('values compare structurally and numbers compare across carriers', () => {
   assert.deepEqual(compare(1, 'a'), [0, false]);
 });
 
+test('a view row reads a number as the Rust Node and Go numberValue do', () => {
+  const story = 'story:a-binary64-value-round-trips-through-a-conformance-suite';
+  const row = (raw: string | number) => ({
+    level: typeof raw === 'number' ? raw : new JsonNumber(raw),
+  });
+  for (const [answered, wanted, same] of [
+    ['0.10000000000000001', '0.1', true],
+    ['1.50000000000000000001', '1.5', true],
+    [1.5, '1.50', true],
+    ['-0.0', '0', true],
+    ['1e2', '100', true],
+    ['9007199254740993', '9007199254740992', false],
+    ['1.25', '1.5', false],
+    ['1', 1.0000000000000002, false],
+  ] as const) {
+    assert.equal(
+      rowMatches(row(answered), row(wanted)),
+      same,
+      `${story}: ${answered} answered, ${wanted} wanted`,
+    );
+  }
+  assert.equal(rowMatches({ level: new JsonNumber('1') }, { level: '1' }), false, story);
+  assert.equal(
+    rowMatches(
+      { level: { inner: new JsonNumber('0.30000000000000004') } },
+      { level: { inner: 0.1 + 0.2 } },
+    ),
+    true,
+    story,
+  );
+});
+
+test("an event's payload reads a number as the Rust Node and Go numberValue do", () => {
+  const story = 'story:a-binary64-value-round-trips-through-a-conformance-suite';
+  const token = (raw: string): Node => new JsonNumber(raw);
+  for (const [answered, wanted, same] of [
+    ['0.10000000000000001', '0.1', true],
+    ['1.50000000000000000001', '1.5', true],
+    ['-0.0', '0', true],
+    ['9007199254740993', '9007199254740992', false],
+    ['1.25', '1.5', false],
+  ] as const) {
+    assert.equal(
+      matches({ level: token(answered) }, { level: token(wanted) }),
+      same,
+      `${story}: ${answered} published, ${wanted} wanted`,
+    );
+    assert.equal(
+      matches({ reading: { levels: [token(answered)] } }, { reading: { levels: [token(wanted)] } }),
+      same,
+      `${story}: ${answered} published inside a struct, ${wanted} wanted`,
+    );
+  }
+  assert.equal(matches({ level: token('1') }, { level: '1' }), false, story);
+  assert.equal(
+    matches({ reading: { level: token('1.5'), extra: 1 } }, { reading: { level: token('1.5') } }),
+    false,
+    `${story}: a struct in a payload is still compared whole`,
+  );
+});
+
 test('an absent struct member and a null one are one value at any depth of a match', () => {
   const quantity = (tail: { [key: string]: Node }): Node => ({
     kind: 'cached_input_tokens',

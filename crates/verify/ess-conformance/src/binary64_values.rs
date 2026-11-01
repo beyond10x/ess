@@ -22,6 +22,7 @@ use crate::admission::{escape, AdmissionError, AdmissionIssue};
 use crate::scenario::{Holds, ScenarioStep};
 use crate::selection::Declaration;
 use crate::ConformanceSuite;
+use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedTypeRef};
 use ess_domain::{Field, Primitive, QualifiedName, TypeRef};
 use ess_primitives::node::Node;
 use std::collections::BTreeMap;
@@ -354,4 +355,76 @@ fn members_same<'a>(
                 None => a == b,
             })
         })
+}
+
+/// 2^53, the authored limit of a `Binary64` literal.
+///
+/// A view row and an error's fields carry no declared type in a suite, so every runner compares
+/// an integer token there exactly, as an `Integer` has to be compared. Below 2^53 that is the
+/// binary64 rule as well, since every integer there is its own binary64. At and past it an
+/// implementation holding an `f64` may answer `9007199254740992` for `9007199254740993`, so an
+/// authored scenario may not write such a value.
+pub(crate) const AUTHORED_LIMIT: f64 = 9_007_199_254_740_992.0;
+
+/// Each `Binary64` leaf `value` holds as a value of `type_ref` whose magnitude is
+/// [`AUTHORED_LIMIT`] or more: its position below `at` and the number as written.
+pub(crate) fn past_authored_limit(
+    ir: &EssIr,
+    type_ref: &ResolvedTypeRef,
+    value: &Node,
+    at: &str,
+    depth: usize,
+    found: &mut Vec<(String, Node)>,
+) {
+    if depth > MAX_DEPTH {
+        return;
+    }
+    match (type_ref, value) {
+        (
+            ResolvedTypeRef::Primitive {
+                name: Primitive::Binary64,
+            },
+            Node::Number(number),
+        ) if number.get().abs() >= AUTHORED_LIMIT => found.push((at.to_owned(), value.clone())),
+        (ResolvedTypeRef::Optional { of }, _) => {
+            past_authored_limit(ir, of, value, at, depth + 1, found);
+        }
+        (ResolvedTypeRef::List { of }, Node::Seq(items)) => {
+            for (index, item) in items.iter().enumerate() {
+                past_authored_limit(ir, of, item, &format!("{at}[{index}]"), depth + 1, found);
+            }
+        }
+        (ResolvedTypeRef::Map { value: of, .. }, Node::Map(entries)) => {
+            for (key, item) in entries {
+                past_authored_limit(ir, of, item, &format!("{at}.{key}"), depth + 1, found);
+            }
+        }
+        (ResolvedTypeRef::Declared { name }, _) => match (&ir.named_type(name).body, value) {
+            (ResolvedBody::Newtype { of, .. }, _) => {
+                past_authored_limit(ir, of, value, at, depth + 1, found);
+            }
+            (ResolvedBody::Struct { fields, .. }, Node::Map(entries)) => {
+                for field in fields {
+                    if let Some(item) = entries.get(&field.name) {
+                        let below = format!("{at}.{}", field.name);
+                        past_authored_limit(ir, &field.type_ref, item, &below, depth + 1, found);
+                    }
+                }
+            }
+            (ResolvedBody::Union { tag, variants }, Node::Map(entries)) => {
+                let selected = entries
+                    .get(tag)
+                    .and_then(Node::as_text)
+                    .and_then(|label| variants.get(label))
+                    .and_then(Option::as_ref);
+                let content = ess_gen::schema::union_content_key(tag);
+                if let (Some(of), Some(item)) = (selected, entries.get(content)) {
+                    let below = format!("{at}.{content}");
+                    past_authored_limit(ir, of, item, &below, depth + 1, found);
+                }
+            }
+            _ => {}
+        },
+        _ => {}
+    }
 }

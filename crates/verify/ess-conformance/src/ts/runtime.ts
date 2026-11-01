@@ -95,11 +95,13 @@ import {
   retainedResult,
   admitSubjectRow,
   admitSubjectShape,
+  compareExact,
   decodeSubjectShape,
   decodeResponseObservation,
   exactDecimalMajor,
   exactObservationEqual,
   expectResponsePayload,
+  numberValue,
   responsePrimitiveAdmits,
   responseEqual,
   snapshotResponseResult,
@@ -6038,15 +6040,16 @@ export class ScenarioRun {
  * (beyond10x/ess#179). A field name holds no dot, so an older suite reads exactly as before. A path
  * that finds nothing, because the leaf or a struct above it was not written or is null, is the leaf
  * holding nothing, which is what a wanted `null` asks about. The Rust runner's `matches` and
- * `carried_at`, rule for rule.
+ * `carried_at`, rule for rule. A number compares by valueEqual, as the Go runtime's `equal` and
+ * Rust's `Node` equality compare one.
  */
 export function matches(row: { [field: string]: Node }, want: { [field: string]: Node }): boolean {
-  return fieldsMatch(row, want, equal);
+  return fieldsMatch(row, want, valueEqual);
 }
 
 /**
  * matches for a view row or the fields of an error, whose struct members compare by sameValue. An
- * observed event, invocation or subject identity is compared exactly by matches.
+ * observed event, invocation or subject identity is compared whole by matches.
  */
 export function rowMatches(
   row: { [field: string]: Node },
@@ -6105,7 +6108,41 @@ export function sameValue(actual: Node, expected: Node): boolean {
       actual.every((item, index) => sameValue(item, expected[index]))
     );
   }
-  return equal(actual, expected);
+  return valueEqual(actual, expected);
+}
+
+/**
+ * equal, except that a number is compared by the value Rust's `Node` and Go's `numberValue` give
+ * it rather than by its exact decimal: an integer exactly, any other number by its nearest
+ * binary64. A payload, a row or an input assertion carries no type, so a `Binary64` the target
+ * answers as `1.50000000000000000001` is the `1.5` the suite wrote
+ * (story:a-binary64-value-round-trips-through-a-conformance-suite).
+ */
+export function valueEqual(left: Node, right: Node): boolean {
+  if (isNumberNode(left) || isNumberNode(right)) {
+    const a = numberValue(left);
+    const b = numberValue(right);
+    return a !== null && b !== null && compareExact(a, b) === 0;
+  }
+  if (Array.isArray(left)) {
+    return (
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((item, index) => valueEqual(item, right[index]))
+    );
+  }
+  if (isObject(left)) {
+    return (
+      isObject(right) &&
+      Object.keys(left).length === Object.keys(right).length &&
+      Object.keys(left).every((key) => valueEqual(left[key], right[key]))
+    );
+  }
+  return equal(left, right);
+}
+
+function isNumberNode(value: Node): boolean {
+  return value instanceof JsonNumber || typeof value === 'number';
 }
 
 /**

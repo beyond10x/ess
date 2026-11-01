@@ -1453,6 +1453,11 @@ fn a_value_the_declared_type_does_not_admit_is_refused_where_it_sits() {
 /// A command taking a `Decimal` and an `Optional<Decimal>`, for the non-finite cases
 /// (beyond10x/ess#676).
 fn metered() -> EssIr {
+    metered_as("Decimal")
+}
+
+/// [`metered`] with `primitive` in place of each `Decimal`.
+fn metered_as(primitive: &str) -> EssIr {
     let text = "format: ess/15
 system: meter
 version: v1
@@ -1474,8 +1479,9 @@ commands:
 actors:
   - name: meter.reading.Reader
     may: [meter.reading.Record]
-";
-    let raw = RawSpecFile::parse(text).expect("well formed");
+"
+    .replace("Decimal", primitive);
+    let raw = RawSpecFile::parse(&text).expect("well formed");
     let specification = Specification::assemble([(SpecSource::new("meter.yaml"), raw)])
         .unwrap_or_else(|errors| panic!("meter validates:\n{errors}"));
     compile(&specification, &SourceMap::new())
@@ -1554,6 +1560,56 @@ fn a_non_finite_scenario_literal_is_refused_with_the_reason() {
             "{message}"
         );
         assert!(!message.contains("found null"), "{message}");
+    }
+}
+
+/// A view row carries no declared type in a suite, so every runner compares an integer token there
+/// exactly, and past 2^53 an implementation holding an `f64` answers a different integer for the
+/// one it was sent. An authored `Binary64` literal is held below 2^53 in magnitude, refused by
+/// name (`docs/design/model-binary64.md` § Authored values); a `Decimal` keeps every integer.
+#[test]
+fn a_binary64_literal_at_or_past_two_to_the_53_is_refused_by_name() {
+    const STORY: &str = "story:a-binary64-value-round-trips-through-a-conformance-suite";
+    let binary64 = metered_as("Binary64");
+    for admitted in [
+        "{value: 1.5}",
+        "{value: 9007199254740991}",
+        "{value: -9007199254740991, limit: 0.5}",
+    ] {
+        let authoring = authoring(&binary64, &metered_act(admitted));
+        assert!(
+            authoring.refusals.is_empty(),
+            "{STORY}: {admitted} is below 2^53: {:?}",
+            authoring.refusals
+        );
+    }
+    let decimal = metered();
+    assert!(
+        authoring(&decimal, &metered_act("{value: 9007199254740993}"))
+            .refusals
+            .is_empty(),
+        "{STORY}: a Decimal integer is compared exactly everywhere, so it has no such limit"
+    );
+    for (input, names, number) in [
+        ("{value: 9007199254740992}", "value", "9007199254740992"),
+        ("{value: -9007199254740993}", "value", "-9007199254740993"),
+        ("{value: 1.5, limit: 1e300}", "limit", "1e300"),
+    ] {
+        let refused = refusal(&binary64, &metered_act(input));
+        let message = refused.to_string();
+        assert_eq!(
+            refused.code().to_string(),
+            "ESS-AUTHOR-015",
+            "{STORY}: {message}"
+        );
+        assert!(
+            message.contains(&format!("{names}: `")),
+            "{STORY}: {names:?} in {message}"
+        );
+        assert!(
+            message.contains("magnitude 2^53 or more"),
+            "{STORY}: {number} in {message}"
+        );
     }
 }
 

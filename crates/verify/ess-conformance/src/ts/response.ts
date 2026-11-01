@@ -1408,6 +1408,59 @@ function exactInteger(value: ExactDecimal): bigint | null {
   return value.units % divisor === 0n ? value.units / divisor : null;
 }
 
+/** 2^127: Rust's `exact_of_decimal_text` holds a literal's digits in an i128. */
+const I128_BOUND = 2n ** 127n;
+
+/** 2^63: an integral binary64 within it is drawn as the integer it is (`canonical_decimal`). */
+const BINARY_INTEGER_BOUND = 2 ** 63;
+
+/**
+ * The value a number means under Rust's `Number` equality (`ess-primitives/src/facts.rs`), as the
+ * Go runtime's `numberValue` reads it, or `null` for anything that is not a finite number:
+ *
+ * - a `JsonNumber` spelling an integer whose digits, as written, an i128 holds is that integer, so
+ *   `9007199254740993` is not `9007199254740992`;
+ * - any other `JsonNumber` is the canonical decimal of the binary64 nearest to it, so `1.5`, `1.50`
+ *   and `1.50000000000000000001` are one value, as are `0.1` and `0.10000000000000001`;
+ * - a JavaScript number is its canonical decimal: the integer it is when integral within 2^63, its
+ *   shortest round-tripping decimal otherwise.
+ *
+ * A view row and an error's fields compare by it ({@link responseEqual} stays exact): a suite's
+ * view assertion carries no declared type, so the reading is the untyped one the Rust and Go
+ * runners give every number there (story:a-binary64-value-round-trips-through-a-conformance-suite).
+ */
+export function numberValue(value: Node): ExactDecimal | null {
+  if (typeof value === 'number') {
+    return binaryValue(value);
+  }
+  const exact = responseNumber(value);
+  if (exact === null) {
+    return null;
+  }
+  if (exactInteger(exact) !== null && digitsFit(exact)) {
+    return exact;
+  }
+  return binaryValue(Number((value as JsonNumber).toString()));
+}
+
+/** Whether a token's digits, scaled by a positive exponent, fit an i128 (Go `decimalDigitsFit`). */
+function digitsFit(value: ExactDecimal): boolean {
+  const units = value.units < 0n ? -value.units : value.units;
+  return (value.scale > 0 ? units * power(value.scale) : units) < I128_BOUND;
+}
+
+/** A binary64's canonical decimal, as Rust's `canonical_decimal` and Go's `binaryValue` draw it. */
+function binaryValue(value: number): ExactDecimal | null {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  if (Number.isInteger(value) && Math.abs(value) <= BINARY_INTEGER_BOUND) {
+    return { units: BigInt(value), scale: 0 };
+  }
+  // `Number#toString` writes the shortest round-tripping digits, zero-padded below 1e21.
+  return responseNumber(new JsonNumber(String(value)));
+}
+
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 

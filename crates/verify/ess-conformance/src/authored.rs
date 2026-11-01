@@ -4989,6 +4989,7 @@ impl<'a> Compiler<'a> {
                 self.shape(&errors, surface);
             }
         }
+        self.binary64_limit(&remaining, &literals, surface);
         for (field, node) in literals {
             let value = structured
                 .remove(&field)
@@ -5257,6 +5258,7 @@ impl<'a> Compiler<'a> {
                 if let Err(errors) = bind(self.ir, &member, &value, Completeness::Partial) {
                     self.member_shape(&errors, &surface);
                 }
+                self.binary64_limit(&member, &value, &surface);
             }
         }
         // A field claimed whole and by a path names one member twice, as on the other claim
@@ -5281,6 +5283,7 @@ impl<'a> Compiler<'a> {
         if let Err(errors) = bind(self.ir, fields, &whole, Completeness::Partial) {
             self.member_shape(&errors, &surface);
         }
+        self.binary64_limit(fields, &whole, &surface);
     }
 
     /// The members a value names that its type does not declare, or leaves out, refused by name.
@@ -5400,15 +5403,12 @@ impl<'a> Compiler<'a> {
                 type_ref: type_ref.clone(),
                 naming: ess_domain::Naming::default(),
             }];
-            if let Err(errors) = bind(
-                self.ir,
-                &member,
-                &BTreeMap::from([(key.clone(), node.clone())]),
-                Completeness::Partial,
-            ) {
+            let value = BTreeMap::from([(key.clone(), node.clone())]);
+            if let Err(errors) = bind(self.ir, &member, &value, Completeness::Partial) {
                 self.shape(&errors, surface);
                 continue;
             }
+            self.binary64_limit(&member, &value, surface);
             let mut written_leaves = BTreeMap::new();
             crate::member_paths::leaves(
                 self.ir,
@@ -5505,8 +5505,45 @@ impl<'a> Compiler<'a> {
         if let Err(errors) = bind(self.ir, fields, &literals, Completeness::Partial) {
             self.shape(&errors, surface);
         }
+        self.binary64_limit(fields, &literals, surface);
         literals.extend(leaves);
         literals
+    }
+
+    /// Refuses each `Binary64` literal `values` holds at or past 2^53 in magnitude
+    /// ([`crate::binary64_values::AUTHORED_LIMIT`]), naming where it stands and the number
+    /// (story:a-binary64-value-round-trips-through-a-conformance-suite).
+    fn binary64_limit(
+        &mut self,
+        fields: &[ResolvedField],
+        values: &BTreeMap<String, Node>,
+        surface: &Surface,
+    ) {
+        for field in fields {
+            let Some(value) = values.get(&field.name) else {
+                continue;
+            };
+            let mut found = Vec::new();
+            crate::binary64_values::past_authored_limit(
+                self.ir,
+                &field.type_ref,
+                value,
+                &field.name,
+                0,
+                &mut found,
+            );
+            for (at, number) in found {
+                let number = serde_json::to_string(&number).unwrap_or_default();
+                self.refuse(Cause::ValueRejected {
+                    surface: surface.clone(),
+                    detail: format!(
+                        "{at}: `{number}` is a Binary64 of magnitude 2^53 or more, where a binary64 \
+                         no longer holds every integer and a suite compares an integer token \
+                         exactly; write a value below 9007199254740992 in magnitude"
+                    ),
+                });
+            }
+        }
     }
 
     /// Refuses each NaN or infinity declared `field` holds (beyond10x/ess#676), naming the number

@@ -301,7 +301,13 @@ the suite is written.
   decimal that round-trips the binary64, with `.0` on an integral value (`1.5`, `0.0`, `-0.0`,
   `1e-7`). No new spelling is introduced, and no other primitive's bytes move.
 - **Authored values.** An authored scenario's number at a `Binary64` input or setup field is read
-  as it is today; a non-finite one is refused by the existing non-finite check. An authored
+  as it is today; a non-finite one is refused by the existing non-finite check. A number of
+  magnitude `2^53` or more at a `Binary64` leaf, in an input, a setup field or a claim, is refused
+  as `ESS-AUTHOR-015`, naming its path and the number. A view row and an error's fields carry no
+  declared type in a suite, so every runner compares an integer token there exactly, as an
+  `Integer` has to be compared. Below `2^53` that is also the binary64 rule, because every integer
+  there is its own binary64. Past it, an implementation that holds an `f64` may answer
+  `9007199254740992` for `9007199254740993`. A `Decimal` has no such limit. An authored
   `-0.0` keeps its sign in the suite. `sets:`, `payload:`, `example:` and precondition literals
   still have no `Binary64` spelling (the domain's `Primitive::admits` table is unchanged); the
   suite codec admits a finite number at a `Binary64` position in its own arm
@@ -319,15 +325,20 @@ There is no epsilon. The suite never claims a sign of zero.
   writes. A non-integral token is read as the canonical decimal of the binary64 it rounds to
   (`Number::parse_decimal`, `Repr::of_binary64`). An integer token is compared exactly, and for
   an expected value below `2^53` in magnitude an integer token equals it exactly when its binary64
-  does. That is why synthesis writes nothing at or past `2^53`. A typed site (an event's `Holds`,
+  does. That is why synthesis writes nothing at or past `2^53`, and authoring refuses such a value
+  (§ Writing a value). A typed site (an event's `Holds`,
   an exact observer's shape, a typed response or fixture shape) admits any finite number at a
   `Binary64` leaf.
 - **Go** compares with `numberValue`, the same rule as Rust's `Number`. A typed response
   observation admits a `Binary64` where `responseNumber` does: a finite binary64 image is
   required, and underflow to zero is admitted.
-- **TypeScript** compares with its exact decimal reading of a `JsonNumber`, and never with
-  `Object.is`. `JSON.stringify` writes `-0` as `0` when the runner sends an input. That changes
-  no verdict, because the two are one value.
+- **TypeScript** compares a view row, an error's fields, an event's payload and an invocation's
+  input (`rowMatches`, `matches`, both through `valueEqual`) with `numberValue`, the same rule as
+  Go's. Those assertions carry no declared type, so a `Decimal` there is read the same way, as it
+  already is in Rust and Go. The exact observers below keep the exact decimal reading of a
+  `JsonNumber` (`responseEqual`). No site compares with `Object.is`.
+  `JSON.stringify` writes `-0` as `0` when the runner sends an input. That changes no verdict,
+  because the two are one value.
 - **Exact observers.** The complete subject a refusal leaves unchanged and the retained result a
   retry returns admit a `Binary64` at any depth (`ExactShape::check_type`, Go `exactType`,
   TypeScript `checkType`). They compare a `Decimal` by its exact rational value, so a typed
