@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.82.0 — 2026-11-01
+
+### Binding scenarios that check event identities, refusals that probe the record, and validation that names the file
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/event-identities-and-file-cited-refusals) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.82.0)
+
+Synthesized binding scenarios compare the trigger event's identity fields with the instance or row they act on. The arranged half of a refusal without an identity view probes the record through the command. ess specify validate names the file a refusal was read from in a specification of several files.
+
 ## 0.81.0 — 2026-11-01
 
 ### Nullable Binary64 fields in generated types, name aliases in the schema, and synthesis that follows bindings
