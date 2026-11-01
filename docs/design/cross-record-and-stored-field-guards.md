@@ -324,8 +324,13 @@ does not leave is the wrong-state answer, so the row the `rush` move itself left
 serve even though `rushed`'s guard still holds on it. A guard that is unknown on the row because the
 row leaves a field it reads absent (an optional field no creation fills) stops selection before the
 wrong-state answer, so the row must hold that field, unless the moving branch is declared before the
-sibling and selected on the row first. An unknown the arrangement caused, a field the target fills
-with a value synthesis does not know, is decided by the target, and either way the move answers.
+sibling and selected on the row first. A guard reading such a field counts as unknown unless the
+leaves whose values synthesis knows decide it: `code == "zzz" or note == "x"`, with `code`
+generated and `note` never filled, is unknown on every target that generated `code` as anything
+but `zzz`, so the row must hold `note` here too. A guard reading no empty field, unknown only for a
+value the target fills and synthesis does not know, is decided by the target: true selects the
+sibling's move from another state, and false passes selection on to the branches after it, of
+which the next paragraph asks a move.
 
 Missing every sibling is not enough: the moving branch must be selected. Its own `when_subject:`
 holds on the row, since where it is false the next branch selected answers (an exempt sibling whose
