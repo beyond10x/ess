@@ -351,24 +351,12 @@ impl Specification {
         // Before any command is converted, so an expanded outcome meets every check a hand-written
         // copy would (docs/design/outcome-groups.md, "Where before validation is in this tree").
         let mut files: Vec<(Source, RawSpecFile)> = files.into_iter().collect();
-        crate::outcome_group::expand(&mut files, &mut errors);
-        crate::command::set_effects::refuse_below_ess_16(
+        refuse_as_written(
             &mut files,
             &mut errors,
             &mut collected.refused.moves,
+            &mut provenance.read,
         );
-        crate::command::set_effects::refuse_affect_moves(
-            &mut files,
-            &mut errors,
-            &mut collected.refused.moves,
-        );
-        crate::command::set_effects::refuse_deletions(&mut files, &mut errors);
-        crate::command::set_effects::refuse_each(
-            &mut files,
-            &mut errors,
-            &mut collected.refused.moves,
-        );
-        crate::command::set_effects::refuse_per_row_events(&mut files, &mut errors);
 
         // A guard reads `input.<field>` only in an `ess/22` source, named by its one header.
         let headers: Vec<Option<FormatVersion>> = files
@@ -396,13 +384,14 @@ impl Specification {
                 crate::expression::attributes::converting(reads_attributes, || {
                     for (source, file) in files {
                         // Every refusal pushed from here to the end of `absorb` is this file's.
-                        let first = errors.len();
+                        mark(&mut provenance.read, &errors, Some(&source));
                         parts.push(collected.absorb(&source, file, &mut errors));
-                        provenance.read.push((source, first..errors.len()));
                     }
                 });
             });
         });
+        // What follows is about the assembled specification, not a file being read.
+        mark(&mut provenance.read, &errors, None);
         provenance.kept = std::mem::take(&mut collected.kept);
 
         let lifecycle_types: Vec<NamedType> = collected
@@ -968,6 +957,38 @@ fn record<K: Ord + std::fmt::Display, T>(
 /// `(kind, name)` to the file of the declaration kept under it; see [`Provenance::kept`].
 type Kept = BTreeMap<(String, String), Source>;
 
+/// [`Provenance::read_while`]'s record: the position in the refusals where each run begins, and
+/// the file being read while it was pushed, or `None`.
+pub(crate) type Read = Vec<(usize, Option<Source>)>;
+
+/// Marks that the refusals `errors` gains from here, until the next mark, were pushed while
+/// `source` was being read, or while no file was.
+pub(crate) fn mark(read: &mut Read, errors: &ValidationErrors, source: Option<&Source>) {
+    read.push((errors.len(), source.cloned()));
+}
+
+/// The passes over the files as written, before any member is converted: outcome groups are
+/// expanded, and the set effects their format cannot read are refused and taken off.
+///
+/// Each pass marks in `read`, before it refuses anything in a file (or a group), that the refusals
+/// from there are that file's, so a refusal made here is cited where it was written and not at a
+/// copy of the same name assembly keeps from another file.
+fn refuse_as_written(
+    files: &mut [(Source, RawSpecFile)],
+    errors: &mut ValidationErrors,
+    refused_moves: &mut BTreeSet<QualifiedName>,
+    read: &mut Read,
+) {
+    use crate::command::set_effects;
+    crate::outcome_group::expand_marking(files, errors, read);
+    set_effects::refuse_below_ess_16(files, errors, refused_moves, read);
+    set_effects::refuse_affect_moves(files, errors, refused_moves, read);
+    set_effects::refuse_deletions(files, errors, read);
+    set_effects::refuse_each(files, errors, refused_moves, read);
+    set_effects::refuse_per_row_events(files, errors, read);
+    mark(read, errors, None);
+}
+
 /// A refused assembly: the refusals, and which file each was read from.
 ///
 /// Returned by [`Specification::assemble_traced`]. `errors` is exactly what
@@ -987,20 +1008,23 @@ pub struct Traced {
 /// two copies of one name apart, so a consumer citing a refusal against a file asks this first.
 /// Two answers, in this order:
 ///
-/// 1. [`Self::read_while`]: a refusal pushed while one file's members were being taken is about
-///    that file. Every refusal `Collected::absorb` makes is about the declaration it is
-///    converting or the name it is declaring, and both are the file's own.
-/// 2. [`Self::kept`]: a refusal made after assembly is about a declaration in the assembled
-///    specification, and of a name declared twice only one copy is there — the one `record` kept,
-///    which is the first copy that converted, not necessarily the first written.
+/// 1. [`Self::read_while`]: a refusal pushed while one file's text was being read is about that
+///    file. That covers every refusal made before the members are merged: the passes over the
+///    files as written (an outcome group's expansion, a set effect refused on its format), which
+///    mark each file, or each group, before refusing anything in it, and `Collected::absorb`,
+///    whose refusals are about the declaration it is converting or the name it is declaring.
+/// 2. [`Self::kept`]: a refusal made after the files are read is about a declaration in the
+///    assembled specification, and of a name declared twice only one copy is there — the one
+///    `record` kept, which is the first copy that converted, not necessarily the first written.
 ///
-/// Neither answers a refusal made before any file is read (an outcome group's expansion, a set
-/// effect refused on its format) or a name no kept declaration carries; for those the consumer
-/// falls back to whatever it did before.
+/// A refusal after the files are read whose location names no kept declaration (a domain, the
+/// system header, a merge of the type registries) has neither answer; for it the consumer falls
+/// back to whatever it did before.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Provenance {
-    /// Per file, in reading order, the positions of the refusals pushed while it was read.
-    read: Vec<(Source, std::ops::Range<usize>)>,
+    /// Where each run of refusals begins, in the order they were pushed, and the file being read
+    /// while it was; `None` where no file was.
+    read: Read,
     /// `(kind, name)` — the kind as [`ConstructKind::as_str`] spells it — to the file of the
     /// declaration assembly kept under it.
     ///
@@ -1011,10 +1035,12 @@ pub struct Provenance {
 impl Provenance {
     /// The file that was being read when the refusal at `index` of [`Traced::errors`] was pushed.
     pub fn read_while(&self, index: usize) -> Option<&Source> {
+        // The last mark at or before `index` is the run it belongs to; later marks start later.
         self.read
             .iter()
-            .find(|(_, range)| range.contains(&index))
-            .map(|(source, _)| source)
+            .rev()
+            .find(|(start, _)| *start <= index)
+            .and_then(|(_, source)| source.as_ref())
     }
 
     /// The file the declaration assembly kept as `name` of `kind` was read from. `kind` is the
