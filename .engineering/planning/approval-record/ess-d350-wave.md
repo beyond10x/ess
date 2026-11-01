@@ -14,7 +14,7 @@ relations:
 - decides: story:related-guard-wrong-state-beside-external
 - decides: story:wrong-state-witness-unknown-and-own-stored-guards
 - decides: story:the-published-schema-admits-the-name-aliases-the-parser-reads
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-01T13:05:38Z", actor: "human:timo", revision: 2}
 ---
@@ -144,3 +144,10 @@ Host build slots the orchestrator relayed for this wave, 2026-11-01:
   80G free or more, at most one other cargo, the tree's `target/` under 15G; a step stops when / falls
   under 70G while it runs; start, end, peak `target/` and lowest / are reported per step. The wave's
   cargo wrapper enforces the checks and the in-step stop and records each step.
+- Host-monitor D133, relayed by the orchestrator: "host-monitor D133 granted your final-gate slot
+  as planned: Stage A ~12G, Stage B ~8G, discard-cache after each, D132 caps including the stop
+  under 70G. It runs after U2, U3 and the U1/U4 fixes merge." Stage A runs the touched crates' tests
+  (ess-gen, schema-contract, ess-domain), four ess-cli targets, named ess-conformance targets only,
+  clippy and `task fmt-check`; Stage B runs `task projection-check` and `task test-xtask`.
+- Hold, 2026-11-01 13:26Z: the substrate lanes run; no new cargo until the orchestrator sends "go".
+  The wave's cargo wrapper refuses while its hold file exists.
