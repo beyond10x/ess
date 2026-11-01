@@ -321,9 +321,17 @@ misses every sibling, chosen in `subject_fact::refusal_witness` (beyond10x/ess#1
 A stored-guarded sibling that moves the subject along a transition not starting from `<S>` needs no
 refuting while its guard decides true or false on the row. Selected or not, a move from a state it
 does not leave is the wrong-state answer, so the row the `rush` move itself left in `Rushed` can
-serve even though `rushed`'s guard still holds on it. A guard that is unknown on the row (it reads an
-optional field no creation fills) stops selection before the wrong-state answer; that case, and a
-moving branch whose own stored guard the row rejects, are not yet handled
+serve even though `rushed`'s guard still holds on it. A guard that is unknown on the row because the
+row leaves a field it reads absent (an optional field no creation fills) stops selection before the
+wrong-state answer, so the row must hold that field, unless the moving branch is declared before the
+sibling and selected on the row first. An unknown the arrangement caused, a field the target fills
+with a value synthesis does not know, is decided by the target, and either way the move answers.
+
+Missing every sibling is not enough: the moving branch must be selected. Its own `when_subject:`
+holds on the row, since where it is false the next branch selected answers (an exempt sibling whose
+guards hold there, or else the default), and that is the wrong-state answer only where it too moves
+the subject from another state. `confirmed: history == Pending` beside a preserving `waiting`
+default is sent only to a `Pending` row in `<S>`
 (`story:wrong-state-witness-unknown-and-own-stored-guards`).
 
 The input is one the moving branch's own input guard admits. A candidate refuting every input half
@@ -332,10 +340,14 @@ is preferred; only where none exists does the witness rely on the row for a mixe
 `token != ""` to a row whose `history` is not `Confirmed`. The row is the ordinary arrangement for
 `<S>` where it serves. Otherwise it is the first row in `<S>` that the declared drivers leave,
 found by the search above and steered by the command's own stored guards. Every stored guard the
-witness relies on the row for is observed before the command, through the view **Observation**
-names. Where no reachable row in `<S>` refutes every such guard, the scenario is refused with
-ESS-SYNTH-003 naming the input and stored guards. It is never written to depend on which branch an
-implementation decides first.
+witness relies on the row to refute is observed before the command, through the view
+**Observation** names. The moving branch's own guard and the fields an exempt sibling's guard reads
+are not: a scenario whose row already served keeps its bytes, and a target holding other values
+there answers with another branch or none, which fails the scenario's outcome. Where no reachable
+row in `<S>` serves, the scenario is refused with ESS-SYNTH-003 naming the input and stored guards:
+the siblings' guards the row must refute, the moving branch's own guard the row must hold, and the
+exempt siblings' guards whose fields it must hold a value in. It is never written to depend on which
+branch an implementation decides first.
 
 **The witness for `refused-overweight`**, in the suite's own step vocabulary:
 

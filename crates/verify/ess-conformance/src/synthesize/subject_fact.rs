@@ -2477,15 +2477,24 @@ pub(super) fn input_selects(
 ///   == ""` is missed by `token != ""` on a row whose `history` is not `Confirmed`.
 ///
 /// A sibling that moves the subject along a transition not starting from `state` needs no
-/// refuting: selected or not, the move is the wrong-state answer.
+/// refuting: selected or not, the move is the wrong-state answer — while its stored guard decides
+/// on the row. One that is `Unknown` there because the row leaves a field it reads absent stops
+/// selection before the wrong-state answer, so the row must hold that field, unless `outcome` is
+/// declared before the sibling and selected first. And missing every sibling is not enough:
+/// `outcome`'s own stored guard holds on the row, since where it is false the next branch selected
+/// answers — an exempt sibling whose guards hold, or else the default — and that is the
+/// wrong-state answer only where it too moves the subject from another state
+/// (story:wrong-state-witness-unknown-and-own-stored-guards).
 ///
 /// A candidate refuting every input half is preferred, so a witness that already did stays the one
 /// it was. The row is `arrangement` where it serves, and otherwise the first row in `state` the
 /// declared drivers leave that does — found by the search [`prepare`] arranges subject-fact
 /// branches with, steered by the command's own stored guards. Where no row serves, the scenario is
 /// refused (ESS-SYNTH-003, naming the guards) rather than written to depend on evaluation order.
-/// Every stored guard the witness relies on the row for is observed before the command, as
-/// [`prepare`] observes it: the row is a fact the scenario is about, not one it assumes.
+/// Every stored guard the witness relies on the row to refute is observed before the command, as
+/// [`prepare`] observes it: the row is a fact the scenario is about, not one it assumes. The own
+/// guard and an exempt sibling's fields are not, so a row that already served keeps its bytes; a
+/// target holding other values there answers otherwise and fails the scenario's outcome.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn refusal_witness(
     ir: &EssIr,
@@ -3208,7 +3217,7 @@ fn refusal_input_from(
     // answered by `wrong_state` whether or not its guard selects it — Entity Runtime lowers no
     // held-state guard onto a stored-field branch, and a move from a state it does not leave is the
     // wrong-state answer — so the row need not refute it (`rushed: urgent and not fast` on the row
-    // `rush` itself left in `Rushed`).
+    // `rush` itself left in `Rushed`); it need only decide its guard (`selection` below).
     let answered_by_state = |other: &ResolvedOutcome| {
         other
             .subject
@@ -3264,6 +3273,101 @@ fn refusal_input_from(
             .collect()
     } else {
         Vec::new()
+    };
+    let position = |branch: &ResolvedOutcome| {
+        command
+            .outcomes
+            .iter()
+            .position(|other| other.name == branch.name)
+    };
+    let own_stored = stored(&outcome.condition);
+    // Missing every sibling is not yet the wrong-state answer: a target taking the branches in
+    // Entity Runtime's order (input-guarded refusals, the other guarded branches in declaration
+    // order, the default, `wrong_state` last; `admit_state` answers a selected move from a state no
+    // move leaves) answers with it only where it selects a move. So, on the row
+    // (story:wrong-state-witness-unknown-and-own-stored-guards):
+    //
+    // * `outcome`'s own stored guard holds, or it is false there and a move from another state
+    //   still answers: a sibling exempt above whose guards hold, or the default — `confirmed:
+    //   history == Pending` beside a preserving `waiting` default is sent only to a `Pending` row;
+    // * no sibling exempt above is `Unknown` there for a field the row leaves absent, which stops
+    //   selection (`OutcomeUnobservable`) before the wrong-state answer — unless `outcome`,
+    //   selected on the row, is declared before it and so taken first. An `Unknown` the arrangement
+    //   caused is decided by the target, and either way the move answers.
+    //
+    // Returned: whether the own guard lost the row, and the sibling guards left `Unknown` by
+    // absence. Asked only of a candidate that otherwise serves, so a refusal it did not cause keeps
+    // its words.
+    let default_moves_away = command
+        .outcomes
+        .iter()
+        .any(|branch| state_default(branch) && answered_by_state(branch));
+    let selection = |input: &BTreeMap<String, Node>,
+                     facts: &crate::InputFacts<'_>|
+     -> Result<(bool, Vec<Predicate>), RefusalCause> {
+        if !on_row {
+            return Ok((false, Vec::new()));
+        }
+        let truth = |predicate: &Predicate, as_guard: bool| {
+            evaluate_row(
+                ir,
+                entity,
+                &arrangement.settled,
+                &arrangement.unwritten,
+                Some(&arrangement.state),
+                predicate,
+                Some((command, input)),
+                as_guard,
+            )
+        };
+        let absent = |predicate: &Predicate| {
+            truth(predicate, false) == Truth::Unknown && truth(predicate, true) == Truth::False
+        };
+        let own_truth = own_stored
+            .as_ref()
+            .map(|predicate| (truth(predicate, false), absent(predicate)));
+        let own_selected = guarded(command).any(|branch| branch.name == outcome.name)
+            && own_truth.is_none_or(|(own, _)| own == Truth::True);
+        let mut moves_on = default_moves_away;
+        let mut unknown = Vec::new();
+        for branch in guarded(command) {
+            if branch.name == outcome.name || !answered_by_state(branch) {
+                continue;
+            }
+            let Some(predicate) = stored(&branch.condition) else {
+                continue;
+            };
+            if let Some(guard) = input_guard(&branch.condition) {
+                if decides(facts, &[guard], false)? {
+                    continue;
+                }
+            }
+            moves_on |= truth(&predicate, false) == Truth::True;
+            if own_selected && position(branch) > position(outcome) {
+                continue;
+            }
+            if absent(&predicate) && !unknown.contains(&predicate) {
+                unknown.push(predicate);
+            }
+        }
+        let own_fails = own_truth.is_some_and(|(own, by_absence)| match own {
+            Truth::True => false,
+            Truth::False => !moves_on,
+            Truth::Unknown => !moves_on || by_absence,
+        });
+        Ok((own_fails, unknown))
+    };
+    let mut own_lost = false;
+    let mut undecided: Vec<Predicate> = Vec::new();
+    let mut lost_at_selection = |(fails, guards): (bool, Vec<Predicate>)| {
+        own_lost |= fails;
+        let lost = fails || !guards.is_empty();
+        for guard in guards {
+            if !undecided.contains(&guard) {
+                undecided.push(guard);
+            }
+        }
+        lost
     };
     let mut row_guards: Vec<Predicate> = if on_row { halves.clone() } else { Vec::new() };
     row_guards.extend(windowed.iter().cloned());
@@ -3336,6 +3440,9 @@ fn refusal_input_from(
             relied.push(predicate);
         }
         if decides(&facts, &siblings, false)? {
+            if lost_at_selection(selection(input, &facts)?) {
+                continue;
+            }
             return Ok((input.clone(), relied));
         }
         if through_row.is_some() {
@@ -3357,6 +3464,9 @@ fn refusal_input_from(
             };
             relied.push(predicate);
         }
+        if lost_at_selection(selection(input, &facts)?) {
+            continue;
+        }
         through_row = Some((input.clone(), relied));
     }
     if let Some(found) = through_row {
@@ -3372,15 +3482,8 @@ fn refusal_input_from(
     // with the wrong-state answer only where its own move does not start from the row's state. Every
     // input-guarded refusal is still refuted, since it is taken before any accepting branch
     // whatever the order (beyond10x/ess#178), and so is every sibling declared before `outcome`.
-    let position = |branch: &ResolvedOutcome| {
-        command
-            .outcomes
-            .iter()
-            .position(|other| other.name == branch.name)
-    };
     let answered_after =
         |other: &ResolvedOutcome| other.error.is_none() && position(other) > position(outcome);
-    let own_stored = stored(&outcome.condition);
     // Only a branch with a stored guard: Entity Runtime lowers no held-state guard onto a
     // stored-field branch, so such a branch selected on a row in a state its move does not start
     // from is the wrong-state answer, as a sibling's is above (`answered_by_state`). A branch with a
@@ -3434,6 +3537,9 @@ fn refusal_input_from(
                 };
                 relied.push(predicate);
             }
+            if lost_at_selection(selection(input, &facts)?) {
+                continue;
+            }
             return Ok((input.clone(), relied));
         }
     }
@@ -3478,13 +3584,14 @@ fn refusal_input_from(
         .collect();
     let holding = own_stored
         .as_ref()
-        .filter(|_| first_declared && later && earlier.is_empty());
+        .filter(|_| (first_declared && later && earlier.is_empty()) || own_lost);
     Err(refusal_unsatisfied(
         entity,
         (&own, &siblings, &listed),
         cause,
         holding,
         lost_on_row.then_some(halves.as_slice()),
+        (!undecided.is_empty()).then_some(undecided.as_slice()),
         (inputs.len().min(super::MAX_CANDIDATES), cut),
     ))
 }
@@ -3709,7 +3816,12 @@ fn refusal_candidates(
 ///   declared before the branch that the row did not refute — is named as what took every such
 ///   input (`cause`);
 /// * where only twins declared after it were passed over, and only on a row selecting the branch
-///   first, the diagnostic names that row (`holding`, the branch's stored guard).
+///   first, the diagnostic names that row (`holding`, the branch's stored guard); so it does where
+///   a candidate was lost to the branch's own stored guard, which the row must hold for the move to
+///   be selected (story:wrong-state-witness-unknown-and-own-stored-guards).
+///
+/// `undecided` names the guards of siblings answered by state that a candidate's row left `Unknown`
+/// for an absent field, which stops selection before the wrong-state answer.
 ///
 /// `tried` is how many candidates were tried, and `cut` how many goals the guard-directed search
 /// drawing them gave up at its bound: where that is any, the refusal says so, as a refusal of the
@@ -3720,6 +3832,7 @@ fn refusal_unsatisfied(
     cause: Option<(&OutcomeName, &Predicate)>,
     holding: Option<&Predicate>,
     halves: Option<&[Predicate]>,
+    undecided: Option<&[Predicate]>,
     (tried, cut): (usize, usize),
 ) -> RefusalCause {
     let mut named = own.to_vec();
@@ -3751,6 +3864,22 @@ fn refusal_unsatisfied(
         let row = format!(
             "a `{entity}` row in this state refuting every one of: {}",
             halves
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        rendered = if rendered.is_empty() {
+            row
+        } else {
+            format!("{rendered}, on {row}")
+        };
+    }
+    if let Some(undecided) = undecided {
+        named.extend(undecided.iter());
+        let row = format!(
+            "a `{entity}` row in this state holding a value in every field read by: {}",
+            undecided
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
@@ -9346,7 +9475,8 @@ mod refusal_cut {
         let guard = Predicate::parse_expression("revision >= 100").expect("a predicate");
         let own = [&guard];
         let refused = |cut| {
-            refusal_unsatisfied(entity, (&own, &[], &[]), None, None, None, (4, cut)).to_string()
+            refusal_unsatisfied(entity, (&own, &[], &[]), None, None, None, None, (4, cut))
+                .to_string()
         };
         let cut_short = refused(2);
         assert!(
