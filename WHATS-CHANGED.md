@@ -99,7 +99,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.81.0)
 
-ess generate types realizes a nullable Optional<Binary64> field and refuses a responseless command's response root by name. The schema admits the id: and component: name aliases. Synthesis follows bindings that rewrite a related row, sends refusals beside external branches to a present related row, and picks wrong-state rows with known stored guards.
+ess generate types realizes an optional, nullable Binary64 field and refuses a responseless command's response root by name. The schema admits the id: and component: name aliases. Synthesis follows bindings that rewrite a related row, sends refusals beside external branches to a present related row, and picks wrong-state rows with known stored guards.
 
 ## 0.80.0 — 2026-11-01
 
