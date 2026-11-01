@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-published-schema-admits-the-name-aliases-the-parser-reads
 kind: story
-status: draft
+status: active
 title: The published schema admits the name aliases the parser reads
 relations:
 - serves: vision:O2
@@ -15,7 +15,10 @@ scope:
   path: crates/specify/ess-domain/src/component.rs
 - confidence: cited
   path: schemas/generated/ess.schema.json
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-01T13:05:45Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-11-01T13:05:45Z", actor: "human:timo", revision: 7}
 ---
 # Story: the published schema admits the name aliases the parser reads
 

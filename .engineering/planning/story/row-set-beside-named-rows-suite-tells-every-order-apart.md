@@ -9,7 +9,14 @@ tags:
 - ess-0.71.0
 relations:
 - derived_from: review-result:adversary-ess-0700-unit-a-pass-2
-revision: 1
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/row_set.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_ess0700a_identity_beside_row_set_2.rs
+revision: 5
 ---
 ## Finding
 
@@ -35,3 +42,15 @@ not tell apart every reordering of the step-4 refusals, or it leaves a branch un
   `adversary_a2_forall_beside_named_rows_kills_forall_mutants`,
   `adversary_a2_forall_beside_named_rows_witnesses_every_branch` and
   `adversary_a2_forall_without_named_rows_kills_forall_mutants_at_ess_31` are restored and green.
+
+## Scope
+
+Derived 2026-11-01 by `aep:story-scoper` for wave D350 on dc60f4532. Every line is **cited** (read from the story or the tree) or **inferred**.
+
+- **Primary surface:** `crates/verify/ess-conformance/src/synthesize/related_guard.rs` and `synthesize/row_set.rs` — cited (the story and its review-result name both sites)
+- `related_guard.rs` `steering_for` :665-710 (:688 is the early `return Vec::new()` on an unsettled row); `row_set.rs` `prepare_with` :3376-3679, search closure :3540, `consistent` :3581, eager `later_sets_hold` :3585 — cited. Linking :688 or :3581 to the four reorderings or the forall refusal — inferred
+- **Symbols:** `steering_for`, `read` :712, `rows` :725, `several` :748, `several_present` :535, `present_beside` :640, `beside_row` :1121, `later_sets_hold` :3245, `arrange_rows` :1690 (forall negation :1792-1796) — cited
+- **Also likely:** `synthesize/precedence.rs` — inferred
+- **Tests pinning today:** `tests/adversary_ess0700a_identity_beside_row_set_2.rs` (:572, :616, :652, :682, :728, forall control :782) — cited. None of the four story-named tests exists; commit d740b1f9e deferred them — cited
+- **Confidence:** medium (sites and absent tests read; mechanism not run)
+- **Would collide with:** `related_guard.rs` (`steering_for`, `read`, `rows`, `beside_row`), `row_set.rs` (`prepare_with`, `arrange_rows`, forall selection :2523-2700), `precedence.rs`, the test file above

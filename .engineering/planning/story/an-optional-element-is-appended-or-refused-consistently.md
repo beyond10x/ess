@@ -7,7 +7,12 @@ title: An optional element is appended or refused, consistently across domain an
 summary: 'The domain admits {append: input.<Optional<T>>} over List<Optional<T>> and generated Go appends nil, but the interpreter refuses the request as Unsupported when the element is absent or null.'
 tags:
 - ess-0.70.0
-revision: 2
+scope:
+- confidence: cited
+  path: crates/specify/ess-domain/src/command/append_list.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute/determined.rs
+revision: 5
 ---
 ## Finding
 
@@ -26,3 +31,16 @@ One of the two, chosen in the fit of this story:
 - the interpreter appends `null` when the element type is Optional, and a view over the list after two such appends from `["a"]` reads `["a", null, null]`.
 
 The adversary case `an_optional_element_the_domain_admits_is_appended_by_the_interpreter` (ess-conformance) is the red test for the second option.
+
+## Scope
+
+Derived 2026-11-01 by `aep:story-scoper` for wave D350 on dc60f4532. Every line is **cited** (read from the story or the tree) or **inferred**.
+
+- **Primary surface:** `crates/specify/ess-domain` (command/append_list) and `crates/verify/ess-conformance` (interpret) — cited
+- **Domain:** `crates/specify/ess-domain/src/command/append_list.rs:199-238` `check_element` (type equality :220); one call site `command/value_expression.rs:1440` — cited
+- **Interpreter:** `crates/verify/ess-conformance/src/interpret/execute/determined.rs:528-552` `append` (absent/Null element is NoValue :539-541); `interpret/execute.rs:2665-2672` dispatch — cited
+- **Generators:** `ess-synth/src/go/behaviour.rs:3725-3742`, `ess-synth/src/rust/behaviour.rs:2882-2897` — cited for the arms; nil/None behaviour — inferred
+- **Documents:** `ess-domain/src/system.rs:335` format-history text — cited
+- **Tests:** `ess-domain/tests/append_set.rs:103-114`, `ess-conformance/tests/append_set.rs:148,170` — cited; no test covers an Optional element append — inferred
+- **Confidence:** medium
+- **Would collide with:** `command/append_list.rs`, `command/value_expression.rs`, `interpret/execute/determined.rs`

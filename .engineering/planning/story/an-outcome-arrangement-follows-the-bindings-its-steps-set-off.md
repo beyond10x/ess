@@ -2,14 +2,25 @@
 format: aep.planning-md/3
 id: story:an-outcome-arrangement-follows-the-bindings-its-steps-set-off
 kind: story
-status: draft
+status: active
 title: An outcome arrangement follows the bindings its steps set off
 summary: A related-guard arrangement that sets off a binding rewriting the arranged row no longer yields a scenario the interpreter fails
 tags:
 - ess-0.74.0
 relations:
 - informed_by: review-result:ess-0730-wave-adversary-pass-1
-revision: 1
+- serves: vision:O2
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_0730_pass1.rs
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-01T13:05:41Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-11-01T13:05:41Z", actor: "human:timo", revision: 7}
 ---
 ## Problem
 
@@ -33,3 +44,18 @@ steps set off. `when_subject` searches likely share the gap (inferred).
 - An outcome scenario whose arrangement sets off a binding that rewrites the arranged row either
   follows that binding (and arranges a row that still refuses) or is refused by name. It never
   fails against the interpreter of the same model.
+
+## Scope
+
+Derived 2026-11-01 by `aep:story-scoper` for wave D350 on dc60f4532. Every line is **cited** (read from the story or the tree) or **inferred**.
+
+- **Primary surface:** `crates/verify/ess-conformance/src/synthesize/related_guard.rs` — cited
+- `related_guard.rs:3125` `arranged_at`, the present-row path `Give` takes: its related via is `input.grant_id`, so `stored::field` (`related_guard/stored.rs:44`) returns None at the early return on `:3136`, and the code continues at `:3137` — cited
+- `related_guard.rs:3230` `with_row(...)`, the row the arrangement settles on; `:3300` `own_arrangement`; `:2755` `prepare_at_in` and `:2772` `arranged`, the callers' entry points — cited
+- The triage pointer `:4118` falls in `send_each_without_row` (`:4095`), the `exists: false` send path, not the present-row path — cited
+- **Callers:** `synthesize.rs:4728` and `:4744` in `run_as` (`:4640`) — cited for the calls; inferred that they build `Give/outcome/not-flagged`
+- **Also likely:** `synthesize/binding_effects.rs:1513` `related_arranged` (calls `prepare_at_in` at `:1564`) — cited for the call; inferred to be the binding-refusal path
+- **Binding awareness:** no `binding` reference in `related_guard.rs` or `related_guard/stored.rs` — cited. The only set-off check is `refusal_policy.rs:277` `refused_row` (`sets_off` `:319`, `rewritten` `:337`), which filters the binding's own refusal-policy scenario, not outcome scenarios — cited
+- **Pinning test:** `crates/verify/ess-conformance/tests/adversary_0730_pass1.rs:104` `f2_a_binding_that_rewrites_the_arranged_row_is_followed` asserts `failures.keys() == ["demo.d.Give/outcome/not-flagged"]` today; fixture `tests/fixtures/adversary-0730/restoring-binding/` — cited
+- **Confidence:** medium. The failing case was not traced step by step; the `when_subject` shared gap was not checked.
+- **Would collide with:** `related_guard.rs` (`arranged_at`, `own_arrangement`, `arranged`, `prepare_at_in`), `refusal_policy.rs` `refused_row`, `binding_effects.rs` `related_arranged`, `synthesize.rs` `run_as`, `tests/adversary_0730_pass1.rs`

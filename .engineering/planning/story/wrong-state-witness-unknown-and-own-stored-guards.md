@@ -2,14 +2,17 @@
 format: aep.planning-md/3
 id: story:wrong-state-witness-unknown-and-own-stored-guards
 kind: story
-status: draft
+status: active
 title: A wrong-state witness handles unknown sibling guards and the moving branch's own stored guard
 relations:
 - serves: vision:O2
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-01T13:05:44Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-01T13:05:44Z", actor: "human:timo", revision: 4}
 ---
 # Story: a wrong-state witness handles unknown sibling guards and the moving branch's own stored guard
 
