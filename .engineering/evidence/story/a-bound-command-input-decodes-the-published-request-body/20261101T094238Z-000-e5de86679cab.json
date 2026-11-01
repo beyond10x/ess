@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-01T09:42:38Z",
+  "actor": "human:timo",
+  "artifact": "story:a-bound-command-input-decodes-the-published-request-body",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-d343-u1-pass-1",
+    "reference": "9dbe58275: adversary cases A1-A3, B1, B2 committed (F2, F3); F1 note left, F4 out of scope",
+    "review": "review-result:adversary-d343-u1-pass-1",
+    "outcome": "fixed"
+  }
+}
