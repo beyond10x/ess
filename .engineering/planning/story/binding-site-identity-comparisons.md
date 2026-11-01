@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:binding-site-identity-comparisons
 kind: story
-status: draft
+status: active
 title: Binding scenarios compare event identity fields with captured instances
 tags:
 - follow-up
@@ -19,7 +19,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/delivery_context.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_273_pass1.rs
-revision: 7
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-01T20:19:30Z", actor: "human:timo", revision: 9}
+- {from: "proposed", to: "active", at: "2026-11-01T20:19:30Z", actor: "human:timo", revision: 10}
 ---
 ## Outcome
 
@@ -41,3 +44,11 @@ Derived 2026-11-01 by `aep:story-scoper` for wave D350 on dc60f4532. Every line 
 - **Pinned by:** `tests/adversary_273_pass1.rs` :241-332, `binding.len() == 4` at :326-331 — cited; fixture `tests/fixtures/binding-arrangement.yaml` — cited
 - **Confidence:** medium
 - **Would collide with:** `synthesize.rs` :9154-9219 and :18721-19362; `delivery_context.rs`; `binding_effects.rs` :3195-3250; `bounded_retry.rs` :256-270; `tests/adversary_273_pass1.rs`
+
+## Acceptance
+
+Written by the D357 coordinator from the Outcome and Origin above (the story carried no Acceptance section).
+
+- A binding scenario (flow, mapping, delivery, on-failure, bounded retry) whose expected event carries an identity field determined by a captured instance compares that field, as command scenarios do since beyond10x/ess#273 (`expect_event_values` with the identity, or the step form the command side uses).
+- The four misses pinned by `crates/verify/ess-conformance/tests/adversary_273_pass1.rs` (`binding.len() == 4`, `Kicked.job_id` copying an input instance in `tests/fixtures/binding-arrangement.yaml`) become zero: the pin is rewritten to assert no binding scenario leaves an identity field uncompared, with `story:binding-site-identity-comparisons` in its message.
+- A target that copies the wrong id into a binding's event fails at least one of those scenarios; the correct interpreted target still passes all of them.
