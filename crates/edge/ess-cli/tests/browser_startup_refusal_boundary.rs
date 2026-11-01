@@ -140,6 +140,65 @@ fn a_handshake_this_runner_never_answers_is_refused_at_the_deadline_it_was_given
                 "the 1.000s deadline was overrun by {:.3}s before the refusal arrived:\n{refusal}",
                 elapsed.saturating_sub(deadline).as_secs_f64()
             );
+            // story:a-marked-region-is-not-a-scan-of-what-runs: an upgrade that never answered
+            // is lost at the deadline, which is `connect`, not an upgrade error.
+            assert!(
+                refusal.contains("\n  stage:            connect\n"),
+                "{refusal}"
+            );
+            assert!(refusal.contains("last upgrade error:"), "{refusal}");
+        }
+    }
+}
+
+/// A browser that completes the upgrade and then loses the socket on the first `session.new`
+/// round trip has still not been started: the session is the last step of the start. The fixture
+/// used to end such a start one call below `launch_program`, in `receive`'s bare `read_exact`
+/// unwrap, with no stage and no `firefox.stderr`.
+#[test]
+fn a_socket_lost_on_the_first_session_round_trip_is_a_lost_start() {
+    let evidence = evidence_dir("session-lost");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") && request.len() < 8192 {
+            let mut byte = [0];
+            if stream.read_exact(&mut byte).is_err() {
+                return;
+            }
+            request.push(byte[0]);
+        }
+        let accepted = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\
+                        Connection: Upgrade\r\n\
+                        Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n";
+        let _ = stream.write_all(accepted.as_bytes());
+        // Read the `session.new` frame's header and close without answering it.
+        let mut header = [0; 2];
+        let _ = stream.read_exact(&mut header);
+    });
+    let program = announcing_stand_in(&evidence, port);
+    match startup_outcome(evidence.to_path_buf(), program, Duration::from_secs(5)) {
+        Err(panic) => panic!(
+            "story:a-marked-region-is-not-a-scan-of-what-runs: a socket lost on session.new \
+             must be a fixture environment refusal carrying its stage and firefox.stderr; the \
+             fixture panicked instead: {panic}"
+        ),
+        Ok(Ok(())) => panic!("a session.new that was never answered admitted a session"),
+        Ok(Err(refusal)) => {
+            assert!(
+                refusal.starts_with("fixture environment refusal:"),
+                "{refusal}"
+            );
+            assert!(
+                refusal.contains("\n  stage:            session ("),
+                "{refusal}"
+            );
+            let log = fs::read_to_string(evidence.join("firefox.stderr")).unwrap();
+            assert!(refusal.contains(log.trim()), "{refusal}");
         }
     }
 }

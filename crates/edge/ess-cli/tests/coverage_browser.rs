@@ -548,67 +548,769 @@ fn a_startup_refusal_attaches_the_stderr_firefox_actually_wrote() {
     }
 }
 
-/// The class F1 named: a start this process loses reports through
-/// `startup_refusal`, and the only lines on the startup path that may end it any
-/// other way are the ones that say which exception they are. The sixth give-up
-/// site was found by an adversary because the enumeration behind that claim was
-/// a reading of the file; this is the same enumeration, made by the compiler's
-/// own copy of the file every time the suite runs.
+/// The panic forms the startup guard reads on every line a start runs. A panic raised inside
+/// another file or crate, an index or slice out of bounds and an arithmetic overflow are not
+/// among them.
+const PANIC_FORMS: &[&str] = &[
+    ".unwrap()",
+    ".unwrap_err()",
+    ".expect(",
+    ".expect_err(",
+    "panic!",
+    "assert!",
+    "assert_eq!",
+    "assert_ne!",
+    "unreachable!",
+    "todo!",
+    "unimplemented!",
+];
+
+/// The two exceptions a line that can end a start may name, read from the comment on the line
+/// itself or on the line above it: `harness`, this runner's own filesystem or process table, and
+/// `defect`, a malformed upgrade or protocol answer.
+const STARTUP_MARKS: &[&str] = &["// startup-path: harness", "// startup-path: defect"];
+
+/// Where a start begins: the functions a caller asks for a browser through. `Browser::new` is not
+/// one, because its panic is how a caller that takes no `Result` receives the refusal itself.
+const STARTS: &[(&str, &str)] = &[("Browser", "launch"), ("Browser", "launch_program")];
+
+/// One source file with every comment and literal blanked out of its code, line for line, and the
+/// text of each line's comments kept apart. Nothing a string, a character literal or a comment
+/// holds can open, close or call anything in the code that is left.
+struct Blanker {
+    chars: Vec<char>,
+    at: usize,
+    code: String,
+    comments: Vec<String>,
+}
+
+impl Blanker {
+    fn peek(&self, ahead: usize) -> Option<char> {
+        self.chars.get(self.at + ahead).copied()
+    }
+    fn keep(&mut self) {
+        let Some(c) = self.peek(0) else { return };
+        self.at += 1;
+        if c == '\n' {
+            self.comments.push(String::new());
+        }
+        self.code.push(if c.is_ascii() { c } else { ' ' });
+    }
+    fn hide(&mut self, comment: bool, count: usize) {
+        for _ in 0..count {
+            let Some(c) = self.peek(0) else { return };
+            self.at += 1;
+            if c == '\n' {
+                self.comments.push(String::new());
+                self.code.push('\n');
+                continue;
+            }
+            if comment {
+                self.comments.last_mut().expect("a line").push(c);
+            }
+            self.code.push(' ');
+        }
+    }
+    fn string(&mut self) {
+        self.hide(false, 1);
+        while let Some(c) = self.peek(0) {
+            match c {
+                '\\' => self.hide(false, 2),
+                '"' => {
+                    self.hide(false, 1);
+                    return;
+                }
+                _ => self.hide(false, 1),
+            }
+        }
+    }
+    fn raw_string(&mut self, hashes: usize) {
+        self.hide(false, hashes + 1);
+        while let Some(c) = self.peek(0) {
+            if c == '"' && (1..=hashes).all(|ahead| self.peek(ahead) == Some('#')) {
+                self.hide(false, hashes + 1);
+                return;
+            }
+            self.hide(false, 1);
+        }
+    }
+    fn quote(&mut self) {
+        if self.peek(1) == Some('\\') {
+            let close = (self.at + 3..self.chars.len()).find(|&index| self.chars[index] == '\'');
+            let end = close.map_or(self.chars.len(), |index| index + 1);
+            self.hide(false, end - self.at);
+        } else if self.peek(2) == Some('\'') {
+            self.hide(false, 3);
+        } else {
+            // A lifetime or a label.
+            self.keep();
+        }
+    }
+    fn run(mut self) -> (String, Vec<String>) {
+        while let Some(c) = self.peek(0) {
+            let next = self.peek(1);
+            if c == '/' && next == Some('/') {
+                while self.peek(0).is_some_and(|c| c != '\n') {
+                    self.hide(true, 1);
+                }
+            } else if c == '/' && next == Some('*') {
+                let mut depth = 0_usize;
+                while self.peek(0).is_some() {
+                    if self.peek(0) == Some('/') && self.peek(1) == Some('*') {
+                        depth += 1;
+                        self.hide(true, 2);
+                    } else if self.peek(0) == Some('*') && self.peek(1) == Some('/') {
+                        depth -= 1;
+                        self.hide(true, 2);
+                        if depth == 0 {
+                            break;
+                        }
+                    } else {
+                        self.hide(true, 1);
+                    }
+                }
+            } else if c == '"' {
+                self.string();
+            } else if c == '\'' {
+                self.quote();
+            } else if c.is_alphanumeric() || c == '_' {
+                let end = (self.at..self.chars.len())
+                    .find(|&index| {
+                        !(self.chars[index].is_alphanumeric() || self.chars[index] == '_')
+                    })
+                    .unwrap_or(self.chars.len());
+                let word: String = self.chars[self.at..end].iter().collect();
+                let hashes = self.chars[end..].iter().take_while(|c| **c == '#').count();
+                let after = self.chars.get(end).copied();
+                if matches!(word.as_str(), "r" | "br") && self.chars.get(end + hashes) == Some(&'"')
+                {
+                    self.hide(false, word.len());
+                    self.raw_string(hashes);
+                } else if word == "b" && after == Some('"') {
+                    self.hide(false, 1);
+                    self.string();
+                } else if word == "b" && after == Some('\'') {
+                    self.hide(false, 1);
+                    self.quote();
+                } else {
+                    for _ in self.at..end {
+                        self.keep();
+                    }
+                }
+            } else {
+                self.keep();
+            }
+        }
+        (self.code, self.comments)
+    }
+}
+
+/// A token of blanked code and the 1-based line it is on.
+struct Token<'a> {
+    text: &'a str,
+    line: usize,
+}
+
+fn tokens(code: &str) -> Vec<Token<'_>> {
+    let bytes = code.as_bytes();
+    let mut found = Vec::new();
+    let mut line = 1;
+    let mut at = 0;
+    while at < bytes.len() {
+        let byte = bytes[at];
+        if byte == b'\n' {
+            line += 1;
+            at += 1;
+        } else if byte.is_ascii_whitespace() {
+            at += 1;
+        } else if byte.is_ascii_alphanumeric() || byte == b'_' {
+            let end = (at..bytes.len())
+                .find(|&index| !(bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_'))
+                .unwrap_or(bytes.len());
+            found.push(Token {
+                text: &code[at..end],
+                line,
+            });
+            at = end;
+        } else {
+            found.push(Token {
+                text: &code[at..=at],
+                line,
+            });
+            at += 1;
+        }
+    }
+    found
+}
+
+/// The token that closes the bracket opened at `open`.
+fn closing(tokens: &[Token<'_>], open: usize) -> Option<usize> {
+    let (opens, closes) = match tokens[open].text {
+        "{" => ("{", "}"),
+        "(" => ("(", ")"),
+        "<" => ("<", ">"),
+        _ => return None,
+    };
+    let mut depth = 0_usize;
+    for (index, token) in tokens.iter().enumerate().skip(open) {
+        if token.text == opens {
+            depth += 1;
+        } else if token.text == closes {
+            depth -= 1;
+            if depth == 0 {
+                return Some(index);
+            }
+        }
+    }
+    None
+}
+
+fn is_word(text: &str) -> bool {
+    text.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+}
+
+/// One function the source declares with a body.
+struct Function {
+    owner: Option<String>,
+    name: String,
+    method: bool,
+    body: (usize, usize),
+    lines: (usize, usize),
+}
+
+impl Function {
+    fn path(&self) -> String {
+        self.owner.as_ref().map_or_else(
+            || self.name.clone(),
+            |owner| format!("{owner}::{}", self.name),
+        )
+    }
+}
+
+/// What a start can reach in one source file.
+struct StartupScan {
+    /// `Owner::name` (or a free function's name) of every function a start can run, with the
+    /// first and last line read for it.
+    reached: Vec<(String, usize, usize)>,
+    /// A line a start runs that holds a panic form and names no exception.
+    unaccounted: Vec<(usize, String)>,
+    /// A line a start runs that holds a panic form and names its exception.
+    accounted: Vec<(usize, String)>,
+    /// A mark that names no panic site a start runs, on its own line or the next.
+    stale: Vec<(usize, String)>,
+}
+
+impl StartupScan {
+    fn reaches(&self, path: &str) -> bool {
+        self.reached.iter().any(|(reached, _, _)| reached == path)
+    }
+}
+
+/// Follow every same-file call a start can make, and read every line of every function it reaches.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one pass from items to reach to sites keeps the scan's rules in one reading"
+)]
+fn startup_scan(source: &str) -> Result<StartupScan, String> {
+    let (code, comments) = Blanker {
+        chars: source.chars().collect(),
+        at: 0,
+        code: String::new(),
+        comments: vec![String::new()],
+    }
+    .run();
+    let tokens = tokens(&code);
+    let text = |index: usize| tokens.get(index).map_or("", |token| token.text);
+    let line = |index: usize| tokens.get(index).map_or(0, |token| token.line);
+
+    // `impl` blocks, as (owner type, trait, first token, last token).
+    let mut impls: Vec<(String, Option<String>, usize, usize)> = Vec::new();
+    for index in 0..tokens.len() {
+        let item = index == 0 || matches!(text(index - 1), "}" | ";" | "]" | "{");
+        if text(index) != "impl" || !item {
+            continue;
+        }
+        let mut at = index + 1;
+        if text(at) == "<" {
+            at = closing(&tokens, at).ok_or("an impl's generics never close")? + 1;
+        }
+        let header_start = at;
+        while at < tokens.len() && text(at) != "{" {
+            at += 1;
+        }
+        let header: Vec<&str> = (header_start..at).map(text).collect();
+        let first_word = |words: &[&str]| {
+            words
+                .iter()
+                .find(|word| is_word(word))
+                .map(|word| (*word).to_owned())
+        };
+        let (owner, implemented) = match header.iter().position(|word| *word == "for") {
+            Some(split) => (
+                first_word(&header[split + 1..]),
+                first_word(&header[..split]),
+            ),
+            None => (first_word(&header), None),
+        };
+        let owner = owner.ok_or("an impl names no type")?;
+        let end = closing(&tokens, at).ok_or("an impl block never closes")?;
+        impls.push((owner, implemented, at, end));
+    }
+
+    let mut functions: Vec<Function> = Vec::new();
+    for index in 0..tokens.len() {
+        if text(index) != "fn" || !is_word(text(index + 1)) {
+            continue;
+        }
+        let Some(open) = (index + 2..tokens.len()).find(|&at| text(at) == "(") else {
+            continue;
+        };
+        let close = closing(&tokens, open).ok_or("a parameter list never closes")?;
+        let method = (open..close).any(|at| text(at) == "self");
+        let Some(body) = (close..tokens.len()).find(|&at| matches!(text(at), "{" | ";")) else {
+            continue;
+        };
+        if text(body) == ";" {
+            continue;
+        }
+        let end = closing(&tokens, body).ok_or("a function body never closes")?;
+        let owner = impls
+            .iter()
+            .filter(|(_, _, first, last)| *first < index && index < *last)
+            .min_by_key(|(_, _, first, last)| last - first)
+            .map(|(owner, _, _, _)| owner.clone());
+        functions.push(Function {
+            owner,
+            name: text(index + 1).to_owned(),
+            method,
+            body: (body, end),
+            lines: (line(index), line(end)),
+        });
+    }
+
+    // Every `struct` and `enum`, with the tokens that declare what it holds.
+    let mut types: Vec<(String, usize, usize)> = Vec::new();
+    for index in 0..tokens.len() {
+        if !matches!(text(index), "struct" | "enum") || !is_word(text(index + 1)) {
+            continue;
+        }
+        let mut at = index + 2;
+        if text(at) == "<" {
+            at = closing(&tokens, at).ok_or("a type's generics never close")? + 1;
+        }
+        let end = if matches!(text(at), "{" | "(") {
+            closing(&tokens, at).ok_or("a type's body never closes")?
+        } else {
+            at
+        };
+        types.push((text(index + 1).to_owned(), at, end));
+    }
+    let dropped: Vec<&str> = impls
+        .iter()
+        .filter(|(_, implemented, _, _)| implemented.as_deref() == Some("Drop"))
+        .map(|(owner, _, _, _)| owner.as_str())
+        .collect();
+    let is_type =
+        |word: &str| dropped.contains(&word) || types.iter().any(|(name, _, _)| name == word);
+
+    let mut reached = vec![false; functions.len()];
+    let mut named: Vec<String> = Vec::new();
+    let mut pending: Vec<usize> = Vec::new();
+    for (owner, name) in STARTS {
+        let start = functions
+            .iter()
+            .position(|function| function.owner.as_deref() == Some(owner) && function.name == *name)
+            .ok_or_else(|| format!("the source declares no `{owner}::{name}` to start from"))?;
+        reached[start] = true;
+        pending.push(start);
+    }
+    // A type is named by the start: its `Drop` runs, and so do the `Drop`s of what it holds.
+    let name_type =
+        |word: &str, named: &mut Vec<String>, pending: &mut Vec<usize>, reached: &mut [bool]| {
+            let mut types_pending = vec![word.to_owned()];
+            while let Some(word) = types_pending.pop() {
+                if named.contains(&word) || !is_type(&word) {
+                    continue;
+                }
+                named.push(word.clone());
+                for (index, function) in functions.iter().enumerate() {
+                    if function.owner.as_deref() == Some(word.as_str())
+                        && function.name == "drop"
+                        && dropped.contains(&word.as_str())
+                        && !reached[index]
+                    {
+                        reached[index] = true;
+                        pending.push(index);
+                    }
+                }
+                for (name, first, last) in &types {
+                    if *name == word {
+                        types_pending.extend(
+                            (*first..=*last)
+                                .map(text)
+                                .filter(|held| is_type(held))
+                                .map(str::to_owned),
+                        );
+                    }
+                }
+            }
+        };
+    while let Some(current) = pending.pop() {
+        let owner = functions[current].owner.clone();
+        let (first, last) = functions[current].body;
+        let mut calls: Vec<usize> = Vec::new();
+        for at in first..=last {
+            let word = text(at);
+            if !is_word(word) {
+                if word == "."
+                    && is_word(text(at + 1))
+                    && (text(at + 2) == "(" || text(at + 2) == ":")
+                {
+                    let method = text(at + 1);
+                    calls.extend(
+                        functions
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, function)| function.method && function.name == method)
+                            .map(|(index, _)| index),
+                    );
+                }
+                continue;
+            }
+            let word = if word == "Self" {
+                owner.as_deref().unwrap_or(word)
+            } else {
+                word
+            };
+            name_type(word, &mut named, &mut pending, &mut reached);
+            if text(at + 1) == ":" && text(at + 2) == ":" && is_word(text(at + 3)) {
+                let name = text(at + 3);
+                calls.extend(
+                    functions
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, function)| {
+                            function.owner.as_deref() == Some(word) && function.name == name
+                        })
+                        .map(|(index, _)| index),
+                );
+            }
+            let in_path = text(at.wrapping_sub(1)) == ":" || text(at.wrapping_sub(1)) == ".";
+            if !in_path && text(at.wrapping_sub(1)) != "fn" {
+                calls.extend(
+                    functions
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, function)| function.owner.is_none() && function.name == word)
+                        .map(|(index, _)| index),
+                );
+            }
+        }
+        for index in calls {
+            if !reached[index] {
+                reached[index] = true;
+                pending.push(index);
+            }
+        }
+    }
+
+    let lines: Vec<&str> = source.lines().collect();
+    let code_lines: Vec<&str> = code.split('\n').collect();
+    let marked = |number: usize| {
+        comments.get(number.wrapping_sub(1)).is_some_and(|comment| {
+            STARTUP_MARKS
+                .iter()
+                .any(|mark| comment.trim_end().ends_with(mark))
+        })
+    };
+    let raw = |number: usize| {
+        lines
+            .get(number.wrapping_sub(1))
+            .map_or("", |line| *line)
+            .to_owned()
+    };
+    let mut run: Vec<usize> = functions
+        .iter()
+        .zip(&reached)
+        .filter(|(_, reached)| **reached)
+        .flat_map(|(function, _)| function.lines.0..=function.lines.1)
+        .collect();
+    run.sort_unstable();
+    run.dedup();
+    let site = |number: usize| {
+        code_lines
+            .get(number.wrapping_sub(1))
+            .is_some_and(|line| PANIC_FORMS.iter().any(|form| line.contains(form)))
+    };
+    let mut scan = StartupScan {
+        reached: functions
+            .iter()
+            .zip(&reached)
+            .filter(|(_, reached)| **reached)
+            .map(|(function, _)| (function.path(), function.lines.0, function.lines.1))
+            .collect(),
+        unaccounted: Vec::new(),
+        accounted: Vec::new(),
+        stale: Vec::new(),
+    };
+    for &number in &run {
+        if site(number) {
+            if marked(number) || marked(number - 1) {
+                scan.accounted.push((number, raw(number)));
+            } else {
+                scan.unaccounted.push((number, raw(number)));
+            }
+        }
+    }
+    for number in 1..=comments.len() {
+        let names_a_site = [number, number + 1]
+            .iter()
+            .any(|line| run.binary_search(line).is_ok() && site(*line));
+        if marked(number) && !names_a_site {
+            scan.stale.push((number, raw(number)));
+        }
+    }
+    Ok(scan)
+}
+
+/// The class F1 named: a start this process loses reports through `startup_refusal`, and the only
+/// lines a start runs that may end it any other way are the ones that say which exception they
+/// are. The sixth give-up site was found by an adversary because the enumeration behind that claim
+/// was a reading of the file, and the marked region that replaced the reading saw neither a panic
+/// one call below a line in it nor a forged end that made it shorter
+/// (`story:a-marked-region-is-not-a-scan-of-what-runs`).
+///
+/// So this reads the compiler's own copy of `support/browser.rs` and follows what a start runs:
+/// from `Browser::launch` and `Browser::launch_program` (`STARTS`), every same-file function a
+/// reached body calls by `Self::f` or `Type::f`, every same-file method named in a `.f(` call (all
+/// of them, since the scan does not know the receiver's type), every same-file free function a
+/// body names, and the `Drop` of every same-file type a reached body names, directly or through
+/// what that type holds. Comments, strings and character literals are blanked first, so no text in
+/// them opens, closes or calls anything. Every line of every reached function, from its `fn` line
+/// to its closing brace, is read for `PANIC_FORMS`; a line holding one names `startup-path:
+/// harness` or `startup-path: defect` in a comment on that line or the one above, and a mark that
+/// names no such line is stale. A panic inside another file or crate, an index, an arithmetic
+/// overflow, and a call through a trait object or a function pointer the file never names are
+/// outside what it reads. The `the_startup_scan_*` cases hold the scan itself to synthetic sources.
 #[test]
 fn no_unaccounted_panic_site_can_end_a_start() {
-    // A marker is the whole tail of its line, so the region's own prose can name
-    // the markers without opening or closing anything.
-    let marks = |line: &str, marker: &str| line.trim_end().ends_with(marker);
-    let source = include_str!("support/browser.rs");
-    let mut region = Vec::new();
-    let mut inside = false;
-    for (index, line) in source.lines().enumerate() {
-        if marks(line, "// startup-path: begin") {
-            inside = true;
-        } else if marks(line, "// startup-path: end") {
-            inside = false;
-        } else if inside {
-            region.push((index + 1, line));
-        }
+    use std::fmt::Write as _;
+    let scan =
+        startup_scan(include_str!("support/browser.rs")).unwrap_or_else(|error| panic!("{error}"));
+    let listed = |sites: &[(usize, String)]| {
+        sites
+            .iter()
+            .fold(String::new(), |mut text, (number, line)| {
+                let _ = writeln!(text, "  support/browser.rs:{number}: {}", line.trim());
+                text
+            })
+    };
+    assert!(
+        scan.unaccounted.is_empty(),
+        "{} line(s) a start runs can end it without a fixture environment refusal and name no \
+         reason. Give up through startup_refusal, or mark the line `startup-path: harness` (this \
+         runner's own filesystem or process table) or `startup-path: defect` (a malformed upgrade \
+         or protocol answer):\n{}",
+        scan.unaccounted.len(),
+        listed(&scan.unaccounted)
+    );
+    assert!(
+        scan.stale.is_empty(),
+        "{} startup mark(s) name no panic site a start runs, on their own line or the next:\n{}",
+        scan.stale.len(),
+        listed(&scan.stale)
+    );
+    // What a start is known to run. A scan that stops following calls drops one of these, which
+    // is what a shorter region looked like.
+    for path in [
+        "Browser::launch_program",
+        "Browser::reach_bidi",
+        "Browser::upgrade",
+        "Browser::connect_give_up",
+        "Browser::assigned_bidi_port",
+        "Browser::exchange",
+        "Browser::send",
+        "Browser::receive",
+        "startup_refusal",
+        "Stage::label",
+        "Stage::timed_a_startup",
+        "ProfileScratch::create",
+        "ProfileScratch::drop",
+        "OwnedChild::stop",
+        "OwnedChild::drop",
+        "Starting::begin",
+        "InStartup::begin",
+        "InStartup::drop",
+    ] {
+        assert!(
+            scan.reaches(path),
+            "a start runs `{path}` and the scan did not reach it: {:?}",
+            scan.reached
+        );
     }
     assert!(
-        region.len() > 50,
-        "the startup path region is not marked in support/browser.rs: {} lines found",
-        region.len()
+        !scan.accounted.is_empty(),
+        "the scan read no marked site at all"
     );
-    let forms = [
-        ".unwrap()",
-        ".expect(",
-        "panic!",
-        "assert!",
-        "assert_eq!",
-        "assert_ne!",
-        "unreachable!",
-        "todo!",
-    ];
-    let mut accounted = 0;
-    let mut previous = "";
-    for (number, line) in region {
-        if forms.iter().any(|form| line.contains(form)) {
-            assert!(
-                [line, previous]
-                    .iter()
-                    .any(|text| marks(text, "// startup-path: harness")
-                        || marks(text, "// startup-path: defect")),
-                "support/browser.rs:{number} can end a start without a fixture environment \
-                 refusal and names no reason. Give up through startup_refusal, or mark the line \
-                 `startup-path: harness` (this runner's own filesystem) or `startup-path: defect` \
-                 (a deliberate BiDi defect signal):\n{line}"
-            );
-            accounted += 1;
-        }
-        previous = line;
+}
+
+/// A synthetic fixture for the scan itself. Each `// AT_<NAME>` line is where a case puts a site:
+/// in a start, one call down by method, two calls down in a free function, in the `Drop` of a type
+/// the start builds, and in two places no start runs. Before `AT_START`, a string, a raw string
+/// line at the function's own indentation, a character literal, a block comment and the old end
+/// marker each hold a closing brace or an end, and none of them ends the function.
+const SYNTHETIC: &str = r#"
+pub struct Browser {
+    guard: Guard,
+}
+struct Guard;
+impl Drop for Guard {
+    fn drop(&mut self) {
+        // AT_DROP
     }
+}
+struct Unbuilt;
+impl Drop for Unbuilt {
+    fn drop(&mut self) {
+        // AT_UNBUILT_DROP
+    }
+}
+impl Browser {
+    pub fn new() -> Self {
+        Self::launch().unwrap_or_else(|refusal| panic!("{refusal}"))
+    }
+    pub fn launch() -> Result<Self, String> {
+        Self::launch_program()
+    }
+    pub fn launch_program() -> Result<Self, String> {
+        let mut browser = Self { guard: Guard };
+        let text = "}";
+        let raw = r"
+    }
+";
+        let brace = '}';
+        /* } */
+        // startup-path: end
+        browser.handshake(text, raw, brace);
+        // AT_START
+        Ok(browser)
+    }
+    fn handshake(&mut self, text: &str, raw: &str, brace: char) {
+        // AT_METHOD
+        refuse(text, raw, brace);
+    }
+    fn unreached(&self) {
+        // AT_UNREACHED
+    }
+}
+fn refuse(text: &str, raw: &str, brace: char) {
+    // AT_FREE
+    let _ = (text, raw, brace);
+}
+"#;
+
+/// `SYNTHETIC` with one placeholder replaced, and the line the replacement is on.
+fn synthetic_with(at: &str, line: &str) -> (String, usize) {
+    let source = SYNTHETIC.replace(&format!("// {at}\n"), &format!("{line}\n"));
+    let number = source
+        .lines()
+        .position(|text| text.contains(line.lines().next().unwrap_or(line).trim()))
+        .unwrap_or_else(|| panic!("{at} is in the synthetic fixture"))
+        + 1;
+    (source, number)
+}
+
+#[test]
+fn the_startup_scan_sees_a_panic_one_and_two_calls_below_the_start_and_in_a_drop_it_runs() {
+    for at in ["AT_START", "AT_METHOD", "AT_FREE", "AT_DROP"] {
+        let (source, number) = synthetic_with(at, &format!("        Some(\"{at}\").unwrap();"));
+        let scan = startup_scan(&source).unwrap();
+        assert!(
+            scan.unaccounted.iter().any(|(line, _)| *line == number),
+            "a panic at {at} (line {number}) is run by a start and the scan did not report it: \
+             reached {:?}, unaccounted {:?}",
+            scan.reached,
+            scan.unaccounted
+        );
+    }
+}
+
+#[test]
+fn the_startup_scan_reads_a_start_to_its_closing_brace_past_text_that_looks_like_an_end() {
+    let (source, number) = synthetic_with("AT_START", "        Some(\"after\").unwrap();");
+    let scan = startup_scan(&source).unwrap();
+    let close = source
+        .lines()
+        .position(|line| line == "        Ok(browser)")
+        .expect("the start returns")
+        + 2;
     assert!(
-        accounted >= 8,
-        "the startup path guard matched {accounted} panic sites, so it is no longer reading the \
-         fixture it is supposed to hold"
+        scan.reached
+            .iter()
+            .any(|(path, _, last)| path == "Browser::launch_program" && *last == close),
+        "the start ends at line {close}: {:?}",
+        scan.reached
     );
+    assert_eq!(
+        scan.unaccounted
+            .iter()
+            .map(|(line, _)| *line)
+            .collect::<Vec<_>>(),
+        [number],
+        "a site after a forged end, a brace in a string, a raw string and a character literal"
+    );
+}
+
+#[test]
+fn the_startup_scan_leaves_out_what_no_start_runs() {
+    for at in ["AT_UNREACHED", "AT_UNBUILT_DROP"] {
+        let (source, number) = synthetic_with(at, &format!("        Some(\"{at}\").unwrap();"));
+        let scan = startup_scan(&source).unwrap();
+        assert!(
+            scan.unaccounted.is_empty(),
+            "{at} (line {number}) is run by no start: {:?}",
+            scan.unaccounted
+        );
+    }
+    let scan = startup_scan(SYNTHETIC).unwrap();
+    assert!(!scan.reaches("Browser::new"), "{:?}", scan.reached);
+    assert!(!scan.reaches("Unbuilt::drop"), "{:?}", scan.reached);
+    assert!(scan.reaches("refuse"), "{:?}", scan.reached);
+    let missing = SYNTHETIC.replace("fn launch_program(", "fn launch_elsewhere(");
+    let Err(refusal) = startup_scan(&missing) else {
+        panic!("a source without the start was scanned")
+    };
+    assert!(refusal.contains("Browser::launch_program"), "{refusal}");
+}
+
+#[test]
+fn a_startup_mark_is_read_from_a_comment_and_names_a_site_a_start_runs() {
+    let marked = "        // startup-path: harness\n        Some(1).unwrap();";
+    let (source, number) = synthetic_with("AT_METHOD", marked);
+    let scan = startup_scan(&source).unwrap();
+    assert!(scan.unaccounted.is_empty(), "{:?}", scan.unaccounted);
+    assert_eq!(
+        scan.accounted
+            .iter()
+            .map(|(line, _)| *line)
+            .collect::<Vec<_>>(),
+        [number + 1]
+    );
+    // A mark that a string holds is not a comment, and accounts for nothing.
+    let quoted = "        let _ = \"\n// startup-path: harness\n\";\n        Some(2).unwrap();";
+    let (source, _) = synthetic_with("AT_METHOD", quoted);
+    let scan = startup_scan(&source).unwrap();
+    assert_eq!(scan.unaccounted.len(), 1, "{:?}", scan.unaccounted);
+    // A mark beside no site, or on a line no start runs, is stale.
+    for at in ["AT_METHOD", "AT_UNREACHED"] {
+        let (source, number) = synthetic_with(at, "        // startup-path: defect");
+        let scan = startup_scan(&source).unwrap();
+        assert_eq!(
+            scan.stale.iter().map(|(line, _)| *line).collect::<Vec<_>>(),
+            [number],
+            "{at}"
+        );
+    }
 }
 
 #[test]
