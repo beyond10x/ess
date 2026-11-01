@@ -870,8 +870,10 @@ impl Plan {
     }
 
     /// Declare every component under the last segment of its qualified name, refusing two that
-    /// would share one (beyond10x/ess#409). For model input only: a bundle's component names
-    /// carry no domain prefix to drop.
+    /// would share one (beyond10x/ess#409). A selected body root `<owner>.<member>` keeps its
+    /// owner's last segment before the member, so `demo.notes.Create.input` is `CreateInput` and
+    /// every command's input or view's row can be selected at once. For model input only: a
+    /// bundle's component names carry no domain prefix to drop.
     pub fn with_short_names(mut self) -> Result<Self, Refused> {
         if !matches!(self.input, InputIdentity::Model { .. }) {
             return Err(Refused(vec![finding(
@@ -883,7 +885,7 @@ impl Plan {
         let mut errors = BTreeSet::new();
         let mut reverse: BTreeMap<String, String> = BTreeMap::new();
         for (source, name) in &mut self.names {
-            let short = declaration_name(source.rsplit('.').next().unwrap_or(source));
+            let short = short_name(source, self.roots.contains(source));
             let pointer = &self.definitions[source].pointer;
             if short.is_empty()
                 || short.as_bytes()[0].is_ascii_digit()
@@ -2042,6 +2044,24 @@ fn local_definition(text: &str) -> Option<String> {
         return None;
     }
     Some(tail.replace("~1", "/").replace("~0", "~"))
+}
+
+/// The members a model body root appends to its command or view: `<command>.input`,
+/// `<command>.response`, `<view>.row` (`ess_gen::schema::ModelTypes::select`).
+const BODY_ROOT_MEMBERS: [&str; 3] = ["input", "response", "row"];
+
+/// The short declaration name of the model definition `source`: its last segment, or, for a
+/// selected root that is a body root, its owner's last segment followed by the member
+/// (`demo.notes.ByOwner.row` is `ByOwnerRow`), the qualified name without its domain prefix.
+fn short_name(source: &str, root: bool) -> String {
+    let mut segments = source.rsplit('.');
+    let last = segments.next().unwrap_or(source);
+    match segments.next() {
+        Some(owner) if root && BODY_ROOT_MEMBERS.contains(&last) => {
+            declaration_name(&format!("{owner}.{last}"))
+        }
+        _ => declaration_name(last),
+    }
 }
 
 fn declaration_name(source: &str) -> String {

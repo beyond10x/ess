@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ess generate types --names short` combines with `--all-commands` and `--all-views` (beyond10x/ess#409): a command's input or response and a view's row are named by their owner's last segment and the member, `demo.notes.Create.input` as `CreateInput` and `demo.notes.ByOwner.row` as `ByOwnerRow`, where every input shortened to `Input` and every row to `Row` and two commands or views were refused as `short_name_collision`. Declared type and event short names are unchanged, and two commands of one name in two domains are still refused, naming both.
+
 ## [0.79.0] — 2026-11-01
 
 ### Added
