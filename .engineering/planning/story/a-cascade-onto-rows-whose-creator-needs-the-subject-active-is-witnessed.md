@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-cascade-onto-rows-whose-creator-needs-the-subject-active-is-witnessed
 kind: story
-status: active
+status: implemented
 title: A cascade onto rows whose creator needs the moving subject active and a second related row is witnessed
 summary: 'affects: rows created only by a command guarded by the subject''s state and another related row get no arrangement (ESS-SYNTH-001); adopter report 2026-10-29, 0.76.0 and 0.77.0'
 tags:
@@ -19,10 +19,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/related_record_effects.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T17:06:35Z", actor: "human:timo", revision: 10, executor: "agent:ess-issues-lead", correlation: "ess-issues-3"}
 - {from: "proposed", to: "active", at: "2026-10-29T17:06:36Z", actor: "human:timo", revision: 11, executor: "agent:ess-issues-lead", correlation: "ess-issues-3"}
+- {from: "active", to: "implemented", at: "2026-11-01T01:28:11Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Problem
 

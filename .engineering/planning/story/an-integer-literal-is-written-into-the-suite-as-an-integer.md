@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-integer-literal-is-written-into-the-suite-as-an-integer
 kind: story
-status: active
+status: implemented
 title: An Integer literal is written into the suite as an integer, which the generated decoders accept
 summary: Authored Integer literals become 1.0 in the suite; the generated Rust integer_at refuses 1.0.
 tags:
@@ -22,10 +22,11 @@ scope:
   path: generated/rust/gatepass/crates/gatepass-server/src/json.rs
 - confidence: cited
   path: generated/web/billing/crates/billing-web/src/json.rs
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T17:06:39Z", actor: "human:timo", revision: 8, executor: "agent:ess-issues-lead", correlation: "ess-issues-3"}
 - {from: "proposed", to: "active", at: "2026-10-29T17:06:39Z", actor: "human:timo", revision: 9, executor: "agent:ess-issues-lead", correlation: "ess-issues-3"}
+- {from: "active", to: "implemented", at: "2026-11-01T01:28:12Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Problem
 

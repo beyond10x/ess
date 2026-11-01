@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-accepting-branch-below-unknown-instance-is-sent-for-a-stored-row
 kind: story
-status: active
+status: implemented
 title: An accepting branch naming no subject below unknown_instance is sent for a stored row
 summary: 'Synthesis arranges the addressed row for a subject-less accepting when: or default that the existence branch answers before (ess#645)'
 tags:
@@ -19,10 +19,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/existence.rs
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T17:06:40Z", actor: "human:timo", revision: 9, executor: "agent:ess-issues-lead", correlation: "ess-issues-3"}
 - {from: "proposed", to: "active", at: "2026-10-29T17:06:40Z", actor: "human:timo", revision: 10, executor: "agent:ess-issues-lead", correlation: "ess-issues-3"}
+- {from: "active", to: "implemented", at: "2026-11-01T01:28:13Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Problem
 

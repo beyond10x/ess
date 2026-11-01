@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:identifier-guards-get-witnesses-and-authored-inputs-meet-their-type
 kind: story
-status: active
+status: implemented
 title: Guards over constrained identifiers get witnesses, and authored inputs are held to their type
 summary: Five synthesis and authoring gaps from one hosting-lifecycle domain (downstream gateway specification, 0.77.0); next wave.
 tags:
@@ -12,10 +12,11 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 - informed_by: decision-blocker:an-out-of-type-command-input-may-have-a-declared-error
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-31T19:58:59Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-31T19:59:00Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-11-01T01:28:08Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 

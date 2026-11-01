@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-scenario-with-a-repeated-key-is-refused
 kind: story
-status: active
+status: implemented
 title: A scenario document that repeats a mapping key is refused, as a model file is
 summary: ess-scenario/1 silently takes the last of two equal keys; model YAML refuses the same repetition.
 tags:
@@ -32,10 +32,11 @@ scope:
   path: website/docs/guides/verify/author-scenarios.md
 - confidence: cited
   path: website/docs/reference/diagnostics.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T17:06:38Z", actor: "human:timo", revision: 9, executor: "agent:ess-issues-lead", correlation: "ess-issues-3"}
 - {from: "proposed", to: "active", at: "2026-10-29T17:06:38Z", actor: "human:timo", revision: 10, executor: "agent:ess-issues-lead", correlation: "ess-issues-3"}
+- {from: "active", to: "implemented", at: "2026-11-01T01:28:12Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Problem
 

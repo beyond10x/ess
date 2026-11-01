@@ -2,16 +2,17 @@
 format: aep.planning-md/3
 id: story:a-text-inequality-against-an-example-is-refuted
 kind: story
-status: active
+status: implemented
 title: A text inequality against an example value gets its refuting case
 summary: Synthesis tries only guard literals on the text ladder, so a != guard against the example value has no refuting candidate
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-31T19:59:07Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-31T19:59:08Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-01T01:28:09Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 

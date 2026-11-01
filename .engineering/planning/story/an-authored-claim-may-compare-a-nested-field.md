@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-authored-claim-may-compare-a-nested-field
 kind: story
-status: active
+status: implemented
 title: An authored scenario may compare a nested field
 summary: Nested-field comparison is refused with ESS-AUTHOR-014/013 (a2a wave 1, G6).
 tags:
@@ -13,10 +13,11 @@ relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
 - informed_by: story:an-authored-event-claim-names-a-struct-leaf
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-31T19:58:59Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-10-31T19:58:59Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-11-01T01:28:07Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 

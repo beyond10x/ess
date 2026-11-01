@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-guard-on-a-related-identity-input-is-decided-on-the-row-sent
 kind: story
-status: active
+status: implemented
 title: 'A when: guard on a related row''s via input is decided on the row sent'
 summary: Synthesis decides an input guard on the identity of the captured related row it sends, steers that row to meet it, or refuses (ess#693)
 tags:
@@ -17,10 +17,11 @@ relations:
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T17:06:40Z", actor: "human:timo", revision: 8, executor: "agent:ess-issues-lead", correlation: "ess-issues-3"}
 - {from: "proposed", to: "active", at: "2026-10-29T17:06:41Z", actor: "human:timo", revision: 9, executor: "agent:ess-issues-lead", correlation: "ess-issues-3"}
+- {from: "active", to: "implemented", at: "2026-11-01T01:28:14Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Problem
 

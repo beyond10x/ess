@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-guard-on-the-input-addressed-parent-row-holds-on-every-command-of-its-children
 kind: story
-status: active
+status: implemented
 title: A guard on the input-addressed parent row holds on the creator, reader and deleter of its child rows
 summary: Creator predicate guard starves the reader's found (ESS-SYNTH-001); when_subject beside a row set is ESS-COMMAND-009; the deleter's synthesized scenario fails past when_subject.
 tags:
@@ -26,10 +26,11 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-component-suites-table.tsv
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures/synthesis-suite-bytes-table.tsv
-revision: 17
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T17:06:37Z", actor: "human:timo", revision: 16, executor: "agent:ess-issues-lead", correlation: "ess-issues-3"}
 - {from: "proposed", to: "active", at: "2026-10-29T17:06:38Z", actor: "human:timo", revision: 17, executor: "agent:ess-issues-lead", correlation: "ess-issues-3"}
+- {from: "active", to: "implemented", at: "2026-11-01T01:28:10Z", actor: "human:timo", revision: 18, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Problem
 

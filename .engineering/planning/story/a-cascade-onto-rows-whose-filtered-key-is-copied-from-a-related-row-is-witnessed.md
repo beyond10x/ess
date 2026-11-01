@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-cascade-onto-rows-whose-filtered-key-is-copied-from-a-related-row-is-witnessed
 kind: story
-status: active
+status: implemented
 title: A cascade onto rows whose filtered key is copied from a related row is witnessed
 summary: 'affects: rows whose creator copies the filtered field with {related:} get no arrangement (ESS-SYNTH-001); split out of U14'
 tags:
@@ -20,10 +20,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/set_effects.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/related_record_effects.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-29T17:06:36Z", actor: "human:timo", revision: 6, executor: "agent:ess-issues-lead", correlation: "ess-issues-3"}
 - {from: "proposed", to: "active", at: "2026-10-29T17:06:37Z", actor: "human:timo", revision: 7, executor: "agent:ess-issues-lead", correlation: "ess-issues-3"}
+- {from: "active", to: "implemented", at: "2026-11-01T01:28:11Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Problem
 
