@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.79.0] — 2026-11-01
+
 ### Added
 
 - From `ess-scenario/6` an authored claim may name one member of a nested value by its dotted path, `checkpoint.checkpoint_id: cp-1`, in an act's `response:`, an event's `payload:`, an error's `fields:` and a view row's `contains`, `excludes` and `at`; each path is compared alone, through `Optional` and newtypes, and the members it does not name are not read (a downstream report). A path naming no member is refused as `ESS-AUTHOR-013` with the full path; a path through a list, map, union, enum or primitive, a reference at a path, and a path in `input:`, `setup:`, `caller:` or `params:` are refused by name. Below `ess-scenario/6` a dotted key is refused as an undeclared field, its help naming `ess-scenario/6`.

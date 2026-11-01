@@ -770,7 +770,7 @@ answers its identity before execution. A suite carrying one is written at 60 (or
 TypeScript run it, older readers refuse these envelopes by version, and every reader refuses an
 entity fixture under a lower major. A suite without one keeps its earlier format and bytes.
 
-`ess-conformance/62` and `ess-conformance/63`, unreleased, let a response observation name one
+`ess-conformance/62` and `ess-conformance/63`, added in [0.79.0][r79], let a response observation name one
 member of a nested value by its dotted path in `expected`, compared alone. A suite carrying one is
 written at 62 (ordinary) or 63 (declared coverage); each implies every major below it, the 60/61
 pair included. Rust, Go and TypeScript run it, older readers refuse these envelopes by version, and
@@ -823,7 +823,7 @@ instance arranged with `setup:`. The values compile into the step's suite/26 `ca
 format moves, and an act with no `caller:` keeps its suite's bytes. Earlier versions refuse the
 key, and an older `ess` refuses the header.
 
-`ess-scenario/6`, unreleased, lets a claim name one member of a nested value by its dotted path,
+`ess-scenario/6`, added in [0.79.0][r79], lets a claim name one member of a nested value by its dotted path,
 `checkpoint.checkpoint_id: cp-1`, in an act's `response:`, an event's `payload:`, an error's
 `fields:` and a row's `contains`, `excludes` and `at`. Each path is compared alone; a nested value
 written whole is still compared whole. Event, error and row paths compile to suite/26 dotted keys,
@@ -885,7 +885,7 @@ each end with the digest it was checked at. Refusals: `unknown_role_service`, `c
 `role_input_drift`. Earlier formats keep their meaning and bytes, and refuse `roles`, even empty,
 as an unknown field; an older reader refuses `/4`.
 
-`ess-composition/5`, unreleased. A `conformances` end may name an event, an error or a command's
+`ess-composition/5`, added in [0.76.0][r76]. A `conformances` end may name an event, an error or a command's
 input or response: exactly one of `type`, `event`, `error` or `command`, and a `command` end
 carries `part: input` or `part: response`. A payload end is compared as a struct with the
 payload's fields, against another payload or a struct type, by the same field rules, `reader:
@@ -1097,4 +1097,6 @@ published release that carries them.
 [r68]: https://github.com/beyond10x/ess/releases/tag/0.68.0
 [r69]: https://github.com/beyond10x/ess/releases/tag/0.69.0
 [r70]: https://github.com/beyond10x/ess/releases/tag/0.70.0
+[r76]: https://github.com/beyond10x/ess/releases/tag/0.76.0
 [r78]: https://github.com/beyond10x/ess/releases/tag/0.78.0
+[r79]: https://github.com/beyond10x/ess/releases/tag/0.79.0

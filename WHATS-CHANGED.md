@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.79.0](#nested-member-claims-binary64-in-conformance-suites-and-typed-authored-inputs) | Nested-member claims, Binary64 in conformance suites, and typed authored inputs | capability | notable |
 | [0.78.0](#structured-input-examples-rows-a-deployment-provides-and-lifecycle-summaries) | Structured input examples, rows a deployment provides, and lifecycle summaries | capability | notable |
 | [0.77.0](#http-bindings-group-alike-outcomes-openapi-import-widens-and-validate-refuses-unreachable-branches) | HTTP bindings group alike outcomes, OpenAPI import widens, and validate refuses unreachable branches | capability | notable |
 | [0.76.0](#schemas-publish-entity-binary64-length-and-distinct-invariants-and-composition-compares-events-and-constraints) | Schemas publish entity, Binary64, length and distinct invariants, and composition compares events and constraints | capability | notable |
@@ -89,6 +90,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.79.0 — 2026-11-01
+
+### Nested-member claims, Binary64 in conformance suites, and typed authored inputs
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.79.0)
+
+From ess-scenario/6 a claim may name a nested member by its dotted path, and an authored literal input its type refuses is refused at any depth. Suites /62 and /63 carry a response member path and a finite Binary64, compared by IEEE equality in Rust, Go and TypeScript. Synthesis refutes an inequality against an example.
 
 ## 0.78.0 — 2026-10-31
 
