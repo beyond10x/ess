@@ -493,7 +493,9 @@ mod declaration_order;
 
 /// A command's input and response and a view's row are roots (beyond10x/ess#656):
 /// `--root <command>.input`, `--root <command>.response`, `--root <view>.row`, and every one of
-/// them under `--all-commands` and `--all-views`.
+/// them under `--all-commands` and `--all-views`. Under `--http <binding>` a command's input is the
+/// request body the bound `OpenAPI` document publishes, and a command whose route publishes none
+/// has no input root.
 mod command_and_view_roots {
     use super::*;
 
@@ -641,5 +643,227 @@ mod command_and_view_roots {
                 "{selector} wrote output"
             );
         }
+    }
+
+    /// `demo.notes.Create` at `PUT /notes/{note_id}`, so its `note_id` leaves the request body,
+    /// and `demo.notes.Pin` at `POST /notes/{note_id}/pin`, whose only field is in its path, so
+    /// the bound `OpenAPI` document publishes no body for it.
+    const ROUTES: &str = "routes:
+  - command: demo.notes.Create
+    method: put
+    path: /notes/{note_id}
+    parameters: {note_id: input.note_id}
+  - command: demo.notes.Pin
+    method: post
+    path: /notes/{note_id}/pin
+    parameters: {note_id: input.note_id}
+";
+
+    /// The notes model with `notes.http.yaml` beside it, carrying the model's real digest as the
+    /// provenance of `ess generate types` records it.
+    fn bound_notes() -> Fixture {
+        let fixture = notes();
+        let output = fixture.run(&[
+            "--root",
+            "demo.notes.NoteId",
+            "--target",
+            "typescript",
+            "--out",
+            "digest",
+        ]);
+        assert!(output.status.success(), "{output:?}");
+        let source: serde_json::Value =
+            serde_json::from_str(&fixture.read("digest/source.schema.json")).unwrap();
+        let digest = source["x-ess-provenance"]["source_digest"]
+            .as_str()
+            .unwrap_or_else(|| panic!("no source digest in {source}"))
+            .to_owned();
+        fs::write(
+            fixture.0.join("notes.http.yaml"),
+            format!(
+                "type: ess-http/1\nspecification:\n  system: demo\n  version: v1\n  source_digest: sha256:{digest}\n{ROUTES}"
+            ),
+        )
+        .unwrap();
+        fixture
+    }
+
+    /// What the generated Rust library does with the body the bound document publishes for
+    /// `demo.notes.Create`, from the adopter's report: it decodes and round-trips, and the same
+    /// body with the path's `note_id` added is refused, as the published schema refuses it.
+    const BOUND_BODY_WIRE: &str = r#"
+use demo_notes::*;
+use serde_json::json;
+
+#[test]
+fn the_bound_input_decodes_the_published_body() {
+    let body = json!({"isPinned": true, "title": "Buy milk"});
+    let decoded: DemoNotesCreateInput = serde_json::from_value(body.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&decoded).unwrap(), body);
+    let mut with_path_field = body.clone();
+    with_path_field["note_id"] = json!("n-1");
+    assert!(serde_json::from_value::<DemoNotesCreateInput>(with_path_field).is_err());
+}
+"#;
+
+    /// Builds and tests the generated Rust library at `library` with `wire` as its test, offline,
+    /// as schema-contract's `rust_realization.rs` builds its libraries.
+    fn rust_wire(library: &std::path::Path, wire: &str) {
+        fs::create_dir_all(library.join("tests")).unwrap();
+        fs::write(library.join("tests/wire.rs"), wire).unwrap();
+        let result = Command::new(env!("CARGO"))
+            .args(["test", "--offline", "--quiet", "--manifest-path"])
+            .arg(library.join("Cargo.toml"))
+            .env(
+                "CARGO_TARGET_DIR",
+                std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("native-types-target"),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+
+    #[test]
+    fn a_bound_command_input_is_the_body_the_bound_document_publishes() {
+        for (target, file, declaration) in [
+            ("rust", "rust/types.rs", "pub struct DemoNotesCreateInput {"),
+            ("go", "go/types.go", "type DemoNotesCreateInput struct {"),
+            (
+                "typescript",
+                "typescript/types.ts",
+                "export type DemoNotesCreateInput = ",
+            ),
+        ] {
+            let fixture = bound_notes();
+            let output = generate(
+                &fixture,
+                &[
+                    "--http",
+                    "notes.http.yaml",
+                    "--root",
+                    "demo.notes.Create.input",
+                ],
+                target,
+            );
+            assert!(output.status.success(), "{target}: {output:?}");
+            let types = fixture.read(file);
+            assert!(types.contains(declaration), "{target}: {types}");
+            assert!(
+                types.contains("isPinned") && types.contains("title"),
+                "{target}: {types}"
+            );
+            assert!(
+                !types.contains("note_id") && !types.contains("NoteId"),
+                "{target}: the field the route carries in its path is still in the body: {types}"
+            );
+            let source: serde_json::Value =
+                serde_json::from_str(&fixture.read(&format!("{target}/source.schema.json")))
+                    .unwrap();
+            let input = &source["$defs"]["demo.notes.Create.input"];
+            assert_eq!(
+                input["properties"]
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<std::collections::BTreeSet<_>>(),
+                std::collections::BTreeSet::from(["isPinned", "title"]),
+                "{target}: {input:#}"
+            );
+
+            if target == "rust" {
+                rust_wire(&fixture.0.join("rust"), BOUND_BODY_WIRE);
+                let unbound = fixture.run(&[
+                    "--root",
+                    "demo.notes.Create.input",
+                    "--target",
+                    "rust",
+                    "--package",
+                    "demo-notes",
+                    "--out",
+                    "unbound",
+                ]);
+                assert!(unbound.status.success(), "{unbound:?}");
+                assert!(
+                    fixture.read("unbound/types.rs").contains("pub note_id: "),
+                    "without --http the input keeps every field"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_bound_route_without_a_body_refuses_its_input_by_name_and_all_commands_leaves_it_out() {
+        let fixture = bound_notes();
+        let output = generate(
+            &fixture,
+            &[
+                "--http",
+                "notes.http.yaml",
+                "--root",
+                "demo.notes.Pin.input",
+            ],
+            "typescript",
+        );
+        assert!(!output.status.success(), "{output:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("demo.notes.Pin.input: unpublished_body: command `demo.notes.Pin`")
+                && stderr.contains("every input field in its path"),
+            "{stderr}"
+        );
+        assert!(
+            !fixture.0.join("typescript").exists(),
+            "a refusal wrote output"
+        );
+
+        let output = generate(
+            &fixture,
+            &["--http", "notes.http.yaml", "--all-commands", "--all-views"],
+            "typescript",
+        );
+        assert!(output.status.success(), "{output:?}");
+        let report: serde_json::Value =
+            serde_json::from_str(&fixture.read("typescript/types-report.json")).unwrap();
+        let roots: Vec<&str> = report["roots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|root| root.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            roots,
+            [
+                "demo.notes.Create.input",
+                "demo.notes.Create.response",
+                "demo.notes.Notes.row",
+                "demo.notes.Summaries.row",
+            ],
+            "a command whose route publishes no body has no input root"
+        );
+    }
+
+    #[test]
+    fn refines_requires_http() {
+        let fixture = notes();
+        let output = generate(
+            &fixture,
+            &[
+                "--refines",
+                "protocol.http.yaml",
+                "--root",
+                "demo.notes.Create.input",
+            ],
+            "typescript",
+        );
+        assert!(!output.status.success(), "{output:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("--http"), "{stderr}");
+        assert!(!fixture.0.join("typescript").exists());
     }
 }
