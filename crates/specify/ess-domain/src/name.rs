@@ -188,6 +188,57 @@ impl schemars::JsonSchema for QualifiedName {
     }
 }
 
+/// The published schema of a name key the parser also reads under a serde alias, for a field
+/// written `#[serde(alias = "<alias>")]` and `#[schemars(flatten, schema_with = …)]`.
+///
+/// `schemars` does not see a serde alias, so without this the document schema refuses every
+/// declaration that spells its name the other way, which the parser reads
+/// (`story:the-published-schema-admits-the-name-aliases-the-parser-reads`). Both spellings carry
+/// `pattern`, so the charset holds whichever is written, and exactly one of them is required: serde
+/// refuses a declaration that writes both (a duplicate field) or neither (a missing field).
+///
+/// `additionalProperties: false` is repeated here because `schemars` 0.8 keeps the parent's only
+/// when the flattened schema carries it too, and each struct this is used on denies unknown fields.
+pub(crate) fn aliased_name_schema(
+    canonical: &str,
+    alias: &str,
+    pattern: &str,
+    description: &str,
+) -> schemars::schema::Schema {
+    use schemars::schema::{InstanceType, Schema, SchemaObject};
+    let spelling = |text: String| {
+        let mut schema = SchemaObject {
+            instance_type: Some(InstanceType::String.into()),
+            ..SchemaObject::default()
+        };
+        schema.string().pattern = Some(pattern.to_owned());
+        schema.metadata().description = Some(text);
+        Schema::Object(schema)
+    };
+    let required = |key: &str| {
+        let mut schema = SchemaObject::default();
+        schema.object().required.insert(key.to_owned());
+        Schema::Object(schema)
+    };
+    let mut schema = SchemaObject {
+        instance_type: Some(InstanceType::Object.into()),
+        ..SchemaObject::default()
+    };
+    let object = schema.object();
+    object.additional_properties = Some(Box::new(Schema::Bool(false)));
+    object
+        .properties
+        .insert(canonical.to_owned(), spelling(description.to_owned()));
+    object.properties.insert(
+        alias.to_owned(),
+        spelling(format!(
+            "`{canonical}`, written `{alias}`: the same key, read the same way. Write one of them."
+        )),
+    );
+    schema.subschemas().one_of = Some(vec![required(canonical), required(alias)]);
+    Schema::Object(schema)
+}
+
 /// What a concept is called on the wire, what a person is shown, and what a code emitter spells it.
 ///
 /// All are optional and all default to the qualified name's last segment. The point of separating

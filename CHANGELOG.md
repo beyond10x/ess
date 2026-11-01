@@ -6,6 +6,7 @@
 
 - `ess generate types` realizes an `Optional<Binary64>` field declared `presence: null_when_absent` or `omitted_or_null`, in a declared struct and in a command's input or response root, as Rust and Go: its Binary64 location is the number member of the field's `anyOf [number, null]`, where it was the property and realization was refused as `model_binary64_layout`. The TypeScript report names its `model_binary64` obligation at that member.
 - `ess generate types --root <command>.response` on a command that declares no response is refused as `unknown_root`, as `--all-commands` leaves it out, where it generated an empty object type.
+- The published document schema (`schemas/generated/ess.schema.json`) admits a binding's name written `id:` and a component's written `component:`, the aliases the parser already reads, each with the same charset as `name:`; it refused every document that spelt a name that way. Writing both spellings, or neither, is refused, as the parser refuses it. Parsing is unchanged.
 
 ## [0.80.0] — 2026-11-01
 

@@ -252,10 +252,11 @@ impl std::fmt::Display for BindingCause {
 #[serde(deny_unknown_fields)]
 pub struct RawBindingSpec {
     /// Its identifier, unique in the system.
-    // `BindingName::PATTERN`, published so an editor refuses what `BindingName::new` refuses.
-    // `tests/published_charsets.rs` holds this literal and that constant together.
+    // Published as `name` or `id`, each with `BindingName::PATTERN`, so an editor refuses what
+    // `BindingName::new` refuses under either spelling (`tests/published_charsets.rs`,
+    // `tests/published_name_aliases.rs`).
     #[serde(alias = "id")]
-    #[schemars(regex(pattern = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"))]
+    #[schemars(flatten, schema_with = "binding_name_schema")]
     pub name: String,
     /// What it reacts to.
     pub when: RawTrigger,
@@ -285,6 +286,16 @@ pub struct RawBindingSpec {
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
+}
+
+/// [`RawBindingSpec::name`]'s published schema: `name`, or its alias `id`.
+fn binding_name_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+    crate::name::aliased_name_schema(
+        "name",
+        "id",
+        BindingName::PATTERN,
+        "Its identifier, unique in the system.",
+    )
 }
 
 /// What a binding reacts to.
