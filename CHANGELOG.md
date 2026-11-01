@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The published document schema (`schemas/generated/ess.schema.json`) admits a binding's name written `id:` and a component's written `component:`, the aliases the parser already reads, each with the same charset as `name:`; it refused every document that spelt a name that way. Writing both spellings, or neither, is refused, as the parser refuses it. Parsing is unchanged.
+
 ## [0.80.0] — 2026-11-01
 
 ### Added

@@ -1954,10 +1954,21 @@
     "RawBindingSpec": {
       "description": "A binding, as a document says it.",
       "type": "object",
+      "oneOf": [
+        {
+          "required": [
+            "name"
+          ]
+        },
+        {
+          "required": [
+            "id"
+          ]
+        }
+      ],
       "required": [
         "delivery",
         "invoke",
-        "name",
         "on_failure",
         "when"
       ],
@@ -1969,6 +1980,11 @@
               "$ref": "#/definitions/Delivery"
             }
           ]
+        },
+        "id": {
+          "description": "`name`, written `id`: the same key, read the same way. Write one of them.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
         },
         "invoke": {
           "description": "What it does.",
@@ -2309,8 +2325,17 @@
     "RawComponentSpec": {
       "description": "What a component is made of, as a document says it.",
       "type": "object",
-      "required": [
-        "name"
+      "oneOf": [
+        {
+          "required": [
+            "name"
+          ]
+        },
+        {
+          "required": [
+            "component"
+          ]
+        }
       ],
       "properties": {
         "accepts": {
@@ -2331,6 +2356,11 @@
               "type": "null"
             }
           ]
+        },
+        "component": {
+          "description": "`name`, written `component`: the same key, read the same way. Write one of them.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
         },
         "name": {
           "description": "Its name — a single segment, like `invoice-service`.",
