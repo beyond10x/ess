@@ -836,6 +836,8 @@ ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--all-
 | `--all-events` |  | no |  | Explicitly select every event payload in the resolved model; combines with `--all-types` |
 | `--all-commands` |  | no |  | Explicitly select every command's input, and its response when it declares one; combines with the other `--all-*` selectors |
 | `--all-views` |  | no |  | Explicitly select every view's row; combines with the other `--all-*` selectors |
+| `--http` | `<HTTP>` | no |  | An `ess-http/1` document binding commands and views to methods and paths. Each command's `.input` is then the request body the `OpenAPI` document under that binding publishes: the input less the fields its route carries in the path. A command whose route publishes no body has no `.input` root: naming it is refused, and `--all-commands` leaves it out. Compiled as `ess specify http compile` compiles it, and refused when a route has no path |
+| `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:` digest pins |
 | `--target` | `<TARGET>` | yes |  | Data library target. Unsupported language targets are not silently substituted. One of `typescript`, `rust`, `go`. |
 | `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |
 | `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
