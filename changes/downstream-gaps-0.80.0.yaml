@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/downstream-gaps-0.80.0
+repository: ess
+publishedAt: 2026-11-01T00:00:00Z
+title: HTTP-bound inputs and short names in generated types, and input-type rules in Entity Runtime
+summary: >-
+  ess generate types takes --http, so each command input is the request body its bound OpenAPI
+  document publishes, and --names short combines with --all-commands and --all-views. Entity Runtime
+  lowering keeps an unstored input type's invariants and prefix or refuses them by name. Synthesis
+  decides an identity guard on the row it arranges.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.80.0
+  version: 0.80.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

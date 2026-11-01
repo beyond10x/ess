@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.80.0] — 2026-11-01
+
 ### Added
 
 - `ess generate types` takes `--http <binding>` (and `--refines`), compiled as `ess generate --kind openapi --http` compiles it (beyond10x/ess#656). Under it each `<command>.input` is the request body the bound OpenAPI document publishes, without the fields its route carries in the path, so the Rust, Go and TypeScript types decode that body; a command whose route publishes no body (encoded `query`, or every field in the path) has no input root: `--root <command>.input` is refused as `unpublished_body` naming the command and why, and `--all-commands` leaves it out. Responses and view rows are unchanged, and without `--http` every generated file keeps its bytes.
