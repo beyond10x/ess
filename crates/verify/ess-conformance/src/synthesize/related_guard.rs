@@ -4546,7 +4546,18 @@ fn on_identity(
     guards: &[&Predicate],
     via: &ResolvedRelatedVia,
 ) -> Vec<Predicate> {
-    let field = via.field();
+    onto_identity(ir, entity, guards, via.field())
+}
+
+/// [`on_identity`] for the input field `field` a row of `entity` is sent through, whatever names
+/// it there: a related guard's `via`, or the subject a branch addresses
+/// (story:an-identity-guard-below-unknown-instance-is-decided-on-the-row-sent).
+pub(super) fn onto_identity(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    guards: &[&Predicate],
+    field: &str,
+) -> Vec<Predicate> {
     let identity = &ir.entity(entity).identity.name;
     let onto = |path: &FactPath| {
         let mut segments = vec![identity.clone()];

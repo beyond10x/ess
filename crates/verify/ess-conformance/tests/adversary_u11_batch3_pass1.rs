@@ -5,6 +5,10 @@
 //! Each case varies one shape the unit's own tests leave out and asserts the unit's claims on
 //! it: every branch has a scenario or a named refusal, and no synthesized scenario fails on the
 //! interpreted target. Every model is inline and neutral, so no suite-bytes table walks it.
+//!
+//! The last section holds the shapes the pass found red: a branch's own `when:` on the identity
+//! input of a subject-addressed row, below `unknown_instance:`, and a String identity guard beside
+//! a related row three moves away.
 
 use std::collections::BTreeMap;
 use std::fmt::Write;
@@ -688,4 +692,134 @@ fn accepting_below_unknown_synthesis_is_deterministic() {
     let first = serde_json::to_string(&run(NOTES).synthesis.suite).unwrap();
     let second = serde_json::to_string(&run(NOTES).synthesis.suite).unwrap();
     assert_eq!(first, second);
+}
+
+// ---------------------------------------------------------------------------------------------
+// The batch-3 red shapes: an identity guard below `unknown_instance:` is decided on the row sent
+// (`story:an-identity-guard-below-unknown-instance-is-decided-on-the-row-sent`)
+// ---------------------------------------------------------------------------------------------
+
+/// [`NOTES`] with `dropped` guarded by `guard`, a `when:` line, in place of `not defined(why)`.
+fn notes_dropped_when(guard: &str) -> String {
+    replaced(
+        NOTES,
+        DROPPED,
+        &format!("      - name: dropped\n{guard}        accepts: nothing\n"),
+    )
+}
+
+/// The identity literals every `OpenNote` of `scenario` is sent: the identities of the notes it
+/// stores.
+fn opened_as(scenario: &Value) -> Vec<Value> {
+    scenario["steps"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter(|step| {
+            step["step"] == "execute_command" && step["command"] == "demo.notes.OpenNote"
+        })
+        .map(|step| step["input"]["note_id"]["value"].clone())
+        .collect()
+}
+
+/// `branch` of `CloseNote` in `run` is witnessed on a note opened as `identity`.
+fn sent_a_note_opened_as(run: &Run, branch: &str, identity: &str) {
+    let id = format!("{CLOSE_NOTE}/outcome/{branch}");
+    let scenario = written(run, &id).unwrap_or_else(|| {
+        panic!(
+            "{id} is witnessed (story:an-identity-guard-below-unknown-instance-is-decided-on-the-row-sent): {:#?}",
+            refused(run, &id)
+        )
+    });
+    assert!(
+        opened_as(&scenario).contains(&Value::from(identity)),
+        "{id} is sent a note opened as {identity}: {scenario:#}"
+    );
+}
+
+/// An accepting branch below `unknown_instance:` guarded on the identity input is sent the note of
+/// that identity, not one opened as the plain witness.
+#[test]
+fn an_accepting_identity_guard_below_unknown_is_sent_the_row_of_that_identity() {
+    let text = notes_dropped_when("        when: 'note_id == \"keep\"'\n");
+    let run = holds(&text, CLOSE_NOTE, &CLOSE_BRANCHES);
+    sent_a_note_opened_as(&run, "dropped", "keep");
+}
+
+/// The same over an enum identity: `note_id == b` is sent a note opened as `b`.
+#[test]
+fn an_accepting_enum_identity_guard_below_unknown_is_sent_the_row_of_that_identity() {
+    let text = replaced(
+        &notes_dropped_when("        when: note_id == b\n"),
+        "  - {name: demo.notes.NoteId, kind: newtype, of: String}\n",
+        "  - {name: demo.notes.NoteId, kind: enum, variants: [a, b, c]}\n",
+    );
+    let run = holds(&text, CLOSE_NOTE, &CLOSE_BRANCHES);
+    sent_a_note_opened_as(&run, "dropped", "b");
+}
+
+/// Below an accepting `note_id != "keep"`, the deleting branch is reached only for a note opened
+/// as `"keep"`: it is sent that note, or refused naming the guard, never a note the accepting
+/// branch answers for.
+#[test]
+fn a_negated_identity_guard_below_unknown_leaves_the_deleting_branch_its_row() {
+    let text = notes_dropped_when("        when: 'note_id != \"keep\"'\n");
+    let run = holds(&text, CLOSE_NOTE, &CLOSE_BRANCHES);
+    let closed = format!("{CLOSE_NOTE}/outcome/closed");
+    if written(&run, &closed).is_some() {
+        sent_a_note_opened_as(&run, "closed", "keep");
+    } else {
+        refused_naming(&run, &closed, "note_id != keep");
+    }
+}
+
+/// Every refusal of `id` is `ESS-SYNTH-003` naming `guard` as a predicate renders it (a text
+/// literal unquoted), and none is the repeated-identity refusal.
+fn refused_naming(run: &Run, id: &str, guard: &str) {
+    let refusals = refused(run, id);
+    assert!(!refusals.is_empty(), "{id} has a scenario or a refusal");
+    for refusal in &refusals {
+        assert!(
+            !refusal.contains("creates a second row"),
+            "{id} is not refused as a repeated identity where a row of another identity \
+             witnesses it (story:an-identity-guard-below-unknown-instance-is-decided-on-the-row-sent): \
+             {refusal}"
+        );
+        assert!(
+            refusal.starts_with("[ESS-SYNTH-003]") && refusal.contains(&format!("`{guard}`")),
+            "{id} is refused naming `{guard}`: {refusal}"
+        );
+    }
+}
+
+/// A String identity guard with a related row three moves away: each branch is witnessed and
+/// passes, or is refused naming the guard; none is refused as a repeated identity, which the
+/// control with the guard on another input shows a row of another identity avoids
+/// ([`a_moved_related_row_under_a_guard_on_another_input_is_found`]).
+#[test]
+fn a_string_identity_guard_beside_a_moved_related_row_is_witnessed_or_refused_naming_it() {
+    let run = holds(
+        &moved_slots("        when: 'kind == \"x\"'\n"),
+        USE_SLOT,
+        &USE_BRANCHES,
+    );
+    for branch in USE_BRANCHES {
+        let id = format!("{USE_SLOT}/outcome/{branch}");
+        if written(&run, &id).is_none() {
+            refused_naming(&run, &id, "kind == x");
+        }
+    }
+}
+
+#[test]
+fn identity_guard_below_unknown_synthesis_is_deterministic() {
+    for text in [
+        notes_dropped_when("        when: 'note_id == \"keep\"'\n"),
+        notes_dropped_when("        when: 'note_id != \"keep\"'\n"),
+    ] {
+        let first = serde_json::to_string(&run(&text).synthesis.suite).unwrap();
+        let second = serde_json::to_string(&run(&text).synthesis.suite).unwrap();
+        assert_eq!(first, second, "the suite is the same twice");
+    }
 }
