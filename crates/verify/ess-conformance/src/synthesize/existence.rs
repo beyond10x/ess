@@ -334,10 +334,12 @@ pub(super) fn existence(
 /// "Precedence"). A target that looks the record up first answers that send "not found", so this
 /// adds the other half, as [`refusals_on_a_stored_row`] does for the two existence forms: the
 /// record created through a declared creation and driven to a state the command runs from, the
-/// refused input sent for it, and the refusal required with no event and the row unchanged — the
-/// last only where some identity view shows the row. Where no arrangement reaches that record, the
-/// scenario is withdrawn and refused with the arrangement's cause, never filed to be skipped at
-/// run time.
+/// refused input sent for it, and the refusal required with no event and the row unchanged. Where
+/// no identity view shows the row, the command reads it back instead: the addressing branch's own
+/// valid send for the record follows, its outcome required, so a target that changed the record on
+/// refusal answers it with another branch. Where no arrangement reaches that record, or no view
+/// shows it and the addressing branch has no valid send, the scenario is withdrawn and refused
+/// with the cause, never filed to be skipped at run time.
 ///
 /// Left to their own families: the two existence forms (their stored-row half is above), a command
 /// reading stored fields (its refusals are already sent for an arranged row), from the one rule
@@ -432,14 +434,23 @@ fn arranged_refusal(
     // Refused, the record stays where the arrangement left it.
     setup.after.clone_from(&setup.before);
     let refused = reach(ir, command, refusal, Distinction::PLAIN)?;
-    // Where no identity view shows the arranged row, nothing can read it back, so the half is
-    // filed without the unchanged-row claim and still requires the error and no event. The plain
-    // send needs no view either, so the scenario is not lost over it (adversary pass 1).
+    // Where no identity view shows the arranged row, no view reads it back, so the half is filed
+    // without the unchanged-row claim, and the command reads it back instead: after the error and
+    // no event, the addressing branch's own valid send for the arranged record, its outcome
+    // required. A target that changed the record on refusal answers that send with another branch.
+    // The plain send needs no view either, so the scenario is not lost over it (adversary pass 1);
+    // it is withdrawn only where the addressing branch has no valid send, which leaves nothing to
+    // show such a target.
     let observed = identity_views(ir, subject).any(|view| {
         setup.after.as_ref().is_some_and(|state| {
             shows(ir, view, state, &setup.settled, &BTreeMap::new()) == Ok(true)
         })
     });
+    let read_back = if observed {
+        None
+    } else {
+        Some(probe(ir, command, addressing, actors, &setup)?)
+    };
     let preservation = if observed {
         subject_fact::preserve_refused_subject(ir, subject, &setup)?
     } else {
@@ -493,8 +504,63 @@ fn arranged_refusal(
     }
     source.extend(forbidden.into_iter().map(EssSemanticRef::from));
     steps.extend(preservation.after);
+    if let Some(probe) = read_back {
+        steps.extend(probe.steps);
+        source.extend(probe.source);
+    }
     models.mark(InvocationPhase::Act, &mut steps);
     Ok(Segment { steps, source })
+}
+
+/// The send reading the arranged row back through the command where no identity view shows it:
+/// `addressing`'s own valid input for the record `setup` arranged, its outcome required. Refused
+/// naming [`UNPROBED`] where `addressing` has no valid send.
+fn probe(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    addressing: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    setup: &Setup,
+) -> Result<super::Invocation, RefusalCause> {
+    let subject = addressing
+        .subject
+        .as_ref()
+        .expect("the addressing branch names a subject");
+    let input = reach(ir, command, addressing, Distinction::PLAIN)
+        .map_err(|_| unprobed(ir, command, addressing, subject))?;
+    let driver = Driver {
+        command,
+        outcome: addressing,
+        effect: &subject.effect,
+    };
+    Ok(super::invoke_with(
+        ir,
+        &driver,
+        setup.instance.as_ref(),
+        actors,
+        &setup.bound,
+        &input,
+    ))
+}
+
+/// Why the arranged half of [`refusals_on_an_arranged_row`] is withdrawn where no identity view
+/// shows the arranged row and the addressing branch has no valid send to read it back through.
+const UNPROBED: &str = "has no valid send for the record an input refusal was sent for, and no \
+                        identity view shows that record, so nothing would show a target that \
+                        changes the record on refusal";
+
+/// The refusal naming [`UNPROBED`] for `addressing` on `subject`'s entity.
+fn unprobed(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    addressing: &ResolvedOutcome,
+    subject: &ResolvedSubject,
+) -> RefusalCause {
+    RefusalCause::NoWitness(WitnessGap {
+        path: format!("{}.{}", command.name, addressing.name),
+        type_ref: ir.entity(&subject.entity).name.to_string(),
+        reason: UNPROBED,
+    })
 }
 
 /// Every input-guarded refusal naming no subject beside branches that read the held state, sent

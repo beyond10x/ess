@@ -539,24 +539,71 @@ fn issue_209_with_a_view_moving_the_record_on_refusal_is_caught() {
     );
 }
 
-/// Without a view the arranged half requires the error and no event, and nothing more. The
-/// record's state is still observable through the command itself: the wrong-state branch answers
-/// a second `Configure` of a moved account. So a target that moves the account on refusal and
-/// publishes nothing passes every scenario.
-///
-/// This pins that known gap as it stands today. The probe through the command is
-/// `story:a-no-view-arranged-half-probes-the-row-through-the-command`; when it lands, flip this
-/// case to require that both refusal scenarios fail against this target.
+/// Without a view nothing reads the arranged row back, but the record's state is still observable
+/// through the command itself: after the refused send, the arranged half sends the addressing
+/// branch's own valid input for the arranged account and requires its outcome. A target that moved
+/// the account on refusal answers that probe with the wrong-state branch, `already-configured`,
+/// where the model answers `configured`, so both refusal scenarios fail against it.
 #[test]
-fn issue_209_no_view_arranged_half_does_not_yet_catch_a_target_moving_the_record_on_refusal() {
+fn issue_209_no_view_arranged_half_catches_a_target_moving_the_record_on_refusal() {
     let failed = failures(&without_view(), Mode::MovesOnRefusal);
-    assert!(
-        !failed.contains_key("vault.acct.Configure/outcome/secret-too-short")
-            && !failed.contains_key("vault.acct.Configure/outcome/missing-configuration"),
-        "this case pins a known gap, where a target moving the stored account on refusal passes \
-         with no view. It is filed as \
-         story:a-no-view-arranged-half-probes-the-row-through-the-command. A refusal scenario \
-         now fails against this target, so flip the case to require both to fail once that story \
-         lands: {failed:#?}"
+    for id in [
+        "vault.acct.Configure/outcome/secret-too-short",
+        "vault.acct.Configure/outcome/missing-configuration",
+    ] {
+        assert!(
+            failed.contains_key(id),
+            "{id} passed a target that moves the stored account on refusal with no view: the \
+             arranged half must probe the row through the command's own valid send \
+             (story:a-no-view-arranged-half-probes-the-row-through-the-command): {failed:#?}"
+        );
+    }
+}
+
+/// The no-view model with `configured` shadowed by `secret-too-short`, declared before it: every
+/// input `configured` admits is refused first, so the command has no valid send to probe the
+/// arranged account with. A catch-all refusal declared last answers every other input.
+fn without_view_or_probe() -> String {
+    let text = without_view();
+    let shadowed = text
+        .replace(
+            "      - name: configured\n        moves:",
+            "      - name: configured\n        when: secret.count < 5\n        moves:",
+        )
+        .replace(
+            "          vault.acct.Configured: {account_id: input.id}\n",
+            "          vault.acct.Configured: {account_id: input.id}\n      \
+             - {name: rejected, error: vault.acct.IdRequired}\n",
+        );
+    assert_eq!(
+        shadowed.matches("secret.count < 5").count() + shadowed.matches("name: rejected").count(),
+        2,
+        "the fixture's `configured` branch moved: {shadowed}"
     );
+    shadowed
+}
+
+/// With no view and no valid send of the addressing branch, nothing would show a target that
+/// moves the record on refusal, so each arranged refusal scenario is withdrawn and refused naming
+/// that branch, never filed as a half that passes such a target.
+#[test]
+fn issue_209_no_view_arranged_half_without_a_valid_send_is_withdrawn_naming_the_branch() {
+    let result = synthesis(&without_view_or_probe());
+    let lines = refusals(&result);
+    for name in ["secret-too-short", "missing-configuration"] {
+        let id = format!("vault.acct.Configure/outcome/{name}");
+        assert!(
+            find(&result, &id).is_none(),
+            "{id} filed with no view and no valid send to probe the arranged row through \
+             (story:a-no-view-arranged-half-probes-the-row-through-the-command): {lines:#?}"
+        );
+        assert!(
+            lines.iter().any(|line| line.contains("SYNTH-001")
+                && line.contains(&id)
+                && line.contains("vault.acct.Configure.configured")
+                && line.contains("no identity view shows that record")),
+            "{id} withdrawn without naming the branch it could not probe through \
+             (story:a-no-view-arranged-half-probes-the-row-through-the-command): {lines:#?}"
+        );
+    }
 }
