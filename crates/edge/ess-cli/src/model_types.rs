@@ -36,6 +36,17 @@ pub struct Args {
     /// Explicitly select every view's row; combines with the other `--all-*` selectors.
     #[arg(long)]
     all_views: bool,
+    /// An `ess-http/1` document binding commands and views to methods and paths. Each command's
+    /// `.input` is then the request body the `OpenAPI` document under that binding publishes: the
+    /// input less the fields its route carries in the path. A command whose route publishes no body
+    /// has no `.input` root: naming it is refused, and `--all-commands` leaves it out. Compiled as
+    /// `ess specify http compile` compiles it, and refused when a route has no path.
+    #[arg(long)]
+    http: Option<PathBuf>,
+    /// The `ess-http/1` binding the `--http` document refines, whose bytes its `refines:` digest
+    /// pins.
+    #[arg(long, requires = "http")]
+    refines: Option<PathBuf>,
     #[command(flatten)]
     options: crate::schema_bundle::TypeOptions,
     /// How declarations are named: the qualified model name, or its last segment.
@@ -56,7 +67,9 @@ pub struct Args {
 pub enum Names {
     /// The qualified model name, every segment kept: `MeteringItemsUsageRecorded`.
     Qualified,
-    /// The last segment, refused where two selected declarations would share one: `UsageRecorded`.
+    /// A declared type or event by its last segment, `UsageRecorded`; a command's input or
+    /// response or a view's row by its owner's last segment and the member, `CreateInput`,
+    /// `ByOwnerRow`. Refused where two selected declarations would share one.
     Short,
 }
 
@@ -77,13 +90,36 @@ pub fn run(args: &Args) -> Result<ExitCode> {
     let Ok((ir, _)) = crate::resolved(&args.input.path, crate::Format::Text)? else {
         return Ok(ExitCode::from(1));
     };
+    // Loaded and held to a path on every route as `ess generate --kind openapi --http` does, so
+    // the bodies are the ones that document publishes.
+    let mut binding = None;
+    if let Some(path) = args.http.as_deref() {
+        let Some(http) =
+            crate::http::load(path, args.refines.as_deref(), &ir, crate::Format::Text)?
+        else {
+            return Ok(ExitCode::from(1));
+        };
+        match ess_gen::http::Binding::new(http) {
+            Ok(bound) => binding = Some(bound),
+            Err(unprojectable) => {
+                eprintln!(
+                    "{} cannot be projected to OpenAPI:\n{unprojectable}",
+                    path.display()
+                );
+                return Ok(ExitCode::from(1));
+            }
+        }
+    }
     let roots = if args.all_types || args.all_events || args.all_commands || args.all_views {
         let types = ir.types().keys().filter(|_| args.all_types);
         let events = ir.events().keys().filter(|_| args.all_events);
         let mut roots: std::collections::BTreeSet<String> =
             types.chain(events).map(ToString::to_string).collect();
         if args.all_commands {
-            roots.extend(ess_gen::schema::ModelTypes::command_roots(&ir));
+            roots.extend(ess_gen::schema::ModelTypes::bound_command_roots(
+                &ir,
+                binding.as_ref(),
+            ));
         }
         if args.all_views {
             roots.extend(ess_gen::schema::ModelTypes::view_roots(&ir));
@@ -92,7 +128,7 @@ pub fn run(args: &Args) -> Result<ExitCode> {
     } else {
         args.root.iter().cloned().collect()
     };
-    let selection = match ess_gen::schema::ModelTypes::select(&ir, &roots) {
+    let selection = match ess_gen::schema::ModelTypes::select_bound(&ir, &roots, binding.as_ref()) {
         Ok(selection) => selection,
         Err(errors) => {
             for error in errors {

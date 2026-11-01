@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-01T09:07:14Z",
+  "actor": "human:timo",
+  "artifact": "story:a-bound-command-input-decodes-the-published-request-body",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-gen --locked --test bound_command_input_roots and -p ess-cli --locked --test model_type_events: base 1628ffb34 red (ess-gen E0599 select_bound/bound_command_roots missing; ess-cli FAILED 16/19, unexpected argument --http/--refines), unit 7978d1b5d ok 4/4 and 19/19; clippy, cli-reference --check ok; verdict VERIFIED (D343 U1 scratch logs)"
+  }
+}

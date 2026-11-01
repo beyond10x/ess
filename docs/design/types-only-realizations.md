@@ -208,7 +208,10 @@ existing bundle adopter's API moves.
   `New<Name>()`. The constant is still a runtime obligation in the report.
 - **Short names are opt-in.** `--names short` on `ess generate types` and `ess generate client`
   declares each component under the last segment of its qualified name and refuses
-  (`short_name_collision`) when two selected components share one. Bundle input refuses the flag.
+  (`short_name_collision`) when two selected components share one. A selected command input or
+  response or view row keeps its owner's last segment before the member (`CreateInput`,
+  `ByOwnerRow`), so `--all-commands` and `--all-views` combine with it. Bundle input refuses the
+  flag.
 
 The `time` 0.3.45 dependency is affected by
 [RUSTSEC-2026-0009](https://rustsec.org/advisories/RUSTSEC-2026-0009.html) in its RFC 2822

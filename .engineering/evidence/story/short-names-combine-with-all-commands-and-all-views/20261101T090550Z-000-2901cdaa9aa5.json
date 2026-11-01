@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-01T09:05:50Z",
+  "actor": "human:timo",
+  "artifact": "story:short-names-combine-with-all-commands-and-all-views",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-d343-u4-pass-1",
+    "reference": "068def67b (F1, F3), Names::Short help (F2) in this commit",
+    "review": "review-result:adversary-d343-u4-pass-1",
+    "outcome": "fixed"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-01T09:09:35Z",
+  "actor": "human:timo",
+  "artifact": "story:an-identity-guard-below-unknown-instance-is-decided-on-the-row-sent",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance --locked --test adversary_u11_batch3_pass1: fix reversed (tests kept) FAILED 19/23 (CloseNote dropped/closed Failed on the interpreted target, ESS-SYNTH-001 on the moved related row), unit ef2cc60f1 ok 23/23; accepting_branch_below_unknown_instance 9, related_guard_on_the_identity_input 6, synthesis bytes tables 2+1, --lib 172 ok; verdict VERIFIED (D343 U3 scratch logs)"
+  }
+}

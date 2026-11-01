@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-01T10:37:56Z",
+  "actor": "human:timo",
+  "artifact": "story:entity-runtime-lowering-enforces-input-type-invariants",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "D343 final gate stage A on integration/ess-d343 at b7e711173, 10:24-10:35Z: cargo test -p ess-gen, -p schema-contract, -p ess-entity-runtime (full), -p ess-cli (model_type_events, adversary_d343_u1_pass1, model_types, http), -p ess-conformance (--lib + 6 named incl. adversary_d343_u3_pass1); 207 binaries, 1389 passed, 0 failed; clippy -D warnings and fmt-check clean"
+  }
+}

@@ -44,6 +44,15 @@ pub(super) fn withdraw_repeated_identities(ir: &EssIr, synthesis: &mut Synthesis
     }
 }
 
+/// Whether `steps` require a creation for a literal identity a row they created earlier still
+/// holds: the scenario they end would be withdrawn. A family appending a further run checks its
+/// steps after the scenario's so far, and passes over a run that repeats an identity where another
+/// run witnesses the same thing
+/// (story:an-identity-guard-below-unknown-instance-is-decided-on-the-row-sent).
+pub(super) fn repeats(ir: &EssIr, steps: &[ScenarioStep]) -> bool {
+    repeated(ir, steps).is_some()
+}
+
 /// The cause, where `steps` require a creation for a literal identity a row they created earlier
 /// still holds; `None` otherwise.
 fn repeated(ir: &EssIr, steps: &[ScenarioStep]) -> Option<RefusalCause> {

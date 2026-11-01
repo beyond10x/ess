@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-01T08:41:11Z",
+  "actor": "human:timo",
+  "artifact": "story:short-names-combine-with-all-commands-and-all-views",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p schema-contract --locked --test short_body_root_names: base 1628ffb34 FAILED 0/3 (short_name_collision Input/Row), unit c612f4dc7 ok 3/3; verdict VERIFIED (D343 U4 scratch red.log vs green.log)"
+  }
+}

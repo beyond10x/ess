@@ -548,6 +548,15 @@ pub enum LoweringCode {
     /// spells them apart, so a lowered definition would store and answer the declared name where
     /// the specification promises the wire spelling.
     StateWireNameUnsupported,
+    /// An input type's invariant or `prefix:` cannot be held. Either a creation does not hold it by
+    /// writing the input into a field of that type on every accepting branch: ESS admits an input
+    /// only when its type's rules hold, an entity-core creation has no precondition slot
+    /// (`CreateDefinition`), and an outcome's `when` would change which branch answers, so the rule
+    /// would be dropped. Or the rule orders text, or a value not known to be a number or an
+    /// instant: entity-core answers `Unknown` for such an ordering, so the precondition would fail
+    /// every request. An update's other input rules lower to the operation's preconditions over
+    /// `$args.input.<field>`.
+    InputInvariantUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -671,11 +680,16 @@ impl Reach {
     }
 }
 
-/// How a nominal rule's base is reached: through an `Optional`, and where on the run-time walk.
+/// How a nominal rule's base is reached: through an `Optional`, where on the run-time walk, and
+/// whether it is a command input's (a precondition) rather than a stored field's (an entity rule).
 #[derive(Debug, Clone, Copy)]
 struct Placement {
     optional: bool,
     reach: Reach,
+    /// Lowered typed, and refused by name where entity-core cannot decide it
+    /// (`story:entity-runtime-lowering-enforces-input-type-invariants`); a stored field's rules
+    /// keep the untyped reading they had.
+    input: bool,
 }
 
 impl Placement {
@@ -684,6 +698,15 @@ impl Placement {
         Self {
             optional,
             reach: Reach::Root,
+            input: false,
+        }
+    }
+
+    /// A command input, at the root of its arguments.
+    fn input(optional: bool) -> Self {
+        Self {
+            input: true,
+            ..Self::root(optional)
         }
     }
 }
@@ -1357,6 +1380,47 @@ impl Projector<'_> {
         self.requirements.push(requirement);
     }
 
+    /// One type rule over `fields` (a newtype's `value`, or a struct's members) as a condition.
+    ///
+    /// A stored field's rule keeps the untyped reading it had. A command input's rule is lowered
+    /// typed, as a guard over the input is: an ordering over a declared `Timestamp` becomes
+    /// `before`/`after`. An ordering entity-core cannot decide — over text or any other
+    /// non-number, which its `compare` answers `Unknown`, or over a fact the typing cannot resolve,
+    /// such as a quantifier's element — is refused by name, naming the input, rather than lowered
+    /// to a precondition that is `Unknown` for every request
+    /// (`story:entity-runtime-lowering-enforces-input-type-invariants`).
+    fn nominal_condition(
+        &mut self,
+        predicate: &Predicate,
+        rewrite: &PathRewrite,
+        fields: &[ResolvedField],
+        input: bool,
+        semantic_path: &str,
+    ) -> Condition {
+        if !input {
+            return lower_predicate(predicate, rewrite);
+        }
+        let service = self.service;
+        let typing = Typing::over(service.source(), fields);
+        let condition = lower_typed(predicate, rewrite, &typing);
+        let mut refused = typing.take_refused();
+        unresolved_orderings(predicate, &typing, &mut refused);
+        for ordering in refused {
+            self.diagnostic_naming(
+                LoweringCode::InputInvariantUnsupported,
+                subset::INPUT_RULE_ORDERING,
+                semantic_path,
+                format!(
+                    "the input's type requires `{ordering}`, an ordering Entity Runtime cannot \
+                     decide over this input: it orders numbers with `compare` and instants with \
+                     `before`/`after`, and answers `Unknown` for any other ordering, so the \
+                     precondition would fail every request"
+                ),
+            );
+        }
+        condition
+    }
+
     #[allow(clippy::too_many_lines)]
     fn lower_nominal_invariants(
         &mut self,
@@ -1367,7 +1431,9 @@ impl Projector<'_> {
         active: &mut Vec<QualifiedName>,
         out: &mut Vec<RuleDefinition>,
     ) {
-        let Placement { optional, reach } = placement;
+        let Placement {
+            optional, reach, ..
+        } = placement;
         match type_ref {
             ResolvedTypeRef::Optional { of } => {
                 self.lower_nominal_invariants(
@@ -1376,6 +1442,7 @@ impl Projector<'_> {
                     Placement {
                         optional: true,
                         reach,
+                        ..placement
                     },
                     semantic_path,
                     active,
@@ -1391,6 +1458,7 @@ impl Projector<'_> {
                     Placement {
                         optional: false,
                         reach: reach.within(Reach::Element),
+                        ..placement
                     },
                     semantic_path,
                     active,
@@ -1472,12 +1540,15 @@ impl Projector<'_> {
                             );
                         }
                         for (index, invariant) in invariants.iter().enumerate() {
-                            let mut condition = lower_predicate(
+                            let mut condition = self.nominal_condition(
                                 &invariant.predicate,
                                 &PathRewrite::Nominal {
                                     base: base.to_owned(),
                                     value_root: true,
                                 },
+                                &value,
+                                placement.input,
+                                semantic_path,
                             );
                             if optional {
                                 condition = optional_guard(base, condition);
@@ -1512,12 +1583,15 @@ impl Projector<'_> {
                             );
                         }
                         for (index, invariant) in invariants.iter().enumerate() {
-                            let mut condition = lower_predicate(
+                            let mut condition = self.nominal_condition(
                                 &invariant.predicate,
                                 &PathRewrite::Nominal {
                                     base: base.to_owned(),
                                     value_root: false,
                                 },
+                                fields,
+                                placement.input,
+                                semantic_path,
                             );
                             if optional {
                                 condition = optional_guard(base, condition);
@@ -1539,6 +1613,7 @@ impl Projector<'_> {
                                 Placement {
                                     optional: optional || field.type_ref.is_optional(),
                                     reach,
+                                    ..placement
                                 },
                                 &format!("{semantic_path}.{}", field.name),
                                 active,
@@ -1558,6 +1633,7 @@ impl Projector<'_> {
                                 Placement {
                                     optional: false,
                                     reach: reach.within(Reach::UnionPayload),
+                                    ..placement
                                 },
                                 &format!("{semantic_path}.{variant}"),
                                 active,
@@ -1982,6 +2058,11 @@ impl Projector<'_> {
             },
             &format!("{command_path}.response"),
         );
+        let preconditions = self.input_type_rules(
+            command,
+            is_create,
+            is_create.then_some((&entity.identity.type_ref, &identities)),
+        );
 
         let mut compiled = Vec::new();
         let mut operation_fields = BTreeMap::new();
@@ -2168,7 +2249,7 @@ impl Projector<'_> {
                 OperationDefinition {
                     arguments,
                     transitions: Vec::new(),
-                    preconditions: Vec::new(),
+                    preconditions,
                     set: BTreeMap::new(),
                     emits: Vec::new(),
                     response: response_schema,
@@ -2177,6 +2258,62 @@ impl Projector<'_> {
             );
         }
         true
+    }
+
+    /// The rules of each input's type (its `invariants:` and `prefix:`, at every layer and member)
+    /// that no stored field holds, as rules over `$args.input.<field>`
+    /// (`story:entity-runtime-lowering-enforces-input-type-invariants`). ESS admits an input only
+    /// when its type's rules hold; the input schema carries its shape and alphabets only.
+    ///
+    /// An input every accepting branch writes into a field of its own type (a `sets:` entry, or a
+    /// creation's identity) needs none: the field's rules are the type's, entity-core checks them
+    /// on the row it writes, and a refusing branch answers before the operation's preconditions
+    /// are read either way. For an update the rest are the operation's preconditions. A creation
+    /// has no precondition slot, and an outcome's `when` would change which branch answers, so
+    /// each input carrying one is refused by name under
+    /// [`LoweringCode::InputInvariantUnsupported`] and nothing is returned for it.
+    fn input_type_rules(
+        &mut self,
+        command: &ResolvedCommand,
+        is_create: bool,
+        identity: Option<(&ResolvedTypeRef, &BTreeMap<OutcomeName, IdentityValue>)>,
+    ) -> Vec<RuleDefinition> {
+        let mut rules = Vec::new();
+        for field in &command.input {
+            if stored_on_every_accepting_branch(command, field, identity) {
+                continue;
+            }
+            let semantic_path = format!("{}.input.{}", command.name, field.name);
+            let before = rules.len();
+            self.lower_nominal_invariants(
+                &field.type_ref,
+                &format!("$args.input.{}", field.name),
+                Placement::input(field.type_ref.is_optional()),
+                &semantic_path,
+                &mut Vec::new(),
+                &mut rules,
+            );
+            if is_create && rules.len() > before {
+                let unheld = rules
+                    .split_off(before)
+                    .into_iter()
+                    .filter_map(|rule| rule.message)
+                    .map(|message| format!("`{message}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.diagnostic(
+                    LoweringCode::InputInvariantUnsupported,
+                    &semantic_path,
+                    format!(
+                        "the input's type requires {unheld}, which ESS checks before it admits the \
+                         input; an Entity Runtime creation has no precondition, no field of that \
+                         type stores the input on every accepting branch, and an outcome guard \
+                         would change which branch answers"
+                    ),
+                );
+            }
+        }
+        rules
     }
 
     fn schema_for_fields(
@@ -4010,6 +4147,78 @@ fn map_key(primitive: Primitive) -> MapKey {
         Primitive::Json => {
             unreachable!("a Json value is refused as a map key while the document is read")
         }
+    }
+}
+
+/// Whether every accepting branch of `command` writes the input `field` unchanged into a field of
+/// the input's own type — a `sets:` entry, or on a creation the identity `identity` names with its
+/// type and each branch's value — so the field's rules, the type's, hold on every row it writes. A
+/// command with no accepting branch stores nothing.
+fn stored_on_every_accepting_branch(
+    command: &ResolvedCommand,
+    field: &ResolvedField,
+    identity: Option<(&ResolvedTypeRef, &BTreeMap<OutcomeName, IdentityValue>)>,
+) -> bool {
+    fn bare(type_ref: &ResolvedTypeRef) -> &ResolvedTypeRef {
+        match type_ref {
+            ResolvedTypeRef::Optional { of } => of,
+            other => other,
+        }
+    }
+    let input_type = bare(&field.type_ref);
+    let mut accepting = command
+        .outcomes
+        .iter()
+        .filter(|outcome| outcome.error.is_none() && outcome.subject.is_some())
+        .peekable();
+    accepting.peek().is_some()
+        && accepting.all(|outcome| {
+            let in_identity = identity.is_some_and(|(type_ref, values)| {
+                bare(type_ref) == input_type
+                    && matches!(
+                        values.get(&outcome.name),
+                        Some(IdentityValue::InputField { field: read }) if *read == field.name
+                    )
+            });
+            in_identity
+                || outcome.sets.iter().any(|set| {
+                    set.conversion.is_none()
+                        && bare(&set.target_type) == input_type
+                        && matches!(
+                            &set.value,
+                            ResolvedPayloadValue::InputField { field: read, .. }
+                                if *read == field.name
+                        )
+                })
+        })
+}
+
+/// Every ordering in `predicate` that `typing` lowers as a plain `compare` while one of its fact
+/// operands resolves to no declared type: entity-core's `compare` decides numbers only, so an
+/// ordering it cannot see is a number is not known to be decided. A text ordering is not repeated
+/// here; [`ordered`] records it.
+fn unresolved_orderings(predicate: &Predicate, typing: &Typing<'_>, out: &mut Vec<String>) {
+    match predicate {
+        Predicate::All(children) | Predicate::Any(children) => {
+            for child in children {
+                unresolved_orderings(child, typing, out);
+            }
+        }
+        Predicate::Not(child) => unresolved_orderings(child, typing, out),
+        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            unresolved_orderings(&quantified.body, typing, out);
+        }
+        Predicate::Compare {
+            left, op, right, ..
+        } if op.needs_ordering()
+            && typing.orders(left, right) == Ordering::Plain
+            && [left, right].into_iter().any(|operand| {
+                matches!(operand, Operand::Fact(_)) && typing.primitive(operand).is_none()
+            }) =>
+        {
+            out.push(predicate.to_string());
+        }
+        _ => {}
     }
 }
 

@@ -241,6 +241,9 @@ pub struct Plan {
     definitions: BTreeMap<String, Node>,
     names: BTreeMap<String, String>,
     roots: BTreeSet<String>,
+    /// The model definitions that are a command's input or response or a view's row, which
+    /// short names keep their owner for (beyond10x/ess#409). Empty for a bundle.
+    body_roots: BTreeSet<String>,
     source_digest: String,
     input: InputIdentity,
     newtypes: BTreeSet<String>,
@@ -719,6 +722,12 @@ impl Plan {
         )?;
         plan.binary64.clone_from(model.binary64_locations());
         plan.field_order.clone_from(model.declared_field_order());
+        plan.body_roots = model
+            .definitions()
+            .iter()
+            .filter(|(source, definition)| is_body_root(source, definition))
+            .map(|(source, _)| source.clone())
+            .collect();
         for at in &plan.binary64 {
             plan.obligations.insert(finding(at, "model_binary64", "finite IEEE-754 binary64 requires nearest-even token decoding, signed-zero preservation and finite round-tripping serialization; the structural number representation alone does not enforce this contract"));
         }
@@ -821,6 +830,7 @@ impl Plan {
             definitions,
             names,
             roots: roots.clone(),
+            body_roots: BTreeSet::new(),
             source_digest,
             input,
             newtypes,
@@ -870,8 +880,11 @@ impl Plan {
     }
 
     /// Declare every component under the last segment of its qualified name, refusing two that
-    /// would share one (beyond10x/ess#409). For model input only: a bundle's component names
-    /// carry no domain prefix to drop.
+    /// would share one (beyond10x/ess#409). A command's input or response or a view's row
+    /// `<owner>.<member>` keeps its
+    /// owner's last segment before the member, so `demo.notes.Create.input` is `CreateInput` and
+    /// every command's input or view's row can be selected at once. For model input only: a
+    /// bundle's component names carry no domain prefix to drop.
     pub fn with_short_names(mut self) -> Result<Self, Refused> {
         if !matches!(self.input, InputIdentity::Model { .. }) {
             return Err(Refused(vec![finding(
@@ -883,7 +896,7 @@ impl Plan {
         let mut errors = BTreeSet::new();
         let mut reverse: BTreeMap<String, String> = BTreeMap::new();
         for (source, name) in &mut self.names {
-            let short = declaration_name(source.rsplit('.').next().unwrap_or(source));
+            let short = short_name(source, self.body_roots.contains(source));
             let pointer = &self.definitions[source].pointer;
             if short.is_empty()
                 || short.as_bytes()[0].is_ascii_digit()
@@ -2042,6 +2055,42 @@ fn local_definition(text: &str) -> Option<String> {
         return None;
     }
     Some(tail.replace("~1", "/").replace("~0", "~"))
+}
+
+/// Whether the model definition `source` is a body root `ess_gen::schema::ModelTypes::select`
+/// resolved: a command's `<command>.input` or `<command>.response`, or a view's `<view>.row`
+/// (beyond10x/ess#656), decided on what the definition is rather than on its name, since a
+/// declared type or an event may itself be named `….input`, `….response` or `….row` and is
+/// resolved first. A message body is published with the message kind and its owner's
+/// qualified name; a row of a view with a `shape:` is a bare reference to that type, which no
+/// declared type or event definition is, as each carries its own `x-ess-kind`.
+fn is_body_root(source: &str, definition: &Value) -> bool {
+    let Some((owner, member)) = source.rsplit_once('.') else {
+        return false;
+    };
+    let kind = definition.get("x-ess-kind").and_then(Value::as_str);
+    let names_owner = definition.get("x-ess-name").and_then(Value::as_str) == Some(owner);
+    match (kind, member) {
+        (Some("command-input"), "input")
+        | (Some("command-response"), "response")
+        | (Some("view-row"), "row") => names_owner,
+        (None, "row") => definition
+            .as_object()
+            .is_some_and(|object| object.len() == 1 && object.contains_key("$ref")),
+        _ => false,
+    }
+}
+
+/// The short declaration name of the model definition `source`: its last segment, or, for a
+/// body root, its owner's last segment followed by the member (`demo.notes.ByOwner.row` is
+/// `ByOwnerRow`), the qualified name without its domain prefix.
+fn short_name(source: &str, body_root: bool) -> String {
+    let mut segments = source.rsplit('.');
+    let last = segments.next().unwrap_or(source);
+    match segments.next() {
+        Some(owner) if body_root => declaration_name(&format!("{owner}.{last}")),
+        _ => declaration_name(last),
+    }
 }
 
 fn declaration_name(source: &str) -> String {

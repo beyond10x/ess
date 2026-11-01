@@ -1,4 +1,4 @@
-#	models=439	lines=608
+#	models=439	lines=596
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -407,7 +407,7 @@ models/toolchain/system.yaml	ASSEMBLE
 system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	components=2
 system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	email-service	REFUSED	e0087bf09f2697c20854f14bf142e27ebaaca4c2af3967e3b9e0a8744395b1fd:343
 system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	invoice-service	billing.invoice.Account	definition=824e314e02746508cf256c1256edeae9aeb36bfaaae6ffe4d93768829ca4efd0:837
-system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	invoice-service	billing.invoice.Invoice	definition=916fe1da2fa0ba0dee8ebf87ef419fed2299d61259a4962c18e1c119df0fc5a5:18595
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	invoice-service	billing.invoice.Invoice	definition=ec8d0cfada46c163c596699935843593109ad84d6930e8a1be97ac18b354503f:18763
 system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	invoice-service	billing.invoice.Invoice	create	accepted, rejected
 system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	invoice-service	billing.invoice.Invoice	billing.invoice.CancelInvoice	cancelled, wrong-state
 system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing	invoice-service	billing.invoice.Invoice	billing.invoice.IssueInvoice	issued, wrong-state
@@ -415,7 +415,7 @@ system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/b
 system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	components=2
 system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	email-service	REFUSED	e0087bf09f2697c20854f14bf142e27ebaaca4c2af3967e3b9e0a8744395b1fd:343
 system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	invoice-service	billing.invoice.Account	definition=824e314e02746508cf256c1256edeae9aeb36bfaaae6ffe4d93768829ca4efd0:837
-system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	invoice-service	billing.invoice.Invoice	definition=138ad3c92bb7743eac5cd8edcd303809f09811f679e655919ebb7e3e7d441b74:18728
+system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	invoice-service	billing.invoice.Invoice	definition=528fb552f8605b7d0ca7897fa6a16ca8f325e6d08e40fe59766f6f47e72f2327:18896
 system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	invoice-service	billing.invoice.Invoice	create	accepted, rejected
 system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	invoice-service	billing.invoice.Invoice	billing.invoice.CancelInvoice	cancelled, wrong-state
 system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	invoice-service	billing.invoice.Invoice	billing.invoice.IssueInvoice	issued, wrong-state
@@ -538,7 +538,7 @@ system-dir:docs/design/read-api-view-idioms.example	components=0
 system-dir:examples/billing	components=2
 system-dir:examples/billing	email-service	REFUSED	e0087bf09f2697c20854f14bf142e27ebaaca4c2af3967e3b9e0a8744395b1fd:343
 system-dir:examples/billing	invoice-service	billing.invoice.Account	definition=824e314e02746508cf256c1256edeae9aeb36bfaaae6ffe4d93768829ca4efd0:837
-system-dir:examples/billing	invoice-service	billing.invoice.Invoice	definition=224c3b2dd2645e14d33ccfbb7d230a11b94860c2b65c0852d898f9444e57c8fd:18823
+system-dir:examples/billing	invoice-service	billing.invoice.Invoice	definition=d0df70abb9aa8c528a4d4e6fb36e841ebca1c13f107ef386ee983eaffc693667:18991
 system-dir:examples/billing	invoice-service	billing.invoice.Invoice	create	accepted, rejected
 system-dir:examples/billing	invoice-service	billing.invoice.Invoice	billing.invoice.CancelInvoice	cancelled, wrong-state
 system-dir:examples/billing	invoice-service	billing.invoice.Invoice	billing.invoice.IssueInvoice	issued, wrong-state
@@ -557,15 +557,9 @@ system-dir:examples/oracle-fixture	order-service	oracle.order.Order	oracle.order
 system-dir:examples/oracle-fixture	order-service	oracle.order.Order	oracle.order.HoldOrder	held, wrong-state
 system-dir:examples/oracle-fixture	order-service	oracle.order.Order	oracle.order.ShipOrder	shipped, wrong-state
 system-dir:examples/revision-pair/after	components=1
-system-dir:examples/revision-pair/after	pricing-service	catalog.pricing.PriceList	definition=b454b7727b720590f4af6a87e61da61fdefa4d84d06e4b4ce85b58b393fbd23e:8409
-system-dir:examples/revision-pair/after	pricing-service	catalog.pricing.PriceList	create	created, rejected
-system-dir:examples/revision-pair/after	pricing-service	catalog.pricing.PriceList	catalog.pricing.PublishPriceList	published, wrong-state
-system-dir:examples/revision-pair/after	pricing-service	catalog.pricing.PriceList	catalog.pricing.RetirePriceList	retired, wrong-state
+system-dir:examples/revision-pair/after	pricing-service	REFUSED	f393b529bc44e11cd2606a00b36be1183e035e3f2f946de91b5d5db52b4647cb:462
 system-dir:examples/revision-pair/before	components=1
-system-dir:examples/revision-pair/before	pricing-service	catalog.pricing.PriceList	definition=d34dce7264dfab0ef7962e4c8e281581f41fa3022463d2b5f0f2690f47578b04:8410
-system-dir:examples/revision-pair/before	pricing-service	catalog.pricing.PriceList	create	created, rejected
-system-dir:examples/revision-pair/before	pricing-service	catalog.pricing.PriceList	catalog.pricing.PublishPriceList	published, wrong-state
-system-dir:examples/revision-pair/before	pricing-service	catalog.pricing.PriceList	catalog.pricing.RetirePriceList	retired, wrong-state
+system-dir:examples/revision-pair/before	pricing-service	REFUSED	f393b529bc44e11cd2606a00b36be1183e035e3f2f946de91b5d5db52b4647cb:462
 system-dir:fuzz/readiness/expected/empty-domain/source	components=0
 system-dir:fuzz/readiness/expected/enum-referenced/source	components=0
 system-dir:fuzz/readiness/expected/enum-unreferenced/source	components=0
@@ -587,23 +581,17 @@ system-dir:models/output-ownership	components=0
 system-dir:models/protospec	components=0
 system-dir:models/recorded-log-adapter	components=0
 system-dir:models/toolchain	components=5
-system-dir:models/toolchain	generate	REFUSED	e12ccdd9115ad355c1e2069600898df4e2ee545eaf06bc54cf8f894aa53e67d8:368
+system-dir:models/toolchain	generate	REFUSED	e610daddf63ba3008743b7882d194ce9a6da2ffa6cd17b888615d11f840d089f:1760
 system-dir:models/toolchain	infra	toolchain.infra.BindingCheck	definition=959532c2366d15a81eaf3b084134d03d93a3352a53e19d6d35eafecd8afd60de:4672
 system-dir:models/toolchain	infra	toolchain.infra.BindingCheck	create	started
 system-dir:models/toolchain	infra	toolchain.infra.BindingCheck	toolchain.infra.ConcludeBindingCheck	violated, unknown, satisfied, wrong-state
-system-dir:models/toolchain	infra	toolchain.infra.Observation	definition=be2ce4a1f91d293f415bda608d9de6bc7ab046e9b2a5c8d6d44a5c22424c116f:7495
+system-dir:models/toolchain	infra	toolchain.infra.Observation	definition=6fe504c2a14f627e1eb1ffd1884b7aae8e0c2163ea52f66be2cb92a72b4dd327:7663
 system-dir:models/toolchain	infra	toolchain.infra.Observation	create	refused, collected
 system-dir:models/toolchain	infra	toolchain.infra.Observation	toolchain.infra.ImportObservation	refused, imported, wrong-state
 system-dir:models/toolchain	release-automation	REFUSED	fca88a6cb61e25f86e28e8a69b4bf8ee5aadc05cb16ff6e4a728fb0ef5f0e657:375
 system-dir:models/toolchain	specify	toolchain.specify.Declaration	definition=f008c7ec58b6b8996de589cd7e5ce17e0cc8ba0610e93e9ac4e1f24d786ff2aa:1384
-system-dir:models/toolchain	specify	toolchain.specify.Model	definition=e35ad9da3080d46de03bbb101a0d25834c876969203a4821146dd7f7a7977256:7192
+system-dir:models/toolchain	specify	toolchain.specify.Model	definition=cafca2a6d7592822584e01558a7b3800a25010d73dbd211b054412b4bbb9c34b:7514
 system-dir:models/toolchain	specify	toolchain.specify.Model	create	refused, selected
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.CompileModel	refused, compiled, wrong-state
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.ResolveModel	refused, resolved, wrong-state
-system-dir:models/toolchain	verify	toolchain.verify.Comparison	definition=42e634d2278370ff555a992f05b8182154dd7421651292c6a532d940f2c8cdc1:3429
-system-dir:models/toolchain	verify	toolchain.verify.Comparison	create	compared
-system-dir:models/toolchain	verify	toolchain.verify.Run	definition=ac7b2a65c9802ce9ded209c6442ce7b8a27f76c7a0cc3d3e540846c6f4e298a4:10408
-system-dir:models/toolchain	verify	toolchain.verify.Run	create	started
-system-dir:models/toolchain	verify	toolchain.verify.Run	toolchain.verify.ConcludeRun	failed, errored, passed, wrong-state
-system-dir:models/toolchain	verify	toolchain.verify.Suite	definition=fc50927abfd36cb570b0d7b80f94606b00cec4c782621d025c6b8012b550d40e:3959
-system-dir:models/toolchain	verify	toolchain.verify.Suite	create	refused, synthesized
+system-dir:models/toolchain	verify	REFUSED	814338eeab0a6bd59612a9c8d4b1b5681021eabae03811a80dfd85a4184c7d92:460

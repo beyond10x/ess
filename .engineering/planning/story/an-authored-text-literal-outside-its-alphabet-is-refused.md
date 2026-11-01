@@ -2,11 +2,15 @@
 format: aep.planning-md/3
 id: story:an-authored-text-literal-outside-its-alphabet-is-refused
 kind: story
-status: draft
+status: implemented
 title: ESS refuses an authored text literal that is outside its field's alphabet
 relations:
 - serves: vision:O2
-revision: 4
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-01T06:46:08Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-01T06:46:09Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-01T06:46:09Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Finding
 
@@ -53,3 +57,23 @@ new `ValidationCode` is added.
 ## Triage (D338)
 
 Adopted at the 2026-10-31 findings triage (orchestrator D338, operator approval relayed by host-monitor D53), narrowed to the entity-invariant half: a `sets:` literal that breaks an entity invariant (`capacity > 0` with `sets: {capacity: 0}`) passes `ess specify validate`, and the lowered Entity Runtime rule then refuses that branch on every request. The alphabet half looks held by `layered_literal` since 0.60.0 (inferred, `crates/specify/ess-domain/src/command.rs`, beyond10x/ess#533).
+
+## Already held (D343)
+
+Checked 2026-11-01 for wave D343 on 45a1beba7 (story-scoper reading, coordinator run).
+
+- **Entity-invariant half (the adopted narrowing): already held.** `validate_literal_invariants`
+  (`crates/specify/ess-domain/src/command.rs:5300-5402`, called at `:5136`; `affects:` rows through
+  `literal_rows` `:5414-5460` and `command/set_effects.rs:465`) refuses a `sets:` literal that breaks
+  an entity invariant as `conflicting_declaration` (`:5376`). It landed in f9fa4d12d ("three
+  downstream findings of 2026-10-19"), first tagged 0.63.0, with
+  `crates/specify/ess-domain/tests/literal_entity_invariants.rs`. Run: `ess specify validate --path
+  .engineering/repro/invariant-broken-by-literal/entity-invariant.yaml` (ess 0.77.0) refuses
+  `outcome drained of pool.slots.DrainPool writes 0 into capacity, which breaks the invariant
+  capacity > 0 of pool.slots.Pool` (ESS-COMMAND-004, `entity-invariant.yaml:46:5`).
+- **Alphabet half: held** by `layered_literal` (`command.rs:6766`, alphabet check in
+  `example_layers` `:6842-6854`, reached from `sets_literal` `:5182`), pinned by
+  `crates/specify/ess-domain/tests/view_paging/adversary_m5_pass1.rs:138`
+  (`the_same_out_of_alphabet_literal_in_sets_is_refused`) — code read, not run.
+
+So the story leaves the D343 selection with no unit and is closed as implemented by f9fa4d12d.

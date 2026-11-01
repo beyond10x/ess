@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-01T06:46:07Z",
+  "actor": "human:timo",
+  "artifact": "story:an-authored-text-literal-outside-its-alphabet-is-refused",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "f9fa4d12d crates/specify/ess-domain/tests/literal_entity_invariants.rs; ess specify validate --path .engineering/repro/invariant-broken-by-literal/entity-invariant.yaml refused ESS-COMMAND-004 (ess 0.77.0, 2026-11-01)"
+  }
+}
