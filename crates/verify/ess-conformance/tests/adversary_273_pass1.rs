@@ -312,9 +312,10 @@ fn sweep_every_input_identity_an_event_copies_is_compared() {
     }
     eprintln!("input identities checked: {checked}");
     assert!(checked > 0, "the sweep found no input identity");
-    // Binding scenarios (flow, delivery, mapping, on-failure) compare no event payload values yet
-    // (story:binding-site-identity-comparisons). Their misses are pinned exactly, so this goes red
-    // when that story lands or when the gap grows; every other scenario must compare every copy.
+    // Binding scenarios (flow, delivery, mapping, on-failure, bounded retry, condition witnesses)
+    // compare the identities of their trigger's event as command scenarios do
+    // (story:binding-site-identity-comparisons), so no scenario of either kind leaves a copy
+    // uncompared.
     let (binding, other): (BTreeSet<_>, BTreeSet<_>) = missed
         .into_iter()
         .partition(|miss| miss.contains("/binding/"));
@@ -325,9 +326,9 @@ fn sweep_every_input_identity_an_event_copies_is_compared() {
     );
     assert_eq!(
         binding.len(),
-        4,
-        "binding scenarios that copy an input identity without comparing it changed; update this pin \
-         with story:binding-site-identity-comparisons: {binding:#?}"
+        0,
+        "binding scenarios that copy an input identity without comparing it \
+         (story:binding-site-identity-comparisons): {binding:#?}"
     );
 }
 
@@ -811,4 +812,60 @@ fn every_identity_the_committed_suites_compare_fails_when_dropped_nulled_zeroed_
     }
     eprintln!("mutants tried: {tried}");
     assert_eq!(survivors.len(), 0, "{survivors:#?}");
+}
+
+// ---- binding scenarios, synthesized (story:binding-site-identity-comparisons) ------------------
+
+const JOBS: &str = include_str!("fixtures/binding-arrangement.yaml");
+const KICKED: &str = "jobs.job.Kicked";
+
+/// Every binding scenario of `kicked-starts` that expects its trigger's `Kicked` holds the target
+/// to the job the trigger was sent: the reference interpreter passes each, and a target that
+/// publishes another id in `Kicked.job_id` — zeroed, or one no run minted — fails each. The
+/// interpreter still delivers the binding the job it was sent, so only a comparison of the field
+/// itself sees the fault.
+#[test]
+fn every_binding_scenario_fails_a_target_publishing_the_wrong_id_in_its_trigger_event() {
+    let ir = one(JOBS);
+    let suite = synthesized(&ir).expect("synthesizes");
+    let expecting: Vec<String> = suite
+        .scenarios
+        .iter()
+        .filter(|(id, _)| id.to_string().contains("kicked-starts/binding/"))
+        .filter(|(_, scenario)| {
+            scenario.steps.iter().any(|step| match step {
+                ScenarioStep::ExpectEvent { event, .. }
+                | ScenarioStep::ExpectEventValues { event, .. } => event.to_string() == KICKED,
+                _ => false,
+            })
+        })
+        .map(|(id, _)| id.to_string())
+        .collect();
+    assert!(
+        expecting.len() >= 4,
+        "flow, mapping, delivery and on-failure of `kicked-starts` expect `Kicked`: {expecting:#?}"
+    );
+    let good = statuses(&suite, &Interpreted::for_model(ir.clone()));
+    for id in &expecting {
+        assert_eq!(good.get(id), Some(&Status::Passed), "{id}: {good:#?}");
+    }
+    for mode in ["zero", "stranger"] {
+        let target = Mutated {
+            inner: Interpreted::for_model(ir.clone()),
+            event: KICKED.into(),
+            field: "job_id".into(),
+            mode,
+        };
+        let ran = statuses(&suite, &target);
+        let survivors: Vec<_> = expecting
+            .iter()
+            .filter(|id| ran.get(*id) != Some(&Status::Failed))
+            .map(|id| format!("{id}: {:?}", ran.get(id)))
+            .collect();
+        assert!(
+            survivors.is_empty(),
+            "{mode}: binding scenarios passing a wrong `Kicked.job_id` \
+             (story:binding-site-identity-comparisons): {survivors:#?}"
+        );
+    }
 }

@@ -9218,6 +9218,47 @@ fn expect_event_step(
     }
 }
 
+/// The branch that publishes a binding's event and the run its own scenario makes of it.
+type Published<'r> = (&'r ResolvedOutcome, &'r Run);
+
+/// The expectation that a binding's trigger published `event`, comparing the identities the
+/// trigger's invocation determines as a command's own scenario compares them
+/// ([`determined_identities`], beyond10x/ess#273, `story:binding-site-identity-comparisons`).
+///
+/// `setup` and `invoke` are the trigger as the binding's scenario sends it. The input read is the
+/// one the last invocation in `invoke` carries, which the destination's arrangement may have
+/// changed to name its own row ([`binding_effects::prepare`]). Where the scenario sends the run as
+/// that run's own scenario does, the subject's identity and the identities its arrangement settled
+/// are compared too; where it rearranged the run, those describe rows the scenario need not make,
+/// and only the sent input is read. A target that publishes another identity in the trigger's event
+/// then fails the binding's scenario, though it delivers the binding the right one.
+fn expect_trigger_event(
+    ir: &EssIr,
+    (published_by, run): Published<'_>,
+    (setup, invoke): (&[ScenarioStep], &[ScenarioStep]),
+    event: &EventRef,
+) -> ScenarioStep {
+    let shape = payload_shape(ir, event);
+    let sent = invoke.iter().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand { input, .. } => Some(input.clone()),
+        ScenarioStep::ExecuteCommandWithoutInput { .. } => Some(BTreeMap::new()),
+        _ => None,
+    });
+    let Some(sent) = sent else {
+        return expect_event_step(event, BTreeMap::new(), BTreeMap::new(), shape);
+    };
+    let unchanged = setup == run.setup.as_slice() && invoke == run.invoke.as_slice();
+    let nothing = BTreeMap::new();
+    let (before, subject) = if unchanged {
+        (&run.before_settled, run.instance.as_ref())
+    } else {
+        (&nothing, None)
+    };
+    let mut identities = determined_identities(ir, published_by, event, &sent, before, subject);
+    identities.extend(crate::fixtures::event_values(published_by, event, &sent));
+    expect_event_step(event, BTreeMap::new(), identities, shape)
+}
+
 /// The `expect_error` step for the error `outcome` reports, comparing each field the
 /// specification gives a source (ess/19, `story:error-payload-sources`) whose value this scenario
 /// determines, by the rules [`determined_payload`] reads an event's by.
@@ -18763,22 +18804,25 @@ fn binding_aspects(
     // The row the invoked command addresses, arranged where an accepting branch admits it before
     // the trigger (beyond10x/ess#267), or the gap that stops every aspect needing it.
     let prepared = binding_effects::prepare(ir, binding, invoked, published_by, trigger, actors);
+    let published: Published<'_> = (published_by, trigger);
     for aspect in BindingAspect::ALL.map(|(aspect, _)| aspect) {
         let id = ScenarioId::Binding {
             binding: subject.clone(),
             aspect,
         };
         let built = match aspect {
-            BindingAspect::Flow => flow(ir, invoked, &prepared, &event),
-            BindingAspect::Mapping => mapping(ir, binding, invoked, trigger, &prepared, &event),
-            BindingAspect::Delivery => delivery(ir, binding, invoked, &prepared, &event),
+            BindingAspect::Flow => flow(ir, invoked, &prepared, published, &event),
+            BindingAspect::Mapping => mapping(ir, binding, invoked, published, &prepared, &event),
+            BindingAspect::Delivery => delivery(ir, binding, invoked, &prepared, published, &event),
             // A policy selected per refusal (ess/22, beyond10x/ess#269) makes no one claim for
             // every failure: each declared refusal is witnessed on its own scenario, below.
             BindingAspect::OnFailure if binding.refusal_policy.is_some() => continue,
             BindingAspect::OnFailure if binding.retry.is_some() => {
-                bounded_retry::exhausted(ir, binding, invoked, trigger, &event, actors)
+                bounded_retry::exhausted(ir, binding, invoked, published, &event, actors)
             }
-            BindingAspect::OnFailure => on_failure(ir, binding, invoked, &prepared, &event),
+            BindingAspect::OnFailure => {
+                on_failure(ir, binding, invoked, &prepared, published, &event)
+            }
             // Not in `ALL`; produced below for the bindings that make the claim.
             BindingAspect::FinalFailure
             | BindingAspect::ConditionFalse
@@ -18827,7 +18871,7 @@ fn binding_aspects(
         return;
     }
     bounded_retry::final_failure(
-        ir, binding, invoked, trigger, &event, actors, &source, suite, refusals,
+        ir, binding, invoked, published, &event, actors, &source, suite, refusals,
     );
 }
 
@@ -18938,6 +18982,8 @@ fn never_invoked(
     let mut steps = Vec::new();
     let mut source: BTreeSet<EssSemanticRef> = [command.clone().into()].into_iter().collect();
     for (index, trigger) in triggers.iter().enumerate() {
+        // A later trigger is sent on the first one's arrangement, never its own.
+        let setup: &[ScenarioStep] = if index == 0 { &trigger.run.setup } else { &[] };
         if index == 0 {
             steps.extend(trigger.run.steps());
         } else if trigger
@@ -18954,11 +19000,12 @@ fn never_invoked(
         } else {
             steps.extend(trigger.run.invoke.iter().cloned());
         }
-        steps.push(ScenarioStep::ExpectEvent {
-            event: event.clone(),
-            payload: BTreeMap::new(),
-            shape: payload_shape(ir, &event),
-        });
+        steps.push(expect_trigger_event(
+            ir,
+            (trigger.published_by, &trigger.run),
+            (setup, &trigger.run.invoke),
+            &event,
+        ));
         source.extend(binding_source(
             ir,
             binding,
@@ -19110,6 +19157,7 @@ fn flow(
     ir: &EssIr,
     invoked: &ResolvedCommand,
     prepared: &Result<binding_effects::Prepared<'_>, BindingGap>,
+    trigger: Published<'_>,
     event: &EventRef,
 ) -> Built {
     let prepared = prepared.as_ref().map_err(Clone::clone)?;
@@ -19117,11 +19165,12 @@ fn flow(
     let published = publishes(invoked, reached)?;
 
     let mut steps = prepared.steps();
-    steps.push(ScenarioStep::ExpectEvent {
-        event: event.clone(),
-        payload: BTreeMap::new(),
-        shape: payload_shape(ir, event),
-    });
+    steps.push(expect_trigger_event(
+        ir,
+        trigger,
+        (&prepared.setup, &prepared.invoke),
+        event,
+    ));
     for event in &published {
         steps.push(ScenarioStep::EventuallyEvent {
             event: event.clone(),
@@ -19160,7 +19209,7 @@ fn mapping(
     ir: &EssIr,
     binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
-    trigger: &Run,
+    published: Published<'_>,
     prepared: &Result<binding_effects::Prepared<'_>, BindingGap>,
     event: &EventRef,
 ) -> Built {
@@ -19170,14 +19219,12 @@ fn mapping(
     }
     let input = binding_effects::mapped_input(ir, binding, event)?;
 
-    let mut steps = prepared
-        .as_ref()
-        .map_or_else(|_| trigger.steps(), binding_effects::Prepared::steps);
-    steps.push(ScenarioStep::ExpectEvent {
-        event: event.clone(),
-        payload: BTreeMap::new(),
-        shape: payload_shape(ir, event),
-    });
+    let (_, trigger) = published;
+    let (mut steps, (setup, invoke)) = match prepared {
+        Ok(prepared) => (prepared.steps(), (&prepared.setup, &prepared.invoke)),
+        Err(_) => (trigger.steps(), (&trigger.setup, &trigger.invoke)),
+    };
+    steps.push(expect_trigger_event(ir, published, (setup, invoke), event));
     steps.push(ScenarioStep::ExpectInvocation {
         binding: BindingRef::new(binding.name.clone()),
         command: command.clone(),
@@ -19222,6 +19269,7 @@ fn delivery(
     binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
     prepared: &Result<binding_effects::Prepared<'_>, BindingGap>,
+    trigger: Published<'_>,
     event: &EventRef,
 ) -> Built {
     // Read before anything else, for the reason `on_failure` reads its policy first.
@@ -19233,11 +19281,12 @@ fn delivery(
     let published = publishes(invoked, reached)?;
 
     let mut steps = prepared.steps();
-    steps.push(ScenarioStep::ExpectEvent {
-        event: event.clone(),
-        payload: BTreeMap::new(),
-        shape: payload_shape(ir, event),
-    });
+    steps.push(expect_trigger_event(
+        ir,
+        trigger,
+        (&prepared.setup, &prepared.invoke),
+        event,
+    ));
     // The second delivery, which is the whole scenario. A total match rather than a wildcard: a
     // delivery guarantee that means something different here must not inherit this, which is why
     // `at_most_once` is refused above rather than falling through to a redelivery.
@@ -19290,6 +19339,7 @@ fn on_failure(
     binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
     prepared: &Result<binding_effects::Prepared<'_>, BindingGap>,
+    trigger: Published<'_>,
     event: &EventRef,
 ) -> Built {
     // Read before the failure is forced, so a `drop` refuses for what it is rather than for a
@@ -19297,7 +19347,7 @@ fn on_failure(
     let policy = binding.on_failure();
     if matches!(policy, ResolvedFailure::Drop) {
         let prepared = prepared.as_ref().map_err(Clone::clone)?;
-        return binding_effects::dropped(ir, binding, invoked, prepared, event);
+        return binding_effects::dropped(ir, binding, invoked, prepared, trigger, event);
     }
     let forced = invoked
         .outcomes
@@ -19322,11 +19372,12 @@ fn on_failure(
     });
     steps.extend(prepared.invoke.iter().cloned());
     steps.extend(prepared.capture.iter().cloned());
-    steps.push(ScenarioStep::ExpectEvent {
-        event: event.clone(),
-        payload: BTreeMap::new(),
-        shape: payload_shape(ir, event),
-    });
+    steps.push(expect_trigger_event(
+        ir,
+        trigger,
+        (&prepared.setup, &prepared.invoke),
+        event,
+    ));
 
     let mut source: BTreeSet<EssSemanticRef> = [
         CommandRef::new(invoked.name.clone()).into(),

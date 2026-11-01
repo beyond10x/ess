@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Synthesized binding scenarios (flow, mapping, delivery, on-failure, a bounded retry's attempts and final failure, an unbounded retry selected per refusal, and a condition's negative witnesses) compare the identity fields of the trigger's event with the instances its invocation was sent, as command scenarios do since beyond10x/ess#273, so a target that publishes another identity in the event fails them; they passed it. A model whose binding triggers carry no captured instance into their event keeps its suite bytes.
+
 ## [0.81.0] — 2026-11-01
 
 ### Fixed
