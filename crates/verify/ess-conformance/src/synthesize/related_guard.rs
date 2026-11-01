@@ -1926,19 +1926,39 @@ pub(super) fn held_beside_external(
 
 /// The related row an identity no row carries is sent beside where `attempt`, the branch the
 /// scenario's input is chosen for, is an external branch of the command, reached by its input
-/// alone ([`arranges_external`], beyond10x/ess#464): [`unknown_identity_overlap`]'s row, where the
-/// precedence plan reads the row's `exists: false` before the addressed row's existence (`ess/22`
-/// and before it, below the one rule), so an unarranged reference would answer that branch instead
-/// (story `related-guard-wrong-state-beside-external`). `None` for every other command and branch,
+/// alone ([`arranges_external`], beyond10x/ess#464), and the precedence plan reads the row's
+/// `exists: false` before the phase that answers `declared`, the branch the scenario expects
+/// ([`unknown_answered_at`]): so an unarranged reference would answer that branch instead (story
+/// `related-guard-wrong-state-beside-external`). The row is present, selecting the first branch the
+/// plan reads after that phase ([`present_after`]). `None` for every other command and branch,
 /// whose scenario is reached as before.
 pub(super) fn unknown_beside_external(
     ir: &EssIr,
     command: &ResolvedCommand,
-    attempt: &ResolvedOutcome,
+    (declared, attempt): (&ResolvedOutcome, &ResolvedOutcome),
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Option<Result<(Arrangement, BoundInput), RefusalCause>> {
-    absent_before_external(ir, command, attempt, Phase::Existence)
-        .then(|| unknown_identity_overlap(ir, command, actors))
+    let answered = unknown_answered_at(ir, command, declared);
+    absent_before_external(ir, command, attempt, answered)
+        .then(|| present_after(ir, command, actors, answered, &[]))
+}
+
+/// The phase that answers an identity no row carries with `declared`: where the precedence plan
+/// reads that branch for a `wrong_state:` branch, which answers such an identity only where the
+/// command declares no `unknown_instance:` and no not-found refusal (an instance that does not
+/// exist rests in no state any move starts from, at the held state), and for an
+/// `unknown_instance:`; the addressed row's existence for a not-found refusal, which the plan
+/// reads among the external branches but the existence check answers.
+fn unknown_answered_at(ir: &EssIr, command: &ResolvedCommand, declared: &ResolvedOutcome) -> Phase {
+    match declared.condition {
+        ResolvedCondition::WrongState | ResolvedCondition::UnknownInstance => {
+            PrecedencePlan::new(command, ir.format())
+                .iter()
+                .find(|(_, branch)| branch.name == declared.name)
+                .map_or(Phase::Existence, |(phase, _)| phase)
+        }
+        _ => Phase::Existence,
+    }
 }
 
 /// The first branch of the command acting on an existing row the input names, and that input.

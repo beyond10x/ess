@@ -15099,11 +15099,12 @@ fn unknown_instance(
         None => unknown_reached(ir, command, acting, declared)?,
     };
     // An external branch is reached by its input alone, naming a related row nobody arranged;
-    // where that row's absence answers before existence, it is arranged present
-    // (`related_guard::unknown_beside_external`).
+    // where that row's absence answers before the branch the scenario expects, it is arranged
+    // present (`related_guard::unknown_beside_external`).
     if related_row.is_none() {
         if let Some(beside) =
-            related_guard::unknown_beside_external(ir, command, attempt, actors).transpose()?
+            related_guard::unknown_beside_external(ir, command, (declared, attempt), actors)
+                .transpose()?
         {
             input.clone_from(&(beside.1).0);
             related_row = Some(beside);
