@@ -927,19 +927,21 @@ fn digest(result: Result<Synthesis, SynthesisFailure>) -> String {
 /// The digests 0.69.2 synthesizes for each fixture, target and layout, recorded before variant
 /// identifiers were derived with the fragment rule. Only a label holding a character other than a
 /// letter, a digit, `-` or `_` was refused then, and only such a label derives another identifier
-/// now, so a model without one keeps every byte.
+/// now, so a model without one keeps every byte. Re-recorded for 0.79.0, where the generated Rust
+/// `json.rs` and Go `server/wire.go` decoders check the whole-number grammar and read an integral
+/// number with a zero fraction as an Integer.
 const BEFORE_DERIVED_LABELS: &[(&str, &str)] = &[
-    ("aliased rust-workspace", "25 artifact(s) 6e8ba51b41773d08"),
-    ("aliased rust-crate", "22 artifact(s) fffa3fc2b8eae1cc"),
-    ("aliased web", "14 artifact(s) d12516abe01e46a3"),
-    ("cross rust-workspace", "26 artifact(s) e0adb70818119a39"),
-    ("cross rust-crate", "23 artifact(s) 06b949618f866471"),
-    ("cross web", "14 artifact(s) 056080abb781f618"),
-    ("cross go", "20 artifact(s) 75ec5e2490b76f1b"),
-    ("labelled rust-workspace", "25 artifact(s) 7f565f0b219eda49"),
-    ("labelled rust-crate", "22 artifact(s) 4aedcbbd9644f44e"),
-    ("labelled web", "14 artifact(s) 43f74cb7878746cd"),
-    ("labelled go", "19 artifact(s) 5c298d0e009048e5"),
+    ("aliased rust-workspace", "25 artifact(s) 404c72c13909a62d"),
+    ("aliased rust-crate", "22 artifact(s) 33863312813698a3"),
+    ("aliased web", "14 artifact(s) f9888e117d9a232e"),
+    ("cross rust-workspace", "26 artifact(s) 9d975910562a5fa6"),
+    ("cross rust-crate", "23 artifact(s) 1872b78b985ecfb6"),
+    ("cross web", "14 artifact(s) 233e93d86746e05d"),
+    ("cross go", "20 artifact(s) fa98787a2c15c671"),
+    ("labelled rust-workspace", "25 artifact(s) dd88003b3b37fc70"),
+    ("labelled rust-crate", "22 artifact(s) ab8a5db996aea8f9"),
+    ("labelled web", "14 artifact(s) 14f13d874c7903e8"),
+    ("labelled go", "19 artifact(s) a99032e02de18b7b"),
 ];
 
 #[test]

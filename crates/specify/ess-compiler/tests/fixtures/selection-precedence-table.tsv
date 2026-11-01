@@ -1,4 +1,4 @@
-#	models=363	commands=724
+#	models=364	commands=725
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -700,6 +700,8 @@ crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	demo.nest
 crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	demo.nested.Leave	default: left
 crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	demo.nested.MatchInGroup	present_related: empty | default: paired
 crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	demo.nested.OpenSlot	default: opened
+crates/verify/ess-conformance/tests/fixtures/nested-response-checkpoint.yaml	ir=291a2e4a5c84e9fa7cdb6322586292aae6b15b7ab9f7f302157a5b8cb1db70d2:2619
+crates/verify/ess-conformance/tests/fixtures/nested-response-checkpoint.yaml	relay.loop.Defer	default: deferred
 crates/verify/ess-conformance/tests/fixtures/now-guard-interpreted.yaml	ir=42abb887d45674d5789eac323db114f48c312913dd2b4c0fc05823f4ebffd6f5:5079
 crates/verify/ess-conformance/tests/fixtures/now-guard-interpreted.yaml	demo.tok.Present	input_refusal: expired | default: accepted
 crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml	ir=fad93168fa11c42db418cd986c510a7310ef87e10eb1077242b76f215de58da8:30720

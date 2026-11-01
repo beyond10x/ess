@@ -1,4 +1,4 @@
-#	models=438	lines=607
+#	models=439	lines=608
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -255,6 +255,7 @@ crates/verify/ess-conformance/tests/fixtures/navigate-a-reference.yaml	component
 crates/verify/ess-conformance/tests/fixtures/navigate-absent-reference.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/negated-defined-beside-subject.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/nested-ordered-heads.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/nested-response-checkpoint.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/now-guard-interpreted.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/now-stored-rows.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/now-view-filter.yaml	components=0
