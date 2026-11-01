@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:entity-runtime-lowering-enforces-input-type-invariants
 kind: story
-status: active
+status: implemented
 title: Entity Runtime lowering enforces, or refuses by name, the invariants of an unstored input's type
 relations:
 - serves: vision:O2
@@ -17,10 +17,11 @@ scope:
   path: crates/generate/ess-entity-runtime/tests/fixtures/lowered-definitions-table.tsv
 - confidence: cited
   path: website/docs/reference/entity-runtime-lowering.md
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-01T06:49:18Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-01T06:49:19Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-11-01T10:37:57Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 ## Finding
 
@@ -63,3 +64,12 @@ name with a lowering code listed in `subset.rs`. A creation has no precondition 
 0.28.0 (`CreateDefinition`, `definition.rs:660`), and putting the invariant into an outcome's `when`
 would change which branch answers, so an invariant a creation cannot enforce is refused by name.
 Nothing is dropped. The generated reference page and the lowered-definitions table move with it.
+
+## Delivered
+
+D343, 2026-11-01: unit 453cdd71a and correction 1c8ea5dd7 (merged 67a6eb77b, 0c4cc25cc). Scope check:
+`lib.rs`, `subset.rs`, the lowered-definitions TSV and the generated reference page confirmed. An
+ordering is lowered typed (Timestamp `before`/`after`, number `compare`); a text ordering or one
+whose fact type cannot be resolved is refused `InputInvariantUnsupported` (`INPUT_RULE_ORDERING`).
+Adversary pass 1: F1, F2 fixed; F3 dismissed (entity-core answers a refusing branch before
+preconditions; nothing is accepted); F4 became `story:entity-runtime-lowers-stored-field-type-orderings-typed`.

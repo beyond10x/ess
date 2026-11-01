@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:short-names-combine-with-all-commands-and-all-views
 kind: story
-status: active
+status: implemented
 title: Short names combine with --all-commands and --all-views
 summary: --names short shortens every body root to Input, Response or Row, so two commands or views collide as short_name_collision.
 tags:
@@ -12,10 +12,11 @@ relations:
 scope:
 - confidence: cited
   path: crates/generate/schema-contract/src/realize.rs
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-01T06:49:20Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-01T06:49:20Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-11-01T10:37:55Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 ## Finding
 
@@ -45,3 +46,10 @@ member (`demo.notes.Create.input` -> `CreateInput`, `demo.notes.ByOwner.row` -> 
 and event short names are unchanged; a collision that remains (two `Create` commands in two
 domains) is still refused as `short_name_collision`, naming both. `--names short --all-commands
 --all-views` then generates for a model whose commands and views have distinct last segments.
+
+## Delivered
+
+D343, 2026-11-01: unit c612f4dc7 and correction e73d95f14 (merged bf79fc7cb, 068def67b), help text
+after U1 merged. Scope check: `realize.rs` confirmed as the only source file; a body root is decided
+on the published schema's `x-ess-kind` (command-input, command-response, view-row), not on the
+name suffix. Adversary pass 1: 3 in scope, fixed; 0 out of scope.

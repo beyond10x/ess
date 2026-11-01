@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-bound-command-input-decodes-the-published-request-body
 kind: story
-status: active
+status: implemented
 title: A bound command input type decodes the request body its OpenAPI document publishes
 summary: Under an ess-http/1 route with path parameters, the generated input type requires the path fields and refuses the body OpenAPI publishes.
 tags:
@@ -20,10 +20,11 @@ scope:
   path: crates/generate/ess-gen/src/model_types.rs
 - confidence: inferred
   path: website/docs/reference/cli.md
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-01T06:49:18Z", actor: "human:timo", revision: 7}
 - {from: "proposed", to: "active", at: "2026-11-01T06:49:18Z", actor: "human:timo", revision: 8}
+- {from: "active", to: "implemented", at: "2026-11-01T10:37:58Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 ## Finding
 
@@ -107,3 +108,10 @@ Derived 2026-11-01 by `aep:story-scoper` for wave D343 on 45a1beba7. Every line 
 - **Tests:** `ess-gen` `command_view_roots`, `model_types`, `openapi_http`, `agreement`; `ess-cli` `model_type_events`, `model_types`, `http`; `schema-contract` `rust_realization`, `typescript_typecheck` — inferred.
 - **Confidence:** medium; the design decision (how a binding reaches `generate types`) is taken in `## Decisions`.
 - **Would collide with:** a unit touching `ModelTypes`/`body_root` or the `generate types` command.
+
+## Delivered
+
+D343, 2026-11-01: unit 7978d1b5d (merged f9f63ab57), adversary cases 9dbe58275. Scope check: ess-cli
+`http.rs` `load` reused unedited; `entry-classifications.json` needed no entry (wrong in Scope);
+`cli.md` regenerated; two-argument `select` call sites unchanged. Adversary pass 1: no defect; F2,
+F3 coverage closed by its cases; F1 a note; F4 became `story:bound-response-root-follows-the-published-result`.

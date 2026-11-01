@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-identity-guard-below-unknown-instance-is-decided-on-the-row-sent
 kind: story
-status: active
+status: implemented
 title: An identity guard below unknown_instance is decided on the row sent
 summary: 'Follow-up of U11 (#645, #693): a branch''s own guard on a subject-addressed identity, and a related row three moves away, still get the wrong row or a wrong refusal'
 tags:
@@ -23,10 +23,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/repeated_identity.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_u11_batch3_pass1.rs
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-01T06:49:19Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-01T06:49:19Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-11-01T10:38:00Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -110,3 +111,12 @@ D343, 2026-11-01 (coordinator): accepted as written for wave D343, unit U3. The 
 were never committed (4902a0b3e holds only green cases), so the unit writes them red-first in
 `crates/verify/ess-conformance/tests/adversary_u11_batch3_pass1.rs` from the shapes in `## Problem`.
 The synthesis bytes tables must not move (acceptance).
+
+## Delivered
+
+D343, 2026-11-01: unit ef2cc60f1 and correction 3db8d0d84 (merged 679449289, 0459d1eba). Scope check:
+`related_guard.rs` gained `onto_identity` and `identity_parts`; the repeated-identity refusal's
+cause was `related_boundaries` in `synthesize.rs` (confirmed by one run); steering goes through
+`subject_fact::search_within`, not `arrange_first` hints (Scope wrong). Bytes tables unchanged.
+Adversary pass 1: F1, F4 fixed (F4 pre-existing, ess 0.77.0 probe); F2, F3 became
+`story:identity-guard-decided-on-the-row-sent-on-every-synthesis-path`.
