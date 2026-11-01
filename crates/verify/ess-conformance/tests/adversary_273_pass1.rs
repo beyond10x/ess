@@ -86,8 +86,30 @@ fn directory(base: &Path) -> Option<EssIr> {
     )
 }
 
-/// Every model this repository carries as a file: the example systems and every single-file
-/// specification fixture of this crate.
+/// Every directory under `base` holding a `system.yaml`, in path order.
+fn system_directories(base: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut pending = vec![base.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.file_name().is_some_and(|name| name == "system.yaml") {
+                found.push(directory.clone());
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+/// Every model this repository carries as a file: the example systems, every single-file
+/// specification fixture of this crate, and every system directory among its fixtures and under
+/// `models/` (story:binding-site-identity-comparisons: most binding fixtures are directories).
 fn every_model() -> Vec<(String, EssIr)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut models = Vec::new();
@@ -120,6 +142,18 @@ fn every_model() -> Vec<(String, EssIr)> {
                 format!("fixtures/{}", path.file_name().unwrap().to_string_lossy()),
                 ir,
             ));
+        }
+    }
+    let repository = root.join("../../..");
+    for base in [fixtures, repository.join("models")] {
+        for system in system_directories(&base) {
+            if let Some(ir) = directory(&system) {
+                let label = system
+                    .strip_prefix(root)
+                    .or_else(|_| system.strip_prefix(&repository))
+                    .unwrap_or(&system);
+                models.push((format!("system-dir:{}", label.display()), ir));
+            }
         }
     }
     models
@@ -234,6 +268,63 @@ fn sweep_identity_comparisons_never_fail_the_reference_interpreter() {
     );
 }
 
+/// What the row `outcome` acts on holds in `read` as the scenario arranged it, where that is a
+/// captured instance: the instance `sent` addresses for its identity, and for a stored field the
+/// input the step creating that row copied into it unconverted. `before` is the scenario's steps
+/// before the event expectation.
+fn held_by_subject(
+    ir: &EssIr,
+    outcome: &ess_compiler::ir::ResolvedOutcome,
+    sent: &BTreeMap<String, ScenarioValue>,
+    before: &[ScenarioStep],
+    read: &str,
+) -> Option<ScenarioValue> {
+    use ess_compiler::ir::{ResolvedEffect, ResolvedInstance};
+
+    let subject = outcome
+        .subject
+        .as_ref()
+        .filter(|subject| !matches!(subject.effect, ResolvedEffect::Creates))?;
+    let ResolvedInstance::Supplied { field } = &subject.instance else {
+        return None;
+    };
+    let addressed = sent.get(&field.name)?;
+    let ScenarioValue::Instance { instance } = addressed else {
+        return None;
+    };
+    if ir.entity(&subject.entity).identity.name == read {
+        return Some(addressed.clone());
+    }
+    let captured = before.iter().rposition(|step| {
+        matches!(step, ScenarioStep::CaptureInstance { instance: named, .. } if named == instance)
+    })?;
+    let created = before[..captured]
+        .iter()
+        .rposition(|step| matches!(step, ScenarioStep::ExecuteCommand { .. }))?;
+    let (
+        ScenarioStep::ExecuteCommand { command, input, .. },
+        Some(ScenarioStep::ExpectOutcome { outcome: taken }),
+    ) = (&before[created], before.get(created + 1))
+    else {
+        return None;
+    };
+    let creator = ir
+        .commands()
+        .values()
+        .find(|it| it.name.to_string() == command.to_string())?
+        .outcomes
+        .iter()
+        .find(|it| it.name.to_string() == taken.outcome.to_string())?;
+    let copied = creator
+        .sets
+        .iter()
+        .find(|it| it.target == read && it.conversion.is_none())?;
+    let ResolvedPayloadValue::InputField { field: from, .. } = &copied.value else {
+        return None;
+    };
+    input.get(from).cloned()
+}
+
 /// The acceptance statement, read over every synthesized scenario of every model: an event field
 /// the outcome fills from an input the scenario sent as a captured instance is compared with that
 /// instance ("synthesis asserts the identity fields it can determine").
@@ -248,7 +339,7 @@ fn sweep_every_input_identity_an_event_copies_is_compared() {
         for (id, scenario) in &suite.scenarios {
             let mut input: Option<BTreeMap<String, ScenarioValue>> = None;
             let mut outcome = None;
-            for step in &scenario.steps {
+            for (at, step) in scenario.steps.iter().enumerate() {
                 match step {
                     ScenarioStep::ExecuteCommand { input: sent, .. } => {
                         input = Some(sent.clone());
@@ -288,18 +379,31 @@ fn sweep_every_input_identity_an_event_copies_is_compared() {
                             _ => BTreeMap::new(),
                         };
                         for field in payload.fields.iter().filter(|it| it.conversion.is_none()) {
-                            let ResolvedPayloadValue::InputField { field: from, .. } = &field.value
-                            else {
-                                continue;
+                            // An input sent as a captured instance, the row the branch acts on, or
+                            // an identity that row was created holding (story:binding-site-identity-comparisons).
+                            let (from, value) = match &field.value {
+                                ResolvedPayloadValue::InputField { field: from, .. } => {
+                                    (format!("input `{from}`"), sent.get(from).cloned())
+                                }
+                                ResolvedPayloadValue::SubjectField { field: read, .. } => (
+                                    format!("subject `{read}`"),
+                                    held_by_subject(
+                                        &ir,
+                                        declared,
+                                        sent,
+                                        &scenario.steps[..at],
+                                        read,
+                                    ),
+                                ),
+                                _ => continue,
                             };
-                            let Some(value @ ScenarioValue::Instance { .. }) = sent.get(from)
-                            else {
+                            let Some(value @ ScenarioValue::Instance { .. }) = value else {
                                 continue;
                             };
                             checked += 1;
-                            if compared.get(&field.target) != Some(value) {
+                            if compared.get(&field.target) != Some(&value) {
                                 missed.insert(format!(
-                                    "{name} {id}: `{event}.{}` <- input `{from}` = {value:?}",
+                                    "{name} {id}: `{event}.{}` <- {from} = {value:?}",
                                     field.target
                                 ));
                             }
@@ -310,7 +414,7 @@ fn sweep_every_input_identity_an_event_copies_is_compared() {
             }
         }
     }
-    eprintln!("input identities checked: {checked}");
+    eprintln!("captured identities checked: {checked}");
     assert!(checked > 0, "the sweep found no input identity");
     // Binding scenarios (flow, delivery, mapping, on-failure, bounded retry, condition witnesses)
     // compare the identities of their trigger's event as command scenarios do
@@ -322,14 +426,38 @@ fn sweep_every_input_identity_an_event_copies_is_compared() {
     assert_eq!(
         other.len(),
         0,
-        "input identities an event copies and no step compares: {other:#?}"
+        "identities an event copies from an input or its row and no step compares: {other:#?}"
     );
     assert_eq!(
-        binding.len(),
-        0,
-        "binding scenarios that copy an input identity without comparing it \
-         (story:binding-site-identity-comparisons): {binding:#?}"
+        binding,
+        refusal_witness_residue(),
+        "binding scenarios that copy an input identity without comparing it, beyond the refusal \
+         witnesses' known residue (story:binding-site-identity-comparisons)"
     );
+}
+
+/// The misses the sweep keeps, outside story:binding-site-identity-comparisons: the witness of a
+/// refusal the policy answers by dropping or by a bounded retry (`refusal_policy::witness`) still
+/// expects the trigger's event by shape alone. The sweep reaches it only in system-directory
+/// fixtures.
+fn refusal_witness_residue() -> BTreeSet<String> {
+    [
+        ("binding-into-updating-command", "refresh-on-ticket-moved", "grant-missing", "demo.b.TicketMoved.ticket_id", "ticket_id", "ticket"),
+        ("binding-refusal-policy-swapped-caller", "refresh-on-ticket-moved", "grant-missing", "demo.b.TicketMoved.ticket_id", "ticket_id", "ticket"),
+        ("binding-refusal-policy-swapped-caller", "refresh-on-ticket-moved", "grant-missing", "demo.b.TicketMoved.ticket_id", "ticket_id", "ticket-swapped"),
+        ("caller-binding-refusal/attr", "give-on-touched", "not-flagged", "demo.d.Touched.grant_id", "grant_id", "grant-138601"),
+        ("caller-binding-refusal/attr", "give-on-touched", "not-flagged", "demo.d.Touched.grant_id", "grant_id", "grant-138601-swapped"),
+        ("caller-binding-refusal/plain", "give-on-touched", "not-flagged", "demo.d.Touched.grant_id", "grant_id", "grant-138601"),
+        ("predicate-refusal-policy-arranged-row", "give-on-touched", "not-flagged", "demo.d.Touched.grant_id", "grant_id", "grant-138601"),
+    ]
+    .into_iter()
+    .map(|(dir, binding, refusal, field, input, instance)| {
+        format!(
+            "system-dir:tests/fixtures/{dir} {binding}/binding/refusal/{refusal}: `{field}` <- input \
+             `{input}` = Instance {{ instance: InstanceName({instance:?}) }}"
+        )
+    })
+    .collect()
 }
 
 // ---- two instances of one entity type, synthesized -------------------------------------------

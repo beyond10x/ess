@@ -9221,21 +9221,38 @@ fn expect_event_step(
 /// The branch that publishes a binding's event and the run its own scenario makes of it.
 type Published<'r> = (&'r ResolvedOutcome, &'r Run);
 
+/// A binding's trigger as its scenario sends it: the arrangement, the invocation, and the stored
+/// fields of the trigger's row the arrangement rewrote, with what the row holds in each
+/// ([`binding_effects::Prepared::rewritten`]).
+type Sent<'s> = (
+    &'s [ScenarioStep],
+    &'s [ScenarioStep],
+    &'s BTreeMap<String, ScenarioValue>,
+);
+
+/// [`Sent`] for a trigger sent as its own run sends it.
+fn as_run(run: &Run) -> Sent<'_> {
+    static NOTHING: BTreeMap<String, ScenarioValue> = BTreeMap::new();
+    (&run.setup, &run.invoke, &NOTHING)
+}
+
 /// The expectation that a binding's trigger published `event`, comparing the identities the
 /// trigger's invocation determines as a command's own scenario compares them
 /// ([`determined_identities`], beyond10x/ess#273, `story:binding-site-identity-comparisons`).
 ///
-/// `setup` and `invoke` are the trigger as the binding's scenario sends it. The input read is the
-/// one the last invocation in `invoke` carries, which the destination's arrangement may have
-/// changed to name its own row ([`binding_effects::prepare`]). Where the scenario sends the run as
-/// that run's own scenario does, the subject's identity and the identities its arrangement settled
-/// are compared too; where it rearranged the run, those describe rows the scenario need not make,
-/// and only the sent input is read. A target that publishes another identity in the trigger's event
-/// then fails the binding's scenario, though it delivers the binding the right one.
+/// `sent` is the trigger as the binding's scenario sends it. The input read is the one the last
+/// invocation carries, which the destination's arrangement may have changed to name its own row
+/// ([`binding_effects::prepare`]). The subject is the instance that input addresses. What the
+/// trigger's row held is read from the run where the scenario arranges that row as the run does —
+/// the run's own arrangement, unchanged, with anything else after it — and from the rewritten
+/// fields alone where the arrangement created the row holding the destination's identity
+/// ([`binding_effects::Prepared::rewritten`]); otherwise nothing of the row is compared. A target
+/// that publishes another identity in the trigger's event then fails the binding's scenario, though
+/// it delivers the binding the right one.
 fn expect_trigger_event(
     ir: &EssIr,
     (published_by, run): Published<'_>,
-    (setup, invoke): (&[ScenarioStep], &[ScenarioStep]),
+    (setup, invoke, rewritten): Sent<'_>,
     event: &EventRef,
 ) -> ScenarioStep {
     let shape = payload_shape(ir, event);
@@ -9248,15 +9265,54 @@ fn expect_trigger_event(
         return expect_event_step(event, BTreeMap::new(), BTreeMap::new(), shape);
     };
     let unchanged = setup == run.setup.as_slice() && invoke == run.invoke.as_slice();
-    let nothing = BTreeMap::new();
-    let (before, subject) = if unchanged {
-        (&run.before_settled, run.instance.as_ref())
+    let subject = if unchanged {
+        run.instance.clone()
     } else {
-        (&nothing, None)
+        supplied_subject(published_by, &sent)
     };
-    let mut identities = determined_identities(ir, published_by, event, &sent, before, subject);
+    let own_row = subject == run.instance && setup.starts_with(&run.setup);
+    let before: BTreeMap<String, Determined> = if unchanged || (own_row && rewritten.is_empty()) {
+        run.before_settled.clone()
+    } else if subject == run.instance {
+        rewritten
+            .iter()
+            .filter_map(|(field, value)| {
+                let held = run.before_settled.get(field)?;
+                Some((
+                    field.clone(),
+                    Determined {
+                        value: value.clone(),
+                        type_ref: held.type_ref.clone(),
+                    },
+                ))
+            })
+            .collect()
+    } else {
+        BTreeMap::new()
+    };
+    let mut identities =
+        determined_identities(ir, published_by, event, &sent, &before, subject.as_ref());
     identities.extend(crate::fixtures::event_values(published_by, event, &sent));
     expect_event_step(event, BTreeMap::new(), identities, shape)
+}
+
+/// The instance `sent` addresses as the row `outcome` acts on, where its identity is a supplied
+/// input the scenario sent as a captured instance.
+fn supplied_subject(
+    outcome: &ResolvedOutcome,
+    sent: &BTreeMap<String, ScenarioValue>,
+) -> Option<InstanceName> {
+    let held = outcome
+        .subject
+        .as_ref()
+        .filter(|held| !matches!(held.effect, ResolvedEffect::Creates))?;
+    let ResolvedInstance::Supplied { field } = &held.instance else {
+        return None;
+    };
+    match supplied_at(sent, &field.name)? {
+        ScenarioValue::Instance { instance } => Some(instance),
+        _ => None,
+    }
 }
 
 /// The `expect_error` step for the error `outcome` reports, comparing each field the
@@ -19003,7 +19059,7 @@ fn never_invoked(
         steps.push(expect_trigger_event(
             ir,
             (trigger.published_by, &trigger.run),
-            (setup, &trigger.run.invoke),
+            (setup, &trigger.run.invoke, &BTreeMap::new()),
             &event,
         ));
         source.extend(binding_source(
@@ -19165,12 +19221,7 @@ fn flow(
     let published = publishes(invoked, reached)?;
 
     let mut steps = prepared.steps();
-    steps.push(expect_trigger_event(
-        ir,
-        trigger,
-        (&prepared.setup, &prepared.invoke),
-        event,
-    ));
+    steps.push(expect_trigger_event(ir, trigger, prepared.sent(), event));
     for event in &published {
         steps.push(ScenarioStep::EventuallyEvent {
             event: event.clone(),
@@ -19220,11 +19271,11 @@ fn mapping(
     let input = binding_effects::mapped_input(ir, binding, event)?;
 
     let (_, trigger) = published;
-    let (mut steps, (setup, invoke)) = match prepared {
-        Ok(prepared) => (prepared.steps(), (&prepared.setup, &prepared.invoke)),
-        Err(_) => (trigger.steps(), (&trigger.setup, &trigger.invoke)),
+    let (mut steps, sent) = match prepared {
+        Ok(prepared) => (prepared.steps(), prepared.sent()),
+        Err(_) => (trigger.steps(), as_run(trigger)),
     };
-    steps.push(expect_trigger_event(ir, published, (setup, invoke), event));
+    steps.push(expect_trigger_event(ir, published, sent, event));
     steps.push(ScenarioStep::ExpectInvocation {
         binding: BindingRef::new(binding.name.clone()),
         command: command.clone(),
@@ -19281,12 +19332,7 @@ fn delivery(
     let published = publishes(invoked, reached)?;
 
     let mut steps = prepared.steps();
-    steps.push(expect_trigger_event(
-        ir,
-        trigger,
-        (&prepared.setup, &prepared.invoke),
-        event,
-    ));
+    steps.push(expect_trigger_event(ir, trigger, prepared.sent(), event));
     // The second delivery, which is the whole scenario. A total match rather than a wildcard: a
     // delivery guarantee that means something different here must not inherit this, which is why
     // `at_most_once` is refused above rather than falling through to a redelivery.
@@ -19372,12 +19418,7 @@ fn on_failure(
     });
     steps.extend(prepared.invoke.iter().cloned());
     steps.extend(prepared.capture.iter().cloned());
-    steps.push(expect_trigger_event(
-        ir,
-        trigger,
-        (&prepared.setup, &prepared.invoke),
-        event,
-    ));
+    steps.push(expect_trigger_event(ir, trigger, prepared.sent(), event));
 
     let mut source: BTreeSet<EssSemanticRef> = [
         CommandRef::new(invoked.name.clone()).into(),
