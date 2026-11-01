@@ -23,10 +23,14 @@
 //!   `view.rs`), and the schema types it as an object, because the `#[schemars(with = "String")]`
 //!   written on the struct is a field attribute that `schemars` 0.8 ignores on a container. Left to
 //!   its own story.
-//! - An empty file. The parser reads no document as the empty specification, and the schema
-//!   describes a mapping, so a validator handed the empty file's `null` refuses it. One committed
-//!   file is empty, a deployment template that is no specification
+//! - An empty document: an empty file, or one holding only comments. The parser reads no document
+//!   as the empty specification, and the schema describes a mapping, so a validator handed the
+//!   empty document's `null` refuses it. When this story landed, one committed file was empty, a
+//!   deployment template that is no specification
 //!   (`ess-deployment/tests/workload_kinds/scheduled-ingest/templates/services.yaml`).
+//!
+//! The corpus is every committed YAML file (`git ls-files`), wherever it sits: `models/`, `docs/`,
+//! `fuzz/`, `.engineering/repro/` and `crates/` alike.
 
 use ess_domain::binding::BindingName;
 use ess_domain::component::ComponentName;
@@ -73,23 +77,29 @@ fn document_validator() -> jsonschema::Validator {
     jsonschema::validator_for(&document_schema()).expect("a usable schema")
 }
 
-fn yaml_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if path.is_dir() {
-            if name == "target" || name.starts_with('.') || name == "node_modules" {
-                continue;
-            }
-            yaml_files(&path, out);
-        } else if name.ends_with(".yaml") || name.ends_with(".yml") {
-            out.push(path);
-        }
-    }
+/// Every committed YAML file in the repository, from `git ls-files`: dot directories
+/// (`.engineering/repro/`), `models/`, `docs/`, `fuzz/` and `crates/` alike, and nothing a build or
+/// another session left untracked in the checkout.
+fn committed_yaml_files() -> Vec<PathBuf> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root())
+        .args(["ls-files", "-z", "--", "*.yaml", "*.yml"])
+        .output()
+        .expect("git runs in the checkout");
+    assert!(
+        output.status.success(),
+        "git ls-files lists the committed files: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut files: Vec<PathBuf> = output
+        .stdout
+        .split(|&byte| byte == 0)
+        .filter(|path| !path.is_empty())
+        .map(|path| root().join(String::from_utf8_lossy(path).as_ref()))
+        .collect();
+    files.sort();
+    files
 }
 
 /// A `Ranking` refusal, the first exception the module documentation names.
@@ -106,10 +116,7 @@ fn is_ranking_exception(error: &jsonschema::ValidationError<'_>) -> bool {
 #[test]
 fn every_committed_document_the_parser_reads_is_admitted_by_the_published_schema() {
     let validator = document_validator();
-    let mut files = Vec::new();
-    yaml_files(&root().join("examples"), &mut files);
-    yaml_files(&root().join("crates"), &mut files);
-    files.sort();
+    let files = committed_yaml_files();
 
     let mut read = 0;
     let mut rankings = 0;
