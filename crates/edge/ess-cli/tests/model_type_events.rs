@@ -688,46 +688,6 @@ mod command_and_view_roots {
         fixture
     }
 
-    /// What the generated Rust library does with the body the bound document publishes for
-    /// `demo.notes.Create`, from the adopter's report: it decodes and round-trips, and the same
-    /// body with the path's `note_id` added is refused, as the published schema refuses it.
-    const BOUND_BODY_WIRE: &str = r#"
-use demo_notes::*;
-use serde_json::json;
-
-#[test]
-fn the_bound_input_decodes_the_published_body() {
-    let body = json!({"isPinned": true, "title": "Buy milk"});
-    let decoded: DemoNotesCreateInput = serde_json::from_value(body.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&decoded).unwrap(), body);
-    let mut with_path_field = body.clone();
-    with_path_field["note_id"] = json!("n-1");
-    assert!(serde_json::from_value::<DemoNotesCreateInput>(with_path_field).is_err());
-}
-"#;
-
-    /// Builds and tests the generated Rust library at `library` with `wire` as its test, offline,
-    /// as schema-contract's `rust_realization.rs` builds its libraries.
-    fn rust_wire(library: &std::path::Path, wire: &str) {
-        fs::create_dir_all(library.join("tests")).unwrap();
-        fs::write(library.join("tests/wire.rs"), wire).unwrap();
-        let result = Command::new(env!("CARGO"))
-            .args(["test", "--offline", "--quiet", "--manifest-path"])
-            .arg(library.join("Cargo.toml"))
-            .env(
-                "CARGO_TARGET_DIR",
-                std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("native-types-target"),
-            )
-            .output()
-            .unwrap();
-        assert!(
-            result.status.success(),
-            "{}\n{}",
-            String::from_utf8_lossy(&result.stdout),
-            String::from_utf8_lossy(&result.stderr)
-        );
-    }
-
     #[test]
     fn a_bound_command_input_is_the_body_the_bound_document_publishes() {
         for (target, file, declaration) in [
@@ -777,7 +737,15 @@ fn the_bound_input_decodes_the_published_body() {
             );
 
             if target == "rust" {
-                rust_wire(&fixture.0.join("rust"), BOUND_BODY_WIRE);
+                // The body refuses the path's `note_id` because the struct is closed; that a
+                // closed struct decodes and refuses unknown members is held by schema-contract's
+                // `rust_realization.rs`, which builds its libraries (no test here spawns cargo).
+                assert!(
+                    types.contains(
+                        "#[serde(deny_unknown_fields)]\npub struct DemoNotesCreateInput {"
+                    ),
+                    "the bound input is a closed struct: {types}"
+                );
                 let unbound = fixture.run(&[
                     "--root",
                     "demo.notes.Create.input",
