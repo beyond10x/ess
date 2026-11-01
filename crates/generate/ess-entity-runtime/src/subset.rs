@@ -115,11 +115,14 @@ pub(crate) const FUNCTION_CALL: &str =
 pub(crate) const STATE_WIRE_NAME: &str =
     "a lifecycle state's wire spelling (`states: [{name, wire}]`, ess/32)";
 pub(crate) const INPUT_RULE: &str =
-    "an `invariants:` or `prefix:` of an update's input type, or of an input stored in a field of \
-     that type";
+    "an `invariants:` or `prefix:` of an update's input type, or of an input every accepting \
+     branch stores in a field of that type";
 pub(crate) const INPUT_RULE_CREATION: &str =
-    "an `invariants:` or `prefix:` of a creation's input type, on an input no field of that type \
-     stores";
+    "an `invariants:` or `prefix:` of a creation's input type, on an input some accepting \
+     branch does not store in a field of that type";
+pub(crate) const INPUT_RULE_ORDERING: &str =
+    "an ordering over text, or over a value not known to be a number or a `Timestamp`, in an \
+     `invariants:` of an input's type";
 
 /// The row a refused value expression is named by.
 pub(crate) fn value_expression(value: &ess_compiler::ir::ResolvedPayloadValue) -> &'static str {
@@ -205,10 +208,13 @@ pub const CONSTRUCTS: &[Construct] = &[
     lowered(
         INPUT_RULE,
         "operation `preconditions` over `$args.input.<field>`, holding where an `Optional` input \
-         is absent; none where every accepting branch writes the input into a field of its type \
-         (a `sets:` entry or a creation's identity), whose entity rules hold on the row",
+         is absent, lowered typed as a guard is: a number ordering as `compare`, a `Timestamp` \
+         ordering as `before`/`after`; none where every accepting branch writes the input into a \
+         field of its type (a `sets:` entry or a creation's identity), whose entity rules hold on \
+         the row",
         &[
             "tests/adversary_alphabet_count_pass1.rs::adv_an_update_holds_an_input_only_text_length_invariant_as_a_precondition",
+            "tests/adversary_alphabet_count_pass1.rs::adv_an_update_holds_an_input_timestamp_ordering_as_an_instant_precondition",
             "tests/adversary_alphabet_count_pass1.rs::adv_a_creation_input_stored_in_a_field_of_its_type_keeps_the_rule_on_the_row",
             "tests/adversary_alphabet_count_pass1.rs::adv_a_creation_identity_taken_from_the_input_keeps_the_rule_on_the_row",
         ],
@@ -690,7 +696,19 @@ pub const CONSTRUCTS: &[Construct] = &[
             "a precondition on the creation entrypoint; an outcome guard would change which \
              branch answers",
         ),
-        &["tests/adversary_alphabet_count_pass1.rs::adv_an_input_only_text_length_invariant_on_a_creation_is_refused_by_name"],
+        &[
+            "tests/adversary_alphabet_count_pass1.rs::adv_an_input_only_text_length_invariant_on_a_creation_is_refused_by_name",
+            "tests/adversary_d343_u2_pass1.rs::adv_d343_u2_a_creation_input_stored_on_one_of_two_accepting_branches_is_refused_by_name",
+        ],
+    ),
+    refused(
+        INPUT_RULE_ORDERING,
+        LoweringCode::InputInvariantUnsupported,
+        Needs::EntityCore(
+            "an ordering over text by its bytes; its `compare` orders numbers only and answers \
+             `Unknown` otherwise",
+        ),
+        &["tests/adversary_alphabet_count_pass1.rs::adv_an_input_text_ordering_invariant_is_refused_by_name"],
     ),
 ];
 
@@ -1004,8 +1022,9 @@ impl LoweringCode {
             Self::InputInvariantUnsupported => (
                 "InputInvariantUnsupported",
                 INPUT_RULE_CREATION,
-                "A creation's input type declares an invariant or a prefix, and the creation \
-                 writes the input into no field of that type.",
+                "An input type's invariant or prefix is not held: on a creation whose accepting \
+                 branches do not all store the input in a field of that type, or as an ordering \
+                 Entity Runtime cannot decide over the input.",
             ),
         }
     }

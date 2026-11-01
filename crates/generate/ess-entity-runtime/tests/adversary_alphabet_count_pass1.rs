@@ -711,6 +711,19 @@ fn adv_a_creation_identity_taken_from_the_input_keeps_the_rule_on_the_row() {
 /// The billing example's `CancelInvoice` with an unstored `label: Optional<Label>` input, `Label`
 /// a String with `value.count <= 3`.
 fn labelled_cancel_ir() -> EssIr {
+    cancel_taking(
+        "  - name: billing.invoice.Label\n    kind: newtype\n    of: String\n    invariants: [value.count <= 3]\n",
+        "      - name: label\n        type: Optional<billing.invoice.Label>\n",
+    )
+}
+
+/// The billing example's `CancelInvoice` declaring `types` and taking the unstored `input` after
+/// its `invoice_id`.
+fn cancel_taking(types: &str, input: &str) -> EssIr {
+    let types = format!("types:\n{types}\n");
+    let input = format!(
+        "      - name: invoice_id\n        type: billing.invoice.InvoiceId\n{input}\n    outcomes:\n      - name: cancelled\n"
+    );
     try_compile(
         &billing_fixture(),
         &[
@@ -725,19 +738,11 @@ fn labelled_cancel_ir() -> EssIr {
                 "          billing.invoice.InvoiceCreated:\n",
                 "          billing.invoice.InvoiceCreated:\n            invoice_id: {generated: true}\n",
             ),
-            (
-                "domains/invoice.yaml",
-                "types:\n",
-                "types:\n  - name: billing.invoice.Label\n    kind: newtype\n    of: String\n    invariants: [value.count <= 3]\n\n",
-            ),
-            (
-                "domains/invoice.yaml",
-                KEPT_INPUT,
-                "      - name: invoice_id\n        type: billing.invoice.InvoiceId\n      - name: label\n        type: Optional<billing.invoice.Label>\n\n    outcomes:\n      - name: cancelled\n",
-            ),
+            ("domains/invoice.yaml", "types:\n", types.as_str()),
+            ("domains/invoice.yaml", KEPT_INPUT, input.as_str()),
         ],
     )
-    .unwrap_or_else(|errors| panic!("the labelled cancel compiles: {errors}"))
+    .unwrap_or_else(|errors| panic!("the cancel taking {input:?} compiles: {errors}"))
 }
 
 /// An update has a precondition slot entity-core evaluates over the arguments, so an unstored
@@ -773,5 +778,77 @@ fn adv_an_update_holds_an_input_only_text_length_invariant_as_a_precondition() {
         taken.starts_with("error: PreconditionFailed"),
         "entity-core refuses `label: \"abcd\"`, which ESS does not admit as a `Label` \
          (story:entity-runtime-lowering-enforces-input-type-invariants): {taken}"
+    );
+}
+
+/// An unstored input whose type is a `Timestamp` bounded below orders instants, which entity-core
+/// decides with `before`/`after` and not with its number `compare`; the precondition lowers typed,
+/// as a guard does, so a later instant is admitted and an earlier one refused
+/// (`story:entity-runtime-lowering-enforces-input-type-invariants`).
+#[test]
+fn adv_an_update_holds_an_input_timestamp_ordering_as_an_instant_precondition() {
+    let ir = cancel_taking(
+        "  - name: billing.invoice.NotBefore\n    kind: newtype\n    of: Timestamp\n    invariants:\n      - value >= \"2000-01-01T00:00:00Z\"\n",
+        "      - name: since\n        type: billing.invoice.NotBefore\n",
+    );
+    let lowered = lower_billing(&ir).unwrap_or_else(|refused| {
+        panic!(
+            "an update's `Timestamp` ordering lowers to a typed precondition: \
+             story:entity-runtime-lowering-enforces-input-type-invariants {refused:?}"
+        )
+    });
+    let row = invoice_row(&[]);
+    let id = "b404a1e8-9360-4af5-a0ac-8a483adfa225";
+    assert_eq!(
+        cancel_with(
+            &lowered,
+            &json!({"invoice_id": id, "since": "2026-01-01T00:00:00Z"}),
+            &row
+        ),
+        "cancelled",
+        "`2026-01-01T00:00:00Z` is a `NotBefore`: \
+         story:entity-runtime-lowering-enforces-input-type-invariants"
+    );
+    let taken = cancel_with(
+        &lowered,
+        &json!({"invoice_id": id, "since": "1999-01-01T00:00:00Z"}),
+        &row,
+    );
+    assert!(
+        taken.starts_with("error: PreconditionFailed"),
+        "entity-core refuses `since: 1999-01-01T00:00:00Z`, which ESS does not admit as a \
+         `NotBefore` (story:entity-runtime-lowering-enforces-input-type-invariants): {taken}"
+    );
+}
+
+/// An unstored input whose type orders text: ESS orders it by its bytes, entity-core's `compare`
+/// answers `Unknown` for text and it has no byte-order operator, so the precondition would fail
+/// every request. The lowering refuses the input by name instead
+/// (`story:entity-runtime-lowering-enforces-input-type-invariants`).
+#[test]
+fn adv_an_input_text_ordering_invariant_is_refused_by_name() {
+    let ir = cancel_taking(
+        "  - name: billing.invoice.Code\n    kind: newtype\n    of: String\n    invariants:\n      - value >= \"m\"\n",
+        "      - name: code\n        type: billing.invoice.Code\n",
+    );
+    let refused = lower_billing(&ir)
+        .err()
+        .unwrap_or_else(|| {
+            panic!(
+                "a text ordering over an input is refused by name, never lowered to a precondition \
+                 that fails every request (story:entity-runtime-lowering-enforces-input-type-invariants)"
+            )
+        })
+        .into_vec();
+    assert_eq!(
+        refused
+            .iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.path.as_str()))
+            .collect::<Vec<_>>(),
+        [(
+            LoweringCode::InputInvariantUnsupported,
+            "billing.invoice.CancelInvoice.input.code"
+        )],
+        "story:entity-runtime-lowering-enforces-input-type-invariants: {refused:#?}"
     );
 }
