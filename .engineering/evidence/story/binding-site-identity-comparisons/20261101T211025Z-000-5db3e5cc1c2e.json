@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-01T21:10:25Z",
+  "actor": "human:timo",
+  "artifact": "story:binding-site-identity-comparisons",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance --locked --lib + 12 named targets (adversary_273_pass1 red on base fix: 4 pinned misses, 6 passed 2 failed; green: 272 passed across 13 lanes, both bytes tables re-pinned for 11 models, committed suites unchanged)",
+    "reference": "unit logs u4/scratch/red-adversary_273_pass1.log (baseline) vs u4/scratch/cargo.log (treatment); merged 5e04d5f20"
+  }
+}

@@ -13,7 +13,7 @@ relations:
 - decides: story:concurrent-history-records-inputs
 - decides: story:a-no-view-arranged-half-probes-the-row-through-the-command
 - decides: story:binding-site-identity-comparisons
-revision: 2
+revision: 4
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-01T20:19:26Z", actor: "human:timo", revision: 2}
 ---
@@ -129,3 +129,23 @@ Scratch root `~/.cache/ess-d357-wave/`; trees under the worktree manager's `b10x
 | U4 | ess-d357-u4 | unit/ess-d357-u4 | tree `target/` | `~/.cache/ess-d357-wave/u4/` | planned |
 
 Pre-flight 2026-11-01: / 102G free of 848G; no other cargo process machine-wide; load1 1.0.
+
+## Build slots
+
+Host build slots the orchestrator relayed for this wave, 2026-11-01:
+
+- Host-monitor D137, relayed as orchestrator D358: "Slot granted (host-monitor D137, my D358). The
+  steps you listed for U1 phase 2, U2, U3 and U4 may start now." Requested: U2 ess-cli
+  `coverage_browser`, `browser_startup_refusal_boundary`, `browser_startup_slow_serve_boundary`,
+  `check_history` and ess-conformance `adversary_w3_389_s2_pass1 --no-run` (~8G); U3 ess-conformance
+  `--lib` and five named `--test` targets (~5G); U4 ess-conformance `--lib` and eleven named
+  `--test` targets plus up to ten binding targets named first (~8G); U1 phase 2 ess-cli
+  `validate_parse_refusals` and one new file (~6G).
+- Terms: one cargo at a time through the wave lock and the host's build slot, jobs 8,
+  `CARGO_INCREMENTAL=0`, line tables only; before each command / at 80G free or more and at most one
+  other cargo (telos and telos-rustgen excluded while load1 < 16 and io avg60 < 5); each tree's
+  `target/` at most 15G, discard-cache when its unit merges; a step stops when / falls under 70G; no
+  all-targets build; the final gate is its own request. One line per unit to host-monitor: start,
+  end, peak `target/`, lowest /.
+- Orchestrator D361 (host-monitor), 2026-11-01: slot granted for the four adversary passes under the D137 terms; each pass runs in its unit tree, serially under the wave lock, `adversary_d357_uN_pass1` plus that unit's granted targets, 2-4G per tree and never over 15G; one line per pass to host-monitor.
+- Orchestrator D359 (host-monitor D138): hold from 20:34Z while the substrate D354 full gate ran; D360 go at 20:46:07Z with the U4 extension (the `ess` binary and suite regeneration, then 13 pin tests in ess-conformance, ess-cli and ess-diff).
