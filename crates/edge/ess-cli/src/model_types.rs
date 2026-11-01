@@ -67,7 +67,9 @@ pub struct Args {
 pub enum Names {
     /// The qualified model name, every segment kept: `MeteringItemsUsageRecorded`.
     Qualified,
-    /// The last segment, refused where two selected declarations would share one: `UsageRecorded`.
+    /// A declared type or event by its last segment, `UsageRecorded`; a command's input or
+    /// response or a view's row by its owner's last segment and the member, `CreateInput`,
+    /// `ByOwnerRow`. Refused where two selected declarations would share one.
     Short,
 }
 
