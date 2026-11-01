@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.80.0 — 2026-11-01
+
+### HTTP-bound inputs and short names in generated types, and input-type rules in Entity Runtime
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/http-bound-inputs-and-short-names) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.80.0)
+
+ess generate types takes --http, so each command input is the request body its bound OpenAPI document publishes, and --names short combines with --all-commands and --all-views. Entity Runtime lowering keeps an unstored input type's invariants and prefix or refuses them by name. Synthesis decides an identity guard on the row it arranges.
+
 ## 0.79.0 — 2026-11-01
 
 ### Nested-member claims, Binary64 in conformance suites, and typed authored inputs
