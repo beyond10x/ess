@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-outcome-arrangement-follows-the-bindings-its-steps-set-off
 kind: story
-status: active
+status: implemented
 title: An outcome arrangement follows the bindings its steps set off
 summary: A related-guard arrangement that sets off a binding rewriting the arranged row no longer yields a scenario the interpreter fails
 tags:
@@ -17,10 +17,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_0730_pass1.rs
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-01T13:05:41Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-01T13:05:41Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-11-01T15:20:29Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 ## Problem
 
@@ -59,3 +60,7 @@ Derived 2026-11-01 by `aep:story-scoper` for wave D350 on dc60f4532. Every line 
 - **Pinning test:** `crates/verify/ess-conformance/tests/adversary_0730_pass1.rs:104` `f2_a_binding_that_rewrites_the_arranged_row_is_followed` asserts `failures.keys() == ["demo.d.Give/outcome/not-flagged"]` today; fixture `tests/fixtures/adversary-0730/restoring-binding/` — cited
 - **Confidence:** medium. The failing case was not traced step by step; the `when_subject` shared gap was not checked.
 - **Would collide with:** `related_guard.rs` (`arranged_at`, `own_arrangement`, `arranged`, `prepare_at_in`), `refusal_policy.rs` `refused_row`, `binding_effects.rs` `related_arranged`, `synthesize.rs` `run_as`, `tests/adversary_0730_pass1.rs`
+
+## Delivered
+
+D350, 2026-11-01: unit 462151a7d (merged 7a9012dd1). New `related_guard/rewritten.rs`: a related row a step's binding rewrites (field, state, removal, also two bindings down) is passed over, else ESS-SYNTH-003 names step, binding and command. Scope check: `binding_effects.rs` was not needed (wrong in Scope); `run_as` building `Give/outcome/not-flagged` confirmed. Adversary pass 1: story 6 not broken (no-op). The `when_subject:` and decoy-row neighbours became `story:binding-rewrites-are-followed-for-subject-guards-and-decoy-rows`.

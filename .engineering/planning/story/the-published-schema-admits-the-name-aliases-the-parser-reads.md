@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-published-schema-admits-the-name-aliases-the-parser-reads
 kind: story
-status: active
+status: implemented
 title: The published schema admits the name aliases the parser reads
 relations:
 - serves: vision:O2
@@ -15,10 +15,11 @@ scope:
   path: crates/specify/ess-domain/src/component.rs
 - confidence: cited
   path: schemas/generated/ess.schema.json
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-01T13:05:45Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-01T13:05:45Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-11-01T15:20:31Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 # Story: the published schema admits the name aliases the parser reads
 
@@ -56,3 +57,7 @@ string `Ranking` that the schema types as an object — include it here or split
 - `crates/specify/ess-domain/src/binding.rs` (`RawBindingSpec`), `component.rs` — cited
 - `schemas/generated/ess.schema.json` (regenerated) — cited
 - `crates/edge/ess-xtask/src/consumer_coverage/reviewed-schema-metadata.json` (re-pin) — inferred
+
+## Delivered
+
+D350, 2026-11-01: unit 4198b2241 (merged 46cef82a4), fix round 813ee8838 with the adversary's cases (merged e979f19b7). `name::aliased_name_schema` publishes a binding's and a component's name as `oneOf` of `name:` and its alias, each with the name charset, `additionalProperties: false`; `ess.schema.json` regenerated and the three `wire:RawSpecFile#/definitions` consumer-coverage rows re-pinned. `published_name_aliases.rs` reads every committed YAML file (`git ls-files`, 612 parsed documents); the only refusals are the named exceptions (the `Ranking` key, now `story:the-published-schema-reads-a-ranking-key-as-a-string`, and one empty file). Adversary pass 1: F1 (corpus walk) fixed, F2 (the `additionalProperties` mutant) guarded by its case 2.
