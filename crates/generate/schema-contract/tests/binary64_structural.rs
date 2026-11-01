@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-const SOURCE: &str = r"format: ess/2
+const SOURCE: &str = r"format: ess/31
 system: sample
 version: v1
 domains: [sample.float]
@@ -53,7 +53,80 @@ types:
       record: sample.float.Record
       dictionary: sample.float.Dictionary
   - {name: sample.float.Plain, kind: newtype, of: Decimal}
+  - {name: sample.float.SampleId, kind: newtype, of: String}
+  - name: sample.float.Reading
+    kind: struct
+    fields:
+      - {name: value, type: 'Optional<Binary64>', presence: null_when_absent}
+      - {name: spare, type: 'Optional<Binary64>', presence: omitted_or_null}
+      - {name: plain, type: 'Optional<Binary64>'}
+entities:
+  - name: sample.float.Sample
+    identity: {name: sample_id, type: sample.float.SampleId}
+    fields:
+      - {name: label, type: sample.float.SampleId}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active], transitions: []}
+commands:
+  - name: sample.float.Measure
+    input:
+      - {name: sample_id, type: sample.float.SampleId, example: s-1}
+      - {name: value, type: 'Optional<Binary64>', presence: null_when_absent}
+    response:
+      - {name: sample_id, type: sample.float.SampleId}
+      - {name: value, type: 'Optional<Binary64>', presence: null_when_absent}
+      - {name: spare, type: 'Optional<Binary64>', presence: omitted_or_null}
+    outcomes:
+      - name: measured
+        returns: true
+        creates: sample.float.Sample
+        instance: sample_id
+        sets: {label: input.sample_id}
+        emits: [sample.float.Measured]
+        payload:
+          sample.float.Measured: {sample_id: input.sample_id}
+events:
+  - name: sample.float.Measured
+    fields:
+      - {name: sample_id, type: sample.float.SampleId}
+components:
+  - component: float-service
+    reached_by: network
+    owns: {domains: [sample.float]}
+    accepts: {commands: [sample.float.Measure]}
+    publishes: {events: [sample.float.Measured]}
 ";
+
+/// The input body the `OpenAPI` projection publishes for `sample.float.Measure`
+/// (story:a-null-when-absent-binary64-field-realizes): each input property's first `examples`
+/// entry, and `null` for a property that publishes none. A Binary64 input carries no `example:`,
+/// so its `null_when_absent` field is spelt the one way an absent value is.
+fn published_measure_example() -> serde_json::Value {
+    let mut sources = ess_compiler::source::SourceMap::new();
+    sources.insert(ess_domain::system::Source::DOCUMENT, SOURCE.to_owned());
+    let specification = ess_domain::spec::Specification::assemble([(
+        ess_domain::system::Source::document(),
+        ess_domain::spec::RawSpecFile::parse(SOURCE).unwrap(),
+    )])
+    .unwrap();
+    let ir = ess_compiler::resolve::compile(&specification, &sources).unwrap();
+    let component = ir.components().values().next().expect("one component");
+    let document: serde_json::Value =
+        serde_json::from_str(&ess_gen::openapi::json(&ir, component)).expect("JSON");
+    let input = &document["components"]["schemas"]["sample.float.Measure.Input"];
+    serde_json::Value::Object(
+        input["properties"]
+            .as_object()
+            .unwrap_or_else(|| panic!("published input properties: {input:#}"))
+            .iter()
+            .map(|(key, property)| {
+                let example = property
+                    .get("examples")
+                    .map_or(serde_json::Value::Null, |examples| examples[0].clone());
+                (key.clone(), example)
+            })
+            .collect(),
+    )
+}
 
 fn plan() -> Plan {
     let roots = [
@@ -70,6 +143,9 @@ fn plan() -> Plan {
         "Record",
         "Nested",
         "Plain",
+        "Reading",
+        "Measure.input",
+        "Measure.response",
     ]
     .map(|name| format!("sample.float.{name}"));
     Plan::from_model(&model::selection(
@@ -173,9 +249,15 @@ fn rust_original_token_wire_corpus() {
     std::fs::create_dir_all(root.join("tests")).unwrap();
     std::fs::write(root.join("Cargo.toml"), &output.supporting["Cargo.toml"]).unwrap();
     std::fs::write(root.join("types.rs"), &output.declarations).unwrap();
+    // `EXAMPLE` is the published input example the nullable-member cases decode
+    // (story:a-null-when-absent-binary64-field-realizes).
     std::fs::write(
         root.join("tests/wire.rs"),
-        include_str!("fixtures/binary64_wire_tests.rs.txt"),
+        format!(
+            "const EXAMPLE: &str = {:?};\n{}",
+            published_measure_example().to_string(),
+            include_str!("fixtures/binary64_wire_tests.rs.txt")
+        ),
     )
     .unwrap();
     // A Binary64-only library declares no exact-numbers feature (beyond10x/ess#483), so the

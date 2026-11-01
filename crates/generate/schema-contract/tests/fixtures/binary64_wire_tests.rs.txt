@@ -116,3 +116,125 @@ fn presence_union_alternatives_and_prior_value_boundary() {
     }
     assert!(EssBinary64::deserialize(serde::de::value::F64Deserializer::<serde::de::value::Error>::new(1.0)).is_err());
 }
+
+/// A nullable `Optional<Binary64>` member, declared `null_when_absent` or `omitted_or_null`, in a
+/// declared struct and in a command's input and response roots
+/// (story:a-null-when-absent-binary64-field-realizes). Each body is compared as the whole
+/// re-encoded document, so a present `null` must come back as a key; each member is read through
+/// the finite Binary64 codec's type. The cases marked "adversary" are the D350 U1 adversary's
+/// pass-1 cases, moved here so that no test spawns a build of its own.
+mod nullable {
+    use super::*;
+    use serde_json::Value;
+
+    const NEGATIVE_ZERO: u64 = 0x8000000000000000;
+
+    fn written<T: DeserializeOwned + Serialize>(text: &str) -> String {
+        let decoded: T = serde_json::from_str(text).unwrap_or_else(|error| panic!("{text}: {error}"));
+        serde_json::to_string(&decoded).unwrap()
+    }
+
+    /// The body decodes and is written back as the same JSON document, keys and `null`s included.
+    fn round_trips<T: DeserializeOwned + Serialize>(text: &str) -> T {
+        let out = written::<T>(text);
+        let read: Value = serde_json::from_str(text).unwrap();
+        let back: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(back, read, "{text} was written back as {out}");
+        serde_json::from_str(text).unwrap()
+    }
+
+    fn refuses<T: DeserializeOwned>(text: &str) {
+        assert!(serde_json::from_str::<T>(text).is_err(), "{text} decodes");
+    }
+
+    fn bits(value: Option<EssBinary64>) -> Option<u64> {
+        value.map(|value| value.get().to_bits())
+    }
+
+    #[test]
+    fn a_null_when_absent_response_field_decodes() {
+        let present: SampleFloatMeasureResponse = round_trips("{\"sample_id\":\"s-1\",\"value\":1.5}");
+        assert_eq!(bits(present.value), Some(1.5f64.to_bits()));
+        let absent: SampleFloatMeasureResponse = round_trips("{\"sample_id\":\"s-1\",\"value\":null}");
+        assert_eq!(bits(absent.value), None);
+        round_trips::<SampleFloatMeasureResponse>("{\"sample_id\":\"s-1\",\"value\":1.5,\"spare\":2.5}");
+        round_trips::<SampleFloatMeasureResponse>("{\"sample_id\":\"s-1\",\"value\":null,\"spare\":null}");
+        let zero: SampleFloatMeasureResponse = serde_json::from_str("{\"sample_id\":\"s-1\",\"value\":-0}").unwrap();
+        assert_eq!(bits(zero.value), Some(NEGATIVE_ZERO));
+        refuses::<SampleFloatMeasureResponse>("{\"sample_id\":\"s-1\"}");
+        refuses::<SampleFloatMeasureResponse>("{\"sample_id\":\"s-1\",\"value\":\"1.5\"}");
+    }
+
+    #[test]
+    fn the_published_input_example_decodes() {
+        let example: Value = serde_json::from_str(EXAMPLE).unwrap();
+        let expected: Value = serde_json::from_str("{\"sample_id\":\"s-1\",\"value\":null}").unwrap();
+        assert_eq!(example, expected, "the published input example");
+        let decoded: SampleFloatMeasureInput = round_trips(EXAMPLE);
+        assert_eq!(bits(decoded.value), None);
+        let present: SampleFloatMeasureInput = round_trips("{\"sample_id\":\"s-1\",\"value\":1.5}");
+        assert_eq!(bits(present.value), Some(1.5f64.to_bits()));
+        refuses::<SampleFloatMeasureInput>("{\"sample_id\":\"s-1\"}");
+    }
+
+    #[test]
+    fn a_null_when_absent_struct_field_decodes() {
+        let present: SampleFloatReading = round_trips("{\"value\":1.5}");
+        assert_eq!(bits(present.value), Some(1.5f64.to_bits()));
+        let absent: SampleFloatReading = round_trips("{\"value\":null}");
+        assert_eq!(bits(absent.value), None);
+        round_trips::<SampleFloatReading>("{\"value\":1.5,\"spare\":2.5,\"plain\":3.5}");
+        let zero: SampleFloatReading = serde_json::from_str("{\"value\":-0}").unwrap();
+        assert_eq!(bits(zero.value), Some(NEGATIVE_ZERO));
+        refuses::<SampleFloatReading>("{\"spare\":2.5}");
+        refuses::<SampleFloatReading>("{\"value\":\"1.5\"}");
+    }
+
+    /// Adversary: a `null` is written back as a present `null`.
+    #[test]
+    fn a_null_is_written_back_as_a_present_null() {
+        for text in [
+            "{\"value\":null}",
+            "{\"value\":null,\"spare\":null}",
+            "{\"value\":1.5,\"spare\":null,\"plain\":2.5}",
+        ] {
+            round_trips::<SampleFloatReading>(text);
+        }
+        for text in [
+            "{\"sample_id\":\"s-1\",\"value\":null}",
+            "{\"sample_id\":\"s-1\",\"value\":null,\"spare\":null}",
+            "{\"sample_id\":\"s-1\",\"value\":1.5}",
+        ] {
+            round_trips::<SampleFloatMeasureResponse>(text);
+        }
+        round_trips::<SampleFloatMeasureInput>("{\"sample_id\":\"s-1\",\"value\":null}");
+    }
+
+    /// Adversary: a token past the binary64 range is refused at every nullable member.
+    #[test]
+    fn a_nullable_member_refuses_a_token_past_the_binary64_range() {
+        refuses::<SampleFloatReading>("{\"value\":1e400}");
+        refuses::<SampleFloatReading>("{\"value\":null,\"spare\":-1e400}");
+        refuses::<SampleFloatReading>("{\"value\":null,\"plain\":1e400}");
+        refuses::<SampleFloatMeasureResponse>("{\"sample_id\":\"s-1\",\"value\":1e400}");
+        refuses::<SampleFloatMeasureResponse>("{\"sample_id\":\"s-1\",\"value\":null,\"spare\":1e400}");
+        refuses::<SampleFloatMeasureInput>("{\"sample_id\":\"s-1\",\"value\":1e400}");
+    }
+
+    /// Adversary: an integer token past 2^53 is read as the nearest binary64.
+    #[test]
+    fn a_nullable_member_reads_the_nearest_binary64() {
+        for (text, key) in [
+            ("{\"value\":9007199254740993}", "value"),
+            ("{\"value\":null,\"spare\":9007199254740993}", "spare"),
+            ("{\"value\":null,\"plain\":9007199254740993}", "plain"),
+        ] {
+            let out = written::<SampleFloatReading>(text);
+            let back: Value = serde_json::from_str(&out).unwrap();
+            assert_eq!(back[key].as_f64(), Some(9007199254740992.0), "{out}");
+            assert!(!out.contains("9007199254740993"), "{text} kept its exact token: {out}");
+        }
+        let out = written::<SampleFloatMeasureResponse>("{\"sample_id\":\"s-1\",\"value\":9007199254740993}");
+        assert!(!out.contains("9007199254740993"), "the response kept its exact token: {out}");
+    }
+}
