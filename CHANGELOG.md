@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The arranged half of an input refusal on a command that addresses an existing record, where no identity view shows the arranged row, sends the addressing branch's own valid input for that record after the refused send and requires that branch, so a target that changes the record on refusal and publishes nothing fails it; it required only the error and no event, and such a target passed. Where that branch has no valid send, the scenario is withdrawn and refused as `ESS-SYNTH-001` naming the branch (beyond10x/ess#209). A model with an identity view keeps its suite bytes.
+
 ## [0.81.0] — 2026-11-01
 
 ### Fixed
