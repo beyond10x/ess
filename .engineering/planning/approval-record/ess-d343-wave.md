@@ -13,7 +13,7 @@ relations:
 - decides: story:an-identity-guard-below-unknown-instance-is-decided-on-the-row-sent
 - decides: story:short-names-combine-with-all-commands-and-all-views
 - decides: story:an-authored-text-literal-outside-its-alphabet-is-refused
-revision: 2
+revision: 3
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-01T06:49:17Z", actor: "human:timo", revision: 2}
 ---
@@ -86,3 +86,18 @@ lock files, CHANGELOG, change record) on that branch before the final gate, one 
 tag and publication through the repository's own process. Not the next wave.
 
 Decider: operator
+
+## Build slots
+
+Host build slots the orchestrator relayed for this wave, 2026-11-01 (all cargo through the host's
+build slot, one command at a time):
+
+- 08:36Z hold lifted for U2 and U4; 08:54Z U1 and U3 granted (host-monitor D95: debuginfo 0, 15G
+  target stop per tree); 09:05Z hold for everything else; 09:25Z start floor 80G free (D347); 09:3xZ
+  go for the U2 fix, then the U1 and U3 adversary runs, each start needing 80G free and at most one
+  other cargo.
+- 09:37Z final-gate slot D129 (host-monitor), two stages, each followed by a cache discard. Stage A
+  covers the touched crates' tests (ess-gen, schema-contract, ess-entity-runtime in full; ess-cli
+  and ess-conformance by named test only, never all-targets) plus clippy and fmt-check. Stage B
+  covers the release-prepare regenerations, `task projection-check`, `task test-xtask` and release
+  verify. Each start needs 80G free and at most one other cargo; each stage stops at 15G of target/.
