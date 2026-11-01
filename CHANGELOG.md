@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ess specify validate` on a specification of several files names the file a refusal was read from, where it named `<document>` whenever the refused declaration's name was written in more than one file, as a name declared in two files is: a refusal made while a file is read is cited in that file, and one checked after assembly in the file of the copy assembly kept, which is the second when the first does not convert; a name written twice in that one file names the file and no line. The library's `Specification::assemble_traced` and `resolve::diagnose_traced` return and read that record; `diagnose_locating` is unchanged.
+
 ## [0.81.0] — 2026-11-01
 
 ### Fixed
