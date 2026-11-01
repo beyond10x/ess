@@ -1269,6 +1269,10 @@ pub(super) struct Prepared<'a> {
     pub(super) row: Option<Row<'a>>,
     /// What the destination's arrangement depends on.
     pub(super) source: BTreeSet<EssSemanticRef>,
+    /// The stored fields of the trigger's row this arrangement rewrote, with what the row holds in
+    /// each when the trigger runs: the field [`stored_destination`] creates the row holding the
+    /// destination's identity in. Empty where it rewrote none.
+    pub(super) rewritten: BTreeMap<String, ScenarioValue>,
 }
 
 /// The existing row a bound invocation acts on.
@@ -1299,6 +1303,15 @@ impl Prepared<'_> {
         steps.extend(self.invoke.iter().cloned());
         steps.extend(self.capture.iter().cloned());
         steps
+    }
+
+    /// The trigger as this arrangement sends it, for [`super::expect_trigger_event`].
+    pub(super) fn sent(&self) -> super::Sent<'_> {
+        (
+            self.setup.as_slice(),
+            self.invoke.as_slice(),
+            &self.rewritten,
+        )
     }
 
     /// The eventual observation of the destination at rest, where there is one to make.
@@ -1423,6 +1436,7 @@ pub(super) fn prepare<'a>(
                 reached,
                 row: None,
                 source: BTreeSet::new(),
+                rewritten: BTreeMap::new(),
             })
         }
         Destination::Unavailable { input, why } => {
@@ -1503,6 +1517,7 @@ fn related_decided<'a>(
         reached: Ok(accepting),
         row: None,
         source,
+        rewritten: BTreeMap::new(),
     })
 }
 
@@ -1699,6 +1714,7 @@ fn related_on_row<'a>(
         reached: Ok(reached),
         row: None,
         source: decided.source,
+        rewritten: BTreeMap::new(),
     })
 }
 
@@ -1950,6 +1966,7 @@ fn keeps_branch_sent(
 /// naming the one condition that stopped it ([`ChangedRowCause`]), so the flow and delivery
 /// scenarios are refused by name rather than filed unpassable. `None` for a branch publishing no
 /// per-row event, which keeps the arrangement it had.
+#[allow(clippy::too_many_lines)]
 fn per_row_decided<'a>(
     ir: &'a EssIr,
     binding: &'a ResolvedBinding,
@@ -1975,6 +1992,7 @@ fn per_row_decided<'a>(
         }),
         row: None,
         source: BTreeSet::new(),
+        rewritten: BTreeMap::new(),
     };
     let movable = |state: &StateName| match &set.effect {
         ResolvedEffect::Moves { transition } => transition.from.contains(state),
@@ -2011,6 +2029,7 @@ fn per_row_decided<'a>(
                 reached: Ok(reached),
                 row: None,
                 source,
+                rewritten: BTreeMap::new(),
             }
         };
 
@@ -2603,6 +2622,7 @@ fn same_row_destination<'a>(
             decided,
         )),
         source,
+        rewritten: BTreeMap::new(),
     })
 }
 
@@ -2645,6 +2665,7 @@ fn arranged_destination<'a>(
                 Ok(()),
             )),
             source: BTreeSet::new(),
+            rewritten: BTreeMap::new(),
         });
     }
     // The trigger reads the stored fields of the row it names, so its arrangement made exactly
@@ -2691,6 +2712,7 @@ fn arranged_destination<'a>(
             Ok(()),
         )),
         source: arrangement.source,
+        rewritten: BTreeMap::new(),
     })
 }
 
@@ -2745,6 +2767,7 @@ fn stored_destination<'a>(
                 Ok(()),
             )),
             source: BTreeSet::new(),
+            rewritten: BTreeMap::new(),
         });
     }
     // The creator reads the stored fields of the row it names, so the arrangement made exactly
@@ -2784,7 +2807,7 @@ fn stored_destination<'a>(
             ir,
             published_by,
             entity,
-            identity,
+            identity.clone(),
             arrangement.state.clone(),
             fan_out(
                 ir,
@@ -2797,6 +2820,7 @@ fn stored_destination<'a>(
             Ok(()),
         )),
         source: arrangement.source,
+        rewritten: [(stored.to_owned(), identity)].into_iter().collect(),
     })
 }
 
@@ -3249,7 +3273,7 @@ pub(super) fn dropped(
     steps.push(super::expect_trigger_event(
         ir,
         trigger,
-        (&prepared.setup, &prepared.invoke),
+        prepared.sent(),
         event,
     ));
     // Every attempt carries the mapped input — a malformed retry beside a correct one fails here —

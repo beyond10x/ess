@@ -491,7 +491,7 @@ fn retried(
     steps.push(super::expect_trigger_event(
         ir,
         trigger,
-        (&prepared.setup, &prepared.invoke),
+        prepared.sent(),
         event,
     ));
     steps.extend(published.iter().map(|event| ScenarioStep::EventuallyEvent {

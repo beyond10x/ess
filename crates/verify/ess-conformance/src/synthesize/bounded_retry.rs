@@ -289,7 +289,7 @@ fn forced_run(
     steps.push(expect_trigger_event(
         ir,
         published,
-        (&trigger.setup, &trigger.invoke),
+        super::as_run(trigger),
         event,
     ));
     steps.push(count(
