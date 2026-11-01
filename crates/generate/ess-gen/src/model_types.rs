@@ -330,7 +330,8 @@ struct BodyRoot<'a> {
 }
 
 /// The body `root` names as `<command>.input`, `<command>.response` or `<view>.row`, if it names
-/// one: refused when it names a command's input `binding` publishes no body for.
+/// one: refused when it names a command's input `binding` publishes no body for, or the response
+/// of a command that declares none.
 fn body_root<'a>(
     ir: &'a EssIr,
     binding: Option<&Binding>,
@@ -364,6 +365,19 @@ fn body_root<'a>(
         }
         RESPONSE_ROOT => {
             let command = command()?;
+            // A command that declares no response has no response root, as
+            // `bound_command_roots` lists none for it: refused as an unknown root that says why.
+            if command.response.is_empty() {
+                return Some(Err(ModelTypeError {
+                    name: root.to_owned(),
+                    rule: "unknown_root",
+                    detail: format!(
+                        "command `{}` declares no response, so it has no `.{RESPONSE_ROOT}` \
+                         root; `--all-commands` leaves it out",
+                        command.name
+                    ),
+                }));
+            }
             (
                 Message::of_response(command),
                 CommandRef::new(command.name.clone()).into(),
@@ -510,10 +524,12 @@ fn numeric_locations(reference: &ResolvedTypeRef, at: &str, found: &mut BTreeSet
     }
 }
 
+/// A nullable field's number sits in its property's `anyOf [number, null]`, so each location is
+/// walked from the type the property projects ([`types::property_type`]), not the stripped one.
 fn fields_numeric_locations(at: &str, fields: &[ResolvedField], found: &mut BTreeSet<String>) {
     for field in fields {
         numeric_locations(
-            field.type_ref.required(),
+            types::property_type(field),
             &pointer(&format!("{at}/properties"), types::wire_name(field)),
             found,
         );

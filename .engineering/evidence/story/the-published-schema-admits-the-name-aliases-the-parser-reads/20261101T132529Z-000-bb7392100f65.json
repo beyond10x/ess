@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-01T13:25:29Z",
+  "actor": "human:timo",
+  "artifact": "story:the-published-schema-admits-the-name-aliases-the-parser-reads",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-domain --locked --test adversary_charset_pass1 --test published_name_aliases (VERIFIED: red before the fix, 4+1 passed 1+4 failed, 339 refused places; green at 4198b2241, 5+5 passed)",
+    "reference": "unit log u4/scratch/cargo.log 13:14:17Z (baseline) vs 13:17:10Z (treatment)"
+  }
+}

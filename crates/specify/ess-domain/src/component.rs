@@ -120,10 +120,11 @@ use crate::types::{TypeBody, TypeRef};
 #[serde(deny_unknown_fields)]
 pub struct RawComponentSpec {
     /// Its name — a single segment, like `invoice-service`.
-    // `ComponentName::PATTERN`, published so an editor refuses what `ComponentName::new` refuses.
-    // `tests/published_charsets.rs` holds this literal and that constant together.
+    // Published as `name` or `component`, each with `ComponentName::PATTERN`, so an editor
+    // refuses what `ComponentName::new` refuses under either spelling
+    // (`tests/published_charsets.rs`, `tests/published_name_aliases.rs`).
     #[serde(alias = "component")]
-    #[schemars(regex(pattern = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"))]
+    #[schemars(flatten, schema_with = "component_name_schema")]
     pub name: String,
     /// The domains it owns.
     #[serde(default)]
@@ -163,6 +164,16 @@ pub struct RawComponentSpec {
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
+}
+
+/// [`RawComponentSpec::name`]'s published schema: `name`, or its alias `component`.
+fn component_name_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+    crate::name::aliased_name_schema(
+        "name",
+        "component",
+        ComponentName::PATTERN,
+        "Its name — a single segment, like `invoice-service`.",
+    )
 }
 
 /// One configuration input a component declares, as a document says it.

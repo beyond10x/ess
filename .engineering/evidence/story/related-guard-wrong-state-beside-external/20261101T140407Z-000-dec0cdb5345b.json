@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-01T14:04:07Z",
+  "actor": "human:timo",
+  "artifact": "story:related-guard-wrong-state-beside-external",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance --locked --test adversary_selection_plan_w5_u4_pass1 (VERIFIED: base code 9 passed 3 failed, a4/a4b/a4c expected wrong-state got no-list; green at 462151a7d, 12 passed, a4/a4b/a4c no longer ignored; bytes table claim-search/related.yaml 51618 -> 53048)",
+    "reference": "unit log u2/scratch 13:17:41Z (baseline) vs 13:59:51Z (treatment); merged 7a9012dd1"
+  }
+}

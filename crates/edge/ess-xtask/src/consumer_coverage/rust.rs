@@ -152,6 +152,15 @@ fn representation(a: &Attribute, owner: &str) -> Result<()> {
         return Ok(());
     }
     let items = a.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
+    // `schemars(flatten)` changes only the schema, never what serde reads. It is true to the wire
+    // only when the same attribute names the function that writes the flattened keys
+    // (`schema_with`): `RawBindingSpec.name` publishes `name` or its serde alias `id` that way. A
+    // bare `schemars(flatten)` would hoist a nested type's keys into the parent while serde still
+    // reads them nested, so it stays refused.
+    let schema_written = name == "schemars"
+        && items
+            .iter()
+            .any(|item| matches!(item, Meta::NameValue(n) if n.path.is_ident("schema_with")));
     for item in items {
         let key = tokens(item.path());
         let allowed = match (&*name, &item) {
@@ -199,7 +208,7 @@ fn representation(a: &Attribute, owner: &str) -> Result<()> {
                         | "try_from"
                 ) && matches!(&n.value,syn::Expr::Lit(x) if matches!(x.lit,syn::Lit::Str(_)))
             }
-            ("schemars", Meta::Path(_)) => key == "skip",
+            ("schemars", Meta::Path(_)) => key == "skip" || (key == "flatten" && schema_written),
             ("schemars", Meta::NameValue(n)) => {
                 matches!(key.as_str(), "with" | "schema_with" | "rename")
                     && matches!(&n.value,syn::Expr::Lit(x) if matches!(x.lit,syn::Lit::Str(_)))

@@ -2,11 +2,23 @@
 format: aep.planning-md/3
 id: story:related-guard-wrong-state-beside-external
 kind: story
-status: draft
+status: implemented
 title: A related-guard command with wrong_state and an external branch gets a wrong-state scenario the interpreter passes
 relations:
 - decomposes: epic:one-selection-plan
-revision: 1
+- serves: vision:O2
+scope:
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/adversary_selection_plan_w5_u4_pass1_open.rs
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-01T13:05:42Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-11-01T13:05:42Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-11-01T15:20:30Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 # Story: A related-guard command with `wrong_state:` and an external branch gets a passing `wrong-state` scenario
 
@@ -29,3 +41,21 @@ no related refusal declared, an arrangement rule under an order name (F5).
 - Cases a4, a4b, a4c parked at `~/.cache/ess-selection-plan/w5-u4-scratch/adversary_selection_plan_w5_u4_pass1.parked.rs`
   pass as a committed test.
 - The synthesis bytes tables move only for the models this fixes, each named.
+
+## Scope
+
+Derived 2026-11-01 by `aep:story-scoper` for wave D350 on dc60f4532. Every line is **cited** (read from the story or the tree) or **inferred**.
+
+- **Primary surface:** `crates/verify/ess-conformance/src/synthesize/related_guard.rs` (wrong-state synthesis) — cited
+- **Symbols:** `wrong_state_overlap` :1678-1797; `orders_present_related_refusal` :1659-1669; `is_related_refusal` :1639; `with_row` :4207; `missing_late` :3938; `arranges_external` :204; `leaves_external` :336; `chooses` :396 — cited
+- **Also likely:** `crates/verify/ess-conformance/src/synthesize.rs` `refusal_arrangement` :15892 (gate :15925, `wrong_state_overlap` call :15927, fallback `reach(...)` :15930) — cited
+- **Mechanism:** the symptom (no row arranged, `list_id` unbound) matches the fallback at :15930, reached when the :15925 gate is false or `with_row` at :1780 arranges nothing; which fires for an external branch was not run — inferred
+- **Phase order:** `PresentRelated` precedes `Accepting` in `crates/specify/ess-domain/src/command/precedence.rs:45`; where `External` sits was not read — cited for the enum, inferred for its effect
+- **Tests:** cases a4 :389, a4b :413, a4c :424 exist as `#[ignore]`d tests in `crates/verify/ess-conformance/tests/adversary_selection_plan_w5_u4_pass1_open.rs` asserting the passing behaviour (the acceptance's parked file is this one) — cited. The non-ignored `a4d` (`adversary_selection_plan_w5_u4_pass1.rs:405`) asserts only the accepting-`when:` variant passes — cited
+- **Story drift:** "base `related_guard.rs` unchanged since 3f0e8e1539" no longer holds: five later commits touch it (newest 3db8d0d84) — cited
+- **Confidence:** medium (call path and symptom read; nothing run)
+- **Would collide with:** `related_guard.rs` `wrong_state_overlap`, `orders_present_related_refusal`; `synthesize.rs` `refusal_arrangement`; `adversary_selection_plan_w5_u4_pass1_open.rs`
+
+## Delivered
+
+D350, 2026-11-01: unit 462151a7d (merged 7a9012dd1), fix round 891c34532 with the adversary's cases (merged 51f911b36). `unknown_instance` sends the unknown-identity scenario beside a present related row (`related_guard::unknown_beside_external`, phase from `unknown_answered_at`), and `refusal_arrangement` does the same for held-state refusals (`held_beside_external`); a4, a4b and a4c leave the open file. Bytes table: `claim-search/related.yaml` 51618 -> 53048 (no `wrong_state:`, its held-state refusals now name a present row). Scope check: the main fix site is `unknown_instance`, not `refusal_arrangement` (partly wrong); the path is `unknown_reached` -> `reach_external`, not the fallback `reach` (wrong); External branch in the Accepting phase confirmed. Row 7's F2/F5 side notes are left as written. Adversary pass 1: F1 (exchanged phase orders) fixed; O1 became `story:a-delivery-under-unbounded-retry-is-not-sent-unsupported`.

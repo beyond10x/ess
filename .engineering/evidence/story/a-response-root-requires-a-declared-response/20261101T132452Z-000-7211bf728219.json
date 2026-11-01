@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-01T13:24:52Z",
+  "actor": "human:timo",
+  "artifact": "story:a-response-root-requires-a-declared-response",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-gen --locked --test command_view_roots (VERIFIED: red before the fix, 5 passed 1 failed; green at c47ab4f64, 6 passed)",
+    "reference": "unit log u1/scratch/cargo.log 13:12:28Z (baseline) vs 13:16:55Z (treatment)"
+  }
+}

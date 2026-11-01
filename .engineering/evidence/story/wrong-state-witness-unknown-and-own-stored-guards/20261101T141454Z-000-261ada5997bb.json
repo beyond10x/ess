@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-01T14:14:54Z",
+  "actor": "human:timo",
+  "artifact": "story:wrong-state-witness-unknown-and-own-stored-guards",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance --locked --test adversary_mixed_guard_pass2 (VERIFIED: base subject_fact.rs 0 passed 4 failed; green at a886ef467, 4 passed; 17 neighbour targets and lib 172 green, bytes table unchanged)",
+    "reference": "unit log u3/scratch/cargo.log 14:06:19Z (baseline) vs 14:11:22Z (treatment); merged bd5b4296e"
+  }
+}

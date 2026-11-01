@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-01T14:21:57Z",
+  "actor": "human:timo",
+  "artifact": "story:a-response-root-requires-a-declared-response",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "F2 fixed at 7c5fd30a0 (unknown_root detail names the missing response); adversary cases 3 passed; merged 0ec9fb366",
+    "review": "review-result:adversary-d350-u1-pass-1",
+    "outcome": "fixed"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-01T14:49:49Z",
+  "actor": "human:timo",
+  "artifact": "story:an-outcome-arrangement-follows-the-bindings-its-steps-set-off",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "D350 final gate stage A on integration/ess-d350 at bc91c84cb, 14:41-14:49Z (A1/A2 split by a cache discard on the 80G precheck): cargo test -p ess-gen, -p schema-contract, -p ess-domain (full), -p ess-cli (schema_bundle, schema_registry_identity, schema_registry_identity_adversary, model_types), -p ess-conformance (--lib + 31 named incl. adversary_d350_u2_pass1 and adversary_d350_u3_pass1, bytes tables); 341 binaries, 2975 passed, 0 failed, 6 ignored; clippy -D warnings and fmt-check clean"
+  }
+}

@@ -15090,7 +15090,7 @@ fn unknown_instance(
     declared: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<ConformanceScenario, RefusalCause> {
-    let related_row = unknown_beside_related(ir, command, declared, actors).transpose()?;
+    let mut related_row = unknown_beside_related(ir, command, declared, actors).transpose()?;
     let (attempt, mut input) = match &related_row {
         Some((_, (input, _))) => (
             *acting.first().ok_or_else(related_guard::unarranged)?,
@@ -15098,6 +15098,18 @@ fn unknown_instance(
         ),
         None => unknown_reached(ir, command, acting, declared)?,
     };
+    // An external branch is reached by its input alone, naming a related row nobody arranged;
+    // where that row's absence answers before the branch the scenario expects, it is arranged
+    // present (`related_guard::unknown_beside_external`).
+    if related_row.is_none() {
+        if let Some(beside) =
+            related_guard::unknown_beside_external(ir, command, (declared, attempt), actors)
+                .transpose()?
+        {
+            input.clone_from(&(beside.1).0);
+            related_row = Some(beside);
+        }
+    }
     let field = names_existing(attempt)
         .or_else(|| preserves_supplied(attempt))
         .unwrap_or_default();
@@ -15925,6 +15937,19 @@ fn refusal_arrangement(
     if related_guard::orders_present_related_refusal(ir, attempt.command) {
         let (input, bound) =
             related_guard::wrong_state_overlap(ir, attempt.command, actors, &mut arrangement)?;
+        return Ok((arrangement, input, bound));
+    }
+    // An external branch is reached by its input alone, naming a related row nobody arranged;
+    // where that row's absence answers before the held state, it is arranged present
+    // (`related_guard::held_beside_external`).
+    if let Some(beside) = related_guard::held_beside_external(
+        ir,
+        attempt.command,
+        attempt.outcome,
+        actors,
+        &mut arrangement,
+    ) {
+        let (input, bound) = beside?;
         return Ok((arrangement, input, bound));
     }
     let input = reach(ir, attempt.command, attempt.outcome, Distinction::PLAIN)?;

@@ -179,11 +179,10 @@ fn a_transition_name_the_parser_refuses_the_schema_refuses() {
 /// published sits on `name` only: the schema has no `id` property at all, so a binding written
 /// with `id:` is refused whole by `additionalProperties` and `required`, whatever its spelling.
 ///
-/// That is today's state, pinned here. Publishing the aliases is
-/// `story:the-published-schema-admits-the-name-aliases-the-parser-reads`, and this case flips
-/// when that story lands.
+/// That was the state this pass pinned. `story:the-published-schema-admits-the-name-aliases-the-parser-reads`
+/// publishes the alias, so the case now asserts admission.
 #[test]
-fn a_binding_written_with_its_id_alias_is_refused_by_the_schema_today() {
+fn a_binding_written_with_its_id_alias_is_admitted_by_the_schema() {
     let text = include_str!("../../../generate/ess-synth/tests/fixtures/binding-selection.yaml");
     RawSpecFile::parse(text).expect("the parser reads `id:`");
     let document: Value = ess_yaml::from_str(text).expect("YAML");
@@ -195,10 +194,9 @@ fn a_binding_written_with_its_id_alias_is_refused_by_the_schema_today() {
         .map(|e| e.to_string())
         .collect();
     assert!(
-        !refusals.is_empty(),
-        "the schema now admits a binding written with `id:`: \
-         story:the-published-schema-admits-the-name-aliases-the-parser-reads has landed, so turn \
-         this case into the assertion that it is admitted"
+        refusals.is_empty(),
+        "story:the-published-schema-admits-the-name-aliases-the-parser-reads: the parser reads a \
+         binding written with `id:` and the published schema refuses it: {refusals:?}"
     );
 }
 

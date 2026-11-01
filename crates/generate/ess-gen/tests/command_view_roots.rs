@@ -105,6 +105,34 @@ fn a_misspelled_or_absent_body_is_an_unknown_root() {
     }
 }
 
+/// A command that declares no response has no `<command>.response` root: `--all-commands` leaves
+/// it out and the `OpenAPI` document publishes no result for it, so naming it is refused rather
+/// than selecting an empty object.
+#[test]
+fn a_command_without_a_response_has_no_response_root_by_name_either() {
+    let ir = compiled();
+    assert!(
+        !ModelTypes::command_roots(&ir).contains("demo.notes.Pin.response"),
+        "the fixture's `demo.notes.Pin` declares no response"
+    );
+    let errors = ModelTypes::select(&ir, &BTreeSet::from(["demo.notes.Pin.response".to_owned()]))
+        .expect_err("a command without a response has no response root");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].name, "demo.notes.Pin.response");
+    assert_eq!(errors[0].rule, "unknown_root", "{errors:?}");
+    assert!(
+        errors[0]
+            .detail
+            .contains("command `demo.notes.Pin` declares no response"),
+        "the refusal says why the root is unknown: {}",
+        errors[0].detail
+    );
+    assert!(
+        ModelTypes::select(&ir, &BTreeSet::from(["demo.notes.Pin.input".to_owned()])).is_ok(),
+        "its input is still a root"
+    );
+}
+
 /// `components.schemas` of the `OpenAPI` document, its references retargeted to `$defs`, so one
 /// validator reads both documents the same way.
 fn published() -> Value {

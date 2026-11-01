@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-01T14:04:07Z",
+  "actor": "human:timo",
+  "artifact": "story:an-outcome-arrangement-follows-the-bindings-its-steps-set-off",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance --locked --test adversary_0730_pass1 (VERIFIED: base code 5 passed 2 failed, f2 expected not-flagged got given; green at 462151a7d, 7 passed)",
+    "reference": "unit log u2/scratch run2 13:17:41Z (baseline) vs 13:59:51Z (treatment); merged 7a9012dd1"
+  }
+}

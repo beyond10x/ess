@@ -761,11 +761,31 @@ pub(crate) fn field(declared: &ResolvedField) -> Node {
     node
 }
 
+/// Whether a field's object property spells an absent value as `null`: declared
+/// `presence: null_when_absent` or `omitted_or_null`.
+pub(crate) fn is_nullable(declared: &ResolvedField) -> bool {
+    matches!(
+        declared.naming.presence,
+        Some(Presence::NullWhenAbsent | Presence::OmittedOrNull)
+    )
+}
+
+/// The type a field's property in [`object`] projects: the `Optional` whole for a nullable field
+/// ([`nullable_field`]), the value it holds otherwise ([`field`]). A schema location under the
+/// property is reached through this type, not through the stripped one.
+pub(crate) fn property_type(declared: &ResolvedField) -> &ResolvedTypeRef {
+    if is_nullable(declared) {
+        &declared.type_ref
+    } else {
+        declared.type_ref.required()
+    }
+}
+
 /// A field declared `presence: null_when_absent` or `omitted_or_null`: its `Optional` projected
 /// whole, as the `anyOf [T, null]` an `Optional` outside a field already is, with the field's
 /// annotations.
 fn nullable_field(declared: &ResolvedField) -> Node {
-    let mut node = type_ref(&declared.type_ref).annotated(
+    let mut node = type_ref(property_type(declared)).annotated(
         declared.naming.display.as_deref(),
         declared.naming.summary.clone(),
     );
@@ -819,8 +839,7 @@ pub(crate) fn object_annotated(
         // projection an `Optional` field always had: optional, and not nullable. `omitted_or_null`
         // (ess/31) admits both: nullable, and not required.
         let null_when_absent = declared.naming.presence == Some(Presence::NullWhenAbsent);
-        let nullable =
-            null_when_absent || declared.naming.presence == Some(Presence::OmittedOrNull);
+        let nullable = is_nullable(declared);
         if !declared.type_ref.is_optional() || null_when_absent {
             required.push(wire.to_owned());
         }

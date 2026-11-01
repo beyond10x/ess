@@ -72,6 +72,25 @@ fn representation_attributes_invalidate_shape_and_unknown_attributes_refuse() {
     );
     assert!(model("#[mystery] struct Root;").is_err());
 }
+/// `schemars(flatten)` is admitted only beside the `schema_with` function that writes the
+/// flattened keys, as `RawBindingSpec.name` publishes its serde alias; bare, it would hoist keys
+/// serde reads nested, so it refuses. Either way the attribute is part of the field's shape.
+#[test]
+fn schema_only_flatten_is_admitted_only_with_its_schema_function() {
+    let plain = model(r#"struct Root { #[serde(alias = "id")] name: String }"#).unwrap();
+    let published = model(
+        r#"struct Root { #[serde(alias = "id")] #[schemars(flatten, schema_with = "name_or_id")] name: String }"#,
+    )
+    .unwrap();
+    assert_ne!(plain, published);
+    let error = model("struct Root { #[schemars(flatten)] name: String }")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("unknown representation grammar schemars(flatten)"),
+        "{error}"
+    );
+}
 #[test]
 fn wire_definitions_references_and_escaped_property_names_are_separate() {
     let a=wire(&json!({"type":"object","properties":{"a/b~c":{"$ref":"#/definitions/Thing"}},"definitions":{"Thing":{"type":"string"}}})).unwrap();

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-01T13:24:51Z",
+  "actor": "human:timo",
+  "artifact": "story:a-null-when-absent-binary64-field-realizes",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p schema-contract --locked --test binary64_null_when_absent (VERIFIED: red before the fix, 0 passed 2 failed; green at c47ab4f64, 2 passed)",
+    "reference": "unit log u1/scratch/cargo.log 13:15:08Z (baseline) vs 13:15:33Z (treatment)"
+  }
+}
