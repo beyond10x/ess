@@ -998,17 +998,17 @@ fn location_of(text: &str, index: usize) -> Location {
 ///
 /// The bridge, and deliberately not a second implementation. Every cross-cutting rule in this model
 /// is enforced by [`Specification::validate`], where it is already tested; what that produces is a
-/// [`ValidationError`](ess_primitives::error::ValidationError) with a document path and prose. What §29 asks for is a code, a span and a
+/// [`ValidationError`] with a document path and prose. What §29 asks for is a code, a span and a
 /// structured body. This adds the first two — the family from the location's layer, the class from
 /// the [`ValidationCode`], the line by finding the declaration in the file it was read from.
 ///
 /// # What it cannot add
 ///
-/// The structured body. A [`ValidationError`](ess_primitives::error::ValidationError) carries its facts as a sentence, and parsing two types
+/// The structured body. A [`ValidationError`] carries its facts as a sentence, and parsing two types
 /// back out of a sentence is exactly what §29 says a consumer must not have to do — so it would be no
 /// better done here. Diagnostics with typed details are the ones [`compile`] produces itself; the
 /// bridged ones carry the message, the hint, the span and the `ess-domain` code they came from.
-/// Closing that gap means giving [`ValidationError`](ess_primitives::error::ValidationError) structured fields, in `ess-domain`.
+/// Closing that gap means giving [`ValidationError`] structured fields, in `ess-domain`.
 pub fn diagnose(errors: &ValidationErrors, sources: &SourceMap) -> Diagnostics {
     diagnose_locating(errors, sources, &[] as &[&str])
 }
@@ -1028,7 +1028,7 @@ pub fn diagnose_locating(
 ///
 /// [`diagnose_locating`] finds the file by searching every file for the declaration's name, which
 /// cannot tell two copies of one name apart and answers `<document>` for both. Here the file comes
-/// from the assembly ([`read_from`]) and only the line is searched for, in that file alone. A
+/// from the assembly (`read_from`) and only the line is searched for, in that file alone. A
 /// refusal the record says nothing about is searched for as [`diagnose_locating`] searches, and a
 /// refusal whose producer gave its own position keeps it. The diagnostics are otherwise the same,
 /// one per refusal and in order.
