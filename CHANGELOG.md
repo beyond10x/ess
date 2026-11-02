@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The generated Rust codecs, which the Rust server reads a request with, refuse at decode, before anything is stored, a `Timestamp` that is not an RFC 3339 `date-time` (at the top level, in an `Optional`, a `List`, a struct field and a map key) and a member a closed JSON object does not declare (a command's input, a struct without `undeclared_fields: ignored`, a union branch); the server answers `400`, or the binding's `refusals.malformed`, naming the member's path, where it stored the value or dropped the member (beyond10x/ess#707). It is the default and not an opt-in, because the OpenAPI document the server serves already refuses these bodies; a struct declaring `undeclared_fields: ignored` and a `Json` value stay open.
+
 ## [0.83.0] — 2026-11-02
 
 ### Fixed

@@ -30,6 +30,7 @@ pub fn encode_gatepass_visit_badge(value: &gatepass_types::visit::Badge, out: &m
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_gatepass_visit_badge(value: &json::Value, at: &str) -> Result<gatepass_types::visit::Badge, json::DecodeError> {
+    json::closed_at(value, at, &["serial", "printed_at", "signature"])?;
     Ok(gatepass_types::visit::Badge {
         serial: {
             let at0 = json::nested(at, "serial");
@@ -40,7 +41,7 @@ pub fn decode_gatepass_visit_badge(value: &json::Value, at: &str) -> Result<gate
             None | Some(json::Value::Null) => None,
             Some(member1) => {
                 let at1 = json::nested(at, "printed_at");
-                Some(gatepass_types::primitives::Timestamp(json::text_at(member1, &at1, "an RFC 3339 instant")?.to_owned()))
+                Some(gatepass_types::primitives::Timestamp(json::timestamp_at(member1, &at1, "an RFC 3339 instant")?.to_owned()))
             }
         },
         signature: {
@@ -90,6 +91,7 @@ pub fn encode_gatepass_visit_deposit(value: &gatepass_types::visit::Deposit, out
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_gatepass_visit_deposit(value: &json::Value, at: &str) -> Result<gatepass_types::visit::Deposit, json::DecodeError> {
+    json::closed_at(value, at, &["amount", "currency"])?;
     Ok(gatepass_types::visit::Deposit {
         amount: {
             let at0 = json::nested(at, "amount");
@@ -146,6 +148,7 @@ pub fn encode_gatepass_visit_host(value: &gatepass_types::visit::Host, out: &mut
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_gatepass_visit_host(value: &json::Value, at: &str) -> Result<gatepass_types::visit::Host, json::DecodeError> {
+    json::closed_at(value, at, &["kind", "value"])?;
     let tag = json::member_at(value, at, "kind")?;
     let at_tag = json::nested(at, "kind");
     Ok(match json::text_at(tag, &at_tag, "one of `contractor`, `employee`")? {
@@ -400,6 +403,7 @@ pub fn encode_command_gatepass_visit_admit_visitor(value: &gatepass_types::visit
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_command_gatepass_visit_admit_visitor(value: &json::Value, at: &str) -> Result<gatepass_types::visit::AdmitVisitor, json::DecodeError> {
+    json::closed_at(value, at, &["visit_id", "badge"])?;
     Ok(gatepass_types::visit::AdmitVisitor {
         visit_id: {
             let at0 = json::nested(at, "visit_id");
@@ -508,6 +512,7 @@ pub fn encode_command_gatepass_visit_register_visit(value: &gatepass_types::visi
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_command_gatepass_visit_register_visit(value: &json::Value, at: &str) -> Result<gatepass_types::visit::RegisterVisit, json::DecodeError> {
+    json::closed_at(value, at, &["visitor", "building", "host", "expected_minutes", "expected_stay", "deposit", "escorts", "notes", "on_watchlist"])?;
     Ok(gatepass_types::visit::RegisterVisit {
         visitor: {
             let at0 = json::nested(at, "visitor");
@@ -621,6 +626,7 @@ pub fn encode_command_gatepass_visit_sign_out_visitor(value: &gatepass_types::vi
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_command_gatepass_visit_sign_out_visitor(value: &json::Value, at: &str) -> Result<gatepass_types::visit::SignOutVisitor, json::DecodeError> {
+    json::closed_at(value, at, &["visit_id"])?;
     Ok(gatepass_types::visit::SignOutVisitor {
         visit_id: {
             let at0 = json::nested(at, "visit_id");

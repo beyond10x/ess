@@ -929,18 +929,21 @@ fn digest(result: Result<Synthesis, SynthesisFailure>) -> String {
 /// letter, a digit, `-` or `_` was refused then, and only such a label derives another identifier
 /// now, so a model without one keeps every byte. Re-recorded for 0.79.0, where the generated Rust
 /// `json.rs` and Go `server/wire.go` decoders check the whole-number grammar and read an integral
-/// number with a zero fraction as an Integer.
+/// number with a zero fraction as an Integer. The Rust and web rows were re-recorded again for the
+/// story `the-generated-rust-server-refuses-what-its-openapi-refuses`, where the Rust `json.rs` and
+/// `wire.rs` decoders refuse a non-RFC 3339 `Timestamp` and a member a closed object does not
+/// declare; the Go rows keep their bytes.
 const BEFORE_DERIVED_LABELS: &[(&str, &str)] = &[
-    ("aliased rust-workspace", "25 artifact(s) 404c72c13909a62d"),
-    ("aliased rust-crate", "22 artifact(s) 33863312813698a3"),
-    ("aliased web", "14 artifact(s) f9888e117d9a232e"),
-    ("cross rust-workspace", "26 artifact(s) 9d975910562a5fa6"),
-    ("cross rust-crate", "23 artifact(s) 1872b78b985ecfb6"),
-    ("cross web", "14 artifact(s) 233e93d86746e05d"),
+    ("aliased rust-workspace", "25 artifact(s) 99f6153802fcf2b0"),
+    ("aliased rust-crate", "22 artifact(s) cc1487e24c0c969a"),
+    ("aliased web", "14 artifact(s) 80e6328c36c83831"),
+    ("cross rust-workspace", "26 artifact(s) 138ef208c56d7585"),
+    ("cross rust-crate", "23 artifact(s) 1a80e1384d357203"),
+    ("cross web", "14 artifact(s) 575d704ce4db6b9c"),
     ("cross go", "20 artifact(s) fa98787a2c15c671"),
-    ("labelled rust-workspace", "25 artifact(s) dd88003b3b37fc70"),
-    ("labelled rust-crate", "22 artifact(s) ab8a5db996aea8f9"),
-    ("labelled web", "14 artifact(s) 14f13d874c7903e8"),
+    ("labelled rust-workspace", "25 artifact(s) 06c0705715e5f7de"),
+    ("labelled rust-crate", "22 artifact(s) 7f17866b02ff49a5"),
+    ("labelled web", "14 artifact(s) 25f25b5e6ffd5b20"),
     ("labelled go", "19 artifact(s) a99032e02de18b7b"),
 ];
 
