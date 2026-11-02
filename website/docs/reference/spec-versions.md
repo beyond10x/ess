@@ -622,7 +622,8 @@ callbacks. A suite without them keeps its earlier format.
 read of the scenario is sent as that actor, as a command is sent as one, so a view an actor's grant
 names is read as an actor it names; `read_as` with `actor: null` sends later reads as no actor at
 all, and `expect_not_granted` with `actor: null` requires a refusal naming none. Synthesis files
-`<view>/grant/read/denied`: the view read as an actor the grant does not name, where one is
+`<view>/grant/read/denied`: the view read as each actor of its own domain the grant does not name,
+or where that domain has none as the lowest-named declared actor it does not name, where one is
 declared, and then as no actor, each followed by `expect_not_granted`, which then requires the
 read's standard refusal; and `<view>/grant/read/admitted/<actor>` for each actor naming it. A read
 the scenario needed answered and the target refused is `failed` in every runner. A Rust
