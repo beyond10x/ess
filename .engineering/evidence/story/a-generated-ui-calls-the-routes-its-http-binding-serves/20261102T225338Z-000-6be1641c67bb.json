@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-02T22:53:38Z",
+  "actor": "human:timo",
+  "artifact": "story:a-generated-ui-calls-the-routes-its-http-binding-serves",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:security-w1-ui1-pass-1",
+    "review": "review-result:security-w1-ui1-pass-1",
+    "outcome": "fixed"
+  }
+}

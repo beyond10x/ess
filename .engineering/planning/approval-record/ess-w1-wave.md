@@ -22,7 +22,7 @@ relations:
 - decides: story:a-view-read-checks-every-rows-shape
 - decides: story:view-and-error-assertions-carry-their-value-shape
 - decides: story:authored-success-step-asserts-no-error
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-02T20:39:26Z", actor: "human:timo", revision: 2}
 ---
@@ -184,3 +184,11 @@ recommendation A). `story:a-union-variant-scenario-reads-each-row-under-its-own-
 the W2 suite-major unit (bullet 2 needs a runner change). Both stay accepted; their patches stay parked
 in the coordinator scratch; no new stories. W1 now implements 9 of its 11 selected stories, and 6 of the 14 P0 (the roadmap exit criterion said 9;
 the Selection above already made it 8).
+
+## Exit criterion
+
+The orchestrator accepted (2026-11-02): the criterion "a generated Rust server refuses every body its OpenAPI
+refuses" counts as met for the beyond10x/ess#707 classes (a malformed `Timestamp`, an undeclared member). An
+`Optional` member sent as `null` is still admitted while the served schema refuses it; that stays backlog draft
+story:an-optional-member-sent-as-null-is-answered-as-the-openapi-answers-it, not waved, and the CHANGELOG and
+the PR body state it as a known limit.
