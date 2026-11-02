@@ -524,7 +524,9 @@ fn send_as(scenario: &mut ConformanceScenario, command: &QualifiedName, actor: &
 /// have refused anyway shows nothing about the grant. Among those, one that snapshots the subject
 /// before the send is preferred, so the refusal is shown to have left it as it was; then the one
 /// with fewest steps; a template whose denied scenario the suite's admission would refuse is passed
-/// over for the next. `None` where no scenario sends the command into an accepting branch, or none
+/// over for the next. A scenario whose last send is the command's is preferred to every scenario
+/// that sends another command after it, as a `ranked` view check does (beyond10x/ess#712). `None`
+/// where no scenario sends the command into an accepting branch, or none
 /// that gives an admissible one, and the denied scenario is withheld with
 /// [`Note::GrantDeniedUnwitnessed`].
 fn refused_from_template(
@@ -533,20 +535,13 @@ fn refused_from_template(
     sender: &ActorRef,
     suite: &ConformanceSuite,
 ) -> Option<ConformanceScenario> {
-    // The last send of the scenario, where it is this command's and the scenario then requires
-    // one of the command's accepting branches of it: a send the command would have refused anyway
-    // asks nothing of the grant.
-    let accepted_send = |scenario: &ConformanceScenario| {
-        let at = scenario
-            .steps
-            .iter()
-            .rposition(|step| sent(step).is_some())?;
-        let (sent_command, _) = sent(&scenario.steps[at])?;
-        if sent_command.name() != &command.name {
-            return None;
-        }
+    // The send at `at`, where the scenario then requires one of the command's accepting branches
+    // of it before anything else is sent: a send the command would have refused anyway asks
+    // nothing of the grant.
+    let accepted_at = |scenario: &ConformanceScenario, at: usize| {
         let required = scenario.steps[at + 1..]
             .iter()
+            .take_while(|step| sent(step).is_none())
             .find_map(|step| match step {
                 ScenarioStep::ExpectOutcome { outcome }
                     if outcome.command.name() == &command.name =>
@@ -561,6 +556,46 @@ fn refused_from_template(
             .any(|declared| declared.name == required.outcome && accepts(declared))
             .then_some(at)
     };
+    // The scenario's last send, where it is this command's.
+    let last_send = |scenario: &ConformanceScenario| {
+        let at = scenario
+            .steps
+            .iter()
+            .rposition(|step| sent(step).is_some())?;
+        let (sent_command, _) = sent(&scenario.steps[at])?;
+        (sent_command.name() == &command.name).then_some(at)
+    };
+    // The scenario's last send of this command, where a later send of another follows it: a
+    // `ranked` view check appends a second creating send after the command's own
+    // (beyond10x/ess#712). `denied_from` drops every later send.
+    let last_own_send = |scenario: &ConformanceScenario| {
+        let at = scenario
+            .steps
+            .iter()
+            .rposition(|step| sent(step).is_some_and(|(sent, _)| sent.name() == &command.name))?;
+        (last_send(scenario) != Some(at)).then_some(at)
+    };
+    // Today's templates first, so every refusal a scenario ending in the command's send gave keeps
+    // its bytes; then those whose send of the command is followed by another's.
+    templates(ir, command, sender, suite, |scenario| {
+        last_send(scenario).and_then(|at| accepted_at(scenario, at))
+    })
+    .or_else(|| {
+        templates(ir, command, sender, suite, |scenario| {
+            last_own_send(scenario).and_then(|at| accepted_at(scenario, at))
+        })
+    })
+}
+
+/// The first admissible denied scenario among the templates `accepted_send` finds, in
+/// [`refused_from_template`]'s order of preference.
+fn templates(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    sender: &ActorRef,
+    suite: &ConformanceSuite,
+    accepted_send: impl Fn(&ConformanceScenario) -> Option<usize>,
+) -> Option<ConformanceScenario> {
     let snapshots = |step: &ScenarioStep| {
         matches!(
             step,

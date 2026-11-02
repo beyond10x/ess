@@ -1356,3 +1356,207 @@ fn adv_d_the_reported_lamp_model_reads_alike_in_go_and_typescript() {
         assert_eq!(replayed.outcomes, reference, "{}", replayed.log);
     }
 }
+
+/// The toy specification of beyond10x/ess#712: a creating command, a command that moves an
+/// existing row, an actor granted nothing, and a view of the row ranked by `order_by`. [`shelf`]
+/// compiles it, with or without the ranking.
+const SHELF_SYSTEM: &str = "format: ess/32
+system: library
+version: v1
+domains:
+  - library.shelf
+";
+const SHELF_COMPONENTS: &str = "components:
+  - component: shelf-service
+    owns: {domains: [library.shelf]}
+    accepts: {commands: [library.shelf.CatalogueBook, library.shelf.LendBook]}
+    publishes: {events: [library.shelf.BookCatalogued, library.shelf.BookLent]}
+    reached_by: network
+";
+const SHELF_DOMAIN: &str = "domain: library.shelf
+
+types:
+  - {name: library.shelf.BookId, kind: newtype, of: Uuid}
+
+entities:
+  - name: library.shelf.Book
+    identity: {name: book_id, type: library.shelf.BookId}
+    fields:
+      - {name: position, type: Integer}
+    lifecycle:
+      initial: Shelved
+      states: [Shelved, Lent]
+      terminal: [Lent]
+      transitions:
+        - {name: lend, from: [Shelved], to: Lent}
+
+actors:
+  - name: library.shelf.Librarian
+    may: [library.shelf.CatalogueBook, library.shelf.LendBook]
+  - name: library.shelf.Reader
+
+commands:
+  - name: library.shelf.CatalogueBook
+    input:
+      - {name: position, type: Integer}
+    outcomes:
+      - name: catalogued
+        creates: library.shelf.Book
+        instance: book_id
+        emits: [library.shelf.BookCatalogued]
+        payload:
+          library.shelf.BookCatalogued: {book_id: {generated: true}}
+        sets: {position: input.position}
+
+  - name: library.shelf.LendBook
+    input:
+      - {name: book_id, type: library.shelf.BookId}
+    outcomes:
+      - name: lent
+        moves: library.shelf.Book.lend
+        instance: book_id
+        emits: [library.shelf.BookLent]
+        payload:
+          library.shelf.BookLent: {book_id: input.book_id}
+      - name: wrong-state
+        wrong_state: true
+        error: library.shelf.BookStateConflict
+
+errors:
+  - name: library.shelf.BookStateConflict
+    fields:
+      - {name: state, type: library.shelf.Book.State}
+
+events:
+  - name: library.shelf.BookCatalogued
+    fields:
+      - {name: book_id, type: library.shelf.BookId}
+  - name: library.shelf.BookLent
+    fields:
+      - {name: book_id, type: library.shelf.BookId}
+
+views:
+  - name: library.shelf.ShelfOrder
+    source: library.shelf.Book
+    consistency: read_your_writes
+    order_by: [position asc]
+    fields:
+      - {name: book_id, type: library.shelf.BookId}
+      - {name: position, type: Integer}
+";
+
+const LEND_DENIED: &str = "library.shelf.LendBook/grant/denied";
+
+/// The shelf model, ranked or not; `reader_lends` grants `Reader` the moving command too, which is
+/// the model a target that skips the grant check implements.
+fn shelf(ranked: bool, reader_lends: bool) -> EssIr {
+    let mut domain = SHELF_DOMAIN.to_owned();
+    if !ranked {
+        domain = domain.replace("    order_by: [position asc]\n", "");
+    }
+    if reader_lends {
+        domain = domain.replace(
+            "  - name: library.shelf.Reader\n",
+            "  - name: library.shelf.Reader\n    may: [library.shelf.LendBook]\n",
+        );
+    }
+    let mut sources = SourceMap::new();
+    let mut parsed = Vec::new();
+    for (label, text) in [
+        ("system.yaml", SHELF_SYSTEM.to_owned()),
+        ("components.yaml", SHELF_COMPONENTS.to_owned()),
+        ("domains/shelf.yaml", domain),
+    ] {
+        let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{label}: {error}"));
+        sources.insert(label.to_owned(), text);
+        parsed.push((Source::new(label), raw));
+    }
+    let specification =
+        Specification::assemble(parsed).unwrap_or_else(|errors| panic!("shelf: {errors}"));
+    compile(&specification, &sources).unwrap_or_else(|errors| panic!("shelf: {errors}"))
+}
+
+/// The verdict of each scenario of `suite` against the interpreted `model`.
+fn shelf_verdicts(suite: &ConformanceSuite, model: EssIr) -> Vec<(String, Status)> {
+    let admitted = AdmittedSuite::from_suite(suite).expect("admits");
+    Runner::for_suite(suite)
+        .run_admitted(&admitted, &Interpreted::for_model(model))
+        .into_report()
+        .scenarios
+        .iter()
+        .map(|result| (result.scenario.to_string(), result.status))
+        .collect()
+}
+
+/// beyond10x/ess#712: the moving command's `grant/denied` is synthesized whether or not a view of
+/// its entity is ranked; it passes the interpreted target and fails one that skips the grant check.
+#[test]
+fn grant_denied_is_synthesized_beside_a_ranked_view() {
+    for ranked in [false, true] {
+        let synthesis = ess_conformance::synthesize(&shelf(ranked, false));
+        assert!(
+            grant_ids(&synthesis.suite).contains(LEND_DENIED),
+            "ranked: {ranked}, story:grant-denied-is-synthesized-beside-a-ranked-view: {:#?}",
+            synthesis.notes
+        );
+        assert!(
+            !synthesis.notes.iter().any(|note| matches!(
+                note,
+                Note::GrantDeniedUnwitnessed { command } if command.to_string() == "library.shelf.LendBook"
+            )),
+            "ranked: {ranked}: {:#?}",
+            synthesis.notes
+        );
+        let gated = shelf_verdicts(&synthesis.suite, shelf(ranked, false));
+        assert!(
+            gated.iter().all(|(_, status)| *status == Status::Passed),
+            "ranked: {ranked}: {gated:#?}"
+        );
+        let skipping = shelf_verdicts(&synthesis.suite, shelf(ranked, true));
+        assert_eq!(
+            skipping
+                .iter()
+                .find(|(id, _)| id == LEND_DENIED)
+                .map(|(_, status)| *status),
+            Some(Status::Failed),
+            "ranked: {ranked}: {skipping:#?}"
+        );
+    }
+}
+
+/// The template of the ranked model's denied scenario is the last send of the moving command: the
+/// creating send the `ranked` check appends after it is dropped, as is everything after the refusal
+/// but the claims that nothing changed.
+#[test]
+fn the_denied_template_is_the_last_send_of_the_command_under_audit() {
+    let synthesis = ess_conformance::synthesize(&shelf(true, false));
+    let id: ScenarioId = LEND_DENIED.parse().unwrap();
+    let scenario = synthesis
+        .suite
+        .scenario(&id)
+        .unwrap_or_else(|| panic!("filed: {:#?}", synthesis.notes));
+    let refused = scenario
+        .steps
+        .iter()
+        .position(|step| matches!(step, ScenarioStep::ExpectNotGranted { .. }))
+        .expect("the refusal is required");
+    let ScenarioStep::ExecuteCommand { actor, command, .. } = &scenario.steps[refused - 1] else {
+        panic!("the refused send comes just before: {:?}", scenario.steps);
+    };
+    assert_eq!(command.to_string(), "library.shelf.LendBook");
+    assert_eq!(
+        actor.as_ref().map(ToString::to_string).as_deref(),
+        Some("library.shelf.Reader")
+    );
+    assert!(
+        scenario.steps[refused + 1..].iter().all(|step| matches!(
+            step,
+            ScenarioStep::QueryView { .. }
+                | ScenarioStep::ExpectSubjectUnchanged { .. }
+                | ScenarioStep::ExpectCompleteSubjectUnchanged { .. }
+                | ScenarioStep::ExpectViewUnchanged { .. }
+        )),
+        "no later send survives the refusal: {:?}",
+        scenario.steps
+    );
+}

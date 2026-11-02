@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Synthesis writes `<command>/grant/denied` for a command acting on an existing row beside a view of its entity ranked by `order_by` (beyond10x/ess#712). The `ranked` view check sends a second creating command after the command's own send, and the grant template read only a scenario's last send, so the refusal was withheld with a note that no scenario sent the command into an accepting branch. Where no scenario ends in the command's accepting send, the template is now the command's own last accepting send, with every later send dropped. Every suite that already had its `grant/denied` scenarios keeps its bytes.
+
 ## [0.83.0] — 2026-11-02
 
 ### Fixed
