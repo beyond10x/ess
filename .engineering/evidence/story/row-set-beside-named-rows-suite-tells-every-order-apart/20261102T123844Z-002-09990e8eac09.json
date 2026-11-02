@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-02T12:38:44Z",
+  "actor": "human:timo",
+  "artifact": "story:row-set-beside-named-rows-suite-tells-every-order-apart",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "U4 fix round 1 on unit/ess-d368-u4-r1 7510ae01f: lib 172, adversary_d368_u4_pass1 17, identity_beside_row_set 5, identity_beside_row_set_2 11, row_sets_precedence 2, row_set_many_selectors_work 2, row_sets_suite 5, synthesis 65, synthesis_row_set_plan 4, bytes tables 2+1 unchanged; clippy -D warnings, fmt-check; red before fix: review file 9/8",
+    "reference": "7510ae01f"
+  }
+}

@@ -13,7 +13,7 @@ relations:
 - decides: story:a-no-view-probe-tells-from-states-apart
 - decides: story:a-refusal-witness-compares-its-trigger-identities
 - decides: story:row-set-beside-named-rows-suite-tells-every-order-apart
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-02T07:12:04Z", actor: "human:timo", revision: 2}
 ---
@@ -181,3 +181,9 @@ Host build slots the orchestrator relayed for this wave, 2026-11-02:
   exemption); tree <= 15G, discard at merge; the final gate stays a separate request at 80G. The
   wave wrapper was changed to these terms (backups `cargo-in.sh.d369`, `recheck.sh.d369`).
 - Holds: PRECHECK-FAIL at 75-77G at 09:02:15-20Z stopped every pass and U2; reported once.
+- D387 (orchestrator, 11:14Z): / >= 80G allows 1 other cargo (stop under 70G); 75-80G allows
+  none (stop under 65G); under 75G nothing starts. The aap gate hold (11:20Z to 11:32Z host clock)
+  stopped all wave cargo.
+- D388 (host-monitor grant, 12:21Z; basis: Timo 2026-10-29, "dips to ~60G during gates
+  acceptable"): one targeted run at a time, 0 other cargo, / >= 68G before each run, stop below
+  60G. Given for U2 first, U4 on a separate go. Wrapper backups `cargo-in.sh.d387`, `recheck.sh.d387`.
