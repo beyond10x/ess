@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A command guarding on a row set beside rows its input names (`ess/32`) is witnessed on every refusal order: a refusal over a named row that also carries a `when:` is held beside the row set's rows, so its row-set branch is no longer refused; a `forall` on the accepting branch is held on a selected row the `forall` passes, and its default refusal on a selected row naming the send's own rows, so a target refusing on any selected row fails, at `ess/31` too (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+
 ## [0.82.0] — 2026-11-01
 
 ### Fixed

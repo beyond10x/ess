@@ -828,6 +828,144 @@ fn forall_without_named_rows_at_31() -> String {
     edited(&text, "format: ess/32\n", "format: ess/31\n")
 }
 
+/// A `when:` over the input on a named-row refusal beside the row set
+/// (story:row-set-beside-named-rows-suite-tells-every-order-apart): `sink-not-input` answers only
+/// where the ports differ. The row-set branch is still witnessed, and every order the rule tells
+/// apart fails, in both declaration orders of the row set.
+#[test]
+fn adversary_a2_when_beside_a_named_refusal_orders_are_told_apart() {
+    let apart = edited(
+        REPRO,
+        "        when_related: {via: input.to_port, predicate: direction != input}\n",
+        "        when_related: {via: input.to_port, predicate: direction != input}
+        when: input.from_port != input.to_port
+",
+    );
+    let shape = Shape {
+        sink_apart: true,
+        ..PLAIN
+    };
+    every_order_told_apart(&[
+        Variant {
+            label: "when: beside a named refusal",
+            text: apart.clone(),
+            rule: vec![NS, NK, SON, SNI, ST],
+            pairs: source_sink_pairs(),
+            shape,
+        },
+        Variant {
+            label: "when: beside a named refusal, row set declared first",
+            text: moved(&apart, SOURCE_TAKEN, NO_SOURCE),
+            rule: vec![NS, NK, ST, SON, SNI],
+            pairs: source_sink_pairs(),
+            shape,
+        },
+    ]);
+}
+
+const FORALL_LINE: &str = "          forall: to_port != input.to_port\n";
+
+/// The reproduction with its row-set refusal replaced by a `forall` on the accepting branch beside
+/// the four named-row refusals, the default answering a wire already joining the two ports.
+fn forall_beside_named_rows() -> String {
+    let text = edited(REPRO, SOURCE_TAKEN, "");
+    let text = edited(
+        &text,
+        "      - name: connected\n        creates: wiring.board.Wire\n",
+        &format!("      - name: connected\n{FORALL}        creates: wiring.board.Wire\n"),
+    );
+    edited(
+        &text,
+        "        sets: {from_port: input.from_port, to_port: input.to_port}\nviews:\n",
+        "        sets: {from_port: input.from_port, to_port: input.to_port}
+      - name: duplicate
+        error: wiring.board.SourceTaken
+views:
+",
+    )
+}
+
+/// The suite of `text` passes its interpreter, and fails each target deciding the `forall` of
+/// `connected` another way: one refusing on any wire from the source, and one reading the
+/// predicate negated. Each answers some reachable request differently: a wire from the source to
+/// another sink, and a wire joining the two ports.
+fn forall_mutants_killed(label: &str, text: &str) {
+    let synthesis = synthesize(&model(text));
+    let refused: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .map(|refusal| format!("{:?} {}", refusal.scenario, refusal.cause))
+        .collect();
+    let mut report = Vec::new();
+    let healthy = run(&synthesis, &Interpreted::for_model(model(text)));
+    let failed: Vec<&String> = healthy
+        .iter()
+        .filter(|(_, status)| **status != Status::Passed)
+        .map(|(id, _)| id)
+        .collect();
+    if !failed.is_empty() {
+        report.push(format!("{label}: the interpreter fails {failed:?}"));
+    }
+    for (mutant, line) in [
+        (
+            "refusing on any wire from the source",
+            "          count: {eq: 0}\n",
+        ),
+        (
+            "reading the predicate negated",
+            "          forall: to_port == input.to_port\n",
+        ),
+    ] {
+        let changed = edited(text, FORALL_LINE, line);
+        let statuses = run(&synthesis, &Interpreted::for_model(model(&changed)));
+        if statuses.values().all(|status| *status == Status::Passed) {
+            report.push(format!(
+                "{label}: a target {mutant} passes the whole suite ({} scenarios)",
+                statuses.len()
+            ));
+        }
+    }
+    assert!(
+        report.is_empty(),
+        "story:row-set-beside-named-rows-suite-tells-every-order-apart\n{}\nsynthesis refused \
+         {refused:#?}",
+        report.join("\n")
+    );
+}
+
+/// A `forall` on the accepting branch beside named rows: a target refusing on any wire from the
+/// source, or reading the predicate negated, fails the suite
+/// (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+#[test]
+fn adversary_a2_forall_beside_named_rows_kills_forall_mutants() {
+    forall_mutants_killed("forall beside named rows", &forall_beside_named_rows());
+}
+
+/// The same model: synthesis refuses nothing, `duplicate` has its scenario, and every order of the
+/// named-row refusals and the default the rule tells apart fails
+/// (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+#[test]
+fn adversary_a2_forall_beside_named_rows_witnesses_every_branch() {
+    every_order_told_apart(&[Variant {
+        label: "forall beside named rows",
+        text: forall_beside_named_rows(),
+        rule: vec![NS, NK, SON, SNI, DUP],
+        pairs: vec![(NS, NK), (NS, SNI), (SON, NK), (SON, SNI)],
+        shape: PLAIN,
+    }]);
+}
+
+/// The same `forall` mutants on the `ess/31` control, which has no named-row guard: the accepting
+/// scenario has to hold a wire from the source to another sink too
+/// (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+#[test]
+fn adversary_a2_forall_without_named_rows_kills_forall_mutants_at_ess_31() {
+    forall_mutants_killed(
+        "forall without named rows at ess/31",
+        &forall_without_named_rows_at_31(),
+    );
+}
+
 /// The same model synthesizes the same suite twice in one process, for every variant here.
 #[test]
 fn adversary_a2_synthesis_is_deterministic_across_variants() {
