@@ -13,7 +13,7 @@ relations:
 - decides: story:a-no-view-probe-tells-from-states-apart
 - decides: story:a-refusal-witness-compares-its-trigger-identities
 - decides: story:row-set-beside-named-rows-suite-tells-every-order-apart
-revision: 2
+revision: 7
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-02T07:12:04Z", actor: "human:timo", revision: 2}
 ---
@@ -152,3 +152,32 @@ Scratch root `~/.cache/ess-d368-wave/`; trees under the worktree manager's `b10x
 Pre-flight 2026-11-02 07:10Z: / 83G free of 848G; no cargo process machine-wide; load1 1.1. The
 trees of earlier waves (D325 to D357, issues-1 to issues-3) are still registered with the worktree
 manager, finished or idle, each `target/` at 4K or absent.
+
+## Build slots
+
+Host build slots the orchestrator relayed for this wave, 2026-11-02:
+
+- Orchestrator D369 (host-monitor grant): "Go (D369, host-monitor grant): ess-conformance named
+  targets for U1-U4 as requested, serial under one wave lock, jobs 8, CARGO_INCREMENTAL=0 +
+  line-tables-only. Before each command: / >= 80G and <= 1 other cargo ... with 2 others start
+  nothing. Stop under 70G. Tree <= 15G. discard-cache at each unit merge." Requested: U1
+  ess-conformance `--lib`, `append_set`, `synthesis_suite_bytes_table` and ess-domain `append_set`;
+  U2 `--lib` and nine named targets; U3 `--lib` and eleven; U4 `--lib` and seven; clippy on those
+  targets and `task fmt-check`. Each tree 3-6G expected.
+- Orchestrator, 07:3xZ: "U4's 2 extra ess-conformance targets (row_set_many_selectors_work,
+  synthesis attempt counters) are approved under D369's terms." U4 adds `row_set_many_selectors_work`
+  and `synthesis` to its seven, because its fix adds a `row_set.rs` attempt those two count.
+- Holds: PRECHECK-FAIL at 79G (U1 07:20:53Z, U3 07:21:44Z, U4 07:28:31Z) and 78G (U1 07:30:50Z,
+  resumed at 80G); the second refusal on one reason stopped the wave until the orchestrator resumes it
+  at / >= 80G with margin.
+- Orchestrator, 07:4xZ: "history_format2 for U2 is approved under D369's terms." U2 adds
+  `history_format2`, which builds the `occurrence-clock-offers` suite whose bytes U2 moves.
+- Orchestrator D373 (host-monitor grant): "6 passes (adversary + security for U1, U3, U4), serial
+  under the wave lock behind U2, named ess-conformance targets only, tree <= 15G, discard-cache
+  after each pass." The passes run in one tree per unit (`ess-d368-<unit>-adv`) off the integration
+  head 7e0d2e880; the named targets are in each unit's review brief.
+- Orchestrator D381 (host-monitor grant), 09:2xZ: unit builds and review passes pre-check at
+  / >= 75G and stop under 65G, one cargo at a time and only with 0 other cargo on the host (no telos
+  exemption); tree <= 15G, discard at merge; the final gate stays a separate request at 80G. The
+  wave wrapper was changed to these terms (backups `cargo-in.sh.d369`, `recheck.sh.d369`).
+- Holds: PRECHECK-FAIL at 75-77G at 09:02:15-20Z stopped every pass and U2; reported once.

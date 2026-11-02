@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-02T08:17:45Z",
+  "actor": "human:timo",
+  "artifact": "story:a-refusal-witness-compares-its-trigger-identities",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "U3 gate list on unit/ess-d368-u3 9bb5460d0: ess-conformance lib 172, adversary_273_pass1 9/0 (from 8), refusal_policy 19, bounded_retry 13, bytes tables 2+1, five more targets green; clippy -D warnings, task fmt-check; red before fix: adversary_273_pass1 7 passed 2 failed (wrong grant_id Passed; residue 7)",
+    "reference": "9bb5460d0"
+  }
+}

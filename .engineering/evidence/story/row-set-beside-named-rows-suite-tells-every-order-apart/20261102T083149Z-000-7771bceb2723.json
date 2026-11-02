@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-02T08:31:49Z",
+  "actor": "human:timo",
+  "artifact": "story:row-set-beside-named-rows-suite-tells-every-order-apart",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "U4 gate list on unit/ess-d368-u4 3e665f021: lib 172, adversary_ess0700a_identity_beside_row_set_2 11/0 (from 7), identity_beside_row_set 5, row_sets_precedence 2, row_set_many_selectors_work 2, row_sets_suite 5, synthesis 65, synthesis_row_set_plan 4, bytes tables 2+1 unchanged; clippy -D warnings, task fmt-check; red at base: 7 passed 4 failed",
+    "reference": "3e665f021"
+  }
+}
