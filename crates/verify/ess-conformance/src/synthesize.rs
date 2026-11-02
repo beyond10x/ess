@@ -13281,7 +13281,17 @@ fn arrange_toward_with(
                     &input,
                 ),
             };
-            if selects_branch(ir, creator.command, creator.outcome, None, &input) != Ok(true)
+            // A creating branch guarded by a row set alone, decided per input on the rows it
+            // reads, is selected by the rows the steps leave, which no input decides: the row
+            // set's arrangement keeps such a row only where those rows decide the branch
+            // (`row_set::walk`; story:row-set-beside-named-rows-suite-tells-every-order-apart).
+            let by_rows = per_input
+                && matches!(
+                    creator.outcome.condition,
+                    ResolvedCondition::RelatedSet { input: None, .. }
+                );
+            if (!by_rows
+                && selects_branch(ir, creator.command, creator.outcome, None, &input) != Ok(true))
                 || !present
             {
                 continue;

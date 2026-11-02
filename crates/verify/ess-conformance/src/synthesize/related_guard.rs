@@ -561,19 +561,19 @@ fn present_on(
     if read.iter().any(|(via, _)| captured(via.field()).is_none()) {
         return false;
     }
+    // A `when:` beside a branch's test only narrows it: a row the test passes over is passed over
+    // whatever the input (story:row-set-beside-named-rows-suite-tells-every-order-apart).
     command
         .outcomes
         .iter()
         .all(|outcome| match &outcome.condition {
             ResolvedCondition::Related {
                 test: ResolvedRelatedTest::Absent,
-                input: None,
                 ..
             } => true,
             ResolvedCondition::Related {
                 via,
                 test: ResolvedRelatedTest::Holds { predicate },
-                input: None,
                 also,
                 ..
             } if also.is_empty() => {
@@ -759,8 +759,9 @@ pub(super) fn vias(command: &ResolvedCommand) -> Vec<(&str, &EntityHandle)> {
         .collect()
 }
 
-/// Whether `outcome` refuses a missing row its input names, or a present one on its stored fields
-/// alone: the refusals [`named_rows`] arranges a scenario of.
+/// Whether `outcome` refuses a missing row its input names, or a present one on its stored fields,
+/// with or without a `when:` over the input beside them: the refusals [`named_rows`] arranges a
+/// scenario of (story:row-set-beside-named-rows-suite-tells-every-order-apart).
 pub(super) fn named_refusal(outcome: &ResolvedOutcome) -> bool {
     outcome.error.is_some()
         && match &outcome.condition {
@@ -771,7 +772,6 @@ pub(super) fn named_refusal(outcome: &ResolvedOutcome) -> bool {
             } => true,
             ResolvedCondition::Related {
                 test: ResolvedRelatedTest::Holds { .. },
-                input: None,
                 also,
                 ..
             } => also.is_empty(),
@@ -1232,10 +1232,10 @@ pub(super) fn named_rows<'c>(
         }
         let at = block_start(1 + index, Distinction::PLAIN);
         let row = match &outcome.condition {
+            // A `when:` beside the predicate is the send's to hold, which names these rows.
             ResolvedCondition::Related {
                 via: own,
                 test: ResolvedRelatedTest::Holds { predicate },
-                input: None,
                 also,
                 ..
             } if own.field() == via.field() && also.is_empty() && outcome.error.is_some() => {
@@ -1350,7 +1350,7 @@ fn later_row(
         .iter()
         .filter(|branch| branch.name != outcome.name && !before.contains(&branch.name))
         .filter(|branch| {
-            matches!(&branch.condition, ResolvedCondition::Related { input: None, also, .. }
+            matches!(&branch.condition, ResolvedCondition::Related { also, .. }
                 if also.is_empty())
         })
         .filter_map(over_row)
