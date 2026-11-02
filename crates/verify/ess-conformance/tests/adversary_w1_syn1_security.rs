@@ -119,7 +119,8 @@ fn three_clients(leaking: Option<&str>) -> EssIr {
     let mut tasks = TWO_TASKS.to_owned();
     if let Some(actor) = leaking {
         let from = format!("  - name: {actor}\n    may: [demo.tasks.OpenTask]\n");
-        let to = format!("  - name: {actor}\n    may: [demo.tasks.OpenTask, demo.tasks.AllTasks]\n");
+        let to =
+            format!("  - name: {actor}\n    may: [demo.tasks.OpenTask, demo.tasks.AllTasks]\n");
         assert!(tasks.contains(&from), "{actor} is declared");
         tasks = tasks.replace(&from, &to);
     }
@@ -341,7 +342,10 @@ fn w1_syn1_grant_denied_is_synthesized_beside_a_filtered_view() {
 /// A view both filtered and ranked beside the moving command.
 #[test]
 fn w1_syn1_grant_denied_is_synthesized_beside_a_ranked_and_filtered_view() {
-    assert_denied_filed_and_discriminating(&["filter: state == Shelved", "order_by: [position asc]"]);
+    assert_denied_filed_and_discriminating(&[
+        "filter: state == Shelved",
+        "order_by: [position asc]",
+    ]);
 }
 
 /// A view ranked descending beside the moving command.
