@@ -6,7 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
-| [0.84.0](#generated-servers-refuse-what-their-openapi-refuses-authored-success-steps-assert-no-error-and-generated-uis-call-their-bindings-routes) | Generated servers refuse what their OpenAPI refuses, authored success steps assert no error, and generated UIs call their binding's routes | capability | significant |
+| [0.84.0](#generated-servers-refuse-what-their-openapi-refuses-and-generated-uis-call-their-bindings-routes) | Generated servers refuse what their OpenAPI refuses, and generated UIs call their binding's routes | capability | significant |
 | [0.83.0](#optional-list-appends-binding-refusals-that-check-event-identities-and-refusals-that-tell-states-apart) | Optional list appends, binding refusals that check event identities, and refusals that tell states apart | capability | notable |
 | [0.82.0](#binding-scenarios-that-check-event-identities-refusals-that-probe-the-record-and-validation-that-names-the-file) | Binding scenarios that check event identities, refusals that probe the record, and validation that names the file | capability | notable |
 | [0.81.0](#nullable-binary64-fields-in-generated-types-name-aliases-in-the-schema-and-synthesis-that-follows-bindings) | Nullable Binary64 fields in generated types, name aliases in the schema, and synthesis that follows bindings | capability | notable |
@@ -98,7 +98,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 ## 0.84.0 — 2026-11-03
 
-### Generated servers refuse what their OpenAPI refuses, authored success steps assert no error, and generated UIs call their binding's routes
+### Generated servers refuse what their OpenAPI refuses, and generated UIs call their binding's routes
 
 capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.84.0)
 

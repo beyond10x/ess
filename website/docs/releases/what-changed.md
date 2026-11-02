@@ -11,7 +11,7 @@ This page is generated from the change records kept in the repository. A release
 
 ## 0.84.0 — 2026-11-03
 
-### Generated servers refuse what their OpenAPI refuses, authored success steps assert no error, and generated UIs call their binding's routes
+### Generated servers refuse what their OpenAPI refuses, and generated UIs call their binding's routes
 
 capability · significant impact · [release post](https://beyond10x.github.io/ess/releases/generated-servers-refuse-what-their-openapi-refuses) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.84.0)
 
