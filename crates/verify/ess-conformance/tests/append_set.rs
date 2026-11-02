@@ -14,7 +14,7 @@ use ess_conformance::{
         ConformanceTarget, Deadline, EntitySetupRequest, ScenarioContext, SemanticCommandRequest,
         SemanticViewRequest, ViewRow,
     },
-    AdmittedSuite, Runner,
+    AdmittedSuite, Runner, ScenarioStep, ScenarioValue, ViewExpectation,
 };
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 use ess_primitives::{
@@ -217,6 +217,177 @@ fn the_synthesized_suite_passes_on_the_interpreted_target() {
             .iter()
             .any(|scenario| scenario.status == Status::Failed),
         "a target that drops the earlier elements fails"
+    );
+}
+
+/// A job holding a `List<Optional<String>>`, grown by `AddLabel` from an `Optional<String>`
+/// input: the element type the domain admits is the list's own, `Optional`.
+const LABELLED: &str = "format: ess/31
+system: demo
+version: v1
+domain: demo.jobs
+types:
+  - {name: demo.jobs.JobId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.jobs.Job
+    identity: {name: job_id, type: demo.jobs.JobId}
+    fields:
+      - {name: labels, type: List<Optional<String>>}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+events:
+  - name: demo.jobs.Changed
+    fields: [{name: job_id, type: demo.jobs.JobId}]
+commands:
+  - name: demo.jobs.OpenJob
+    input: [{name: job_id, type: demo.jobs.JobId}, {name: labels, type: List<Optional<String>>}]
+    outcomes:
+      - name: opened
+        creates: demo.jobs.Job
+        instance: job_id
+        sets: {labels: input.labels}
+        emits: [demo.jobs.Changed]
+        payload: {demo.jobs.Changed: {job_id: input.job_id}}
+  - name: demo.jobs.AddLabel
+    input: [{name: job_id, type: demo.jobs.JobId}, {name: label, type: Optional<String>}]
+    outcomes:
+      - name: labelled
+        updates: demo.jobs.Job
+        instance: job_id
+        sets: {labels: {append: input.label}}
+        emits: [demo.jobs.Changed]
+        payload: {demo.jobs.Changed: {job_id: input.job_id}}
+views:
+  - name: demo.jobs.Jobs
+    source: demo.jobs.Job
+    consistency: read_your_writes
+    fields:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: labels, type: List<Optional<String>>}
+";
+
+fn add_label(target: &Interpreted, label: Option<Node>) {
+    let mut input = BTreeMap::from([("job_id".into(), Node::Text(ID.into()))]);
+    if let Some(label) = label {
+        input.insert("label".into(), label);
+    }
+    target
+        .execute_command(SemanticCommandRequest {
+            command: "demo.jobs.AddLabel".parse().unwrap(),
+            actor: None,
+            caller: None,
+            input,
+            correlation: correlation(),
+        })
+        .unwrap_or_else(|error| {
+            panic!(
+                "story:an-optional-element-is-appended-or-refused-consistently: the domain \
+                 admits the Optional element, so the interpreter appends it: {error:?}"
+            )
+        });
+}
+
+#[test]
+fn an_optional_element_the_domain_admits_is_appended_by_the_interpreter() {
+    let target = Interpreted::for_model(model(LABELLED));
+    target
+        .begin_scenario(&ScenarioContext::new(
+            "demo.jobs/authored/append-optional".parse().unwrap(),
+            correlation(),
+        ))
+        .unwrap();
+    target
+        .establish_entity(EntitySetupRequest {
+            entity: "demo.jobs.Job".parse().unwrap(),
+            identity: Node::Text(ID.into()),
+            fields: BTreeMap::from([("labels".into(), texts(&["a"]))]),
+            state: "Open".parse().unwrap(),
+            correlation: correlation(),
+        })
+        .unwrap();
+
+    // One element left out, one sent as `null`: both are the absent `Optional`, appended as null.
+    add_label(&target, None);
+    add_label(&target, Some(Node::Null));
+    assert_eq!(
+        row(&target)["labels"],
+        Node::Seq(vec![Node::Text("a".into()), Node::Null, Node::Null]),
+        "story:an-optional-element-is-appended-or-refused-consistently"
+    );
+
+    // A present element is appended as it is.
+    add_label(&target, Some(Node::Text("b".into())));
+    assert_eq!(
+        row(&target)["labels"],
+        Node::Seq(vec![
+            Node::Text("a".into()),
+            Node::Null,
+            Node::Null,
+            Node::Text("b".into()),
+        ])
+    );
+}
+
+/// The suite synthesized for an `Optional` element, run on the interpreted target.
+#[test]
+fn the_synthesized_suite_appending_an_optional_element_passes_on_the_interpreted_target() {
+    let ir = model(LABELLED);
+    let synthesis = ess_conformance::synthesize(&ir);
+    assert!(
+        synthesis
+            .suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string().contains("demo.jobs.AddLabel")),
+        "AddLabel is witnessed: {:?}",
+        synthesis.refusals
+    );
+    let labelled = synthesis
+        .suite
+        .scenarios
+        .iter()
+        .find(|(id, _)| id.to_string() == "demo.jobs.AddLabel/outcome/labelled")
+        .map_or_else(|| panic!("no labelled scenario"), |(_, scenario)| scenario);
+    // The scenario leaves the `Optional` element out, and asserts the null appended after the
+    // element the arrangement stored.
+    assert!(
+        labelled.steps.iter().any(|step| matches!(
+            step,
+            ScenarioStep::ExecuteCommand { command, input, .. }
+                if command.to_string() == "demo.jobs.AddLabel" && !input.contains_key("label")
+        )),
+        "{:#?}",
+        labelled.steps
+    );
+    let expected: Vec<_> = labelled
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExpectView {
+                expectation: ViewExpectation::Contains { fields },
+                ..
+            } => fields.get("labels"),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        expected,
+        [&ScenarioValue::Literal {
+            value: Node::Seq(vec![Node::Text("labels.0".into()), Node::Null]),
+        }],
+        "story:an-optional-element-is-appended-or-refused-consistently: {:#?}",
+        labelled.steps
+    );
+    let input = AdmittedSuite::from_suite(&synthesis.suite).unwrap();
+    let report =
+        Runner::for_suite(input.suite()).run_admitted(&input, &Interpreted::for_model(ir.clone()));
+    let unpassed: Vec<_> = report
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+        .collect();
+    assert!(
+        unpassed.is_empty(),
+        "story:an-optional-element-is-appended-or-refused-consistently: {unpassed:#?}"
     );
 }
 
