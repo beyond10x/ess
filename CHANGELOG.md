@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The interpreted target appends `null` for an absent or `null` element of `{append: input.<field>}` over a `List<Optional<T>>`, as generated Rust and Go already append `None` and `nil`, and synthesis expects that `null` in the view row; it refused the command as unsupported. An element over a list of required elements is unchanged.
+
 ## [0.82.0] — 2026-11-01
 
 ### Fixed

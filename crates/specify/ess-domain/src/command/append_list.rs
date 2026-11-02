@@ -3,9 +3,11 @@
 //!
 //! A `sets:` source over a `List<T>` or `Optional<List<T>>` field of an existing subject, as
 //! `{increment: n}` is over a number: refused on `creates:`, in a payload, inside a nested mapping
-//! and on a set effect. The element is `input.<path>` of type `T` exactly; an `Optional` read has
-//! nothing to append, and a declared conversion is not applied. Other element sources (the subject,
-//! a related row, the caller, a literal) are not admitted in this cut.
+//! and on a set effect. The element is `input.<path>` of type `T` exactly, and a declared
+//! conversion is not applied: an `Optional` read over a list of required elements is refused,
+//! while over a `List<Optional<U>>` it is `T` itself, and an absent or `null` element appends
+//! `null`. Other element sources (the subject, a related row, the caller, a literal) are not
+//! admitted in this cut.
 //!
 //! Below `ess/31` the mapping `{append: …}` is the nested mapping it always was, a struct with a
 //! member `append` ([`read_below_ess_31`]); over a `List<…>` field it is refused naming `ess/31`.
@@ -229,7 +231,9 @@ pub(super) fn check_element(
                 ),
             )
             .with_hint(if read.type_ref.is_optional() {
-                "an absent element has nothing to append; declare the input required".to_owned()
+                "an absent element appends `null` only to a `List<Optional<…>>`; declare the \
+                 input required, or the list's element `Optional`"
+                    .to_owned()
             } else {
                 format!("declare `{field}` as `{element}`")
             }),

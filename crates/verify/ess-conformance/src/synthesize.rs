@@ -10539,21 +10539,40 @@ fn expression_value(
 
 /// ess/31: the list the arrangement left the row holding, absent read as empty, with the element
 /// the scenario sent last; nothing where the row's list or the sent element is undetermined.
+///
+/// Over a `List<Optional<T>>` (`list`) an element the scenario left absent or sent as `null` is
+/// `null` last, as the interpreted target and generated Rust and Go append it
+/// (story:an-optional-element-is-appended-or-refused-consistently); an input path whose root the
+/// scenario sent as no literal stays undetermined.
 fn appended_at(
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
     target_location: &[String],
-    element: &str,
+    (element, list): (&str, &ResolvedTypeRef),
 ) -> Option<ScenarioValue> {
     let mut items = match before_literal_at(before, target_location)? {
         Node::Seq(items) => items.clone(),
         Node::Null => Vec::new(),
         _ => return None,
     };
-    match supplied_at(supplied, element)? {
-        ScenarioValue::Literal { value: Node::Null } => return None,
-        ScenarioValue::Literal { value } => items.push(value),
-        _ => return None,
+    let optional_element = matches!(
+        list.required(),
+        ResolvedTypeRef::List { of } if of.is_optional()
+    );
+    let root = element.split_once('.').map_or(element, |(root, _)| root);
+    let root_literal = matches!(
+        supplied.get(root),
+        None | Some(ScenarioValue::Literal { .. })
+    );
+    match supplied_at(supplied, element) {
+        Some(ScenarioValue::Literal { value: Node::Null }) | None
+            if optional_element && root_literal =>
+        {
+            items.push(Node::Null);
+        }
+        Some(ScenarioValue::Literal { value: Node::Null }) | None => return None,
+        Some(ScenarioValue::Literal { value }) => items.push(value),
+        Some(_) => return None,
     }
     Some(ScenarioValue::Literal {
         value: Node::Seq(items),
@@ -10635,7 +10654,7 @@ fn expression_value_at(
             })
         }
         ResolvedPayloadValue::Append { field: element, .. } => {
-            appended_at(supplied, before, target_location, element)
+            appended_at(supplied, before, target_location, (element, &field.target_type))
         }
         // An omitted input leaves the fallback: nothing determined for `{generated: true}`, and the
         // literal read as the target's type for `else: <literal>` (ess/16, #163), so an

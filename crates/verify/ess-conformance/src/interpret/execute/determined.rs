@@ -524,7 +524,10 @@ pub(super) fn increment(
 
 /// `{append: input.<path>}` (ess/31): the list the row held at `target_location` before the
 /// outcome, an absent `Optional` read as empty, with `element` last. A required list the row does
-/// not hold, or one whose value is unknown, determines nothing.
+/// not hold, or one whose value is unknown, determines nothing. Over a `List<Optional<T>>` an
+/// absent or `null` element appends `null`, as generated Rust and Go append `None` and `nil`
+/// (story:an-optional-element-is-appended-or-refused-consistently); over a list of required
+/// elements it determines nothing.
 pub(super) fn append(
     ir: &EssIr,
     field: &ResolvedPayloadField,
@@ -536,9 +539,15 @@ pub(super) fn append(
     let no_value = || Undetermined::NoValue {
         what: format!("the exact previous `{location}` with one element appended"),
     };
-    let element = element
-        .filter(|element| **element != Node::Null)
-        .ok_or_else(no_value)?;
+    let optional_element = matches!(
+        field.target_type.required(),
+        ResolvedTypeRef::List { of } if of.is_optional()
+    );
+    let element = match element.filter(|element| **element != Node::Null) {
+        Some(element) => element,
+        None if optional_element => &Node::Null,
+        None => return Err(no_value()),
+    };
     let mut items = match value_at(before, target_location)? {
         Some(Value::Known(Node::Seq(items))) => items,
         Some(Value::Absent | Value::Known(Node::Null)) => Vec::new(),
