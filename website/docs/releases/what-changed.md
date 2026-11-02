@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.84.0 — 2026-11-03
+
+### Generated servers refuse what their OpenAPI refuses, authored success steps assert no error, and generated UIs call their binding's routes
+
+capability · significant impact · [release post](https://beyond10x.github.io/ess/releases/generated-servers-refuse-what-their-openapi-refuses) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.84.0)
+
+Generated Rust servers refuse a malformed Timestamp and an undeclared JSON member at decode, and the Go server an undeclared top-level member. Authored success acts assert no error. Denied-grant scenarios reach ranked views and every ungranted actor. Generated UIs call their binding's routes.
+
 ## 0.83.0 — 2026-11-02
 
 ### Optional list appends, binding refusals that check event identities, and refusals that tell states apart
