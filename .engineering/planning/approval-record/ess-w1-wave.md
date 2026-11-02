@@ -22,7 +22,7 @@ relations:
 - decides: story:a-view-read-checks-every-rows-shape
 - decides: story:view-and-error-assertions-carry-their-value-shape
 - decides: story:authored-success-step-asserts-no-error
-revision: 3
+revision: 6
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-02T20:39:26Z", actor: "human:timo", revision: 2}
 ---
@@ -165,3 +165,22 @@ terms in force since 20:15Z." Every cargo call runs as `nice -n 10 ionice -c3` w
 the integration gate. Before each step: / >= 80G, at most one other cargo machine-wide, io pressure
 `some avg60` under 15; when one fails, wait. Each tree stays at or under 15G and is discarded at
 merge. The wave wrapper waits on a failed check (re-checks every 30 s, up to 45 minutes).
+
+## Review findings (D396, 2026-11-02)
+
+Orchestrator D396 (Timo, verbatim: "you fix one thing, and then you come up with 10 new things ... we basically never, ever get where we want to go"): this wave files no story from adversary or security findings; an out-of-scope finding stays one row in its review-result record, and a finding that blocks a unit's acceptance or a targeted issue is fixed inside the wave without a story.
+
+## Review findings (D398, 2026-11-02, replaces the D396 section above)
+
+Orchestrator D398 (Timo, verbatim: "new findings should land basically in a backlog ... the wave, so to say, is a sprint ... only what's basically approved is even considered for a wave"): a pre-existing finding becomes one draft backlog story with no wave and no priority bump (it may link to its review-result); an introduced finding goes back to the unit's implementor; W1 stays the predefined W1 stories of the roadmap plus H0, and nothing from findings joins it (D397).
+
+## Scope change (D401, 2026-11-02)
+
+Orchestrator D401: W1 ships SYN1 stories 1 and 2 only (`story:grant-denied-is-synthesized-beside-a-ranked-view`,
+`story:a-denied-scenario-covers-every-ungranted-actor-of-the-domain`; commits e5905e8e6 and 509854bee on
+`unit/ess-w1-syn1`). `story:a-system-issued-awaited-step-honours-its-outcomes-input-guard` leaves W1 on
+`decision-blocker:system-issued-await-carries-compared-values` (Decider: operator, options A and B,
+recommendation A). `story:a-union-variant-scenario-reads-each-row-under-its-own-identity` leaves W1 for
+the W2 suite-major unit (bullet 2 needs a runner change). Both stay accepted; their patches stay parked
+in the coordinator scratch; no new stories. W1 now implements 9 of its 11 selected stories, and 6 of the 14 P0 (the roadmap exit criterion said 9;
+the Selection above already made it 8).

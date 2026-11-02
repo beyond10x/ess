@@ -18,7 +18,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/system_issued.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/system_issued_synthesis.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T20:48:56Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-02T20:48:56Z", actor: "human:timo", revision: 7}
@@ -50,3 +50,9 @@ Derived 2026-11-02 by `aep:story-scoper` for wave W1 on b81deac78. Every line is
 - **Not established:** the repro `system-guard` and the test name are not in the tree (new work); accepting `Otherwise` and `ExternalWhen` arms do not reduce to an equality input, so a typed refusal there would withdraw scenarios that pass today — the implementor decides — inferred.
 - **Size:** medium, about 90-150 lines; no format version (`ORDINARY = 52`, `src/system_issued.rs:119`, whose `step_keys` already admit an optional `input` on `await_outcome`, `:230-233`) — cited.
 - **ess-conformance targets:** `system_issued_synthesis` — inferred.
+
+## Schedule (D401, 2026-11-02)
+
+Left wave W1 (orchestrator D401). It waits on `decision-blocker:system-issued-await-carries-compared-values`
+(Decider: operator) and is not waved until that is answered. The SYN1 patch from W1 is parked in the
+coordinator scratch, outside the repository.
