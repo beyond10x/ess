@@ -23,7 +23,9 @@
 
 use std::num::NonZeroU32;
 
-use ess_compiler::ir::{EventHandle, ResolvedRefusalAction, ResolvedRefusalPolicy};
+use ess_compiler::ir::{
+    EventHandle, ResolvedPayloadValue, ResolvedRefusalAction, ResolvedRefusalPolicy,
+};
 
 use super::{
     accepting_component, clipped, insert, payload_shape, publishes, ActorRef, BTreeMap, BTreeSet,
@@ -228,13 +230,12 @@ fn witness(
     let mut steps = setup.clone();
     steps.extend(armed);
     steps.extend(invoke.iter().cloned());
-    // The trigger's event compared as the other binding scenarios compare it
-    // (story:a-refusal-witness-compares-its-trigger-identities): the identities the invocation
-    // sent, and what the trigger's row holds where the scenario arranges that row as its run does.
-    // Where a related row is arranged first and the trigger's row created naming it, no field of
-    // that row is read: nothing records what it was rewritten to hold.
+    // The trigger's event compared as the other binding scenarios compare it, and with the ids it
+    // was sent as literals (story:a-refusal-witness-compares-its-trigger-identities). Where a
+    // related row is arranged first and the trigger's row created naming it, no field of that row
+    // is read: nothing records what it was rewritten to hold.
     let rewritten = BTreeMap::new();
-    steps.push(super::expect_trigger_event(
+    steps.push(expect_sent_trigger_event(
         ir,
         sent_by,
         (setup.as_slice(), invoke.as_slice(), &rewritten),
@@ -247,6 +248,87 @@ fn witness(
     ));
     steps.extend(after);
     Ok((steps, clipped(&text), source))
+}
+
+/// [`super::expect_trigger_event`] for a refusal witness: the identities the invocation sent as
+/// captured instances, and what the trigger's row holds where the scenario arranges that row as its
+/// run does, and also each literal the invocation was sent for an event field of an entity's
+/// identity type that the branch fills from that input unconverted. That literal is the id a
+/// trigger is sent naming no row ([`super::binding_effects::related_missing`]): no instance
+/// captured it, the binding maps it into the invoked command, and the refusal is about it, so a
+/// target that publishes another id there fails the witness
+/// (story:a-refusal-witness-compares-its-trigger-identities).
+fn expect_sent_trigger_event(
+    ir: &EssIr,
+    published: super::Published<'_>,
+    sent: super::Sent<'_>,
+    event: &EventRef,
+) -> ScenarioStep {
+    let step = super::expect_trigger_event(ir, published, sent, event);
+    // The input the last invocation carries, as `expect_trigger_event` reads it.
+    let input = sent.1.iter().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand { input, .. } => Some(Some(input)),
+        ScenarioStep::ExecuteCommandWithoutInput { .. } => Some(None),
+        _ => None,
+    });
+    let Some(Some(input)) = input else {
+        return step;
+    };
+    let identity_types: Vec<_> = ir
+        .entities()
+        .values()
+        .map(|entity| &entity.identity.type_ref)
+        .collect();
+    let ids: BTreeMap<String, ess_primitives::node::Node> = published
+        .0
+        .payload
+        .iter()
+        .filter(|payload| EventRef::from(&payload.event) == *event)
+        .flat_map(|payload| &payload.fields)
+        .filter(|field| field.conversion.is_none() && identity_types.contains(&&field.target_type))
+        .filter_map(|field| {
+            let ResolvedPayloadValue::InputField { field: from, .. } = &field.value else {
+                return None;
+            };
+            match super::supplied_at(input, from)? {
+                crate::ScenarioValue::Literal { value } => Some((field.target.clone(), value)),
+                _ => None,
+            }
+        })
+        .collect();
+    match step {
+        ScenarioStep::ExpectEvent {
+            event,
+            mut payload,
+            shape,
+        } => {
+            for (field, value) in ids {
+                payload.entry(field).or_insert(value);
+            }
+            ScenarioStep::ExpectEvent {
+                event,
+                payload,
+                shape,
+            }
+        }
+        ScenarioStep::ExpectEventValues {
+            event,
+            mut payload,
+            shape,
+        } => {
+            for (field, value) in ids {
+                payload
+                    .entry(field)
+                    .or_insert_with(|| crate::ScenarioValue::literal(value));
+            }
+            ScenarioStep::ExpectEventValues {
+                event,
+                payload,
+                shape,
+            }
+        }
+        other => other,
+    }
 }
 
 /// The invocation leaving the related row missing, sent from the first other publisher of the
