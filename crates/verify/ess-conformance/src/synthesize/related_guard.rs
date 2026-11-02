@@ -562,7 +562,8 @@ fn present_on(
         return false;
     }
     // A `when:` beside a branch's test only narrows it: a row the test passes over is passed over
-    // whatever the input (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+    // whatever the input, and a row it holds on where the send refutes the `when:`
+    // (story:row-set-beside-named-rows-suite-tells-every-order-apart).
     command
         .outcomes
         .iter()
@@ -574,23 +575,63 @@ fn present_on(
             ResolvedCondition::Related {
                 via,
                 test: ResolvedRelatedTest::Holds { predicate },
+                input: guard,
                 also,
                 ..
             } if also.is_empty() => {
-                captured(via.field()).is_some_and(|(entity, instance, settled)| {
-                    subject_fact::row_truth_with(
-                        ir,
-                        entity,
-                        settled,
-                        &BTreeSet::new(),
-                        held.get(instance),
-                        predicate,
-                        Some((command, input)),
-                    ) == Truth::False
-                })
+                guard
+                    .as_ref()
+                    .is_some_and(|guard| refuted_on(ir, command, guard, bound, input))
+                    || captured(via.field()).is_some_and(|(entity, instance, settled)| {
+                        subject_fact::row_truth_with(
+                            ir,
+                            entity,
+                            settled,
+                            &BTreeSet::new(),
+                            held.get(instance),
+                            predicate,
+                            Some((command, input)),
+                        ) == Truth::False
+                    })
             }
             ResolvedCondition::Related { .. } => false,
             _ => true,
+        })
+}
+
+/// The input field `path` reads in a `when:` beside a branch's guard, which names the input
+/// namespace's fields bare, or as `input.<field>`.
+pub(super) fn guard_input(path: &FactPath) -> Option<&str> {
+    match path.segments() {
+        [field] => Some(field.as_str()),
+        [root, field] if root == ess_domain::command::subject_fact::INPUT_NAMESPACE => {
+            Some(field.as_str())
+        }
+        _ => None,
+    }
+}
+
+/// Whether the send `input`, its fields in `bound` naming captured rows, refutes `guard`, the
+/// `when:` beside a branch over a named row ([`present_on`]): a comparison of two such fields is
+/// decided by whether they name the same row, and any other reading of one decides nothing.
+fn refuted_on(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guard: &Predicate,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    input: &BTreeMap<String, Node>,
+) -> bool {
+    let named = |path: &FactPath| bound.get(guard_input(path)?).cloned();
+    let decided = super::row_set::rows_compared(guard, &named);
+    !decided
+        .fact_paths()
+        .into_iter()
+        .any(|path| named(path).is_some())
+        && flatten(ir, command, input).is_ok_and(|facts| {
+            matches!(
+                facts.decide(&decided),
+                crate::decision::Decision::Refuted(_)
+            )
         })
 }
 
@@ -759,9 +800,10 @@ pub(super) fn vias(command: &ResolvedCommand) -> Vec<(&str, &EntityHandle)> {
         .collect()
 }
 
-/// Whether `outcome` refuses a missing row its input names, or a present one on its stored fields,
-/// with or without a `when:` over the input beside them: the refusals [`named_rows`] arranges a
-/// scenario of (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+/// Whether `outcome` refuses a missing row its input names, with no `when:` beside it, or a present
+/// one on its stored fields, with or without a `when:` over the input beside it: the refusals
+/// [`named_rows`] arranges a scenario of, the send holding that `when:`
+/// (story:row-set-beside-named-rows-suite-tells-every-order-apart).
 pub(super) fn named_refusal(outcome: &ResolvedOutcome) -> bool {
     outcome.error.is_some()
         && match &outcome.condition {
@@ -1225,10 +1267,30 @@ pub(super) fn named_rows<'c>(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     later: u8,
 ) -> Result<Vec<(&'c str, Arrangement)>, RefusalCause> {
-    let mut named = Vec::new();
+    let mut named: Vec<(&'c str, Arrangement)> = Vec::new();
+    let mut read: Vec<&EntityHandle> = Vec::new();
+    let own = equated(outcome);
+    let before: BTreeSet<&ess_domain::command::OutcomeName> =
+        super::precedence::answers_before(ir.format(), command, outcome)
+            .into_iter()
+            .map(|branch| &branch.name)
+            .collect();
+    let later_whens = later_whens((command, outcome), later, &before);
     for (index, (via, entity)) in rows(command).into_iter().enumerate() {
         if index >= 4 {
             return Err(unarranged());
+        }
+        let equal = (own.as_slice(), later_whens.as_slice(), &before);
+        if let Some(row) = named_again(
+            ir,
+            (command, outcome),
+            (via.field(), entity),
+            (&named, &read),
+            equal,
+        )? {
+            named.push((via.field(), row));
+            read.push(entity);
+            continue;
         }
         let at = block_start(1 + index, Distinction::PLAIN);
         let row = match &outcome.condition {
@@ -1295,8 +1357,199 @@ pub(super) fn named_rows<'c>(
         };
         let row = row.ok_or_else(|| beside_refused((command, outcome), (via, entity)))?;
         named.push((via.field(), row));
+        read.push(entity);
     }
     Ok(named)
+}
+
+/// The inputs a `when:` equates ([`named_again`]): the refusal's own pairs, each later refusal's
+/// predicate with its pairs, and the branches the precedence plan reads before the refusal.
+type Equal<'e> = (
+    &'e [(&'e str, &'e str)],
+    &'e [(&'e Predicate, Vec<(&'e str, &'e str)>)],
+    &'e BTreeSet<&'e ess_domain::command::OutcomeName>,
+);
+
+/// The row already `named` that the input `field` names again in the scenario of `outcome`
+/// ([`named_rows`]). A `when:` beside the refusal equating the two inputs (`own`) holds only where
+/// both name that row: it is named again where it serves here too, and the scenario is refused
+/// where it does not. So is the row a later refusal equating them (`later_whens`) holds on, where
+/// it serves as [`later_row`]'s rows do: no refusal over it the precedence plan reads `before`
+/// `outcome` holds there; so that refusal holds beside `outcome`.
+fn named_again(
+    ir: &EssIr,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    (field, entity): (&str, &EntityHandle),
+    (named, read): (&[(&str, Arrangement)], &[&EntityHandle]),
+    (own, later_whens, before): Equal<'_>,
+) -> Result<Option<Arrangement>, RefusalCause> {
+    let pairs = |list: &[(&str, &str)], other: &str| {
+        list.iter()
+            .any(|(a, b)| (*a, *b) == (field, other) || (*b, *a) == (field, other))
+    };
+    let same = named.iter().zip(read).find_map(|((other, row), read)| {
+        if *read != entity {
+            return None;
+        }
+        let required = pairs(own, other);
+        let later_holds = later_whens.iter().any(|(predicate, equal)| {
+            pairs(equal, other)
+                && subject_fact::guard_truth_with(
+                    ir,
+                    entity,
+                    &row.settled,
+                    &row.unwritten,
+                    Some(&row.state),
+                    predicate,
+                    None,
+                ) == Truth::True
+        });
+        (required || later_holds).then_some((row, required))
+    });
+    let Some((row, required)) = same else {
+        return Ok(None);
+    };
+    let serving = if required {
+        serves(ir, (command, outcome), (field, entity, row))
+    } else {
+        earlier_pass(ir, (command, before), (field, entity, row))
+    };
+    if serving {
+        Ok(Some(row.clone()))
+    } else if required {
+        Err(unarranged())
+    } else {
+        Ok(None)
+    }
+}
+
+/// Every refusal over a row's stored fields the precedence plan reads after `outcome` (not among
+/// `before`), over a row whose bit `later` sets ([`named_rows`]): its predicate and the inputs its
+/// `when:` equates.
+fn later_whens<'c>(
+    (command, outcome): (&'c ResolvedCommand, &ResolvedOutcome),
+    later: u8,
+    before: &BTreeSet<&ess_domain::command::OutcomeName>,
+) -> Vec<(&'c Predicate, Vec<(&'c str, &'c str)>)> {
+    let mut whens = Vec::new();
+    for (index, (via, _)) in rows(command).into_iter().enumerate() {
+        if index >= 8 || later & (1 << index) == 0 {
+            continue;
+        }
+        for branch in &command.outcomes {
+            if let ResolvedCondition::Related {
+                via: over,
+                test: ResolvedRelatedTest::Holds { predicate },
+                also,
+                ..
+            } = &branch.condition
+            {
+                if over.field() == via.field()
+                    && also.is_empty()
+                    && branch.error.is_some()
+                    && branch.name != outcome.name
+                    && !before.contains(&branch.name)
+                {
+                    whens.push((predicate, equated(branch)));
+                }
+            }
+        }
+    }
+    whens
+}
+
+/// The pairs of inputs the `when:` beside `outcome`'s guard over a named row requires equal: its
+/// conjuncts `input.a == input.b` ([`named_rows`]).
+fn equated(outcome: &ResolvedOutcome) -> Vec<(&str, &str)> {
+    let ResolvedCondition::Related {
+        input: Some(guard), ..
+    } = &outcome.condition
+    else {
+        return Vec::new();
+    };
+    let conjuncts = match guard {
+        Predicate::All(children) => children.iter().collect(),
+        other => vec![other],
+    };
+    let sent = guard_input;
+    conjuncts
+        .into_iter()
+        .filter_map(|conjunct| match conjunct {
+            Predicate::Compare {
+                left: ess_primitives::predicate::Operand::Fact(left),
+                op: ess_primitives::predicate::CompareOp::Eq,
+                right: ess_primitives::predicate::Operand::Fact(right),
+                ..
+            } => Some((sent(left)?, sent(right)?)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Whether no refusal over `field`'s stored fields among those `before` names holds on `row`
+/// ([`named_rows`], as [`later_row`] decides it).
+fn earlier_pass(
+    ir: &EssIr,
+    (command, before): (
+        &ResolvedCommand,
+        &BTreeSet<&ess_domain::command::OutcomeName>,
+    ),
+    (field, entity, row): (&str, &EntityHandle, &Arrangement),
+) -> bool {
+    command
+        .outcomes
+        .iter()
+        .filter(|branch| before.contains(&branch.name) && branch.error.is_some())
+        .all(|branch| match &branch.condition {
+            ResolvedCondition::Related {
+                via,
+                test: ResolvedRelatedTest::Holds { predicate },
+                ..
+            } if via.field() == field => {
+                subject_fact::guard_truth_with(
+                    ir,
+                    entity,
+                    &row.settled,
+                    &row.unwritten,
+                    Some(&row.state),
+                    predicate,
+                    None,
+                ) == Truth::False
+            }
+            _ => true,
+        })
+}
+
+/// Whether `row`, arranged for another input, serves as the row `field` names in the scenario of
+/// `outcome` ([`named_rows`]): its predicate holds there where `outcome` refuses over that row,
+/// and every branch over it answering before `outcome` is passed over.
+fn serves(
+    ir: &EssIr,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    (field, entity, row): (&str, &EntityHandle, &Arrangement),
+) -> bool {
+    let holds = match &outcome.condition {
+        ResolvedCondition::Related {
+            via,
+            test: ResolvedRelatedTest::Holds { predicate },
+            ..
+        } if via.field() == field => {
+            subject_fact::guard_truth_with(
+                ir,
+                entity,
+                &row.settled,
+                &row.unwritten,
+                Some(&row.state),
+                predicate,
+                None,
+            ) == Truth::True
+        }
+        ResolvedCondition::Related { via, .. } if via.field() == field => false,
+        _ => true,
+    };
+    holds
+        && leaves_to(ir, (command, outcome), (field, entity, row), None)
+            .is_ok_and(|leaves| leaves == Truth::True)
 }
 
 /// A row of `entity`, which `via` of `command` names, on which a refusal over its stored fields

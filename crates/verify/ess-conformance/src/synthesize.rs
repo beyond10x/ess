@@ -4717,12 +4717,37 @@ fn run_as(
         if witness != Witness::Full {
             return Err(row_set::unarranged());
         }
-        let (mut setup, input, gaps) = row_set::prepare(models, command, outcome, actors)?;
-        if row_set::beside_named(ir.format(), command, outcome) {
-            row_set::with_overlaps(models, command, outcome, actors, &mut setup, &input);
+        let beside_named = row_set::beside_named(ir.format(), command, outcome);
+        match row_set::prepare(models, command, outcome, actors) {
+            Ok((mut setup, input, gaps)) => {
+                if beside_named {
+                    row_set::with_overlaps(models, command, outcome, actors, &mut setup, &input);
+                }
+                row_gaps = gaps;
+                (setup, input)
+            }
+            // A refusal carrying a `when:` beside its named row that no send beside the row set
+            // holds is witnessed on its related row alone, as it was before it stood beside the
+            // row set (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+            Err(_)
+                if related
+                    && beside_named
+                    && matches!(
+                        outcome.condition,
+                        ResolvedCondition::Related { input: Some(_), .. }
+                    ) =>
+            {
+                related_guard::prepare_at_in(
+                    models,
+                    command,
+                    outcome,
+                    actors,
+                    Distinction::PLAIN,
+                    None,
+                )?
+            }
+            Err(refused) => return Err(refused),
         }
-        row_gaps = gaps;
-        (setup, input)
     } else if related {
         match witness {
             Witness::Full => related_guard::prepare_at_in(
@@ -8680,6 +8705,25 @@ pub(crate) fn accepting_input_half(outcome: &ResolvedOutcome) -> Option<&Predica
         | ResolvedCondition::ExternalSubject { input, .. } => input.as_ref(),
         _ => None,
     }
+}
+
+/// Whether `input` refutes the `when:` of every branch the precedence plan answers before `outcome`
+/// ([`precedence::answers_before`]): what the input of a creating branch a row set alone guards is
+/// decided on, its row set being the rows the steps leave
+/// (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+fn refutes_whens_first(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+) -> bool {
+    let Ok(facts) = flatten(ir, command, input) else {
+        return false;
+    };
+    precedence::answers_before(ir.format(), command, outcome)
+        .into_iter()
+        .filter_map(when)
+        .all(|guard| matches!(facts.decide(guard), Decision::Refuted(_)))
 }
 
 /// Every input-guarded refusal of `command` the precedence plan answers before `outcome`
@@ -13290,10 +13334,12 @@ fn arrange_toward_with(
                     creator.outcome.condition,
                     ResolvedCondition::RelatedSet { input: None, .. }
                 );
-            if (!by_rows
-                && selects_branch(ir, creator.command, creator.outcome, None, &input) != Ok(true))
-                || !present
-            {
+            let selected = if by_rows {
+                refutes_whens_first(ir, creator.command, creator.outcome, &input)
+            } else {
+                selects_branch(ir, creator.command, creator.outcome, None, &input) == Ok(true)
+            };
+            if !selected || !present {
                 continue;
             }
             let owner =

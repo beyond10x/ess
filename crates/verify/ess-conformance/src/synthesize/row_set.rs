@@ -241,6 +241,12 @@ pub(super) fn unarranged() -> RefusalCause {
 pub(super) const ROWS_UNARRANGED: &str = "has no arrangement of rows the declared commands \
      produce on which the rows its selector selects take this branch";
 
+/// Why a refusal over a row the input names beside a row set was not arranged there: the send
+/// naming the rows arranged for it does not hold the `when:` beside the refusal
+/// (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+pub(super) const WHEN_UNSENT: &str = "has no send naming the rows arranged beside the row set \
+     that holds the `when:` beside its guard";
+
 /// Why no rows were arranged that take a row-set branch, where the selector compares its rows'
 /// field with an input and the command creating them refuses a missing related row named by the
 /// input it sets that field from, and no such row could be arranged for the rows and the send to
@@ -610,7 +616,8 @@ fn when(other: &ResolvedOutcome) -> Option<&Predicate> {
     }
 }
 
-/// An input reaching `outcome` as far as its input decides it: its own input guard true, and the
+/// An input reaching `outcome` as far as its input decides it: its own input guard, or the `when:`
+/// beside its guard over a row set or a named row, true, and the
 /// `when:` of every branch the precedence plan answers before it false
 /// ([`precedence::answers_before`]). Under the precedence order those are every input-guarded
 /// refusal and, for an accepting branch, every accepting `when:` branch declared before it; for
@@ -623,7 +630,12 @@ pub(super) fn input_for(
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
     let own: Option<&Predicate> = match &outcome.condition {
         ResolvedCondition::When { predicate } => Some(predicate),
-        ResolvedCondition::RelatedSet { input, .. } => input.as_ref(),
+        // The `when:` beside a row set, or beside a refusal over a row the input names
+        // ([`sends_when`]), is the send's to hold
+        // (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+        ResolvedCondition::RelatedSet { input, .. } | ResolvedCondition::Related { input, .. } => {
+            input.as_ref()
+        }
         _ => None,
     };
     let refute: Vec<&Predicate> = precedence::answers_before(ir.format(), command, outcome)
@@ -3165,12 +3177,20 @@ pub(super) fn prepare(
     let attempt = |arranging| {
         prepare_with(models, command, outcome, actors, arranging).map(|(prepared, _)| prepared)
     };
+    // An arrangement standing only where no selector selects a row is kept for last: a branch true
+    // of a nonempty set is witnessed on one wherever some arrangement stands with it
+    // (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+    let mut unselected = None;
     if super::related_guard::uses(command)
         && super::related_guard::several_present(models.arrangement.format())
     {
         for arranging in beside_attempts(models.arrangement.format(), command, outcome) {
-            if let Ok(prepared) = attempt(arranging) {
-                return Ok(prepared);
+            match prepare_with(models, command, outcome, actors, arranging) {
+                Ok((prepared, true)) => return Ok(prepared),
+                Ok((prepared, false)) => {
+                    unselected.get_or_insert(prepared);
+                }
+                Err(_) => {}
             }
         }
     }
@@ -3184,12 +3204,16 @@ pub(super) fn prepare(
     let refused = match prepare_with(models, command, outcome, actors, Arranging::default()) {
         Ok((prepared, true)) => return Ok(prepared),
         // Standing only where the selector selects no row, it is kept unless the related rows
-        // linked first let some row stand selected: a branch true of a nonempty set is witnessed
-        // on one, so a target refusing on any selected row fails it
-        // (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+        // linked first, or named as the send names them, let some row stand selected: a branch
+        // true of a nonempty set is witnessed on one, so a target refusing on any selected row
+        // fails it (story:row-set-beside-named-rows-suite-tells-every-order-apart).
         Ok((prepared, false)) => {
             if link().is_some() {
-                for arranging in [Arranging::LINKED, Arranging::HELD_UNDER] {
+                for arranging in [
+                    Arranging::LINKED,
+                    Arranging::HELD_UNDER,
+                    Arranging::SEND_ROWS,
+                ] {
                     if let Ok((linked, true)) =
                         prepare_with(models, command, outcome, actors, arranging)
                     {
@@ -3197,9 +3221,12 @@ pub(super) fn prepare(
                     }
                 }
             }
-            return Ok(prepared);
+            return Ok(unselected.unwrap_or(prepared));
         }
-        Err(refused) => refused,
+        Err(refused) => match unselected {
+            Some(prepared) => return Ok(prepared),
+            None => refused,
+        },
     };
     let Some(link) = link() else {
         return Err(refused);
@@ -3247,10 +3274,18 @@ enum Others {
     #[default]
     Own,
     /// The row the send names through the same input, where it names one: the rows a `forall`
-    /// comparing such a field with the input refutes, so its default refusal is witnessed
+    /// comparing such a field with the input refutes, or holds on, so its default refusal, and its
+    /// accepting branch on a selected row, are witnessed
     /// (story:row-set-beside-named-rows-suite-tells-every-order-apart). Tried after every other
     /// arrangement.
     Sent,
+    /// The linked row itself, where the input names a row of its entity: rows only a creator sent
+    /// one row twice lays, such as a wire from an input-facing port, which a creator refusing
+    /// such a port only where its two ports differ lays from `Connect(p, p)`. A row-set refusal is
+    /// so witnessed beside a refusal over the linked row that holds there, so a target answering
+    /// that refusal first fails it (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+    /// Tried after [`Self::Own`] for the same rows.
+    Linked,
 }
 
 impl Arranging {
@@ -3310,6 +3345,11 @@ fn beside_attempts(
                 held_under: false,
                 others: Others::Own,
             }));
+            attempts.push(Arranging {
+                later,
+                others: Others::Linked,
+                ..Arranging::LINKED
+            });
         }
     }
     attempts.push(Arranging::LINKED);
@@ -3479,8 +3519,11 @@ fn prepare_with(
     let named = if super::related_guard::uses(command) {
         let named = super::related_guard::named_rows(ir, command, outcome, actors, attempt.later)?;
         for (via, row) in &named {
-            setup.steps.extend(row.steps.iter().cloned());
-            setup.source.extend(row.source.iter().cloned());
+            // A row two inputs name is arranged once.
+            if !setup.bound.values().any(|bound| *bound == row.instance) {
+                setup.steps.extend(row.steps.iter().cloned());
+                setup.source.extend(row.source.iter().cloned());
+            }
             setup.bound.insert((*via).to_owned(), row.instance.clone());
         }
         named
@@ -3530,6 +3573,9 @@ fn prepare_with(
         setup.instance.as_ref(),
         &setup.bound,
     );
+    if !sends_when(ir, command, outcome, &input, &supplied) {
+        return Err(gap(at(), WHEN_UNSENT));
+    }
     let closed = |predicate: &Predicate| {
         written_in(predicate, &|path| {
             input_value(path, &input).or_else(|| subject_value(path, &setup.settled))
@@ -4061,6 +4107,15 @@ fn related_link(
     })
 }
 
+/// Whether `input` of the command `creator` names a row of `entity` ([`Others::Linked`]).
+fn names_entity(ir: &EssIr, creator: &QualifiedName, input: &str, entity: &EntityHandle) -> bool {
+    ir.commands().get(creator).is_some_and(|creator| {
+        super::related_guard::vias(creator)
+            .into_iter()
+            .any(|(via, read)| via == input && read == entity)
+    })
+}
+
 /// The branches of `creator` refusing the related row `input.<via>` names: the one refusing it
 /// missing, where declared, and those refusing it on its stored fields.
 fn creator_guards(
@@ -4384,7 +4439,13 @@ fn linked(
                 let mut held = BTreeMap::from([(row.instance.clone(), row.state.clone())]);
                 let mut rows = BTreeMap::from([(row.instance.clone(), row.settled.clone())]);
                 for (field, input) in &link.others {
-                    let sent = named_row(input).filter(|_| others == Others::Sent);
+                    let sent = match others {
+                        Others::Own => None,
+                        Others::Sent => named_row(input),
+                        Others::Linked => {
+                            names_entity(ir, &link.creator, input, &link.entity).then_some(row)
+                        }
+                    };
                     let other = if let Some(other) = sent {
                         other.clone()
                     } else if let Some(other) = beside.get(input) {
@@ -4467,6 +4528,66 @@ fn input_field(path: &FactPath) -> Option<&str> {
             Some(field.as_str())
         }
         _ => None,
+    }
+}
+
+/// Whether the send `input` holds the `when:` beside `outcome`'s guard over a row its input names,
+/// where it carries one, each input `supplied` as an arranged instance naming that row
+/// (story:row-set-beside-named-rows-suite-tells-every-order-apart). A comparison of two such
+/// inputs is decided by whether they name the same row; any other reading of one is not, and the
+/// send is refused.
+fn sends_when(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+    supplied: &BTreeMap<String, ScenarioValue>,
+) -> bool {
+    let ResolvedCondition::Related {
+        input: Some(guard), ..
+    } = &outcome.condition
+    else {
+        return true;
+    };
+    let named = |path: &FactPath| match supplied.get(super::related_guard::guard_input(path)?)? {
+        ScenarioValue::Instance { instance } => Some(instance.clone()),
+        _ => None,
+    };
+    let decided = rows_compared(guard, &named);
+    if decided
+        .fact_paths()
+        .into_iter()
+        .any(|path| named(path).is_some())
+    {
+        return false;
+    }
+    flatten(ir, command, input).is_ok_and(|facts| facts.decide(&decided) == Decision::Satisfied)
+}
+
+/// `predicate` with each equality or inequality between two inputs `named` gives an instance for
+/// decided by whether the instances are one ([`sends_when`]). Every other leaf is left as it is.
+pub(super) fn rows_compared(
+    predicate: &Predicate,
+    named: &dyn Fn(&FactPath) -> Option<InstanceName>,
+) -> Predicate {
+    let decide = |child: &Predicate| rows_compared(child, named);
+    match predicate {
+        Predicate::All(children) => Predicate::All(children.iter().map(decide).collect()),
+        Predicate::Any(children) => Predicate::Any(children.iter().map(decide).collect()),
+        Predicate::Not(inner) => Predicate::Not(Box::new(decide(inner))),
+        Predicate::Compare {
+            left: Operand::Fact(left),
+            op: op @ (CompareOp::Eq | CompareOp::Ne),
+            right: Operand::Fact(right),
+            ..
+        } => match (named(left), named(right)) {
+            (Some(left), Some(right)) if (left == right) == (*op == CompareOp::Eq) => {
+                Predicate::Always
+            }
+            (Some(_), Some(_)) => Predicate::Never,
+            _ => predicate.clone(),
+        },
+        other => other.clone(),
     }
 }
 
