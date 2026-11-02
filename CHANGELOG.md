@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- In the terminal renderer a row action's inline confirm is addressed by the row key the view and `ess ui test` use (the section's read `key`, else its `live.match`, else `id`), so `rows/<key>/row_actions/<action>/confirm/overlay` reaches the open confirm of a view keyed by `reads.key`; it was keyed by `live.match` or `id` alone, and on a view without `id` the confirm on screen was reported as not open (story:a-row-actions-confirm-is-addressed-by-the-views-key).
+
 ## [0.83.0] — 2026-11-02
 
 ### Fixed

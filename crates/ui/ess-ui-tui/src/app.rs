@@ -3306,8 +3306,9 @@ impl App {
     }
 
     /// `path` scoped under `row` when it lies inside a collection's `row_actions`:
-    /// `<collection>/rows/<key>/row_actions/…`, the key being the section's `live.match` field,
-    /// else `id`.
+    /// `<collection>/rows/<key>/row_actions/…`, the key being the section's row key
+    /// ([`ess_ui::Section::row_key`]: its read's `key`, else its `live.match`), else `id`, as the
+    /// view and `ess ui test` key the rows.
     fn row_scoped(&self, path: &NodePath, row: &Value) -> Option<String> {
         let segments = path.segments();
         let at = segments
@@ -3317,8 +3318,7 @@ impl App {
         let key_field = match container {
             [pages, _, sections, section] if pages == "pages" && sections == "sections" => self
                 .section_by_name(section)
-                .and_then(|section| section.live.as_ref())
-                .and_then(|live| live.match_field.clone()),
+                .and_then(|section| section.row_key().map(str::to_owned)),
             _ => None,
         }
         .unwrap_or_else(|| "id".to_owned());
