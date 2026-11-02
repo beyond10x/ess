@@ -165,6 +165,7 @@ impl ProfileScratch {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         // A directory this process already made is never reused: `create_dir` refuses it.
+        // startup-path: harness
         fs::create_dir(&path).unwrap();
         Self(path)
     }
@@ -191,12 +192,12 @@ impl Drop for OwnedChild {
     }
 }
 pub struct Browser {
-    _child: OwnedChild,
+    child: OwnedChild,
     stream: TcpStream,
     next: u64,
     receipt: File,
     evidence: PathBuf,
-    // Declared after `_child`, so the profile is removed only once Firefox has been stopped.
+    // Declared after `child`, so the profile is removed only once Firefox has been stopped.
     _scratch: Option<ProfileScratch>,
 }
 /// The startup deadline every fixture in this process is judged against.
@@ -308,6 +309,9 @@ pub enum Stage<'a> {
     Connect,
     /// The upgrade was lost before the deadline: a read, write or socket failure.
     Upgrade(&'a str),
+    /// The first `session.new` round trip was lost after the upgrade, with the child still
+    /// running: a read, write or socket failure, a close frame, or an error answer.
+    Session(&'a str),
 }
 impl Stage<'_> {
     /// Every stage the fixture can give up a start at.
@@ -318,6 +322,7 @@ impl Stage<'_> {
         Stage::Announce,
         Stage::Connect,
         Stage::Upgrade("<io error>"),
+        Stage::Session("<io error>"),
     ];
     /// The name a refusal reports this stage under.
     pub fn label(self) -> String {
@@ -327,6 +332,7 @@ impl Stage<'_> {
             Stage::Announce => "announce".to_owned(),
             Stage::Connect => "connect".to_owned(),
             Stage::Upgrade(error) => format!("upgrade ({error})"),
+            Stage::Session(error) => format!("session ({error})"),
         }
     }
     /// Whether a startup was timed at all before this stage gave up.
@@ -385,19 +391,17 @@ impl Browser {
         let firefox = std::env::var_os("ESS_FIREFOX").unwrap_or_else(|| "firefox".into());
         Self::launch_program(evidence, &firefox, deadline)
     }
-    // startup-path: begin
-    // Every line between here and `startup-path: end` is on the path from a
-    // caller asking for a browser to a browser that answers BiDi, and a start
-    // lost on it is reported through `startup_refusal` and nothing else. A line
-    // here that can end the process another way has to say which of the two
-    // exceptions it is:
-    //   `startup-path: harness` — this runner's own filesystem or process table,
-    //      which is a broken machine and not a start that was lost; and
-    //   `startup-path: defect`  — a malformed upgrade or protocol answer;
-    //      a boot-time HTTP 404 alone does not establish readiness.
-    // `no_unaccounted_panic_site_can_end_a_start` in coverage_browser.rs reads
-    // this region and holds that class, so a further give-up site cannot arrive
-    // unnamed the way the WebSocket upgrade read did.
+    // A start runs from `launch` or `launch_program` to a browser that has answered its first
+    // `session.new`, and a start lost on the way is reported through `startup_refusal` and nothing
+    // else. Every line of every function in this file that a start can call, one call down or
+    // more, and of the `Drop` of every type it builds, that can end the process another way says
+    // which of the two exceptions it is, in a comment on that line or the one above:
+    //   `startup-path: harness` — this runner's own filesystem or process table, which is a
+    //      broken machine and not a start that was lost; and
+    //   `startup-path: defect`  — a malformed upgrade or protocol answer; a boot-time HTTP 404
+    //      alone does not establish readiness.
+    // `no_unaccounted_panic_site_can_end_a_start` in coverage_browser.rs follows those calls
+    // through this file and holds that class, and fails on a mark that names no such line.
     /// The same startup against a named program, so the fixture's own refusal
     /// path can be exercised without a Firefox that misbehaves on demand.
     pub fn launch_program(
@@ -411,7 +415,6 @@ impl Browser {
         let (scratch, profile_root) = if let Some(root) = std::env::var_os("ESS_BROWSER_TMPDIR") {
             (None, PathBuf::from(root))
         } else {
-            // startup-path: harness
             let scratch = ProfileScratch::create();
             let root = scratch.0.clone();
             (Some(scratch), root)
@@ -475,7 +478,7 @@ impl Browser {
         // startup-path: defect
         assert!(response.contains(RFC6455_EXAMPLE_ACCEPT), "{response}");
         let mut browser = Self {
-            _child: child,
+            child,
             stream,
             next: 0,
             // startup-path: harness
@@ -483,7 +486,25 @@ impl Browser {
             evidence: evidence.to_path_buf(),
             _scratch: scratch,
         };
-        browser.call("session.new", &json!({"capabilities":{"alwaysMatch":{}}}));
+        // The first session round trip is the last step of a start. A socket lost on it, a close
+        // frame and an error answer are a start this runner did not deliver; an answer that is not
+        // the protocol is a defect, in `exchange`.
+        let session = browser.exchange("session.new", &json!({"capabilities":{"alwaysMatch":{}}}));
+        if let Err(error) = session {
+            let reason = error.to_string();
+            let stage = if matches!(browser.child.0.try_wait(), Ok(Some(_))) {
+                Stage::Exited
+            } else {
+                Stage::Session(&reason)
+            };
+            browser.child.stop();
+            return Err(startup_refusal(
+                stage,
+                started.elapsed(),
+                deadline,
+                evidence,
+            ));
+        }
         drop(in_startup);
         drop(starting);
         Ok(browser)
@@ -587,7 +608,6 @@ impl Browser {
                 .set_read_timeout(Some(SESSION_TIMEOUT))
                 .and_then(|()| stream.set_write_timeout(Some(SESSION_TIMEOUT)))
             {
-                // startup-path: harness
                 let reason = format!("restoring the session timeouts: {error}");
                 child.stop();
                 return Err(startup_refusal(
@@ -690,38 +710,63 @@ impl Browser {
             thread::sleep(Duration::from_millis(50));
         }
     }
-    // startup-path: end
 
+    /// One `BiDi` command on a browser that is already up. A lost socket ends the case here: the
+    /// start this browser belonged to was delivered, so it is not a start that was lost.
     fn call(&mut self, method: &str, params: &Value) -> Value {
+        self.exchange(method, params)
+            .unwrap_or_else(|error| panic!("BiDi {method}: {error}"))
+    }
+    /// Send one `BiDi` command and wait for its answer. A socket failure, a close frame and an
+    /// error answer are returned, so that the start's own `session.new` reports each as a lost
+    /// start; a frame that is neither text, ping nor close, and a text frame that is not JSON, are
+    /// not the protocol and panic as a defect.
+    fn exchange(&mut self, method: &str, params: &Value) -> std::io::Result<Value> {
         self.next += 1;
         let request = json!({"id":self.next,"method":method,"params":params});
+        // startup-path: harness
         writeln!(self.receipt, "{}", json!({"sent":request})).unwrap();
-        self.send(1, request.to_string().as_bytes());
+        self.send(1, request.to_string().as_bytes())?;
         loop {
-            let (opcode, payload) = self.receive();
+            let (opcode, payload) = self.receive()?;
             if opcode == 9 {
-                self.send(10, &payload);
+                self.send(10, &payload)?;
                 continue;
             }
+            if opcode == 8 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionAborted,
+                    "the browser closed the WebSocket with a close frame",
+                ));
+            }
+            // startup-path: defect
             assert_eq!(opcode, 1, "unexpected WebSocket frame");
+            // startup-path: defect
             let value: Value = serde_json::from_slice(&payload).unwrap();
+            // startup-path: harness
             writeln!(self.receipt, "{}", json!({"received":value})).unwrap();
             if value["id"].as_u64() == Some(self.next) {
-                assert_ne!(value["type"], "error", "{value}");
-                return value["result"].clone();
+                if value["type"] == "error" {
+                    return Err(std::io::Error::other(format!("an error answer: {value}")));
+                }
+                return Ok(value["result"].clone());
             }
         }
     }
-    fn send(&mut self, opcode: u8, payload: &[u8]) {
+    fn send(&mut self, opcode: u8, payload: &[u8]) -> std::io::Result<()> {
         let mut bytes = vec![0x80 | opcode];
-        if payload.len() < 126 {
-            bytes.push(0x80 | u8::try_from(payload.len()).unwrap());
-        } else if u16::try_from(payload.len()).is_ok() {
-            bytes.push(0x80 | 0x7e);
-            bytes.extend(u16::try_from(payload.len()).unwrap().to_be_bytes());
-        } else {
-            bytes.push(0x80 | 0x7f);
-            bytes.extend(u64::try_from(payload.len()).unwrap().to_be_bytes());
+        let length = payload.len();
+        match (u8::try_from(length), u16::try_from(length)) {
+            (Ok(short), _) if short < 126 => bytes.push(0x80 | short),
+            (_, Ok(medium)) => {
+                bytes.push(0x80 | 0x7e);
+                bytes.extend(medium.to_be_bytes());
+            }
+            _ => {
+                bytes.push(0x80 | 0x7f);
+                let long = u64::try_from(length).map_err(std::io::Error::other)?;
+                bytes.extend(long.to_be_bytes());
+            }
         }
         let mask = [0x12, 0x34, 0x56, 0x78];
         bytes.extend(mask);
@@ -731,30 +776,33 @@ impl Browser {
                 .enumerate()
                 .map(|(i, byte)| byte ^ mask[i % 4]),
         );
-        self.stream.write_all(&bytes).unwrap();
+        self.stream.write_all(&bytes)
     }
-    fn receive(&mut self) -> (u8, Vec<u8>) {
+    fn receive(&mut self) -> std::io::Result<(u8, Vec<u8>)> {
         let mut header = [0; 2];
-        self.stream.read_exact(&mut header).unwrap();
+        self.stream.read_exact(&mut header)?;
+        // startup-path: defect
         assert_ne!(header[0] & 0x80, 0, "fragmented test response");
+        // startup-path: defect
         assert_eq!(header[1] & 0x80, 0, "server frames are unmasked");
         let length = match header[1] & 0x7f {
             126 => {
                 let mut bytes = [0; 2];
-                self.stream.read_exact(&mut bytes).unwrap();
+                self.stream.read_exact(&mut bytes)?;
                 u64::from(u16::from_be_bytes(bytes))
             }
             127 => {
                 let mut bytes = [0; 8];
-                self.stream.read_exact(&mut bytes).unwrap();
+                self.stream.read_exact(&mut bytes)?;
                 u64::from_be_bytes(bytes)
             }
             length => u64::from(length),
         };
+        // startup-path: defect
         assert!(length < 4_194_304, "unexpectedly large test response");
-        let mut payload = vec![0; usize::try_from(length).unwrap()];
-        self.stream.read_exact(&mut payload).unwrap();
-        (header[0] & 0x0f, payload)
+        let mut payload = vec![0; usize::try_from(length).map_err(std::io::Error::other)?];
+        self.stream.read_exact(&mut payload)?;
+        Ok((header[0] & 0x0f, payload))
     }
     /// The evidence directory this browser's start, stderr and `BiDi` receipt were written to.
     /// Read by a suite that reuses one browser across fixtures; the others start one per fixture.

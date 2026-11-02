@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/downstream-gaps-0.82.0
+repository: ess
+publishedAt: 2026-11-01T00:00:00Z
+title: Binding scenarios that check event identities, refusals that probe the record, and validation that names the file
+summary: >-
+  Synthesized binding scenarios compare the trigger event's identity fields with the instance or row
+  they act on. The arranged half of a refusal without an identity view probes the record through the
+  command. ess specify validate names the file a refusal was read from in a specification of several
+  files.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.82.0
+  version: 0.82.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

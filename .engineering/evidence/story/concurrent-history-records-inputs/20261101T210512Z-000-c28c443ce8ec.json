@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-01T21:05:12Z",
+  "actor": "human:timo",
+  "artifact": "story:concurrent-history-records-inputs",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-cli --locked --test check_history (claim already held on base by c85a3be56/c5ef2ede2, beyond10x/ess#576: recorded input gives Violation, absent input Linearizable; regression case added, 6 passed)",
+    "reference": "unit log u2/scratch/cargo.log; merged 5384b8f0c"
+  }
+}

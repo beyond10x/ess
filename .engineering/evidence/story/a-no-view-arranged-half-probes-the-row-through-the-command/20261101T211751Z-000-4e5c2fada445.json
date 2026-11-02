@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-01T21:17:51Z",
+  "actor": "human:timo",
+  "artifact": "story:a-no-view-arranged-half-probes-the-row-through-the-command",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-d357-u3-pass-1",
+    "reference": "fix commit 1962a5ff0, merged 4b43f8608",
+    "review": "review-result:adversary-d357-u3-pass-1",
+    "outcome": "fixed"
+  }
+}

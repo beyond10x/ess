@@ -97,8 +97,9 @@ fn startup_outcome(
 }
 
 /// A listener that answers `404` on the first upgrade attempt — the state
-/// `browser.rs:421` documents a booting Firefox as being in — and then accepts
-/// every later connection and never answers it, which is what a process starved
+/// `Browser::reach_bidi` in `support/browser.rs` documents a booting Firefox as
+/// being in — and then accepts every later connection and never answers it,
+/// which is what a process starved
 /// of CPU looks like from the other end of the socket. Returns the port and the
 /// count of accepted connections.
 fn booting_then_starved(port_sink: &Arc<AtomicUsize>) -> u16 {
@@ -231,8 +232,8 @@ fn a_socket_lost_while_the_child_is_alive_is_retried_like_every_other_state_on_t
 /// `BiDi` call it will ever make — starting with `session.new`, which
 /// `launch_program` issues before it returns. On the slow runner the story is
 /// about, that is the difference between a start that is reported and a start
-/// that ends in a bare `WouldBlock` at `support/browser.rs:610`, reached from
-/// `support/browser.rs:374`, a line inside the marked startup region.
+/// that ended in a bare `WouldBlock` in `receive`, reached from the `session.new`
+/// round trip at the end of `Browser::launch_program` in `support/browser.rs`.
 ///
 /// No longer ignored. `reach_bidi` restores the socket's read and write timeouts to
 /// `SESSION_TIMEOUT` on the successful return, so what this case measures is now a property of the
@@ -293,8 +294,7 @@ fn a_browser_that_became_ready_late_does_not_inherit_the_leftover_deadline_as_it
             "a browser that reached the WebSocket upgrade 2.700s into a 3.000s deadline kept \
              the 0.300s that were left as the read timeout on the session it then had to \
              create, and the start ended in a bare io panic with no stage, no measured \
-             startup and no firefox.stderr, one call below a line inside the marked startup \
-             region: {panic}"
+             startup and no firefox.stderr, one call below Browser::launch_program: {panic}"
         ),
     }
 }
@@ -345,13 +345,12 @@ fn the_same_browser_answering_the_same_call_at_the_same_speed_succeeds_when_it_i
 }
 
 /// The other half of the story's acceptance: "the three tests do not compete for
-/// CPU during startup". `launch_program` releases the startup lock at
-/// `support/browser.rs:338` and then issues `session.new` at
-/// `support/browser.rs:346` — the first `BiDi` round trip of a cold start, and
-/// the one that actually creates the session the caller asked for — outside it.
-/// `peak_concurrent_startups()` cannot see that, because `InStartup` is scoped to
-/// `reach_bidi` alone; this counts the overlap from the browser's own side
-/// instead, which is where competing for CPU is visible.
+/// CPU during startup". `Browser::launch_program` in `support/browser.rs` issues
+/// `session.new` — the first `BiDi` round trip of a cold start, and the one that
+/// actually creates the session the caller asked for — and only then drops its
+/// `InStartup` count and the startup lock. This counts the overlap from the
+/// browser's own side, which is where competing for CPU is visible, and checks
+/// that the startup counter still sees the round trip.
 #[test]
 fn three_fixtures_do_not_ask_three_browsers_to_create_a_session_at_the_same_time() {
     let root = evidence_dir("session-new-overlap");
@@ -430,8 +429,8 @@ fn three_fixtures_do_not_ask_three_browsers_to_create_a_session_at_the_same_time
         peak.load(Ordering::SeqCst),
         1,
         "{} of the three fixtures were creating their BiDi session at the same instant, so \
-         three cold Firefoxes competed for CPU during startup after all; the startup lock is \
-         released at support/browser.rs:338 and session.new is issued at :346",
+         three cold Firefoxes competed for CPU during startup after all; Browser::launch_program \
+         must hold the startup lock until session.new has been answered",
         peak.load(Ordering::SeqCst)
     );
     assert!(

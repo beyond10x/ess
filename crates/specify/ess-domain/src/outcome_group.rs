@@ -229,6 +229,8 @@ struct Admitted {
     group: RawOutcomeGroup,
     form: Form,
     members: BTreeSet<QualifiedName>,
+    /// The file the group was read from, which its collisions are cited in.
+    source: Source,
 }
 
 /// Expands every file's outcome groups into their member commands, before anything is converted.
@@ -238,6 +240,17 @@ struct Admitted {
 /// written. A group with a refusal of its own expands into nothing; a collision with a command's
 /// own outcome, or with another group's, withholds that group from that command only.
 pub fn expand(files: &mut [(Source, RawSpecFile)], errors: &mut ValidationErrors) {
+    expand_marking(files, errors, &mut Vec::new());
+}
+
+/// [`expand`], marking in `read` before each group's refusals the file that group was read from
+/// (`story:a-refusal-records-the-document-it-was-read-from`): every refusal here is about a group,
+/// at `outcome_groups.<name>`, and a group is written in one file.
+pub(crate) fn expand_marking(
+    files: &mut [(Source, RawSpecFile)],
+    errors: &mut ValidationErrors,
+    read: &mut crate::spec::Read,
+) {
     let declared = Declared::read(files);
     let mut written: Vec<(Source, RawOutcomeGroup)> = Vec::new();
     for (source, file) in files.iter_mut() {
@@ -249,6 +262,7 @@ pub fn expand(files: &mut [(Source, RawSpecFile)], errors: &mut ValidationErrors
     let mut seen: BTreeSet<OutcomeGroupName> = BTreeSet::new();
     let mut admitted: BTreeMap<OutcomeGroupName, Admitted> = BTreeMap::new();
     for (source, group) in written {
+        crate::spec::mark(read, errors, Some(&source));
         let first = seen.insert(group.name.clone());
         if !first {
             errors.push(
@@ -282,13 +296,14 @@ pub fn expand(files: &mut [(Source, RawSpecFile)], errors: &mut ValidationErrors
                         group,
                         form,
                         members,
+                        source,
                     },
                 );
             }
         }
     }
 
-    let gains = collisions(files, &admitted, errors);
+    let gains = collisions(files, &admitted, errors, read);
     for (_, file) in files.iter_mut() {
         for command in &mut file.commands {
             let Some(groups) = gains.get(&command.name) else {
@@ -562,6 +577,7 @@ fn collisions(
     files: &[(Source, RawSpecFile)],
     admitted: &BTreeMap<OutcomeGroupName, Admitted>,
     errors: &mut ValidationErrors,
+    read: &mut crate::spec::Read,
 ) -> BTreeMap<QualifiedName, Vec<OutcomeGroupName>> {
     let mut own: BTreeMap<&QualifiedName, BTreeSet<&OutcomeName>> = BTreeMap::new();
     for (_, file) in files {
@@ -596,6 +612,7 @@ fn collisions(
                     Form::List => format!("leave `{command}` out of `commands:`"),
                     Form::Selector => format!("list `{command}` under `except:`"),
                 };
+                crate::spec::mark(read, errors, Some(&admitted.source));
                 errors.push(
                     ValidationError::new(
                         ValidationCode::DuplicateDeclaration,
@@ -629,6 +646,7 @@ fn collisions(
                     Some(earlier) => {
                         withheld.insert(earlier);
                         withheld.insert(group);
+                        crate::spec::mark(read, errors, Some(&admitted.source));
                         errors.push(
                             ValidationError::new(
                                 ValidationCode::DuplicateDeclaration,

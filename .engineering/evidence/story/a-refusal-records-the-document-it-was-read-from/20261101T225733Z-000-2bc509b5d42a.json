@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-01T22:57:33Z",
+  "actor": "human:timo",
+  "artifact": "story:a-refusal-records-the-document-it-was-read-from",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "D357 final gate on integration/ess-d357 at 0a026cc15 (release-prepare 9b7871dc2), 22:40-22:56Z, stage A split into four parts by cache discards at the 15G cap: cargo test -p ess-domain and -p ess-compiler (full), -p ess-cli (13 named targets incl. coverage_browser, both browser_startup boundaries, check_history, validate_names_the_file_read_from, validate_parse_refusals, adversary_d357_u2_pass1), -p ess-conformance (--lib + 17 named incl. adversary_d357_u3_pass1, adversary_d357_u4_pass1, adversary_273_pass1, external_beside_held_guard after a one-line re-pin, both bytes tables); 2615 passed, 0 failed, 3 ignored; clippy -D warnings and fmt-check clean; stage B release verify 0.82.0, projection-check, test-xtask (420 passed) green",
+    "reference": "gate logs gate/stageA*.log, gate/stageB.log in the wave scratch"
+  }
+}

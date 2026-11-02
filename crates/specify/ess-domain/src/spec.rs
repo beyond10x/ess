@@ -331,6 +331,19 @@ impl Specification {
     pub fn assemble(
         files: impl IntoIterator<Item = (Source, RawSpecFile)>,
     ) -> Result<Self, ValidationErrors> {
+        Self::assemble_traced(files).map_err(|traced| traced.errors)
+    }
+
+    /// [`Self::assemble`], returning with the refusals the [`Provenance`] that says which file each
+    /// was read from (`story:a-refusal-records-the-document-it-was-read-from`).
+    ///
+    /// The refusals are the ones [`Self::assemble`] returns, in the same order and byte for byte;
+    /// the record sits beside them rather than on [`ValidationError`], so no refusal and no
+    /// serialized byte moves.
+    pub fn assemble_traced(
+        files: impl IntoIterator<Item = (Source, RawSpecFile)>,
+    ) -> Result<Self, Traced> {
+        let mut provenance = Provenance::default();
         let mut errors = ValidationErrors::new();
         let mut parts: Vec<SpecPart> = Vec::new();
         let mut collected = Collected::default();
@@ -338,24 +351,12 @@ impl Specification {
         // Before any command is converted, so an expanded outcome meets every check a hand-written
         // copy would (docs/design/outcome-groups.md, "Where before validation is in this tree").
         let mut files: Vec<(Source, RawSpecFile)> = files.into_iter().collect();
-        crate::outcome_group::expand(&mut files, &mut errors);
-        crate::command::set_effects::refuse_below_ess_16(
+        refuse_as_written(
             &mut files,
             &mut errors,
             &mut collected.refused.moves,
+            &mut provenance.read,
         );
-        crate::command::set_effects::refuse_affect_moves(
-            &mut files,
-            &mut errors,
-            &mut collected.refused.moves,
-        );
-        crate::command::set_effects::refuse_deletions(&mut files, &mut errors);
-        crate::command::set_effects::refuse_each(
-            &mut files,
-            &mut errors,
-            &mut collected.refused.moves,
-        );
-        crate::command::set_effects::refuse_per_row_events(&mut files, &mut errors);
 
         // A guard reads `input.<field>` only in an `ess/22` source, named by its one header.
         let headers: Vec<Option<FormatVersion>> = files
@@ -382,11 +383,16 @@ impl Specification {
             crate::command::set_effects::converting_deletions(admits_deletions, || {
                 crate::expression::attributes::converting(reads_attributes, || {
                     for (source, file) in files {
+                        // Every refusal pushed from here to the end of `absorb` is this file's.
+                        mark(&mut provenance.read, &errors, Some(&source));
                         parts.push(collected.absorb(&source, file, &mut errors));
                     }
                 });
             });
         });
+        // What follows is about the assembled specification, not a file being read.
+        mark(&mut provenance.read, &errors, None);
+        provenance.kept = std::mem::take(&mut collected.kept);
 
         let lifecycle_types: Vec<NamedType> = collected
             .entities
@@ -401,7 +407,7 @@ impl Specification {
         // system header: without a namespace, a domain list and a type registry there is nothing for
         // the member passes to resolve against, and each of them would report its own cascade.
         let Some(system) = system else {
-            return Err(errors);
+            return Err(Traced { errors, provenance });
         };
 
         // A present mint and a payload read are `ess/27` sources (beyond10x/ess#545); below it each
@@ -448,7 +454,9 @@ impl Specification {
 
         errors.extend(specification.validate_after(&collected.refused));
         errors.extend(specification.validate_roster(&collected.roster));
-        errors.into_result(specification)
+        errors
+            .into_result(specification)
+            .map_err(|errors| Traced { errors, provenance })
     }
 
     /// Replaces every authored predicate an `ess/22` source wrote with what its bare words name
@@ -931,9 +939,117 @@ fn declare(
 /// `every_masked_rows_name_is_recorded_from_the_copy_that_converts`, and where an author meets it —
 /// a view on the entity, an actor's grant on the command — in
 /// `tests/masked_declaration_reference_cascade.rs`.
-fn record<K: Ord, T>(first: bool, into: &mut BTreeMap<K, T>, name: K, value: T) {
+///
+/// The copy it keeps is also written into `kept`, under `kind` and the name, as coming from
+/// `source`: what [`Provenance::kept`] answers for a refusal made after assembly.
+fn record<K: Ord + std::fmt::Display, T>(
+    first: bool,
+    into: &mut BTreeMap<K, T>,
+    (name, value): (K, T),
+    (kept, kind, source): (&mut Kept, &'static str, &Source),
+) {
     if first || !into.contains_key(&name) {
+        kept.insert((kind.to_owned(), name.to_string()), source.clone());
         into.insert(name, value);
+    }
+}
+
+/// `(kind, name)` to the file of the declaration kept under it; see [`Provenance::kept`].
+type Kept = BTreeMap<(String, String), Source>;
+
+/// [`Provenance::read_while`]'s record: the position in the refusals where each run begins, and
+/// the file being read while it was pushed, or `None`.
+pub(crate) type Read = Vec<(usize, Option<Source>)>;
+
+/// Marks that the refusals `errors` gains from here, until the next mark, were pushed while
+/// `source` was being read, or while no file was.
+pub(crate) fn mark(read: &mut Read, errors: &ValidationErrors, source: Option<&Source>) {
+    read.push((errors.len(), source.cloned()));
+}
+
+/// The passes over the files as written, before any member is converted: outcome groups are
+/// expanded, and the set effects their format cannot read are refused and taken off.
+///
+/// Each pass marks in `read`, before it refuses anything in a file (or a group), that the refusals
+/// from there are that file's, so a refusal made here is cited where it was written and not at a
+/// copy of the same name assembly keeps from another file.
+fn refuse_as_written(
+    files: &mut [(Source, RawSpecFile)],
+    errors: &mut ValidationErrors,
+    refused_moves: &mut BTreeSet<QualifiedName>,
+    read: &mut Read,
+) {
+    use crate::command::set_effects;
+    crate::outcome_group::expand_marking(files, errors, read);
+    set_effects::refuse_below_ess_16(files, errors, refused_moves, read);
+    set_effects::refuse_affect_moves(files, errors, refused_moves, read);
+    set_effects::refuse_deletions(files, errors, read);
+    set_effects::refuse_each(files, errors, refused_moves, read);
+    set_effects::refuse_per_row_events(files, errors, read);
+    mark(read, errors, None);
+}
+
+/// A refused assembly: the refusals, and which file each was read from.
+///
+/// Returned by [`Specification::assemble_traced`]. `errors` is exactly what
+/// [`Specification::assemble`] returns; `provenance` answers by the position of a refusal in it.
+#[derive(Debug)]
+pub struct Traced {
+    /// The refusals, in the order assembly made them.
+    pub errors: ValidationErrors,
+    /// Which file each refusal was read from, where assembly knows.
+    pub provenance: Provenance,
+}
+
+/// Which file assembly was reading when it refused, and which file each declaration it kept came
+/// from (`story:a-refusal-records-the-document-it-was-read-from`).
+///
+/// A [`ValidationError`] carries no document, and a search for the declaration's name cannot tell
+/// two copies of one name apart, so a consumer citing a refusal against a file asks this first.
+/// Two answers, in this order:
+///
+/// 1. [`Self::read_while`]: a refusal pushed while one file's text was being read is about that
+///    file. That covers every refusal made before the members are merged: the passes over the
+///    files as written (an outcome group's expansion, a set effect refused on its format), which
+///    mark each file, or each group, before refusing anything in it, and `Collected::absorb`,
+///    whose refusals are about the declaration it is converting or the name it is declaring.
+/// 2. [`Self::kept`]: a refusal made after the files are read is about a declaration in the
+///    assembled specification, and of a name declared twice only one copy is there — the one
+///    `record` kept, which is the first copy that converted, not necessarily the first written.
+///
+/// A refusal after the files are read whose location names no kept declaration (a domain, the
+/// system header, a merge of the type registries) has neither answer; for it the consumer falls
+/// back to whatever it did before.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Provenance {
+    /// Where each run of refusals begins, in the order they were pushed, and the file being read
+    /// while it was; `None` where no file was.
+    read: Read,
+    /// `(kind, name)` — the kind as [`ConstructKind::as_str`] spells it — to the file of the
+    /// declaration assembly kept under it.
+    ///
+    /// [`ConstructKind::as_str`]: ess_primitives::error::ConstructKind::as_str
+    kept: Kept,
+}
+
+impl Provenance {
+    /// The file that was being read when the refusal at `index` of [`Traced::errors`] was pushed.
+    pub fn read_while(&self, index: usize) -> Option<&Source> {
+        // The last mark at or before `index` is the run it belongs to; later marks start later.
+        self.read
+            .iter()
+            .rev()
+            .find(|(start, _)| *start <= index)
+            .and_then(|(_, source)| source.as_ref())
+    }
+
+    /// The file the declaration assembly kept as `name` of `kind` was read from. `kind` is the
+    /// head token of a refusal's location, as [`ConstructKind::as_str`] spells it: `entity`,
+    /// `command`, `type`, and so on.
+    ///
+    /// [`ConstructKind::as_str`]: ess_primitives::error::ConstructKind::as_str
+    pub fn kept(&self, kind: &str, name: &str) -> Option<&Source> {
+        self.kept.get(&(kind.to_owned(), name.to_owned()))
     }
 }
 
@@ -1017,6 +1133,11 @@ struct Collected {
     /// *recorded* and this has to answer what was *declared*. See [`declare`] for the difference
     /// and for what the registries alone could not see.
     declared: BTreeMap<(&'static str, String), Source>,
+    /// The file of every declaration kept, under the same `(kind, name)` as `declared` and `type`
+    /// for a type: written by [`record`] and, for a type, where [`Collected::write`] keeps it. What
+    /// `declared` cannot say, because the copy kept is the first that converted, not the first
+    /// written. Handed to [`Provenance`] once every file is read.
+    kept: Kept,
     /// Every type and domain member name written so far, whether or not its declaration
     /// converted: the cross-kind half of what `declared` is for. See [`Collected::write`].
     written: BTreeMap<QualifiedName, Written>,
@@ -1275,6 +1396,9 @@ impl Collected {
             };
             let claim = Claim::new(source, None, MemberKind::Type);
             if self.write(&name, claim, converted.is_some(), errors) {
+                // `write` keeps only a copy that converted, so this is the type the name means.
+                self.kept
+                    .insert(("type".to_owned(), name.to_string()), source.clone());
                 part.types.extend(converted);
             }
         }
@@ -1289,7 +1413,12 @@ impl Collected {
             let converted = match EntitySpec::try_from(raw) {
                 Ok(entity) => {
                     let converted = entity.name.clone();
-                    record(first, &mut self.entities, entity.name.clone(), entity);
+                    record(
+                        first,
+                        &mut self.entities,
+                        (entity.name.clone(), entity),
+                        (&mut self.kept, "entity", source),
+                    );
                     Some(converted)
                 }
                 Err(member_errors) => {
@@ -1310,7 +1439,12 @@ impl Collected {
             let converted = match EventSpec::try_from(raw) {
                 Ok(event) => {
                     let converted = event.name.clone();
-                    record(first, &mut self.events, event.name.clone(), event);
+                    record(
+                        first,
+                        &mut self.events,
+                        (event.name.clone(), event),
+                        (&mut self.kept, "event", source),
+                    );
                     Some(converted)
                 }
                 Err(member_errors) => {
@@ -1381,7 +1515,12 @@ impl Collected {
             let converted = match ErrorSpec::try_from(raw) {
                 Ok(error) => {
                     let converted = error.name.clone();
-                    record(first, &mut self.errors, error.name.clone(), error);
+                    record(
+                        first,
+                        &mut self.errors,
+                        (error.name.clone(), error),
+                        (&mut self.kept, "error", source),
+                    );
                     Some(converted)
                 }
                 Err(member_errors) => {
@@ -1404,7 +1543,12 @@ impl Collected {
             let converted = match ViewSpec::try_from(raw) {
                 Ok(view) if withheld.is_none() => {
                     let converted = view.name.clone();
-                    record(first, &mut self.views, view.name.clone(), view);
+                    record(
+                        first,
+                        &mut self.views,
+                        (view.name.clone(), view),
+                        (&mut self.kept, "view", source),
+                    );
                     Some(converted)
                 }
                 outcome => {
@@ -1432,7 +1576,12 @@ impl Collected {
             let converted = match ActorSpec::try_from(raw) {
                 Ok(actor) => {
                     let converted = actor.name.clone();
-                    record(first, &mut self.actors, actor.name.clone(), actor);
+                    record(
+                        first,
+                        &mut self.actors,
+                        (actor.name.clone(), actor),
+                        (&mut self.kept, "actor", source),
+                    );
                     Some(converted)
                 }
                 Err(member_errors) => {
@@ -1468,7 +1617,12 @@ impl Collected {
             let converted = match CommandSpec::try_from(raw) {
                 Ok(command) => {
                     let converted = command.name.clone();
-                    record(first, &mut self.commands, command.name.clone(), command);
+                    record(
+                        first,
+                        &mut self.commands,
+                        (command.name.clone(), command),
+                        (&mut self.kept, "command", source),
+                    );
                     Some(converted)
                 }
                 Err(member_errors) => {
@@ -1522,8 +1676,8 @@ impl Collected {
                     record(
                         first,
                         &mut self.components,
-                        component.name.clone(),
-                        component,
+                        (component.name.clone(), component),
+                        (&mut self.kept, "component", source),
                     );
                 }
                 Err(member_errors) => {
@@ -1547,7 +1701,12 @@ impl Collected {
             );
             match crate::binding::BindingSpec::try_from(raw) {
                 Ok(binding) => {
-                    record(first, &mut self.bindings, binding.name.clone(), binding);
+                    record(
+                        first,
+                        &mut self.bindings,
+                        (binding.name.clone(), binding),
+                        (&mut self.kept, "binding", source),
+                    );
                 }
                 Err(member_errors) => errors.extend(member_errors),
             }
@@ -2191,6 +2350,100 @@ bindings:
                  more than once. The registry holds {recorded:?}; the refusals were: {errors}"
             );
         }
+    }
+
+    /// [`Provenance`] for every kind that goes through [`declare`] and [`record`], with the two
+    /// copies of each [`MASKED`] row in two files
+    /// (`story:a-refusal-records-the-document-it-was-read-from`).
+    ///
+    /// The copy kept is the second file's when the first copy is broken — the case where the first
+    /// file declares the name first and is still not what the name means — and the first file's
+    /// for the one row whose first copy converts. The refusal of the second declaration is pushed
+    /// while the second file is read. A record site that does not write `kept` fails its row
+    /// here, so a ninth kind is measured the day it is routed through `record`.
+    #[test]
+    fn provenance_names_the_file_each_masked_rows_kept_copy_and_duplicate_came_from() {
+        for row in MASKED {
+            let mut files = minimal();
+            files.extend(
+                row.support
+                    .iter()
+                    .map(|(label, support)| file(label, support)),
+            );
+            files.push(file("first.yaml", &row.first_alone()));
+            files.push(file("second.yaml", &row.second_alone()));
+            let traced = Specification::assemble_traced(files)
+                .err()
+                .unwrap_or_else(|| panic!("the {} row declares one name twice", row.kind));
+            let (kind, name) = row
+                .location
+                .split_once(' ')
+                .expect("every row's location is its kind and then its name");
+
+            let kept = if row.first_is_broken {
+                "second.yaml"
+            } else {
+                "first.yaml"
+            };
+            assert_eq!(
+                traced.provenance.kept(kind, name),
+                Some(&Source::new(kept)),
+                "the {kind} `{name}` assembly kept is {kept}'s copy: {}",
+                traced.errors
+            );
+
+            let duplicate = traced
+                .errors
+                .as_slice()
+                .iter()
+                .position(|error| {
+                    error.code == ValidationCode::DuplicateDeclaration
+                        && error.location == row.location
+                })
+                .unwrap_or_else(|| panic!("the {kind} `{name}` is refused as declared twice"));
+            assert_eq!(
+                traced.provenance.read_while(duplicate),
+                Some(&Source::new("second.yaml")),
+                "the {kind} `{name}` is declared again while second.yaml is read: {}",
+                traced.errors
+            );
+        }
+    }
+
+    /// A type goes through [`Collected::write`] rather than [`record`], and its kept copy is
+    /// recorded there.
+    #[test]
+    fn provenance_names_the_file_a_kept_type_and_its_duplicate_came_from() {
+        let mut files = minimal();
+        files.push(file(
+            "a.yaml",
+            "domain: shop.cart\ntypes:\n  - {name: shop.cart.CartId, kind: newtype, of: Uuid}\n",
+        ));
+        files.push(file(
+            "b.yaml",
+            "domain: shop.cart\ntypes:\n  - {name: shop.cart.CartId, kind: newtype, of: String}\n",
+        ));
+        let traced = Specification::assemble_traced(files)
+            .expect_err("one type name written twice is refused");
+
+        assert_eq!(
+            traced.provenance.kept("type", "shop.cart.CartId"),
+            Some(&Source::new("a.yaml")),
+            "the first copy converts and is kept: {}",
+            traced.errors
+        );
+        let duplicate = traced
+            .errors
+            .as_slice()
+            .iter()
+            .position(|error| error.code == ValidationCode::DuplicateDeclaration)
+            .expect("the second writing is refused");
+        assert_eq!(
+            traced.provenance.read_while(duplicate),
+            Some(&Source::new("b.yaml")),
+            "the name is written again while b.yaml is read: {}",
+            traced.errors
+        );
     }
 
     /// The same name twice, in all four combinations of sound and broken.

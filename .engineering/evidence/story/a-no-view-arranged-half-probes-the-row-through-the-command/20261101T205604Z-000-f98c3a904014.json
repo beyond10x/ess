@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-01T20:56:04Z",
+  "actor": "human:timo",
+  "artifact": "story:a-no-view-arranged-half-probes-the-row-through-the-command",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance --locked --test adversary_arrangement_pass2 (VERIFIED: base 12 passed 1 failed at :554; unit 14 passed)",
+    "reference": "unit logs u3/scratch/cargo-red.log (baseline) vs u3/scratch/cargo-gate.log (treatment); merged 7d209d37f"
+  }
+}

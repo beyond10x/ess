@@ -138,13 +138,20 @@ fn compile_advised(raw: RawLoaded, advise: bool) -> (LoadedSpec, Diagnostics) {
         .iter()
         .map(|(source, _)| source.to_string())
         .collect::<Vec<_>>();
-    let assembled = match ess_domain::spec::Specification::assemble(parsed) {
+    // Traced, so a refusal is cited in the file assembly read it from rather than wherever a search
+    // for its name lands (`story:a-refusal-records-the-document-it-was-read-from`).
+    let assembled = match ess_domain::spec::Specification::assemble_traced(parsed) {
         Ok(specification) => specification,
-        Err(errors) => {
-            let diagnostics = ess_compiler::resolve::diagnose_locating(&errors, &texts, &labels);
+        Err(traced) => {
+            let diagnostics = ess_compiler::resolve::diagnose_traced(&traced, &texts, &labels);
             let refused = LoadedSpec::Refused {
                 files_read,
-                problems: errors.as_slice().iter().map(ToString::to_string).collect(),
+                problems: traced
+                    .errors
+                    .as_slice()
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
                 diagnostics,
             };
             return (refused, Diagnostics::new());
