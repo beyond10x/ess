@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The arranged half of an input refusal on a command that addresses an existing record, where no identity view shows the arranged row, tells the arranged state apart from every other state: where the first branch addressing the record from that state runs from other states as well, it sends the shortest sequence of sends that does tell them apart, drawn from the command's branches and from other commands whose input names only that record, a `wrong_state:` refusal among the answers, so a target that moves the record on refusal between two states that branch runs from fails it; such a target passed. Where no sequence tells every state apart, the scenario is withdrawn and refused as `ESS-SYNTH-001` naming the arranged state and the states left.
+- An input refusal beside held-state branches, on a model with no identity view, reads the record back after each held-state send through sends from that state that tell it apart from every other state, the command's own branches first and its held-state refusals among them, so a target that moves the record on refusal and publishes nothing fails it; it required only the error and no event, and such a target passed. Where no send from a held state has a valid input the scenario is withdrawn and refused as `ESS-SYNTH-001` naming every branch tried, and where the sends leave a state they cannot tell apart, naming the states. A model with an identity view keeps its suite bytes; the test model `occurrence-clock-offers.yaml`, which has none, moves its suite bytes: its `AcceptOffer/outcome/malformed` scenario reads the offer back in each of its three states, its scenario count and refusals unchanged.
+
 ## [0.82.0] — 2026-11-01
 
 ### Fixed
