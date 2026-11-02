@@ -192,6 +192,12 @@ pub struct CommandRoute {
     /// JSON when empty.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub path_params: BTreeMap<String, String>,
+    /// Each variable of [`Self::path_params`] whose field is renamed on the wire, to the field's
+    /// model name: a `bind` may send the field under either name, so the variable is filled from
+    /// the other when the wire name holds no value, and both leave the body. Absent from the JSON
+    /// when empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub path_aliases: BTreeMap<String, String>,
     /// Whether a request must carry a body (`ess_gen::http::body_required`).
     pub body_required: bool,
     /// Every declared error the command can answer, by its wire code (the `error` member of a

@@ -1627,31 +1627,46 @@ struct Surface {
 }
 
 /// Where a route moves off the derived surface (beyond10x/ess#713): its method when it is not
-/// `default`, and each path variable with the input field or view parameter it carries.
-fn moved(
-    ir: &EssIr,
-    route: &http::Route<'_>,
-    default: http::Method,
-) -> (Option<String>, BTreeMap<String, String>) {
-    let method = (route.method != default).then(|| route.method.as_str().to_owned());
-    let carried = http::path_fields(ir, route)
-        .into_iter()
-        .map(|(variable, field)| {
-            let name = match route.serves {
-                // A command's input is sent under each field's wire name, a view's parameters
-                // are bound by name.
-                Served::Command(_) => field.naming.wire.as_ref().unwrap_or(&field.name),
-                Served::View(_) => &field.name,
-            };
-            (variable, name.clone())
-        })
-        .collect();
-    (method, carried)
+/// `default`, each path variable with the input field or view parameter it carries, and, for a
+/// command, each variable whose field is renamed on the wire with the field's model name.
+struct Moved {
+    method: Option<String>,
+    path_params: BTreeMap<String, String>,
+    path_aliases: BTreeMap<String, String>,
 }
 
-/// Why a route of `http` cannot be what a generated UI calls: the binding routes none, or reads
-/// a command's input as anything but a JSON body.
-fn unbound(bound: HttpBinding<'_>, route: &http::Route<'_>, qualified: &str) -> Option<String> {
+fn moved(ir: &EssIr, route: &http::Route<'_>, default: http::Method) -> Moved {
+    let mut out = Moved {
+        method: (route.method != default).then(|| route.method.as_str().to_owned()),
+        path_params: BTreeMap::new(),
+        path_aliases: BTreeMap::new(),
+    };
+    for (variable, field) in http::path_fields(ir, route) {
+        match (route.serves, &field.naming.wire) {
+            // A command's input is sent under each field's wire name, and a `bind` may name the
+            // field by its model name instead; a view's parameters are bound by name.
+            (Served::Command(_), Some(wire)) if *wire != field.name => {
+                out.path_aliases
+                    .insert(variable.clone(), field.name.clone());
+                out.path_params.insert(variable, wire.clone());
+            }
+            _ => {
+                out.path_params.insert(variable, field.name.clone());
+            }
+        }
+    }
+    out
+}
+
+/// Why a route of `http` cannot be what a generated UI calls: the binding routes none, serves a
+/// command on `get` with an input field its path does not carry, or reads a command's input as
+/// anything but a JSON body.
+fn unbound(
+    ir: &EssIr,
+    bound: HttpBinding<'_>,
+    route: &http::Route<'_>,
+    qualified: &str,
+) -> Option<String> {
     let what = match route.serves {
         Served::Command(_) => "command",
         Served::View(_) => "view",
@@ -1662,6 +1677,29 @@ fn unbound(bound: HttpBinding<'_>, route: &http::Route<'_>, qualified: &str) -> 
              it binds would call a route that server is not bound to; route it there",
             bound.path.display()
         ));
+    }
+    if let (Served::Command(handle), http::Method::Get) = (route.serves, route.method) {
+        // A generated UI sends a `get` command without a body, so its path must carry it all.
+        let carried: BTreeSet<&str> = http::path_fields(ir, route)
+            .into_iter()
+            .map(|(_, field)| field.name.as_str())
+            .collect();
+        let left: Vec<String> = ir
+            .command(handle)
+            .input
+            .iter()
+            .filter(|field| !carried.contains(field.name.as_str()))
+            .map(|field| format!("`{}`", field.name))
+            .collect();
+        if !left.is_empty() {
+            return Some(format!(
+                "command `{qualified}` is served on `get` in the binding {}, and its path does \
+                 not carry {}: a generated UI sends a `get` command without a body, so its path \
+                 must carry every input field",
+                bound.path.display(),
+                left.join(", ")
+            ));
+        }
     }
     let encoding = http::request(route).encoding;
     (matches!(route.serves, Served::Command(_)) && encoding != ess_gen::ess_http::Encoding::Json)
@@ -1695,7 +1733,8 @@ impl Surface {
                     Served::Command(handle) => handle.to_string(),
                     Served::View(handle) => handle.to_string(),
                 };
-                if let Some(why) = binding.and_then(|bound| unbound(bound, &route, &qualified)) {
+                if let Some(why) = binding.and_then(|bound| unbound(ir, bound, &route, &qualified))
+                {
                     surface.unbound.insert(qualified.clone(), why);
                 }
                 match route.serves {
@@ -1719,13 +1758,14 @@ impl Surface {
                                     display: error.naming.display_or(&error.name).to_owned(),
                                 });
                         }
-                        let (method, path_params) = moved(ir, &route, http::Method::Post);
+                        let off = moved(ir, &route, http::Method::Post);
                         let route = CommandRoute {
                             path: route.path,
                             body_required: http::body_required(command),
                             errors,
-                            method,
-                            path_params,
+                            method: off.method,
+                            path_params: off.path_params,
+                            path_aliases: off.path_aliases,
                         };
                         surface
                             .commands
@@ -1754,13 +1794,13 @@ impl Surface {
                                 None => non_scalar.push(param.name.clone()),
                             }
                         }
-                        let (method, path_params) = moved(ir, &route, http::Method::Get);
+                        let off = moved(ir, &route, http::Method::Get);
                         let route = ViewRoute {
                             path: route.path,
                             params,
                             identity: None,
-                            method,
-                            path_params,
+                            method: off.method,
+                            path_params: off.path_params,
                         };
                         surface.non_scalar.insert(handle.to_string(), non_scalar);
                         surface.unservable.insert(handle.to_string(), unservable);
