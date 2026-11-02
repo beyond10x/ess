@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-02T13:36:41Z",
+  "actor": "human:timo",
+  "artifact": "story:a-no-view-held-state-refusal-probes-the-record",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "D368 U2 fix round 1: cargo test -p ess-conformance --lib + 12 named targets (lib 172, a_no_view 3, adversary_d357_u3_pass1 5, arrangement_pass1 14, arrangement_pass2 14, external_beside_held_guard 17, held_state_input_refusal 7, history_format2 11, bytes tables 2+1, synthesis 65, adversary_d368_u2_pass1 6, security_d368_u2_pass1 4) exit 0; clippy -D warnings and fmt-check exit 0",
+    "reference": "c5eddc4a2"
+  }
+}
