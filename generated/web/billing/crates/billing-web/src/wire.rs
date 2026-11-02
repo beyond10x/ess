@@ -194,6 +194,7 @@ pub fn encode_billing_invoice_line_item(value: &billing_types::invoice::LineItem
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_billing_invoice_line_item(value: &json::Value, at: &str) -> Result<billing_types::invoice::LineItem, json::DecodeError> {
+    json::closed_at(value, at, &["description", "quantity", "unit_price"])?;
     Ok(billing_types::invoice::LineItem {
         description: {
             let at0 = json::nested(at, "description");
@@ -229,6 +230,7 @@ pub fn encode_billing_invoice_money(value: &billing_types::invoice::Money, out: 
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_billing_invoice_money(value: &json::Value, at: &str) -> Result<billing_types::invoice::Money, json::DecodeError> {
+    json::closed_at(value, at, &["amount", "currency"])?;
     Ok(billing_types::invoice::Money {
         amount: {
             let at0 = json::nested(at, "amount");
@@ -271,6 +273,7 @@ pub fn encode_billing_invoice_payee(value: &billing_types::invoice::Payee, out: 
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_billing_invoice_payee(value: &json::Value, at: &str) -> Result<billing_types::invoice::Payee, json::DecodeError> {
+    json::closed_at(value, at, &["kind", "value"])?;
     let tag = json::member_at(value, at, "kind")?;
     let at_tag = json::nested(at, "kind");
     Ok(match json::text_at(tag, &at_tag, "one of `company`, `person`")? {
@@ -532,6 +535,7 @@ pub fn encode_command_billing_email_send_email(value: &billing_types::email::Sen
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_command_billing_email_send_email(value: &json::Value, at: &str) -> Result<billing_types::email::SendEmail, json::DecodeError> {
+    json::closed_at(value, at, &["recipient", "template"])?;
     Ok(billing_types::email::SendEmail {
         recipient: {
             let at0 = json::nested(at, "recipient");
@@ -596,6 +600,7 @@ pub fn encode_command_billing_invoice_cancel_invoice(value: &billing_types::invo
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_command_billing_invoice_cancel_invoice(value: &json::Value, at: &str) -> Result<billing_types::invoice::CancelInvoice, json::DecodeError> {
+    json::closed_at(value, at, &["invoice_id"])?;
     Ok(billing_types::invoice::CancelInvoice {
         invoice_id: {
             let at0 = json::nested(at, "invoice_id");
@@ -671,6 +676,7 @@ pub fn encode_command_billing_invoice_create_invoice(value: &billing_types::invo
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_command_billing_invoice_create_invoice(value: &json::Value, at: &str) -> Result<billing_types::invoice::CreateInvoice, json::DecodeError> {
+    json::closed_at(value, at, &["account_id", "customer_email", "amount"])?;
     Ok(billing_types::invoice::CreateInvoice {
         account_id: {
             let at0 = json::nested(at, "account_id");
@@ -742,6 +748,7 @@ pub fn encode_command_billing_invoice_issue_invoice(value: &billing_types::invoi
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_command_billing_invoice_issue_invoice(value: &json::Value, at: &str) -> Result<billing_types::invoice::IssueInvoice, json::DecodeError> {
+    json::closed_at(value, at, &["invoice_id", "issued_at"])?;
     Ok(billing_types::invoice::IssueInvoice {
         invoice_id: {
             let at0 = json::nested(at, "invoice_id");
@@ -751,7 +758,7 @@ pub fn decode_command_billing_invoice_issue_invoice(value: &json::Value, at: &st
         issued_at: {
             let at1 = json::nested(at, "issued_at");
             let member1 = json::member_at(value, at, "issued_at")?;
-            billing_types::primitives::Timestamp(json::text_at(member1, &at1, "an RFC 3339 instant")?.to_owned())
+            billing_types::primitives::Timestamp(json::timestamp_at(member1, &at1, "an RFC 3339 instant")?.to_owned())
         },
     })
 }
@@ -820,6 +827,7 @@ pub fn encode_command_billing_invoice_pay_invoice(value: &billing_types::invoice
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_command_billing_invoice_pay_invoice(value: &json::Value, at: &str) -> Result<billing_types::invoice::PayInvoice, json::DecodeError> {
+    json::closed_at(value, at, &["invoice_id", "amount"])?;
     Ok(billing_types::invoice::PayInvoice {
         invoice_id: {
             let at0 = json::nested(at, "invoice_id");

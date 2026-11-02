@@ -381,6 +381,7 @@ fn a_bound_dispatch_with_events_returns_the_taken_events() {
         "not-granted",
         "not-granted-anonymous",
         "malformed-json",
+        "place-unknown-member",
         "form-refuse",
         "form-twice",
         "unfinished",
@@ -392,6 +393,29 @@ fn a_bound_dispatch_with_events_returns_the_taken_events() {
     ] {
         assert_eq!(events[label], serde_json::json!([]), "{label}");
     }
+}
+
+/// A JSON command body with a member no input field names, on a route whose `unknown` is the
+/// default `refuse`, is `refusals.malformed`, and the command does not run
+/// (story:a-json-command-body-refuses-an-unknown-member). The same body without the member runs.
+#[test]
+fn a_json_command_body_refuses_a_member_no_input_field_names() {
+    let unknown = served("place-unknown-member");
+    assert_eq!(
+        (unknown.status, unknown.json()),
+        (400, serde_json::json!({"error": "invalid_request"})),
+        "story:a-json-command-body-refuses-an-unknown-member: {}",
+        unknown.body
+    );
+    assert_eq!(unknown.header("Cache-Control"), Some("no-store"));
+    assert_eq!(served("placed").status, 201, "{}", served("placed").body);
+    let zero = served("place-leading-zero");
+    assert_eq!(
+        zero.status, 201,
+        "a leading zero in a declared field is read: {}",
+        zero.body
+    );
+    assert_eq!(zero.json(), serde_json::json!({"code": "C-j5"}));
 }
 
 /// `refusals:` answers `not_granted`, `unfinished` and `malformed` as declared on the routes the
