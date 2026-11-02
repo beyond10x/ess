@@ -204,6 +204,9 @@ func serveGatepassVisitAdmitVisitor(system *system.System, body []byte) response
 	if refused != nil {
 		return *refused
 	}
+	if err := closedInput(value, []string{"visit_id", "badge"}); err != nil {
+		return refusal(400, err.Error())
+	}
 	input, err := decodeCommandGatepassVisitAdmitVisitor(value, "body")
 	if err != nil {
 		// 400 and not 422: this is a body the schema decides, which is the difference
@@ -263,6 +266,9 @@ func serveGatepassVisitRegisterVisit(system *system.System, body []byte) respons
 	if refused != nil {
 		return *refused
 	}
+	if err := closedInput(value, []string{"visitor", "building", "host", "expected_minutes", "expected_stay", "deposit", "escorts", "notes", "on_watchlist"}); err != nil {
+		return refusal(400, err.Error())
+	}
 	input, err := decodeCommandGatepassVisitRegisterVisit(value, "body")
 	if err != nil {
 		// 400 and not 422: this is a body the schema decides, which is the difference
@@ -316,6 +322,9 @@ func serveGatepassVisitSignOutVisitor(system *system.System, body []byte) respon
 	value, refused := readJSON(body)
 	if refused != nil {
 		return *refused
+	}
+	if err := closedInput(value, []string{"visit_id"}); err != nil {
+		return refusal(400, err.Error())
 	}
 	input, err := decodeCommandGatepassVisitSignOutVisitor(value, "body")
 	if err != nil {

@@ -932,19 +932,22 @@ fn digest(result: Result<Synthesis, SynthesisFailure>) -> String {
 /// number with a zero fraction as an Integer. The Rust and web rows were re-recorded again for the
 /// story `the-generated-rust-server-refuses-what-its-openapi-refuses`, where the Rust `json.rs` and
 /// `wire.rs` decoders refuse a non-RFC 3339 `Timestamp` and a member a closed object does not
-/// declare; the Go rows keep their bytes.
+/// declare, and once more after review: the Rust and web rows for the corrected `timestamp_at`
+/// documentation, the Go rows because a Go route derived without a binding refuses a member no
+/// input field names (`closedInput`, story `a-json-command-body-refuses-an-unknown-member`) and
+/// the Go `server/wire.go` reads a `Timestamp` as the Rust decoder does (`timestampAt`).
 const BEFORE_DERIVED_LABELS: &[(&str, &str)] = &[
-    ("aliased rust-workspace", "25 artifact(s) 99f6153802fcf2b0"),
-    ("aliased rust-crate", "22 artifact(s) cc1487e24c0c969a"),
-    ("aliased web", "14 artifact(s) 80e6328c36c83831"),
-    ("cross rust-workspace", "26 artifact(s) 138ef208c56d7585"),
-    ("cross rust-crate", "23 artifact(s) 1a80e1384d357203"),
-    ("cross web", "14 artifact(s) 575d704ce4db6b9c"),
-    ("cross go", "20 artifact(s) fa98787a2c15c671"),
-    ("labelled rust-workspace", "25 artifact(s) 06c0705715e5f7de"),
-    ("labelled rust-crate", "22 artifact(s) 7f17866b02ff49a5"),
-    ("labelled web", "14 artifact(s) 25f25b5e6ffd5b20"),
-    ("labelled go", "19 artifact(s) a99032e02de18b7b"),
+    ("aliased rust-workspace", "25 artifact(s) 6a5badcfc44d5494"),
+    ("aliased rust-crate", "22 artifact(s) b987d4ddda990b7e"),
+    ("aliased web", "14 artifact(s) 6627557201bb4415"),
+    ("cross rust-workspace", "26 artifact(s) 6519a7de5bcff579"),
+    ("cross rust-crate", "23 artifact(s) 2c1ab6f97a50acf3"),
+    ("cross web", "14 artifact(s) de37506b1332580c"),
+    ("cross go", "20 artifact(s) 3fdd5951495b733b"),
+    ("labelled rust-workspace", "25 artifact(s) 3cdee1359d4b672e"),
+    ("labelled rust-crate", "22 artifact(s) 0d725438bffb40f5"),
+    ("labelled web", "14 artifact(s) 6169b63ce86ae55c"),
+    ("labelled go", "19 artifact(s) 470c9b48709f82a2"),
 ];
 
 #[test]

@@ -1165,7 +1165,7 @@ fn decode_primitive(primitive: Primitive) -> (&'static str, &'static str) {
         Primitive::Integer => ("integerAt", "an integer"),
         Primitive::Bytes => ("bytesAt", "base64-encoded bytes"),
         Primitive::Decimal => ("decimalAt", "a decimal string"),
-        Primitive::Timestamp => ("textAt", "an RFC 3339 instant"),
+        Primitive::Timestamp => ("timestampAt", "an RFC 3339 instant"),
         Primitive::Duration => ("textAt", "an ISO 8601 duration"),
         Primitive::Uuid => ("uuidAt", "a UUID"),
     }
@@ -1207,7 +1207,16 @@ fn decode_key(
                  {{\n{indent}\treturn out, err\n{indent}}}"
             );
         }
-        Primitive::Decimal | Primitive::Timestamp | Primitive::Duration | Primitive::Uuid => {
+        Primitive::Timestamp => {
+            let read = format!("key{}", next(slot));
+            let _ = writeln!(
+                out,
+                "{indent}{read}, err := keyTimestamp({source}, {at})\n{indent}if err != nil \
+                 {{\n{indent}\treturn out, err\n{indent}}}\n{indent}{held} := {}({read})",
+                emit.primitive_ctor(primitive)
+            );
+        }
+        Primitive::Decimal | Primitive::Duration | Primitive::Uuid => {
             let _ = writeln!(
                 out,
                 "{indent}{held} := {}({source})",
@@ -1879,11 +1888,21 @@ fn command_route(
          != nil {\n\t\t\treturn *refused\n\t\t}\n\t\tvalue = read\n\t}\n"
             .to_owned()
     };
+    // The default request is `unknown: refuse` (`ess_gen::http`), so a derived route is closed as
+    // a bound `json` one is, before the port is called.
+    let fields = command
+        .input
+        .iter()
+        .map(|field| go_string(ess_gen::schema::wire_field_name(field)))
+        .collect::<Vec<_>>()
+        .join(", ");
     let _ = write!(
         out,
         "\n// serve{function} answers `POST` `{}`: reads the declared input, runs the port, \
          answers the\n// declared outcome.\nfunc serve{function}(system *{system}, body []byte) \
-         response {{\n{read}\tinput, err := decodeCommand{function}(value, \"body\")\n\tif err != nil \
+         response {{\n{read}\tif err := closedInput(value, []string{{{fields}}}); err != nil \
+         {{\n\t\treturn refusal(400, err.Error())\n\t}}\n\tinput, err := \
+         decodeCommand{function}(value, \"body\")\n\tif err != nil \
          {{\n\t\t// 400 and not 422: this is a body the schema decides, which is the \
          difference\n\t\t// between fixing a value and fixing a serialiser.\n\t\treturn \
          refusal(400, err.Error())\n\t}}\n\toutcome, unmet := \
@@ -2290,6 +2309,109 @@ func textAt(value any, at string, expected string) (string, error) {
 	return text, nil
 }
 
+// timestampAt is the instant at this path, as the published schema's `format: date-time` reads
+// one and the Rust server's decoder does: an RFC 3339 `date-time`, whose date exists, whose `T`
+// and `Z` may be lower-case, whose fraction is any number of digits, and whose leap second falls
+// on the last minute of a UTC day.
+func timestampAt(value any, at string, expected string) (string, error) {
+	text, err := textAt(value, at, expected)
+	if err != nil {
+		return "", err
+	}
+	if !dateTime(text) {
+		return "", DecodeError{At: at, Expected: expected, Found: "`" + text + "`"}
+	}
+	return text, nil
+}
+
+// keyTimestamp reads an instant written as an object key.
+func keyTimestamp(key string, at string) (string, error) {
+	if !dateTime(key) {
+		return "", DecodeError{At: at, Expected: "a key spelling an RFC 3339 instant", Found: fmt.Sprintf("the key `%s`", key)}
+	}
+	return key, nil
+}
+
+// dateTime is true where text is an RFC 3339 `date-time`, as timestampAt reads one.
+func dateTime(text string) bool {
+	digits := func(from int, to int) (int, bool) {
+		if to > len(text) {
+			return 0, false
+		}
+		held := 0
+		for at := from; at < to; at++ {
+			if text[at] < '0' || text[at] > '9' {
+				return 0, false
+			}
+			held = held*10 + int(text[at]-'0')
+		}
+		return held, true
+	}
+	if len(text) < 20 || text[4] != '-' || text[7] != '-' || (text[10] != 'T' && text[10] != 't') || text[13] != ':' || text[16] != ':' {
+		return false
+	}
+	year, yearRead := digits(0, 4)
+	month, monthRead := digits(5, 7)
+	day, dayRead := digits(8, 10)
+	hour, hourRead := digits(11, 13)
+	minute, minuteRead := digits(14, 16)
+	second, secondRead := digits(17, 19)
+	if !yearRead || !monthRead || !dayRead || !hourRead || !minuteRead || !secondRead {
+		return false
+	}
+	days := 0
+	switch month {
+	case 1, 3, 5, 7, 8, 10, 12:
+		days = 31
+	case 4, 6, 9, 11:
+		days = 30
+	case 2:
+		days = 28
+		if (year%4 == 0 && year%100 != 0) || year%400 == 0 {
+			days = 29
+		}
+	default:
+		return false
+	}
+	if day == 0 || day > days || hour > 23 || minute > 59 || second > 60 {
+		return false
+	}
+	at := 19
+	if text[at] == '.' {
+		at++
+		fraction := at
+		for at < len(text) && text[at] >= '0' && text[at] <= '9' {
+			at++
+		}
+		if at == fraction {
+			return false
+		}
+	}
+	// The minute of the UTC day the offset names, for the one second that depends on it.
+	dayMinutes := 24 * 60
+	utc := 0
+	switch {
+	case at+1 == len(text) && (text[at] == 'Z' || text[at] == 'z'):
+		utc = hour*60 + minute
+	case at+6 == len(text) && (text[at] == '+' || text[at] == '-') && text[at+3] == ':':
+		offsetHour, offsetHourRead := digits(at+1, at+3)
+		offsetMinute, offsetMinuteRead := digits(at+4, at+6)
+		if !offsetHourRead || !offsetMinuteRead || offsetHour > 23 || offsetMinute > 59 {
+			return false
+		}
+		local := hour*60 + minute + dayMinutes
+		offset := offsetHour*60 + offsetMinute
+		if text[at] == '+' {
+			utc = (local - offset) % dayMinutes
+		} else {
+			utc = (local + offset) % dayMinutes
+		}
+	default:
+		return false
+	}
+	return second < 60 || utc == dayMinutes-1
+}
+
 // boolAt is the boolean at this path.
 func boolAt(value any, at string, expected string) (bool, error) {
 	held, ok := value.(bool)
@@ -2631,5 +2753,30 @@ func readJSON(body []byte) (any, *response) {
 		return nil, &answer
 	}
 	return value, nil
+}
+
+// closedInput refuses a command body holding a member none of fields names: the default request
+// is `unknown: refuse`, and the served document closes the input. A value that is no object is
+// the decoder's to refuse. The standard decoder keeps no member order, so of several such members
+// the least by name is the one named, where the Rust server names the first to arrive.
+func closedInput(value any, fields []string) error {
+	object, err := objectAt(value, "body", "an object")
+	if err != nil {
+		return nil
+	}
+	unnamed, found := "", false
+	for name := range object {
+		named := false
+		for _, field := range fields {
+			named = named || field == name
+		}
+		if !named && (!found || name < unnamed) {
+			unnamed, found = name, true
+		}
+	}
+	if !found {
+		return nil
+	}
+	return DecodeError{At: nested("body", unnamed), Expected: "no member: no field is named so", Found: describes(object[unnamed])}
 }
 "#;
