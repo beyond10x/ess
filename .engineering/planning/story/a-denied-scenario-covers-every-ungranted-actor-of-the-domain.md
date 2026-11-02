@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/view_grant.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/view_grant_denied.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T20:48:54Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-02T20:48:55Z", actor: "human:timo", revision: 7}
@@ -64,11 +64,15 @@ orchestrator relayed on 2026-10-22 (ESS 0.67.0, a2a main 3a18050).
 
 ## Decisions
 
-2026-10-22: **accept, redesigned.** The denied read is sent as the lowest-named ungranted actor of
-the view's own domain; where that domain has none, as today's lowest-named ungranted actor. No
-change to `ScenarioId::ReadGrant`, no edit to `grant.rs:9-11`, no format version. Per-actor denied
-scenarios are declined for now (format change); a second ungranted actor of the same domain stays
-unchecked, and that limit is recorded, not fixed.
+2026-10-22: **accept, redesigned.** No change to `ScenarioId::ReadGrant`, no edit to `grant.rs:9-11`, no
+format version.
+
+Superseded on 2026-11-02 by wave W1 (`approval-record:ess-w1-wave`, commit 509854bee): the denied read is
+sent as every ungranted actor of the view's own domain, in name order, then as no actor; where that
+domain has none, as the lowest-named declared actor the grant does not name
+(`crates/verify/ess-conformance/src/synthesize/view_grant.rs:187-202`). The 2026-10-22 limit (only the
+lowest-named actor of the domain read, a second one unchecked) no longer holds. Per-actor scenarios
+are still not filed: the actors are reads within the one `ReadGrant` scenario.
 
 Depends on `story:an-optional-input-a-system-command-awaits-is-compared-only-when-issued` and
 `story:a-refused-send-keeps-the-earlier-read-token-for-a-denied-grant` (unit A2, shares the
