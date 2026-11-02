@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- An authored act whose `outcome:` names a branch that declares no error also requires that no error came back (`expect_no_error` after its `expect_outcome`), so a target that answers the success branch under its own name with an error fails the step; it matched the outcome name alone and passed. A refusing branch is unchanged. `expect_no_error` needs `ess-conformance/11`, which every suite the CLI writes already states (a synthesized or authored suite `ess-conformance/34` or above, a coverage suite `ess-conformance/35` or above), so no suite format moves; a library caller assembling an authored suite by hand from `SuiteProvenance::of` (`ess-conformance/4`) calls `select_fresh_format_for` before admitting it, as the CLI does. The committed billing suite's two authored scenarios move their bytes (story:authored-success-step-asserts-no-error).
+
 ### Fixed
 
 - Synthesis writes `<command>/grant/denied` for a command acting on an existing row beside a view of its entity ranked by `order_by` (beyond10x/ess#712). The `ranked` view check sends a second creating command after the command's own send, and the grant template read only a scenario's last send, so the refusal was withheld with a note that no scenario sent the command into an accepting branch. Where no scenario ends in the command's accepting send, the template is now the command's own last accepting send, with every later send dropped. Every suite that already had its `grant/denied` scenarios keeps its bytes.

@@ -145,6 +145,7 @@ fn shape(authoring: &Authoring) -> Vec<String> {
             }
             ScenarioStep::ExecuteCommand { .. } => "execute".to_owned(),
             ScenarioStep::ExpectOutcome { outcome } => format!("outcome:{outcome}"),
+            ScenarioStep::ExpectNoError => "no-error".to_owned(),
             ScenarioStep::ExpectError { error, .. } => format!("error:{error}"),
             ScenarioStep::ExpectEvent { event, .. } => format!("event:{event}"),
             other => panic!("unexpected step {other:?}"),
@@ -166,7 +167,10 @@ fn refusals(ir: &EssIr, text: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-const SEND_FAILED: &str = "  - at: 2026-01-05T09:00:00Z\n    command: billing.email.SendEmail\n    \
+/// The story that adds `ExpectNoError` after a success outcome, named in each changed assertion.
+const SUCCESS_NO_ERROR_STORY: &str = "story:authored-success-step-asserts-no-error";
+
+const SEND_FAILED: &str ="  - at: 2026-01-05T09:00:00Z\n    command: billing.email.SendEmail\n    \
      input:\n      recipient: nobody@example.test\n      template: welcome\n    outcome: failed\n    \
      error:\n      name: billing.email.Undeliverable\n";
 
@@ -229,18 +233,22 @@ fn each_external_act_forces_the_branch_it_names_and_no_other_act_is_forced() {
             "outcome:courier.mail.SendMail/bounced",
             "execute",
             "outcome:courier.mail.SendMail/sent",
+            "no-error",
             "configure:courier.mail.SendMail/failed",
             "execute",
             "outcome:courier.mail.SendMail/failed",
             "configure:courier.mail.SendMail/queued",
             "execute",
             "outcome:courier.mail.SendMail/queued",
+            "no-error",
             "execute",
             "outcome:courier.mail.SendMail/slowed",
             "configure:courier.mail.SendMail/throttled",
             "execute",
             "outcome:courier.mail.SendMail/throttled",
-        ]
+        ],
+        "{SUCCESS_NO_ERROR_STORY}: `sent` and `queued` are successes and also assert no error; \
+         the refusing branches are unchanged"
     );
 }
 
@@ -262,8 +270,10 @@ fn an_act_naming_a_non_external_branch_compiles_as_before() {
         vec![
             "execute",
             "outcome:courier.mail.SendMail/sent",
+            "no-error",
             "event:courier.mail.MailSent",
-        ]
+        ],
+        "{SUCCESS_NO_ERROR_STORY}: `sent` is a success, so the step also asserts no error"
     );
 }
 
@@ -405,8 +415,10 @@ fn a_named_external_branch_with_its_claims_is_not_refused() {
             "configure:courier.mail.SendMail/queued",
             "execute",
             "outcome:courier.mail.SendMail/queued",
+            "no-error",
             "event:courier.mail.MailQueued",
-        ]
+        ],
+        "{SUCCESS_NO_ERROR_STORY}: `queued` is an external success, so it also asserts no error"
     );
 }
 

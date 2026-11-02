@@ -98,6 +98,9 @@ fn refused_or_satisfiable_on_billing(ir: &EssIr, text: &str) {
     for (id, scenario) in authoring.scenarios {
         suite.insert(id, scenario).expect("one id");
     }
+    // story:authored-success-step-asserts-no-error: a success act now states `expect_no_error`,
+    // which the hand-built suite admits only at the format the CLI selects.
+    suite.select_fresh_format_for(ir);
     let admitted = ess_conformance::AdmittedSuite::from_suite(&suite).expect("admitted");
     let report = ess_conformance::Runner::for_suite(&suite)
         .run_admitted(&admitted, &ess_conformance::reference::Billing::new())

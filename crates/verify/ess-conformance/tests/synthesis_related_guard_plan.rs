@@ -222,6 +222,7 @@ fn authored_on_interpreter(model: &EssIr, text: &str) -> Vec<String> {
     assert!(compiled.is_complete(), "{:?}", refusals(&compiled));
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(model));
     suite.scenarios = compiled.scenarios;
+    suite.select_fresh_format_for(model);
     not_passed(model.clone(), &suite)
 }
 
