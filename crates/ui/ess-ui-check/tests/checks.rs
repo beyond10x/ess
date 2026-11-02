@@ -657,6 +657,57 @@ fn account_menu_keys() {
         "{:#?}",
         written.findings
     );
+    // An entry the terminal cannot read as an action is dropped whole, though every key it
+    // declares is drawn (story:account-menu-entries-keep-sets-and-navigate).
+    let unread = doc(&[(
+        "shells",
+        &shell(
+            "{label: Dark, sets: {shell.theme: \"'dark'\"}}, {name: away, navigate: p}, \
+             {name: dark, sets: \"'dark'\"}",
+        ),
+    )]);
+    let unread = report(&unread);
+    for path in [
+        "shells/app/regions/account/props/actions",
+        "shells/app/regions/account/props/actions/away",
+        "shells/app/regions/account/props/actions/dark",
+    ] {
+        let finding = trips_in(&unread, "account_menu_keys", path);
+        assert!(
+            finding.message.contains("does not read as an action"),
+            "story:account-menu-entries-keep-sets-and-navigate: {finding:?}"
+        );
+    }
+    assert_eq!(
+        tripped(&unread, "account_menu_keys").len(),
+        3,
+        "{:#?}",
+        unread.findings
+    );
+    // `sets` beside what a renderer runs instead of it is refused.
+    let beside = doc(&[(
+        "shells",
+        &shell(
+            "{name: a, does: t.SignOut, sets: {shell.theme: \"'dark'\"}}, \
+             {name: b, navigate: {to: p}, sets: {shell.theme: \"'dark'\"}}, \
+             {name: c, opens: org, sets: {shell.theme: \"'dark'\"}}",
+        ),
+    )]);
+    let beside = report(&beside);
+    for (name, other) in [("a", "does"), ("b", "navigate"), ("c", "opens")] {
+        let path = format!("shells/app/regions/account/props/actions/{name}/sets");
+        let finding = trips_in(&beside, "account_menu_keys", &path);
+        assert!(
+            finding.message.contains(&format!("beside `{other}`")),
+            "story:account-menu-entries-keep-sets-and-navigate: {finding:?}"
+        );
+    }
+    assert_eq!(
+        tripped(&beside, "account_menu_keys").len(),
+        3,
+        "{:#?}",
+        beside.findings
+    );
 }
 
 // ── style: tokens, themes, the theme choice, tone maps ──────────────────────────────────────

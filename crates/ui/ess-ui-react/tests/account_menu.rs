@@ -131,3 +131,20 @@ fn an_account_menu_entry_with_navigate_changes_the_route() {
 "#,
     );
 }
+
+/// An entry that does not read as an action is refused, naming it, not drawn without its `sets`
+/// or `navigate`: `navigate` written as a page name is one.
+#[test]
+fn an_account_menu_entry_that_is_not_an_action_is_refused() {
+    let text = DOCUMENT.replace("navigate: {to: things.other}", "navigate: things.other");
+    let document = ess_ui::load_str(&text).unwrap_or_else(|error| panic!("{error}"));
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let error = ess_ui_react::render(&document, &root)
+        .expect_err("story:account-menu-entries-keep-sets-and-navigate: the entry is refused");
+    assert!(
+        error
+            .to_string()
+            .starts_with("shells/app/regions/account/props/actions/other: this account menu entry does not read as an action"),
+        "story:account-menu-entries-keep-sets-and-navigate: {error}"
+    );
+}
