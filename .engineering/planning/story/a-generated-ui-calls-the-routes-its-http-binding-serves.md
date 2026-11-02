@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-generated-ui-calls-the-routes-its-http-binding-serves
 kind: story
-status: draft
+status: active
 title: A generated UI calls the routes its HTTP binding serves
 summary: ess generate ui and ess ui run take no ess-http binding, so a generated UI calls the default surface and every call 404s on a server generated with --http (#713)
 tags:
@@ -11,7 +11,31 @@ tags:
 refs:
 - provider: github
   reference: beyond10x/ess#713
-revision: 3
+relations:
+- serves: vision:O2
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli/src/ui.rs
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/generate_ui_tui.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-check/src/lib.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/model.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-react/src/lib.rs
+- confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/http.rs
+- confidence: inferred
+  path: crates/ui/ess-ui-tui/src/lib.rs
+- confidence: cited
+  path: crates/ui/ess-ui/src/binding.rs
+revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:48:51Z", actor: "human:timo", revision: 14}
+- {from: "proposed", to: "active", at: "2026-11-02T20:48:51Z", actor: "human:timo", revision: 15}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -74,3 +98,18 @@ runtime hard-codes GET for views and POST for commands.
 `ess generate synthesize --target rust --layout crate --http <binding>` serves the binding's routes
 (`GET /items`, `POST /items`). All four UI calls answer 404 from that server, and neither generator
 warns. A UI and a service generated from one specification do not meet.
+
+## Scope
+
+Derived 2026-11-02 by `aep:story-scoper` for wave W1 on b81deac78. Every line is **cited** (read from the story or the tree) or **inferred** (a reading that could be wrong).
+
+- **Primary surface:** `crates/ui/ess-ui-check` (the UI route table) — cited.
+- **Files:** `crates/ui/ess-ui-check/src/model.rs:1372` (`binding()`) and `:1605` (`Surface::of` reads the default `http::routes`) — cited.
+- **Files:** `crates/edge/ess-cli/src/ui.rs:176` (`bind()`, no `--http`); `crates/ui/ess-ui/src/binding.rs:125,154` (`ViewRoute`, `CommandRoute`: no method); `crates/ui/ess-ui-react/templates/runtime/data.ts.tmpl:186,378` (`POST` hard-coded); `crates/ui/ess-ui-tui/src/http.rs:258,363` (`POST`, `GET` hard-coded) — cited.
+- **Also likely:** `crates/ui/ess-ui-react/src/lib.rs:168` (`ReactArgs`) and `crates/ui/ess-ui-tui/src/lib.rs:125` (`TuiArgs`) to carry the binding, or `ess-cli` `ui.rs` `Generate`/`Run`; `crates/edge/ess-cli/tests/generate_ui_tui.rs:174-236` as the served-server harness the acceptance test would extend — inferred.
+- **Documents:** `crates/ui/ess-ui-react/templates/project/README.md.tmpl:30-33` states `GET`/`POST` and needs a line only if the verb becomes per-route — cited.
+- **Confidence:** high — the story and the tree agree on every defect site; the flag placement is inferred.
+- **Would collide with:** any unit touching `ess_ui_check::binding` or its refusals, the route table in `ess-ui/src/binding.rs`, the React data layer (`data.ts.tmpl`), the TUI HTTP adapter (`ess-ui-tui/src/http.rs`), or `ess generate ui` / `ess ui run` options in `ess-cli/src/ui.rs` — inferred.
+- **Safety fact:** `bound_routes(ir, c, None)` returns `routes(ir, c)` unchanged (`crates/generate/ess-gen/src/http.rs:517-524`) — cited. **Unproven:** that `binding.ts` and `binding.rs` keep their bytes once a `method` member is added; that needs the member omitted at its default, as `identity` is at `ess-ui/src/binding.rs:17` — inferred.
+- **Size:** medium, about 250 lines plus 150 test lines; no format version (`ess-ui/1`, `ess-http/1` only read) — cited.
+- **Targeted runs:** `ess-cli` tests `generate_ui_tui`, `ui_commands`; `ess-ui-check` test `binding`; no ess-conformance target — cited.

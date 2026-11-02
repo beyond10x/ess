@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-generated-rust-server-refuses-what-its-openapi-refuses
 kind: story
-status: draft
+status: active
 title: The generated Rust server refuses what its OpenAPI refuses
 summary: The Rust server admits any string as a Timestamp and ignores undeclared JSON members that its served OpenAPI refuses (#707)
 tags:
@@ -11,7 +11,21 @@ tags:
 refs:
 - provider: github
   reference: beyond10x/ess#707
-revision: 3
+relations:
+- serves: vision:O2
+scope:
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/http/bound.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/src/rust/json.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/wire.rs
+- confidence: inferred
+  path: crates/generate/ess-synth/tests/http_binding_rust.rs
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:48:49Z", actor: "human:timo", revision: 9}
+- {from: "proposed", to: "active", at: "2026-11-02T20:48:49Z", actor: "human:timo", revision: 10}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -87,3 +101,19 @@ The generated Rust server decodes JSON request bodies more loosely than the Open
 A misspelt required member is refused, but only because the required member is then missing.
 Where a bad timestamp sorts in an ordered view was not observed: `order_by` over a `Timestamp` is an
 obligation in 0.77.0.
+
+## Scope
+
+Derived 2026-11-02 by `aep:story-scoper` for wave W1 on b81deac78. Every line is **cited** (read from the story or the tree) or **inferred** (a reading that could be wrong).
+
+- **Primary surface:** `crates/generate/ess-synth/src/rust/` (the Rust target emitter) — cited.
+- **Files:** `crates/generate/ess-synth/src/rust/wire.rs`: the Timestamp arm reads `json::text_at` (`wire.rs:973`); the struct, command, event and record decoders (`wire.rs:242`, `:376`, `:519`, `:891`) read declared members only and never refuse an undeclared one — cited.
+- **Also likely:** `crates/generate/ess-synth/src/rust/json.rs` (a validating RFC 3339 reader and a closed-members reader beside `text_at`, `json.rs:717`); `crates/generate/ess-synth/src/rust/http/bound.rs` (the JSON body path `json_body`, `bound.rs:354`; `with_path` merges path fields after parse, so a top-level closure check must know the carried names); `crates/generate/ess-synth/tests/http_binding_rust.rs` for the tests — inferred.
+- **Symbols:** `json::text_at` (`json.rs:717`, `wire.rs:973`, `web/bridge.rs:719`); `http::flat_object` (`http/bound.rs:263`, form and query only); `ResolvedCommand.undeclared_fields` (`crates/specify/ess-compiler/src/ir.rs:2059`); `undeclared_fields_ignored` (`ir.rs:3287`) — cited.
+- **Documents:** none; a `CHANGELOG.md` Changed line — inferred.
+- **Generated:** `crates/generate/ess-synth/tests/served_codec_names.rs:927` pins FNV digests per fixture, target and layout, so any emitted-byte change moves that table — cited.
+- **Confidence:** medium — the defect sites are cited; the JSON top-level closure rule is inferred and nothing was run.
+- **Would collide with:** any unit editing the Rust decoders in `ess-synth/src/rust/wire.rs` or `json.rs` (also read by `web/bridge.rs`); `story:a-json-command-body-refuses-an-unknown-member` is the same surface and the same unit (GEN1) — cited.
+- **Safety fact:** the new refusals add nothing the served OpenAPI does not already state: `Timestamp` is `format: date-time` (`crates/generate/ess-gen/src/types.rs:667`) and a struct is `additionalProperties: false` unless `undeclared_fields: ignored` (`types.rs:43`) — cited.
+- **Not established:** whether a JSON route with `unknown: ignore` must admit extra members (the served JSON body is a `$ref` to the command input, `crates/generate/ess-gen/src/openapi.rs:1129-1138`; the route's `unknown:` is consulted only for form bodies); whether the Go server shares the Timestamp gap (`textAt`, `crates/generate/ess-synth/src/go/http.rs:2285`) — inferred.
+- **Size:** medium, about 200 emitter lines and 150 test lines; no spec format change (`SUPPORTED_FORMATS` ends at 33, `crates/specify/ess-domain/src/system.rs:53-56`) — cited.

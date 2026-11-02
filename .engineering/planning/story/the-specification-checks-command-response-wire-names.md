@@ -7,7 +7,7 @@ title: The specification checks command response wire names
 summary: Two response fields of one wire name are refused by the specification pass, so every target is covered, not only Rust and web
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-domain-language
 revision: 1
 ---
 ## Problem

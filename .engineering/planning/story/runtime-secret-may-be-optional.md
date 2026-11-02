@@ -5,8 +5,8 @@ kind: story
 status: draft
 title: A runtime container secret may be optional, and the chart omits it when no Secret is named
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-delivery
 revision: 1
 ---
 ## Outcome

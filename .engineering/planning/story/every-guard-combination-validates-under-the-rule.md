@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:every-guard-combination-validates-under-the-rule
 kind: story
-status: active
+status: implemented
 title: Under format A every guard combination refused for want of an order validates
 tags:
 - adopter-report
@@ -18,10 +18,11 @@ relations:
 - depends_on: story:the-precedence-rule-places-every-branch
 - informed_by: story:one-command-combines-identity-and-row-set-related-guards
 - informed_by: story:feature-request-282
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T02:54:27Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
 - {from: "proposed", to: "active", at: "2026-10-21T02:54:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:28Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

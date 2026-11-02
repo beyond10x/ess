@@ -7,8 +7,8 @@ title: The Go and TypeScript runners admit and judge a suite with an awaited Opt
 summary: Go refuses admission (fresh original pair) and TS fails grant/denied on the row 7.1 fixture suite; pre-existing, found in 0.69.0.
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
-revision: 1
+- decomposes: epic:adopter-gaps-verdicts
+revision: 2
 ---
 ## Need
 
@@ -32,3 +32,7 @@ reason). Whether the TypeScript failure is the one
   and TypeScript runners against the interpreted target; one test replays it through all three.
 - The Go admission refusal above either stops, or is shown to be right and the Rust runner refuses
   the same suite too.
+
+## Reconcile note (2026-11-02)
+
+Store hygiene H0 of wave W1, section 2i: Re-run the TypeScript half before W3; if TypeScript passes, the story narrows to Go.

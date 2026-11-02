@@ -11,8 +11,8 @@ tags:
 - feature-request
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
 - depends_on: story:a-branch-may-leave-its-addressed-record-unchanged-without-a-view
+- decomposes: epic:adopter-gaps-domain-language
 revision: 2
 ---
 ## Need

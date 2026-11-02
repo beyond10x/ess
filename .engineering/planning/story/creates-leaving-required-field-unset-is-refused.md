@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:creates-leaving-required-field-unset-is-refused
 kind: story
-status: draft
+status: archived
 title: A creates effect that leaves a required field unset is refused
 tags:
 - adopter-report
@@ -10,7 +10,9 @@ tags:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-02T20:43:57Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 
@@ -29,3 +31,9 @@ invariant reads the field (ESS-COMMAND-018,
   field; one that sets all of them, or leaves only Optional fields unset, validates.
 - The refusal is checked against the repository's own specifications and examples first; any it
   would break is listed in the story before the change lands.
+
+## Resolution
+
+2026-11-02, store hygiene H0 of wave W1 (reconcile roadmap section 2b, R2): duplicate of
+`story:a-required-field-no-creator-sets-is-refused-by-validate` (scheduled W3), which supersedes
+this story. Archived.

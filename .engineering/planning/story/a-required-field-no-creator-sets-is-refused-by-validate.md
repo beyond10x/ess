@@ -9,9 +9,10 @@ tags:
 - adopter-report
 - ess-0.70.0
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
 - informed_by: story:an-unfillable-required-field-is-named-by-validate-and-the-view
+- supersedes: story:creates-leaving-required-field-unset-is-refused
+- decomposes: epic:adopter-gaps-domain-language
 scope:
 - confidence: cited
   path: crates/edge/ess-xtask/src/consumer_coverage/macro-guards.json

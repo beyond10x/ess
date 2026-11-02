@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-denied-scenario-covers-every-ungranted-actor-of-the-domain
 kind: story
-status: draft
+status: active
 title: A grant-denied scenario catches a target that admits an ungranted actor of the same domain
 summary: The denied cell reads as the lowest-named actor across domains, so a same-domain leak passes (a2a wave 1, M6); defect.
 tags:
@@ -11,15 +11,18 @@ tags:
 - ess-0.70.0
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
 - depends_on: story:an-optional-input-a-system-command-awaits-is-compared-only-when-issued
 - depends_on: story:a-refused-send-keeps-the-earlier-read-token-for-a-denied-grant
+- decomposes: epic:adopter-gaps-synthesis
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize/view_grant.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/view_grant_denied.rs
-revision: 4
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:48:54Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-11-02T20:48:55Z", actor: "human:timo", revision: 7}
 ---
 ## Need
 
@@ -95,3 +98,18 @@ granted `demo.tasks.Agent`.
 ## Schedule
 
 Release 0.70.0 (defect, wave A unit A3, after unit A2). The release tag on the artifact marks it.
+
+## Scope
+
+Derived 2026-11-02 by `aep:story-scoper` for wave W1 on b81deac78. Every line is **cited** (read from the story or the tree) or **inferred** (a reading that could be wrong).
+
+- **Primary surface:** `crates/verify/ess-conformance` (read-grant synthesis) — cited.
+- **Files:** `crates/verify/ess-conformance/src/synthesize/view_grant.rs:185-189` (denied-actor pick) and `:229-263` (`denied_reads`); `crates/verify/ess-conformance/tests/view_grant_denied.rs` (three new cases and a two-domain fixture) — cited.
+- **Symbols:** `ResolvedActor.domain` (`crates/specify/ess-compiler/src/ir.rs:2674`), `ResolvedView.domain` (`ir.rs:2331`); the owner field is set at `crates/specify/ess-compiler/src/resolve.rs:2175-2177` — cited.
+- **Documents:** `website/docs/guides/synthesize.md:429`, `docs/design/view-grants.md:47` and `website/docs/reference/spec-versions.md:625` state the lowest-named rule and go stale on this change — cited.
+- **Confidence:** high — the story and the tree both put the defect at `view_grant.rs:185-189`.
+- **Would collide with:** any unit editing `synthesize/view_grant.rs` (read-grant witness and module doc, lines 9-17) or `tests/view_grant_denied.rs` — cited.
+- **Safety fact:** the denied actor reaches only `denied_reads` (`view_grant.rs:194`) and the `denied.is_none()` note (`:196`) — cited; byte identity for other models is unproven.
+- **Size:** medium, about 150 lines; no suite format change (`one_time_response.rs:30,32`: ORDINARY 34, COVERAGE 35, reused at `view_grant.rs:24`; no new ScenarioId or step) — cited.
+- **ess-conformance targets:** `view_grant_denied`, `view_grant_security`, `grant_denied` — inferred.
+- **Note:** the Schedule line (0.70.0) is stale; the defect is still present on 0.83.0 — cited.

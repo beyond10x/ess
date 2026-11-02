@@ -3,8 +3,8 @@ format: aep.planning-md/3
 id: story:restore-blog-lag-three
 kind: story
 status: draft
-title: Restore BLOG_LAG to three when the 0.67.0 release post merges
-revision: 3
+title: Restore BLOG_LAG to three when the next release post merges
+revision: 5
 ---
 # Story: restore-blog-lag-three
 
@@ -39,3 +39,7 @@ as a public announcement.
 ## Open Questions
 
 None.
+
+## Reconcile note (2026-11-02)
+
+Store hygiene H0 of wave W1, section 2i: The title and body name 0.67.0 and a lag of four; the constant is 6 since 0.69.0, whose post was skipped as 0.67.0's and 0.68.0's were (crates/edge/ess-xtask/src/docs.rs:39-42), and 6 is intended. Retitled: the acceptance is unchanged, the next release that carries a post sets BLOG_LAG back to 3.

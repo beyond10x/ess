@@ -6,7 +6,7 @@ status: draft
 title: A view parameter compared with the lifecycle state is bound from the asserted state
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-wire-and-answers
 revision: 1
 ---
 ## Outcome

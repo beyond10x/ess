@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:54:57Z",
+  "actor": "human:timo",
+  "artifact": "epic:oci-component-delivery",
+  "kind": "epic",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "CHANGELOG.md:4560 (finite deployment recovery, SingleHostGeneratedHelm1), CHANGELOG.md:4636 (Helm cache hits verify the OCI manifest)"
+  }
+}

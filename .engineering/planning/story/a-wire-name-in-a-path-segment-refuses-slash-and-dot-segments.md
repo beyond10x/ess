@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-wire-name-in-a-path-segment-refuses-slash-and-dot-segments
 kind: story
-status: draft
+status: implemented
 title: A wire name that a generated path segment reads refuses '/', '.' and '..'
 relations:
 - serves: vision:O2
@@ -15,7 +15,11 @@ scope:
   path: crates/specify/ess-domain/src/wire.rs
 - confidence: inferred
   path: crates/specify/ess-primitives/src/error.rs
-revision: 5
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:40:41Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:40:41Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:41Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Finding
 

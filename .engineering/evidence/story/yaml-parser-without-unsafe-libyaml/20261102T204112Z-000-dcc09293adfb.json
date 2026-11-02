@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:41:12Z",
+  "actor": "human:timo",
+  "artifact": "story:yaml-parser-without-unsafe-libyaml",
+  "kind": "story",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "crates/edge/ess-xtask/tests/layout.rs:347"
+  }
+}

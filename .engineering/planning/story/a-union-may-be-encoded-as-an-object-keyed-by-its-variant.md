@@ -10,8 +10,8 @@ tags:
 - feature-request
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
 - informed_by: story:union-tag-inline-with-fields
+- decomposes: epic:adopter-gaps-domain-language
 revision: 2
 ---
 ## Need

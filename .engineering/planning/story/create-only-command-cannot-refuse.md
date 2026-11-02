@@ -2,9 +2,11 @@
 format: aep.planning-md/3
 id: story:create-only-command-cannot-refuse
 kind: story
-status: draft
+status: implemented
 title: A command that only creates cannot declare a refusal
 summary: 'wrong_state: is the only refusal form and ESS-COMMAND-012 refuses it where nothing moves, so the claim survives only in a hand-written scenario'
+relations:
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/generate/ess-gen
@@ -20,7 +22,11 @@ scope:
   path: crates/verify/ess-diff
 - confidence: inferred
   path: docs/design
-revision: 11
+revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:41:22Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:41:22Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:41:22Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## The defect
 

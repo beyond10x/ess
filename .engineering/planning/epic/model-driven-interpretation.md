@@ -2,16 +2,17 @@
 format: aep.planning-md/3
 id: epic:model-driven-interpretation
 kind: epic
-status: active
+status: implemented
 title: A specification can be executed without being implemented
 summary: A model-driven ConformanceTarget that reads the IR, so any specification runs before anybody fills an obligation.
 owner: ess
 relations:
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-13T09:34:23Z", actor: "human:timo", revision: 3, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-13T09:34:26Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "active", to: "implemented", at: "2026-11-02T20:55:00Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 # Epic: model-driven interpretation
 

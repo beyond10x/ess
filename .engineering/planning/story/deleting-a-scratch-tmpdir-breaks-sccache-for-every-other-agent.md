@@ -2,9 +2,11 @@
 format: aep.planning-md/3
 id: story:deleting-a-scratch-tmpdir-breaks-sccache-for-every-other-agent
 kind: story
-status: draft
+status: archived
 title: Deleting a scratch TMPDIR breaks sccache for every other agent
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-02T20:43:59Z", actor: "human:timo", revision: 3}
 ---
 # Deleting a scratch TMPDIR breaks sccache for every other agent
 
@@ -63,3 +65,8 @@ The obvious candidates, none free:
 
 - the wave coordinator's brief template — `inferred`; it is prose in this session, not a file
 - `home-path:sha256:4727a71f2fe1dfaac07d79d5b2777a82a107e8522dd5cf9b60ea0a732f1ddf57` — `inferred`, if the stable-`TMPDIR` rule belongs beside the `/tmp` quota rule
+
+## Resolution
+
+2026-11-02, store hygiene H0 of wave W1 (reconcile roadmap section 2b, R3): obsolete. Machine
+operations, not ESS behaviour; it belongs in workspace instructions. Archived.

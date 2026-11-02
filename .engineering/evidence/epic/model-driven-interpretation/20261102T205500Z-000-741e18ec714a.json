@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:55:00Z",
+  "actor": "human:timo",
+  "artifact": "epic:model-driven-interpretation",
+  "kind": "epic",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "CHANGELOG.md:29 (0.81.0, the model interpreter runs bindings before the send)"
+  }
+}

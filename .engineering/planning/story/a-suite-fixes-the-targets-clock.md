@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-suite-fixes-the-targets-clock
 kind: story
-status: active
+status: implemented
 title: A suite fixes the target's now for a step, and synthesis witnesses every now comparison on its boundary
 tags:
 - adopter-report
@@ -12,10 +12,11 @@ refs:
 relations:
 - decomposes: epic:generic-expression-language
 - serves: vision:O2
-revision: 4
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-16T10:20:20Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-16T10:20:20Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:26Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 
@@ -100,3 +101,7 @@ clock's instant; synthesis sending the filtered field's carrier input as `now_of
 side of the bound (latency-safe margin) and, at the boundary, a `hold_now` before the read; a suite
 pair admitting `hold_now` before `query_view` in Rust, Go and TypeScript admission; generated
 queries and Entity Runtime refusing it by name.
+
+## Reconcile note (2026-11-02)
+
+Store hygiene H0 of wave W1, section 2i: The view-filter remnant the 2026-10-21 note calls not done shipped in 0.68.0 (CHANGELOG.md:310, 0.68.0: a view filter may order a Timestamp field against now, #560); that note is stale.

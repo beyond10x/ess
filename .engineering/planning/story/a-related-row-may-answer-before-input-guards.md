@@ -7,10 +7,14 @@ title: A command may declare that an existing related row answers before its inp
 summary: 'Adopter report R2: a second initialize answers already-initialized before its payload is read; the precedence rule forbids that order.'
 tags:
 - ess-0.71.0
+refs:
+- provider: github
+  reference: beyond10x/ess#554
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
-revision: 3
+- decomposes: epic:adopter-gaps-synthesis
+- decomposes: epic:generic-guard-precedence
+revision: 4
 ---
 ## Report
 

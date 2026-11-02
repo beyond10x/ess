@@ -11,9 +11,9 @@ tags:
 - gap
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
 - informed_by: story:a-command-binds-to-a-protocol-or-deployment-http-route
 - depends_on: story:an-operation-may-have-additional-http-routes
+- decomposes: epic:adopter-gaps-wire-and-answers
 revision: 5
 ---
 ## Need

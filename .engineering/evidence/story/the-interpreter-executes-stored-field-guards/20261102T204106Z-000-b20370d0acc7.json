@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:41:06Z",
+  "actor": "human:timo",
+  "artifact": "story:the-interpreter-executes-stored-field-guards",
+  "kind": "story",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "crates/verify/ess-conformance/tests/mixed_guard_wrong_state.rs:478"
+  }
+}

@@ -9,8 +9,8 @@ tags:
 - design-first
 - feature-request
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-wire-and-answers
 revision: 2
 ---
 ## Outcome

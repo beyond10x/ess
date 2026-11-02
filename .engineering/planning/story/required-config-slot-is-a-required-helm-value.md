@@ -6,7 +6,7 @@ status: draft
 title: A projected chart refuses to render without its required settings and image
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-delivery
 revision: 1
 ---
 ## Outcome

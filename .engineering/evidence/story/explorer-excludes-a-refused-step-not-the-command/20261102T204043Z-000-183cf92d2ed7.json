@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:43Z",
+  "actor": "human:timo",
+  "artifact": "story:explorer-excludes-a-refused-step-not-the-command",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "CHANGELOG.md:1402 (0.60.0, beyond10x/ess#537 closed)"
+  }
+}

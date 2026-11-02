@@ -9,7 +9,7 @@ tags:
 - ess-0.71.0
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-domain-language
 revision: 1
 ---
 ## Problem

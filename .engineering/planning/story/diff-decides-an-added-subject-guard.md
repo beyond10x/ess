@@ -9,8 +9,8 @@ tags:
 - adopter-report
 - ess-0.70.0
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-verdicts
 revision: 1
 ---
 ## Outcome

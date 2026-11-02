@@ -2,14 +2,15 @@
 format: aep.planning-md/3
 id: epic:downstream-reported-gaps
 kind: epic
-status: active
+status: archived
 title: Downstream-reported synthesis, binding and grant gaps are closed
 relations:
 - serves: vision:O2
-revision: 16
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:18Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-30T13:04:29Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "archived", at: "2026-11-02T20:55:01Z", actor: "human:timo", revision: 18}
 ---
 ## Outcome
 
@@ -246,3 +247,12 @@ The operator: "make sure ess knows that we expect all of those fixed efficiently
   Repro fixtures with neutral names come from the reporter on request.
 
 - 2026-10-23: one ess tree builds at a time. Orchestrator: "G-U34 builds only after G-U32's build is done. Rule: one ess tree builds at a time ... Editing and spec work in ess-0690-gu34 may go on; cargo waits." Reason given: a five-crate gate run measured 23453 MB on 2026-10-22. From now on, a unit dispatched while another builds edits and traces only, and starts cargo when the coordinator releases it.
+
+## Resolution
+
+Split into 7 theme epics, 2026-11-02 (store hygiene H0 of wave W1, sections 2e and 2g):
+`epic:adopter-gaps-domain-language`, `epic:adopter-gaps-synthesis`, `epic:adopter-gaps-verdicts`,
+`epic:adopter-gaps-wire-and-answers`, `epic:adopter-gaps-generated-code`,
+`epic:adopter-gaps-delivery` and `epic:adopter-gaps-event-client`; three exchange children moved to
+`epic:messages-are-exchanged-independent-of-the-wire`. Done-already and obsolete children stay here,
+closed by sections 2a and 2b.

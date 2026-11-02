@@ -7,7 +7,7 @@ title: A guarded branch an unguarded sibling always shadows is reported
 summary: Validate accepts a held state where an unguarded branch makes a guarded one unreachable
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-domain-language
 revision: 1
 ---
 ## Problem

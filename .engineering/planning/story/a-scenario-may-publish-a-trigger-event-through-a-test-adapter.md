@@ -10,9 +10,9 @@ tags:
 - ess-0.70.0
 - feature-request
 relations:
-- decomposes: epic:downstream-reported-gaps
 - informed_by: story:a-refusal-policy-scenario-is-not-set-up-through-a-trigger-that-needs-the-row
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-synthesis
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/interpret

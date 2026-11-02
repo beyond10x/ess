@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:interpreted-scenario-supplied-facts
 kind: story
-status: draft
+status: implemented
 title: A scenario supplies what the model does not determine
 summary: External outcomes, time and minted identities come from the scenario, never from the interpreter
 owner: ess
@@ -25,7 +25,11 @@ scope:
   path: crates/verify/ess-conformance/src/target.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:40:56Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:40:56Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:57Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 # Story: a scenario supplies what the model does not determine
 

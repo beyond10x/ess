@@ -2,14 +2,16 @@
 format: aep.planning-md/3
 id: story:a-behaviour-may-issue-a-command-through-its-system
 kind: story
-status: draft
+status: archived
 title: A generated behaviour may issue a command its outcome declares, through the system
 tags:
 - adopter-report
 - ess-0.70.0
 relations:
 - decomposes: epic:downstream-reported-gaps
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-02T20:43:59Z", actor: "human:timo", revision: 4}
 ---
 ## Need
 
@@ -46,3 +48,9 @@ Covered by the existing route. Answered from ESS sources on 2026-10-22 against t
 - **Not supported, and not needed for this report.** Issuing a command from inside a behaviour or a port. A behaviour obligation receives only its input over the storage and context ports (`crates/generate/ess-synth/src/rust/obligation.rs:216`) and holds no handle to `System`. No ESS design asks for one: an outcome causing another command is a reaction (a binding the pump delivers) or a system-issued command from the implementation's loop.
 
 So this is a usage gap on the adopter's side. Kept as a draft and not moved. If the adopter still needs a behaviour to issue a command after moving to the route above, reopen it with that case.
+
+## Resolution
+
+2026-11-02, store hygiene H0 of wave W1 (reconcile roadmap section 2b, R2): obsolete. Answered
+2026-10-22 as a usage gap: `system.<component>.<command>` plus pump
+(`crates/generate/ess-synth/src/rust/system.rs:896-902`). Reopen only with a new case. Archived.

@@ -15,7 +15,7 @@ relations:
 - serves: vision:O2
 - decomposes: epic:generic-aggregates
 - depends_on: story:expression-arithmetic-and-time
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:08:01Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:08:01Z", actor: "human:timo", revision: 3}
@@ -69,3 +69,7 @@ Accept, redesigned into the generic aggregate feature.
 - `sum_over_a_product_with_an_attribute`: weighted downtime witnessed with two levels.
 - `max_over_an_ordered_enum`: the worst level per incident, witnessed where declaration order and
   alphabetical order disagree.
+
+## State
+
+2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): Not started (ESS-VIEW-009); core of beyond10x/ess#561; scheduled W9.

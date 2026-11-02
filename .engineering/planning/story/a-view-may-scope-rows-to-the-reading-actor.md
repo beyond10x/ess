@@ -11,7 +11,7 @@ tags:
 - feature-request
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-wire-and-answers
 revision: 2
 ---
 ## Need

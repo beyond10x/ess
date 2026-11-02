@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-subject-prefixed-via-hint-names-the-bare-field
 kind: story
-status: draft
+status: implemented
 title: 'A when_related via: subject.<field> refusal names the bare stored-field form in its hint'
 tags:
 - adopter-report
@@ -14,7 +14,11 @@ scope:
   path: crates/specify/ess-domain/src/command/related_guard.rs
 - confidence: cited
   path: crates/specify/ess-domain/tests/related_guard.rs
-revision: 2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:40:40Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:40:40Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:40Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

@@ -12,7 +12,7 @@ tags:
 - gap
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-wire-and-answers
 revision: 3
 ---
 ## Need

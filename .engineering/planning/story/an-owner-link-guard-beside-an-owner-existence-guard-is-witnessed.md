@@ -7,8 +7,8 @@ title: A guard comparing an owned row's link with an input is witnessed when the
 tags:
 - adopter-report
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-synthesis
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs

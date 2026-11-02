@@ -12,7 +12,7 @@ tags:
 - ess-0.70.0-first
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-verdicts
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/interpret/execute.rs

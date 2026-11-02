@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:58Z",
+  "actor": "human:timo",
+  "artifact": "story:precedence-swap-overlap-taken-earlier-scored-equivalent",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "crates/verify/ess-conformance/tests/mutation_identical_answer.rs:529"
+  }
+}

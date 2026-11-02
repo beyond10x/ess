@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:27Z",
+  "actor": "human:timo",
+  "artifact": "story:every-guard-combination-validates-under-the-rule",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "crates/specify/ess-domain/tests/related_guard.rs:942"
+  }
+}

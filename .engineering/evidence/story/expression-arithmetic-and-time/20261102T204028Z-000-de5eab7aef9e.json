@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:28Z",
+  "actor": "human:timo",
+  "artifact": "story:expression-arithmetic-and-time",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "crates/verify/ess-conformance/tests/expression_arithmetic_and_time.rs:154"
+  }
+}

@@ -7,9 +7,9 @@ title: A CLI type carries an invariant, or the refusal names where the rule belo
 tags:
 - feature-request
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+- decomposes: epic:adopter-gaps-generated-code
+revision: 2
 ---
 ## Outcome
 
@@ -37,3 +37,7 @@ carries the rule as a comment beside the type until ESS can express it.
 
 Decide the construct in `docs/design/` before code; the refusal message is split first so an
 adopter can tell the two causes apart.
+
+## Reconcile note (2026-11-02)
+
+Store hygiene H0 of wave W1, section 2i: Split the refusal message out into its own story first; it ships ahead of the type invariants.

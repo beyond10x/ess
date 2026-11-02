@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:34Z",
+  "actor": "human:timo",
+  "artifact": "story:unknown-instance-beside-preserving-and-update-selection",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "crates/specify/ess-domain/tests/outcome_shapes.rs:763"
+  }
+}

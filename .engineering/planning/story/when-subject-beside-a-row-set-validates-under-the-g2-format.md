@@ -8,13 +8,16 @@ summary: ESS-COMMAND-009 refuses when_subject beside a row set at every format; 
 tags:
 - downstream
 - follow-up
+refs:
+- provider: github
+  reference: beyond10x/ess#642
 relations:
 - informed_by: story:a-guard-on-the-input-addressed-parent-row-holds-on-every-command-of-its-children
 - decomposes: epic:generic-row-queries
 scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/command/row_set.rs
-revision: 2
+revision: 3
 ---
 ## Problem
 

@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:38Z",
+  "actor": "human:timo",
+  "artifact": "story:a-refusal-policy-scenario-is-not-set-up-through-a-trigger-that-needs-the-row",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "eb2dfa52d"
+  }
+}

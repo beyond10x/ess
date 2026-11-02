@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:unknown-instance-beside-preserving-and-update-selection
 kind: story
-status: active
+status: implemented
 title: 'Under format A unknown_instance: answers beside preserving branches and every when_subject: update selection'
 tags:
 - adopter-report
@@ -21,10 +21,11 @@ relations:
 - informed_by: story:read-only-command-answers-an-unknown-instance
 - informed_by: story:create-or-update-selects-update-branches-by-stored-fields
 - informed_by: story:refusal-above-held-state-branch-validates
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T02:54:28Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
 - {from: "proposed", to: "active", at: "2026-10-21T02:54:29Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:34Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:a-command-binds-to-a-protocol-or-deployment-http-route
 kind: story
-status: active
+status: archived
 title: A command or view binds to the HTTP method and path a protocol fixes or a deployment chooses
 refs:
 - provider: github
   reference: beyond10x/ess#493
 relations:
 - serves: vision:O2
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-11T11:03:11Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-11T11:03:11Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "archived", at: "2026-11-02T20:53:30Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Request
 
@@ -358,3 +359,10 @@ Source: a2a wave 3 (an adopter's server implementation, 2026-10-22). A feature r
 - Need: the adopter wants to hold its hand-written HTTP server to the suite over the wire. On 0.68.0 `ess verify conform run --target` takes `billing`, `oracle-fixture` and `interpreted` only, so no live-HTTP target exists. This is stage 3 of this story ("an HTTP conformance target", `docs/design/http-presentation-binding.md:57`, `:590`, `:715-720`), designed and not built.
 - The second half of the request, a Rust target for `ess verify conform synthesize` (0.68.0 offers `ir`, `go`, `typescript`), is answered by design: the command's help says a Rust implementation runs the `ir` suite with the `ess-conformance` runner. No separate story is filed; the gap is documentation for an adopter whose target is an HTTP server rather than a Rust trait.
 - Count: the adopter's whole suite (168 scenarios) is the scope a live-HTTP target would run.
+
+## Resolution
+
+Archived by the 2026-11-02 reconcile (store hygiene H0 of wave W1, section 2d). Stage 1 shipped in
+0.60.0 (1aa82caf99, 491000f9f9). Stage 2 is implemented through the `http-*` stories (section 2a).
+Stage 3 is split out to `story:a-conformance-run-drives-a-live-http-target` (roadmap W9, unit
+HTTP3).

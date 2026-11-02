@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:12Z",
+  "actor": "human:timo",
+  "artifact": "story:binding-delivery-at-most-once",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "crates/specify/ess-domain/src/binding.rs:366"
+  }
+}

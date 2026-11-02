@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-guard-says-what-an-absent-value-compares-as
 kind: story
-status: active
+status: implemented
 title: 'A guard says what an absent Optional compares as: coalesce on the left of a comparison, decided in every lane'
 tags:
 - adopter-report
@@ -12,10 +12,12 @@ refs:
 relations:
 - decomposes: epic:generic-expression-language
 - serves: vision:O2
-revision: 3
+- supersedes: story:interpreted-absent-optional-comparison-is-false
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T00:15:54Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":3}}}
 - {from: "proposed", to: "active", at: "2026-10-21T00:15:55Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":3}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:11Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":4}}}
 ---
 ## Outcome
 

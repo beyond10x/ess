@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:47Z",
+  "actor": "human:timo",
+  "artifact": "story:go-explorer-draws-read-only-commands",
+  "kind": "story",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "crates/verify/ess-conformance/tests/explore.rs:842"
+  }
+}

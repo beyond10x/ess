@@ -6,7 +6,7 @@ status: draft
 title: Release verification refuses a chart that is not its runtime's projection
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-delivery
 revision: 1
 ---
 ## Outcome

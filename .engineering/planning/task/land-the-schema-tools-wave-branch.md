@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: task:land-the-schema-tools-wave-branch
 kind: task
-status: draft
+status: archived
 title: 'Gate and merge integrate/ess-wave-20261017 (#590, #591, #593)'
 summary: The finished schema-tools branch lands on the integration branch
 refs:
@@ -14,7 +14,9 @@ refs:
   reference: beyond10x/ess#593
 relations:
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-02T20:54:47Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 
@@ -73,3 +75,9 @@ schema validate` accepts the projection as written, and the three store files va
 `crates/generate/schema-contract/src/bundle.rs`, `models/toolchain/domains/generate.yaml`,
 `website/docs/reference/cli.md`, `website/docs/guides/generate-artifacts.md`, `CHANGELOG.md`,
 `AGENTS.md`, `crates/edge/ess-cli/tests/support/browser.rs`.
+
+## Resolution
+
+Archived by the 2026-11-02 reconcile (store hygiene H0 of wave W1, section 2e). The branch this task
+would land was merged and shipped in 0.63.0: every issue it names was closed on 2026-10-19 (read
+back with `gh issue view` on 2026-11-02).

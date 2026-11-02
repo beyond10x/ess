@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-refusal-policy-scenario-is-not-set-up-through-a-trigger-that-needs-the-row
 kind: story
-status: draft
+status: implemented
 title: A refusal-policy scenario for a missing related row is not set up through a trigger that needs that row
 summary: binding/refusal scenarios for a when_related exists:false refusal send a trigger that itself refuses the absent row (adopter defect 2, 2026-10-22); since 0.65.0.
 tags:
@@ -22,7 +22,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/refusal_policy.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/refusal_policy.rs
-revision: 13
+revision: 16
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:40:39Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:40:39Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:39Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 

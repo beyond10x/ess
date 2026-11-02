@@ -11,7 +11,7 @@ tags:
 - ess-0.70.0
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-verdicts
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/interpret/views.rs
@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance/src/target.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/interpreted_views.rs
-revision: 10
+revision: 11
 ---
 ## Need
 
@@ -138,3 +138,7 @@ Its message names no view and no field, which is the defect this story fixes. On
 named, the adopter can tell whether its model leaves a required view field unset or the
 interpreter cannot read a set one; the second would be its own story. The reproduction is kept
 out of this repository.
+
+## Reconcile note (2026-11-02)
+
+Store hygiene H0 of wave W1, section 2i: Part (b) is removed from this story: it now lives in story:a-required-field-no-creator-sets-is-refused-by-validate. Only part (a) remains.

@@ -8,7 +8,7 @@ tags:
 - adopter-report
 - ess-0.70.0
 relations:
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-wire-and-answers
 revision: 1
 ---
 ## Need

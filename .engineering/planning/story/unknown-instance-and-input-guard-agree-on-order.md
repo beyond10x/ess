@@ -9,8 +9,8 @@ tags:
 - defect
 - ess-0.71.0
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-verdicts
 revision: 2
 ---
 ## Outcome

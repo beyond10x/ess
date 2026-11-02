@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:41:05Z",
+  "actor": "human:timo",
+  "artifact": "story:the-generated-go-runtime-is-gofmt-clean",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "77339115e"
+  }
+}

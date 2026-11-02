@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:37Z",
+  "actor": "human:timo",
+  "artifact": "story:an-external-creators-further-runs-name-arranged-rows",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cd1062ca8"
+  }
+}

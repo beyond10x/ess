@@ -12,7 +12,7 @@ refs:
   reference: beyond10x/ess#637
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-domain-language
 revision: 2
 ---
 ## Problem

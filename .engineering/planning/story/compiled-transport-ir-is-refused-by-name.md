@@ -6,7 +6,7 @@ status: draft
 title: Transport consumers refuse the compiled transport IR by name
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-generated-code
 revision: 1
 ---
 ## Outcome

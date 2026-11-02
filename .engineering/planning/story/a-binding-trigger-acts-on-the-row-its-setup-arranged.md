@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-binding-trigger-acts-on-the-row-its-setup-arranged
 kind: story
-status: draft
+status: implemented
 title: A binding scenario sends its trigger against the row the setup arranged
 summary: Binding delivery/flow/mapping scenarios arrange one row and trigger on another when the trigger guards when_related on the destination input (adopter defect 1, 2026-10-22); since 0.65.0.
 tags:
@@ -18,7 +18,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/binding_arranged_rows.rs
-revision: 8
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:40:35Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:40:35Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:35Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 

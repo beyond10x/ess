@@ -9,7 +9,7 @@ tags:
 - ess-0.71.0
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-synthesis
 revision: 1
 ---
 ## Adversary pass 1, unit I (ess-0700 wave)

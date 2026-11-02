@@ -7,7 +7,7 @@ title: The first of several overlapping related refusals over one row is synthes
 summary: Synthesis refuses reachable related refusals that share a guard with a later one (ESS-SYNTH-003), as in 0.68.0 (found by the U14 adversary, 2026-10-23).
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-synthesis
 revision: 1
 ---
 ## Need

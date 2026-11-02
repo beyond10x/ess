@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:interpreted-eventual-views
 kind: story
-status: draft
+status: implemented
 title: An eventual view is really eventual under the interpreter
 summary: Views derive rows from source, filter, params, order_by and shape, and eventual consistency lags
 owner: ess
@@ -29,7 +29,11 @@ scope:
   path: crates/verify/ess-conformance/src/reference.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/target.rs
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:40:55Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:40:55Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:55Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 # Story: an eventual view is really eventual under the interpreter
 
