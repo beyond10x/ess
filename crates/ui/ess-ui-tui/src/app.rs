@@ -1297,6 +1297,18 @@ impl App {
         self.node_reads(at, &node.body, ui, ctx, out);
     }
 
+    /// The row a record shows, and its fields, tabs, items and actions see: the first row of its
+    /// own read, else the row in scope around it. The draw, the nested reads and the record's
+    /// action keys all take it from here, so an action acts on the row the screen shows.
+    pub(crate) fn record_row(&self, record: &ess_ui::Record, ctx: &Ctx<'_>) -> Option<Value> {
+        record
+            .reads
+            .as_ref()
+            .and_then(|reads| self.reader_result(reads, &self.request(reads, ctx)))
+            .and_then(|result| result.rows.first().cloned())
+            .or_else(|| ctx.row.cloned())
+    }
+
     /// A record's nested reads: its items' and the shown tab's, as the screen draws them, each in
     /// the scope of the record's row. A tab not shown holds nothing (beyond10x/ess#354).
     fn record_reads(
@@ -1307,13 +1319,9 @@ impl App {
         ctx: &Ctx<'_>,
         out: &mut Wanted,
     ) {
-        let row = record
-            .reads
-            .as_ref()
-            .and_then(|reads| self.reader_result(reads, &self.request(reads, ctx)))
-            .and_then(|result| result.rows.first().cloned());
+        let row = self.record_row(record, ctx);
         let inner = Ctx {
-            row: row.as_ref().or(ctx.row),
+            row: row.as_ref(),
             ..*ctx
         };
         let tab = self.ui(ui).tab.min(record.tabs.len().saturating_sub(1));
@@ -2555,34 +2563,7 @@ impl App {
             Composite::Form(form) => self.form_key(target, &ui, &form, &draft, key),
             Composite::FilterBar(bar) => self.bar_key(&ui, &bar, section.as_deref(), key),
             Composite::Record(record) => {
-                let tabs = record.tabs.len().max(1);
-                let tab = self.ui(&ui).tab.min(tabs - 1);
-                match key.code {
-                    KeyCode::Char(']') => {
-                        let state = self.ui_mut(&ui);
-                        state.tab = (tab + 1) % tabs;
-                    }
-                    KeyCode::Char('[') => {
-                        let state = self.ui_mut(&ui);
-                        state.tab = (tab + tabs - 1) % tabs;
-                    }
-                    KeyCode::Char(letter) => {
-                        let ctx = Ctx {
-                            section: section.as_deref(),
-                            overlay,
-                            ..Ctx::default()
-                        };
-                        let actions = crate::view::record_actions(&record, tab);
-                        if let Some((_, action)) = self
-                            .action_keys(&actions, &ctx)
-                            .into_iter()
-                            .find(|(key, _)| *key == letter)
-                        {
-                            self.run_action_at(&ui, &action, None);
-                        }
-                    }
-                    _ => {}
-                }
+                self.record_key(&ui, &record, section.as_deref(), overlay, key);
             }
             Composite::Confirm(confirm) => self.confirm_key(&ui, &confirm, key),
             Composite::RichText(text) => {
@@ -2766,6 +2747,46 @@ impl App {
             }
             KeyCode::Char(letter) => {
                 if let Some((_, action)) = actions.into_iter().find(|(key, _)| *key == letter) {
+                    self.run_action_at(ui, &action, row);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// A key on a record: `]` and `[` switch its tab, and a letter runs the record action it
+    /// names. The record's actions see the row it shows, as the draw does: a `row.<key>` bind
+    /// sends it and a `visible: row.<field> …` guard reads it.
+    fn record_key(
+        &mut self,
+        ui: &str,
+        record: &ess_ui::Record,
+        section: Option<&str>,
+        overlay: bool,
+        key: KeyEvent,
+    ) {
+        let tabs = record.tabs.len().max(1);
+        let tab = self.ui(ui).tab.min(tabs - 1);
+        match key.code {
+            KeyCode::Char(']') => self.ui_mut(ui).tab = (tab + 1) % tabs,
+            KeyCode::Char('[') => self.ui_mut(ui).tab = (tab + tabs - 1) % tabs,
+            KeyCode::Char(letter) => {
+                let ctx = Ctx {
+                    section,
+                    overlay,
+                    ..Ctx::default()
+                };
+                let row = self.record_row(record, &ctx);
+                let row_ctx = Ctx {
+                    row: row.as_ref(),
+                    ..ctx
+                };
+                let actions = crate::view::record_actions(record, tab);
+                if let Some((_, action)) = self
+                    .action_keys(&actions, &row_ctx)
+                    .into_iter()
+                    .find(|(key, _)| *key == letter)
+                {
                     self.run_action_at(ui, &action, row);
                 }
             }

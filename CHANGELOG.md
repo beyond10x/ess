@@ -5,6 +5,7 @@
 ### Fixed
 
 - In the terminal renderer a row action's inline confirm is addressed by the row key the view and `ess ui test` use (the section's read `key`, else its `live.match`, else `id`), so `rows/<key>/row_actions/<action>/confirm/overlay` reaches the open confirm of a view keyed by `reads.key`; it was keyed by `live.match` or `id` alone, and on a view without `id` the confirm on screen was reported as not open (story:a-row-actions-confirm-is-addressed-by-the-views-key).
+- In the terminal renderer a record's actions see the row the record shows, as the draw and the React target already did: a `row.<key>` bind sends the row's key, and an action whose `visible:` guard reads the row acts; the key that ran the action held no row, so the bind sent `null` and a guarded action did nothing (story:a-record-action-in-the-terminal-renderer-sees-its-row).
 
 ## [0.83.0] — 2026-11-02
 

@@ -804,13 +804,7 @@ impl App {
                 self.collection_lines(collection, place, Some("row_actions"))
             }
             Composite::Record(record) => {
-                let row = record
-                    .reads
-                    .as_ref()
-                    .and_then(|reads| self.reader_result(reads, &self.request(reads, &place.ctx)))
-                    .and_then(|result| result.rows.first().cloned())
-                    .or_else(|| place.ctx.row.cloned())
-                    .unwrap_or(Value::Null);
+                let row = self.record_row(record, &place.ctx).unwrap_or(Value::Null);
                 let mut lines = Vec::new();
                 let shown = self.labelled(&record.fields, &row);
                 for field in &record.fields {
