@@ -325,9 +325,38 @@ fn held_by_subject(
     input.get(from).cloned()
 }
 
+/// The fields of `event` whose declared type is the identity type of an entity of `ir`.
+fn identity_typed_fields(ir: &EssIr, event: &str) -> BTreeSet<String> {
+    let identities: Vec<_> = ir
+        .entities()
+        .values()
+        .map(|entity| &entity.identity.type_ref)
+        .collect();
+    ir.events()
+        .values()
+        .filter(|declared| declared.name.to_string() == event)
+        .flat_map(|declared| &declared.fields)
+        .filter(|field| identities.contains(&&field.type_ref))
+        .map(|field| field.name.clone())
+        .collect()
+}
+
+/// The values an event step compares, by field: its typed values, or its literals.
+fn expected_payload(step: &ScenarioStep) -> BTreeMap<String, ScenarioValue> {
+    match step {
+        ScenarioStep::ExpectEventValues { payload, .. } => payload.clone(),
+        ScenarioStep::ExpectEvent { payload, .. } => payload
+            .iter()
+            .map(|(field, value)| (field.clone(), ScenarioValue::literal(value.clone())))
+            .collect(),
+        _ => BTreeMap::new(),
+    }
+}
+
 /// The acceptance statement, read over every synthesized scenario of every model: an event field
-/// the outcome fills from an input the scenario sent as a captured instance is compared with that
-/// instance ("synthesis asserts the identity fields it can determine").
+/// the outcome fills from an input the scenario sent as a captured instance, or as a literal of an
+/// entity's identity type, is compared with that value ("synthesis asserts the identity fields it
+/// can determine").
 #[test]
 fn sweep_every_input_identity_an_event_copies_is_compared() {
     let mut checked = 0;
@@ -374,10 +403,8 @@ fn sweep_every_input_identity_an_event_copies_is_compared() {
                         else {
                             continue;
                         };
-                        let compared: BTreeMap<String, ScenarioValue> = match step {
-                            ScenarioStep::ExpectEventValues { payload, .. } => payload.clone(),
-                            _ => BTreeMap::new(),
-                        };
+                        let compared = expected_payload(step);
+                        let identity_typed = identity_typed_fields(&ir, &event.to_string());
                         for field in payload.fields.iter().filter(|it| it.conversion.is_none()) {
                             // An input sent as a captured instance, the row the branch acts on, or
                             // an identity that row was created holding (story:binding-site-identity-comparisons).
@@ -397,8 +424,17 @@ fn sweep_every_input_identity_an_event_copies_is_compared() {
                                 ),
                                 _ => continue,
                             };
-                            let Some(value @ ScenarioValue::Instance { .. }) = value else {
-                                continue;
+                            // A captured instance, or a literal the scenario chose for a field of an
+                            // entity's identity type: the id a trigger is sent naming no row
+                            // (story:a-refusal-witness-compares-its-trigger-identities).
+                            let value = match value {
+                                Some(value @ ScenarioValue::Instance { .. }) => value,
+                                Some(value @ ScenarioValue::Literal { .. })
+                                    if identity_typed.contains(&field.target) =>
+                                {
+                                    value
+                                }
+                                _ => continue,
                             };
                             checked += 1;
                             if compared.get(&field.target) != Some(&value) {
@@ -418,44 +454,69 @@ fn sweep_every_input_identity_an_event_copies_is_compared() {
     assert!(checked > 0, "the sweep found no input identity");
     // Binding scenarios (flow, delivery, mapping, on-failure, bounded retry, condition witnesses)
     // compare the identities of their trigger's event as command scenarios do
-    // (story:binding-site-identity-comparisons), so no scenario of either kind leaves a copy
-    // uncompared.
-    let (binding, other): (BTreeSet<_>, BTreeSet<_>) = missed
-        .into_iter()
-        .partition(|miss| miss.contains("/binding/"));
+    // (story:binding-site-identity-comparisons), and so do the refusal witnesses
+    // `<binding>/binding/refusal/<outcome>`, whichever publisher or trigger they send
+    // (story:a-refusal-witness-compares-its-trigger-identities), the captured instances and the
+    // literal ids they were sent alike. The one residue is outside that story: the trigger event of
+    // the other binding scenarios compares a captured instance but not a literal id it was sent
+    // (`expect_trigger_event`), pinned exactly so a new miss of any kind fails.
     assert_eq!(
-        other.len(),
-        0,
-        "identities an event copies from an input or its row and no step compares: {other:#?}"
-    );
-    assert_eq!(
-        binding,
-        refusal_witness_residue(),
-        "binding scenarios that copy an input identity without comparing it, beyond the refusal \
-         witnesses' known residue (story:binding-site-identity-comparisons)"
+        missed,
+        literal_trigger_id_residue(),
+        "identities an event copies from an input or its row and no step compares, beyond the \
+         pinned literal-id residue of non-refusal binding scenarios; binding refusal witnesses \
+         keep none (story:a-refusal-witness-compares-its-trigger-identities)"
     );
 }
 
-/// The misses the sweep keeps, outside story:binding-site-identity-comparisons: the witness of a
-/// refusal the policy answers by dropping or by a bounded retry (`refusal_policy::witness`) still
-/// expects the trigger's event by shape alone. The sweep reaches it only in system-directory
-/// fixtures.
-fn refusal_witness_residue() -> BTreeSet<String> {
+/// The misses the sweep keeps, outside story:a-refusal-witness-compares-its-trigger-identities:
+/// a binding's flow, delivery, mapping and on-failure scenarios expect their trigger's event
+/// through `expect_trigger_event`, which compares the instances the trigger was sent and not a
+/// literal id it was sent.
+fn literal_trigger_id_residue() -> BTreeSet<String> {
+    let aspects = ["delivery", "flow", "mapping", "on-failure"];
     [
-        ("binding-into-updating-command", "refresh-on-ticket-moved", "grant-missing", "demo.b.TicketMoved.ticket_id", "ticket_id", "ticket"),
-        ("binding-refusal-policy-swapped-caller", "refresh-on-ticket-moved", "grant-missing", "demo.b.TicketMoved.ticket_id", "ticket_id", "ticket"),
-        ("binding-refusal-policy-swapped-caller", "refresh-on-ticket-moved", "grant-missing", "demo.b.TicketMoved.ticket_id", "ticket_id", "ticket-swapped"),
-        ("caller-binding-refusal/attr", "give-on-touched", "not-flagged", "demo.d.Touched.grant_id", "grant_id", "grant-138601"),
-        ("caller-binding-refusal/attr", "give-on-touched", "not-flagged", "demo.d.Touched.grant_id", "grant_id", "grant-138601-swapped"),
-        ("caller-binding-refusal/plain", "give-on-touched", "not-flagged", "demo.d.Touched.grant_id", "grant_id", "grant-138601"),
-        ("predicate-refusal-policy-arranged-row", "give-on-touched", "not-flagged", "demo.d.Touched.grant_id", "grant_id", "grant-138601"),
+        (
+            "examples/billing",
+            "notify-on-invoice-created",
+            &aspects[..],
+            "billing.invoice.InvoiceCreated.account_id",
+            "account_id",
+            "00000000-0000-4000-8000-67229bae00fc",
+        ),
+        (
+            "fixtures/binding-arrangement.yaml",
+            "created-starts",
+            &aspects[..3],
+            "jobs.job.Created.job_id",
+            "job_id",
+            "00000000-0000-4000-8000-01b453fc1f5c",
+        ),
+        (
+            "system-dir:../../../models/toolchain",
+            "check-on-tag",
+            &aspects[..],
+            "toolchain.release.TagPushed.tag",
+            "tag",
+            "tag",
+        ),
+        (
+            "system-dir:tests/fixtures/set-effect-binding-causes",
+            "sync-on-flag-set",
+            &aspects[..],
+            "demo.c.FlagSet.grant_id",
+            "grant_id",
+            "grant_id",
+        ),
     ]
     .into_iter()
-    .map(|(dir, binding, refusal, field, input, instance)| {
-        format!(
-            "system-dir:tests/fixtures/{dir} {binding}/binding/refusal/{refusal}: `{field}` <- input \
-             `{input}` = Instance {{ instance: InstanceName({instance:?}) }}"
-        )
+    .flat_map(|(model, binding, aspects, field, input, value)| {
+        aspects.iter().map(move |aspect| {
+            format!(
+                "{model} {binding}/binding/{aspect}: `{field}` <- input `{input}` = Literal {{ \
+                 value: Text({value:?}) }}"
+            )
+        })
     })
     .collect()
 }
@@ -878,6 +939,23 @@ impl ConformanceTarget for Mutated {
     ) -> Result<(), TargetError> {
         self.inner.configure_external_outcome(control)
     }
+    // A refusal witness forces a bounded retry's refusal on every attempt and counts the attempts
+    // (story:a-refusal-witness-compares-its-trigger-identities): forwarded, so a scenario that
+    // does not compare the mutated field passes rather than stopping `unsupported`.
+    fn configure_external_outcome_repeatedly(
+        &self,
+        control: ExternalOutcomeControl,
+        times: std::num::NonZeroU32,
+    ) -> Result<(), TargetError> {
+        self.inner
+            .configure_external_outcome_repeatedly(control, times)
+    }
+    fn observe_invocations(
+        &self,
+        request: InvocationObservationRequest,
+    ) -> Result<Vec<ObservedInvocation>, TargetError> {
+        self.inner.observe_invocations(request)
+    }
     fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
         self.inner.redeliver_event(request)
     }
@@ -996,4 +1074,106 @@ fn every_binding_scenario_fails_a_target_publishing_the_wrong_id_in_its_trigger_
              (story:binding-site-identity-comparisons): {survivors:#?}"
         );
     }
+}
+
+/// The refusal witnesses (`<binding>/binding/refusal/<outcome>`) hold the target to every identity
+/// their trigger was sent (story:a-refusal-witness-compares-its-trigger-identities): on each
+/// refusal-policy fixture the reference interpreter passes every one, and each of them fails a
+/// target publishing another id — zeroed, or one no run minted — in any identity field of the
+/// trigger's event. The fixtures cover a refusal answered through an arranged row the predicate
+/// refuses (`not-flagged`) and one answered by a trigger naming no row (`missing`,
+/// `grant-missing`), with and without a caller attribute. The interpreter still delivers the
+/// binding the id it was sent, so only a comparison of the field itself sees the fault.
+#[test]
+fn every_binding_refusal_witness_fails_a_target_publishing_a_wrong_id_in_its_trigger_event() {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let mut measured = 0;
+    let mut survivors = Vec::new();
+    for (dir, binding, event, fields) in [
+        (
+            "caller-binding-refusal/plain",
+            "give-on-touched",
+            "demo.d.Touched",
+            &["grant_id"][..],
+        ),
+        (
+            "caller-binding-refusal/attr",
+            "give-on-touched",
+            "demo.d.Touched",
+            &["grant_id"][..],
+        ),
+        (
+            "predicate-refusal-policy-arranged-row",
+            "give-on-touched",
+            "demo.d.Touched",
+            &["grant_id"][..],
+        ),
+        (
+            "binding-into-updating-command",
+            "refresh-on-ticket-moved",
+            "demo.b.TicketMoved",
+            &["ticket_id", "grant_id"][..],
+        ),
+        (
+            "binding-refusal-policy-swapped-caller",
+            "refresh-on-ticket-moved",
+            "demo.b.TicketMoved",
+            &["ticket_id", "grant_id"][..],
+        ),
+    ] {
+        let ir = directory(&fixtures.join(dir)).expect("the fixture compiles");
+        assert_eq!(
+            identity_typed_fields(&ir, event),
+            fields.iter().map(|it| (*it).to_owned()).collect(),
+            "{dir}: every identity field of `{event}` is mutated"
+        );
+        let suite = synthesized(&ir).expect("synthesizes");
+        let prefix = format!("{binding}/binding/refusal/");
+        let witnesses: Vec<String> = suite
+            .scenarios
+            .keys()
+            .map(ToString::to_string)
+            .filter(|id| id.starts_with(&prefix))
+            .collect();
+        assert!(
+            !witnesses.is_empty(),
+            "{dir}: `{binding}` has refusal witnesses"
+        );
+        let good = statuses(&suite, &Interpreted::for_model(ir.clone()));
+        for id in &witnesses {
+            assert_eq!(
+                good.get(id),
+                Some(&Status::Passed),
+                "{dir} {id}: the reference interpreter passes every refusal witness: {good:#?}"
+            );
+        }
+        for field in fields {
+            for mode in ["zero", "stranger"] {
+                let target = Mutated {
+                    inner: Interpreted::for_model(ir.clone()),
+                    event: event.into(),
+                    field: (*field).into(),
+                    mode,
+                };
+                let ran = statuses(&suite, &target);
+                for id in &witnesses {
+                    measured += 1;
+                    if ran.get(id) != Some(&Status::Failed) {
+                        survivors.push(format!(
+                            "{dir} {id}: `{event}.{field}` {mode}: {:?}",
+                            ran.get(id)
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("refusal witness mutants measured: {measured}");
+    assert!(measured > 0, "no refusal witness was measured");
+    assert!(
+        survivors.is_empty(),
+        "refusal witnesses passing a wrong id in an identity field of their trigger's event; each \
+         witness must fail each one (story:a-refusal-witness-compares-its-trigger-identities): \
+         {survivors:#?}"
+    );
 }

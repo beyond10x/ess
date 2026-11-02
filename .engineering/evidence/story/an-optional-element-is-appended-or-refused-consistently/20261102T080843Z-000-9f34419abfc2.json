@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-02T08:08:43Z",
+  "actor": "human:timo",
+  "artifact": "story:an-optional-element-is-appended-or-refused-consistently",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-conformance --locked --no-fail-fast --lib --test append_set --test synthesis_suite_bytes_table (lib 172/0, append_set 5/0 from 3, bytes table 2/0) + cargo test -p ess-domain --test append_set (8/0) + clippy -D warnings + task fmt-check, on unit/ess-d368-u1 295d0b617; red before fix: append_set 3 passed 2 failed",
+    "reference": "295d0b617440927b4ecc87d84d868a871f1d7162"
+  }
+}

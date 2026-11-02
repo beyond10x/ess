@@ -4717,12 +4717,37 @@ fn run_as(
         if witness != Witness::Full {
             return Err(row_set::unarranged());
         }
-        let (mut setup, input, gaps) = row_set::prepare(models, command, outcome, actors)?;
-        if row_set::beside_named(ir.format(), command, outcome) {
-            row_set::with_overlaps(models, command, outcome, actors, &mut setup, &input);
+        let beside_named = row_set::beside_named(ir.format(), command, outcome);
+        match row_set::prepare(models, command, outcome, actors) {
+            Ok((mut setup, input, gaps)) => {
+                if beside_named {
+                    row_set::with_overlaps(models, command, outcome, actors, &mut setup, &input);
+                }
+                row_gaps = gaps;
+                (setup, input)
+            }
+            // A refusal carrying a `when:` beside its named row that no send beside the row set
+            // holds is witnessed on its related row alone, as it was before it stood beside the
+            // row set (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+            Err(_)
+                if related
+                    && beside_named
+                    && matches!(
+                        outcome.condition,
+                        ResolvedCondition::Related { input: Some(_), .. }
+                    ) =>
+            {
+                related_guard::prepare_at_in(
+                    models,
+                    command,
+                    outcome,
+                    actors,
+                    Distinction::PLAIN,
+                    None,
+                )?
+            }
+            Err(refused) => return Err(refused),
         }
-        row_gaps = gaps;
-        (setup, input)
     } else if related {
         match witness {
             Witness::Full => related_guard::prepare_at_in(
@@ -8682,6 +8707,25 @@ pub(crate) fn accepting_input_half(outcome: &ResolvedOutcome) -> Option<&Predica
     }
 }
 
+/// Whether `input` refutes the `when:` of every branch the precedence plan answers before `outcome`
+/// ([`precedence::answers_before`]): what the input of a creating branch a row set alone guards is
+/// decided on, its row set being the rows the steps leave
+/// (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+fn refutes_whens_first(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+) -> bool {
+    let Ok(facts) = flatten(ir, command, input) else {
+        return false;
+    };
+    precedence::answers_before(ir.format(), command, outcome)
+        .into_iter()
+        .filter_map(when)
+        .all(|guard| matches!(facts.decide(guard), Decision::Refuted(_)))
+}
+
 /// Every input-guarded refusal of `command` the precedence plan answers before `outcome`
 /// ([`precedence::answers_before`]), in declaration order. Of two input refusals an input selects
 /// the first declared answers, as Entity Runtime takes it (beyond10x/ess#227 adversary pass 1), and
@@ -10539,21 +10583,40 @@ fn expression_value(
 
 /// ess/31: the list the arrangement left the row holding, absent read as empty, with the element
 /// the scenario sent last; nothing where the row's list or the sent element is undetermined.
+///
+/// Over a `List<Optional<T>>` (`list`) an element the scenario left absent or sent as `null` is
+/// `null` last, as the interpreted target and generated Rust and Go append it
+/// (story:an-optional-element-is-appended-or-refused-consistently); an input path whose root the
+/// scenario sent as no literal stays undetermined.
 fn appended_at(
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
     target_location: &[String],
-    element: &str,
+    (element, list): (&str, &ResolvedTypeRef),
 ) -> Option<ScenarioValue> {
     let mut items = match before_literal_at(before, target_location)? {
         Node::Seq(items) => items.clone(),
         Node::Null => Vec::new(),
         _ => return None,
     };
-    match supplied_at(supplied, element)? {
-        ScenarioValue::Literal { value: Node::Null } => return None,
-        ScenarioValue::Literal { value } => items.push(value),
-        _ => return None,
+    let optional_element = matches!(
+        list.required(),
+        ResolvedTypeRef::List { of } if of.is_optional()
+    );
+    let root = element.split_once('.').map_or(element, |(root, _)| root);
+    let root_literal = matches!(
+        supplied.get(root),
+        None | Some(ScenarioValue::Literal { .. })
+    );
+    match supplied_at(supplied, element) {
+        Some(ScenarioValue::Literal { value: Node::Null }) | None
+            if optional_element && root_literal =>
+        {
+            items.push(Node::Null);
+        }
+        Some(ScenarioValue::Literal { value: Node::Null }) | None => return None,
+        Some(ScenarioValue::Literal { value }) => items.push(value),
+        Some(_) => return None,
     }
     Some(ScenarioValue::Literal {
         value: Node::Seq(items),
@@ -10635,7 +10698,7 @@ fn expression_value_at(
             })
         }
         ResolvedPayloadValue::Append { field: element, .. } => {
-            appended_at(supplied, before, target_location, element)
+            appended_at(supplied, before, target_location, (element, &field.target_type))
         }
         // An omitted input leaves the fallback: nothing determined for `{generated: true}`, and the
         // literal read as the target's type for `else: <literal>` (ess/16, #163), so an
@@ -13262,9 +13325,21 @@ fn arrange_toward_with(
                     &input,
                 ),
             };
-            if selects_branch(ir, creator.command, creator.outcome, None, &input) != Ok(true)
-                || !present
-            {
+            // A creating branch guarded by a row set alone, decided per input on the rows it
+            // reads, is selected by the rows the steps leave, which no input decides: the row
+            // set's arrangement keeps such a row only where those rows decide the branch
+            // (`row_set::walk`; story:row-set-beside-named-rows-suite-tells-every-order-apart).
+            let by_rows = per_input
+                && matches!(
+                    creator.outcome.condition,
+                    ResolvedCondition::RelatedSet { input: None, .. }
+                );
+            let selected = if by_rows {
+                refutes_whens_first(ir, creator.command, creator.outcome, &input)
+            } else {
+                selects_branch(ir, creator.command, creator.outcome, None, &input) == Ok(true)
+            };
+            if !selected || !present {
                 continue;
             }
             let owner =

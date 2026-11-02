@@ -241,6 +241,12 @@ pub(super) fn unarranged() -> RefusalCause {
 pub(super) const ROWS_UNARRANGED: &str = "has no arrangement of rows the declared commands \
      produce on which the rows its selector selects take this branch";
 
+/// Why a refusal over a row the input names beside a row set was not arranged there: the send
+/// naming the rows arranged for it does not hold the `when:` beside the refusal
+/// (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+pub(super) const WHEN_UNSENT: &str = "has no send naming the rows arranged beside the row set \
+     that holds the `when:` beside its guard";
+
 /// Why no rows were arranged that take a row-set branch, where the selector compares its rows'
 /// field with an input and the command creating them refuses a missing related row named by the
 /// input it sets that field from, and no such row could be arranged for the rows and the send to
@@ -610,7 +616,8 @@ fn when(other: &ResolvedOutcome) -> Option<&Predicate> {
     }
 }
 
-/// An input reaching `outcome` as far as its input decides it: its own input guard true, and the
+/// An input reaching `outcome` as far as its input decides it: its own input guard, or the `when:`
+/// beside its guard over a row set or a named row, true, and the
 /// `when:` of every branch the precedence plan answers before it false
 /// ([`precedence::answers_before`]). Under the precedence order those are every input-guarded
 /// refusal and, for an accepting branch, every accepting `when:` branch declared before it; for
@@ -623,7 +630,12 @@ pub(super) fn input_for(
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
     let own: Option<&Predicate> = match &outcome.condition {
         ResolvedCondition::When { predicate } => Some(predicate),
-        ResolvedCondition::RelatedSet { input, .. } => input.as_ref(),
+        // The `when:` beside a row set, or beside a refusal over a row the input names
+        // ([`sends_when`]), is the send's to hold
+        // (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+        ResolvedCondition::RelatedSet { input, .. } | ResolvedCondition::Related { input, .. } => {
+            input.as_ref()
+        }
         _ => None,
     };
     let refute: Vec<&Predicate> = precedence::answers_before(ir.format(), command, outcome)
@@ -2548,6 +2560,13 @@ struct Plan<'p> {
 /// What one attempt of [`Plan::arrange`] arranges: the steps, the rows and the witness gaps.
 type Attempt = (Vec<ScenarioStep>, Vec<Arrangement>, Vec<RefusalCause>);
 
+/// How [`Plan::new`] closes a predicate over the input and subject, and the values the send
+/// supplies.
+type Closing<'c> = (
+    &'c dyn Fn(&Predicate) -> Predicate,
+    &'c BTreeMap<String, ScenarioValue>,
+);
+
 /// The selections of a branch and, beside each, the owner row arranged under it (beyond10x/ess#553)
 /// and the related row its rows are created naming (beyond10x/ess#682).
 type Selections<'p> = (
@@ -2557,16 +2576,33 @@ type Selections<'p> = (
 );
 
 impl<'p> Plan<'p> {
-    /// The plan for `outcome` of `command` over `selections`, each predicate `closed`.
+    /// The plan for `outcome` of `command` over `selections`, each predicate `closed`. A comparison
+    /// of a field the linked row names with an input naming an arranged instance in `supplied` is
+    /// decided first ([`decided_by`]): the rows are created naming that row, and the send names
+    /// the instance, so no value written in for the input decides it
+    /// (story:row-set-beside-named-rows-suite-tells-every-order-apart).
     fn new(
         command: &'p ResolvedCommand,
         outcome: &'p ResolvedOutcome,
         (selections, unders, links): Selections<'p>,
-        closed: &dyn Fn(&Predicate) -> Predicate,
+        (closed, supplied): Closing<'_>,
     ) -> Self {
+        let decided = |predicate: &Predicate, linked: Option<&Linked>| {
+            linked.map_or_else(
+                || predicate.clone(),
+                |linked| {
+                    decided_by(
+                        predicate,
+                        &|field| linked.fields.get(field).cloned(),
+                        supplied,
+                    )
+                },
+            )
+        };
         let foralls = selections
             .iter()
-            .map(|selection| {
+            .zip(links)
+            .map(|(selection, linked)| {
                 command
                     .outcomes
                     .iter()
@@ -2575,7 +2611,9 @@ impl<'p> Plan<'p> {
                             selection: guarded,
                             test,
                             ..
-                        } if guarded == *selection => test.predicate().map(closed),
+                        } if guarded == *selection => test
+                            .predicate()
+                            .map(|predicate| closed(&decided(predicate, linked.as_ref()))),
                         _ => None,
                     })
                     .collect()
@@ -2594,10 +2632,11 @@ impl<'p> Plan<'p> {
                         .as_ref()
                         .map(|(link, _)| link)
                         .or_else(|| linked.as_ref().map(|linked| &linked.conjunct));
-                    closed(&link.map_or_else(
+                    let filter = link.map_or_else(
                         || selection.filter.clone(),
                         |link| without_link(&selection.filter, link),
-                    ))
+                    );
+                    closed(&decided(&filter, linked.as_ref()))
                 })
                 .collect(),
             owners: unders
@@ -3135,28 +3174,66 @@ pub(super) fn prepare(
     // Beside rows the input names (ess/32, beyond10x/ess#554) the rows are created naming those
     // rows first, so a refusal over them is witnessed beside rows the row set selects wherever
     // the precedence order lets them stand.
+    let attempt = |arranging| {
+        prepare_with(models, command, outcome, actors, arranging).map(|(prepared, _)| prepared)
+    };
+    // An arrangement standing only where no selector selects a row is kept for last: a branch true
+    // of a nonempty set is witnessed on one wherever some arrangement stands with it
+    // (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+    let mut unselected = None;
     if super::related_guard::uses(command)
         && super::related_guard::several_present(models.arrangement.format())
     {
-        for attempt in beside_attempts(models.arrangement.format(), command, outcome) {
-            if let Ok(prepared) = prepare_with(models, command, outcome, actors, attempt) {
-                return Ok(prepared);
+        for arranging in beside_attempts(models.arrangement.format(), command, outcome) {
+            match prepare_with(models, command, outcome, actors, arranging) {
+                Ok((prepared, true)) => return Ok(prepared),
+                Ok((prepared, false)) => {
+                    unselected.get_or_insert(prepared);
+                }
+                Err(_) => {}
             }
         }
     }
-    let refused = match prepare_with(models, command, outcome, actors, Arranging::default()) {
-        Ok(prepared) => return Ok(prepared),
-        Err(refused) => refused,
+    let link = || {
+        selections_of(command).ok().and_then(|selections| {
+            selections
+                .iter()
+                .find_map(|selection| related_link(models.arrangement, command, selection))
+        })
     };
-    let Some(link) = selections_of(command).ok().and_then(|selections| {
-        selections
-            .iter()
-            .find_map(|selection| related_link(models.arrangement, command, selection))
-    }) else {
+    let refused = match prepare_with(models, command, outcome, actors, Arranging::default()) {
+        Ok((prepared, true)) => return Ok(prepared),
+        // Standing only where the selector selects no row, it is kept unless the related rows
+        // linked first, or named as the send names them, let some row stand selected: a branch
+        // true of a nonempty set is witnessed on one, so a target refusing on any selected row
+        // fails it (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+        Ok((prepared, false)) => {
+            if link().is_some() {
+                for arranging in [
+                    Arranging::LINKED,
+                    Arranging::HELD_UNDER,
+                    Arranging::SEND_ROWS,
+                ] {
+                    if let Ok((linked, true)) =
+                        prepare_with(models, command, outcome, actors, arranging)
+                    {
+                        return Ok(linked);
+                    }
+                }
+            }
+            return Ok(unselected.unwrap_or(prepared));
+        }
+        Err(refused) => match unselected {
+            Some(prepared) => return Ok(prepared),
+            None => refused,
+        },
+    };
+    let Some(link) = link() else {
         return Err(refused);
     };
-    prepare_with(models, command, outcome, actors, Arranging::LINKED)
-        .or_else(|_| prepare_with(models, command, outcome, actors, Arranging::HELD_UNDER))
+    attempt(Arranging::LINKED)
+        .or_else(|_| attempt(Arranging::HELD_UNDER))
+        .or_else(|_| attempt(Arranging::SEND_ROWS))
         .map_err(|_| {
             guarded_creator(
                 models.arrangement,
@@ -3181,9 +3258,34 @@ struct Arranging {
     /// The rows a selector reads under the addressed subject are created with their creator's
     /// input steered on that subject as the setup left it ([`super::arrange_toward_held`]), so a
     /// creator refusing the subject on its stored fields compared with its input passes: a child
-    /// row sent the tenant its parent holds. Tried last, so every arrangement an earlier attempt
-    /// stands with keeps its steps.
+    /// row sent the tenant its parent holds. Tried after [`Self::LINKED`], so every arrangement an
+    /// earlier attempt stands with keeps its steps.
     held_under: bool,
+    /// Which rows the creator of a selector's rows names in every other field it sets from an input
+    /// naming a row ([`linked`]).
+    others: Others,
+}
+
+/// The rows a selector's rows name in every field their creator sets from an input naming a row,
+/// beside the linked one ([`linked`]).
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum Others {
+    /// A row of their own ([`creator_row`]).
+    #[default]
+    Own,
+    /// The row the send names through the same input, where it names one: the rows a `forall`
+    /// comparing such a field with the input refutes, or holds on, so its default refusal, and its
+    /// accepting branch on a selected row, are witnessed
+    /// (story:row-set-beside-named-rows-suite-tells-every-order-apart). Tried after every other
+    /// arrangement.
+    Sent,
+    /// The linked row itself, where the input names a row of its entity: rows only a creator sent
+    /// one row twice lays, such as a wire from an input-facing port, which a creator refusing
+    /// such a port only where its two ports differ lays from `Connect(p, p)`. A row-set refusal is
+    /// so witnessed beside a refusal over the linked row that holds there, so a target answering
+    /// that refusal first fails it (story:row-set-beside-named-rows-suite-tells-every-order-apart).
+    /// Tried after [`Self::Own`] for the same rows.
+    Linked,
 }
 
 impl Arranging {
@@ -3192,11 +3294,18 @@ impl Arranging {
         later: 0,
         eager: false,
         held_under: false,
+        others: Others::Own,
     };
 
     /// [`Self::LINKED`], the rows under the addressed subject steered on it.
     const HELD_UNDER: Self = Self {
         held_under: true,
+        ..Self::LINKED
+    };
+
+    /// [`Self::LINKED`], the creator's other rows the send's own.
+    const SEND_ROWS: Self = Self {
+        others: Others::Sent,
         ..Self::LINKED
     };
 }
@@ -3222,6 +3331,7 @@ fn beside_attempts(
             later: 0,
             eager: true,
             held_under: false,
+            others: Others::Own,
         }));
     }
     if outcome.error.is_some() && matches!(outcome.condition, ResolvedCondition::RelatedSet { .. })
@@ -3233,7 +3343,13 @@ fn beside_attempts(
                 later,
                 eager: false,
                 held_under: false,
+                others: Others::Own,
             }));
+            attempts.push(Arranging {
+                later,
+                others: Others::Linked,
+                ..Arranging::LINKED
+            });
         }
     }
     attempts.push(Arranging::LINKED);
@@ -3371,7 +3487,8 @@ fn joined(items: &[String], word: &str) -> String {
     }
 }
 
-/// [`prepare`], the related rows its selectors link arranged first where `link` holds.
+/// [`prepare`], the related rows its selectors link arranged first where `link` holds; and whether
+/// some selector selects a row on the arrangement that stands.
 #[allow(clippy::too_many_lines)]
 fn prepare_with(
     models: &super::caller::InvocationModels<'_>,
@@ -3379,7 +3496,7 @@ fn prepare_with(
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     attempt: Arranging,
-) -> Result<Prepared, RefusalCause> {
+) -> Result<(Prepared, bool), RefusalCause> {
     let ir = models.arrangement;
     let link = attempt.link;
     let selections = selections_of(command)?;
@@ -3402,8 +3519,11 @@ fn prepare_with(
     let named = if super::related_guard::uses(command) {
         let named = super::related_guard::named_rows(ir, command, outcome, actors, attempt.later)?;
         for (via, row) in &named {
-            setup.steps.extend(row.steps.iter().cloned());
-            setup.source.extend(row.source.iter().cloned());
+            // A row two inputs name is arranged once.
+            if !setup.bound.values().any(|bound| *bound == row.instance) {
+                setup.steps.extend(row.steps.iter().cloned());
+                setup.source.extend(row.source.iter().cloned());
+            }
             setup.bound.insert((*via).to_owned(), row.instance.clone());
         }
         named
@@ -3440,7 +3560,7 @@ fn prepare_with(
             &selections,
             &unders,
             actors,
-            (&mut setup, &named),
+            (&mut setup, &named, attempt.others),
         )
     } else {
         selections.iter().map(|_| None).collect()
@@ -3453,6 +3573,9 @@ fn prepare_with(
         setup.instance.as_ref(),
         &setup.bound,
     );
+    if !sends_when(ir, command, outcome, &input, &supplied) {
+        return Err(gap(at(), WHEN_UNSENT));
+    }
     let closed = |predicate: &Predicate| {
         written_in(predicate, &|path| {
             input_value(path, &input).or_else(|| subject_value(path, &setup.settled))
@@ -3466,7 +3589,12 @@ fn prepare_with(
         .next()
         .and_then(|(_, row)| addressed(command, &supplied).map(|(entity, _)| (entity, row)))
         .map(|(entity, row)| subject_fact::holding(ir, entity, row));
-    let mut plan = Plan::new(command, outcome, (&selections, &unders, &links), &closed);
+    let mut plan = Plan::new(
+        command,
+        outcome,
+        (&selections, &unders, &links),
+        (&closed, &supplied),
+    );
     plan.held_under = attempt.held_under;
     // A head is arranged only where a creating command steers its first key: a field set from the
     // input, or an identity the input names (ess/27, beyond10x/ess#543).
@@ -3588,7 +3716,8 @@ fn prepare_with(
                     });
                     continue;
                 }
-                return Search::Found(steps, arranged, gaps, rows);
+                let selected = counts.iter().any(|count| *count > 0);
+                return Search::Found(steps, arranged, gaps, rows, selected);
             }
             if unstandable && first_failure.is_some() {
                 return Search::Exhausted;
@@ -3621,7 +3750,7 @@ fn prepare_with(
     if matches!(searched, Search::Cut) {
         return Err(cut());
     }
-    if let Search::Found(steps, arranged, gaps, rows) = searched {
+    if let Search::Found(steps, arranged, gaps, rows, selected) = searched {
         let mut found = setup;
         found.steps = steps;
         for row in &arranged {
@@ -3635,7 +3764,7 @@ fn prepare_with(
         found
             .settled
             .extend(selected_values(ir, command, outcome, &supplied, &rows));
-        return Ok((found, input, gaps));
+        return Ok(((found, input, gaps), selected));
     }
     // A branch whose rows take it with one selected row and never more never observes its order.
     if plan.heads.iter().any(Option::is_some) {
@@ -3978,6 +4107,15 @@ fn related_link(
     })
 }
 
+/// Whether `input` of the command `creator` names a row of `entity` ([`Others::Linked`]).
+fn names_entity(ir: &EssIr, creator: &QualifiedName, input: &str, entity: &EntityHandle) -> bool {
+    ir.commands().get(creator).is_some_and(|creator| {
+        super::related_guard::vias(creator)
+            .into_iter()
+            .any(|(via, read)| via == input && read == entity)
+    })
+}
+
 /// The branches of `creator` refusing the related row `input.<via>` names: the one refusing it
 /// missing, where declared, and those refusing it on its stored fields.
 fn creator_guards(
@@ -4268,14 +4406,16 @@ fn flow_text(text: &str) -> String {
 ///
 /// Where the send's input already names the related row, one of the rows `named` arranged for
 /// it (ess/32, beyond10x/ess#554), the rows are created naming that row instead, and naming a row
-/// of their own for every other row the creator sets a field from ([`creator_row`]).
+/// of their own for every other row the creator sets a field from ([`creator_row`]) —
+/// or, for [`Others::Sent`], naming the row the send names through the same input, where it names
+/// one.
 fn linked(
     ir: &EssIr,
     command: &ResolvedCommand,
     selections: &[&ResolvedRowSelection],
     unders: &[Option<(Predicate, Arrangement)>],
     actors: &BTreeMap<QualifiedName, ActorRef>,
-    (setup, named): (&mut Setup, &[(String, Arrangement)]),
+    (setup, named, others): (&mut Setup, &[(String, Arrangement)], Others),
 ) -> Vec<Option<Linked>> {
     let mut created: BTreeMap<String, Arrangement> = BTreeMap::new();
     // The creator's other rows, by the input naming them: created once, and never the send's.
@@ -4299,7 +4439,16 @@ fn linked(
                 let mut held = BTreeMap::from([(row.instance.clone(), row.state.clone())]);
                 let mut rows = BTreeMap::from([(row.instance.clone(), row.settled.clone())]);
                 for (field, input) in &link.others {
-                    let other = if let Some(other) = beside.get(input) {
+                    let sent = match others {
+                        Others::Own => None,
+                        Others::Sent => named_row(input),
+                        Others::Linked => {
+                            names_entity(ir, &link.creator, input, &link.entity).then_some(row)
+                        }
+                    };
+                    let other = if let Some(other) = sent {
+                        other.clone()
+                    } else if let Some(other) = beside.get(input) {
                         other.clone()
                     } else if let Some(other) = creator_row(ir, &link, input, actors, beside.len())
                     {
@@ -4382,6 +4531,66 @@ fn input_field(path: &FactPath) -> Option<&str> {
     }
 }
 
+/// Whether the send `input` holds the `when:` beside `outcome`'s guard over a row its input names,
+/// where it carries one, each input `supplied` as an arranged instance naming that row
+/// (story:row-set-beside-named-rows-suite-tells-every-order-apart). A comparison of two such
+/// inputs is decided by whether they name the same row; any other reading of one is not, and the
+/// send is refused.
+fn sends_when(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+    supplied: &BTreeMap<String, ScenarioValue>,
+) -> bool {
+    let ResolvedCondition::Related {
+        input: Some(guard), ..
+    } = &outcome.condition
+    else {
+        return true;
+    };
+    let named = |path: &FactPath| match supplied.get(super::related_guard::guard_input(path)?)? {
+        ScenarioValue::Instance { instance } => Some(instance.clone()),
+        _ => None,
+    };
+    let decided = rows_compared(guard, &named);
+    if decided
+        .fact_paths()
+        .into_iter()
+        .any(|path| named(path).is_some())
+    {
+        return false;
+    }
+    flatten(ir, command, input).is_ok_and(|facts| facts.decide(&decided) == Decision::Satisfied)
+}
+
+/// `predicate` with each equality or inequality between two inputs `named` gives an instance for
+/// decided by whether the instances are one ([`sends_when`]). Every other leaf is left as it is.
+pub(super) fn rows_compared(
+    predicate: &Predicate,
+    named: &dyn Fn(&FactPath) -> Option<InstanceName>,
+) -> Predicate {
+    let decide = |child: &Predicate| rows_compared(child, named);
+    match predicate {
+        Predicate::All(children) => Predicate::All(children.iter().map(decide).collect()),
+        Predicate::Any(children) => Predicate::Any(children.iter().map(decide).collect()),
+        Predicate::Not(inner) => Predicate::Not(Box::new(decide(inner))),
+        Predicate::Compare {
+            left: Operand::Fact(left),
+            op: op @ (CompareOp::Eq | CompareOp::Ne),
+            right: Operand::Fact(right),
+            ..
+        } => match (named(left), named(right)) {
+            (Some(left), Some(right)) if (left == right) == (*op == CompareOp::Eq) => {
+                Predicate::Always
+            }
+            (Some(_), Some(_)) => Predicate::Never,
+            _ => predicate.clone(),
+        },
+        other => other.clone(),
+    }
+}
+
 /// `predicate` with each equality between a row's field and an input field decided where both name
 /// an arranged instance (beyond10x/ess#553): a review filed under the incident a reopen names. Every
 /// other leaf is left as it is.
@@ -4390,7 +4599,23 @@ fn instances_decided(
     settled: &BTreeMap<String, Determined>,
     supplied: &BTreeMap<String, ScenarioValue>,
 ) -> Predicate {
-    let decide = |child: &Predicate| instances_decided(child, settled, supplied);
+    decided_by(
+        predicate,
+        &|field| match &settled.get(field)?.value {
+            ScenarioValue::Instance { instance } => Some(instance.clone()),
+            _ => None,
+        },
+        supplied,
+    )
+}
+
+/// [`instances_decided`] on the instance `named` gives for a row's field, where it gives one.
+fn decided_by(
+    predicate: &Predicate,
+    named: &dyn Fn(&str) -> Option<InstanceName>,
+    supplied: &BTreeMap<String, ScenarioValue>,
+) -> Predicate {
+    let decide = |child: &Predicate| decided_by(child, named, supplied);
     match predicate {
         Predicate::All(children) => Predicate::All(children.iter().map(decide).collect()),
         Predicate::Any(children) => Predicate::Any(children.iter().map(decide).collect()),
@@ -4405,15 +4630,13 @@ fn instances_decided(
                 let [field] = row.segments() else {
                     return None;
                 };
-                let ScenarioValue::Instance { instance: held } = &settled.get(field)?.value else {
-                    return None;
-                };
-                let ScenarioValue::Instance { instance: named } =
+                let held = named(field)?;
+                let ScenarioValue::Instance { instance: given } =
                     supplied.get(input_field(sent)?)?
                 else {
                     return None;
                 };
-                Some(held == named)
+                Some(held == *given)
             };
             match instance(left, right).or_else(|| instance(right, left)) {
                 Some(same) if same == (*op == CompareOp::Eq) => Predicate::Always,
@@ -4558,9 +4781,16 @@ fn copied<'o>(outcome: &'o ResolvedOutcome, selection: &ResolvedRowSelection) ->
 }
 
 /// What one search of [`prepare`] ends in: the first arrangement that stands, with its steps,
-/// rows, witness gaps and the rows the steps leave; none; or the cut at [`ARRANGEMENTS`].
+/// rows, witness gaps, the rows the steps leave and whether some selector selects a row; none; or
+/// the cut at [`ARRANGEMENTS`].
 enum Search {
-    Found(Vec<ScenarioStep>, Vec<Arrangement>, Vec<RefusalCause>, Rows),
+    Found(
+        Vec<ScenarioStep>,
+        Vec<Arrangement>,
+        Vec<RefusalCause>,
+        Rows,
+        bool,
+    ),
     Exhausted,
     Cut,
 }

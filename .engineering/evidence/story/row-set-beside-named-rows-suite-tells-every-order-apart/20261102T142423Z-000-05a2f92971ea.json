@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-02T14:24:23Z",
+  "actor": "human:timo",
+  "artifact": "story:row-set-beside-named-rows-suite-tells-every-order-apart",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "D368 final gate (D392) on integration/ess-d368 at 79a6f9cd6 (release-prepare 0bd706d7d, regeneration b4a23af22), 13:39-14:22Z, five stages with a cache discard between: A1 cargo test -p ess-domain full (1825 passed, 0 failed, 2 ignored); A2 -p ess-conformance --lib + 31 named targets incl. every D368 review file, both bytes tables and external_beside_held_guard (442 passed, 0 failed); A3 clippy -D warnings on ess-domain --all-targets and the ess-conformance set, fmt-check; A4 doc --workspace --no-deps with RUSTDOCFLAGS -D warnings; B release verify 0.83.0, whats-changed --check (88), site-data --check, projection-check, test-xtask (420 passed), no replaced suite digest left (15 checked); peak target 12G, lowest / 62G",
+    "reference": "79a6f9cd6"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-02T11:40:39Z",
+  "actor": "human:timo",
+  "artifact": "story:a-refusal-witness-compares-its-trigger-identities",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "U3 fix round 1 on unit/ess-d368-u3-r1 11d968fd6: lib 172, adversary_273_pass1 9, adversary_d368_u3_pass1 6, refusal_policy 19, bounded_retry 13, bytes tables (7 models re-pinned), 6 more targets green; clippy -D warnings, fmt-check; red before fix 273_pass1 7/2, d368_u3 3/3",
+    "reference": "11d968fd6"
+  }
+}

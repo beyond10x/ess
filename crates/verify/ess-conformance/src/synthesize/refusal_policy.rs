@@ -23,7 +23,9 @@
 
 use std::num::NonZeroU32;
 
-use ess_compiler::ir::{EventHandle, ResolvedRefusalAction, ResolvedRefusalPolicy};
+use ess_compiler::ir::{
+    EventHandle, ResolvedPayloadValue, ResolvedRefusalAction, ResolvedRefusalPolicy,
+};
 
 use super::{
     accepting_component, clipped, insert, payload_shape, publishes, ActorRef, BTreeMap, BTreeSet,
@@ -136,7 +138,7 @@ fn witness(
 ) -> Built {
     let command = CommandRef::new(invoked.name.clone());
     let forced = forcible(ir.format(), invoked, outcome);
-    let alternative = super::bounded_retry::clean_trigger(ir, binding, trigger, actors)?;
+    let alternative = super::bounded_retry::clean_publisher(ir, binding, trigger, actors)?;
     // A missing related row is a refusal the honest system answers on every attempt, where the
     // trigger names a row no row carries: no injection is needed to reach it (a downstream
     // adopter's report of 2026-10-20). Where the trigger refuses that missing row itself, another
@@ -185,20 +187,25 @@ fn witness(
         Some((invoke, publisher)) => (Some(invoke), publisher),
         None => (None, None),
     };
-    let trigger = match &publisher {
-        Some((run, _)) => run,
-        None => alternative.as_ref().map_or(trigger, |(run, _)| run),
+    // The trigger the scenario sends, with the branch it takes: what its event carries, and so
+    // which identities the expectation compares, is that branch's, whichever publisher is sent.
+    let sent_by: super::Published<'_> = match &publisher {
+        Some((run, by, _)) => (*by, run),
+        None => alternative
+            .as_ref()
+            .map_or((published_by, trigger), |(run, by, _)| (*by, run)),
     };
+    let trigger = sent_by.1;
     let mut source: BTreeSet<EssSemanticRef> = [command.clone().into(), forced_ref.clone().into()]
         .into_iter()
         .collect();
-    if let Some((_, published)) = &publisher {
-        source.extend(published.iter().cloned());
+    if let Some((_, _, rests_on)) = &publisher {
+        source.extend(rests_on.iter().cloned());
     }
     if let Some(component) = accepting_component(ir, &invoked.name) {
         source.insert(component.into());
     }
-    if let Some((_, extra)) = &alternative {
+    if let Some((_, _, extra)) = &alternative {
         source.extend(extra.iter().cloned());
     }
     if let Some((_, _, rests_on)) = &arranged {
@@ -210,23 +217,30 @@ fn witness(
         after,
         text,
     } = owed(ir, binding, policy, outcome, action, invoked, &mut source);
-    let mut steps = match &arranged {
-        Some((setup, _, _)) => setup.clone(),
-        None => trigger.setup.clone(),
-    };
-    if let Some(invoke) = answered {
-        steps.extend(invoke);
-    } else if let Some((_, invoke, _)) = arranged {
-        steps.extend(invoke);
+    // The trigger as sent: its arrangement and its invocation, the forced refusal armed between
+    // them where it is forced rather than answered.
+    let (setup, invoke, armed) = if let Some(invoke) = answered {
+        (trigger.setup.clone(), invoke, None)
+    } else if let Some((setup, invoke, _)) = arranged {
+        (setup, invoke, None)
     } else {
-        steps.push(super::bounded_retry::force(forced_ref, times));
-        steps.extend(trigger.invoke.iter().cloned());
-    }
-    steps.push(ScenarioStep::ExpectEvent {
-        event: event.clone(),
-        payload: BTreeMap::new(),
-        shape: payload_shape(ir, event),
-    });
+        let armed = super::bounded_retry::force(forced_ref, times);
+        (trigger.setup.clone(), trigger.invoke.clone(), Some(armed))
+    };
+    let mut steps = setup.clone();
+    steps.extend(armed);
+    steps.extend(invoke.iter().cloned());
+    // The trigger's event compared as the other binding scenarios compare it, and with the ids it
+    // was sent as literals (story:a-refusal-witness-compares-its-trigger-identities). Where a
+    // related row is arranged first and the trigger's row created naming it, no field of that row
+    // is read: nothing records what it was rewritten to hold.
+    let rewritten = BTreeMap::new();
+    steps.push(expect_sent_trigger_event(
+        ir,
+        sent_by,
+        (setup.as_slice(), invoke.as_slice(), &rewritten),
+        event,
+    ));
     steps.push(super::bounded_retry::count(
         BindingRef::new(binding.name.clone()),
         command,
@@ -236,19 +250,103 @@ fn witness(
     Ok((steps, clipped(&text), source))
 }
 
+/// [`super::expect_trigger_event`] for a refusal witness: the identities the invocation sent as
+/// captured instances, and what the trigger's row holds where the scenario arranges that row as its
+/// run does, and also each literal the invocation was sent for an event field of an entity's
+/// identity type that the branch fills from that input unconverted. That literal is the id a
+/// trigger is sent naming no row ([`super::binding_effects::related_missing`]): no instance
+/// captured it, the binding maps it into the invoked command, and the refusal is about it, so a
+/// target that publishes another id there fails the witness
+/// (story:a-refusal-witness-compares-its-trigger-identities).
+fn expect_sent_trigger_event(
+    ir: &EssIr,
+    published: super::Published<'_>,
+    sent: super::Sent<'_>,
+    event: &EventRef,
+) -> ScenarioStep {
+    let step = super::expect_trigger_event(ir, published, sent, event);
+    // The input the last invocation carries, as `expect_trigger_event` reads it.
+    let input = sent.1.iter().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand { input, .. } => Some(Some(input)),
+        ScenarioStep::ExecuteCommandWithoutInput { .. } => Some(None),
+        _ => None,
+    });
+    let Some(Some(input)) = input else {
+        return step;
+    };
+    let identity_types: Vec<_> = ir
+        .entities()
+        .values()
+        .map(|entity| &entity.identity.type_ref)
+        .collect();
+    let ids: BTreeMap<String, ess_primitives::node::Node> = published
+        .0
+        .payload
+        .iter()
+        .filter(|payload| EventRef::from(&payload.event) == *event)
+        .flat_map(|payload| &payload.fields)
+        .filter(|field| field.conversion.is_none() && identity_types.contains(&&field.target_type))
+        .filter_map(|field| {
+            let ResolvedPayloadValue::InputField { field: from, .. } = &field.value else {
+                return None;
+            };
+            match super::supplied_at(input, from)? {
+                crate::ScenarioValue::Literal { value } => Some((field.target.clone(), value)),
+                _ => None,
+            }
+        })
+        .collect();
+    match step {
+        ScenarioStep::ExpectEvent {
+            event,
+            mut payload,
+            shape,
+        } => {
+            for (field, value) in ids {
+                payload.entry(field).or_insert(value);
+            }
+            ScenarioStep::ExpectEvent {
+                event,
+                payload,
+                shape,
+            }
+        }
+        ScenarioStep::ExpectEventValues {
+            event,
+            mut payload,
+            shape,
+        } => {
+            for (field, value) in ids {
+                payload
+                    .entry(field)
+                    .or_insert_with(|| crate::ScenarioValue::literal(value));
+            }
+            ScenarioStep::ExpectEventValues {
+                event,
+                payload,
+                shape,
+            }
+        }
+        other => other,
+    }
+}
+
 /// The invocation leaving the related row missing, sent from the first other publisher of the
 /// binding's event (by command, then branch, in declaration order) that does not refuse the missing
-/// row itself, with its arranged run and what that run rests on. `None` where every publisher
-/// refuses it, so the refusal by name stands.
+/// row itself, with its arranged run, the branch it takes, which says what its event carries, and
+/// what that run rests on. `None` where every publisher refuses it, so the refusal by name stands.
 #[allow(clippy::type_complexity)]
-fn unguarded_publisher(
-    ir: &EssIr,
+fn unguarded_publisher<'ir>(
+    ir: &'ir EssIr,
     binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
     published_by: &ResolvedOutcome,
     refusal: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
-) -> Option<(Vec<ScenarioStep>, Option<(Run, Vec<EssSemanticRef>)>)> {
+) -> Option<(
+    Vec<ScenarioStep>,
+    Option<(Run, &'ir ResolvedOutcome, Vec<EssSemanticRef>)>,
+)> {
     let event = binding.cause.event()?;
     ir.commands().values().find_map(|command| {
         command
@@ -270,7 +368,7 @@ fn unguarded_publisher(
                     name.clone().into(),
                     OutcomeRef::new(name, outcome.name.clone()).into(),
                 ];
-                Some((invoke, Some((run, published))))
+                Some((invoke, Some((run, outcome, published))))
             })
     })
 }

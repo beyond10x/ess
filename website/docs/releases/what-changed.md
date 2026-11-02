@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.83.0 — 2026-11-02
+
+### Optional list appends, binding refusals that check event identities, and refusals that tell states apart
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/optional-appends-and-refusals-that-tell-states-apart) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.83.0)
+
+The interpreted target appends null for an absent optional list element. Binding refusal scenarios compare trigger event identities. A row-set guard beside named rows is witnessed on every refusal order. No-view input refusals read the record back through sends that tell its state apart.
+
 ## 0.82.0 — 2026-11-01
 
 ### Binding scenarios that check event identities, refusals that probe the record, and validation that names the file
