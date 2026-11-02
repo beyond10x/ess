@@ -130,7 +130,7 @@ export async function runCommand(
   }
 }
 
-function bound(action: ActionSpec, values: Record<string, unknown>): Record<string, unknown> {
+function bound(action: Pick<ActionSpec, "bind">, values: Record<string, unknown>): Record<string, unknown> {
   const input: Record<string, unknown> = {};
   for (const [name, expr] of Object.entries(action.bind ?? {})) {
     input[name] = evaluate(expr, values);
@@ -147,12 +147,16 @@ function download(name: string, text: string, type: string): void {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Runs `action` in `scope`: its command, overlay, page, export, copy or state, in that order. Where
+ * it is drawn plays no part, so an account menu entry runs as it is.
+ */
 //+plain
-async function runAction(action: ActionSpec, scope: Scope, extra?: Record<string, unknown>): Promise<boolean> {
+export async function runAction(action: Omit<ActionSpec, "data-ui-path">, scope: Scope, extra?: Record<string, unknown>): Promise<boolean> {
 //-plain
 //+bound
-async function runAction(
-  action: ActionSpec,
+export async function runAction(
+  action: Omit<ActionSpec, "data-ui-path">,
   scope: Scope,
   extra?: Record<string, unknown>,
   refused?: (refusal: Refusal | undefined) => void,

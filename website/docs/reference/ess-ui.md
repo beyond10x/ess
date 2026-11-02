@@ -2702,6 +2702,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `filter_paging` | [Reads](#reads) | `reads.filter` | `{must: use_client_or_none_paging}` | error |
 | `filter_over_param` | [Reads](#reads) | `reads.filter` | `{must: prefer_existing_server_parameter}` | warning |
 | `filter_export` | [Action](#action) | `export.params` | `{must: not_claim_to_copy_client_filter}` | warning |
+| `account_menu_keys` | every node | `shells.*.regions.*.props.actions[] of an account_menu` | `{must_be_in: [name, label, opens, does, sets, navigate]}` | error |
 
 ## Retrofits and lowering
 
