@@ -6,7 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
-| [0.83.0](#optional-list-appends-binding-refusals-that-check-event-identities-row-sets-on-every-refusal-order-and-no-view-refusals-that-tell-states-apart) | Optional list appends, binding refusals that check event identities, row sets on every refusal order, and no-view refusals that tell states apart | capability | notable |
+| [0.83.0](#optional-list-appends-binding-refusals-that-check-event-identities-and-refusals-that-tell-states-apart) | Optional list appends, binding refusals that check event identities, and refusals that tell states apart | capability | notable |
 | [0.82.0](#binding-scenarios-that-check-event-identities-refusals-that-probe-the-record-and-validation-that-names-the-file) | Binding scenarios that check event identities, refusals that probe the record, and validation that names the file | capability | notable |
 | [0.81.0](#nullable-binary64-fields-in-generated-types-name-aliases-in-the-schema-and-synthesis-that-follows-bindings) | Nullable Binary64 fields in generated types, name aliases in the schema, and synthesis that follows bindings | capability | notable |
 | [0.80.0](#http-bound-inputs-and-short-names-in-generated-types-and-input-type-rules-in-entity-runtime) | HTTP-bound inputs and short names in generated types, and input-type rules in Entity Runtime | capability | notable |
@@ -97,7 +97,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 ## 0.83.0 — 2026-11-02
 
-### Optional list appends, binding refusals that check event identities, row sets on every refusal order, and no-view refusals that tell states apart
+### Optional list appends, binding refusals that check event identities, and refusals that tell states apart
 
 capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.83.0)
 

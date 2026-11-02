@@ -11,7 +11,7 @@ This page is generated from the change records kept in the repository. A release
 
 ## 0.83.0 — 2026-11-02
 
-### Optional list appends, binding refusals that check event identities, row sets on every refusal order, and no-view refusals that tell states apart
+### Optional list appends, binding refusals that check event identities, and refusals that tell states apart
 
 capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/optional-appends-and-refusals-that-tell-states-apart) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.83.0)
 
