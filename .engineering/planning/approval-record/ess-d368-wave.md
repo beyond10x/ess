@@ -13,7 +13,7 @@ relations:
 - decides: story:a-no-view-probe-tells-from-states-apart
 - decides: story:a-refusal-witness-compares-its-trigger-identities
 - decides: story:row-set-beside-named-rows-suite-tells-every-order-apart
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-02T07:12:04Z", actor: "human:timo", revision: 2}
 ---
@@ -187,3 +187,9 @@ Host build slots the orchestrator relayed for this wave, 2026-11-02:
 - D388 (host-monitor grant, 12:21Z; basis: Timo 2026-10-29, "dips to ~60G during gates
   acceptable"): one targeted run at a time, 0 other cargo, / >= 68G before each run, stop below
   60G. Given for U2 first, U4 on a separate go. Wrapper backups `cargo-in.sh.d387`, `recheck.sh.d387`.
+- D388 extended (13:4xZ) to the 0.83.0 regeneration and the U2 review and fix passes: 0 other cargo
+  in every band (the >= 80G one-other allowance dropped), retry every 2 minutes up to 10 times on
+  other cargo. Wrapper backups `cargo-in.sh.d388b`, `recheck.sh.d388b`.
+- D392 (host-monitor grant for the final gate): stages A1-A4 and B; each starts only at / >= 72G
+  with 0 other cargo (retries every 2 minutes, up to 15 times); stop below 60G; tree <= 12G;
+  `worktree discard-cache` between stages; queued behind a connectors clippy check.
