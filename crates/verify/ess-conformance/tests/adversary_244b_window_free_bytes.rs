@@ -195,6 +195,11 @@ const BASE: &str = include_str!("fixtures/adversary-244b-base-digests.tsv");
 /// `synthesis-suite-bytes-table.tsv` pinned at 0.67.0; `conditional-measures-generated`, which
 /// that table excludes, is ess/22 and outside every 0.68.0 synthesis change. IR and mutants are
 /// unchanged.
+///
+/// After 0.82.0 (story a-no-view-held-state-refusal-probes-the-record): a held-state input refusal
+/// on a model with no identity view reads the record back, so the `occurrence-clock-offers` suite
+/// grows; its `malformed` scenario reads the offer back in each state. IR, refusals and mutants
+/// are unchanged.
 const INTENDED: &[(&str, &str)] = &[
     (
         "crates/verify/ess-conformance/tests/fixtures/arrangement-input-refusal.yaml",
@@ -430,11 +435,11 @@ const INTENDED: &[(&str, &str)] = &[
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml",
-        "ir=100a4d422734bdd51af9:14053 suite=2381a42504a5cc0ab314:28272 refusals=4fd558db28f2b7a105b0:2473 mutants=fad5957bb2e5091b3d81:1764",
+        "ir=100a4d422734bdd51af9:14053 suite=4b8a770fbb6241c13f00:30533 refusals=4fd558db28f2b7a105b0:2473 mutants=fad5957bb2e5091b3d81:1764",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/occurrence-clock-offers.yaml@ess22",
-        "ir=100a4d422734bdd51af9:14053 suite=2381a42504a5cc0ab314:28272 refusals=4fd558db28f2b7a105b0:2473 mutants=fad5957bb2e5091b3d81:1764",
+        "ir=100a4d422734bdd51af9:14053 suite=4b8a770fbb6241c13f00:30533 refusals=4fd558db28f2b7a105b0:2473 mutants=fad5957bb2e5091b3d81:1764",
     ),
     (
         "crates/verify/ess-conformance/tests/fixtures/one-time-coverage/model.yaml",

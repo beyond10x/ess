@@ -14,6 +14,8 @@
 //! Every step used is an existing one, so a suite carrying either form keeps the format its other
 //! steps select.
 
+use std::collections::VecDeque;
+
 use ess_compiler::ir::{Driver, EntityHandle, ResolvedPayloadValue};
 use ess_domain::command::TestStrategy;
 use ess_domain::view::Consistency;
@@ -335,13 +337,15 @@ pub(super) fn existence(
 /// adds the other half, as [`refusals_on_a_stored_row`] does for the two existence forms: the
 /// record created through a declared creation and driven to a state the command runs from, the
 /// refused input sent for it, and the refusal required with no event and the row unchanged. Where
-/// no identity view shows the row, the command reads it back instead: a valid send of the first
-/// branch addressing the record that runs from the arranged state and has one follows, its
-/// outcome required. A target that moved the record on refusal out of every state that branch
-/// runs from, or otherwise changed what that branch answers, fails it; a move between two states
-/// that branch runs from is not seen. Where no arrangement reaches that record, or no view shows
-/// it and no such branch has a valid send, the scenario is withdrawn and refused with the cause,
-/// never filed to be skipped at run time.
+/// no identity view shows the row, the commands read it back instead ([`probe`]): sends for the
+/// record whose required answers tell the arranged state apart from every other state of its
+/// lifecycle follow. That is the valid send of the first branch addressing the record from the
+/// arranged state where it alone does, and otherwise the shortest sequence of sends that does,
+/// such as another command's branch the model answers with its `wrong_state:` refusal in the
+/// states the first branch also runs from. A target that moved the record on refusal, into any
+/// state, fails it. Where no arrangement reaches that record, or no view shows it and no send has a valid
+/// input or the sends leave a state they cannot tell apart from the arranged one, the scenario is
+/// withdrawn and refused with the cause, never filed to be skipped at run time.
 ///
 /// Left to their own families: the two existence forms (their stored-row half is above), a command
 /// reading stored fields (its refusals are already sent for an arranged row), from the one rule
@@ -432,32 +436,32 @@ fn arranged_refusal(
     setup.after.clone_from(&setup.before);
     let refused = reach(ir, command, refusal, Distinction::PLAIN)?;
     // Where no identity view shows the arranged row, no view reads it back, so the half is filed
-    // without the unchanged-row claim, and the command reads it back instead ([`probe`]): after
-    // the error and no event, a valid send of a branch addressing the record from the arranged
-    // state, its outcome required. A target that moved the record on refusal out of every state
-    // that branch runs from, or otherwise changed what it answers, answers that send with another
-    // branch; a move between two states it runs from is not seen. The plain send needs no view
-    // either, so the scenario is not lost over it (adversary pass 1); it is withdrawn only where no
-    // branch addressing the record from that state has a valid send.
+    // without the unchanged-row claim, and the commands read it back instead ([`probe`]): after
+    // the error and no event, sends for the record that together tell the arranged state apart
+    // from every other state, each answer required. A target that moved the record on refusal,
+    // into any state, answers one of them with another branch. The plain send needs no view
+    // either, so the scenario is not lost over it (adversary pass 1); it is withdrawn where no
+    // send has a valid input or the sends leave a state they cannot tell apart from the arranged
+    // one.
     let observed = identity_views(ir, subject).any(|view| {
         setup.after.as_ref().is_some_and(|state| {
             shows(ir, view, state, &setup.settled, &BTreeMap::new()) == Ok(true)
         })
     });
-    let read_back = if observed {
-        None
+    let (preservation, read_back) = if observed {
+        (
+            subject_fact::preserve_refused_subject(ir, subject, &setup)?,
+            None,
+        )
     } else {
-        Some(probe(ir, command, subject, actors, &setup)?)
-    };
-    let preservation = if observed {
-        subject_fact::preserve_refused_subject(ir, subject, &setup)?
-    } else {
-        subject_fact::Preservation {
-            before: Vec::new(),
-            after: Vec::new(),
-            source: BTreeSet::new(),
-            unobserved: Vec::new(),
-        }
+        let record = Record {
+            instance: setup.instance.as_ref(),
+            bound: &setup.bound,
+            held: setup.before.as_ref(),
+            arranged: true,
+        };
+        let read_back = probe(ir, command, &subject.entity, actors, &record)?;
+        (unobserved(), Some(read_back))
     };
 
     let command_ref = CommandRef::new(command.name.clone());
@@ -519,6 +523,17 @@ fn addresses(outcome: &ResolvedOutcome) -> bool {
     })
 }
 
+/// The preservation of a record no view shows: nothing is observed around the refusal, and the
+/// commands read the record back instead ([`probe`]).
+fn unobserved() -> subject_fact::Preservation {
+    subject_fact::Preservation {
+        before: Vec::new(),
+        after: Vec::new(),
+        source: BTreeSet::new(),
+        unobserved: Vec::new(),
+    }
+}
+
 /// `true` where `outcome` can be taken on a record resting in `held`: its condition admits the
 /// state, and a move it makes starts there.
 fn runs_from(outcome: &ResolvedOutcome, held: &ess_domain::entity::StateName) -> bool {
@@ -531,67 +546,607 @@ fn runs_from(outcome: &ResolvedOutcome, held: &ess_domain::entity::StateName) ->
         })
 }
 
-/// The send reading the arranged row back through the command where no identity view shows it:
-/// the valid input of the first branch, in declaration order, that addresses a record of
-/// `arranged`'s entity from the state `setup` left it in and has one, sent for that record and its
-/// outcome required. A target that moved the record on refusal out of every state that branch
-/// runs from, or otherwise changed what it answers, fails it; a move between two states it runs
-/// from is not seen. Refused naming [`UNPROBED`] and every branch tried where none has one.
+/// The sends reading the record an input refusal was sent for back through the commands, where no
+/// identity view shows it: after the refusal, each send's input for that record, and the branch
+/// the model answers it with required.
+///
+/// Together they tell the state the record was left in apart from every other state of its
+/// lifecycle, so a target that moved the record on refusal, into any state, answers one of them
+/// with another branch. The arranged half of [`refusals_on_an_arranged_row`] tries first the valid
+/// input of each branch of `command`, in declaration order, that addresses a record of `entity`
+/// from that state, sent as an arranging act; where one alone tells the state apart it is the
+/// whole read. Otherwise, and for a held-state refusal, the read is the shortest sequence of sends,
+/// each from the state the sends before it leave the record in, drawn from the branches of
+/// `command` and of every other command [`reads_plainly`] admits, in that order; a held-state
+/// refusal of `command` is one of them. Where the arrangement names no state, the first valid send
+/// of an addressing branch is the read, as before.
+///
+/// Refused naming [`UNPROBED`] and every branch tried with no valid send from that state where no
+/// send tells any state apart from it, and naming [`UNTOLD`] and the states left where no sequence
+/// tells every one apart.
 fn probe(
     ir: &EssIr,
     command: &ResolvedCommand,
-    arranged: &ResolvedSubject,
+    entity: &EntityHandle,
     actors: &BTreeMap<QualifiedName, ActorRef>,
-    setup: &Setup,
+    record: &Record<'_>,
 ) -> Result<super::Invocation, RefusalCause> {
-    let mut tried = Vec::new();
-    for branch in command.outcomes.iter().filter(|branch| {
-        addresses(branch)
-            && branch
-                .subject
+    let gap = |path: String, reason| {
+        RefusalCause::NoWitness(WitnessGap {
+            path,
+            type_ref: ir.entity(entity).name.to_string(),
+            reason,
+        })
+    };
+    let mut reads = Reads::new(ir, command, entity, actors, record);
+    let Some(held) = record.held else {
+        let first = reads.at(None).first().copied();
+        return match first {
+            Some(found) => Ok(reads.sent(&[found])),
+            None => Err(gap(reads.tried.join(", "), UNPROBED)),
+        };
+    };
+    let start = Search {
+        at: held.clone(),
+        others: ir
+            .entity(entity)
+            .lifecycle
+            .states
+            .iter()
+            .filter(|state| *state != held)
+            .map(|state| (state.clone(), state.clone()))
+            .collect(),
+        chain: Vec::new(),
+    };
+    if start.others.is_empty() {
+        // A lifecycle of one state: nothing to tell apart, the record read back as it is.
+        let first = reads.at(Some(held)).first().copied();
+        return match first {
+            Some(found) => Ok(reads.sent(&[found])),
+            None => Err(gap(reads.tried.join(", "), UNPROBED)),
+        };
+    }
+    let mut best: Option<Search> = None;
+    let mut queue = VecDeque::from([start]);
+    let mut seen = BTreeSet::new();
+    let mut expanded = 0;
+    while let Some(search) = queue.pop_front() {
+        if expanded == MAX_PROBE_SEARCHES {
+            break;
+        }
+        expanded += 1;
+        for found in reads.at(Some(&search.at)) {
+            let Some(next) = reads.after(&search, found) else {
+                continue;
+            };
+            if next.others.is_empty() {
+                return Ok(reads.sent(&next.chain));
+            }
+            if best
                 .as_ref()
-                .is_some_and(|subject| subject.entity == arranged.entity)
-            && setup
-                .before
-                .as_ref()
-                .is_none_or(|held| runs_from(branch, held))
-    }) {
+                .is_none_or(|best| next.others.len() < best.others.len())
+            {
+                best = Some(next.clone());
+            }
+            // A state left resting where the record rests answers every later send alike.
+            if next.others.values().any(|now| *now == next.at) {
+                continue;
+            }
+            if seen.insert((next.at.clone(), next.others.clone())) {
+                queue.push_back(next);
+            }
+        }
+    }
+    Err(match best {
+        None => gap(reads.tried.join(", "), UNPROBED),
+        Some(best) => gap(
+            std::iter::once(held)
+                .chain(best.others.keys())
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+            UNTOLD,
+        ),
+    })
+}
+
+/// How many partial sequences [`probe`] extends before it settles for the best it found.
+const MAX_PROBE_SEARCHES: usize = 64;
+
+/// The record [`probe`] reads back.
+struct Record<'a> {
+    /// What the arrangement bound it as.
+    instance: Option<&'a super::InstanceName>,
+    /// The rows the refused command's input points at, by input field.
+    bound: &'a BTreeMap<String, super::InstanceName>,
+    /// The state the arrangement left it in, where it says.
+    held: Option<&'a ess_domain::entity::StateName>,
+    /// `true` for the arranged half of [`refusals_on_an_arranged_row`], whose first sends are the
+    /// addressing branches', sent as arranging acts.
+    arranged: bool,
+}
+
+/// One partial sequence of [`probe`]: where the record rests after it, where each other state it
+/// has not told apart would have left the record, by the state it started in, and its sends.
+#[derive(Clone)]
+struct Search {
+    at: ess_domain::entity::StateName,
+    others: BTreeMap<ess_domain::entity::StateName, ess_domain::entity::StateName>,
+    chain: Vec<usize>,
+}
+
+/// One send [`probe`] can make.
+struct Read<'i> {
+    /// Its steps and the constructs they depend on.
+    invocation: super::Invocation,
+    /// The states in which the model answers it as it does in the state it is sent from, that
+    /// state among them; a state the model leaves the answer undecided in counts as alike.
+    alike: BTreeSet<&'i ess_domain::entity::StateName>,
+    /// Where a record that answered it as required rests.
+    lands: Landing<'i>,
+}
+
+/// Where a send leaves a record that answered it as required.
+#[derive(Clone, Copy)]
+enum Landing<'i> {
+    /// Where it was.
+    Stays,
+    /// In the state the branch's move arrives at.
+    To(&'i ess_domain::entity::StateName),
+    /// Nowhere: the branch deleted it.
+    Gone,
+}
+
+impl<'i> Landing<'i> {
+    /// Where a record resting in `now` rests once it has answered as required; `None` once gone.
+    fn rests<'s>(
+        self,
+        now: &'s ess_domain::entity::StateName,
+    ) -> Option<&'s ess_domain::entity::StateName>
+    where
+        'i: 's,
+    {
+        match self {
+            Self::Stays => Some(now),
+            Self::To(state) => Some(state),
+            Self::Gone => None,
+        }
+    }
+}
+
+/// What [`Reads::through`] made of one branch.
+enum Tried<'i> {
+    /// It is no send that reads the record back from that state.
+    Not,
+    /// It has no valid send from that state.
+    Unsent,
+    /// Its send.
+    Sent(Read<'i>),
+}
+
+/// Where `branch` leaves the record it answers for.
+fn lands(branch: &ResolvedOutcome) -> Landing<'_> {
+    match branch.subject.as_ref().map(|subject| &subject.effect) {
+        Some(ResolvedEffect::Moves { transition }) => Landing::To(&transition.to),
+        Some(ResolvedEffect::Deletes) => Landing::Gone,
+        _ => Landing::Stays,
+    }
+}
+
+/// The sends of [`probe`], found once per state.
+struct Reads<'i, 'r> {
+    ir: &'i EssIr,
+    command: &'i ResolvedCommand,
+    entity: &'i EntityHandle,
+    actors: &'r BTreeMap<QualifiedName, ActorRef>,
+    record: &'r Record<'r>,
+    known: Vec<Read<'i>>,
+    from: BTreeMap<Option<ess_domain::entity::StateName>, Vec<usize>>,
+    /// The branches tried from the state the record was left in with no valid send there, as
+    /// `command.branch`.
+    tried: Vec<String>,
+}
+
+impl<'i, 'r> Reads<'i, 'r> {
+    fn new(
+        ir: &'i EssIr,
+        command: &'i ResolvedCommand,
+        entity: &'i EntityHandle,
+        actors: &'r BTreeMap<QualifiedName, ActorRef>,
+        record: &'r Record<'r>,
+    ) -> Self {
+        Self {
+            ir,
+            command,
+            entity,
+            actors,
+            record,
+            known: Vec::new(),
+            from: BTreeMap::new(),
+            tried: Vec::new(),
+        }
+    }
+
+    /// The sends from `at`, in the order [`probe`] tries them; `None` for a record whose
+    /// arrangement names no state.
+    fn at(&mut self, at: Option<&ess_domain::entity::StateName>) -> Vec<usize> {
+        let key = at.cloned();
+        if let Some(found) = self.from.get(&key) {
+            return found.clone();
+        }
+        let (ir, own, entity) = (self.ir, self.command, self.entity);
+        let mut found = Vec::new();
+        let mut sent = BTreeSet::new();
+        let mut tried = Vec::new();
+        if self.record.arranged {
+            for branch in own.outcomes.iter().filter(|branch| {
+                addresses(branch)
+                    && branch
+                        .subject
+                        .as_ref()
+                        .is_some_and(|subject| subject.entity == *entity)
+                    && at.is_none_or(|held| runs_from(branch, held))
+            }) {
+                sent.insert(&branch.name);
+                match self.addressing(branch) {
+                    Some(read) => found.push(self.push(read)),
+                    None => tried.push(format!("{}.{}", own.name, branch.name)),
+                }
+            }
+        }
+        if let Some(at) = at {
+            let others: Vec<&ResolvedCommand> = if self.record.bound.is_empty() {
+                ir.commands()
+                    .values()
+                    .filter(|other| {
+                        other.name != own.name
+                            && reads_plainly(ir, other, entity)
+                            && self.actors.contains_key(&other.name)
+                                == self.actors.contains_key(&own.name)
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            for command in std::iter::once(own).chain(others) {
+                for branch in &command.outcomes {
+                    if command.name == own.name && sent.contains(&branch.name) {
+                        continue;
+                    }
+                    match self.through(command, branch, at) {
+                        Tried::Not => {}
+                        Tried::Sent(read) => found.push(self.push(read)),
+                        Tried::Unsent => tried.push(format!("{}.{}", command.name, branch.name)),
+                    }
+                }
+            }
+        }
+        if at == self.record.held {
+            self.tried = tried;
+        }
+        self.from.insert(key, found.clone());
+        found
+    }
+
+    fn push(&mut self, read: Read<'i>) -> usize {
+        self.known.push(read);
+        self.known.len() - 1
+    }
+
+    /// The addressing `branch` of the refused command, its own valid input sent as an arranging
+    /// act, where it has one; alike in every state it runs from.
+    fn addressing(&self, branch: &'i ResolvedOutcome) -> Option<Read<'i>> {
         let subject = branch
             .subject
             .as_ref()
             .expect("an addressing branch names a subject");
-        let Ok(input) = reach(ir, command, branch, Distinction::PLAIN) else {
-            tried.push(format!("{}.{}", command.name, branch.name));
-            continue;
-        };
+        let input = reach(self.ir, self.command, branch, Distinction::PLAIN).ok()?;
         let driver = Driver {
-            command,
+            command: self.command,
             outcome: branch,
             effect: &subject.effect,
         };
-        return Ok(super::invoke_with(
-            ir,
+        let invocation = super::invoke_with(
+            self.ir,
             &driver,
-            setup.instance.as_ref(),
-            actors,
-            &setup.bound,
+            self.record.instance,
+            self.actors,
+            self.record.bound,
             &input,
-        ));
+        );
+        Some(Read {
+            invocation,
+            alike: self
+                .ir
+                .entity(self.entity)
+                .lifecycle
+                .states
+                .iter()
+                .filter(|state| runs_from(branch, state))
+                .collect(),
+            lands: lands(branch),
+        })
     }
-    Err(RefusalCause::NoWitness(WitnessGap {
-        path: tried.join(", "),
-        type_ref: ir.entity(&arranged.entity).name.to_string(),
-        reason: UNPROBED,
-    }))
+
+    /// `branch` of `command` sent for the record resting in `at`, the branch the model answers
+    /// there required.
+    fn through(
+        &self,
+        command: &'i ResolvedCommand,
+        branch: &'i ResolvedOutcome,
+        at: &ess_domain::entity::StateName,
+    ) -> Tried<'i> {
+        let decided = matches!(
+            branch.condition,
+            ResolvedCondition::When { .. }
+                | ResolvedCondition::Otherwise
+                | ResolvedCondition::SubjectState { .. }
+                | ResolvedCondition::StateChange { .. }
+        );
+        if !decided
+            || is_input_guarded_refusal(branch)
+            || branch.test_strategy == TestStrategy::InjectFault
+            || branch.replays.is_some()
+            || !super::admits_held_state(&branch.condition, at)
+        {
+            return Tried::Not;
+        }
+        let subject = match &branch.subject {
+            Some(subject)
+                if subject.entity == *self.entity
+                    && subject.effect != ResolvedEffect::Creates
+                    && matches!(subject.instance, ResolvedInstance::Supplied { .. }) =>
+            {
+                subject
+            }
+            Some(_) => return Tried::Not,
+            None => match subject_fact::common(command) {
+                Some(subject) if subject.entity == *self.entity => subject,
+                _ => return Tried::Not,
+            },
+        };
+        let input = if super::has_subject_guards(command) {
+            super::reach_in_state(self.ir, command, branch, at, Distinction::PLAIN)
+        } else {
+            reach(self.ir, command, branch, Distinction::PLAIN)
+        };
+        let Ok(input) = input else {
+            return Tried::Unsent;
+        };
+        let Answer::Branch(expected) = answer(self.ir, command, &input, at) else {
+            return Tried::Unsent;
+        };
+        let alike = self
+            .ir
+            .entity(self.entity)
+            .lifecycle
+            .states
+            .iter()
+            .filter(|state| match answer(self.ir, command, &input, state) {
+                Answer::Branch(other) => other.name == expected.name,
+                Answer::Refused => false,
+                Answer::Undecided => true,
+            })
+            .collect();
+        Tried::Sent(Read {
+            invocation: self.send(command, subject, expected, &input),
+            alike,
+            lands: lands(expected),
+        })
+    }
+
+    /// `input` sent to `command` for the record, named through `subject`, and `expected`
+    /// required.
+    fn send(
+        &self,
+        command: &ResolvedCommand,
+        subject: &ResolvedSubject,
+        expected: &ResolvedOutcome,
+        input: &BTreeMap<String, Node>,
+    ) -> super::Invocation {
+        let command_ref = CommandRef::new(command.name.clone());
+        let outcome_ref = OutcomeRef::new(command_ref.clone(), expected.name.clone());
+        let mut source: BTreeSet<EssSemanticRef> =
+            [command_ref.clone().into(), outcome_ref.clone().into()]
+                .into_iter()
+                .collect();
+        if let Some(actor) = self.actors.get(&command.name) {
+            source.insert(actor.clone().into());
+        }
+        // Another command's input names no row but the record ([`reads_plainly`]).
+        let unbound = BTreeMap::new();
+        let bound = if command.name == self.command.name {
+            self.record.bound
+        } else {
+            &unbound
+        };
+        let steps = vec![
+            ScenarioStep::ExecuteCommand {
+                caller: BTreeMap::new(),
+                command: command_ref,
+                actor: self.actors.get(&command.name).cloned(),
+                input: supply(
+                    self.ir,
+                    command,
+                    input,
+                    Some(subject),
+                    self.record.instance,
+                    bound,
+                ),
+            },
+            ScenarioStep::ExpectOutcome {
+                outcome: outcome_ref,
+            },
+        ];
+        super::Invocation {
+            steps,
+            source,
+            settled: BTreeMap::new(),
+        }
+    }
+
+    /// `search` extended by the `found`th send, or `None` where that send tells no other state
+    /// apart, or deletes the record before every one is.
+    fn after(&self, search: &Search, found: usize) -> Option<Search> {
+        let read = &self.known[found];
+        let others: BTreeMap<_, _> = search
+            .others
+            .iter()
+            .filter(|(_, now)| read.alike.contains(*now))
+            .map(|(origin, now)| (origin.clone(), read.lands.rests(now).unwrap_or(now).clone()))
+            .collect();
+        if others.len() == search.others.len() {
+            return None;
+        }
+        let at = match read.lands {
+            Landing::Gone if !others.is_empty() => return None,
+            lands => lands.rests(&search.at).unwrap_or(&search.at).clone(),
+        };
+        let mut chain = search.chain.clone();
+        chain.push(found);
+        Some(Search { at, others, chain })
+    }
+
+    /// The steps and sources of the sends `chain` names, in order.
+    fn sent(&self, chain: &[usize]) -> super::Invocation {
+        let mut steps = Vec::new();
+        let mut source = BTreeSet::new();
+        for found in chain {
+            let read = &self.known[*found];
+            steps.extend(read.invocation.steps.iter().cloned());
+            source.extend(read.invocation.source.iter().cloned());
+        }
+        super::Invocation {
+            steps,
+            source,
+            settled: BTreeMap::new(),
+        }
+    }
 }
 
-/// Why the arranged half of [`refusals_on_an_arranged_row`] is withdrawn where no identity view
-/// shows the arranged row and no branch addressing it from its arranged state has a valid send to
-/// read it back through.
+/// What the model answers an input sent to a command for a stored record resting in a state.
+enum Answer<'i> {
+    /// That branch.
+    Branch(&'i ResolvedOutcome),
+    /// A refusal the command does not declare: the branch selected moves from other states, and
+    /// the command declares no `wrong_state:` branch.
+    Refused,
+    /// No one branch the model decides.
+    Undecided,
+}
+
+/// [`Answer`] for `input` sent to `command` for a record resting in `held`: the one branch
+/// selected there ([`super::selected_in_state`]), or the `wrong_state:` branch where that branch
+/// moves from other states (the precedence order, step 4).
+fn answer<'i>(
+    ir: &EssIr,
+    command: &'i ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+    held: &ess_domain::entity::StateName,
+) -> Answer<'i> {
+    let Ok(facts) = super::flatten(ir, command, input) else {
+        return Answer::Undecided;
+    };
+    let mut chosen = None;
+    for branch in &command.outcomes {
+        match super::selected_in_state(ir.format(), command, branch, held, &facts) {
+            Ok(true) => {
+                chosen = Some(branch);
+                break;
+            }
+            Ok(false) => {}
+            Err(_) => return Answer::Undecided,
+        }
+    }
+    let Some(chosen) = chosen else {
+        return Answer::Undecided;
+    };
+    let elsewhere = chosen
+        .subject
+        .as_ref()
+        .and_then(|subject| subject.effect.transition())
+        .is_some_and(|transition| !transition.from.contains(held));
+    if !elsewhere {
+        return Answer::Branch(chosen);
+    }
+    command
+        .outcomes
+        .iter()
+        .find(|branch| branch.condition == ResolvedCondition::WrongState)
+        .map_or(Answer::Refused, Answer::Branch)
+}
+
+/// `true` for a command other than the refused one that [`probe`] may send to read a record of
+/// `entity` back: issued by a caller, every branch decided by the input, the record's existence or
+/// its held state (the only conditions [`answer`] models), none filling a field from a related row,
+/// and no input field naming a record but the one its branches address.
+fn reads_plainly(ir: &EssIr, command: &ResolvedCommand, entity: &EntityHandle) -> bool {
+    let names_the_record = |input: &str| {
+        command.outcomes.iter().any(|outcome| {
+            outcome.subject.as_ref().is_some_and(|subject| {
+                subject.entity == *entity
+                    && matches!(&subject.instance, ResolvedInstance::Supplied { field }
+                        if field.name == input)
+            })
+        })
+    };
+    !command.system_issued
+        && command.outcomes.iter().all(|outcome| {
+            matches!(
+                outcome.condition,
+                ResolvedCondition::When { .. }
+                    | ResolvedCondition::Otherwise
+                    | ResolvedCondition::WrongState
+                    | ResolvedCondition::UnknownInstance
+                    | ResolvedCondition::SubjectState { .. }
+                    | ResolvedCondition::StateChange { .. }
+            ) && !reads_related(outcome)
+        })
+        && command.input.iter().all(|field| {
+            names_the_record(&field.name)
+                || !ir
+                    .entities()
+                    .values()
+                    .any(|other| other.identity.type_ref == field.type_ref)
+        })
+}
+
+/// `true` where an event, error or stored field `outcome` fills is read from a related row.
+fn reads_related(outcome: &ResolvedOutcome) -> bool {
+    fn related(value: &ResolvedPayloadValue) -> bool {
+        match value {
+            ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::RelatedState { .. } => true,
+            ResolvedPayloadValue::Struct { fields } => {
+                fields.iter().any(|field| related(&field.value))
+            }
+            _ => false,
+        }
+    }
+    outcome
+        .payload
+        .iter()
+        .flat_map(|payload| &payload.fields)
+        .chain(&outcome.sets)
+        .chain(&outcome.error_payload)
+        .any(|field| related(&field.value))
+}
+
+/// Why an input refusal's arranged or held-state half is withdrawn where no identity view shows
+/// the record and no branch tried has a valid send, from the state the record was left in, that
+/// tells that state apart from any other.
 const UNPROBED: &str = "has no valid send for the record an input refusal was sent for, from the \
                         state that record was arranged in, and no identity view shows that \
                         record, so nothing would show a target that changes on refusal what the \
                         command answers for it";
+
+/// Why an input refusal's arranged or held-state half is withdrawn where no identity view shows
+/// the record and the sends [`probe`] can make leave states it cannot tell apart from the one the
+/// record was left in; the path names that state first, then those.
+const UNTOLD: &str = "names first the state the record an input refusal was sent for was arranged \
+                      in, then the states no send synthesis can make tells apart from it, and no \
+                      identity view shows that record, so a target that moved it on refusal into \
+                      one of those would not be seen";
 
 /// Every input-guarded refusal naming no subject beside branches that read the held state, sent
 /// again for a row arranged in each held state (beyond10x/ess#227).
@@ -606,10 +1161,18 @@ const UNPROBED: &str = "has no valid send for the record an input refusal was se
 /// state first answers a sibling in each and fails there, and a target that checks the input in
 /// every state but one fails in that one.
 ///
+/// Where no identity view shows the record, nothing observes it in its state or compares it
+/// unchanged, so after each refused send the commands read it back instead ([`probe`]): sends
+/// from that held state whose required answers tell it apart from every other state, the
+/// command's own branches that run there first, its held-state refusals among them. A target that
+/// moved the record on refusal, into any state, answers one with another branch and fails.
+///
 /// Where a sibling that runs in a state also reads the input, the refused input is sent there
 /// again at their overlap, refuting every other input refusal: a target that tries the sibling
 /// first takes it. Where no arrangement reaches a state, the scenario is withdrawn and refused
-/// with the arrangement's cause, never left without that state's witness.
+/// with the arrangement's cause, never left without that state's witness; with no identity view,
+/// likewise where no send from a held state has a valid input, naming every branch tried, or
+/// where the sends leave a state they cannot tell apart from it, naming the states.
 fn refusals_in_each_held_state(
     models: &InvocationModels<'_>,
     command: &ResolvedCommand,
@@ -693,25 +1256,32 @@ fn held_state_refusals(
             part.steps.extend(arrangement.steps);
             part.source.extend(arrangement.source);
             // Observed in the state it was arranged in, where a view shows it; the held-state
-            // siblings need that view themselves, so its absence is theirs to refuse.
-            let preservation = match super::observe_selection_subject(
+            // siblings need that view themselves, so its absence is theirs to refuse. Where no
+            // identity view shows the record at all, the commands read it back after the refusal
+            // instead ([`probe`]), as the arranged half of a command without held-state branches
+            // does; a model with such a view keeps its sends.
+            let mut read_back = None;
+            let preservation = if let Ok((observed, view)) = super::observe_selection_subject(
                 ir,
                 subject,
                 &arrangement.instance,
                 state,
                 &refusal.name.to_string(),
             ) {
-                Ok((observed, view)) => {
-                    part.steps.extend(observed);
-                    part.source.insert(view.into());
-                    subject_fact::preserve_refused_subject(ir, subject, &setup)?
+                part.steps.extend(observed);
+                part.source.insert(view.into());
+                subject_fact::preserve_refused_subject(ir, subject, &setup)?
+            } else {
+                if identity_views(ir, subject).next().is_none() {
+                    let record = Record {
+                        instance: Some(&arrangement.instance),
+                        bound: &BTreeMap::new(),
+                        held: Some(state),
+                        arranged: false,
+                    };
+                    read_back = Some(probe(ir, command, &subject.entity, actors, &record)?);
                 }
-                Err(_) => subject_fact::Preservation {
-                    before: Vec::new(),
-                    after: Vec::new(),
-                    source: BTreeSet::new(),
-                    unobserved: Vec::new(),
-                },
+                unobserved()
             };
             part.steps.extend(preservation.before);
             part.source.extend(preservation.source);
@@ -740,6 +1310,10 @@ fn held_state_refusals(
                 });
             }
             part.steps.extend(preservation.after);
+            if let Some(read) = read_back {
+                part.steps.extend(read.steps);
+                part.source.extend(read.source);
+            }
         }
     }
     models.mark(InvocationPhase::Act, &mut part.steps);

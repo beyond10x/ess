@@ -2,9 +2,10 @@
 //!
 //! * The staged model, with `configure` running from two states, files both refusal scenarios
 //!   with their arranged half, passes the correct target and catches a target moving the record
-//!   to `Configured` on refusal. A target that changes the record on refusal into another state
-//!   the probing branch also runs from is not caught, and the story does not claim it; that case
-//!   is kept outside this file for a later story.
+//!   to `Configured` on refusal. A target that swaps the record on refusal between two states the
+//!   probing branch runs from is caught too, through `Stage`, which tells them apart
+//!   (story:a-no-view-probe-tells-from-states-apart); with `stage` running from both, nothing
+//!   tells them apart and both scenarios are withdrawn naming the states.
 //! * Where the first branch addressing the record has no valid send and a later one does, the
 //!   arranged half probes through the later one and is kept.
 use std::cell::{Cell, RefCell};
@@ -153,6 +154,10 @@ enum Mode {
     /// [`Mode::Correct`], except a refusal of `Configure` for a stored account moves it to
     /// `Configured`, with no event.
     MovesOnRefusal,
+    /// [`Mode::Correct`], except a refusal of `Configure` for a stored account swaps it between
+    /// `New` and `Staged`, with no event. `Configure` runs from both, so its own valid send answers
+    /// `configured` either way; `Stage` of a staged account answers `not-new`.
+    SwapsFromStateOnRefusal,
 }
 
 struct Accounts {
@@ -246,8 +251,17 @@ impl ConformanceTarget for Accounts {
                 };
                 if let Some((name, error)) = refused {
                     if let Some(state) = rows.get_mut(&id) {
-                        if self.mode == Mode::MovesOnRefusal {
-                            "Configured".clone_into(state);
+                        match (self.mode, state.as_str()) {
+                            (Mode::MovesOnRefusal, _) => {
+                                "Configured".clone_into(state);
+                            }
+                            (Mode::SwapsFromStateOnRefusal, "New") => {
+                                "Staged".clone_into(state);
+                            }
+                            (Mode::SwapsFromStateOnRefusal, "Staged") => {
+                                "New".clone_into(state);
+                            }
+                            _ => {}
                         }
                     }
                     refuse(name, error)
@@ -373,6 +387,59 @@ fn no_view_arranged_half_is_kept_where_a_later_addressing_branch_has_a_valid_sen
             "{id} withdrawn although `configured` has a valid send to probe the arranged row \
              through (story:a-no-view-arranged-half-probes-the-row-through-the-command): {:#?}",
             refusals(&result)
+        );
+    }
+}
+
+/// The acceptance, "a target that changes the record on refusal fails the arranged half": a
+/// target swapping the account between `New` and `Staged` on refusal changes the record, and the
+/// model decides that change from the row (`Stage` answers `staged` from `New` and `not-new` from
+/// `Staged`). The `Configure` probe alone answers `configured` from both, so the arranged half
+/// must also send a branch that tells the two apart.
+#[test]
+fn no_view_arranged_half_catches_a_target_changing_the_from_state_on_refusal() {
+    let failed = failures(STAGED, Mode::SwapsFromStateOnRefusal);
+    for id in REFUSED {
+        assert!(
+            failed.contains_key(id),
+            "{id} passed a target that swaps the stored account between two states `Configure` \
+             runs from, on refusal, with no view; `Stage` would show it, the `Configure` probe \
+             cannot (story:a-no-view-probe-tells-from-states-apart): {failed:#?}"
+        );
+    }
+}
+
+/// The staged model with `stage` running from `Staged` as well: every command now answers a
+/// staged account as it answers a new one, so no send tells the two apart.
+fn untellable() -> String {
+    let text = STAGED.replace(
+        "{name: stage, from: [New], to: Staged}",
+        "{name: stage, from: [New, Staged], to: Staged}",
+    );
+    assert_ne!(text, STAGED, "the staged model's `stage` transition moved");
+    text
+}
+
+/// Where no send tells the arranged state apart from another state the probe answers alike in,
+/// a target moving the record between them on refusal would pass, so each arranged refusal
+/// scenario is withdrawn and refused as `ESS-SYNTH-001` naming those states, never filed.
+#[test]
+fn no_view_arranged_half_is_withdrawn_naming_the_states_no_send_tells_apart() {
+    let result = synthesis(&untellable());
+    let lines = refusals(&result);
+    for id in REFUSED {
+        assert!(
+            !filed(&result, id),
+            "{id} filed although no send tells `New` from `Staged` with no view \
+             (story:a-no-view-probe-tells-from-states-apart): {lines:#?}"
+        );
+        assert!(
+            lines.iter().any(|line| line.contains("SYNTH-001")
+                && line.contains(id)
+                && line.contains("`New, Staged`")
+                && line.contains("no send synthesis can make tells apart")),
+            "{id} withdrawn without naming the states it cannot tell apart \
+             (story:a-no-view-probe-tells-from-states-apart): {lines:#?}"
         );
     }
 }
