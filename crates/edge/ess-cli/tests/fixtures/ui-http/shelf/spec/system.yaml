@@ -1,0 +1,6 @@
+format: ess/32
+system: shelf
+version: v1
+summary: A toy shelf of items, to probe request decoding.
+domains:
+  - shelf.items

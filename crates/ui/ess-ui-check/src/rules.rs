@@ -26,6 +26,7 @@ pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mu
     checker.navigation(sink);
     checker.pages(sink);
     checker.shells(sink);
+    account_menu_keys(document, sink);
     checker.declared_types(sink);
     checker.widget_cycles(&located, sink);
     for node in &located {
@@ -39,6 +40,52 @@ pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mu
     degrades_cover(&located, options, sink);
     crate::enums::run(document, &located, sink);
     crate::names::overlay_params(&located, sink);
+}
+
+/// The keys of an account menu entry every renderer draws: the terminal reads an entry as a whole
+/// action, the React menu these keys.
+const ACCOUNT_MENU_KEYS: &[&str] = &["name", "label", "opens", "does", "sets", "navigate"];
+
+/// `account_menu_keys`: each key an `account_menu` region's `actions` entry declares is one every
+/// renderer draws, so no key is accepted and dropped without a word. Region `props` are opaque to
+/// the loader, so nothing else reads them.
+fn account_menu_keys(document: &Document, sink: &mut Sink) {
+    for (shell_name, shell) in &document.shells {
+        for (region_name, region) in &shell.regions {
+            if region.kind != RegionKind::AccountMenu {
+                continue;
+            }
+            let Some(Value::Sequence(entries)) = region.props.get("actions") else {
+                continue;
+            };
+            let actions = NodePath::root()
+                .child("shells")
+                .child(shell_name)
+                .child("regions")
+                .child(region_name)
+                .child("props")
+                .child("actions");
+            for entry in entries.iter().filter_map(Value::as_mapping) {
+                let at = match entry.get("name").and_then(Value::as_str) {
+                    Some(name) => actions.child(name),
+                    None => actions.clone(),
+                };
+                for key in entry.keys().filter_map(Value::as_str) {
+                    if !ACCOUNT_MENU_KEYS.contains(&key) {
+                        sink.push(
+                            "account_menu_keys",
+                            &at.child(key),
+                            format!(
+                                "`{key}` on an account menu entry is dropped by a renderer: an \
+                                 entry is drawn from `name`, `label`, `opens`, `does`, `sets` \
+                                 and `navigate` only"
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Keys that mean something only beside another: a metric's `aggregate`, `field` and `reads`

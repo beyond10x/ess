@@ -792,6 +792,8 @@ ess generate ui [OPTIONS] --target <TARGET> --path <PATH> --out <OUT>
 | `--path` | `<PATH>` | yes |  | The `ess-ui/1` document |
 | `--out` | `<OUT>` | yes |  | Directory the project is written to |
 | `--model` | `<MODEL>` | no |  | The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`, or one file): the app is bound to the HTTP surface the specification's `reached_by: network` components serve, instead of answering from fixtures |
+| `--http` | `<HTTP>` | no |  | The `ess-http/1` binding the server was synthesized with (`ess generate synthesize --http`): the UI calls the methods and paths it declares, each path variable filled from the field it carries. Every view and command the document names must be routed there |
+| `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding `--http` refines, whose bytes its `refines:` digest pins |
 
 #### `ess generate output adopt`
 
@@ -1825,6 +1827,8 @@ ess ui run [OPTIONS] --tui --path <PATH>
 | `--fixtures` | `<FIXTURES>` | no |  | A fixture directory replacing the one the document names |
 | `--model` | `<MODEL>` | no |  | The ESS specification the document's `model:` names (a directory, its `ess-inputs.yaml`, or one file): reads and commands go to the HTTP surface its `reached_by: network` components serve instead of the fixtures, and no fixture channel plays. The `Authorization` header is read from `ESS_UI_AUTHORIZATION`, never from the command line |
 | `--base-url` | `<URL>`… | no |  | Where a served component is reached, `http://` only: `<url>` when the document binds one component, else `<component>=<url>`, once per component |
+| `--http` | `<HTTP>` | no |  | The `ess-http/1` binding the server was synthesized with (`ess generate synthesize --http`): the UI calls the methods and paths it declares, each path variable filled from the field it carries. Every view and command the document names must be routed there |
+| `--refines` | `<REFINES>` | no |  | The `ess-http/1` binding `--http` refines, whose bytes its `refines:` digest pins |
 
 #### `ess ui test`
 

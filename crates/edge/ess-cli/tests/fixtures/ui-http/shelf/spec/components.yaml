@@ -1,0 +1,10 @@
+components:
+  - component: shelf-service
+    summary: Holds the items of one shelf.
+    owns:
+      domains: [shelf.items]
+    accepts:
+      commands: [shelf.items.AddItem, shelf.items.AddStamp]
+    publishes:
+      events: [shelf.items.ItemAdded, shelf.items.StampAdded]
+    reached_by: network

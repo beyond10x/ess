@@ -1,0 +1,66 @@
+format: ess/23
+system: items
+version: v1
+domain: items.catalog
+types:
+  - {name: items.catalog.ItemId, kind: newtype, of: Integer}
+entities:
+  - name: items.catalog.Item
+    identity: {name: item_id, type: items.catalog.ItemId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Listed, states: [Listed], terminal: [Listed]}
+actors:
+  - name: items.catalog.Clerk
+    may: [items.catalog.AddItem, items.catalog.RenameItem]
+events:
+  - name: items.catalog.ItemAdded
+    fields:
+      - {name: item_id, type: items.catalog.ItemId}
+      - {name: title, type: String}
+  - name: items.catalog.ItemRenamed
+    fields:
+      - {name: item_id, type: items.catalog.ItemId}
+      - {name: title, type: String}
+commands:
+  - name: items.catalog.AddItem
+    naming: {wire: add-item}
+    input:
+      - {name: item_id, type: items.catalog.ItemId}
+      - {name: title, type: String}
+    outcomes:
+      - name: added
+        creates: items.catalog.Item
+        instance: item_id
+        sets: {title: input.title}
+        emits: [items.catalog.ItemAdded]
+        payload:
+          items.catalog.ItemAdded: {item_id: input.item_id, title: input.title}
+  - name: items.catalog.RenameItem
+    naming: {wire: rename-item}
+    input:
+      - {name: item_id, type: items.catalog.ItemId}
+      - {name: title, type: String}
+    outcomes:
+      - name: renamed
+        emits: [items.catalog.ItemRenamed]
+        payload:
+          items.catalog.ItemRenamed: {item_id: input.item_id, title: input.title}
+views:
+  - name: items.catalog.AllItems
+    source: items.catalog.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: items.catalog.ItemId}
+      - {name: title, type: String}
+  - name: items.catalog.Titles
+    source: items.catalog.Item
+    consistency: read_your_writes
+    fields:
+      - {name: title, type: String}
+components:
+  - component: items
+    owns: {domains: [items.catalog]}
+    accepts: {commands: [items.catalog.AddItem, items.catalog.RenameItem]}
+    publishes: {events: [items.catalog.ItemAdded, items.catalog.ItemRenamed]}
+    reached_by: network

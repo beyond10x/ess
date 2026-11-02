@@ -6,8 +6,11 @@ import { hrefFor, pageAt } from "../routes";
 import { useNotices, useScope } from "./core";
 import { dataAdapter, invalidate } from "./data";
 import { evaluate, truthy } from "./expr";
+//+plain
+import { runAction } from "./actions";
+//-plain
 //+bound
-import { RefusalNote, runCommand, type Refusal } from "./actions";
+import { RefusalNote, runAction, runCommand, type Refusal } from "./actions";
 //-bound
 
 /** The frame of one shell. */
@@ -130,6 +133,9 @@ export interface MenuEntry {
   label?: string;
   opens?: string;
   does?: string;
+  /** Run as an action runs them: the page to go to, the state to set. */
+  navigate?: { to: string; params?: Record<string, string> };
+  sets?: Record<string, string>;
 }
 
 /** The account menu region: the actor's name and the menu's entries. */
@@ -169,6 +175,8 @@ export function AccountMenu(props: { actions: MenuEntry[] }): ReactNode {
 //+bound
                     void runCommand(scope, entry.does, {}, false, setRefusal);
 //-bound
+                  } else if (entry.navigate || entry.sets) {
+                    void runAction(entry, scope);
                   }
                 }}
               >

@@ -1679,3 +1679,4 @@ checks:
     - {id: filter_paging, subject: "reads.filter", must: use_client_or_none_paging, severity: error}
     - {id: filter_over_param, subject: "reads.filter", must: prefer_existing_server_parameter, severity: warning}
     - {id: filter_export, subject: "export.params", must: not_claim_to_copy_client_filter, severity: warning}
+    - {id: account_menu_keys, subject: "shells.*.regions.*.props.actions[] of an account_menu", must_be_in: [name, label, opens, does, sets, navigate], severity: error}

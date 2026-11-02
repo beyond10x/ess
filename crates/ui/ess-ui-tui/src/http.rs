@@ -3,9 +3,11 @@
 //! Routes come from a [`Binding`] (`ess_ui_check::binding`), never from a derivation of this
 //! crate's own: a read is `GET <base><path>` with its parameters under their query keys, a
 //! command `POST <base><path>` with its input as a JSON body, and every command answer is read by
-//! [`ess_ui::binding::classify`]. The transport is HTTP/1.1 over `std::net`, `http://` only: an
-//! `https://` base URL is refused by name. A request that has not finished within [`TIMEOUT`] is
-//! given up, so a stalled server cannot hold the terminal.
+//! [`ess_ui::binding::classify`]. A route an `ess-http/1` binding moves names its own method, and
+//! each path variable it declares is filled from the parameter or input field it carries, which
+//! then leaves the query or the body (beyond10x/ess#713). The transport is HTTP/1.1 over
+//! `std::net`, `http://` only: an `https://` base URL is refused by name. A request that has not
+//! finished within [`TIMEOUT`] is given up, so a stalled server cannot hold the terminal.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -246,17 +248,21 @@ impl HttpAdapter {
         let (base, route) = self
             .served(command, |served| &served.commands)
             .ok_or_else(|| format!("no served component accepts {command}"))?;
+        let path = fill(&route.path, &route.path_params, |name| input.get(name))
+            .map_err(|why| format!("{command}: {why}"))?;
+        let carried = carried(&route.path_params);
         let body = serde_json::Value::Object(
             input
                 .iter()
+                .filter(|(name, _)| !carried.contains(name.as_str()))
                 .map(|(name, value)| (name.clone(), to_json(value)))
                 .collect(),
         )
         .to_string();
         self.exchange(
             base,
-            "POST",
-            &format!("{}{}", base.prefix, route.path),
+            route.method.as_deref().unwrap_or("POST"),
+            &format!("{}{path}", base.prefix),
             Some(&body),
         )
     }
@@ -343,8 +349,16 @@ impl DataAdapter for HttpAdapter {
         let (base, route) = self
             .served(&request.view, |served| &served.views)
             .ok_or_else(|| format!("no served component answers {}", request.view))?;
+        let path = fill(&route.path, &route.path_params, |name| {
+            request.params.get(name)
+        })
+        .map_err(|why| format!("{}: {why}", request.view))?;
+        let carried = carried(&route.path_params);
         let mut query = Vec::new();
         for param in &route.params {
+            if carried.contains(param.name.as_str()) {
+                continue;
+            }
             let value = match request.params.get(&param.name) {
                 None | Some(Value::Null) => continue,
                 Some(Value::String(text)) if text.is_empty() => continue,
@@ -355,12 +369,13 @@ impl DataAdapter for HttpAdapter {
             };
             query.push(format!("{}={}", encode(&param.wire), encode(&value)));
         }
-        let mut target = format!("{}{}", base.prefix, route.path);
+        let mut target = format!("{}{path}", base.prefix);
         if !query.is_empty() {
             target.push('?');
             target.push_str(&query.join("&"));
         }
-        let (status, body) = self.exchange(base, "GET", &target, None)?;
+        let method = route.method.as_deref().unwrap_or("GET");
+        let (status, body) = self.exchange(base, method, &target, None)?;
         if !(200..300).contains(&status) {
             let refused = serde_json::from_str::<serde_json::Value>(&body)
                 .ok()
@@ -623,7 +638,36 @@ fn unchunk(mut rest: &[u8]) -> Result<Option<Vec<u8>>, String> {
     }
 }
 
-/// `text` percent-encoded for a query: every byte but the unreserved ones.
+/// The names a route's path carries, which leave its body or query.
+fn carried(path_params: &BTreeMap<String, String>) -> std::collections::BTreeSet<&str> {
+    path_params.values().map(String::as_str).collect()
+}
+
+/// `path` with each `{variable}` of `path_params` replaced by the value `value` gives for the
+/// name it carries, percent-encoded as one segment; refused, naming that name, when there is no
+/// value or an empty one.
+fn fill<'a>(
+    path: &str,
+    path_params: &BTreeMap<String, String>,
+    value: impl Fn(&str) -> Option<&'a Value>,
+) -> Result<String, String> {
+    let mut filled = path.to_owned();
+    for (variable, name) in path_params {
+        let text = match value(name) {
+            None | Some(Value::Null) => None,
+            Some(value @ (Value::Sequence(_) | Value::Mapping(_))) => {
+                Some(to_json(value).to_string())
+            }
+            Some(value) => Some(display(value)),
+        }
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| format!("no value for `{name}`, which the path `{path}` carries"))?;
+        filled = filled.replace(&format!("{{{variable}}}"), &encode(&text));
+    }
+    Ok(filled)
+}
+
+/// `text` percent-encoded for a query or a path segment: every byte but the unreserved ones.
 fn encode(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for byte in text.bytes() {

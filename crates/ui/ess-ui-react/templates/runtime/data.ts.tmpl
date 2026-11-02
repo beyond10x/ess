@@ -228,6 +228,12 @@ export interface ViewRoute {
   params: QueryParam[];
   /** The row field carrying the identity of the entity the view projects (beyond10x/ess#328). */
   identity?: string;
+//+routed
+  /** The method, where an `ess-http/1` binding serves the view on another than `GET`. */
+  method?: string;
+  /** Each path variable to the parameter whose value it carries, which then leaves the query. */
+  path_params?: Record<string, string>;
+//-routed
 }
 
 /** One view parameter: the name a read binds it by and the query key it travels under. */
@@ -243,6 +249,12 @@ export interface CommandRoute {
   path: string;
   body_required: boolean;
   errors: Record<string, ErrorRoute>;
+//+routed
+  /** The method, where an `ess-http/1` binding serves the command on another than `POST`. */
+  method?: string;
+  /** Each path variable to the input field whose value it carries, which then leaves the body. */
+  path_params?: Record<string, string>;
+//-routed
 }
 
 /** One declared error: the status its branch answers with and what it is shown as. */
@@ -332,6 +344,25 @@ function shown(answer: Exclude<Answer, { answer: "accepted" }>, route: CommandRo
   }
 }
 
+//+routed
+/**
+ * `path` with each `{variable}` of `params` filled from the value `values` holds for the name it
+ * carries, as one segment (beyond10x/ess#713). Refused, naming it, when there is no value.
+ */
+function routePath(path: string, params: Record<string, string> | undefined, values: Record<string, unknown>): string {
+  let filled = path;
+  for (const [variable, name] of Object.entries(params ?? {})) {
+    const value = values[name];
+    if (value === undefined || value === null || value === "") {
+      throw new DataError(`no value for \`${name}\`, which the path \`${path}\` carries`, 400);
+    }
+    const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+    filled = filled.split(`{${variable}}`).join(encodeURIComponent(text));
+  }
+  return filled;
+}
+
+//-routed
 /**
  * The adapter for the served surface `binding` describes: a read is `GET <base><path>` with its
  * parameters under their query keys, a command `POST <base><path>` with its input as the body,
@@ -345,14 +376,29 @@ export function httpAdapter(binding: Binding, base: (component: string) => strin
         throw new DataError(`no served component answers ${request.view}`, 404);
       }
       const query = new URLSearchParams();
+//+routed
+      const carried = Object.values(found.route.path_params ?? {});
+      const path = routePath(found.route.path, found.route.path_params, request.params);
+//-routed
       for (const param of found.route.params) {
+//+routed
+        if (carried.includes(param.name)) {
+          continue;
+        }
+//-routed
         const value = request.params[param.name];
         if (value !== undefined && value !== null && value !== "") {
           query.set(param.wire, typeof value === "object" ? JSON.stringify(value) : String(value));
         }
       }
       const search = query.toString();
+//+unrouted
       const response = await fetch(`${base(found.component)}${found.route.path}${search ? `?${search}` : ""}`, {
+//-unrouted
+//+routed
+      const response = await fetch(`${base(found.component)}${path}${search ? `?${search}` : ""}`, {
+        method: found.route.method ?? "GET",
+//-routed
         headers: headers(false),
         signal: request.signal,
       });
@@ -371,14 +417,28 @@ export function httpAdapter(binding: Binding, base: (component: string) => strin
       if (found === undefined) {
         throw new DataError(`no served component accepts ${command}`, 404);
       }
+//+routed
+      const carried = Object.values(found.route.path_params ?? {});
+      const path = routePath(found.route.path, found.route.path_params, input);
+      const body = Object.fromEntries(Object.entries(input).filter(([name]) => !carried.includes(name)));
+//-routed
       let status = 0;
       let text = "";
       try {
+//+unrouted
         const response = await fetch(`${base(found.component)}${found.route.path}`, {
           method: "POST",
           headers: headers(true),
           body: JSON.stringify(input),
         });
+//-unrouted
+//+routed
+        const response = await fetch(`${base(found.component)}${path}`, {
+          method: found.route.method ?? "POST",
+          headers: headers(true),
+          body: JSON.stringify(body),
+        });
+//-routed
         status = response.status;
         text = await response.text();
       } catch {

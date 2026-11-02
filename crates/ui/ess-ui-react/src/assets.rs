@@ -104,21 +104,30 @@ fn imports(id: &str, text: &str) -> Vec<String> {
     found
 }
 
-/// A template's text for a bound or a plain project.
+/// A template's text for a bound or a plain project, and for a bound one whose route table moves
+/// a method or carries a path parameter ([`Binding::routed`]).
 ///
 /// A line reading `//+bound` opens lines only a project bound to a served surface carries, and
-/// `//-bound` closes them; `//+plain` … `//-plain` hold the lines they replace. The marker lines
-/// themselves are never emitted, so a plain project is the template with every bound block
-/// removed — byte for byte what it was before the blocks were written.
-pub(crate) fn select(text: &str, bound: bool) -> String {
+/// `//-bound` closes them; `//+plain` … `//-plain` hold the lines they replace. Inside a bound
+/// block, `//+routed` … `//-routed` hold lines only a routed project carries and `//+unrouted` …
+/// `//-unrouted` the lines they replace (beyond10x/ess#713). The marker lines themselves are never
+/// emitted, so a plain project is the template with every bound block removed, and an unrouted one
+/// the template with every routed block removed — each byte for byte what it was before the
+/// blocks were written.
+pub(crate) fn select(text: &str, bound: bool, routed: bool) -> String {
     let mut out = String::with_capacity(text.len());
-    let mut keep = true;
+    // Whether each open block is kept; a line is emitted when every one is.
+    let mut open: Vec<bool> = Vec::new();
     for line in text.split_inclusive('\n') {
         match line.trim() {
-            "//+bound" => keep = bound,
-            "//+plain" => keep = !bound,
-            "//-bound" | "//-plain" => keep = true,
-            _ if keep => out.push_str(line),
+            "//+bound" => open.push(bound),
+            "//+plain" => open.push(!bound),
+            "//+routed" => open.push(routed),
+            "//+unrouted" => open.push(!routed),
+            "//-bound" | "//-plain" | "//-routed" | "//-unrouted" => {
+                open.pop();
+            }
+            _ if open.iter().all(|kept| *kept) => out.push_str(line),
             _ => {}
         }
     }
@@ -126,10 +135,14 @@ pub(crate) fn select(text: &str, bound: bool) -> String {
 }
 
 /// The runtime files for the modules used, closed over their imports.
-pub(crate) fn runtime(used: &BTreeSet<String>, bound: bool) -> BTreeMap<String, String> {
+pub(crate) fn runtime(
+    used: &BTreeSet<String>,
+    bound: bool,
+    routed: bool,
+) -> BTreeMap<String, String> {
     let table: BTreeMap<&str, (&Module, String)> = RUNTIME
         .iter()
-        .map(|module| (module.id, (module, select(module.text, bound))))
+        .map(|module| (module.id, (module, select(module.text, bound, routed))))
         .collect();
     let mut wanted: BTreeSet<String> = used.clone();
     wanted.extend(ALWAYS.iter().map(|id| (*id).to_owned()));
@@ -173,10 +186,14 @@ pub(crate) fn project(
         );
     }
     let fill = |text: &str| {
-        select(text, binding.is_some())
-            .replace("{{app}}", app)
-            .replace("{{title}}", title)
-            .replace("    {{base_url_metas}}\n", &metas)
+        select(
+            text,
+            binding.is_some(),
+            binding.is_some_and(Binding::routed),
+        )
+        .replace("{{app}}", app)
+        .replace("{{title}}", title)
+        .replace("    {{base_url_metas}}\n", &metas)
     };
     let mut files = BTreeMap::new();
     for (file, text) in [

@@ -1,0 +1,17 @@
+format: ess-ui/1
+app: shelf
+model: items
+placement_profile: fat
+shells: {app: {regions: {main: {kind: page_outlet}}}}
+navigation: {home: shelf, sections: [{name: all, pages: [shelf]}]}
+pages:
+  shelf:
+    kind: detail_page
+    title: Shelf
+    sections:
+      - name: items
+        component: collection
+        reads: catalog.AllItems
+        columns: [title]
+        actions: [{name: add, does: catalog.AddItem}]
+        row_actions: [{name: rename, label: Rename, does: catalog.RenameItem, bind: {item_id: row.item_id, title: row.title}}]

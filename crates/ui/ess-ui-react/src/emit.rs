@@ -46,6 +46,17 @@ fn expr(value: Option<&ess_ui::Expr>) -> Option<String> {
     value.map(|value| ts::string(&value.0))
 }
 
+/// An action's `navigate` as the runtime's `ActionSpec` carries it: the page and its params.
+fn navigate(navigate: &ess_ui::Navigate) -> String {
+    ts::object([
+        ("to", Some(ts::string(&navigate.to))),
+        (
+            "params",
+            (!navigate.params.is_empty()).then(|| exprs(&navigate.params)),
+        ),
+    ])
+}
+
 fn strings<'a>(values: impl IntoIterator<Item = &'a String>) -> String {
     ts::array(values.into_iter().map(|value| ts::string(value)))
 }
@@ -648,15 +659,7 @@ impl<'d> Gen<'d> {
     }
 
     fn action(&mut self, at: &NodePath, action: &Action) -> String {
-        let navigate = action.navigate.as_ref().map(|navigate| {
-            ts::object([
-                ("to", Some(ts::string(&navigate.to))),
-                (
-                    "params",
-                    (!navigate.params.is_empty()).then(|| exprs(&navigate.params)),
-                ),
-            ])
-        });
+        let navigate = action.navigate.as_ref().map(navigate);
         let export = action.export.as_ref().map(|export| {
             ts::object([
                 ("reads", Some(ts::string(&export.reads))),
@@ -2463,11 +2466,25 @@ impl<'d> Gen<'d> {
                         .map(|entry| {
                             let text =
                                 |key: &str| entry.get(key).and_then(Value::as_str).map(ts::string);
+                            // `sets` and `navigate` as an action carries them: the menu runs
+                            // them through the runtime's `runAction`.
+                            let action =
+                                ess_yaml::from_value::<Action>(Value::Mapping(entry.clone())).ok();
+                            let sets = action
+                                .as_ref()
+                                .filter(|action| !action.sets.is_empty())
+                                .map(|action| exprs(&action.sets));
+                            let navigate = action
+                                .as_ref()
+                                .and_then(|action| action.navigate.as_ref())
+                                .map(navigate);
                             ts::object([
                                 ("name", text("name")),
                                 ("label", text("label")),
                                 ("opens", text("opens")),
                                 ("does", text("does")),
+                                ("sets", sets),
+                                ("navigate", navigate),
                             ])
                         })
                         .collect(),
