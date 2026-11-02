@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:row-set-beside-named-rows-suite-tells-every-order-apart
 kind: story
-status: active
+status: implemented
 title: 'A row set beside named rows: the suite tells every refusal order apart'
 summary: 'With when: beside a named refusal or a forall accepting branch, the synthesized suite misses reorderings or leaves a branch unwitnessed.'
 tags:
@@ -19,10 +19,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/row_set.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_ess0700a_identity_beside_row_set_2.rs
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T07:12:07Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-11-02T07:12:07Z", actor: "human:timo", revision: 10}
+- {from: "active", to: "implemented", at: "2026-11-02T14:24:24Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":3,"review_outcome":2}}}
 ---
 ## Finding
 
@@ -67,3 +68,7 @@ Derived 2026-11-02 by `aep:story-scoper` for wave D368 on 6437975cb, replacing t
 - **Size:** medium (~350 changed lines) — inferred. **Confidence:** medium (defects reproduced, fix site not proven)
 - **Would collide with:** `row_set.rs` (`prepare_with`, `guarded_creator`, `arrange_rows`, selection plan, `beside_named`), `related_guard.rs` (`named_refusal`, `steering_for`, `named_rows`, `beside_row`), `precedence.rs`, the pass-2 test file, the synthesis bytes tables
 - **Safety fact:** `named_refusal` is called only from `row_set.rs:195`, so admitting a `when:` refusal changes only the `beside_named` path — level 2, unproven
+
+## Delivered
+
+D368, 2026-11-02: a command guarding on a row set beside rows its input names (`ess/32`) is witnessed on every refusal order. Unit 3e665f021, merged 7e0d2e880, with a 12-line `synthesize.rs` change approved by the wave lead after U1 merged. Fix round 1 (7510ae01f, merged 21ef8a7fa) answered both review passes: a named-row refusal with a `when:` now gets a send that holds it, the accepting `forall` fallback tries `SEND_ROWS`, the creator may be sent the linked row twice, and the `named_refusal` doc is corrected. No suite bytes moved. Out-of-scope rows became `story:a-creator-under-a-row-set-and-when-is-arranged`, `story:a-row-set-suite-fails-a-target-refusing-less` and `story:a-not-equal-or-any-selector-beside-named-rows-is-witnessed`.

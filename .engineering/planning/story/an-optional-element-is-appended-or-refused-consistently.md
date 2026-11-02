@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-optional-element-is-appended-or-refused-consistently
 kind: story
-status: active
+status: implemented
 title: An optional element is appended or refused, consistently across domain and interpreter
 summary: 'The domain admits {append: input.<Optional<T>>} over List<Optional<T>> and generated Go appends nil, but the interpreter refuses the request as Unsupported when the element is absent or null.'
 tags:
@@ -20,10 +20,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/append_set.rs
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T07:12:04Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-11-02T07:12:04Z", actor: "human:timo", revision: 10}
+- {from: "active", to: "implemented", at: "2026-11-02T14:24:20Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":2,"review_outcome":2}}}
 ---
 ## Finding
 
@@ -69,3 +70,7 @@ append `nil`/`None` (see Scope), so this moves the interpreter to shipped behavi
 major; refusing it in the domain would be a stricter rule for a specification that validates today,
 which needs a new major. The module comment in `command/append_list.rs` and the ess/31 history
 text in `system.rs` are corrected to say an Optional element of a `List<Optional<T>>` appends null.
+
+## Delivered
+
+D368, 2026-11-02, option two: the interpreted target appends `null` for an absent or `null` element of `{append: input.<field>}` over a `List<Optional<T>>`, as generated Rust and Go append `None` and `nil`, and synthesis expects that `null` in the view row. Unit 295d0b617, merged 07bd42c36. Adversary and security pass 1 found nothing inside the Acceptance (outcome no-op); their out-of-scope rows became `story:a-present-optional-element-is-appended`, `story:a-nested-optional-is-refused` and `story:the-ess31-history-states-the-optional-read`.

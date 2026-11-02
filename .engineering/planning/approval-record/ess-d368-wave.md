@@ -13,7 +13,7 @@ relations:
 - decides: story:a-no-view-probe-tells-from-states-apart
 - decides: story:a-refusal-witness-compares-its-trigger-identities
 - decides: story:row-set-beside-named-rows-suite-tells-every-order-apart
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-02T07:12:04Z", actor: "human:timo", revision: 2}
 ---
@@ -193,3 +193,33 @@ Host build slots the orchestrator relayed for this wave, 2026-11-02:
 - D392 (host-monitor grant for the final gate): stages A1-A4 and B; each starts only at / >= 72G
   with 0 other cargo (retries every 2 minutes, up to 15 times); stop below 60G; tree <= 12G;
   `worktree discard-cache` between stages; queued behind a connectors clippy check.
+
+## Close
+
+Closed 2026-11-02. Five stories are implemented:
+- triage row 21: `story:an-optional-element-is-appended-or-refused-consistently`, option two;
+- triage row 11: `story:row-set-beside-named-rows-suite-tells-every-order-apart`;
+- three D357 adoptions: `story:a-refusal-witness-compares-its-trigger-identities`,
+  `story:a-no-view-held-state-refusal-probes-the-record` and
+  `story:a-no-view-probe-tells-from-states-apart`, the last two as one unit.
+
+Each unit had one adversary pass and one security pass.
+- U1 needed no fix.
+- U2, U3 and U4 each fixed every in-scope finding in one fix round.
+- The local final gate (D392, five stages) was green on the first run.
+- Release-prepare 0.83.0 is 0bd706d7d, regenerated at b4a23af22.
+
+Out-of-scope rows (11): 10 adopted as draft stories (tag `ess-d368-close`), 1 declined, 0 duplicates.
+- Adopted:
+  - `story:a-present-optional-element-is-appended`
+  - `story:a-nested-optional-is-refused`
+  - `story:the-ess31-history-states-the-optional-read`
+  - `story:the-244b-probe-stays-current`
+  - `story:binding-scenarios-compare-literal-trigger-ids`
+  - `story:a-related-refusal-compares-the-rewritten-row`
+  - `story:a-creator-under-a-row-set-and-when-is-arranged`
+  - `story:a-row-set-suite-fails-a-target-refusing-less`
+  - `story:a-not-equal-or-any-selector-beside-named-rows-is-witnessed`
+  - `story:a-held-state-refusal-reads-back-where-the-view-cannot-observe`
+- Declined: the stale doc comment at `adversary_retry_pass2_count.rs:2`, which names the removed
+  `clean_trigger`. It is a test comment with no behaviour; a later edit of that file corrects it.

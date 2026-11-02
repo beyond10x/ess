@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-no-view-held-state-refusal-probes-the-record
 kind: story
-status: active
+status: implemented
 title: A no-view held-state refusal probes the record through a command
 relations:
 - serves: vision:O2
@@ -13,10 +13,11 @@ scope:
   path: crates/verify/ess-conformance/tests/a_no_view_held_state_refusal_probes_the_record.rs
 - confidence: cited
   path: docs/design/outcome-shapes.md
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T07:12:05Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-11-02T07:12:05Z", actor: "human:timo", revision: 10}
+- {from: "active", to: "implemented", at: "2026-11-02T14:24:26Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":3,"review_outcome":2}}}
 ---
 ## Finding
 
@@ -51,3 +52,7 @@ Wave D368 (`approval-record:ess-d368-wave`, 2026-11-02): this story and
 and every committed suite under `suites/`. The test fixture `occurrence-clock-offers.yaml` has no
 views and a held-state input refusal, so its suite gains the probe; its pinned rows are re-pinned and
 the model is named in the CHANGELOG line.
+
+## Delivered
+
+D368, 2026-11-02, with `story:a-no-view-probe-tells-from-states-apart` as one unit: on a model with no identity view, an input refusal beside held-state branches reads the record back after each held-state send, through sends from that state that tell it apart from every other state. Unit e266be529, merged 550377957. Only `occurrence-clock-offers` moved its suite bytes. Fix round 1 (c5eddc4a2, merged 7cdd82c68) answered both review passes; see the sibling story. The held-state case where an identity view exists but cannot observe the state became `story:a-held-state-refusal-reads-back-where-the-view-cannot-observe`, and the ignored window-free probe's stale rows became `story:the-244b-probe-stays-current`.

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-no-view-probe-tells-from-states-apart
 kind: story
-status: active
+status: implemented
 title: The no-view arranged probe tells apart the states its branch runs from
 relations:
 - serves: vision:O2
@@ -13,10 +13,11 @@ scope:
   path: crates/verify/ess-conformance/tests/adversary_d357_u3_pass1.rs
 - confidence: cited
   path: docs/design/outcome-shapes.md
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T07:12:05Z", actor: "human:timo", revision: 7}
 - {from: "proposed", to: "active", at: "2026-11-02T07:12:06Z", actor: "human:timo", revision: 8}
+- {from: "active", to: "implemented", at: "2026-11-02T14:24:27Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":3,"review_outcome":2}}}
 ---
 ## Finding
 
@@ -42,3 +43,14 @@ Derived 2026-11-02 by `aep:story-scoper` for wave D368 on 6437975cb. Every line 
 - **Pinned bytes:** `tests/fixtures/synthesis-suite-bytes-table.tsv`, `synthesis-component-suites-table.tsv` and `suites/generated/*/suite.json` should not move (1188481a0 moved none; no pinned model reaches `probe`) — inferred
 - **Confidence:** high for where it lands; medium for the shape (which cross-command branch, whether a new refusal reason is needed)
 - **Would collide with:** `existence.rs` :329-595 and the adjacent `held_state_refusals` :648 (story:a-no-view-held-state-refusal-probes-the-record), `outcome-shapes.md` § Conformance, the `CHANGELOG.md` `[Unreleased]` head, `tests/adversary_d357_u3_pass1.rs`
+
+## Delivered
+
+D368, 2026-11-02, with `story:a-no-view-held-state-refusal-probes-the-record` as one unit: the arranged half of a no-view input refusal tells the arranged state apart from every other state, through the shortest sequence of sends that a bounded search finds, extended one send at a time past it. A `wrong_state:` refusal counts among the answers. Where no sequence tells every state apart, it is withdrawn as `ESS-SYNTH-001` naming the states left. Unit e266be529, merged 550377957.
+
+Fix round 1 (c5eddc4a2, merged 7cdd82c68) answered both review passes:
+- the 64-try search no longer withdraws scenarios that a longer sequence keeps;
+- a valid send that tells nothing apart is refused naming the states, not as "no valid send";
+- a plain-typed input names a record only where a branch uses it as one.
+
+The red D357 swap case passes.
