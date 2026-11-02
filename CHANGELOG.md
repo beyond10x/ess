@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A synthesized binding refusal scenario (`<binding>/binding/refusal/<outcome>`, a refusal the binding's policy drops, escalates or retries a bounded number of times) compares the identity fields of the trigger's event with the instances its invocation was sent, as the other binding scenarios do since 0.82.0, also where it sends another publisher of the event, a trigger naming no related row, or one naming a row arranged so the predicate refuses it; it expected that event by shape alone, so a target publishing a wrong id there passed. The suite bytes of five fixture models move (`binding-into-updating-command`, `binding-refusal-policy-swapped-caller`, `caller-binding-refusal/attr`, `caller-binding-refusal/plain`, `predicate-refusal-policy-arranged-row`).
+
 ## [0.82.0] — 2026-11-01
 
 ### Fixed
