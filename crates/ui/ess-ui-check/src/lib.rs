@@ -36,7 +36,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 pub use model::{
-    binding, compile_sources, load_model, model_from_sources, BindingError, Model, Refusal,
+    binding, binding_over, compile_sources, load_model, model_from_sources, BindingError,
+    HttpBinding, Model, Refusal,
 };
 
 /// The format marker of the JSON report.

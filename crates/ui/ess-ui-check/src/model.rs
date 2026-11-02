@@ -1370,9 +1370,36 @@ impl std::error::Error for BindingError {}
 /// `ess_ui::load_str_with` over this model — is carried with its variants
 /// (beyond10x/ess#328, #330).
 pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Binding, BindingError> {
+    binding_over(document, sources, None)
+}
+
+/// An `ess-http/1` binding compiled against the model ([`ess_gen::http::Binding`]), and the file
+/// a refusal names it by.
+#[derive(Debug, Clone, Copy)]
+pub struct HttpBinding<'a> {
+    /// The binding's file, as the command line named it.
+    pub path: &'a Path,
+    /// The compiled binding.
+    pub binding: &'a http::Binding,
+}
+
+/// [`binding`], with the routes `http` declares in place of the derived ones (beyond10x/ess#713):
+/// each route the document names carries the binding's path, its method where that is not the
+/// default (`GET` for a view, `POST` for a command) and the field or parameter each path variable
+/// carries. `None` is [`binding`] exactly.
+///
+/// Refused besides, at the node that names it: a view or command the binding does not route,
+/// naming the binding's file, since the server synthesized from it is the one the UI is generated
+/// for; and a command whose route reads its input as anything but a JSON body (`form`, `query`),
+/// which no generated UI sends.
+pub fn binding_over(
+    document: &Document,
+    sources: &[(String, String)],
+    http: Option<HttpBinding<'_>>,
+) -> Result<Binding, BindingError> {
     let ir = compile_sources(sources, Path::new(&document.model)).map_err(BindingError::Model)?;
     let model = Model::index(&ir);
-    let served = Surface::of(&ir);
+    let served = Surface::of(&ir, http);
     let mut binding = Binding {
         system: model.system.clone(),
         components: BTreeMap::new(),
@@ -1401,6 +1428,10 @@ pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Bind
                     refuse(&named.at, unserved("command", &qualified));
                     continue;
                 };
+                if let Some(message) = served.unbound.get(&qualified) {
+                    refuse(&named.at, message.clone());
+                    continue;
+                }
                 binding.names.insert(name.to_owned(), qualified.clone());
                 binding
                     .components
@@ -1421,6 +1452,10 @@ pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Bind
                     refuse(&named.at, unserved("view", &qualified));
                     continue;
                 };
+                if let Some(message) = served.unbound.get(&qualified) {
+                    refuse(&named.at, message.clone());
+                    continue;
+                }
                 let unreadable = read_refusals(&served, &qualified, bound);
                 if unreadable.is_empty() {
                     binding.names.insert(name.to_owned(), qualified.clone());
@@ -1584,17 +1619,70 @@ struct Surface {
     /// Every served view's parameters at a scalar no code target serves (`Binary64`), by the view's
     /// qualified name.
     unservable: BTreeMap<String, Vec<String>>,
+    /// Every view and command an `ess-http/1` binding leaves unrouted or routes in a way no
+    /// generated UI sends, by qualified name, with why.
+    unbound: BTreeMap<String, String>,
     /// Every served view whose model declaration carries `paging:`, which no code target serves.
     paged: BTreeSet<String>,
 }
 
+/// Where a route moves off the derived surface (beyond10x/ess#713): its method when it is not
+/// `default`, and each path variable with the input field or view parameter it carries.
+fn moved(
+    ir: &EssIr,
+    route: &http::Route<'_>,
+    default: http::Method,
+) -> (Option<String>, BTreeMap<String, String>) {
+    let method = (route.method != default).then(|| route.method.as_str().to_owned());
+    let carried = http::path_fields(ir, route)
+        .into_iter()
+        .map(|(variable, field)| {
+            let name = match route.serves {
+                // A command's input is sent under each field's wire name, a view's parameters
+                // are bound by name.
+                Served::Command(_) => field.naming.wire.as_ref().unwrap_or(&field.name),
+                Served::View(_) => &field.name,
+            };
+            (variable, name.clone())
+        })
+        .collect();
+    (method, carried)
+}
+
+/// Why a route of `http` cannot be what a generated UI calls: the binding routes none, or reads
+/// a command's input as anything but a JSON body.
+fn unbound(bound: HttpBinding<'_>, route: &http::Route<'_>, qualified: &str) -> Option<String> {
+    let what = match route.serves {
+        Served::Command(_) => "command",
+        Served::View(_) => "view",
+    };
+    if route.declared.is_none() {
+        return Some(format!(
+            "{what} `{qualified}` has no route in the binding {}: a UI generated for the server \
+             it binds would call a route that server is not bound to; route it there",
+            bound.path.display()
+        ));
+    }
+    let encoding = http::request(route).encoding;
+    (matches!(route.serves, Served::Command(_)) && encoding != ess_gen::ess_http::Encoding::Json)
+        .then(|| {
+            format!(
+                "command `{qualified}` reads its input as `{}` in the binding {}: a generated UI \
+                 sends a command's input as a `json` body only",
+                encoding.as_str(),
+                bound.path.display()
+            )
+        })
+}
+
 impl Surface {
-    fn of(ir: &EssIr) -> Self {
+    fn of(ir: &EssIr, binding: Option<HttpBinding<'_>>) -> Self {
         let mut surface = Self {
             views: BTreeMap::new(),
             commands: BTreeMap::new(),
             non_scalar: BTreeMap::new(),
             unservable: BTreeMap::new(),
+            unbound: BTreeMap::new(),
             paged: BTreeSet::new(),
         };
         for component in ir.components().values() {
@@ -1602,7 +1690,14 @@ impl Surface {
                 continue;
             }
             let name = component.name.to_string();
-            for route in http::routes(ir, component) {
+            for route in http::bound_routes(ir, component, binding.map(|bound| bound.binding)) {
+                let qualified = match route.serves {
+                    Served::Command(handle) => handle.to_string(),
+                    Served::View(handle) => handle.to_string(),
+                };
+                if let Some(why) = binding.and_then(|bound| unbound(bound, &route, &qualified)) {
+                    surface.unbound.insert(qualified.clone(), why);
+                }
                 match route.serves {
                     Served::Command(handle) => {
                         let command = ir.command(handle);
@@ -1624,10 +1719,13 @@ impl Surface {
                                     display: error.naming.display_or(&error.name).to_owned(),
                                 });
                         }
+                        let (method, path_params) = moved(ir, &route, http::Method::Post);
                         let route = CommandRoute {
                             path: route.path,
                             body_required: http::body_required(command),
                             errors,
+                            method,
+                            path_params,
                         };
                         surface
                             .commands
@@ -1656,10 +1754,13 @@ impl Surface {
                                 None => non_scalar.push(param.name.clone()),
                             }
                         }
+                        let (method, path_params) = moved(ir, &route, http::Method::Get);
                         let route = ViewRoute {
                             path: route.path,
                             params,
                             identity: None,
+                            method,
+                            path_params,
                         };
                         surface.non_scalar.insert(handle.to_string(), non_scalar);
                         surface.unservable.insert(handle.to_string(), unservable);

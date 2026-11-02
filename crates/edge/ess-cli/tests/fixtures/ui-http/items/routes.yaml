@@ -1,0 +1,11 @@
+routes:
+  - view: items.catalog.AllItems
+    method: get
+    path: /items
+  - command: items.catalog.AddItem
+    method: post
+    path: /items
+  - command: items.catalog.RenameItem
+    method: put
+    path: /items/{item_id}
+    parameters: {item_id: input.item_id}

@@ -1,0 +1,81 @@
+domain: shelf.items
+summary: Items on a shelf.
+
+types:
+  - name: shelf.items.ItemId
+    kind: newtype
+    of: Uuid
+  - name: shelf.items.StampId
+    kind: newtype
+    of: Uuid
+  - name: shelf.items.Label
+    kind: struct
+    fields:
+      - {name: key, type: String}
+      - {name: value, type: String}
+      - {name: unit, type: Optional<String>}
+
+entities:
+  - name: shelf.items.Item
+    identity: {name: item_id, type: shelf.items.ItemId}
+    fields:
+      - {name: created_at, type: Timestamp}
+      - {name: labels, type: List<shelf.items.Label>}
+    lifecycle: {initial: Shelved, states: [Shelved], terminal: [Shelved]}
+  - name: shelf.items.Stamp
+    identity: {name: stamp_id, type: shelf.items.StampId}
+    fields:
+      - {name: stamped_at, type: Timestamp}
+    lifecycle: {initial: Kept, states: [Kept], terminal: [Kept]}
+
+actors:
+  - name: shelf.items.Clerk
+    may: [shelf.items.AddItem, shelf.items.AddStamp]
+
+commands:
+  - name: shelf.items.AddItem
+    naming: {wire: add-item}
+    input:
+      - {name: created_at, type: Timestamp}
+      - {name: labels, type: List<shelf.items.Label>}
+    outcomes:
+      - name: added
+        creates: shelf.items.Item
+        instance: item_id
+        emits: [shelf.items.ItemAdded]
+        payload:
+          shelf.items.ItemAdded: {item_id: {generated: true}}
+        sets: {created_at: input.created_at, labels: input.labels}
+  - name: shelf.items.AddStamp
+    naming: {wire: add-stamp}
+    input:
+      - {name: stamped_at, type: Timestamp}
+    outcomes:
+      - name: added
+        creates: shelf.items.Stamp
+        instance: stamp_id
+        emits: [shelf.items.StampAdded]
+        payload:
+          shelf.items.StampAdded: {stamp_id: {generated: true}}
+        sets: {stamped_at: input.stamped_at}
+
+events:
+  - name: shelf.items.ItemAdded
+    fields: [{name: item_id, type: shelf.items.ItemId}]
+  - name: shelf.items.StampAdded
+    fields: [{name: stamp_id, type: shelf.items.StampId}]
+
+views:
+  - name: shelf.items.AllItems
+    source: shelf.items.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: shelf.items.ItemId}
+      - {name: created_at, type: Timestamp}
+      - {name: labels, type: List<shelf.items.Label>}
+  - name: shelf.items.AllStamps
+    source: shelf.items.Stamp
+    consistency: read_your_writes
+    fields:
+      - {name: stamp_id, type: shelf.items.StampId}
+      - {name: stamped_at, type: Timestamp}

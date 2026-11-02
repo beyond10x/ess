@@ -48,6 +48,29 @@ pub(crate) struct Run {
     tui: bool,
     #[command(flatten)]
     document: ess_ui_tui::TuiArgs,
+    #[command(flatten)]
+    http: Http,
+}
+
+/// The `ess-http/1` binding a UI's routes come from.
+#[derive(Debug, clap::Args)]
+pub(crate) struct Http {
+    /// The `ess-http/1` binding the server was synthesized with (`ess generate synthesize
+    /// --http`): the UI calls the methods and paths it declares, each path variable filled from
+    /// the field it carries. Every view and command the document names must be routed there.
+    #[arg(long, requires = "model")]
+    http: Option<PathBuf>,
+    /// The `ess-http/1` binding `--http` refines, whose bytes its `refines:` digest pins.
+    #[arg(long, requires = "http")]
+    refines: Option<PathBuf>,
+}
+
+impl Http {
+    fn binding(&self) -> Option<(&Path, Option<&Path>)> {
+        self.http
+            .as_deref()
+            .map(|http| (http, self.refines.as_deref()))
+    }
 }
 
 /// `ess generate ui`: an `ess-ui/1` document becomes an application.
@@ -58,6 +81,8 @@ pub(crate) struct Generate {
     target: Target,
     #[command(flatten)]
     project: ess_ui_react::ReactArgs,
+    #[command(flatten)]
+    http: Http,
 }
 
 /// The applications `ess generate ui` generates.
@@ -106,10 +131,11 @@ pub(crate) fn run(command: &Command) -> ExitCode {
             let binding = match document
                 .model
                 .as_deref()
-                .map(|model| bind(&document.path, model))
+                .map(|model| bind(&document.path, model, run.http.binding()))
             {
                 None => None,
-                Some(Ok(binding)) => Some(binding),
+                Some(Ok(Ok(binding))) => Some(binding),
+                Some(Ok(Err(code))) => return code,
                 Some(Err(error)) => return refusal(&format!("{error:#}")),
             };
             match ess_ui_tui::run(document, binding.as_ref()) {
@@ -140,9 +166,14 @@ pub(crate) fn generate(arguments: &Generate) -> ExitCode {
     match arguments.target {
         Target::React => {
             let react = &arguments.project;
-            let binding = match react.model.as_deref().map(|model| bind(&react.path, model)) {
+            let binding = match react
+                .model
+                .as_deref()
+                .map(|model| bind(&react.path, model, arguments.http.binding()))
+            {
                 None => None,
-                Some(Ok(binding)) => Some(binding),
+                Some(Ok(Ok(binding))) => Some(binding),
+                Some(Ok(Err(code))) => return code,
                 Some(Err(error)) => return refusal(&format!("{error:#}")),
             };
             match ess_ui_react::run(react, binding.as_ref()) {
@@ -158,8 +189,9 @@ pub(crate) fn generate(arguments: &Generate) -> ExitCode {
                      the specification serves",
                 );
             };
-            let binding = match bind(&project.path, model) {
-                Ok(binding) => binding,
+            let binding = match bind(&project.path, model, arguments.http.binding()) {
+                Ok(Ok(binding)) => binding,
+                Ok(Err(code)) => return code,
                 Err(error) => return refusal(&format!("{error:#}")),
             };
             match ess_ui_tui::generate::generate(&project.path, &binding, &project.out) {
@@ -173,12 +205,37 @@ pub(crate) fn generate(arguments: &Generate) -> ExitCode {
 /// The route table the document at `document` binds to on the surface the specification at
 /// `model` serves, through `ess_ui_check::binding`. The document is loaded with the model's enums,
 /// so a choice's `options` may name one (beyond10x/ess#330).
-fn bind(document: &Path, model: &Path) -> anyhow::Result<ess_ui::binding::Binding> {
+///
+/// With `http` (`--http FILE [--refines FILE]`), the routes are the ones that binding declares,
+/// compiled exactly as `ess generate synthesize --http` compiles it for the server
+/// (beyond10x/ess#713). `Ok(Err(code))` is a refusal of the binding already reported.
+fn bind(
+    document: &Path,
+    model: &Path,
+    http: Option<(&Path, Option<&Path>)>,
+) -> anyhow::Result<Result<ess_ui::binding::Binding, ExitCode>> {
     let (sources, shown) = sources(model)?;
     let enums = ess_ui_check::model_from_sources(&sources, shown)?;
     let loaded = ess_ui::load_path_with(document, &enums)
         .map_err(|error| anyhow::anyhow!("{}: {error}", document.display()))?;
-    Ok(ess_ui_check::binding(&loaded, &sources)?)
+    let Some((path, refines)) = http else {
+        return Ok(Ok(ess_ui_check::binding(&loaded, &sources)?));
+    };
+    let Ok((ir, _)) = crate::resolved(model, crate::Format::Text)? else {
+        return Ok(Err(ExitCode::from(1)));
+    };
+    let Some(bound) = crate::http::server(path, refines, &ir, crate::Format::Text)? else {
+        return Ok(Err(ExitCode::from(1)));
+    };
+    let http = ess_ui_check::HttpBinding {
+        path,
+        binding: &bound,
+    };
+    Ok(Ok(ess_ui_check::binding_over(
+        &loaded,
+        &sources,
+        Some(http),
+    )?))
 }
 
 fn success(summary: &str) -> ExitCode {

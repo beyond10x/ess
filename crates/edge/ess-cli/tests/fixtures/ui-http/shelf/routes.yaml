@@ -1,0 +1,8 @@
+routes:
+  - command: shelf.items.AddItem
+    method: post
+    path: /items
+    request: {encoding: json, unknown: refuse}
+  - {command: shelf.items.AddStamp, method: post, path: /stamps}
+  - {view: shelf.items.AllItems, method: get, path: /items}
+  - {view: shelf.items.AllStamps, method: get, path: /stamps}
