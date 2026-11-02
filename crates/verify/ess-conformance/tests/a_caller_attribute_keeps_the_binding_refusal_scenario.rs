@@ -50,8 +50,10 @@ const PLAIN: [(&str, &str); 3] = [
 const REFUSAL: &str = "give-on-touched/binding/refusal/missing";
 
 /// The canonical JSON of the twin's suite, re-pinned when `story:binding-site-identity-comparisons`
-/// made its binding scenarios compare the trigger event's identities (the bytes table's digest).
-const PLAIN_SHA256: &str = "ad7f1e150e54e236d2402b35379f53f4da23ab3b81bd295cfc825bbad769be18";
+/// made its binding scenarios compare the trigger event's identities, and again when
+/// `story:a-refusal-witness-compares-its-trigger-identities` made its refusal witnesses compare
+/// them (the bytes table's digest).
+const PLAIN_SHA256: &str = "dc191560d0ae27f253c7319a59b4c86d93b321ab7ac9d500fa74bc1d987b01f8";
 
 fn model(files: [(&str, &str); 3]) -> EssIr {
     let parsed = files.map(|(label, text)| {

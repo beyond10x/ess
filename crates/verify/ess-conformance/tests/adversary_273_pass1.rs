@@ -418,46 +418,17 @@ fn sweep_every_input_identity_an_event_copies_is_compared() {
     assert!(checked > 0, "the sweep found no input identity");
     // Binding scenarios (flow, delivery, mapping, on-failure, bounded retry, condition witnesses)
     // compare the identities of their trigger's event as command scenarios do
-    // (story:binding-site-identity-comparisons), so no scenario of either kind leaves a copy
-    // uncompared.
-    let (binding, other): (BTreeSet<_>, BTreeSet<_>) = missed
-        .into_iter()
-        .partition(|miss| miss.contains("/binding/"));
+    // (story:binding-site-identity-comparisons), and so do the refusal witnesses
+    // `<binding>/binding/refusal/<outcome>`, whichever publisher or trigger they send
+    // (story:a-refusal-witness-compares-its-trigger-identities): no scenario of any kind leaves a
+    // copy uncompared, and no residue is kept.
     assert_eq!(
-        other.len(),
+        missed.len(),
         0,
-        "identities an event copies from an input or its row and no step compares: {other:#?}"
+        "identities an event copies from an input or its row and no step compares, binding \
+         refusal witnesses included (story:a-refusal-witness-compares-its-trigger-identities): \
+         {missed:#?}"
     );
-    assert_eq!(
-        binding,
-        refusal_witness_residue(),
-        "binding scenarios that copy an input identity without comparing it, beyond the refusal \
-         witnesses' known residue (story:binding-site-identity-comparisons)"
-    );
-}
-
-/// The misses the sweep keeps, outside story:binding-site-identity-comparisons: the witness of a
-/// refusal the policy answers by dropping or by a bounded retry (`refusal_policy::witness`) still
-/// expects the trigger's event by shape alone. The sweep reaches it only in system-directory
-/// fixtures.
-fn refusal_witness_residue() -> BTreeSet<String> {
-    [
-        ("binding-into-updating-command", "refresh-on-ticket-moved", "grant-missing", "demo.b.TicketMoved.ticket_id", "ticket_id", "ticket"),
-        ("binding-refusal-policy-swapped-caller", "refresh-on-ticket-moved", "grant-missing", "demo.b.TicketMoved.ticket_id", "ticket_id", "ticket"),
-        ("binding-refusal-policy-swapped-caller", "refresh-on-ticket-moved", "grant-missing", "demo.b.TicketMoved.ticket_id", "ticket_id", "ticket-swapped"),
-        ("caller-binding-refusal/attr", "give-on-touched", "not-flagged", "demo.d.Touched.grant_id", "grant_id", "grant-138601"),
-        ("caller-binding-refusal/attr", "give-on-touched", "not-flagged", "demo.d.Touched.grant_id", "grant_id", "grant-138601-swapped"),
-        ("caller-binding-refusal/plain", "give-on-touched", "not-flagged", "demo.d.Touched.grant_id", "grant_id", "grant-138601"),
-        ("predicate-refusal-policy-arranged-row", "give-on-touched", "not-flagged", "demo.d.Touched.grant_id", "grant_id", "grant-138601"),
-    ]
-    .into_iter()
-    .map(|(dir, binding, refusal, field, input, instance)| {
-        format!(
-            "system-dir:tests/fixtures/{dir} {binding}/binding/refusal/{refusal}: `{field}` <- input \
-             `{input}` = Instance {{ instance: InstanceName({instance:?}) }}"
-        )
-    })
-    .collect()
 }
 
 // ---- two instances of one entity type, synthesized -------------------------------------------
@@ -878,6 +849,23 @@ impl ConformanceTarget for Mutated {
     ) -> Result<(), TargetError> {
         self.inner.configure_external_outcome(control)
     }
+    // A refusal witness forces a bounded retry's refusal on every attempt and counts the attempts
+    // (story:a-refusal-witness-compares-its-trigger-identities): forwarded, so a scenario that
+    // does not compare the mutated field passes rather than stopping `unsupported`.
+    fn configure_external_outcome_repeatedly(
+        &self,
+        control: ExternalOutcomeControl,
+        times: std::num::NonZeroU32,
+    ) -> Result<(), TargetError> {
+        self.inner
+            .configure_external_outcome_repeatedly(control, times)
+    }
+    fn observe_invocations(
+        &self,
+        request: InvocationObservationRequest,
+    ) -> Result<Vec<ObservedInvocation>, TargetError> {
+        self.inner.observe_invocations(request)
+    }
     fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
         self.inner.redeliver_event(request)
     }
@@ -995,5 +983,94 @@ fn every_binding_scenario_fails_a_target_publishing_the_wrong_id_in_its_trigger_
             "{mode}: binding scenarios passing a wrong `Kicked.job_id` \
              (story:binding-site-identity-comparisons): {survivors:#?}"
         );
+    }
+}
+
+/// The refusal witnesses (`<binding>/binding/refusal/<outcome>`) hold the target to the identity
+/// their trigger was sent (story:a-refusal-witness-compares-its-trigger-identities): on each
+/// refusal-policy fixture the reference interpreter passes every one, and a target publishing
+/// another id in the trigger's event — zeroed, or one no run minted — fails at least one. The
+/// fixtures cover a refusal answered through an arranged row the predicate refuses (`not-flagged`)
+/// and one answered by a trigger naming no row (`grant-missing`), with and without a caller
+/// attribute. The interpreter still delivers the binding the id it was sent, so only a comparison
+/// of the field itself sees the fault.
+#[test]
+fn every_binding_refusal_fixture_fails_a_target_publishing_the_wrong_id_in_its_trigger_event() {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    for (dir, binding, event, field) in [
+        (
+            "caller-binding-refusal/plain",
+            "give-on-touched",
+            "demo.d.Touched",
+            "grant_id",
+        ),
+        (
+            "caller-binding-refusal/attr",
+            "give-on-touched",
+            "demo.d.Touched",
+            "grant_id",
+        ),
+        (
+            "predicate-refusal-policy-arranged-row",
+            "give-on-touched",
+            "demo.d.Touched",
+            "grant_id",
+        ),
+        (
+            "binding-into-updating-command",
+            "refresh-on-ticket-moved",
+            "demo.b.TicketMoved",
+            "ticket_id",
+        ),
+        (
+            "binding-refusal-policy-swapped-caller",
+            "refresh-on-ticket-moved",
+            "demo.b.TicketMoved",
+            "ticket_id",
+        ),
+    ] {
+        let ir = directory(&fixtures.join(dir)).expect("the fixture compiles");
+        let suite = synthesized(&ir).expect("synthesizes");
+        let prefix = format!("{binding}/binding/refusal/");
+        let witnesses: Vec<String> = suite
+            .scenarios
+            .keys()
+            .map(ToString::to_string)
+            .filter(|id| id.starts_with(&prefix))
+            .collect();
+        assert!(
+            !witnesses.is_empty(),
+            "{dir}: `{binding}` has refusal witnesses"
+        );
+        let good = statuses(&suite, &Interpreted::for_model(ir.clone()));
+        for id in &witnesses {
+            assert_eq!(
+                good.get(id),
+                Some(&Status::Passed),
+                "{dir} {id}: the reference interpreter passes every refusal witness: {good:#?}"
+            );
+        }
+        for mode in ["zero", "stranger"] {
+            let target = Mutated {
+                inner: Interpreted::for_model(ir.clone()),
+                event: event.into(),
+                field: field.into(),
+                mode,
+            };
+            let ran = statuses(&suite, &target);
+            let failed: Vec<&String> = witnesses
+                .iter()
+                .filter(|id| ran.get(*id) == Some(&Status::Failed))
+                .collect();
+            assert!(
+                !failed.is_empty(),
+                "{dir} {mode}: every refusal witness of `{binding}` passes a wrong `{event}.{field}` \
+                 (story:a-refusal-witness-compares-its-trigger-identities): {:#?}",
+                witnesses
+                    .iter()
+                    .map(|id| format!("{id}: {:?}", ran.get(id)))
+                    .collect::<Vec<_>>()
+            );
+        }
     }
 }

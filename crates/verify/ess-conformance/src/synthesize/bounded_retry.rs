@@ -145,30 +145,20 @@ fn single_attempt(
     Ok((steps, clipped(&text), source))
 }
 
+/// Another publisher's run, the branch it takes, and what it depends on.
+pub(super) type CleanPublisher<'ir> = (Run, &'ir ResolvedOutcome, BTreeSet<EssSemanticRef>);
+
 /// A trigger whose arrangement does not itself publish the binding's event, so every invocation
 /// the count sees is one the bounded retry made: `None` where the one `bindings` chose is already
 /// such a trigger, otherwise the first other publisher of the event, in the model's order, whose
-/// arrangement is clean, with what it depends on.
+/// arrangement is clean, with the branch it takes, which says what its event carries and so which
+/// identities [`expect_trigger_event`] compares, and with what it depends on.
 ///
 /// A step of the arrangement sets the binding off when it executes a command that [`reaches`] the
 /// event — read conservatively, whichever branch the step takes and whichever branch each command a
 /// binding invokes on the way takes. Where every publisher needs such an arrangement, the count
 /// would include attempts the bound did not make, so the scenario is refused by name.
-pub(super) fn clean_trigger(
-    ir: &EssIr,
-    binding: &ResolvedBinding,
-    trigger: &Run,
-    actors: &BTreeMap<QualifiedName, ActorRef>,
-) -> Result<Option<(Run, BTreeSet<EssSemanticRef>)>, BindingGap> {
-    Ok(clean_publisher(ir, binding, trigger, actors)?.map(|(run, _, source)| (run, source)))
-}
-
-/// Another publisher's run, the branch it takes, and what it depends on.
-type CleanPublisher<'ir> = (Run, &'ir ResolvedOutcome, BTreeSet<EssSemanticRef>);
-
-/// [`clean_trigger`], with the branch the other publisher takes, which says what its event
-/// carries.
-fn clean_publisher<'ir>(
+pub(super) fn clean_publisher<'ir>(
     ir: &'ir EssIr,
     binding: &ResolvedBinding,
     trigger: &Run,

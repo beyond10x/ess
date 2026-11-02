@@ -136,7 +136,7 @@ fn witness(
 ) -> Built {
     let command = CommandRef::new(invoked.name.clone());
     let forced = forcible(ir.format(), invoked, outcome);
-    let alternative = super::bounded_retry::clean_trigger(ir, binding, trigger, actors)?;
+    let alternative = super::bounded_retry::clean_publisher(ir, binding, trigger, actors)?;
     // A missing related row is a refusal the honest system answers on every attempt, where the
     // trigger names a row no row carries: no injection is needed to reach it (a downstream
     // adopter's report of 2026-10-20). Where the trigger refuses that missing row itself, another
@@ -185,20 +185,25 @@ fn witness(
         Some((invoke, publisher)) => (Some(invoke), publisher),
         None => (None, None),
     };
-    let trigger = match &publisher {
-        Some((run, _)) => run,
-        None => alternative.as_ref().map_or(trigger, |(run, _)| run),
+    // The trigger the scenario sends, with the branch it takes: what its event carries, and so
+    // which identities the expectation compares, is that branch's, whichever publisher is sent.
+    let sent_by: super::Published<'_> = match &publisher {
+        Some((run, by, _)) => (*by, run),
+        None => alternative
+            .as_ref()
+            .map_or((published_by, trigger), |(run, by, _)| (*by, run)),
     };
+    let trigger = sent_by.1;
     let mut source: BTreeSet<EssSemanticRef> = [command.clone().into(), forced_ref.clone().into()]
         .into_iter()
         .collect();
-    if let Some((_, published)) = &publisher {
-        source.extend(published.iter().cloned());
+    if let Some((_, _, rests_on)) = &publisher {
+        source.extend(rests_on.iter().cloned());
     }
     if let Some(component) = accepting_component(ir, &invoked.name) {
         source.insert(component.into());
     }
-    if let Some((_, extra)) = &alternative {
+    if let Some((_, _, extra)) = &alternative {
         source.extend(extra.iter().cloned());
     }
     if let Some((_, _, rests_on)) = &arranged {
@@ -210,23 +215,31 @@ fn witness(
         after,
         text,
     } = owed(ir, binding, policy, outcome, action, invoked, &mut source);
-    let mut steps = match &arranged {
-        Some((setup, _, _)) => setup.clone(),
-        None => trigger.setup.clone(),
-    };
-    if let Some(invoke) = answered {
-        steps.extend(invoke);
-    } else if let Some((_, invoke, _)) = arranged {
-        steps.extend(invoke);
+    // The trigger as sent: its arrangement and its invocation, the forced refusal armed between
+    // them where it is forced rather than answered.
+    let (setup, invoke, armed) = if let Some(invoke) = answered {
+        (trigger.setup.clone(), invoke, None)
+    } else if let Some((setup, invoke, _)) = arranged {
+        (setup, invoke, None)
     } else {
-        steps.push(super::bounded_retry::force(forced_ref, times));
-        steps.extend(trigger.invoke.iter().cloned());
-    }
-    steps.push(ScenarioStep::ExpectEvent {
-        event: event.clone(),
-        payload: BTreeMap::new(),
-        shape: payload_shape(ir, event),
-    });
+        let armed = super::bounded_retry::force(forced_ref, times);
+        (trigger.setup.clone(), trigger.invoke.clone(), Some(armed))
+    };
+    let mut steps = setup.clone();
+    steps.extend(armed);
+    steps.extend(invoke.iter().cloned());
+    // The trigger's event compared as the other binding scenarios compare it
+    // (story:a-refusal-witness-compares-its-trigger-identities): the identities the invocation
+    // sent, and what the trigger's row holds where the scenario arranges that row as its run does.
+    // Where a related row is arranged first and the trigger's row created naming it, no field of
+    // that row is read: nothing records what it was rewritten to hold.
+    let rewritten = BTreeMap::new();
+    steps.push(super::expect_trigger_event(
+        ir,
+        sent_by,
+        (setup.as_slice(), invoke.as_slice(), &rewritten),
+        event,
+    ));
     steps.push(super::bounded_retry::count(
         BindingRef::new(binding.name.clone()),
         command,
@@ -238,17 +251,20 @@ fn witness(
 
 /// The invocation leaving the related row missing, sent from the first other publisher of the
 /// binding's event (by command, then branch, in declaration order) that does not refuse the missing
-/// row itself, with its arranged run and what that run rests on. `None` where every publisher
-/// refuses it, so the refusal by name stands.
+/// row itself, with its arranged run, the branch it takes, which says what its event carries, and
+/// what that run rests on. `None` where every publisher refuses it, so the refusal by name stands.
 #[allow(clippy::type_complexity)]
-fn unguarded_publisher(
-    ir: &EssIr,
+fn unguarded_publisher<'ir>(
+    ir: &'ir EssIr,
     binding: &ResolvedBinding,
     invoked: &ResolvedCommand,
     published_by: &ResolvedOutcome,
     refusal: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
-) -> Option<(Vec<ScenarioStep>, Option<(Run, Vec<EssSemanticRef>)>)> {
+) -> Option<(
+    Vec<ScenarioStep>,
+    Option<(Run, &'ir ResolvedOutcome, Vec<EssSemanticRef>)>,
+)> {
     let event = binding.cause.event()?;
     ir.commands().values().find_map(|command| {
         command
@@ -270,7 +286,7 @@ fn unguarded_publisher(
                     name.clone().into(),
                     OutcomeRef::new(name, outcome.name.clone()).into(),
                 ];
-                Some((invoke, Some((run, published))))
+                Some((invoke, Some((run, outcome, published))))
             })
     })
 }
