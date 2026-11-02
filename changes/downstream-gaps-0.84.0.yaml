@@ -1,0 +1,18 @@
+schema: b10x-change/v1
+id: ess/downstream-gaps-0.84.0
+repository: ess
+publishedAt: 2026-11-03T00:00:00Z
+title: Generated servers refuse what their OpenAPI refuses, authored success steps assert no error, and generated UIs call their binding's routes
+summary: >-
+  Generated Rust servers refuse at decode a malformed Timestamp and an undeclared JSON member, and
+  the Go server refuses an undeclared top-level member. An authored success act also asserts that
+  no error came back. Denied-grant scenarios are written beside ranked views and read as every
+  ungranted actor of the view's domain. A generated UI calls the routes its HTTP binding serves,
+  and the terminal and React renderers keep row keys, record rows and account menu entries.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.84.0
+  version: 0.84.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]
