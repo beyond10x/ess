@@ -10,7 +10,7 @@ tags:
 - review-finding
 relations:
 - informed_by: review-result:adversary-w1-gen1-pass-1
-revision: 1
+revision: 2
 ---
 ## Need
 
@@ -29,3 +29,11 @@ Before W1 any text was stored; W1 narrowed the gap. Found by review-result:adver
 ## Schedule
 
 Backlog (D398): not waved; considered only after approval and after every predefined wave is released.
+
+## Repro
+
+The W1 GEN1 adversary pass wrote `the_timestamp_decoder_answers_the_trees_rfc3339_instant_vectors` and
+`every_timestamp_the_decoder_admits_is_an_instant_the_generated_server_can_order` in
+`crates/generate/ess-synth/tests/adversary_w1_gen1_adversary.rs` (over `ess-primitives/tests/vectors/rfc3339-instants.json`
+and a fixed 604,800-text corpus; 7,304 admitted texts the instant grammar cannot read). They were left out of the
+committed file because the item is out of W1.
