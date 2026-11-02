@@ -526,6 +526,7 @@ fn suite(ir: &EssIr) -> ConformanceSuite {
     for (id, scenario) in authoring.scenarios {
         suite.insert(id, scenario).expect("one id");
     }
+    suite.select_fresh_format_for(ir);
     suite
 }
 
