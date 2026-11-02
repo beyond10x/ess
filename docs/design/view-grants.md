@@ -44,10 +44,11 @@ checks no read grant fails the denied scenario rather than being skipped.
 For each read-granted view a served component answers, synthesis:
 
 - sends every other read of it as the lowest-named actor naming it;
-- files `<view>/grant/read/denied`: the view read as the lowest-named actor the grant does not name,
-  where one is declared, and then as no actor, each followed by `expect_not_granted`, which after a
-  `query_view` requires that read's refusal (a view every actor may read is still read as no
-  actor);
+- files `<view>/grant/read/denied`: the view read as each actor of the view's own domain the grant
+  does not name, in name order, or, where that domain has none, as the lowest-named declared actor
+  the grant does not name, where one is declared; and then as no actor; each followed by
+  `expect_not_granted`, which after a `query_view` requires that read's refusal (a view every actor
+  may read is still read as no actor);
 - files `<view>/grant/read/admitted/<actor>` for each actor naming it: the read served.
 
 The ids carry `read` because `<view>/grant/denied` could not be told from a command's
