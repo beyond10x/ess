@@ -8,6 +8,8 @@ summary: 'NEEDS-CHANGE: account-menu check misses unparseable entries and droppe
 relations:
 - reviews: story:account-menu-entries-keep-sets-and-navigate
 - reviews: story:a-generated-ui-calls-the-routes-its-http-binding-serves
+- reviews: story:a-row-actions-confirm-is-addressed-by-the-views-key
+- reviews: story:a-record-action-in-the-terminal-renderer-sees-its-row
 revision: 1
 ---
 unit: W1 UI1 (four ess-ui stories), 642617588, c0daa4b1f, c942ffcd1, 939c2caf4 merged as cce755258, reviewed in tree ess-w1-ui1 at 939c2caf4
