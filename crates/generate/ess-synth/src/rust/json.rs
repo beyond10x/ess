@@ -833,7 +833,9 @@ pub fn decimal_at<'a>(value: &'a Value, at: &str, expected: &str) -> Result<&'a 
 /// # Errors
 ///
 /// [`DecodeError`] when the value is not a string, or is one RFC 3339 does not spell — refused as
-/// the contract refuses it, rather than stored as an instant nobody can order.
+/// the contract refuses it. An admitted text is what `format: date-time` admits, which is not
+/// always an instant the server can order: a leap second (`23:59:60`) and a fraction past nine
+/// digits are admitted, and a guard comparing either reads it as unknown.
 pub fn timestamp_at<'a>(value: &'a Value, at: &str, expected: &str) -> Result<&'a str, DecodeError> {
     let text = text_at(value, at, expected)?;
     if date_time(text) {

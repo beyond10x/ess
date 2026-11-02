@@ -160,6 +160,31 @@ func readJSON(body []byte) (any, *response) {
 	return value, nil
 }
 
+// closedInput refuses a command body holding a member none of fields names: the default request
+// is `unknown: refuse`, and the served document closes the input. A value that is no object is
+// the decoder's to refuse. The standard decoder keeps no member order, so of several such members
+// the least by name is the one named, where the Rust server names the first to arrive.
+func closedInput(value any, fields []string) error {
+	object, err := objectAt(value, "body", "an object")
+	if err != nil {
+		return nil
+	}
+	unnamed, found := "", false
+	for name := range object {
+		named := false
+		for _, field := range fields {
+			named = named || field == name
+		}
+		if !named && (!found || name < unnamed) {
+			unnamed, found = name, true
+		}
+	}
+	if !found {
+		return nil
+	}
+	return DecodeError{At: nested("body", unnamed), Expected: "no member: no field is named so", Found: describes(object[unnamed])}
+}
+
 // Actor is an actor the specification declares, by its qualified name.
 type Actor string
 
