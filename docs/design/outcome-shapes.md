@@ -284,9 +284,13 @@ row back instead (`existence::probe`): the half then sends inputs for that recor
 answers tell the state it was arranged in apart from every other state of its lifecycle. That is
 the valid input of the first branch, in declaration order, that addresses the record from that
 state, where that branch runs from no other state; otherwise it is the shortest sequence of sends
-that does tell them apart, each from the state the sends before it leave the record in, drawn
-from the command's branches and from every other command whose branches are decided by the
-input, the record's existence or its held state and whose input names no other record. A
+a bounded search finds that does tell them apart, extended one send at a time past it where the
+bound stops the search first, so it can be longer than the shortest, each from the state the
+sends before it leave the record in, drawn from the command's branches and from every other
+command whose branches are decided by the input, the record's existence or its held state and
+whose input names no other record. An input of the identity's plain type names another record
+only where a branch uses it as one (its subject, a field carrying a relation, rows selected by
+`affects:` or `instances:`); a free-text reason beside the identity names none. A
 `wrong_state:` refusal is such an answer: `Stage`, running only from `New`, answers `staged` for
 a new record and `not-new` for a staged one. A target that moved the record on refusal, into any
 state, answers one of those sends with another branch. A target that looks the record up before
@@ -294,8 +298,9 @@ it checks the input fails the first half; a target that checks the input only fo
 fails the second. If no arrangement reaches that record, synthesis withdraws the scenario and
 refuses it with the arrangement's cause. With no view it withdraws the scenario and refuses it as
 `ESS-SYNTH-001` where no send from that state has a valid input, naming every branch it tried, and
-where the sends leave a state they cannot tell apart from the arranged one, naming the arranged
-state and then those states. It is not filed to be skipped at run time. Three cases keep their own families: a refusal whose guard reads
+where the sends it tried leave a state they cannot tell apart from the arranged one, naming the
+arranged state and then those states; where valid sends exist but none tells any state apart,
+that is every other state. It is not filed to be skipped at run time. Three cases keep their own families: a refusal whose guard reads
 the identity field stays a plain send (#178), a command reading stored fields already sends its
 refusals for an arranged row, and a command whose branches read the held state gets one arranged
 row per held state, below.

@@ -340,8 +340,9 @@ pub(super) fn existence(
 /// no identity view shows the row, the commands read it back instead ([`probe`]): sends for the
 /// record whose required answers tell the arranged state apart from every other state of its
 /// lifecycle follow. That is the valid send of the first branch addressing the record from the
-/// arranged state where it alone does, and otherwise the shortest sequence of sends that does,
-/// such as another command's branch the model answers with its `wrong_state:` refusal in the
+/// arranged state where it alone does, and otherwise the shortest sequence of sends a bounded
+/// search finds that does, extended one send at a time past it where the bound stops the search
+/// first, such as another command's branch the model answers with its `wrong_state:` refusal in the
 /// states the first branch also runs from. A target that moved the record on refusal, into any
 /// state, fails it. Where no arrangement reaches that record, or no view shows it and no send has a valid
 /// input or the sends leave a state they cannot tell apart from the arranged one, the scenario is
@@ -555,15 +556,18 @@ fn runs_from(outcome: &ResolvedOutcome, held: &ess_domain::entity::StateName) ->
 /// with another branch. The arranged half of [`refusals_on_an_arranged_row`] tries first the valid
 /// input of each branch of `command`, in declaration order, that addresses a record of `entity`
 /// from that state, sent as an arranging act; where one alone tells the state apart it is the
-/// whole read. Otherwise, and for a held-state refusal, the read is the shortest sequence of sends,
-/// each from the state the sends before it leave the record in, drawn from the branches of
-/// `command` and of every other command [`reads_plainly`] admits, in that order; a held-state
-/// refusal of `command` is one of them. Where the arrangement names no state, the first valid send
-/// of an addressing branch is the read, as before.
+/// whole read. Otherwise, and for a held-state refusal, the read is the shortest sequence of sends
+/// a bounded breadth-first search finds ([`MAX_PROBE_SEARCHES`]), each from the state the sends
+/// before it leave the record in, drawn from the branches of `command` and of every other command
+/// [`reads_plainly`] admits, in that order; a held-state refusal of `command` is one of them. Where
+/// the bound stops the search first, the best sequence it found is extended one send at a time
+/// past it ([`Reads::extended`]), so the read can be longer than the shortest. Where the
+/// arrangement names no state, the first valid send of an addressing branch is the read, as before.
 ///
-/// Refused naming [`UNPROBED`] and every branch tried with no valid send from that state where no
-/// send tells any state apart from it, and naming [`UNTOLD`] and the states left where no sequence
-/// tells every one apart.
+/// Refused naming [`UNPROBED`] and every branch tried where no send from that state has a valid
+/// input, and naming [`UNTOLD`] and the states left where valid sends exist but they leave a state
+/// untold: the states no send the search tried tells apart, every other state where none tells
+/// any apart.
 fn probe(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -607,7 +611,7 @@ fn probe(
         };
     }
     let mut best: Option<Search> = None;
-    let mut queue = VecDeque::from([start]);
+    let mut queue = VecDeque::from([start.clone()]);
     let mut seen = BTreeSet::new();
     let mut expanded = 0;
     while let Some(search) = queue.pop_front() {
@@ -637,20 +641,32 @@ fn probe(
             }
         }
     }
-    Err(match best {
-        None => gap(reads.tried.join(", "), UNPROBED),
-        Some(best) => gap(
-            std::iter::once(held)
-                .chain(best.others.keys())
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", "),
-            UNTOLD,
-        ),
-    })
+    // The search stopped at its bound or found no sequence telling every state apart: the best
+    // sequence so far is extended one send at a time past it, so the states named are those no
+    // further send tells apart.
+    let best = match best {
+        Some(best) => reads.extended(best),
+        // A valid send that tells nothing apart leaves every state untold; none at all is unprobed.
+        None if reads.at(Some(held)).is_empty() => {
+            return Err(gap(reads.tried.join(", "), UNPROBED));
+        }
+        None => start,
+    };
+    if best.others.is_empty() {
+        return Ok(reads.sent(&best.chain));
+    }
+    Err(gap(
+        std::iter::once(held)
+            .chain(best.others.keys())
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", "),
+        UNTOLD,
+    ))
 }
 
-/// How many partial sequences [`probe`] extends before it settles for the best it found.
+/// How many partial sequences [`probe`] extends breadth first before it extends the best it found
+/// one send at a time ([`Reads::extended`]).
 const MAX_PROBE_SEARCHES: usize = 64;
 
 /// The record [`probe`] reads back.
@@ -1007,6 +1023,31 @@ impl<'i, 'r> Reads<'i, 'r> {
         Some(Search { at, others, chain })
     }
 
+    /// `search` extended one send at a time: each time by the send from where the record rests
+    /// that leaves the fewest states untold, the first in [`Reads::at`]'s order of those that tie,
+    /// until every state is told apart or no send tells another apart. Deterministic, and bounded
+    /// by the states left, one fewer with each send.
+    fn extended(&mut self, mut search: Search) -> Search {
+        while !search.others.is_empty() {
+            let mut next: Option<Search> = None;
+            for found in self.at(Some(&search.at)) {
+                if let Some(after) = self.after(&search, found) {
+                    if next
+                        .as_ref()
+                        .is_none_or(|next| after.others.len() < next.others.len())
+                    {
+                        next = Some(after);
+                    }
+                }
+            }
+            match next {
+                Some(next) => search = next,
+                None => break,
+            }
+        }
+        search
+    }
+
     /// The steps and sources of the sends `chain` names, in order.
     fn sent(&self, chain: &[usize]) -> super::Invocation {
         let mut steps = Vec::new();
@@ -1079,7 +1120,7 @@ fn answer<'i>(
 /// `true` for a command other than the refused one that [`probe`] may send to read a record of
 /// `entity` back: issued by a caller, every branch decided by the input, the record's existence or
 /// its held state (the only conditions [`answer`] models), none filling a field from a related row,
-/// and no input field naming a record but the one its branches address.
+/// and no input field naming a record but the one its branches address ([`names_a_row`]).
 fn reads_plainly(ir: &EssIr, command: &ResolvedCommand, entity: &EntityHandle) -> bool {
     let names_the_record = |input: &str| {
         command.outcomes.iter().any(|outcome| {
@@ -1102,13 +1143,53 @@ fn reads_plainly(ir: &EssIr, command: &ResolvedCommand, entity: &EntityHandle) -
                     | ResolvedCondition::StateChange { .. }
             ) && !reads_related(outcome)
         })
-        && command.input.iter().all(|field| {
-            names_the_record(&field.name)
-                || !ir
-                    .entities()
-                    .values()
-                    .any(|other| other.identity.type_ref == field.type_ref)
-        })
+        && command
+            .input
+            .iter()
+            .all(|field| names_the_record(&field.name) || !names_a_row(ir, command, field))
+}
+
+/// `true` where the input `field` of `command` may name a row.
+///
+/// A field of a declared type some entity's identity has names one of its rows by its type. A
+/// field of a primitive type an identity also has (a plain `String`) names a row only where the
+/// model uses it as one: a branch's subject named by it, a branch storing a field that carries a
+/// relation, or a branch whose `affects:` or `instances:` selects rows by a filter; the last two
+/// are counted for every such field, as their filters may read any input. A field the model reads
+/// only as a value, such as a free-text reason, names none.
+fn names_a_row(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    field: &ess_compiler::ir::ResolvedField,
+) -> bool {
+    let typed_as_identity = ir
+        .entities()
+        .values()
+        .any(|other| other.identity.type_ref == field.type_ref);
+    if !typed_as_identity {
+        return false;
+    }
+    if !matches!(
+        field.type_ref,
+        ess_compiler::ir::ResolvedTypeRef::Primitive { .. }
+    ) {
+        return true;
+    }
+    command.outcomes.iter().any(|outcome| {
+        outcome.instances.is_some()
+            || !outcome.affects.is_empty()
+            || outcome.subject.as_ref().is_some_and(|subject| {
+                matches!(&subject.instance, ResolvedInstance::Supplied { field: named }
+                    if named.name == field.name)
+                    || {
+                        let carried = ir.relations_carried_by(subject.entity.name());
+                        outcome
+                            .sets
+                            .iter()
+                            .any(|set| carried.contains_key(set.target.as_str()))
+                    }
+            })
+    })
 }
 
 /// `true` where an event, error or stored field `outcome` fills is read from a related row.
@@ -1133,20 +1214,22 @@ fn reads_related(outcome: &ResolvedOutcome) -> bool {
 }
 
 /// Why an input refusal's arranged or held-state half is withdrawn where no identity view shows
-/// the record and no branch tried has a valid send, from the state the record was left in, that
-/// tells that state apart from any other.
+/// the record and no branch tried has a valid send from the state the record was left in.
 const UNPROBED: &str = "has no valid send for the record an input refusal was sent for, from the \
                         state that record was arranged in, and no identity view shows that \
                         record, so nothing would show a target that changes on refusal what the \
                         command answers for it";
 
 /// Why an input refusal's arranged or held-state half is withdrawn where no identity view shows
-/// the record and the sends [`probe`] can make leave states it cannot tell apart from the one the
-/// record was left in; the path names that state first, then those.
+/// the record and the sends [`probe`] tried leave states it cannot tell apart from the one the
+/// record was left in: after the best sequence its bounded search found, extended one send at a
+/// time, or after none where valid sends exist but none tells a state apart. The path names that
+/// state first, then those.
 const UNTOLD: &str = "names first the state the record an input refusal was sent for was arranged \
-                      in, then the states no send synthesis can make tells apart from it, and no \
-                      identity view shows that record, so a target that moved it on refusal into \
-                      one of those would not be seen";
+                      in, then the states left untold from it once the sends synthesis tried have \
+                      told apart all they could, after which no send synthesis can make tells \
+                      apart from it any of those, and no identity view shows that record, so a \
+                      target that moved it on refusal into one of those would not be seen";
 
 /// Every input-guarded refusal naming no subject beside branches that read the held state, sent
 /// again for a row arranged in each held state (beyond10x/ess#227).

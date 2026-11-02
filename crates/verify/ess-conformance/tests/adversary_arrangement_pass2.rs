@@ -584,8 +584,10 @@ fn without_view_or_probe() -> String {
 }
 
 /// With no view and no valid send of the addressing branch, nothing would show a target that
-/// moves the record on refusal, so each arranged refusal scenario is withdrawn and refused naming
-/// that branch, never filed as a half that passes such a target.
+/// moves the record on refusal, so each arranged refusal scenario is withdrawn, never filed as a
+/// half that passes such a target. `rejected` has a valid send but answers alike in `New` and
+/// `Configured`, so the cause names those states, not a branch without a valid send
+/// (story:a-no-view-probe-tells-from-states-apart, fix round 1).
 #[test]
 fn issue_209_no_view_arranged_half_without_a_valid_send_is_withdrawn_naming_the_branch() {
     let result = synthesis(&without_view_or_probe());
@@ -600,10 +602,13 @@ fn issue_209_no_view_arranged_half_without_a_valid_send_is_withdrawn_naming_the_
         assert!(
             lines.iter().any(|line| line.contains("SYNTH-001")
                 && line.contains(&id)
-                && line.contains("vault.acct.Configure.configured")
+                && line.contains("`New, Configured`")
+                && line.contains("no send synthesis can make tells apart")
                 && line.contains("no identity view shows that record")),
-            "{id} withdrawn without naming the branch it could not probe through \
-             (story:a-no-view-arranged-half-probes-the-row-through-the-command): {lines:#?}"
+            "{id} withdrawn without naming the states `rejected`, its one valid send, cannot tell \
+             apart (story:a-no-view-probe-tells-from-states-apart, fix round 1, which replaced \
+             the branch-naming cause of story:a-no-view-arranged-half-probes-the-row-through-the-command \
+             where a valid send exists): {lines:#?}"
         );
     }
 }

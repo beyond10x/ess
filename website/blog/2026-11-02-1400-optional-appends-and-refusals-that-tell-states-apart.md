@@ -57,16 +57,18 @@ covers each of them.
   identity view shows the row.
 - The arranged half of such a refusal tells the arranged state apart from every other state. Where
   the first branch addressing the record from that state also runs from other states, the scenario
-  sends the shortest sequence that does tell them apart. That sequence is drawn from the command's
-  branches and from other commands whose input names only that record, with a `wrong_state:`
-  refusal among the answers.
+  sends the shortest sequence a bounded search finds that does tell them apart. Where the bound
+  stops the search first, that sequence is extended one send at a time past it. It is drawn from
+  the command's branches and from other commands whose input names only that record, with a
+  `wrong_state:` refusal among the answers. A free-text input beside the identity names no record.
 - A refusal beside held-state branches reads the record back after each held-state send, through
   sends from that state that tell it apart from every other state. The command's own branches come
   first, its held-state refusals among them.
 - A target that moves the record on refusal and publishes nothing now fails both. Before, they
   required only the error and no event, and such a target passed.
-- Where no sequence or send can tell the states apart, the scenario is withdrawn and refused as
-  `ESS-SYNTH-001`, naming the states left or every branch tried.
+- Where the sends tried leave states untold, the scenario is withdrawn and refused as
+  `ESS-SYNTH-001`, naming the states left. Where no send has a valid input, it names every branch
+  tried.
 - A model with an identity view keeps its suite bytes. The test model `occurrence-clock-offers.yaml`,
   which has none, moves its suite bytes: its `AcceptOffer/outcome/malformed` scenario reads the
   offer back in each of its three states, with its scenario count and refusals unchanged.
