@@ -94,30 +94,7 @@ impl Toy {
 
     /// The model's source digest, as its generated schemas' provenance carries it.
     fn digest(self, dir: &Path) -> String {
-        let out = dir.join(format!("{}-schema", self.dir));
-        let model = self.model();
-        let generated = ess(&[
-            "generate",
-            "--path",
-            utf8(&model),
-            "--kind",
-            "schema",
-            "--out",
-            utf8(&out),
-        ]);
-        assert!(generated.status.success(), "{}", text(&generated.stderr));
-        for text in files(&out).into_values() {
-            let Ok(schema) = serde_json::from_slice::<serde_json::Value>(&text) else {
-                continue;
-            };
-            if let Some(digest) = schema["x-ess-provenance"]["source_digest"].as_str() {
-                return digest.trim_start_matches("sha256:").to_owned();
-            }
-        }
-        panic!(
-            "no generated schema of {} carries a source digest",
-            self.dir
-        )
+        digest_of(&dir.join(format!("{}-schema", self.dir)), &self.model())
     }
 
     /// Writes `routes` as an `ess-http/1` binding of this model, named `name`, under `dir`.
@@ -135,6 +112,32 @@ impl Toy {
         .expect("the binding is written");
         path
     }
+}
+
+/// The source digest of the model at `model`, as the schemas generated under `out` carry it.
+fn digest_of(out: &Path, model: &Path) -> String {
+    let generated = ess(&[
+        "generate",
+        "--path",
+        utf8(model),
+        "--kind",
+        "schema",
+        "--out",
+        utf8(out),
+    ]);
+    assert!(generated.status.success(), "{}", text(&generated.stderr));
+    for text in files(out).into_values() {
+        let Ok(schema) = serde_json::from_slice::<serde_json::Value>(&text) else {
+            continue;
+        };
+        if let Some(digest) = schema["x-ess-provenance"]["source_digest"].as_str() {
+            return digest.trim_start_matches("sha256:").to_owned();
+        }
+    }
+    panic!(
+        "no generated schema of {} carries a source digest",
+        model.display()
+    )
 }
 
 /// `ess generate ui --target <target>` of `document` into `dir/<target>`, with `--http` when
@@ -757,4 +760,197 @@ fn a_command_bound_to_put_with_a_path_parameter_reaches_its_route() {
             "{STORY}: {method} {path}: {status}"
         );
     }
+}
+
+#[test]
+fn a_command_on_get_whose_path_does_not_carry_its_input_is_refused() {
+    let dir = scratch("get-query");
+    let http = ITEMS.binding(
+        &dir,
+        "items-get-query.yaml",
+        "routes:\n  - {view: items.catalog.AllItems, method: get, path: /items}\n  \
+         - {command: items.catalog.AddItem, method: post, path: /items}\n  \
+         - command: items.catalog.RenameItem\n    method: get\n    path: /items/{item_id}\n    \
+         parameters: {item_id: input.item_id}\n    request: {encoding: query}\n",
+    );
+    for target in ["tui", "react"] {
+        let (output, out) = generate(&dir, target, ITEMS, &ITEMS.document(), Some(&http));
+        let stderr = text(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{STORY}: {target}: {stderr}");
+        assert!(
+            stderr.contains("items.catalog.RenameItem")
+                && stderr.contains("items-get-query.yaml")
+                && stderr.contains("`title`")
+                && stderr.contains("without a body"),
+            "{STORY}: {target}: the refusal names the command, the field and the binding: {stderr}"
+        );
+        assert!(!out.exists(), "{STORY}: {target}: nothing is written");
+    }
+}
+
+/// Accepts `count` connections on `127.0.0.1:0`, answers each `202`, and returns each request's
+/// line and body once all have arrived.
+fn record(count: usize) -> (String, std::thread::JoinHandle<Vec<(String, String)>>) {
+    use std::io::{Read as _, Write as _};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a local port");
+    let base = format!("http://{}", listener.local_addr().expect("an address"));
+    let handle = std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        for stream in listener.incoming().take(count) {
+            let mut stream = stream.expect("a connection");
+            let mut read = Vec::new();
+            let mut buffer = [0_u8; 4096];
+            let head = loop {
+                let n = stream.read(&mut buffer).expect("the request reads");
+                read.extend_from_slice(&buffer[..n]);
+                if let Some(at) = read.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break at + 4;
+                }
+                assert!(n > 0, "the request ends before its head");
+            };
+            let text = String::from_utf8_lossy(&read[..head]).into_owned();
+            let length = text
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())?
+                })
+                .unwrap_or(0);
+            while read.len() < head + length {
+                let n = stream.read(&mut buffer).expect("the body reads");
+                if n == 0 {
+                    break;
+                }
+                read.extend_from_slice(&buffer[..n]);
+            }
+            let body = String::from_utf8_lossy(&read[head..]).into_owned();
+            seen.push((text.lines().next().unwrap_or_default().to_owned(), body));
+            let answer = r#"{"outcome":"renamed"}"#;
+            let _ = write!(
+                stream,
+                "HTTP/1.1 202 Accepted\r\nContent-Type: application/json\r\nContent-Length: \
+                 {}\r\nConnection: close\r\n\r\n{answer}",
+                answer.len()
+            );
+        }
+        seen
+    });
+    (base, handle)
+}
+
+/// The items toy with `RenameItem`'s `item_id` renamed `item` on the wire: a `bind` may send the
+/// field under either name, and the path variable is filled from whichever holds the value.
+#[test]
+fn a_path_variable_whose_field_is_renamed_on_the_wire_is_filled_from_either_name() {
+    let dir = scratch("renamed");
+    let model = dir.join("system.yaml");
+    let source = std::fs::read_to_string(ITEMS.model()).expect("the model reads");
+    let renamed = source.replacen(
+        "naming: {wire: rename-item}\n    input:\n      - {name: item_id, type: items.catalog.ItemId}",
+        "naming: {wire: rename-item}\n    input:\n      - {name: item_id, type: items.catalog.ItemId, wire: item}",
+        1,
+    );
+    assert_ne!(renamed, source, "the rename is written");
+    std::fs::write(&model, renamed).expect("the model is written");
+    let http = dir.join("items-http.yaml");
+    std::fs::write(
+        &http,
+        format!(
+            "type: ess-http/1\nspecification:\n  system: items\n  version: v1\n  source_digest: \
+             sha256:{}\n{}",
+            digest_of(&dir.join("schema"), &model),
+            ITEMS.routes()
+        ),
+    )
+    .expect("the binding is written");
+    let mut outs = BTreeMap::new();
+    for target in ["tui", "react"] {
+        let out = dir.join(target);
+        let generated = ess(&[
+            "generate",
+            "ui",
+            "--target",
+            target,
+            "--path",
+            utf8(&ITEMS.document()),
+            "--model",
+            utf8(&model),
+            "--out",
+            utf8(&out),
+            "--http",
+            utf8(&http),
+        ]);
+        assert_eq!(
+            generated.status.code(),
+            Some(0),
+            "{STORY}: {target}: {}",
+            text(&generated.stderr)
+        );
+        let route =
+            &table(target, &out)["components"]["items"]["commands"]["items.catalog.RenameItem"];
+        assert_eq!(
+            route["path_params"],
+            json!({"item_id": "item"}),
+            "{STORY}: {target}: {route}"
+        );
+        assert_eq!(
+            route["path_aliases"],
+            json!({"item_id": "item_id"}),
+            "{STORY}: {target}: {route}"
+        );
+        outs.insert(target, out);
+    }
+    let expected = [
+        (
+            "PUT /items/7 HTTP/1.1".to_owned(),
+            r#"{"title":"Lamp"}"#.to_owned(),
+        ),
+        (
+            "PUT /items/8 HTTP/1.1".to_owned(),
+            r#"{"title":"Desk"}"#.to_owned(),
+        ),
+    ];
+
+    let (base, seen) = record(2);
+    let binding: Binding = serde_json::from_value(table("tui", &outs["tui"])).expect("a binding");
+    let bases = BTreeMap::from([("items".to_owned(), base)]);
+    let adapter = ess_ui_tui::HttpAdapter::new(binding, &bases, None).expect("the adapter");
+    for (key, id, title) in [("item_id", 7, "Lamp"), ("item", 8, "Desk")] {
+        let input = BTreeMap::from([
+            (key.to_owned(), Value::Number(id.into())),
+            ("title".to_owned(), Value::String(title.to_owned())),
+        ]);
+        adapter
+            .post("items.catalog.RenameItem", &input)
+            .unwrap_or_else(|error| panic!("{STORY}: terminal {key}: {error}"));
+    }
+    assert_eq!(
+        seen.join().expect("the recorder"),
+        expected,
+        "{STORY}: terminal"
+    );
+
+    let react = &outs["react"];
+    support::compile(react, &["binding.ts", "runtime/data.ts"]);
+    let (base, seen) = record(2);
+    let script = format!(
+        r#"
+const {{ binding }} = out("binding");
+const {{ httpAdapter }} = out("runtime/data");
+const adapter = httpAdapter(binding, () => {base:?});
+(async () => {{
+  await adapter.send("items.catalog.RenameItem", {{ item_id: 7, title: "Lamp" }});
+  await adapter.send("items.catalog.RenameItem", {{ item: 8, title: "Desk" }});
+  console.log("sent");
+}})().catch((error) => {{ console.error(String(error)); process.exit(1); }});
+"#
+    );
+    let printed = support::node_stdout(react, "renamed", &script);
+    assert!(printed.contains("sent"), "{STORY}: {printed}");
+    assert_eq!(
+        seen.join().expect("the recorder"),
+        expected,
+        "{STORY}: React"
+    );
 }

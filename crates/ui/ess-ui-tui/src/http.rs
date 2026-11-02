@@ -248,22 +248,32 @@ impl HttpAdapter {
         let (base, route) = self
             .served(command, |served| &served.commands)
             .ok_or_else(|| format!("no served component accepts {command}"))?;
-        let path = fill(&route.path, &route.path_params, |name| input.get(name))
-            .map_err(|why| format!("{command}: {why}"))?;
-        let carried = carried(&route.path_params);
-        let body = serde_json::Value::Object(
-            input
-                .iter()
-                .filter(|(name, _)| !carried.contains(name.as_str()))
-                .map(|(name, value)| (name.clone(), to_json(value)))
-                .collect(),
+        let path = fill(
+            &route.path,
+            &route.path_params,
+            &route.path_aliases,
+            |name| input.get(name),
         )
-        .to_string();
+        .map_err(|why| format!("{command}: {why}"))?;
+        let carried = carried(&route.path_params, &route.path_aliases);
+        let method = route.method.as_deref().unwrap_or("POST");
+        // A `get` or `head` command carries every input field in its path (checked at generate)
+        // and is sent without a body.
+        let body = (!matches!(method, "GET" | "HEAD")).then(|| {
+            serde_json::Value::Object(
+                input
+                    .iter()
+                    .filter(|(name, _)| !carried.contains(name.as_str()))
+                    .map(|(name, value)| (name.clone(), to_json(value)))
+                    .collect(),
+            )
+            .to_string()
+        });
         self.exchange(
             base,
-            route.method.as_deref().unwrap_or("POST"),
+            method,
             &format!("{}{path}", base.prefix),
-            Some(&body),
+            body.as_deref(),
         )
     }
 
@@ -349,11 +359,12 @@ impl DataAdapter for HttpAdapter {
         let (base, route) = self
             .served(&request.view, |served| &served.views)
             .ok_or_else(|| format!("no served component answers {}", request.view))?;
-        let path = fill(&route.path, &route.path_params, |name| {
+        let none = BTreeMap::new();
+        let path = fill(&route.path, &route.path_params, &none, |name| {
             request.params.get(name)
         })
         .map_err(|why| format!("{}: {why}", request.view))?;
-        let carried = carried(&route.path_params);
+        let carried = carried(&route.path_params, &none);
         let mut query = Vec::new();
         for param in &route.params {
             if carried.contains(param.name.as_str()) {
@@ -638,22 +649,35 @@ fn unchunk(mut rest: &[u8]) -> Result<Option<Vec<u8>>, String> {
     }
 }
 
-/// The names a route's path carries, which leave its body or query.
-fn carried(path_params: &BTreeMap<String, String>) -> std::collections::BTreeSet<&str> {
-    path_params.values().map(String::as_str).collect()
+/// The names a route's path carries, and their aliases, which leave its body or query.
+fn carried<'a>(
+    path_params: &'a BTreeMap<String, String>,
+    aliases: &'a BTreeMap<String, String>,
+) -> std::collections::BTreeSet<&'a str> {
+    path_params
+        .values()
+        .chain(aliases.values())
+        .map(String::as_str)
+        .collect()
 }
 
 /// `path` with each `{variable}` of `path_params` replaced by the value `value` gives for the
-/// name it carries, percent-encoded as one segment; refused, naming that name, when there is no
-/// value or an empty one.
+/// name it carries, or else for the variable's alias, percent-encoded as one segment; refused,
+/// naming that name, when there is no value or an empty one.
 fn fill<'a>(
     path: &str,
     path_params: &BTreeMap<String, String>,
+    aliases: &BTreeMap<String, String>,
     value: impl Fn(&str) -> Option<&'a Value>,
 ) -> Result<String, String> {
     let mut filled = path.to_owned();
     for (variable, name) in path_params {
-        let text = match value(name) {
+        let found = value(name).or_else(|| {
+            aliases
+                .get(variable)
+                .and_then(|alias| value(alias.as_str()))
+        });
+        let text = match found {
             None | Some(Value::Null) => None,
             Some(value @ (Value::Sequence(_) | Value::Mapping(_))) => {
                 Some(to_json(value).to_string())

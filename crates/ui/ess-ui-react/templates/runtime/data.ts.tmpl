@@ -254,6 +254,9 @@ export interface CommandRoute {
   method?: string;
   /** Each path variable to the input field whose value it carries, which then leaves the body. */
   path_params?: Record<string, string>;
+  /** Each path variable whose field is renamed on the wire to the field's model name, which a
+   * `bind` may send it under instead. */
+  path_aliases?: Record<string, string>;
 //-routed
 }
 
@@ -347,19 +350,34 @@ function shown(answer: Exclude<Answer, { answer: "accepted" }>, route: CommandRo
 //+routed
 /**
  * `path` with each `{variable}` of `params` filled from the value `values` holds for the name it
- * carries, as one segment (beyond10x/ess#713). Refused, naming it, when there is no value.
+ * carries, or else for its alias, as one segment (beyond10x/ess#713). Refused, naming it, when
+ * there is no value, or a dot segment (`.`, `..`) a URL resolver would remove, leaving the route.
  */
-function routePath(path: string, params: Record<string, string> | undefined, values: Record<string, unknown>): string {
+function routePath(
+  path: string,
+  params: Record<string, string> | undefined,
+  values: Record<string, unknown>,
+  aliases: Record<string, string> = {},
+): string {
   let filled = path;
   for (const [variable, name] of Object.entries(params ?? {})) {
-    const value = values[name];
+    const alias = aliases[variable];
+    const value = values[name] ?? (alias === undefined ? undefined : values[alias]);
     if (value === undefined || value === null || value === "") {
       throw new DataError(`no value for \`${name}\`, which the path \`${path}\` carries`, 400);
     }
     const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+    if (text === "." || text === "..") {
+      throw new DataError(`\`${name}\` is \`${text}\`, which the path \`${path}\` cannot carry as a segment`, 400);
+    }
     filled = filled.split(`{${variable}}`).join(encodeURIComponent(text));
   }
   return filled;
+}
+
+/** Whether a command on `method` is sent without a body: `GET` and `HEAD` carry none. */
+function bodiless(method: string): boolean {
+  return method === "GET" || method === "HEAD";
 }
 
 //-routed
@@ -418,9 +436,14 @@ export function httpAdapter(binding: Binding, base: (component: string) => strin
         throw new DataError(`no served component accepts ${command}`, 404);
       }
 //+routed
-      const carried = Object.values(found.route.path_params ?? {});
-      const path = routePath(found.route.path, found.route.path_params, input);
-      const body = Object.fromEntries(Object.entries(input).filter(([name]) => !carried.includes(name)));
+      const aliases = found.route.path_aliases ?? {};
+      const carried = [...Object.values(found.route.path_params ?? {}), ...Object.values(aliases)];
+      const path = routePath(found.route.path, found.route.path_params, input, aliases);
+      const method = found.route.method ?? "POST";
+      // A `GET` or `HEAD` command carries every input field in its path (checked at generate).
+      const body = bodiless(method)
+        ? undefined
+        : JSON.stringify(Object.fromEntries(Object.entries(input).filter(([name]) => !carried.includes(name))));
 //-routed
       let status = 0;
       let text = "";
@@ -434,9 +457,9 @@ export function httpAdapter(binding: Binding, base: (component: string) => strin
 //-unrouted
 //+routed
         const response = await fetch(`${base(found.component)}${path}`, {
-          method: found.route.method ?? "POST",
-          headers: headers(true),
-          body: JSON.stringify(body),
+          method,
+          headers: headers(body !== undefined),
+          body,
         });
 //-routed
         status = response.status;

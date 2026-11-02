@@ -2459,6 +2459,7 @@ impl<'d> Gen<'d> {
             }
             RegionKind::AccountMenu => {
                 let menu = self.import("runtime/shell", "AccountMenu");
+                let errors = &mut self.errors;
                 let entries: Vec<String> = match prop("actions") {
                     Some(Value::Sequence(items)) => items
                         .iter()
@@ -2467,9 +2468,22 @@ impl<'d> Gen<'d> {
                             let text =
                                 |key: &str| entry.get(key).and_then(Value::as_str).map(ts::string);
                             // `sets` and `navigate` as an action carries them: the menu runs
-                            // them through the runtime's `runAction`.
+                            // them through the runtime's `runAction`. An entry that does not
+                            // read as an action is refused, as `account_menu_keys` refuses it.
                             let action =
-                                ess_yaml::from_value::<Action>(Value::Mapping(entry.clone())).ok();
+                                ess_yaml::from_value::<Action>(Value::Mapping(entry.clone()))
+                                    .map_err(|error| {
+                                        let name = entry.get("name").and_then(Value::as_str);
+                                        let entry_at = name.map_or_else(
+                                            || at.child("props").child("actions"),
+                                            |name| at.child("props").child("actions").child(name),
+                                        );
+                                        errors.push(GenerateError::new(format!(
+                                    "{entry_at}: this account menu entry does not read as an \
+                                     action: {error}"
+                                )));
+                                    })
+                                    .ok();
                             let sets = action
                                 .as_ref()
                                 .filter(|action| !action.sets.is_empty())
