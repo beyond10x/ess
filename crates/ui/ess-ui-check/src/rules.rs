@@ -215,9 +215,10 @@ fn reads_of<'a>(located: &'a Located<'_>) -> Vec<(NodePath, &'a Reads)> {
 }
 
 /// `pager_paging`, `pager_params`, `pager_sizes`: a read's `pager` pages a server read, names
-/// two params of that read each bound to a `state.<path>` a renderer can set, and offers at
-/// least one page size, each at least 1. Nothing is recognised by its name: a param is a pager
-/// param only when the pager names it.
+/// two params of that read each bound to a `state.<path>` a renderer can set, neither path the
+/// other or inside it (both are written when a size is chosen), and offers at least one page
+/// size, each at least 1. Nothing is recognised by its name: a param is a pager param only when
+/// the pager names it.
 ///
 /// `pager_outside_collection`: only a collection renders a pager footer, so a `pager` on any
 /// other read (another composite's, a graph editor's edges', an action's `loads`) is a key no
@@ -270,6 +271,23 @@ fn pagers(located: &Located<'_>, sink: &mut Sink) {
             };
             sink.push("pager_params", &pager_at.child(key), message);
         }
+        if let Some(size) = pager.size.as_ref().filter(|size| *size != &pager.page) {
+            if let (Some(page_path), Some(size_path)) =
+                (read.state_path(&pager.page), read.state_path(size))
+            {
+                if overlaps(page_path, size_path) {
+                    sink.push(
+                        "pager_params",
+                        &pager_at,
+                        format!(
+                            "`pager.page` is bound to `{page_path}` and `pager.size` to \
+                             `{size_path}`; one path holds the other, so writing one replaces the \
+                             other: bind each to a state path of its own"
+                        ),
+                    );
+                }
+            }
+        }
         if pager.sizes.is_empty() {
             sink.push(
                 "pager_sizes",
@@ -285,6 +303,14 @@ fn pagers(located: &Located<'_>, sink: &mut Sink) {
             );
         }
     }
+}
+
+/// Whether two `state.<path>` texts are the same path or one lies inside the other, compared
+/// segment by segment (`state.q` holds `state.q.size`, not `state.qs`).
+fn overlaps(left: &str, right: &str) -> bool {
+    left.split('.')
+        .zip(right.split('.'))
+        .all(|(left, right)| left == right)
 }
 
 /// Keys that mean something only beside another: a metric's `aggregate`, `field` and `reads`

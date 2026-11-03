@@ -1996,7 +1996,7 @@ fixture: fixtures/forecast.yaml
 | `filter_paging` | `reads.filter` | `{must: use_client_or_none_paging}` | error |
 | `filter_over_param` | `reads.filter` | `{must: prefer_existing_server_parameter}` | warning |
 | `pager_paging` | `reads.pager` | `{must: use_server_paging}` | error |
-| `pager_params` | `reads.pager.page`, `reads.pager.size` | `{must: name_distinct_params_of_the_read_each_bound_to_a_state_path}` | error |
+| `pager_params` | `reads.pager.page`, `reads.pager.size` | `{must: name_distinct_params_of_the_read_each_bound_to_a_state_path_neither_inside_the_other}` | error |
 | `pager_sizes` | `reads.pager.sizes` | `{must: list_at_least_one_size_each_at_least_1}` | error |
 | `pager_outside_collection` | `reads.pager` | `{must: belong_to_a_collection_reads}` | error |
 
@@ -2730,7 +2730,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `filter_over_param` | [Reads](#reads) | `reads.filter` | `{must: prefer_existing_server_parameter}` | warning |
 | `filter_export` | [Action](#action) | `export.params` | `{must: not_claim_to_copy_client_filter}` | warning |
 | `pager_paging` | [Reads](#reads) | `reads.pager` | `{must: use_server_paging}` | error |
-| `pager_params` | [Reads](#reads) | `reads.pager.page`, `reads.pager.size` | `{must: name_distinct_params_of_the_read_each_bound_to_a_state_path}` | error |
+| `pager_params` | [Reads](#reads) | `reads.pager.page`, `reads.pager.size` | `{must: name_distinct_params_of_the_read_each_bound_to_a_state_path_neither_inside_the_other}` | error |
 | `pager_sizes` | [Reads](#reads) | `reads.pager.sizes` | `{must: list_at_least_one_size_each_at_least_1}` | error |
 | `pager_outside_collection` | [Reads](#reads) | `reads.pager` | `{must: belong_to_a_collection_reads}` | error |
 | `account_menu_keys` | every node | `shells.*.regions.*.props.actions[] of an account_menu` | `{must_be_in: [name, label, opens, does, sets, navigate]}` | error |

@@ -257,9 +257,11 @@ export function Collection(props: {
 /**
  * Previous, the page (of how many, when the total and the size are known), Next (disabled on
  * the last page when they are), and with a size path a per-page select that returns to page 1.
- * The size is known only when its state holds a number of at least 1; the select offers that
- * size even when `sizes` does not list it, and a "Default" entry while the state holds none, so
- * it always shows what the read sends. Reads and writes only the state paths it is handed.
+ * The size counts pages only when its state holds a number of at least 1. The select offers that
+ * size even when `sizes` does not list it, any other value the state holds (0, a negative, text)
+ * as an entry of its own text, and a "Default" entry only while the state holds nothing
+ * (`undefined`, `null`, `""`), so it always shows what the read sends. Reads and writes only the
+ * state paths it is handed.
  */
 function Pager(props: {
   pager: { page: string; size?: string; sizes?: number[]; declared?: boolean };
@@ -273,7 +275,10 @@ function Pager(props: {
     return null;
   }
   const page = Number(current ?? 1) || 1;
-  const size = pager.size === undefined ? undefined : pageSize(evaluate(pager.size, scope.values));
+  const held = pager.size === undefined ? undefined : evaluate(pager.size, scope.values);
+  const unset = held === undefined || held === null || held === "";
+  const size = pageSize(held);
+  const other = unset || size !== undefined ? undefined : typeof held === "object" ? JSON.stringify(held) : String(held);
   const sizes = [...(pager.sizes ?? [])];
   if (size !== undefined && !sizes.includes(size)) {
     sizes.push(size);
@@ -298,7 +303,7 @@ function Pager(props: {
         <label className="ui-page-size">
           <span className="ui-form-label">Per page</span>
           <select
-            value={size === undefined ? "" : String(size)}
+            value={size !== undefined ? String(size) : (other ?? "")}
             onChange={(event: ChangeEvent<HTMLSelectElement>) => {
               const chosen = pageSize(event.target.value);
               if (chosen !== undefined) {
@@ -309,7 +314,8 @@ function Pager(props: {
               }
             }}
           >
-            {size === undefined ? <option value="">Default</option> : null}
+            {unset ? <option value="">Default</option> : null}
+            {other !== undefined ? <option value={other}>{other}</option> : null}
             {sizes.map((option) => (
               <option key={option} value={String(option)}>
                 {option}
