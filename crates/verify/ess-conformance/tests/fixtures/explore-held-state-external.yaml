@@ -1,0 +1,113 @@
+# The explorer's fixture for an external cause arranged on a command whose held state another
+# branch answers (story:explorer-and-interpreter-agree-on-external-cause-for-stored-record).
+#
+# A ticket is opened, parked and unparked. `Nudge` refuses a parked ticket (`parked`, the held
+# state), is refused when the mail gateway bounces the nudge (`bounced`, a plain `external:`),
+# refuses an identity no ticket carries (`no-ticket`) and otherwise nudges the ticket. The held state is
+# step 3 of the precedence order and a plain external branch step 5, so an arranged bounce never
+# answers a parked ticket. The targets beside it are `explore-held-state-external-target.mjs` and
+# `explore_held_state_external_target.go`, each switched by the mode the driver passes.
+
+format: ess/29
+system: explorehx
+version: v1
+domain: explorehx.desk
+summary: Tickets that are opened, parked, unparked and nudged.
+
+types:
+  - {name: explorehx.desk.TicketId, kind: newtype, of: Uuid}
+
+entities:
+  - name: explorehx.desk.Ticket
+    identity: {name: ticket_id, type: explorehx.desk.TicketId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Parked]
+      transitions:
+        - {name: park, from: [Open], to: Parked}
+        - {name: unpark, from: [Parked], to: Open}
+
+actors:
+  - name: explorehx.desk.Agent
+    may: [explorehx.desk.OpenTicket, explorehx.desk.Park, explorehx.desk.Unpark, explorehx.desk.Nudge]
+
+errors:
+  - {name: explorehx.desk.NotOpen, summary: The ticket is parked.}
+  - {name: explorehx.desk.NotParked, summary: The ticket is open.}
+  - {name: explorehx.desk.Bounced, summary: The mail gateway bounced the nudge.}
+  - {name: explorehx.desk.NoTicket, summary: No ticket carries the identity.}
+
+commands:
+  - name: explorehx.desk.OpenTicket
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: explorehx.desk.Ticket
+        instance: ticket_id
+        sets: {label: input.label}
+        emits: [explorehx.desk.Opened]
+        payload:
+          explorehx.desk.Opened: {ticket_id: {generated: true}}
+  - name: explorehx.desk.Park
+    input:
+      - {name: ticket_id, type: explorehx.desk.TicketId}
+    outcomes:
+      - name: parked-now
+        moves: explorehx.desk.Ticket.park
+        instance: ticket_id
+        emits: [explorehx.desk.Parked]
+        payload:
+          explorehx.desk.Parked: {ticket_id: input.ticket_id}
+      - {name: not-open, wrong_state: true, error: explorehx.desk.NotOpen}
+  - name: explorehx.desk.Unpark
+    input:
+      - {name: ticket_id, type: explorehx.desk.TicketId}
+    outcomes:
+      - name: unparked
+        moves: explorehx.desk.Ticket.unpark
+        instance: ticket_id
+        emits: [explorehx.desk.Unparked]
+        payload:
+          explorehx.desk.Unparked: {ticket_id: input.ticket_id}
+      - {name: not-parked, wrong_state: true, error: explorehx.desk.NotParked}
+  - name: explorehx.desk.Nudge
+    input:
+      - {name: ticket_id, type: explorehx.desk.TicketId}
+    outcomes:
+      - name: no-ticket
+        unknown_instance: true
+        error: explorehx.desk.NoTicket
+      - name: parked
+        when_subject_state: Parked
+        error: explorehx.desk.NotOpen
+      - name: bounced
+        external: the mail gateway bounces the nudge
+        error: explorehx.desk.Bounced
+      - name: nudged
+        updates: explorehx.desk.Ticket
+        instance: ticket_id
+        emits: [explorehx.desk.Nudged]
+        payload:
+          explorehx.desk.Nudged: {ticket_id: input.ticket_id}
+
+events:
+  - name: explorehx.desk.Opened
+    fields: [{name: ticket_id, type: explorehx.desk.TicketId}]
+  - name: explorehx.desk.Parked
+    fields: [{name: ticket_id, type: explorehx.desk.TicketId}]
+  - name: explorehx.desk.Unparked
+    fields: [{name: ticket_id, type: explorehx.desk.TicketId}]
+  - name: explorehx.desk.Nudged
+    fields: [{name: ticket_id, type: explorehx.desk.TicketId}]
+
+views:
+  - name: explorehx.desk.Tickets
+    source: explorehx.desk.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: explorehx.desk.TicketId}
+      - {name: label, type: String}
+      - {name: state, type: explorehx.desk.Ticket.State}

@@ -9,9 +9,10 @@
 // The suite asks one fixed question per scenario. This walks paths nobody wrote — a view that drops
 // rows after the fifth, a refusal that still writes, an identity reused on the fourth create, a
 // state that cannot be re-entered a third time — and checks after every step the outcome, the
-// error, the direct events and their determined payload fields, every parameterless view over an
-// entity (polling an `eventual` one), identity uniqueness and every invariant. A failure is shrunk
-// to a shorter trace that still fails the same way.
+// error, the direct events and their determined payload fields, every required member of a direct
+// response, every parameterless view over an entity (polling an `eventual` one), identity
+// uniqueness and every invariant. A failure is shrunk to a shorter trace that still fails the same
+// way.
 //
 // # External branches
 //
@@ -286,6 +287,11 @@ func exploreLoad(irText, suiteText string) (map[string]any, error) {
 		return nil, fmt.Errorf("explore: cannot read `ir.json`: %w", err)
 	}
 	ir := exploreObject(model)
+	if component, ok := provenance["component"].(string); ok {
+		if err := exploreScope(ir, component); err != nil {
+			return nil, err
+		}
+	}
 	for _, command := range exploreSorted(ir["commands"]) {
 		for _, raw := range exploreList(command["outcomes"]) {
 			if len(exploreList(exploreObject(raw)["one_time_response"])) != 0 {
@@ -294,6 +300,48 @@ func exploreLoad(irText, suiteText string) (map[string]any, error) {
 		}
 	}
 	return ir, nil
+}
+
+// exploreScope narrows ir, after its digest was checked, to what the suite's component realises
+// (`ess generate synthesize --component`, `provenance.component`): the commands it accepts or owns
+// the domain of, and the views of the domains it owns, as `synthesize --component` scopes the
+// suite. Every other command and view is left out of exploration rather than reported excluded,
+// so a target of that component alone passes without AllowExcluded
+// (story:component-explorer-walks-only-its-component).
+func exploreScope(ir map[string]any, name string) error {
+	var component map[string]any
+	for _, declared := range exploreSorted(ir["components"]) {
+		if exploreString(declared["name"]) == name {
+			component = declared
+		}
+	}
+	if component == nil {
+		return fmt.Errorf("explore: `suite.json` is scoped to component `%s`, which `ir.json` does not declare", name)
+	}
+	owns := map[string]bool{}
+	for _, domain := range exploreStrings(component["owns"]) {
+		owns[domain] = true
+	}
+	accepts := map[string]bool{}
+	for _, command := range exploreStrings(component["accepts"]) {
+		accepts[command] = true
+	}
+	commands := map[string]any{}
+	for key, node := range exploreObject(ir["commands"]) {
+		command := exploreObject(node)
+		if accepts[exploreString(command["name"])] || owns[exploreString(command["domain"])] {
+			commands[key] = node
+		}
+	}
+	views := map[string]any{}
+	for key, node := range exploreObject(ir["views"]) {
+		if owns[exploreString(exploreObject(node)["domain"])] {
+			views[key] = node
+		}
+	}
+	ir["commands"] = commands
+	ir["views"] = views
+	return nil
 }
 
 func exploreObject(value any) map[string]any {
@@ -1966,10 +2014,24 @@ func exploreDecideRow(command *exploreCommand, input Row, model *exploreModel) e
 		}
 		return exploreDecision{kind: "ambiguous", names: []string{"no record for the supplied instance"}}
 	}
+	// heldAnswers is set once a branch the held row selects holds. The precedence order reads the
+	// held state before a plain external branch (steps 4 and 6; 3 and 5 under the one rule), so
+	// where one holds the interpreter (`interpret::execute::select_phases`) never asks a provider:
+	// no external branch is eligible, whatever an earlier step arranged
+	// (story:explorer-and-interpreter-agree-on-external-cause-for-stored-record). An external
+	// branch marked `before_row: true` answers before the held state, and exploreDecide still
+	// offers it.
+	heldAnswers := false
+	eligible := func() ([]map[string]any, string) {
+		if heldAnswers {
+			return []map[string]any{}, ""
+		}
+		return exploreEligible(command, outcomes, source, record)
+	}
 	// orExternal is what a step may take where no ordinary branch can be: the eligible external
 	// branches alone, or otherwise, when there are none.
 	orExternal := func(otherwise exploreDecision) exploreDecision {
-		externals, unknown := exploreEligible(command, outcomes, source, record)
+		externals, unknown := eligible()
 		if unknown != "" {
 			return exploreDecision{kind: "unknown", reason: unknown}
 		}
@@ -1987,7 +2049,7 @@ func exploreDecideRow(command *exploreCommand, input Row, model *exploreModel) e
 	stranded := record != nil && moves > 0 && !starts[fmt.Sprint(record.fields["state"])]
 	wrongState := func() exploreDecision {
 		if wrong != nil {
-			externals, unknown := exploreEligible(command, outcomes, source, record)
+			externals, unknown := eligible()
 			if unknown != "" {
 				return exploreDecision{kind: "unknown", reason: unknown}
 			}
@@ -2006,6 +2068,7 @@ func exploreDecideRow(command *exploreCommand, input Row, model *exploreModel) e
 	if undecided != nil {
 		return *undecided
 	}
+	heldAnswers = held != nil
 	holding := []map[string]any{}
 	if held != nil {
 		earlier := []string{}
@@ -2044,7 +2107,7 @@ func exploreDecideRow(command *exploreCommand, input Row, model *exploreModel) e
 	// The external branches this input and subject make eligible. Their guards state eligibility,
 	// not the verdict, so they take no part in choosing the ordinary branch; and where no ordinary
 	// branch can be taken, they still can.
-	externals, unknown := exploreEligible(command, outcomes, source, record)
+	externals, unknown := eligible()
 	if unknown != "" {
 		return exploreDecision{kind: "unknown", reason: unknown}
 	}
@@ -2610,6 +2673,22 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 			}
 			if !exploreValueAgrees(ir, exploreObject(field["target_type"]), naming, expected, actual, present, 0) {
 				return &exploreDisagreement{kind: "payload", detail: fmt.Sprintf("event %d `%s`.%s is %s, the specification says %s", index, event.Event, target, exploreRender(actual, present), exploreRender(expected, true))}, nil
+			}
+		}
+	}
+	// A `returns: true` outcome returns the command's declared response (ess/17): every member it
+	// declares REQUIRED, a type that is not `Optional`, is present. The model determines no
+	// response value, so a member is checked for presence only
+	// (story:go-explorer-compares-direct-response-members).
+	if outcome["returns"] == true {
+		for _, item := range exploreList(command.node["response"]) {
+			field := exploreObject(item)
+			member := exploreString(field["name"])
+			if exploreOptionalType(ir, exploreObject(field["type_ref"])) {
+				continue
+			}
+			if _, present := result.Response[member]; !present {
+				return &exploreDisagreement{kind: "response", detail: fmt.Sprintf("the target's response to `%s` has no `%s`, a member the specification requires", name, member)}, nil
 			}
 		}
 	}

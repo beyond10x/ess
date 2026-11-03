@@ -1,0 +1,36 @@
+# The explorer's fixture for a command's direct response members
+# (story:go-explorer-compares-direct-response-members).
+#
+# `Mint` returns a token (`minted`, `returns: true`): its response declares `token` and `label`,
+# both REQUIRED, and `note`, an `Optional` member. The model determines none of their values, so
+# the explorer checks each REQUIRED member for presence only. `too-long` refuses a label over eight
+# characters and returns nothing. The targets beside it are `explore-direct-response-target.mjs`
+# and `explore_direct_response_target.go`, each switched by the mode the driver passes.
+
+format: ess/29
+system: explorert
+version: v1
+domain: explorert.keys
+summary: Tokens minted and returned to the caller.
+
+actors:
+  - name: explorert.keys.Client
+    may: [explorert.keys.Mint]
+
+errors:
+  - {name: explorert.keys.TooLong, summary: The label is over eight characters.}
+
+commands:
+  - name: explorert.keys.Mint
+    input:
+      - {name: label, type: String}
+    response:
+      - {name: token, type: String}
+      - {name: label, type: String}
+      - {name: note, type: Optional<String>}
+    outcomes:
+      - name: too-long
+        when: label.count > 8
+        error: explorert.keys.TooLong
+      - name: minted
+        returns: true

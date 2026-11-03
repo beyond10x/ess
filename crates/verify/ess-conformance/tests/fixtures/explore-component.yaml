@@ -1,0 +1,91 @@
+# The explorer's fixture for a suite scoped to one component
+# (story:component-explorer-walks-only-its-component).
+#
+# `front` accepts `OpenTicket` and `CloseTicket`; `back` accepts `WriteNote`. The targets beside it,
+# `explore-component-target.mjs` and `explore_component_target.go`, implement `front` alone and
+# answer `WriteNote` as unsupported.
+
+format: ess/29
+system: explorecmp
+version: v1
+domain: explorecmp.desk
+summary: Tickets the front desk opens and closes, and notes the back office writes.
+
+types:
+  - {name: explorecmp.desk.TicketId, kind: newtype, of: Uuid}
+  - {name: explorecmp.desk.NoteId, kind: newtype, of: Uuid}
+
+entities:
+  - name: explorecmp.desk.Ticket
+    identity: {name: ticket_id, type: explorecmp.desk.TicketId}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+  - name: explorecmp.desk.Note
+    identity: {name: note_id, type: explorecmp.desk.NoteId}
+    fields:
+      - {name: body, type: String}
+    lifecycle: {initial: Written, states: [Written], terminal: [Written], transitions: []}
+
+actors:
+  - name: explorecmp.desk.Clerk
+    may: [explorecmp.desk.OpenTicket, explorecmp.desk.CloseTicket, explorecmp.desk.WriteNote]
+
+errors:
+  - {name: explorecmp.desk.NotOpen, summary: The ticket is closed.}
+
+commands:
+  - name: explorecmp.desk.OpenTicket
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: explorecmp.desk.Ticket
+        instance: ticket_id
+        sets: {label: input.label}
+        emits: [explorecmp.desk.Opened]
+        payload:
+          explorecmp.desk.Opened: {ticket_id: {generated: true}}
+  - name: explorecmp.desk.CloseTicket
+    input:
+      - {name: ticket_id, type: explorecmp.desk.TicketId}
+    outcomes:
+      - name: closed
+        moves: explorecmp.desk.Ticket.close
+        instance: ticket_id
+        emits: [explorecmp.desk.Closed]
+        payload:
+          explorecmp.desk.Closed: {ticket_id: input.ticket_id}
+      - {name: not-open, wrong_state: true, error: explorecmp.desk.NotOpen}
+  - name: explorecmp.desk.WriteNote
+    input:
+      - {name: body, type: String}
+    outcomes:
+      - name: written
+        creates: explorecmp.desk.Note
+        instance: note_id
+        sets: {body: input.body}
+        emits: [explorecmp.desk.Written]
+        payload:
+          explorecmp.desk.Written: {note_id: {generated: true}}
+
+events:
+  - name: explorecmp.desk.Opened
+    fields: [{name: ticket_id, type: explorecmp.desk.TicketId}]
+  - name: explorecmp.desk.Closed
+    fields: [{name: ticket_id, type: explorecmp.desk.TicketId}]
+  - name: explorecmp.desk.Written
+    fields: [{name: note_id, type: explorecmp.desk.NoteId}]
+
+components:
+  - component: front
+    accepts: {commands: [explorecmp.desk.OpenTicket, explorecmp.desk.CloseTicket]}
+    publishes: {events: [explorecmp.desk.Opened, explorecmp.desk.Closed]}
+  - component: back
+    accepts: {commands: [explorecmp.desk.WriteNote]}
+    publishes: {events: [explorecmp.desk.Written]}

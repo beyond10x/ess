@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The precedence section of `docs/design/cross-record-and-stored-field-guards.md` states how an input refusal and an `unknown_instance:` or `exists: false` branch are ordered in each format: the input refusal answers first from `ess/27`, `ess/29` refuses either declared above it naming both and the order, and below `ess/29` either order validates. No behaviour changes. Validation and the interpreter already agreed, and so did both explorers on the `unknown_instance:` pair; they leave a `when_related:` command out. Tests now pin it (story:unknown-instance-and-input-guard-agree-on-order).
+
+### Fixed
+
+- The generated explorer (Go and TypeScript) no longer expects an arranged `external:` branch where a branch the stored row selects (its held state, or a predicate over its fields) holds. The interpreter answers the held state first, as the precedence order does, so a target in that order failed exploration naming the external branch (story:explorer-and-interpreter-agree-on-external-cause-for-stored-record).
+- The generated explorer (Go and TypeScript) fails a target whose answer to a `returns: true` outcome leaves out a required member of the command's `response`, naming the outcome and the member. It compared outcome, error and events only. Values are not compared, because the model determines none (story:go-explorer-compares-direct-response-members).
+- A package whose suite is scoped to one component (`ess generate synthesize --component`) explores only the commands that component accepts or whose domain it owns, and the views of the domains it owns. It explored every command of the whole model, so a target implementing that component failed on the other components' commands unless `AllowExcluded` was set (story:component-explorer-walks-only-its-component).
+
 ## [0.84.0] — 2026-11-03
 
 ### Added

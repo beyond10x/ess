@@ -1,0 +1,113 @@
+# The fixture for an input refusal declared above an unknown-instance branch and a related row's
+# `exists: false` (story:unknown-instance-and-input-guard-agree-on-order).
+#
+# `Nudge` refuses an amount over 100 (`too-much`, an input refusal, step 1 of the precedence order)
+# and an identity no ticket carries (`no-ticket`, `unknown_instance:`, step 2), and otherwise nudges
+# the ticket. `Route` refuses the same two and a desk no row carries (`no-desk`, `when_related:
+# exists: false`, step 4), and otherwise routes the ticket. Each declares its branches in step
+# order, which `ess/29` requires. The explorer leaves a command with a `when_related:` branch out,
+# so it explores `Nudge` alone. The targets beside it are `explore-input-beside-unknown-target.mjs`
+# and `explore_input_beside_unknown_target.go`, each switched by the mode the driver passes.
+
+format: ess/29
+system: exploreiu
+version: v1
+domain: exploreiu.desk
+summary: Tickets nudged and routed to desks.
+
+types:
+  - {name: exploreiu.desk.TicketId, kind: newtype, of: Uuid}
+  - {name: exploreiu.desk.DeskId, kind: newtype, of: Uuid}
+
+entities:
+  - name: exploreiu.desk.Desk
+    identity: {name: desk_id, type: exploreiu.desk.DeskId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live], transitions: []}
+  - name: exploreiu.desk.Ticket
+    identity: {name: ticket_id, type: exploreiu.desk.TicketId}
+    fields:
+      - {name: label, type: String}
+    lifecycle: {initial: Live, states: [Live], terminal: [Live], transitions: []}
+
+actors:
+  - name: exploreiu.desk.Agent
+    may: [exploreiu.desk.MakeDesk, exploreiu.desk.OpenTicket, exploreiu.desk.Nudge, exploreiu.desk.Route]
+
+errors:
+  - {name: exploreiu.desk.TooMuch, summary: The amount is over 100.}
+  - {name: exploreiu.desk.NoTicket, summary: No ticket carries the identity.}
+  - {name: exploreiu.desk.NoDesk, summary: No desk carries the identity.}
+
+commands:
+  - name: exploreiu.desk.MakeDesk
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: made
+        creates: exploreiu.desk.Desk
+        instance: desk_id
+        sets: {label: input.label}
+        emits: [exploreiu.desk.DeskMade]
+        payload:
+          exploreiu.desk.DeskMade: {desk_id: {generated: true}}
+  - name: exploreiu.desk.OpenTicket
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: opened
+        creates: exploreiu.desk.Ticket
+        instance: ticket_id
+        sets: {label: input.label}
+        emits: [exploreiu.desk.Opened]
+        payload:
+          exploreiu.desk.Opened: {ticket_id: {generated: true}}
+  - name: exploreiu.desk.Nudge
+    input:
+      - {name: ticket_id, type: exploreiu.desk.TicketId}
+      - {name: amount, type: Integer}
+    outcomes:
+      - name: too-much
+        when: amount > 100
+        error: exploreiu.desk.TooMuch
+      - name: no-ticket
+        unknown_instance: true
+        error: exploreiu.desk.NoTicket
+      - name: nudged
+        updates: exploreiu.desk.Ticket
+        instance: ticket_id
+        emits: [exploreiu.desk.Nudged]
+        payload:
+          exploreiu.desk.Nudged: {ticket_id: input.ticket_id}
+  - name: exploreiu.desk.Route
+    input:
+      - {name: ticket_id, type: exploreiu.desk.TicketId}
+      - {name: desk_id, type: exploreiu.desk.DeskId}
+      - {name: amount, type: Integer}
+    outcomes:
+      - name: too-much
+        when: amount > 100
+        error: exploreiu.desk.TooMuch
+      - name: no-ticket
+        unknown_instance: true
+        error: exploreiu.desk.NoTicket
+      - name: no-desk
+        when_related: {via: input.desk_id, exists: false}
+        error: exploreiu.desk.NoDesk
+      - name: routed
+        updates: exploreiu.desk.Ticket
+        instance: ticket_id
+        emits: [exploreiu.desk.Routed]
+        payload:
+          exploreiu.desk.Routed: {ticket_id: input.ticket_id}
+
+events:
+  - name: exploreiu.desk.DeskMade
+    fields: [{name: desk_id, type: exploreiu.desk.DeskId}]
+  - name: exploreiu.desk.Opened
+    fields: [{name: ticket_id, type: exploreiu.desk.TicketId}]
+  - name: exploreiu.desk.Nudged
+    fields: [{name: ticket_id, type: exploreiu.desk.TicketId}]
+  - name: exploreiu.desk.Routed
+    fields: [{name: ticket_id, type: exploreiu.desk.TicketId}]

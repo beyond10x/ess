@@ -878,6 +878,19 @@ satisfy both (input guards the finite prover shows disjoint excepted), naming bo
 to declare them in; a marker declared below a guarded branch is not refused. Below `ess/29` only
 the held-state rule (#486) and the `before_row:` rule (#534) hold, one pair each.
 
+An input refusal beside a missing row, `unknown_instance:` (step 2) or `exists: false` over a row
+the input names (step 4), answers first under the rule. Declaring the input refusal above them is
+the step order and validates from `ess/27`; from `ess/29` declaring either above the input refusal
+is refused, naming both and the order to declare them in
+(`story:unknown-instance-and-input-guard-agree-on-order`;
+`crates/specify/ess-domain/tests/held_state_order.rs`). The model interpreter answers both pairs by
+the rule, and both generated explorers answer the `unknown_instance:` pair alike. They leave a
+command with a `when_related:` branch out of exploration
+(`crates/verify/ess-conformance/tests/explore_input_beside_unknown.rs`).
+Below `ess/29` either declaration order validates, and the format's own order answers: below
+`ess/27` `exists: false` over the input first (step 1 of the six), from `ess/27` the input refusal
+first. A refusal there would narrow what a published format admits, so none is added.
+
 The one move from the six steps is a missing row the input names: step 1 there, step 4 here, after
 the addressed record's existence and held state, as a stored reference's already was. Request-only
 refusals stay first (the record's answer 1). `RelatedRow` holds nothing under the rule.
