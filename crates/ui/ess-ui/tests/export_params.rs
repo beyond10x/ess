@@ -72,3 +72,37 @@ fn an_export_keeps_the_expression_form() {
         Some(ExportParams::Expression(Expr("same_as(list)".to_owned())))
     );
 }
+
+#[test]
+fn a_wrongly_shaped_params_names_the_two_shapes() {
+    for (params, found) in [
+        ("[ids, names]", "not a list"),
+        (
+            "{ids: {from: selection.id}}",
+            "param `ids` is a map, not an expression",
+        ),
+    ] {
+        let text = document(&format!(
+            "{{reads: desk.Bundle, as: zip, params: {params}}}"
+        ));
+        let Err(error) = load_str(&text) else {
+            panic!("`params: {params}` loads");
+        };
+        let message = error.message();
+        assert!(
+            message.contains("a map of params `{<param>: <expr>}`")
+                && message.contains("one expression such as `same_as(<section>)`")
+                && message.contains(found)
+                && !message.contains("untagged"),
+            "story:a-refused-node-is-reported-at-its-own-path: `params: {params}` is refused \
+             naming the two shapes and `{found}`: {error}"
+        );
+        assert!(
+            error
+                .path()
+                .to_string()
+                .starts_with("pages/files/sections/list/bulk_actions/download"),
+            "the refusal is at the bulk action: {error}"
+        );
+    }
+}

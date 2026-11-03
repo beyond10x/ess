@@ -44,13 +44,12 @@ pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mu
     crate::names::overlay_params(&located, sink);
 }
 
-/// `export_selection`: an export's params read `selection.<field>` only on a bulk action (one of
-/// a collection's `bulk_actions`, or `bulk: true`), the one place the section's selection is in
-/// the action's scope. Anywhere else the path reads nothing and the view is read without it.
-fn export_selection(sink: &mut Sink, path: &NodePath, action: &Action, export: &Export) {
-    let bulk = action.bulk
-        || path.segments().iter().rev().nth(1).map(String::as_str) == Some("bulk_actions");
-    if bulk {
+/// `export_selection`: an export's params read `selection.<field>` only on one of a collection's
+/// `bulk_actions`, the one place the runtime puts the section's selection in the action's scope
+/// (`bulk: true` on any other action puts nothing there). Anywhere else the path reads nothing
+/// and the view is read without it.
+fn export_selection(sink: &mut Sink, path: &NodePath, export: &Export) {
+    if path.segments().iter().rev().nth(1).map(String::as_str) == Some("bulk_actions") {
         return;
     }
     let params = path.child("export").child("params");
@@ -68,8 +67,8 @@ fn export_selection(sink: &mut Sink, path: &NodePath, action: &Action, export: &
                 "export_selection",
                 &at,
                 format!(
-                    "`selection.{field}` reads the section's selection, which only a bulk action \
-                     has in scope (`bulk_actions` or `bulk: true`)"
+                    "`selection.{field}` reads the section's selection, which only an action \
+                     of `bulk_actions` has in scope"
                 ),
             );
         }
@@ -1013,7 +1012,7 @@ impl Checker<'_> {
         }
         toggle_state(sink, path, action);
         if let Some(export) = &action.export {
-            export_selection(sink, path, action, export);
+            export_selection(sink, path, export);
         }
     }
 

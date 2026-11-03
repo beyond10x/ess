@@ -2577,14 +2577,61 @@ pub struct Export {
 }
 
 /// An export's `params`.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExportParams {
     /// One expression, such as `same_as(<section>)`: the params of another section's read.
     Expression(Expr),
-    /// Each param and the expression it is read with, evaluated in the action's scope; on a bulk
-    /// action `selection.<field>` reads that field of the selected rows.
+    /// Each param and the expression it is read with, evaluated in the action's scope; on one of
+    /// a collection's `bulk_actions` `selection.<field>` reads that field of the selected rows.
     Map(BTreeMap<String, Expr>),
+}
+
+/// The two shapes an export's `params` takes, named in each refusal of another shape.
+const EXPORT_PARAMS_SHAPES: &str =
+    "an export's `params` is a map of params `{<param>: <expr>}` or one expression such as \
+     `same_as(<section>)`";
+
+impl<'de> Deserialize<'de> for ExportParams {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let scalar = |value: Value| match value {
+            Value::String(text) => Ok(Expr(text)),
+            Value::Number(number) => Ok(Expr(number.to_string())),
+            Value::Bool(flag) => Ok(Expr(flag.to_string())),
+            other => Err(other),
+        };
+        let shape = |value: &Value| match value {
+            Value::Null => "nothing",
+            Value::Sequence(_) => "a list",
+            Value::Mapping(_) => "a map",
+            Value::Tagged(_) => "a tagged value",
+            Value::String(_) | Value::Number(_) | Value::Bool(_) => "a scalar",
+        };
+        match Value::deserialize(deserializer)? {
+            Value::Mapping(entries) => entries
+                .into_iter()
+                .map(|(key, value)| {
+                    let Some(name) = key.as_str().map(str::to_owned) else {
+                        return Err(D::Error::custom(format!(
+                            "{EXPORT_PARAMS_SHAPES}; a param's name is a string, not {}",
+                            shape(&key)
+                        )));
+                    };
+                    scalar(value)
+                        .map(|expr| (name.clone(), expr))
+                        .map_err(|other| {
+                            D::Error::custom(format!(
+                                "{EXPORT_PARAMS_SHAPES}; param `{name}` is {}, not an expression",
+                                shape(&other)
+                            ))
+                        })
+                })
+                .collect::<Result<_, _>>()
+                .map(Self::Map),
+            value => scalar(value).map(Self::Expression).map_err(|other| {
+                D::Error::custom(format!("{EXPORT_PARAMS_SHAPES}, not {}", shape(&other)))
+            }),
+        }
+    }
 }
 
 /// File picker feeding a command.

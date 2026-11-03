@@ -88,3 +88,31 @@ fn a_selection_param_on_a_bulk_action_is_fine() {
     let found = findings(&text);
     assert!(found.is_empty(), "{found:#?}");
 }
+
+/// The runtime puts the selection in scope only around `bulk_actions`, so `bulk: true` on an
+/// action elsewhere does not make it a bulk action.
+#[test]
+fn a_bulk_flag_outside_bulk_actions_is_no_bulk_action() {
+    let text = document(
+        "{reads: desk.Bundle, as: zip, params: {kind: row.kind}}",
+        "{reads: desk.Bundle, as: zip, params: {ids: selection.id}}",
+    )
+    .replace(
+        "{name: everything, label: Everything, export:",
+        "{name: everything, label: Everything, bulk: true, export:",
+    );
+    assert!(text.contains("bulk: true"), "{text}");
+    let found = findings(&text);
+    let at: Vec<&str> = found.iter().map(|finding| finding.path.as_str()).collect();
+    assert_eq!(
+        at,
+        ["pages/files/sections/list/actions/everything/export/params"],
+        "story:a-refused-node-is-reported-at-its-own-path: `bulk: true` outside `bulk_actions` \
+         has no selection in scope: {found:#?}"
+    );
+    assert!(
+        found[0].message.contains("`bulk_actions`") && !found[0].message.contains("bulk: true"),
+        "the message names the one place the selection is in scope: {:?}",
+        found[0]
+    );
+}

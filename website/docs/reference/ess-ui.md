@@ -2015,7 +2015,7 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `bind` | map of `name` → `expr` |   |   | command input from row, selection or state |
 | `opens` | name of an [overlay](#overlay) |   |   | overlay to open |
 | `navigate` | record \{ `to`: name of a [Page](#page), `params`: optional map of `name` → `expr` \} |   |   | page to go to |
-| `export` | record \{ `reads`: name of an ESS `view`, `as`: (one of: `csv` \| `json` \| `zip` \| `png`), `params`: optional (one of: map of `name` → `expr` \| `expr`) \} |   |   | download a view; `params` is each param written out, or one expression such as `same_as(<section>)`; on a bulk action a param may read `selection.<field>` |
+| `export` | record \{ `reads`: name of an ESS `view`, `as`: (one of: `csv` \| `json` \| `zip` \| `png`), `params`: optional (one of: map of `name` → `expr` \| `expr`) \} |   |   | download a view; `params` is each param written out, or one expression such as `same_as(<section>)`; on one of a collection's `bulk_actions` a param may read `selection.<field>` |
 | `upload` | record \{ `accept`: list of `string`, `does`: name of an ESS `command` \} |   |   | file picker feeding a command |
 | `copy` | `expr` |   |   | value copied to the clipboard |
 | `sets` | map of `expr` → (one of: `expr` \| exactly `toggle`) |   |   | UI state change only, never business data |

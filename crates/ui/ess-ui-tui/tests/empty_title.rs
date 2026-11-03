@@ -62,3 +62,24 @@ fn an_empty_state_shows_its_title() {
         "the title is not shown before the message:\n{screen}"
     );
 }
+
+#[test]
+fn an_empty_title_is_no_title() {
+    let dir = scratch("untitled");
+    let screen = |document: &str| {
+        App::from_text(document, &dir, Options::new(dir.join("state")))
+            .unwrap_or_else(|error| panic!("{error}"))
+            .render_text(100, 30)
+    };
+    let blank = screen(&DOCUMENT.replace("title: No files, ", "title: \"\", "));
+    let none = screen(&DOCUMENT.replace("title: No files, ", ""));
+    assert!(
+        blank.contains("Upload a file to see it here."),
+        "the message is shown:\n{blank}"
+    );
+    assert_eq!(
+        blank, none,
+        "story:a-refused-node-is-reported-at-its-own-path: `title: \"\"` draws what no title \
+         draws, as React does"
+    );
+}
