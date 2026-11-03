@@ -1,4 +1,4 @@
-#	models=443	lines=605
+#	models=447	lines=609
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -212,10 +212,14 @@ crates/verify/ess-conformance/tests/fixtures/explore-adv-order.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-adv-overlap.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-before-row.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-codes.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-component.yaml	components=2
+crates/verify/ess-conformance/tests/fixtures/explore-direct-response.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-external-adversary.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-external-exits.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-external.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-guards-first.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-held-state-external.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-input-beside-unknown.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-pair/pair.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-preconditions-list.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-preconditions.yaml	components=0
@@ -599,7 +603,7 @@ system-dir:models/toolchain	infra	toolchain.infra.Observation	create	refused, co
 system-dir:models/toolchain	infra	toolchain.infra.Observation	toolchain.infra.ImportObservation	refused, imported, wrong-state
 system-dir:models/toolchain	release-automation	REFUSED	fca88a6cb61e25f86e28e8a69b4bf8ee5aadc05cb16ff6e4a728fb0ef5f0e657:375
 system-dir:models/toolchain	specify	toolchain.specify.Declaration	definition=f008c7ec58b6b8996de589cd7e5ce17e0cc8ba0610e93e9ac4e1f24d786ff2aa:1384
-system-dir:models/toolchain	specify	toolchain.specify.Model	definition=cafca2a6d7592822584e01558a7b3800a25010d73dbd211b054412b4bbb9c34b:7514
+system-dir:models/toolchain	specify	toolchain.specify.Model	definition=e3f7a725dea74b1ebcc1b857c7e3667bf6ffb48823497eac193df1c0c2a1f2cd:7532
 system-dir:models/toolchain	specify	toolchain.specify.Model	create	refused, selected
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.CompileModel	refused, compiled, wrong-state
 system-dir:models/toolchain	specify	toolchain.specify.Model	toolchain.specify.ResolveModel	refused, resolved, wrong-state

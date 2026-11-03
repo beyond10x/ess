@@ -938,7 +938,16 @@ fn an_emission_whose_only_sites_are_unavailable_still_collects_them() {
 
 #[test]
 fn the_class_list_ends_with_emit_swap_and_older_classes_keep_their_reports() {
-    assert_eq!(MutantClass::ALL.last(), Some(&MutantClass::EmitSwap));
+    // The two grant classes follow emit-swap (story:the-mutation-audit-covers-actor-grants).
+    assert_eq!(
+        &MutantClass::ALL[MutantClass::ALL.len() - 3..],
+        &[
+            MutantClass::EmitSwap,
+            MutantClass::GrantDrop,
+            MutantClass::GrantAdd
+        ],
+        "story:the-mutation-audit-covers-actor-grants"
+    );
     assert_eq!(MutantClass::EmitSwap.as_str(), "emit-swap");
     assert_eq!(MutantClass::EmitSwap.manifest_format(), MANIFEST_FORMAT_4);
     // emit-drop on billing writes the report it always wrote.

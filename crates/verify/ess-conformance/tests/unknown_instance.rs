@@ -442,3 +442,232 @@ fn create_or_preserve_is_witnessed_on_an_unknown_and_a_stored_identity() {
         .collect();
     assert!(failed.is_empty(), "{failed:#?}");
 }
+
+/// A delete of an absent row succeeds and writes nothing
+/// (`story:a-delete-may-have-a-no-op-branch-that-emits-nothing`).
+///
+/// `DeleteJob` deletes a stored job and answers `absent`, a non-refusing `unknown_instance:`
+/// branch, for an identity no job carries. The `absent` scenario reads the jobs back through the
+/// immediate view and requires no row with the identity it sent, so a target that writes a row on
+/// the no-op branch fails it.
+mod no_op_delete {
+    use std::cell::RefCell;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use ess_conformance::interpret::Interpreted;
+    use ess_conformance::report::Status;
+    use ess_conformance::scenario::ConformanceSuite;
+    use ess_conformance::target::{
+        AbsentInputRequest, ConformanceTarget, EventObservationRequest, ExternalOutcomeControl,
+        ImplementationIdentity, InvocationObservationRequest, ObservedEvent, ObservedInvocation,
+        RedeliveryRequest, ScenarioContext, SemanticCommandRequest, SemanticCommandResult,
+        SemanticViewRequest, SemanticViewResult, TargetError,
+    };
+    use ess_conformance::{AdmittedSuite, Runner, ScenarioStep, ViewExpectation};
+    use ess_primitives::node::Node;
+
+    use super::{ir, scenario, synthesis};
+
+    const JOBS: &str = "format: ess/27
+system: demo
+version: v1
+domain: demo.jobs
+types:
+  - {name: demo.jobs.JobId, kind: newtype, of: String}
+entities:
+  - name: demo.jobs.Job
+    identity: {name: job_id, type: demo.jobs.JobId}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Queued, states: [Queued], terminal: [Queued]}
+commands:
+  - name: demo.jobs.CreateJob
+    input:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: title, type: String}
+    outcomes:
+      - name: created
+        creates: demo.jobs.Job
+        instance: job_id
+        sets: {title: input.title}
+        emits: [demo.jobs.JobCreated]
+        payload:
+          demo.jobs.JobCreated: {job_id: input.job_id}
+  - name: demo.jobs.DeleteJob
+    input:
+      - {name: job_id, type: demo.jobs.JobId}
+    outcomes:
+      - {name: absent, unknown_instance: true, refuses: false}
+      - name: deleted
+        deletes: demo.jobs.Job
+        instance: job_id
+        emits: [demo.jobs.JobDeleted]
+        payload:
+          demo.jobs.JobDeleted: {job_id: input.job_id}
+events:
+  - name: demo.jobs.JobCreated
+    fields: [{name: job_id, type: demo.jobs.JobId}]
+  - name: demo.jobs.JobDeleted
+    fields: [{name: job_id, type: demo.jobs.JobId}]
+views:
+  - name: demo.jobs.Jobs
+    source: demo.jobs.Job
+    consistency: read_your_writes
+    fields:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: title, type: String}
+";
+
+    const ABSENT: &str = "demo.jobs.DeleteJob/outcome/absent";
+
+    /// The model interpreter, with a planted defect: a `DeleteJob` answered `absent` stores a job
+    /// row for the identity it was sent, which every later view read shows.
+    struct Writing {
+        inner: Interpreted,
+        written: RefCell<BTreeSet<Node>>,
+    }
+
+    impl ConformanceTarget for Writing {
+        fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+            self.inner.identity()
+        }
+        fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+            self.written.borrow_mut().clear();
+            self.inner.begin_scenario(scenario)
+        }
+        fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+            self.inner.end_scenario(scenario)
+        }
+        fn execute_command(
+            &self,
+            request: SemanticCommandRequest,
+        ) -> Result<SemanticCommandResult, TargetError> {
+            let job = request.input.get("job_id").cloned();
+            let result = self.inner.execute_command(request)?;
+            let absent = result
+                .outcome
+                .as_ref()
+                .is_some_and(|taken| taken.to_string() == ABSENT.replace("/outcome/", "/"));
+            if let (true, Some(job)) = (absent, job) {
+                self.written.borrow_mut().insert(job);
+            }
+            Ok(result)
+        }
+        fn execute_command_without_input(
+            &self,
+            request: AbsentInputRequest,
+        ) -> Result<SemanticCommandResult, TargetError> {
+            self.inner.execute_command_without_input(request)
+        }
+        fn query_view(
+            &self,
+            request: SemanticViewRequest,
+        ) -> Result<SemanticViewResult, TargetError> {
+            let mut result = self.inner.query_view(request)?;
+            for job in self.written.borrow().iter() {
+                result.rows.push(BTreeMap::from([
+                    ("job_id".to_owned(), job.clone()),
+                    ("title".to_owned(), Node::from("written")),
+                ]));
+            }
+            Ok(result)
+        }
+        fn observe_events(
+            &self,
+            request: EventObservationRequest,
+        ) -> Result<Vec<ObservedEvent>, TargetError> {
+            self.inner.observe_events(request)
+        }
+        fn configure_external_outcome(
+            &self,
+            request: ExternalOutcomeControl,
+        ) -> Result<(), TargetError> {
+            self.inner.configure_external_outcome(request)
+        }
+        fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+            self.inner.redeliver_event(request)
+        }
+        fn observe_invocations(
+            &self,
+            request: InvocationObservationRequest,
+        ) -> Result<Vec<ObservedInvocation>, TargetError> {
+            self.inner.observe_invocations(request)
+        }
+    }
+
+    fn statuses<T: ConformanceTarget>(
+        suite: &ConformanceSuite,
+        target: &T,
+    ) -> BTreeMap<String, Status> {
+        let admitted = AdmittedSuite::from_suite(suite).unwrap_or_else(|error| panic!("{error}"));
+        Runner::for_suite(admitted.suite())
+            .run_admitted(&admitted, target)
+            .into_report()
+            .scenarios
+            .into_iter()
+            .map(|result| (result.scenario.to_string(), result.status))
+            .collect()
+    }
+
+    #[test]
+    fn a_no_op_branch_that_writes_a_row_fails() {
+        let result = synthesis(JOBS);
+        let absent = scenario(&result.suite, ABSENT);
+        assert!(
+            absent.steps.iter().any(|step| matches!(
+                step,
+                ScenarioStep::ExpectView {
+                    expectation: ViewExpectation::Excludes { fields },
+                    ..
+                } if fields.contains_key("job_id")
+            )),
+            "`{ABSENT}` reads the jobs back and requires no row with the identity it sent:\n{:#?}",
+            absent.steps
+        );
+        let writing = Writing {
+            inner: Interpreted::for_model(ir(JOBS)),
+            written: RefCell::new(BTreeSet::new()),
+        };
+        let ran = statuses(&result.suite, &writing);
+        assert_ne!(
+            ran.get(ABSENT),
+            Some(&Status::Passed),
+            "a target storing a job on the no-op branch fails `{ABSENT}`: {ran:#?}"
+        );
+    }
+
+    #[test]
+    fn a_no_op_delete_of_an_absent_row_passes() {
+        let result = synthesis(JOBS);
+        assert!(result.refusals.is_empty(), "{:#?}", result.refusals);
+        let ran = statuses(&result.suite, &Interpreted::for_model(ir(JOBS)));
+        assert_eq!(ran.len(), 3, "{ran:#?}");
+        assert!(
+            ran.values().all(|status| *status == Status::Passed),
+            "{ran:#?}"
+        );
+    }
+
+    #[test]
+    fn a_no_op_branch_no_immediate_view_reads_is_named_in_a_note() {
+        let eventual = JOBS.replace("consistency: read_your_writes", "consistency: eventual");
+        let result = synthesis(&eventual);
+        let absent = scenario(&result.suite, ABSENT);
+        assert!(
+            !absent
+                .steps
+                .iter()
+                .any(|step| matches!(step, ScenarioStep::QueryView { .. })),
+            "no immediate view reads the jobs, so `{ABSENT}` keeps its steps:\n{:#?}",
+            absent.steps
+        );
+        let notes: Vec<String> = result.notes.iter().map(ToString::to_string).collect();
+        assert!(
+            notes
+                .iter()
+                .any(|note| note.contains(ABSENT) && note.contains("demo.jobs.Job")),
+            "a note names the scenario and the entity: {:#?}",
+            result.notes
+        );
+    }
+}

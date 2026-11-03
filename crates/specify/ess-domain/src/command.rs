@@ -170,7 +170,7 @@
 //! | two outcomes are unconditional | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
 //! | an outcome neither emits nor errors | [`EmptyChange`](ValidationCode::EmptyChange) |
 //! | an outcome names an error *and* emits, or names an error *and* declares a subject without `compensates: true` | [`RefusalMutatedState`](ValidationCode::RefusalMutatedState) |
-//! | `compensates: true` on a refusal not decided by `external:`, or beside `creates:`, `deletes:` or `affects:` | [`RefusalMutatedState`](ValidationCode::RefusalMutatedState) |
+//! | `compensates: true` on a refusal not decided by `external:`, or beside `creates:` or `affects:`, or beside `deletes:` below ess/34 | [`RefusalMutatedState`](ValidationCode::RefusalMutatedState) |
 //! | `compensates: true` on a branch naming no error | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
 //! | `compensates: true` on a refusal declaring no change to its addressed row | [`MissingDeclaration`](ValidationCode::MissingDeclaration) |
 //! | `before_row: true` on a branch not decided by `external:`, naming no error, beside `compensates: true`, with an error payload reading a row, declared after a branch a later step answers, or on a command with a `when_related:` branch | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
@@ -347,9 +347,10 @@ impl From<OutcomeName> for String {
 }
 
 /// Holds a branch marked `compensates: true` to the one shape the marker admits (ess/22,
-/// beyond10x/ess#197, `docs/design/refusal-with-effect.md`): an `external:` refusal that moves or
-/// updates the one row its `instance:` names, writes at most that row's `sets:`, and creates,
-/// deletes, emits and fans out nothing. An unmarked branch earns nothing here.
+/// beyond10x/ess#197, `docs/design/refusal-with-effect.md`): an `external:` refusal that moves,
+/// updates or (from ess/34, beyond10x/ess#585) deletes the one row its `instance:` names, writes at
+/// most that row's `sets:`, and creates, emits and fans out nothing. An unmarked branch earns
+/// nothing here.
 ///
 /// The marker's own misuses take the nearest codes — a branch that names no error is a conflict, a
 /// refusal that declares no change is missing it — and every change beyond the admitted one is the
@@ -399,7 +400,9 @@ fn validate_compensation(outcome: &Outcome, at: &ConstructRef) -> ValidationErro
         None => outcome.set_effects.instances.is_none(),
         Some(_) => false,
     };
-    if others || matches!(effect, Some(Effect::Creates | Effect::Deletes)) {
+    // A delete of the addressed row is admitted from `ess/34`; `compensating_delete_format` is its
+    // gate (`story:every-witness-reads-back-its-outcome-effect`, beyond10x/ess#585).
+    if others || matches!(effect, Some(Effect::Creates)) {
         errors.push(
             ValidationError::at(
                 at.clone(),
@@ -407,38 +410,81 @@ fn validate_compensation(outcome: &Outcome, at: &ConstructRef) -> ValidationErro
                 format!(
                     "outcome `{}` reports `{error}` and declares `compensates: true` beside {}; \
                          a compensating refusal changes only the row its `instance:` names, by a \
-                         move or field writes",
+                         move, field writes or its deletion",
                     outcome.name,
                     if others {
                         "`affects:`, which changes other rows"
                     } else {
-                        "a subject it creates or deletes"
+                        "a subject it creates"
                     }
                 ),
             )
             .with_hint(
-                "declare the change with `moves:` or `updates:` and `sets:` on the addressed \
-                     row only",
+                "declare the change with `moves:` or `updates:` and `sets:`, or with `deletes:`, \
+                     on the addressed row only",
             ),
         );
     } else if unchanged {
-        errors.push(
-            ValidationError::at(
-                marker,
-                ValidationCode::MissingDeclaration,
-                format!(
-                    "outcome `{}` declares `compensates: true` and no change to its addressed \
-                         row; a compensating refusal moves the row or writes its fields",
-                    outcome.name
-                ),
-            )
-            .with_hint(
-                "declare the change with `moves:` or `updates:`, `instance:` and `sets:`, or \
-                     drop `compensates:`",
-            ),
-        );
+        errors.push(unchanged_compensation(
+            outcome,
+            marker,
+            names_compensating_delete(),
+        ));
     }
     errors
+}
+
+/// The refusal of a `compensates: true` branch that declares no change to its addressed row.
+///
+/// `deletes` is set while an `ess/34` source converts (`converting_compensating_deletes`), where a
+/// compensating refusal may delete its row, so the text names `deletes:` there and is unchanged
+/// below (`story:every-witness-reads-back-its-outcome-effect`).
+fn unchanged_compensation(
+    outcome: &Outcome,
+    marker: ConstructRef,
+    deletes: bool,
+) -> ValidationError {
+    let (change, declare) = if deletes {
+        (
+            "moves the row, writes its fields or deletes it",
+            "declare the change with `moves:` or `updates:`, `instance:` and `sets:`, or with \
+             `deletes:` and `instance:`, or drop `compensates:`",
+        )
+    } else {
+        (
+            "moves the row or writes its fields",
+            "declare the change with `moves:` or `updates:`, `instance:` and `sets:`, or drop \
+             `compensates:`",
+        )
+    };
+    ValidationError::at(
+        marker,
+        ValidationCode::MissingDeclaration,
+        format!(
+            "outcome `{}` declares `compensates: true` and no change to its addressed row; a \
+             compensating refusal {change}",
+            outcome.name
+        ),
+    )
+    .with_hint(declare)
+}
+
+thread_local! {
+    static NAMES_COMPENSATING_DELETE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `convert` with the refusal of a compensation declaring no change naming `deletes:` when
+/// `admitted` (an `ess/34` source), restoring what was set before, so a nested assembly cannot leak
+/// its format into its caller's.
+pub(crate) fn converting_compensating_deletes<T>(admitted: bool, convert: impl FnOnce() -> T) -> T {
+    let before = NAMES_COMPENSATING_DELETE.with(|cell| cell.replace(admitted));
+    let converted = convert();
+    NAMES_COMPENSATING_DELETE.with(|cell| cell.set(before));
+    converted
+}
+
+fn names_compensating_delete() -> bool {
+    NAMES_COMPENSATING_DELETE.with(std::cell::Cell::get)
 }
 
 /// The refusal of a `compensates: true` branch no `external:` cause decides, without its hint.
@@ -4769,6 +4815,50 @@ fn marker_formats(
         .chain(before_row_format(format, outcome, at))
         .chain(narrowed_external_format(format, outcome, at))
         .chain(narrowed_compensation_format(format, outcome, at))
+        .chain(compensating_delete_format(format, outcome, at))
+}
+
+/// The format gate of a compensating refusal that deletes its addressed row (`compensates: true`
+/// beside `deletes:`, ess/34, beyond10x/ess#585). `validate_compensation` admits the shape at every
+/// format; below `ess/34` this keeps the refusal it had, under the code it had, naming `ess/34`.
+fn compensating_delete_format(
+    format: crate::system::FormatVersion,
+    outcome: &Outcome,
+    at: &ConstructRef,
+) -> Option<ValidationError> {
+    let error = outcome.error.as_ref()?;
+    (outcome.compensates
+        && outcome
+            .subject
+            .as_ref()
+            .is_some_and(|subject| subject.effect == Effect::Deletes)
+        && outcome.set_effects.affects.is_empty()
+        // A compensation no `external:` cause decides is refused by `validate_compensation`.
+        && matches!(
+            outcome.condition,
+            OutcomeCondition::External { .. }
+                | OutcomeCondition::ExternalWhen { .. }
+                | OutcomeCondition::ExternalSubject { .. }
+        )
+        // Below ess/22 `compensation_format` is the branch's only refusal.
+        && format.major() >= crate::system::FormatVersion::V22.major()
+        && format.major() < crate::system::FormatVersion::V34.major())
+    .then(|| {
+        ValidationError::at(
+            at.clone(),
+            ValidationCode::RefusalMutatedState,
+            format!(
+                "outcome `{}` reports `{error}` and declares `compensates: true` beside a subject \
+                 it deletes; below specification format ess/34 a compensating refusal changes \
+                 only the row its `instance:` names, by a move or field writes",
+                outcome.name
+            ),
+        )
+        .with_hint(
+            "declare `format: ess/34`, where a compensating refusal may delete its addressed row, \
+             or declare the change with `moves:` or `updates:` and `sets:`",
+        )
+    })
 }
 
 /// The format gate of a narrowed race that compensates (`external:` beside `when_subject:
@@ -8029,11 +8119,15 @@ fn subject_of(
                 ValidationCode::MissingDeclaration,
                 format!("outcomes.{name}.instance"),
                 format!(
-                    "outcome `{name}` declares `instance: {field}` and none of `creates`, `moves` \
-                     or `updates`, so the field names the identity of nothing"
+                    "outcome `{name}` declares `instance: {field}` and none of `creates`, \
+                     `moves`, `updates` or `deletes`, so the field names the identity of nothing"
                 ),
             )
-            .with_hint("say what this branch does to which entity, or drop the `instance`")
+            .with_hint(
+                "say what this branch does to which entity with `creates:`, `moves:`, `updates:` \
+                 or `deletes:`, or drop the `instance`; a branch that answers a row no record \
+                 carries is `unknown_instance: true, refuses: false`",
+            )
             .into());
         }
         (None, None) => return Ok(None),
@@ -9680,6 +9774,46 @@ outcomes:
         assert!(
             errors.to_string().contains("identity of nothing"),
             "the message says what is wrong with it, not merely that something is: {errors}"
+        );
+    }
+
+    #[test]
+    fn an_instance_without_an_effect_names_deletes() {
+        // story:a-delete-may-have-a-no-op-branch-that-emits-nothing. The spelling an author reaches
+        // first for a delete of nothing is `instance:` beside `accepts: nothing`; the refusal names
+        // `deletes` among the effects and points at the idiom for a branch answering an absent row.
+        let raw: RawCommandSpec = ess_yaml::from_str(
+            r"
+name: demo.jobs.DeleteJob
+input:
+  - name: job_id
+    type: String
+outcomes:
+  - name: absent
+    instance: job_id
+    accepts: nothing
+  - name: deleted
+    deletes: demo.jobs.Job
+    instance: job_id
+    emits: [demo.jobs.JobDeleted]
+",
+        )
+        .expect("well formed");
+
+        let errors = CommandSpec::try_from(raw).expect_err("an instance with no subject");
+        let refusal = errors
+            .as_slice()
+            .iter()
+            .find(|error| error.location.ends_with("outcomes.absent.instance"))
+            .unwrap_or_else(|| panic!("the refusal at the instance: {errors}"));
+        assert!(
+            refusal.message.contains("`deletes`"),
+            "the message lists `deletes` among the effects: {refusal:?}"
+        );
+        let hint = refusal.hint.as_deref().unwrap_or_default();
+        assert!(
+            hint.contains("deletes:") && hint.contains("unknown_instance: true, refuses: false"),
+            "the hint names `deletes:` and the idiom for an absent row: {refusal:?}"
         );
     }
 

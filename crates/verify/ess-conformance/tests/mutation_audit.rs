@@ -185,13 +185,14 @@ fn pinned_verdicts(report: &MutationReport, pinned: &[(&str, Verdict, &str)]) {
 /// was killed.
 const BILLING_SURVIVORS: &[(&str, Why)] = &[];
 
-/// Billing's twenty-two mutants.
+/// Billing's nineteen mutants.
 ///
 /// **The design page predicted every `transition-to` mutant would be killed by its own transition
-/// scenario. Measured, all three are stillborn**, refused `ESS-ENTITY-011`: in `examples/billing/`
-/// every state is entered by exactly one transition, so sending any transition elsewhere leaves
-/// its old arrival state unreachable, and validation refuses an unreachable state. No choice of
-/// alternative state changes that. The same is true of every `emit-drop`: each billing outcome
+/// scenario. Measured, none has a mutant**: in `examples/billing/` every state is entered by
+/// exactly one transition, so sending any transition elsewhere leaves its old arrival state
+/// unreachable, and validation refuses an unreachable state (`ESS-ENTITY-011`). No choice of
+/// alternative state changes that, so all three are listed as unmutated (`no_admissible_state`,
+/// beyond10x/ess#711) rather than stillborn. The same is true of every `emit-drop`: each billing outcome
 /// emits exactly one event, so dropping it leaves an outcome that neither emits nor names an error,
 /// which `ESS-COMMAND-007` refuses.
 ///
@@ -302,22 +303,68 @@ const BILLING_VERDICTS: &[(&str, Verdict, &str)] = &[
         Verdict::Killed,
         "billing.invoice.IssueInvoice/outcome/issued",
     ),
+];
+
+/// Billing's unmutated sites, each with its reason (beyond10x/ess#711). `Customer`'s grant is listed
+/// because billing serves nothing over the network
+/// (story:the-mutation-audit-reports-the-sites-it-could-not-mutate,
+/// story:the-mutation-audit-covers-actor-grants).
+const BILLING_UNMUTATED: &[(&str, &str)] = &[
+    (
+        "grant-drop/billing.invoice.Customer/billing.invoice.CreateInvoice",
+        "command_not_served",
+    ),
+    (
+        "sets-drop/billing.invoice.CreateInvoice/accepted/account_id",
+        "creates_row",
+    ),
+    (
+        "sets-drop/billing.invoice.CreateInvoice/accepted/reminder_count",
+        "creates_row",
+    ),
+    (
+        "sets-drop/billing.invoice.CreateInvoice/accepted/total",
+        "creates_row",
+    ),
+    (
+        "sets-drop/billing.invoice.IssueInvoice/issued/issued_at",
+        "optional_field",
+    ),
+    (
+        "sets-retarget/billing.invoice.CreateInvoice/accepted/account_id",
+        "no_retarget_source",
+    ),
+    (
+        "sets-retarget/billing.invoice.CreateInvoice/accepted/total",
+        "no_retarget_source",
+    ),
+    (
+        "sets-retarget/billing.invoice.IssueInvoice/issued/issued_at",
+        "no_retarget_source",
+    ),
     (
         "transition-to/billing.invoice.Invoice.cancel",
-        Verdict::Stillborn,
-        "ESS-ENTITY-011",
+        "no_admissible_state",
     ),
     (
         "transition-to/billing.invoice.Invoice.issue",
-        Verdict::Stillborn,
-        "ESS-ENTITY-011",
+        "no_admissible_state",
     ),
     (
         "transition-to/billing.invoice.Invoice.settle",
-        Verdict::Stillborn,
-        "ESS-ENTITY-011",
+        "no_admissible_state",
     ),
 ];
+
+/// The ids and reasons of the report's unmutated sites.
+fn unmutated(report: &MutationReport) -> Vec<(&str, &str)> {
+    report
+        .unmutated_sites
+        .iter()
+        .flatten()
+        .map(|site| (site.id.as_str(), site.reason.as_str()))
+        .collect()
+}
 
 #[test]
 fn the_billing_audit_pins_every_mutant_and_kills_every_one_that_ran() {
@@ -329,6 +376,11 @@ fn the_billing_audit_pins_every_mutant_and_kills_every_one_that_ran() {
             ("emit-swap", 2),
             ("error-swap", 5),
             ("from-drop", 2),
+            // Billing declares `Customer` and `Auditor` and serves nothing over the network, so no
+            // grant is a mutant; `Customer`'s grant is listed
+            // (story:the-mutation-audit-covers-actor-grants).
+            ("grant-add", 0),
+            ("grant-drop", 0),
             ("guard-boundary", 2),
             ("guard-connective", 0),
             ("guard-negate", 2),
@@ -336,18 +388,20 @@ fn the_billing_audit_pins_every_mutant_and_kills_every_one_that_ran() {
             ("precedence-swap", 0),
             ("sets-drop", 0),
             ("sets-retarget", 0),
-            ("transition-to", 3),
+            ("transition-to", 0),
         ]),
         "{}",
         report.render_text()
     );
     pinned_verdicts(&report, BILLING_VERDICTS);
     pinned_survivors(&report, BILLING_SURVIVORS);
+    assert_eq!(unmutated(&report), BILLING_UNMUTATED);
+    assert_eq!(report.coverage(), (14, 33));
     assert_eq!(report.implementation, "billing-reference");
     assert_eq!(report.specification, "billing v3");
-    assert_eq!(report.counts.mutants, 22);
+    assert_eq!(report.counts.mutants, 19);
     assert_eq!(report.counts.killed, 14);
-    assert_eq!(report.counts.stillborn, 8);
+    assert_eq!(report.counts.stillborn, 5);
     assert_eq!(
         unavailable(&report),
         [
@@ -367,10 +421,15 @@ fn unavailable(report: &MutationReport) -> Vec<&str> {
     sites.iter().map(|site| site.id.as_str()).collect()
 }
 
-/// The oracle fixture's survivors. None.
-const ORACLE_SURVIVORS: &[(&str, Why)] = &[];
+/// The oracle fixture's survivors. One: the order's `weight_grams` is stored and no view reads it,
+/// so the weight `PlaceOrder` writes is not observable at the boundary, and writing `7919` in its
+/// place (beyond10x/ess#711) changes nothing a target answers.
+const ORACLE_SURVIVORS: &[(&str, Why)] = &[(
+    "sets-retarget/oracle.order.PlaceOrder/accepted/weight_grams",
+    Why::Equivalent,
+)];
 
-/// The oracle fixture's twenty-five mutants. `from-drop/…cancel/Held` is stillborn for the reason
+/// The oracle fixture's twenty-three mutants. `from-drop/…cancel/Held` is stillborn for the reason
 /// `ESS-ENTITY-011` gives: `cancel` is `Held`'s only way out, so dropping it strands the state.
 ///
 /// `OrderHeld` and `OrderShipped` carry the same fields, so `hold` and `ship` swap them and each is
@@ -491,20 +550,38 @@ const ORACLE_VERDICTS: &[(&str, Verdict, &str)] = &[
         Verdict::Killed,
         "oracle.order.AmendOrder/outcome/amended",
     ),
+    // `weight_grams: 7919` (beyond10x/ess#711): no other input is an `Integer`, and the order's
+    // `weight_grams >= 0` invariant refuses `-7919`, so the literal above zero stands in. It
+    // survives: see `ORACLE_SURVIVORS`.
+    (
+        "sets-retarget/oracle.order.PlaceOrder/accepted/weight_grams",
+        Verdict::Survived,
+        "",
+    ),
+];
+
+/// The oracle fixture's unmutated sites, each with its reason (beyond10x/ess#711): its three
+/// transitions are, like billing's, the only way into their states.
+const ORACLE_UNMUTATED: &[(&str, &str)] = &[
+    (
+        "sets-drop/oracle.order.PlaceOrder/accepted/contact",
+        "creates_row",
+    ),
+    (
+        "sets-drop/oracle.order.PlaceOrder/accepted/weight_grams",
+        "creates_row",
+    ),
     (
         "transition-to/oracle.order.Order.cancel",
-        Verdict::Stillborn,
-        "ESS-ENTITY-011",
+        "no_admissible_state",
     ),
     (
         "transition-to/oracle.order.Order.hold",
-        Verdict::Stillborn,
-        "ESS-ENTITY-011",
+        "no_admissible_state",
     ),
     (
         "transition-to/oracle.order.Order.ship",
-        Verdict::Stillborn,
-        "ESS-ENTITY-011",
+        "no_admissible_state",
     ),
 ];
 
@@ -518,24 +595,28 @@ fn the_oracle_audit_pins_every_mutant_and_kills_every_one_that_ran() {
             ("emit-swap", 2),
             ("error-swap", 5),
             ("from-drop", 2),
+            // No actor is declared, so no grant site (story:the-mutation-audit-covers-actor-grants).
+            ("grant-add", 0),
+            ("grant-drop", 0),
             ("guard-boundary", 4),
             ("guard-connective", 0),
             ("guard-negate", 2),
             ("order-flip", 0),
             ("precedence-swap", 0),
             ("sets-drop", 0),
-            ("sets-retarget", 1),
-            ("transition-to", 3),
+            ("sets-retarget", 2),
+            ("transition-to", 0),
         ]),
         "{}",
         report.render_text()
     );
     pinned_verdicts(&report, ORACLE_VERDICTS);
     pinned_survivors(&report, ORACLE_SURVIVORS);
+    assert_eq!(unmutated(&report), ORACLE_UNMUTATED);
     assert_eq!(report.implementation, "oracle-reference");
-    assert_eq!(report.counts.mutants, 25);
+    assert_eq!(report.counts.mutants, 23);
     assert_eq!(report.counts.killed, 15);
-    assert_eq!(report.counts.stillborn, 10);
+    assert_eq!(report.counts.stillborn, 7);
     assert_eq!(
         unavailable(&report),
         [
@@ -660,9 +741,9 @@ fn two_audits_of_one_tree_are_byte_identical() {
     assert_eq!(first, second);
     assert!(first.ends_with("}\n"), "one trailing LF");
     let value: serde_json::Value = serde_json::from_str(&first).unwrap();
-    // `/4`: every class includes `emit-swap`, and billing has sites it leaves unavailable
-    // (beyond10x/ess#295).
-    assert_eq!(value["format"], "ess-mutation-report/4");
+    // `/8`: every class includes `emit-swap`, and billing has sites it leaves unavailable
+    // (beyond10x/ess#295) and sites it leaves unmutated (beyond10x/ess#711).
+    assert_eq!(value["format"], "ess-mutation-report/8");
     assert_eq!(value["spec_digest"].as_str().map(str::len), Some(64));
     let ids: Vec<&str> = value["mutants"]
         .as_array()
@@ -729,7 +810,8 @@ fn the_verdict_classification_reads_scenario_statuses() {
 // ---- P1-8: the closed class list -----------------------------------------------------------------
 
 /// Eleven since beyond10x/ess#212 added `sets-drop` and `precedence-swap`; twelve since
-/// beyond10x/ess#295 added `emit-swap`.
+/// beyond10x/ess#295 added `emit-swap`; fourteen since beyond10x/ess#710 added `grant-drop` and
+/// `grant-add` (story:the-mutation-audit-covers-actor-grants).
 #[test]
 fn the_classes_are_exactly_the_twelve_altering_classes() {
     let names: Vec<&str> = MutantClass::ALL
@@ -751,6 +833,8 @@ fn the_classes_are_exactly_the_twelve_altering_classes() {
             "sets-drop",
             "precedence-swap",
             "emit-swap",
+            "grant-drop",
+            "grant-add",
         ]
     );
 }
@@ -838,10 +922,7 @@ fn each_class_changes_exactly_what_its_description_says() {
         .map(|mutant| (mutant.id, mutant.change))
         .collect();
     for (id, change) in [
-        (
-            "transition-to/billing.invoice.Invoice.settle",
-            "`to: Paid` becomes `to: Cancelled`",
-        ),
+        // Billing's transitions have no `transition-to` mutant (beyond10x/ess#711).
         (
             "from-drop/billing.invoice.Invoice.cancel/Draft",
             "`from: [Draft, Issued]` becomes `from: [Issued]`",

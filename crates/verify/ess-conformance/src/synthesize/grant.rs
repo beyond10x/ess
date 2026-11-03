@@ -8,7 +8,9 @@
 //!
 //! - **Who is refused.** One `<command>/grant/denied` per command some declared actor lacks the
 //!   grant for, sent as the lowest-named such actor: any of them is refused, and choosing by name
-//!   is the choice that does not move when an unrelated actor is declared. The send reuses the
+//!   is the choice that does not move when an unrelated actor is declared. A `grant-drop` mutant
+//!   of the mutation audit sends it as the actor that lost the grant ([`with_dropped_grant`],
+//!   beyond10x/ess#710). The send reuses the
 //!   arrangement of one of the command's own scenarios whose send takes an accepting branch —
 //!   preferring one that snapshots the subject it acts on — so the refusal is asked of a request
 //!   that would otherwise have been accepted. The log may then hold no more of anything the send
@@ -24,7 +26,9 @@
 //!   scenarios than granted actors is a `<command>/grant/admitted/<actor>` added, a copy of its
 //!   simplest scenario sent as that actor. A command an actor carrying attributes holds keeps the
 //!   actor synthesis chose, because its scenarios' expectations are read for that actor's values;
-//!   a [`Note::GrantRotationSkipped`] names each such command.
+//!   a [`Note::GrantRotationSkipped`] names each such command. A `grant-add` mutant of the
+//!   mutation audit that gave such a command to an actor carrying no attributes, where the command
+//!   reads none, still gets a `grant/admitted/<actor>` for that actor ([`with_added_grant`]).
 //!
 //! A command the system issues itself (ess/27, beyond10x/ess#542) is awaited rather than sent, so
 //! its system actors get no `grant/admitted` scenario and no rotation: the await is their witness.
@@ -74,8 +78,8 @@ pub(super) fn denied(
                 .values()
                 .filter(|actor| !grants(actor, &command.name))
         };
-        let Some(sender) = lacking()
-            .find(|actor| command.system_issued && !actor.system)
+        let Some(sender) = dropped_sender(ir, &command.name)
+            .or_else(|| lacking().find(|actor| command.system_issued && !actor.system))
             .or_else(|| lacking().next())
         else {
             notes.push(Note::GrantedToEveryActor {
@@ -124,11 +128,11 @@ pub(super) fn denied_since(
         let Some(command) = ir.commands().get(command_ref.name()) else {
             continue;
         };
-        let Some(sender) = ir
-            .actors()
-            .values()
-            .find(|actor| !grants(actor, &command.name))
-        else {
+        let Some(sender) = dropped_sender(ir, &command.name).or_else(|| {
+            ir.actors()
+                .values()
+                .find(|actor| !grants(actor, &command.name))
+        }) else {
             continue;
         };
         let sender = ActorRef::new(sender.name.clone());
@@ -204,6 +208,199 @@ fn served_commands(ir: &EssIr) -> BTreeSet<QualifiedName> {
 /// Whether `actor` may invoke `command`.
 fn grants(actor: &ess_compiler::ir::ResolvedActor, command: &QualifiedName) -> bool {
     actor.may.iter().any(|granted| granted.name() == command)
+}
+
+/// One grant the mutation audit considers (beyond10x/ess#710): `actor` and a command, whether
+/// `actor` holds it, and why the audit leaves it alone where it does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AuditedGrant {
+    /// The actor, by qualified name.
+    pub(crate) actor: String,
+    /// The command, by qualified name.
+    pub(crate) command: String,
+    /// Whether the actor's `may:` names the command.
+    pub(crate) held: bool,
+    /// Why no mutant changes it, where none does.
+    pub(crate) excluded: Option<GrantExclusion>,
+}
+
+/// Why the mutation audit leaves a grant alone (beyond10x/ess#710, #711).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GrantExclusion {
+    /// A held grant of the system's own actor: it is no caller of a served surface.
+    SystemActor,
+    /// A held grant of a command no served component accepts: no surface answers its refusal.
+    CommandNotServed,
+    /// A grant the actor lacks of a command an actor carrying attributes holds, where the actor
+    /// carries attributes or the command reads one: [`admit_every_granted_actor`] keeps the actor
+    /// synthesis chose for it, and no scenario can be sent as the actor that gained the grant.
+    AttributedHolder,
+}
+
+/// Every [`AuditedGrant`] of `ir`, in byte order of actor and then command; none where the model
+/// declares no actor, as [`denied`] then writes nothing.
+///
+/// Each actor that is not the system's has one per command a served component accepts, held or
+/// not; every other `may:` entry, of the system's actor or of a command nothing serves, is one
+/// with its [`GrantExclusion`], so no grant the model declares goes unaccounted for.
+pub(crate) fn audited_grants(ir: &EssIr) -> Vec<AuditedGrant> {
+    let served = served_commands(ir);
+    let mut found: Vec<AuditedGrant> = Vec::new();
+    for actor in ir.actors().values() {
+        let entry = |command: &QualifiedName, held, excluded| AuditedGrant {
+            actor: actor.name.to_string(),
+            command: command.to_string(),
+            held,
+            excluded,
+        };
+        for granted in &actor.may {
+            let command = granted.name();
+            if actor.system {
+                found.push(entry(command, true, Some(GrantExclusion::SystemActor)));
+            } else if !served.contains(command) {
+                found.push(entry(command, true, Some(GrantExclusion::CommandNotServed)));
+            }
+        }
+        if actor.system {
+            continue;
+        }
+        for command in &served {
+            let held = grants(actor, command);
+            let excluded = (!held && !admitted_as_gainer(ir, actor, command))
+                .then_some(GrantExclusion::AttributedHolder);
+            found.push(entry(command, held, excluded));
+        }
+    }
+    found.sort_by(|left, right| (&left.actor, &left.command).cmp(&(&right.actor, &right.command)));
+    found.dedup_by(|left, right| (&left.actor, &left.command) == (&right.actor, &right.command));
+    found
+}
+
+/// Whether a `grant-add` mutant giving `actor` the served `command` has a scenario sending the
+/// command as `actor`: where no holder does yet, the mutant's only holder is `actor`; where no
+/// holder, `actor` included, carries attributes, the rotation sends it as every holder
+/// ([`admit_every_granted_actor`]); otherwise only if `actor` carries none and the command reads
+/// none, so the copy [`admit_added_grant`] sends asks what it asked the holder (beyond10x/ess#710).
+fn admitted_as_gainer(
+    ir: &EssIr,
+    actor: &ess_compiler::ir::ResolvedActor,
+    command: &QualifiedName,
+) -> bool {
+    let holders: Vec<&ess_compiler::ir::ResolvedActor> = ir
+        .actors()
+        .values()
+        .filter(|holder| grants(holder, command))
+        .collect();
+    let attributed =
+        !actor.attributes.is_empty() || holders.iter().any(|holder| !holder.attributes.is_empty());
+    holders.is_empty()
+        || !attributed
+        || (actor.attributes.is_empty() && super::caller::reads(ir, command).is_empty())
+}
+
+/// The grant a `grant-add` mutant of the mutation audit gave: `actor` may now invoke `command`
+/// (beyond10x/ess#710). Only [`with_added_grant`] names one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AddedGrant {
+    /// The actor, by qualified name.
+    pub(crate) actor: String,
+    /// The command, by qualified name.
+    pub(crate) command: String,
+}
+
+thread_local! {
+    /// The added grant of the `grant-add` mutant being synthesized on this thread, if any.
+    static ADDED: std::cell::RefCell<Option<AddedGrant>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `synthesize` with `added` as the grant the model under synthesis gained, and restores
+/// what was there before, also on a panic.
+///
+/// Where an actor carrying attributes holds the command, so its scenarios keep the actor
+/// synthesis chose, a `<command>/grant/admitted/<actor>` scenario is still sent as the actor that
+/// gained the grant ([`admit_added_grant`]). Every synthesis outside the mutation audit runs with
+/// none, and its bytes are unchanged.
+pub(crate) fn with_added_grant<R>(added: Option<AddedGrant>, synthesize: impl FnOnce() -> R) -> R {
+    struct Restore(Option<AddedGrant>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            ADDED.with(|it| *it.borrow_mut() = previous);
+        }
+    }
+    let previous = ADDED.with(|it| it.replace(added));
+    let _restore = Restore(previous);
+    synthesize()
+}
+
+/// The actor [`with_added_grant`] names for `command`, where `ir` declares it, it holds the grant,
+/// carries no attributes and the command reads none.
+fn added_sender<'a>(
+    ir: &'a EssIr,
+    command: &QualifiedName,
+) -> Option<&'a ess_compiler::ir::ResolvedActor> {
+    let added = ADDED.with(|it| it.borrow().clone())?;
+    if added.command != command.to_string() || !super::caller::reads(ir, command).is_empty() {
+        return None;
+    }
+    ir.actors().values().find(|actor| {
+        actor.name.to_string() == added.actor
+            && actor.attributes.is_empty()
+            && grants(actor, command)
+    })
+}
+
+/// The grant a `grant-drop` mutant of the mutation audit removed: `actor` may no longer invoke
+/// `command` (beyond10x/ess#710). Only [`with_dropped_grant`] names one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DroppedGrant {
+    /// The actor, by qualified name.
+    pub(crate) actor: String,
+    /// The command, by qualified name.
+    pub(crate) command: String,
+}
+
+thread_local! {
+    /// The dropped grant of the `grant-drop` mutant being synthesized on this thread, if any.
+    static DROPPED: std::cell::RefCell<Option<DroppedGrant>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `synthesize` with `dropped` as the grant the model under synthesis no longer holds, and
+/// restores what was there before, also on a panic.
+///
+/// The `<command>/grant/denied` refusal is then sent as the actor that lost the grant wherever it
+/// now lacks it, rather than as the lowest-named lacking actor, which a correct target refuses
+/// too. Every synthesis outside the mutation audit runs with none, and its bytes are unchanged.
+pub(crate) fn with_dropped_grant<R>(
+    dropped: Option<DroppedGrant>,
+    synthesize: impl FnOnce() -> R,
+) -> R {
+    struct Restore(Option<DroppedGrant>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            DROPPED.with(|it| *it.borrow_mut() = previous);
+        }
+    }
+    let previous = DROPPED.with(|it| it.replace(dropped));
+    let _restore = Restore(previous);
+    synthesize()
+}
+
+/// The actor [`with_dropped_grant`] names for `command`, where `ir` declares it and it lacks the
+/// grant.
+fn dropped_sender<'a>(
+    ir: &'a EssIr,
+    command: &QualifiedName,
+) -> Option<&'a ess_compiler::ir::ResolvedActor> {
+    let dropped = DROPPED.with(|it| it.borrow().clone())?;
+    if dropped.command != command.to_string() {
+        return None;
+    }
+    ir.actors()
+        .values()
+        .find(|actor| actor.name.to_string() == dropped.actor && !grants(actor, command))
 }
 
 /// Attribute-free actors still denote distinct principals even when their grants are identical.
@@ -433,6 +630,7 @@ fn admit_every_granted_actor(
                 command: CommandRef::new(command.name.clone()),
                 attributed,
             });
+            admit_added_grant(ir, &command.name, suite, refusals);
             continue;
         }
         let granted: Vec<ActorRef> = holders
@@ -481,6 +679,66 @@ fn admit_every_granted_actor(
             insert(suite, id, scenario, refusals);
         }
     }
+}
+
+/// Under [`with_added_grant`], the `<command>/grant/admitted/<actor>` scenario of the actor that
+/// gained the grant of a command whose rotation was skipped: a copy of the simplest scenario that
+/// sends the command as some actor, each such send sent as the gaining actor with no caller
+/// values, which it declares none of and the command reads none of (beyond10x/ess#710). A target
+/// that refuses the actor the specification does not grant the command fails it.
+fn admit_added_grant(
+    ir: &EssIr,
+    command: &QualifiedName,
+    suite: &mut ConformanceSuite,
+    refusals: &mut Vec<Refusal>,
+) {
+    let Some(gainer) = added_sender(ir, command) else {
+        return;
+    };
+    let Some(mut scenario) = suite
+        .scenarios
+        .iter()
+        .filter(|(id, scenario)| {
+            !is_grant(id)
+                && scenario
+                    .steps
+                    .iter()
+                    .filter_map(sent)
+                    .any(|(sent, actor)| sent.name() == command && actor.is_some())
+        })
+        .map(|(_, scenario)| scenario)
+        .min_by_key(|scenario| scenario.steps.len())
+        .cloned()
+    else {
+        return;
+    };
+    let actor = ActorRef::new(gainer.name.clone());
+    send_as(&mut scenario, command, &actor);
+    for step in &mut scenario.steps {
+        if let ScenarioStep::ExecuteCommand {
+            command: sent,
+            caller,
+            ..
+        }
+        | ScenarioStep::ExecuteCommandWithoutInput {
+            command: sent,
+            caller,
+            ..
+        } = step
+        {
+            if sent.name() == command {
+                caller.clear();
+            }
+        }
+    }
+    scenario.purpose = clipped(&format!(
+        "`{command}` sent as `{actor}`, which the specification grants it, is accepted"
+    ));
+    let id = ScenarioId::GrantAdmitted {
+        command: CommandRef::new(command.clone()),
+        actor,
+    };
+    insert(suite, id, scenario, refusals);
 }
 
 /// Every step of `scenario` that sends `command` as some actor sends it as `actor` instead.

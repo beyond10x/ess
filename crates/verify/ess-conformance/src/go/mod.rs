@@ -154,7 +154,8 @@ const EXPLORE_README: &str = r#"
 
 `Explore` runs seeded random sequences of commands against fresh targets built by the same
 factory `Run` takes, and checks every step against a reference model interpreted from `ir.json`:
-the outcome, the error, the direct events and their determined payload fields, every view without
+the outcome, the error, the direct events and their determined payload fields, every REQUIRED
+member of a direct response (present; the model determines no response value), every view without
 parameters (polling an `eventual` one), identity uniqueness and every invariant. A disagreement is
 shrunk to a shorter trace that still fails the same way.
 

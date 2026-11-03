@@ -785,3 +785,253 @@ fn no_go_source_uses_a_tab_free_indent_or_a_trailing_space() {
         }
     }
 }
+
+// ---- a served component named like a file of the server package --------------------------------
+//
+// story:go-synthesis-repairs-a-served-component-named-server. The server package writes its own
+// `server.go` and `wire.go`, and one surface file per served component named after it; a component
+// whose stem is one of the package's own files, or another component's, takes a repaired name by
+// the rule `go/layout.rs` applies to package names. These cases run `go build ./...` where `go` is
+// on `PATH`; without it they still read the bytes.
+
+const SERVED_STORY: &str = "story:go-synthesis-repairs-a-served-component-named-server";
+
+const SERVED_SYSTEM: &str = "\
+format: ess/33
+system: demo
+version: v1
+domains:
+  - demo.server
+  - demo.relay
+";
+
+/// A domain with one entity, a creating and an updating command, and their events.
+fn served_domain(domain: &str) -> String {
+    "\
+domain: demo.D
+types:
+  - {name: demo.D.ClientId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.D.Client
+    identity: {name: client_id, type: demo.D.ClientId}
+    fields:
+      - {name: topic, type: String}
+    lifecycle: {initial: Connected, states: [Connected], terminal: [Connected], transitions: []}
+events:
+  - name: demo.D.Handshaken
+    fields: [{name: client_id, type: demo.D.ClientId}]
+  - name: demo.D.Published
+    fields: [{name: client_id, type: demo.D.ClientId}, {name: topic, type: String}]
+errors:
+  - name: demo.D.NoSuchClient
+commands:
+  - name: demo.D.Handshake
+    input: [{name: topic, type: String}]
+    outcomes:
+      - name: accepted
+        creates: demo.D.Client
+        instance: client_id
+        sets: {topic: input.topic}
+        emits: [demo.D.Handshaken]
+        payload: {demo.D.Handshaken: {client_id: {generated: true}}}
+  - name: demo.D.Publish
+    input: [{name: client_id, type: demo.D.ClientId}, {name: topic, type: String}]
+    outcomes:
+      - name: published
+        updates: demo.D.Client
+        instance: client_id
+        sets: {topic: input.topic}
+        emits: [demo.D.Published]
+        payload: {demo.D.Published: {client_id: input.client_id, topic: input.topic}}
+      - {name: unknown, unknown_instance: true, error: demo.D.NoSuchClient}
+"
+    .replace("demo.D", &format!("demo.{domain}"))
+}
+
+/// One served component owning `domain`.
+fn served_component(name: &str, domain: &str) -> String {
+    format!(
+        "  - component: {name}
+    reached_by: network
+    owns: {{domains: [demo.{domain}]}}
+    accepts: {{commands: [demo.{domain}.Handshake, demo.{domain}.Publish]}}
+    publishes: {{events: [demo.{domain}.Handshaken, demo.{domain}.Published]}}
+"
+    )
+}
+
+/// The `demo` model with the component serving `demo.server` named `server_name`, and the one
+/// serving `demo.relay` named `relay_name`.
+fn served(server_name: &str, relay_name: &str) -> Synthesis {
+    let components = format!(
+        "components:\n{}{}",
+        served_component(server_name, "server"),
+        served_component(relay_name, "relay")
+    );
+    let ir = fixture(&[
+        ("system.yaml", SERVED_SYSTEM),
+        ("domains/server.yaml", &served_domain("server")),
+        ("domains/relay.yaml", &served_domain("relay")),
+        ("components.yaml", &components),
+    ]);
+    synthesize_for(&ir, Target::Go).unwrap_or_else(|failure| {
+        panic!("{SERVED_STORY}: Go emits: {}", failure.to_canonical_json())
+    })
+}
+
+/// The Go files under `server/`, by path.
+fn server_files(synthesis: &Synthesis) -> Vec<&str> {
+    synthesis
+        .artifacts
+        .keys()
+        .map(String::as_str)
+        .filter(|path| path.starts_with("server/") && is_go(path))
+        .collect()
+}
+
+/// `go build ./...` over the whole tree, offline, where `go` is on `PATH`.
+fn go_builds_where_present(label: &str, synthesis: &Synthesis) {
+    let available = std::process::Command::new("go")
+        .arg("version")
+        .output()
+        .is_ok_and(|output| output.status.success());
+    if !available {
+        return;
+    }
+    let directory = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("go-served-{label}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    for artifact in synthesis.artifacts.values() {
+        let path = directory.join(&artifact.path);
+        std::fs::create_dir_all(path.parent().expect("a file has a parent")).expect("mkdir");
+        std::fs::write(&path, &artifact.contents).expect("write");
+    }
+    let output = std::process::Command::new("go")
+        .args(["build", "-buildvcs=false", "./..."])
+        .current_dir(&directory)
+        .env("GOWORK", "off")
+        .env("GOFLAGS", "-mod=mod")
+        .env("GOPROXY", "off")
+        .env("CGO_ENABLED", "0")
+        .output()
+        .expect("the Go tool runs");
+    let _ = std::fs::remove_dir_all(&directory);
+    assert!(
+        output.status.success(),
+        "{SERVED_STORY}: `{label}` builds:\n{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// FNV-1a over every artifact's path and contents, in path order: one number for a whole tree.
+fn tree_digest(synthesis: &Synthesis) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for (path, artifact) in &synthesis.artifacts {
+        for byte in path
+            .bytes()
+            .chain([0])
+            .chain(artifact.contents.bytes())
+            .chain([0])
+        {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0100_0000_01b3);
+        }
+    }
+    hash
+}
+
+#[test]
+fn a_served_component_named_server_gets_a_repaired_surface_file() {
+    let synthesis = served("server", "gateway");
+    assert_eq!(
+        server_files(&synthesis),
+        [
+            "server/ess_static.go",
+            "server/gateway.go",
+            "server/server.go",
+            "server/servercomponent.go",
+            "server/wire.go"
+        ],
+        "{SERVED_STORY}: `server/server.go` stays the package's own file and the component's \
+         surface takes the repaired name"
+    );
+    let helpers = artifact(&synthesis, "server/server.go");
+    assert!(
+        !helpers.contains("The `server` component of `demo`"),
+        "{SERVED_STORY}: `server/server.go` is the package helpers file, not a surface"
+    );
+    let surface = artifact(&synthesis, "server/servercomponent.go");
+    assert!(
+        surface.contains("// The `server` component of `demo` v1, on the wire."),
+        "{SERVED_STORY}: the repaired file is the `server` component's surface:\n{surface}"
+    );
+    go_builds_where_present("server", &synthesis);
+}
+
+#[test]
+fn a_served_component_named_wire_gets_a_repaired_surface_file() {
+    // The package's other own file: the same collision with `wire.go`.
+    let synthesis = served("wire", "gateway");
+    assert_eq!(
+        server_files(&synthesis),
+        [
+            "server/ess_static.go",
+            "server/gateway.go",
+            "server/server.go",
+            "server/wire.go",
+            "server/wirecomponent.go"
+        ],
+        "{SERVED_STORY}: `server/wire.go` stays the package's own file"
+    );
+    assert!(
+        artifact(&synthesis, "server/wirecomponent.go")
+            .contains("// The `wire` component of `demo` v1, on the wire."),
+        "{SERVED_STORY}: the repaired file is the `wire` component's surface"
+    );
+    go_builds_where_present("wire", &synthesis);
+}
+
+#[test]
+fn two_served_components_with_one_stem_get_distinct_surface_files() {
+    // `front-desk` and `frontdesk` are two components and one Go word: the second in component
+    // order takes the repaired name.
+    let synthesis = served("front-desk", "frontdesk");
+    assert_eq!(
+        server_files(&synthesis),
+        [
+            "server/ess_static.go",
+            "server/frontdesk.go",
+            "server/frontdeskcomponent.go",
+            "server/server.go",
+            "server/wire.go"
+        ],
+        "{SERVED_STORY}: two components, two surface files"
+    );
+    go_builds_where_present("one-stem", &synthesis);
+}
+
+#[test]
+fn a_served_component_not_named_server_keeps_its_file_names() {
+    // The control: no collision, so the tree is the one emitted before the repair existed, byte
+    // for byte. The digest was read from the tree on the base the story's unit forked from
+    // (4a0d58c611); a change that moves it changes Go output for a model the repair is not about.
+    let synthesis = served("gateway", "relay-service");
+    assert_eq!(
+        server_files(&synthesis),
+        [
+            "server/ess_static.go",
+            "server/gateway.go",
+            "server/relayservice.go",
+            "server/server.go",
+            "server/wire.go"
+        ],
+        "{SERVED_STORY}: `server/server.go` beside `server/gateway.go`"
+    );
+    assert_eq!(
+        format!("{:016x}", tree_digest(&synthesis)),
+        "752554d7649190c4",
+        "{SERVED_STORY}: the control tree keeps its bytes"
+    );
+    go_builds_where_present("gateway", &synthesis);
+}

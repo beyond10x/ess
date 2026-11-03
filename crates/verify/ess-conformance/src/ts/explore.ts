@@ -9,9 +9,10 @@
 // The suite asks one fixed question per scenario. This walks paths nobody wrote — a view that drops
 // rows after the fifth, a refusal that still writes, an identity reused on the fourth create, a
 // state that cannot be re-entered a third time — and checks after every step the outcome, the
-// error, the direct events and their determined payload fields, every parameterless view over an
-// entity (polling an `eventual` one), identity uniqueness and every invariant. A failure is shrunk
-// to a shorter trace that still fails the same way.
+// error, the direct events and their determined payload fields, every required member of a direct
+// response, every parameterless view over an entity (polling an `eventual` one), identity
+// uniqueness and every invariant. A failure is shrunk to a shorter trace that still fails the same
+// way.
 //
 // # External branches
 //
@@ -315,8 +316,42 @@ export function loadModel(
     throw new Error(MODEL_MISMATCH);
   }
   const model = strictJSON(body);
+  const component =
+    isObject(suite) && isObject(suite.provenance) ? suite.provenance.component : undefined;
+  if (typeof component === 'string') scope(model, component);
   refusePrivateExploration(model);
   return model;
+}
+
+/**
+ * Narrows `ir`, after its digest was checked, to what the suite's component realises (`ess
+ * generate synthesize --component`, `provenance.component`): the commands it accepts or owns the
+ * domain of, and the views of the domains it owns, as `synthesize --component` scopes the suite.
+ * Every other command and view is left out of exploration rather than reported excluded, so a
+ * target of that component alone passes without `allowExcluded`
+ * (story:component-explorer-walks-only-its-component).
+ */
+function scope(ir: Node, name: string): void {
+  const component = sortedValues(ir.components).find((declared: Node) => declared.name === name);
+  if (component === undefined) {
+    throw new Error(
+      `explore: \`suite.json\` is scoped to component \`${name}\`, which \`ir.json\` does not declare`,
+    );
+  }
+  const owns = new Set<string>(list(component.owns).map(String));
+  const accepts = new Set<string>(list(component.accepts).map(String));
+  const commands: { [name: string]: Node } = {};
+  for (const [key, command] of Object.entries<Node>(isObject(ir.commands) ? ir.commands : {})) {
+    if (accepts.has(String(command.name)) || owns.has(String(command.domain))) {
+      commands[key] = command;
+    }
+  }
+  const views: { [name: string]: Node } = {};
+  for (const [key, view] of Object.entries<Node>(isObject(ir.views) ? ir.views : {})) {
+    if (owns.has(String(view.domain))) views[key] = view;
+  }
+  ir.commands = commands;
+  ir.views = views;
 }
 
 /** An object's values in byte order of key. */
@@ -1610,10 +1645,19 @@ function decideRow(command: Command, input: Row, model: Model): Decision {
     if (missingRecord !== undefined) return { kind: 'take', outcome: missingRecord, externals: [] };
     return { kind: 'ambiguous', names: ['no record for the supplied instance'] };
   }
+  // `heldAnswers` is set once a branch the held row selects holds. The precedence order reads the
+  // held state before a plain external branch (steps 4 and 6; 3 and 5 under the one rule), so where
+  // one holds the interpreter (`interpret::execute::select_phases`) never asks a provider: no
+  // external branch is eligible, whatever an earlier step arranged
+  // (story:explorer-and-interpreter-agree-on-external-cause-for-stored-record). An external branch
+  // marked `before_row: true` answers before the held state, and `decide` still offers it.
+  let heldAnswers = false;
+  const eligibleNow = (): Node[] | string =>
+    heldAnswers ? [] : eligibleExternals(command, outcomes, source, record);
   // What a step may take where no ordinary branch can be: the eligible external branches alone,
   // or `otherwise`, when there are none.
   const orExternal = (otherwise: { kind: 'ambiguous'; names: string[] }): Decision => {
-    const eligible = eligibleExternals(command, outcomes, source, record);
+    const eligible = eligibleNow();
     if (typeof eligible === 'string') return { kind: 'unknown', reason: eligible };
     if (eligible.length > 0) {
       return { kind: 'take', outcome: undefined, externals: eligible, names: otherwise.names };
@@ -1629,7 +1673,7 @@ function decideRow(command: Command, input: Row, model: Model): Decision {
   const stranded = record !== undefined && moves.length > 0 && !starts.has(record.fields.state);
   const wrongState = (): Decision => {
     if (wrong !== undefined) {
-      const eligible = eligibleExternals(command, outcomes, source, record);
+      const eligible = eligibleNow();
       if (typeof eligible === 'string') return { kind: 'unknown', reason: eligible };
       return { kind: 'take', outcome: wrong, externals: eligible };
     }
@@ -1647,6 +1691,7 @@ function decideRow(command: Command, input: Row, model: Model): Decision {
   // so that draw alone the specification does not decide, and it is redrawn.
   const { held, decision: undecided } = heldBranch(command, outcomes, record as Rec, source, input);
   if (undecided !== undefined) return undecided;
+  heldAnswers = held !== undefined;
   const holding: Node[] = [];
   if (held !== undefined) {
     const earlier: string[] = [];
@@ -1684,7 +1729,7 @@ function decideRow(command: Command, input: Row, model: Model): Decision {
   // The external branches this input and subject make eligible. Their guards state eligibility,
   // not the verdict, so they take no part in choosing the ordinary branch; and where no ordinary
   // branch can be taken, they still can.
-  const externals = eligibleExternals(command, outcomes, source, record);
+  const externals = eligibleNow();
   if (typeof externals === 'string') return { kind: 'unknown', reason: externals };
   let selected: Node;
   if (holding.length > 1) {
@@ -2254,6 +2299,22 @@ async function perform(
         return {
           kind: 'payload',
           detail: `event ${index} \`${event.event}\`.${field.target} is ${render(actual)}, the specification says ${render(expected)}`,
+        };
+      }
+    }
+  }
+  // A `returns: true` outcome returns the command's declared response (ess/17): every member it
+  // declares REQUIRED, a type that is not `Optional`, is present. The model determines no response
+  // value, so a member is checked for presence only
+  // (story:go-explorer-compares-direct-response-members).
+  if (outcome.returns === true) {
+    const response = result.response ?? {};
+    for (const field of list(command.node.response)) {
+      if (optionalType(ir, field.type_ref)) continue;
+      if (!Object.prototype.hasOwnProperty.call(response, field.name)) {
+        return {
+          kind: 'response',
+          detail: `the target's response to \`${outcome.name}\` has no \`${field.name}\`, a member the specification requires`,
         };
       }
     }

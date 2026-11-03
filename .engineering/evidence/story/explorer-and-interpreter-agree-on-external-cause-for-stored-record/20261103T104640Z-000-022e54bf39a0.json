@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-03T10:46:40Z",
+  "actor": "human:timo",
+  "artifact": "story:explorer-and-interpreter-agree-on-external-cause-for-stored-record",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "W2 0.85.0 staged local full gate on integration/ess-w2: run 1 04248989d6 A1 A1b A2h A2a A2c A2 exit 0; run 2 7613f051fa A3 A4 A5 A6 A7 A8 exit 0; run 3 b95e07bc02 B exit 0 (GATE-EXIT=0, 2026-11-03T10:46Z); peak target 11G",
+    "reference": "b95e07bc02"
+  }
+}

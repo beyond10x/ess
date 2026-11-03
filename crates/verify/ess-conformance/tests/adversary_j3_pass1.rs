@@ -117,10 +117,10 @@ const CLOCKED_SWAP: &str = "error-swap/demo.tok.Present/expired";
 
 /// Acceptance: "a mutant only an authored scenario pins is killed by it". The authored scenario
 /// requires `Expired`; the interpreter of the `error-swap` mutant answers `Revoked`, as `run
-/// --target interpreted` shows once it is handed the step clock. `mutate` builds the mutant's
-/// interpreter with no command clock (`AuthoredSuite::on`, `mutate.rs`), so the `now` guard is
-/// Unknown, the scenario is `unsupported` on the baseline and on every mutant, and the mutant is
-/// not killed.
+/// --target interpreted` shows once it is handed the step clock. `mutate` runs the authored half
+/// (`AuthoredSuite::on`) and, since 0.85.0, the synthesized half on the scenario clock as well, so
+/// the synthesized `outcome/expired` scenario decides the `now` guard too and kills the mutant
+/// beside the authored one.
 #[test]
 fn an_authored_scenario_on_a_now_guard_kills_the_mutant_it_pins() {
     let report = audit(
@@ -138,7 +138,13 @@ fn an_authored_scenario_on_a_now_guard_kills_the_mutant_it_pins() {
     );
     assert_eq!(
         entry.killers.as_deref(),
-        Some(["demo.tok/authored/long-expired".to_owned()].as_slice()),
+        Some(
+            [
+                "demo.tok.Present/outcome/expired".to_owned(),
+                "demo.tok/authored/long-expired".to_owned(),
+            ]
+            .as_slice()
+        ),
         "{entry:#?}"
     );
 }

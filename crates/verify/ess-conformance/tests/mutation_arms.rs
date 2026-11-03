@@ -376,8 +376,9 @@ fn a_sets_drop_mutant_sends_the_edited_value_apart_from_the_stored_one() {
 #[test]
 fn an_emission_with_a_new_class_declares_version_4_and_one_without_stays_version_3() {
     let (files, texts) = arms();
+    // `sets-drop` also lists the writes it excludes here, which takes `/7` (beyond10x/ess#711).
     let new = mutate::emit(&files, &texts, &[MutantClass::SetsDrop]).expect("emits");
-    assert_eq!(new.manifest.format, MANIFEST_FORMAT_4);
+    assert_eq!(new.manifest.format, mutate::MANIFEST_FORMAT_7);
     let swapped = mutate::emit(&files, &texts, &[MutantClass::PrecedenceSwap]).expect("emits");
     assert_eq!(swapped.manifest.format, MANIFEST_FORMAT_4);
     // The new guard arms are sites of an existing class, which a version 3 reader already scores.
@@ -390,10 +391,10 @@ fn an_emission_with_a_new_class_declares_version_4_and_one_without_stays_version
 #[test]
 fn a_version_3_manifest_naming_a_new_class_is_refused_naming_version_4() {
     let (files, texts) = arms();
-    let emission = mutate::emit(&files, &texts, &[MutantClass::SetsDrop]).expect("emits");
+    let emission = mutate::emit(&files, &texts, &[MutantClass::PrecedenceSwap]).expect("emits");
     let manifest = emission.files[MANIFEST_FILE].replace(MANIFEST_FORMAT_4, MANIFEST_FORMAT);
-    let refusal = mutate::Manifest::from_json(&manifest).expect_err("sets-drop is version 4");
-    assert!(refusal.contains("sets-drop"), "{refusal}");
+    let refusal = mutate::Manifest::from_json(&manifest).expect_err("precedence-swap is version 4");
+    assert!(refusal.contains("precedence-swap"), "{refusal}");
     assert!(refusal.contains(MANIFEST_FORMAT_4), "{refusal}");
 }
 
@@ -402,9 +403,10 @@ fn a_manifest_version_this_reader_does_not_know_is_refused_naming_the_ones_it_re
     let (files, texts) = arms();
     let emission = mutate::emit(&files, &texts, &[MutantClass::SetsDrop]).expect("emits");
     let manifest =
-        emission.files[MANIFEST_FILE].replace(MANIFEST_FORMAT_4, "ess-mutation-manifest/7");
-    let refusal = mutate::Manifest::from_json(&manifest).expect_err("/7 is not read");
+        emission.files[MANIFEST_FILE].replace(mutate::MANIFEST_FORMAT_7, "ess-mutation-manifest/8");
+    let refusal = mutate::Manifest::from_json(&manifest).expect_err("/8 is not read");
     for known in [
+        mutate::MANIFEST_FORMAT_7,
         mutate::MANIFEST_FORMAT_6,
         mutate::MANIFEST_FORMAT_5,
         MANIFEST_FORMAT_4,

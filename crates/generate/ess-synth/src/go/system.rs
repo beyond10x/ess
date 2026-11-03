@@ -349,11 +349,15 @@ fn transformations(
             let determined = crate::plan::determined_prepared_input(emit.ir, binding, field)
                 .expect("generated transformation requires every mapped input to be determined");
             let ident = super::items::field_ident(&mut taken, &field.name);
-            let (note, expression) = if checks {
+            let copies = matches!(determined, DeterminedInput::Copy { .. });
+            let (note, mut expression) = if checks {
                 input_expression(&mut checked, determined, (index, field), emit, binding)
             } else {
                 mapping_expression(determined, emit, binding)
             };
+            if copies {
+                expression = wrapped_copy(emit, binding, &field.name, expression);
+            }
             let _ = writeln!(
                 members,
                 "\t\t// {ident} is {note}.\n\t\t{ident}: {expression},"
@@ -364,6 +368,49 @@ fn transformations(
         out.push_str(&members);
         out.push_str(closing(binding.selection.is_some(), checks));
     }
+}
+
+/// A required event field copied into an Optional input, as the input's Go type.
+///
+/// Go spells `Optional<T>` as `*T` and refuses a `T` where a `*T` is wanted, so the copy is
+/// wrapped once per Optional level the input adds over the field, innermost first. A function
+/// literal rather than `new(expression)` or a generic helper: the generated `go.mod` names Go
+/// 1.21, and a helper would move every system module's bytes. Any other mapping, a copy whose
+/// types agree, and a crossing that is not Optional levels alone are returned as they are
+/// (story:go-synthesis-refuses-an-optional-into-required-assignment).
+fn wrapped_copy(
+    emit: &Emit<'_>,
+    binding: &ResolvedBinding,
+    input: &str,
+    mut expression: String,
+) -> String {
+    let Some(mapping) = binding
+        .mapping
+        .iter()
+        .find(|mapping| mapping.target == input && mapping.conversion.is_none())
+    else {
+        return expression;
+    };
+    let ess_compiler::ir::ResolvedMappingValue::EventField {
+        type_ref: source, ..
+    } = &mapping.value
+    else {
+        return expression;
+    };
+    let mut levels = Vec::new();
+    let mut target = &mapping.target_type;
+    while target != source {
+        let ess_compiler::ir::ResolvedTypeRef::Optional { of } = target else {
+            return expression;
+        };
+        levels.push(of.as_ref());
+        target = of;
+    }
+    for of in levels.into_iter().rev() {
+        let go = emit.go_type(of);
+        expression = format!("func(value {go}) *{go} {{ return &value }}({expression})");
+    }
+    expression
 }
 
 /// How a transformation returns its input: beside its selection failure where it selects, and

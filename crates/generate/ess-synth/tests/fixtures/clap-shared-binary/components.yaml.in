@@ -1,0 +1,35 @@
+components:
+  - component: audit-service
+    summary: The desk's log, from the same terminal.
+    owns:
+      domains:
+        - desk.audit
+    accepts:
+      commands:
+        - desk.audit.RecordEntry
+    reached_by: command_line
+    cli:
+      binary: desk
+      groups:
+        - name: audit
+          summary: The desk's log
+          commands:
+            - desk.audit.RecordEntry
+  - component: desk-service
+    summary: Visitor passes, from a terminal at the desk.
+    owns:
+      domains:
+        - desk.pass
+    accepts:
+      commands:
+        - desk.pass.RegisterVisit
+    reached_by: command_line
+    cli:
+      binary: desk
+      groups:
+        - name: visits
+          summary: Everything about one visit
+          commands:
+            - desk.pass.RegisterVisit
+          views:
+            - desk.pass.ExpectedVisits

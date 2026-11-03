@@ -52,7 +52,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32, 33,
+    27, 28, 29, 30, 31, 32, 33, 34,
 ];
 
 /// What one specification format admits that the format before it did not.
@@ -360,6 +360,16 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
         ],
         stricter: &[],
     },
+    FormatHistoryEntry {
+        major: 34,
+        release: Some("0.85.0"),
+        added: &[
+            "A compensating refusal (`compensates: true` beside `external:`) may delete the row its `instance:` names, `deletes:` as an accepting branch spells it: the interpreted target removes the row and answers the error, and its scenario forces the branch, requires the error and no event, and requires the row absent from every immediate view of the entity. `creates:`, `affects:` and `emits:` beside the marker stay refused. Below `ess/34` the delete is refused as `refusal_mutated_state` naming `ess/34` (beyond10x/ess#585).",
+        ],
+        stricter: &[
+            "A named refusal decided by input (`when:`) or by a related row (`when_related:`) that names no subject of its own, on a command whose other branches address an existing row through the input, observes that row completely and requires it unchanged, as a held-state, `when_subject:` or `external:` refusal does; below `ess/34` its suite keeps its bytes (beyond10x/ess#587).",
+        ],
+    },
 ];
 
 // `FORMAT_HISTORY` and `SUPPORTED_FORMATS` name the same majors in the same order, and every row
@@ -499,6 +509,10 @@ impl FormatVersion {
     /// Structured input examples, rows a deployment provides, and lifecycle member summaries
     /// (wave D325, downstream reports of 2026-10-30).
     pub const V33: Self = Self(33);
+    /// A compensating refusal that deletes its addressed row, and the complete read-back of every
+    /// named refusal of a command addressing an existing row
+    /// (`story:every-witness-reads-back-its-outcome-effect`, beyond10x/ess#585, #587).
+    pub const V34: Self = Self(34);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

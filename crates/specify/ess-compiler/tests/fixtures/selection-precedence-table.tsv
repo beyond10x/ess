@@ -1,4 +1,4 @@
-#	models=366	commands=727
+#	models=370	commands=739
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -524,6 +524,12 @@ crates/verify/ess-conformance/tests/fixtures/explore-codes.yaml	ir=b2f040cbf0cd1
 crates/verify/ess-conformance/tests/fixtures/explore-codes.yaml	explorecodes.auth.PlanCode	input_refusal: in-the-past | default: planned
 crates/verify/ess-conformance/tests/fixtures/explore-codes.yaml	explorecodes.auth.RedeemCode	existence: unknown-code | held_state: expired | default: redeemed
 crates/verify/ess-conformance/tests/fixtures/explore-codes.yaml	explorecodes.auth.StoreCode	default: stored
+crates/verify/ess-conformance/tests/fixtures/explore-component.yaml	ir=4071b3cc4f085906b679c671671bf5281b46e1d1a2c854514709236318f78c19:12032
+crates/verify/ess-conformance/tests/fixtures/explore-component.yaml	explorecmp.desk.CloseTicket	held_state: not-open | default: closed
+crates/verify/ess-conformance/tests/fixtures/explore-component.yaml	explorecmp.desk.OpenTicket	default: opened
+crates/verify/ess-conformance/tests/fixtures/explore-component.yaml	explorecmp.desk.WriteNote	default: written
+crates/verify/ess-conformance/tests/fixtures/explore-direct-response.yaml	ir=d5eece3fa7ba6c58b9d42a238106a3b97be723671163db6a5b085d7e1b9a4bf9:2559
+crates/verify/ess-conformance/tests/fixtures/explore-direct-response.yaml	explorert.keys.Mint	input_refusal: too-long | default: minted
 crates/verify/ess-conformance/tests/fixtures/explore-external-adversary.yaml	ir=686e90bf6a1d9b0c069fd1316ebc33ca67b2d9fd080255b4339551bb6e970bf6:12561
 crates/verify/ess-conformance/tests/fixtures/explore-external-adversary.yaml	exploreadv.desk.Close	held_state: wrong-state | accepting: overridden | default: closed
 crates/verify/ess-conformance/tests/fixtures/explore-external-adversary.yaml	exploreadv.desk.Hold	held_state: wrong-state | default: held
@@ -539,6 +545,16 @@ crates/verify/ess-conformance/tests/fixtures/explore-guards-first.yaml	ir=ac24b4
 crates/verify/ess-conformance/tests/fixtures/explore-guards-first.yaml	exploreorder.desk.Hold	input_refusal: tiny, negative, capped | held_state: wrong-state | accepting: held | default: unrated
 crates/verify/ess-conformance/tests/fixtures/explore-guards-first.yaml	exploreorder.desk.Open	default: opened
 crates/verify/ess-conformance/tests/fixtures/explore-guards-first.yaml	exploreorder.desk.Release	held_state: wrong-state | accepting: noted | default: released
+crates/verify/ess-conformance/tests/fixtures/explore-held-state-external.yaml	ir=dbb33efac3217adb2424f91b8b80d6b4b9b0ccf1aaaa698e3d15179752f606c5:14900
+crates/verify/ess-conformance/tests/fixtures/explore-held-state-external.yaml	explorehx.desk.Nudge	existence: no-ticket | held_state: parked | accepting: bounced | default: nudged
+crates/verify/ess-conformance/tests/fixtures/explore-held-state-external.yaml	explorehx.desk.OpenTicket	default: opened
+crates/verify/ess-conformance/tests/fixtures/explore-held-state-external.yaml	explorehx.desk.Park	held_state: not-open | default: parked-now
+crates/verify/ess-conformance/tests/fixtures/explore-held-state-external.yaml	explorehx.desk.Unpark	held_state: not-parked | default: unparked
+crates/verify/ess-conformance/tests/fixtures/explore-input-beside-unknown.yaml	ir=cb1ded531e05603c8a9ce3291aa9b2b194f71403cc60888c1003bc3bda68123d:15386
+crates/verify/ess-conformance/tests/fixtures/explore-input-beside-unknown.yaml	exploreiu.desk.MakeDesk	default: made
+crates/verify/ess-conformance/tests/fixtures/explore-input-beside-unknown.yaml	exploreiu.desk.Nudge	input_refusal: too-much | existence: no-ticket | default: nudged
+crates/verify/ess-conformance/tests/fixtures/explore-input-beside-unknown.yaml	exploreiu.desk.OpenTicket	default: opened
+crates/verify/ess-conformance/tests/fixtures/explore-input-beside-unknown.yaml	exploreiu.desk.Route	input_refusal: too-much | existence: no-ticket | present_related: no-desk | default: routed
 crates/verify/ess-conformance/tests/fixtures/explore-pair/pair.yaml	ir=592fe2a66d347724cc1f39ca3b15de03efe609f7d389015c8fea8d7dd3dc5d5c:7921
 crates/verify/ess-conformance/tests/fixtures/explore-pair/pair.yaml	pair.core.OpenBox	default: opened
 crates/verify/ess-conformance/tests/fixtures/explore-pair/pair.yaml	pair.core.OpenCrate	default: opened

@@ -176,6 +176,9 @@ fn a_baseline_that_does_not_pass_exits_three_with_mutate_001() {
     assert!(!report.exists(), "a refused audit writes no report");
 }
 
+/// Each billing outcome emits one event, so every `emit-drop` mutant is stillborn
+/// (`ESS-COMMAND-007`). Billing's transitions have no admissible other target, so `transition-to`
+/// has no mutant there at all and refuses, as a class with no site does (beyond10x/ess#711).
 #[test]
 fn every_mutant_stillborn_ran_nothing_and_exits_three() {
     let output = mutate(&[
@@ -184,7 +187,7 @@ fn every_mutant_stillborn_ran_nothing_and_exits_three() {
         "--target",
         "billing",
         "--class",
-        "transition-to",
+        "emit-drop",
     ]);
     let stdout = text(&output.stdout);
     assert_eq!(
@@ -194,8 +197,22 @@ fn every_mutant_stillborn_ran_nothing_and_exits_three() {
         text(&output.stderr)
     );
     assert!(
-        stdout.contains("3 mutant(s), 0 killed, 0 survived, 0 inconclusive, 3 stillborn"),
+        stdout.contains("5 mutant(s), 0 killed, 0 survived, 0 inconclusive, 5 stillborn"),
         "{stdout}"
+    );
+    let transitions = mutate(&[
+        "--path",
+        "examples/billing",
+        "--target",
+        "billing",
+        "--class",
+        "transition-to",
+    ]);
+    let stderr = text(&transitions.stderr);
+    assert_eq!(transitions.status.code(), Some(3), "{stderr}");
+    assert!(
+        stderr.starts_with("refusal[ESS-MUTATE-003]: `transition-to`"),
+        "{stderr}"
     );
 }
 
@@ -214,16 +231,20 @@ fn the_json_output_is_the_report_bytes() {
         report.to_str().unwrap(),
     ]);
     // Every class includes `emit-swap` (beyond10x/ess#295): billing's two swaps are killed and its
-    // three sites without an alternative are unavailable, so the audit is `/4` and exits 3.
+    // three sites without an alternative are unavailable, so the audit exits 3. Its eleven
+    // unmutated sites (beyond10x/ess#711) make it `/8`: the ten of
+    // story:the-mutation-audit-reports-the-sites-it-could-not-mutate and `Customer`'s grant of a
+    // command nothing serves (story:the-mutation-audit-covers-actor-grants).
     assert_eq!(output.status.code(), Some(3), "{}", text(&output.stderr));
     let written = std::fs::read(&report).expect("--report-out is written");
     assert_eq!(output.stdout, written);
     let value: serde_json::Value = serde_json::from_slice(&written).unwrap();
-    assert_eq!(value["format"], "ess-mutation-report/4");
-    assert_eq!(value["counts"]["mutants"], 22);
+    assert_eq!(value["format"], "ess-mutation-report/8");
+    assert_eq!(value["counts"]["mutants"], 19);
     assert_eq!(value["counts"]["killed"], 14);
-    assert_eq!(value["counts"]["stillborn"], 8);
+    assert_eq!(value["counts"]["stillborn"], 5);
     assert_eq!(value["unavailable_sites"].as_array().map(Vec::len), Some(3));
+    assert_eq!(value["unmutated_sites"].as_array().map(Vec::len), Some(11));
 
     let yaml = mutate(&[
         "--path",
@@ -235,7 +256,7 @@ fn the_json_output_is_the_report_bytes() {
     ]);
     assert_eq!(yaml.status.code(), Some(3));
     assert!(
-        text(&yaml.stdout).contains("format: ess-mutation-report/4"),
+        text(&yaml.stdout).contains("format: ess-mutation-report/8"),
         "{}",
         text(&yaml.stdout)
     );
@@ -266,9 +287,9 @@ fn the_help_names_the_twelve_classes_and_the_exit_statuses() {
         help.contains(
             "[possible values: from-drop, transition-to, guard-boundary, sets-retarget, \
              guard-negate, guard-connective, error-swap, emit-drop, order-flip, sets-drop, \
-             precedence-swap, emit-swap]"
+             precedence-swap, emit-swap, grant-drop, grant-add]"
         ),
-        "{help}"
+        "story:the-mutation-audit-covers-actor-grants: {help}"
     );
     assert!(
         help.contains("[possible values: billing, oracle-fixture, interpreted]"),
@@ -277,6 +298,127 @@ fn the_help_names_the_twelve_classes_and_the_exit_statuses() {
     for status in ["Exit 0", "Exit 1", "Exit 3"] {
         assert!(help.contains(status), "{status}: {help}");
     }
+}
+
+/// The toy linear lifecycle of beyond10x/ess#711, brand-free: `lend` is the only transition into
+/// `Lent`, so no other target state keeps the lifecycle admissible.
+const LINEAR: &str = r"format: ess/32
+system: library
+version: v1
+domain: library.shelf
+types:
+  - {name: library.shelf.BookId, kind: newtype, of: Uuid}
+entities:
+  - name: library.shelf.Book
+    identity: {name: book_id, type: library.shelf.BookId}
+    fields:
+      - {name: position, type: Integer}
+    lifecycle:
+      initial: Shelved
+      states: [Shelved, Lent]
+      terminal: [Lent]
+      transitions:
+        - {name: lend, from: [Shelved], to: Lent}
+actors:
+  - name: library.shelf.Librarian
+    may: [library.shelf.CatalogueBook, library.shelf.LendBook]
+errors:
+  - name: library.shelf.BookNotFound
+  - name: library.shelf.BookStateConflict
+commands:
+  - name: library.shelf.CatalogueBook
+    input:
+      - {name: position, type: Integer}
+    outcomes:
+      - name: catalogued
+        creates: library.shelf.Book
+        instance: book_id
+        emits: [library.shelf.BookCatalogued]
+        payload:
+          library.shelf.BookCatalogued: {book_id: {generated: true}}
+        sets: {position: input.position}
+  - name: library.shelf.LendBook
+    input:
+      - {name: book_id, type: library.shelf.BookId}
+    outcomes:
+      - name: lent
+        moves: library.shelf.Book.lend
+        instance: book_id
+        emits: [library.shelf.BookLent]
+        payload:
+          library.shelf.BookLent: {book_id: input.book_id}
+      - name: wrong-state
+        wrong_state: true
+        error: library.shelf.BookStateConflict
+events:
+  - name: library.shelf.BookCatalogued
+    fields:
+      - {name: book_id, type: library.shelf.BookId}
+  - name: library.shelf.BookLent
+    fields:
+      - {name: book_id, type: library.shelf.BookId}
+views:
+  - name: library.shelf.BookById
+    source: library.shelf.Book
+    consistency: read_your_writes
+    fields:
+      - {name: book_id, type: library.shelf.BookId}
+      - {name: position, type: Integer}
+";
+
+/// A site without a live mutant is listed and leaves the default exit status as it was (D135);
+/// `--fail-on-unmutated` makes it block exit 0, as an unavailable emit-swap site does
+/// (story:the-mutation-audit-reports-the-sites-it-could-not-mutate).
+#[test]
+fn a_site_without_a_live_mutant_blocks_exit_zero_only_when_asked() {
+    let directory = scratch("linear");
+    let spec = directory.join("linear.yaml");
+    std::fs::write(&spec, LINEAR).unwrap();
+    let args = [
+        "--path",
+        spec.to_str().unwrap(),
+        "--target",
+        "interpreted",
+        "--class",
+        "transition-to",
+        "--class",
+        "error-swap",
+    ];
+    let default = mutate(&args);
+    let stdout = text(&default.stdout);
+    assert_eq!(
+        default.status.code(),
+        Some(0),
+        "{stdout}{}",
+        text(&default.stderr)
+    );
+    assert!(
+        stdout.lines().any(|line| line.starts_with(
+            "unmutated transition-to/library.shelf.Book.lend (no_admissible_state): "
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout
+            .lines()
+            .next()
+            .is_some_and(|summary| summary.ends_with("; 1 of 2 site(s) scored")),
+        "{stdout}"
+    );
+    let mut strict = args.to_vec();
+    strict.push("--fail-on-unmutated");
+    let strict = mutate(&strict);
+    assert_eq!(
+        strict.status.code(),
+        Some(3),
+        "story:the-mutation-audit-reports-the-sites-it-could-not-mutate: {}{}",
+        text(&strict.stdout),
+        text(&strict.stderr)
+    );
+    assert_eq!(
+        strict.stdout, default.stdout,
+        "the flag changes the exit only"
+    );
 }
 
 #[test]

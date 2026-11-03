@@ -13,6 +13,7 @@ vars:
   JSON_BODY_SECURITY_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/json-body-security-harness'
   UI_HTTP_SHELF_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/ui-http-shelf-server'
   UI_HTTP_ITEMS_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/ui-http-items-server'
+  CLAP_SHARED_BINARY: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/clap-shared-binary'
   # The feature-off cases a pull request runs, when `FEATURE_OFF=number-semantics`: every package
   # but ess-cli, ess-cli's unit tests, and the ess-cli binaries about number semantics — every one
   # whose source names `arbitrary_precision` among them, which `ci_lanes.rs` checks. The `main`
@@ -77,10 +78,12 @@ tasks:
       ESS_JSON_BODY_SECURITY_HARNESS: '{{.JSON_BODY_SECURITY_HARNESS}}'
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
+      ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
     cmds:
       - task: integer-spellings-harness
       - task: json-body-harnesses
       - task: ui-http-servers
+      - task: clap-shared-binary
       - cargo test --workspace --exclude ess-xtask --locked
       # The workspace run has serde_json's `arbitrary_precision` on: entity-core enables it, and
       # ess-entity-runtime unifies it in. This run selects packages that do not depend on
@@ -107,6 +110,7 @@ tasks:
       - task: integer-spellings-harness
       - task: json-body-harnesses
       - task: ui-http-servers
+      - task: clap-shared-binary
 
   # A test that runs cargo builds a crate graph inside its lane
   # (`crates/edge/ess-xtask/tests/no_test_builds.rs`), so the harness the `integer_spellings` test
@@ -189,6 +193,31 @@ tasks:
       - cp {{.WORK}}/target/debug/items-server {{.UI_HTTP_ITEMS_SERVER}}
       - rm -rf {{.WORK}}
 
+  clap-shared-binary:
+    desc: >-
+      Build the clap binary ess-synth's clap_shared_binary runs, generated from two components
+      sharing one `cli.binary`, at CLAP_SHARED_BINARY (no test builds with cargo,
+      no_test_builds.rs).
+    vars:
+      WORK: target/clap-shared-binary
+      FIXTURES: crates/generate/ess-synth/tests/fixtures/clap-shared-binary
+    cmds:
+      - cargo build --workspace --exclude ess-xtask --locked --bin ess
+      - rm -rf {{.WORK}}
+      - mkdir -p {{.WORK}}/model/domains {{.NEXTEST_ARCHIVES}}
+      - cp {{.FIXTURES}}/system.yaml.in {{.WORK}}/model/system.yaml
+      - cp {{.FIXTURES}}/components.yaml.in {{.WORK}}/model/components.yaml
+      - cp {{.FIXTURES}}/domains/pass.yaml.in {{.WORK}}/model/domains/pass.yaml
+      - cp {{.FIXTURES}}/domains/audit.yaml.in {{.WORK}}/model/domains/audit.yaml
+      - target/debug/ess generate synthesize --path {{.WORK}}/model --target clap --out {{.WORK}}/desk
+      # The generated crate is no member of this workspace, whose root is above it.
+      - printf '\n[workspace]\n' >> {{.WORK}}/desk/crates/desk-cli/Cargo.toml
+      - >-
+        env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS -u RUSTC_WRAPPER CARGO_INCREMENTAL=0
+        cargo build --offline --quiet --manifest-path {{.WORK}}/desk/crates/desk-cli/Cargo.toml --target-dir {{.WORK}}/target
+      - cp {{.WORK}}/target/debug/desk {{.CLAP_SHARED_BINARY}}
+      - rm -rf {{.WORK}}
+
   test-archive-feature-off:
     desc: Compile the feature-off test binaries into the nextest archive `test-feature-off` runs.
     cmds:
@@ -222,6 +251,7 @@ tasks:
       ESS_JSON_BODY_SECURITY_HARNESS: '{{.JSON_BODY_SECURITY_HARNESS}}'
       ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
+      ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
     cmds:
       - cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst --workspace-remap . --extract-to . --extract-overwrite --no-fail-fast --partition slice:{{.SHARD}}
 

@@ -2,16 +2,22 @@
 format: aep.planning-md/3
 id: story:a-boundary-row-of-a-deleting-branch-is-sent-for-a-row-that-exists
 kind: story
-status: draft
+status: implemented
 title: A boundary row of a deleting branch is sent for a row that exists
 summary: Synthesis sends a deleting branch's boundary row for the row its own act deleted; the scenario fails on a conforming target
 relations:
 - serves: vision:O2
 - informed_by: story:an-accepting-branch-below-unknown-instance-is-sent-for-a-stored-row
 scope:
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
-revision: 2
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/existence.rs
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-03T05:57:25Z", actor: "human:timo", revision: 8}
+- {from: "proposed", to: "active", at: "2026-11-03T05:57:25Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:51Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 
@@ -51,3 +57,24 @@ for `deletes:` in `crates/specify/ess-compiler/src/ir.rs:783-787`). Its doc name
 - A `moves:` or `updates:` branch keeps its boundary arrangement byte for byte, and the existing
   rows of the synthesis bytes tables do not move except where a repository model has a deleting
   branch with a boundary row. Any such row is listed in the fit review.
+
+## Scope
+
+Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is **cited** (read from the story or the tree) or **inferred** (a reading that could be wrong). The story's line numbers are from 0.77.0 and have drifted: `boundaries` is now at synthesize.rs:17751 (was :17008), the transition filter at :17880-17883 (was :17117-17120), `ResolvedEffect::transition` at ir.rs:791-797 (was :783-787).
+
+- **Primary surface:** `crates/verify/ess-conformance` (synthesis of boundary rows) — cited
+- **Files:** `crates/verify/ess-conformance/src/synthesize.rs` (`boundaries` :17751, transition filter :17880-17883, `identity_boundary_row` :17943) — cited
+- **Symbols:** `boundaries`, `identity_boundary_row`, `ResolvedEffect::transition` (ir.rs:791), `ResolvedEffect::Deletes` — cited
+- **Also likely:** `crates/verify/ess-conformance/src/synthesize/existence.rs` (`unknown_answers_before` :50, a gate the fix may widen) — inferred
+- **Also likely:** a new acceptance test file under `crates/verify/ess-conformance/tests/` — inferred
+- **Documents:** none
+- **Confidence:** high — story and tree agree (`deletes:` has no `transition()`, so no fresh row is arranged); not re-run at 0.84.0
+- **Would collide with:** any unit touching the boundary-row arrangement in synthesize.rs (`boundaries`, `identity_boundary_row`), and the synthesis bytes tables for a model with a deleting branch carrying a boundary row — inferred
+- **Safety fact:** a `deletes:` branch takes no `transition()` (ir.rs:791-797), so the `moves:`/`updates:` arrangement at synthesize.rs:17880-17883 is keyed on that and a `Deletes`-only arm leaves it alone — inferred
+- **Already in the tree (partly):** `identity_boundary_row` treats a deleted identity as needing a fresh row (synthesize.rs:17975-17979), but only when `existence::unknown_answers_before` holds (:17956, existence.rs:50); the story's model has no `unknown_instance:` branch — cited
+- **Size:** medium, about 30 source lines plus a test of about 150; no format version (`COVERAGE_SUITE_FORMAT`, coverage.rs:15) — inferred
+- **Targeted run:** ess-conformance `--test accepting_branch_below_unknown_instance`, `related_guard_absent_input`, `synthesis_suite_bytes_table`, `synthesis_suite_bytes_table_claim_fixtures`, `synthesis_suite_bytes_table_claim_search`, `synthesis_suite_bytes_table_cli_read`, plus the new test — inferred
+
+## Delivered
+
+W2 (D408), 2026-11-03: a guard's boundary row for a `deletes:` branch is sent for a row of its own, arranged fresh, as for a `moves:` branch. Unit e0236a014f; merged a23b3e9e59.

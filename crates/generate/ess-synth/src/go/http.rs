@@ -54,6 +54,9 @@ const LOG_FORMAT: &str = "ess/1";
 /// The transport the emitted server speaks, as the startup record names it.
 const TRANSPORT: &str = "http/1.1";
 
+/// The stem of the server package's wire file, which no surface file may take.
+const WIRE: &str = "wire";
+
 /// Every component whose surface the specification says is reached from outside, in name order.
 pub(crate) fn served<'a>(ir: &'a EssIr, refusals: &TargetRefusals) -> Vec<&'a ResolvedComponent> {
     ir.components()
@@ -123,7 +126,8 @@ pub(super) fn server_package(
             source: actor.to_string(),
         });
     }
-    for component in &components {
+    let stems = surface_stems(package, &components);
+    for (component, stem) in components.iter().zip(&stems) {
         covered.insert(Capability {
             kind: CapabilityKind::ComponentTransport,
             source: component.name.to_string(),
@@ -133,7 +137,7 @@ pub(super) fn server_package(
             plan,
             layout,
             package,
-            component,
+            (component, stem),
             &components,
             records_invocations,
             binding,
@@ -531,7 +535,7 @@ fn wire_file(
             response_encoder(&mut body, &emit, command, members);
         }
     }
-    emit.file_at(format!("{}/wire.go", package.dir), provenance, "", &body)
+    emit.file_at(format!("{}/{WIRE}.go", package.dir), provenance, "", &body)
 }
 
 /// The function-name fragment of a declaration: its whole qualified name, pascal-cased.
@@ -1243,7 +1247,7 @@ fn surface_file(
     plan: &SynthesisPlan,
     layout: &Layout,
     package: &Package,
-    component: &ResolvedComponent,
+    (component, stem): (&ResolvedComponent, &str),
     served: &[&ResolvedComponent],
     records_invocations: bool,
     binding: Option<&http::Binding>,
@@ -1320,7 +1324,7 @@ fn surface_file(
     );
 
     emit.file_at(
-        format!("{}/{}.go", package.dir, module_stem(component)),
+        format!("{}/{stem}.go", package.dir),
         provenance,
         &format!(
             "// The `{}` component of `{}` {}, on the wire.\n//\n// The specification says this \
@@ -1613,9 +1617,26 @@ fn startup(
 /// One row of the surface table: `(method, path, what it serves, the construct's name)`.
 type Row = (&'static str, String, &'static str, String);
 
-/// The file one component's surface is emitted into, named after the component.
-fn module_stem(component: &ResolvedComponent) -> String {
-    name::package_ident(&component.name.to_string())
+/// The stem of the file each served component's surface is emitted into, in `served` order.
+///
+/// Named after the component, and repaired the way `go/layout.rs` repairs a package name (the
+/// suffix `component`) where that name is already a file of the server package: the package's own
+/// `server.go` and `wire.go`, or the stem of a component before it, as `front-desk` and
+/// `frontdesk` share one Go word. Without the repair the surface overwrote the file it collided
+/// with (story:go-synthesis-repairs-a-served-component-named-server). The package's
+/// `ess_memory.go` and `ess_static.go` need no entry: a stem has no underscore before its end.
+fn surface_stems(package: &Package, served: &[&ResolvedComponent]) -> Vec<String> {
+    let mut taken = BTreeSet::from([package.name.clone(), WIRE.to_owned()]);
+    served
+        .iter()
+        .map(|component| {
+            super::layout::repair(
+                &mut taken,
+                name::package_ident(&component.name.to_string()),
+                "component",
+            )
+        })
+        .collect()
 }
 
 /// The whole surface as rows of `(method, path, what it serves, the construct's name)`.

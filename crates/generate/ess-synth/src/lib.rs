@@ -493,12 +493,15 @@ fn emit(
     paging::refuse(ir, &plan, target)?;
     failure::binding_policies(ir, &plan, target)?;
     let mut artifacts = BTreeMap::new();
+    let mut collisions = Vec::new();
     insert(
         &mut artifacts,
+        &mut collisions,
         Artifact::new(PLAN_MARKDOWN, plan.to_markdown()),
     );
     insert(
         &mut artifacts,
+        &mut collisions,
         Artifact::new(PLAN_JSON, plan.to_canonical_json()),
     );
     let report = match target {
@@ -508,28 +511,28 @@ fn emit(
                 OutputLayout::Crate => rust::single_crate_bound(ir, &plan, http)?,
             };
             for artifact in emitted {
-                insert(&mut artifacts, artifact);
+                insert(&mut artifacts, &mut collisions, artifact);
             }
             None
         }
         Target::Go => {
             let emission = go::workspace_bound(ir, &plan, http)?;
             for artifact in emission.artifacts {
-                insert(&mut artifacts, artifact);
+                insert(&mut artifacts, &mut collisions, artifact);
             }
             Some(emission.report)
         }
         Target::Web => {
             let emission = web::workspace(ir, &plan)?;
             for artifact in emission.artifacts {
-                insert(&mut artifacts, artifact);
+                insert(&mut artifacts, &mut collisions, artifact);
             }
             Some(emission.report)
         }
         Target::Clap => {
             let emission = clap::workspace(ir, &plan)?;
             for artifact in emission.artifacts {
-                insert(&mut artifacts, artifact);
+                insert(&mut artifacts, &mut collisions, artifact);
             }
             Some(emission.report)
         }
@@ -537,12 +540,17 @@ fn emit(
     if let Some(report) = &report {
         insert(
             &mut artifacts,
+            &mut collisions,
             Artifact::new(TARGET_MARKDOWN, report.to_markdown()),
         );
         insert(
             &mut artifacts,
+            &mut collisions,
             Artifact::new(TARGET_JSON, report.to_canonical_json()),
         );
+    }
+    if !collisions.is_empty() {
+        return Err(TargetFailure::new(ir, target, &plan, collisions));
     }
     Ok(Synthesis {
         plan,
@@ -553,12 +561,79 @@ fn emit(
 
 /// Keyed insertion that refuses a duplicate path: two artifacts claiming one file means the second
 /// silently overwrites the first and the tree looks complete while missing one — the same rule
-/// `ess-gen` enforces, held here as an internal invariant because every path is produced by this
-/// crate itself.
-fn insert(artifacts: &mut BTreeMap<String, Artifact>, artifact: Artifact) {
-    let path = artifact.path.clone();
-    assert!(
-        artifacts.insert(path.clone(), artifact).is_none(),
-        "two artifacts claimed `{path}`; that is a defect in ess-synth"
-    );
+/// `ess-gen` enforces. Every path is produced by this crate itself, so a claim is a defect in an
+/// emitter; it is recorded as a `path-collision` cause naming the path and both artifacts, and
+/// the emission fails with every collision rather than panicking at the first
+/// (story:go-synthesis-repairs-a-served-component-named-server).
+fn insert(
+    artifacts: &mut BTreeMap<String, Artifact>,
+    collisions: &mut Vec<TargetFailureCause>,
+    artifact: Artifact,
+) {
+    match artifacts.entry(artifact.path.clone()) {
+        std::collections::btree_map::Entry::Vacant(slot) => {
+            slot.insert(artifact);
+        }
+        std::collections::btree_map::Entry::Occupied(claimed) => {
+            collisions.push(TargetFailureCause::new(
+                TargetFailureCode::PathCollision,
+                vec![artifact.path.clone()],
+                format!(
+                    "two generated artifacts claim `{}`: the first {}, the second {}; that is a \
+                     defect in ess-synth",
+                    artifact.path,
+                    described(claimed.get()),
+                    described(&artifact)
+                ),
+            ));
+        }
+    }
+}
+
+/// One artifact, as a collision names it: its size and a digest of its contents, which tell two
+/// artifacts at one path apart where their paths cannot.
+fn described(artifact: &Artifact) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in artifact.contents.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("of {} bytes (FNV-1a {hash:016x})", artifact.contents.len())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Two artifacts at one path are a `path-collision` naming the path and both artifacts, and
+    /// the first keeps the path (story:go-synthesis-repairs-a-served-component-named-server).
+    #[test]
+    fn two_artifacts_claiming_one_path_are_refused() {
+        let mut artifacts = BTreeMap::new();
+        let mut collisions = Vec::new();
+        insert(
+            &mut artifacts,
+            &mut collisions,
+            Artifact::new("server/server.go", "package server\n"),
+        );
+        assert!(collisions.is_empty(), "{collisions:?}");
+        insert(
+            &mut artifacts,
+            &mut collisions,
+            Artifact::new("server/server.go", "package server // surface\n"),
+        );
+        assert_eq!(artifacts["server/server.go"].contents, "package server\n");
+        let [collision] = collisions.as_slice() else {
+            panic!("one collision: {collisions:?}");
+        };
+        assert_eq!(collision.code(), TargetFailureCode::PathCollision);
+        assert_eq!(collision.sources(), ["server/server.go"]);
+        let detail = collision.detail();
+        assert!(
+            detail.contains("`server/server.go`")
+                && detail.contains("the first of 15 bytes")
+                && detail.contains("the second of 26 bytes"),
+            "{detail}"
+        );
+    }
 }

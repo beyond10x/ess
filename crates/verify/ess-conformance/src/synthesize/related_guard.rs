@@ -3692,10 +3692,21 @@ fn own_arrangement(
         (None, Some((sibling, named))) => {
             let arranged = prepare_in(ir, sibling, actors, None, distinction)?;
             let instance = arranged.instance.ok_or_else(unarranged)?;
+            // A complete input-guarded or related-row refusal (ess/34) reads the row back
+            // unchanged, so the state and fields it was left in are kept for its snapshot
+            // (`story:every-witness-reads-back-its-outcome-effect`); every other branch keeps
+            // what it had.
+            let complete = super::guarded_complete(outcome);
             Setup {
                 steps: arranged.steps,
                 source: arranged.source,
                 bound: BTreeMap::from([(named.to_owned(), instance)]),
+                before: arranged.before.filter(|_| complete),
+                settled: if complete {
+                    arranged.settled
+                } else {
+                    BTreeMap::new()
+                },
                 ..Setup::none()
             }
         }
