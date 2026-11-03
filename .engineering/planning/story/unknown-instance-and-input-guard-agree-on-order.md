@@ -18,7 +18,7 @@ scope:
   path: crates/specify/ess-domain/tests/held_state_order.rs
 - confidence: cited
   path: docs/design/cross-record-and-stored-field-guards.md
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:22Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:23Z", actor: "human:timo", revision: 10}
@@ -67,3 +67,30 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Not established:** stale story cites (design `:746-748`, `:762`; `execute.rs:516-520`); the story's claim that the declaration-order check covers only held-state and external branches is superseded by ess/29 `validate_step_order`.
 - **Size:** medium, about 150-200 lines; small (docs only) if the first bullet is retracted; no format version for a refusal gated below `ONE_RULE` — inferred
 - **Targeted run:** ess-domain `--test held_state_order`; ess-conformance `--test precedence_order`, `explore_guards_first`, `related_guard_unknown_instance`; ess-cli (domain change) — inferred
+
+## W2 ruling on acceptance bullet 1 (2026-11-03)
+
+The W2 lead rules acceptance bullet 1 impossible as written. It asks validation to refuse an input
+guard declared above an unknown-instance branch. Under
+`docs/design/cross-record-and-stored-field-guards.md` (precedence) the input refusal answers at
+step 1, so that order is the correct one: it validates from `ess/27`, and `ess/29` already refuses
+the reverse order for both `unknown_instance:` and `exists: false`. Below `ess/29` either order
+validates, as the design page documents; a refusal there would narrow a published format.
+
+Bullet 2 holds for the `unknown_instance:` pair. W2 unit EXP1 (`ab6d56ac01`) pins it with
+`crates/specify/ess-domain/tests/held_state_order.rs` (the `ess/29` refusal and the `ess/27`
+admitted order) and `crates/verify/ess-conformance/tests/explore_input_beside_unknown.rs`. The
+`exists: false` pair cannot be explored, because the explorers leave out any command with a
+`when_related:` branch, which is an ESS gap outside this story.
+
+The bullet is reported to the orchestrator for retraction or rewording. The story is not moved to
+implemented until the acceptance is settled.
+
+## Resolution
+
+Acceptance bullet 1 is retracted by the orchestrator's D410 (2026-11-03): it contradicts the
+precedence section of `docs/design/cross-record-and-stored-field-guards.md`, which `ess/29` already
+enforces. The precedence code is unchanged. Bullet 2 is the story's acceptance, pinned by
+`crates/specify/ess-domain/tests/held_state_order.rs` and
+`crates/verify/ess-conformance/tests/explore_input_beside_unknown.rs` (W2 unit EXP1, `ab6d56ac01`).
+The story moves to implemented when wave W2 closes.

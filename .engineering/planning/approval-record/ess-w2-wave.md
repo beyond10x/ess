@@ -23,7 +23,7 @@ relations:
 - decides: story:mutate-interpreted-synthesized-scenarios-run-on-the-scenario-clock
 - decides: story:the-mutation-audit-reports-the-sites-it-could-not-mutate
 - decides: story:the-mutation-audit-covers-actor-grants
-revision: 2
+revision: 3
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-03T05:57:18Z", actor: "human:timo", revision: 2}
 ---
@@ -151,3 +151,12 @@ building into its own `target/`.
 Pre-flight 2026-11-03: / 195G free of 848G. The trees of earlier waves (d325 to d368, issues-1 to
 -3, 0680, 0690, 0750) are still registered with the worktree manager; none is this wave's and none
 is touched.
+
+## Retraction (D410, 2026-11-03)
+
+The orchestrator's D410 retracts acceptance bullet 1 of
+`story:unknown-instance-and-input-guard-agree-on-order`. That bullet asks for a refusal of an input
+guard declared above an unknown-instance branch. The precedence section of
+`docs/design/cross-record-and-stored-field-guards.md` makes that order the correct one, and
+`ess/29` already refuses the reverse order. The precedence code is not changed. Bullet 2 stays as
+the story's acceptance, and the story moves to implemented at the wave's close.
