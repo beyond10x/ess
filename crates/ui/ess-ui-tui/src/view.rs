@@ -1414,7 +1414,20 @@ fn browser_label(action: &ess_ui::Action) -> String {
 
 /// One cell of a row, drawn by the field's `as`.
 fn cell(field: &Field, row: &Value) -> String {
-    cell_value(field, &field_path(row, &field.field))
+    let value = field_path(row, &field.field);
+    labelled_cell(field, &value).unwrap_or_else(|| cell_value(field, &value))
+}
+
+/// A displayed value the field labels (`labels`, or a choice's fixed option), drawn by its `as`;
+/// `None` when it has no label or its `as` does not show a value as text.
+fn labelled_cell(field: &Field, value: &Value) -> Option<String> {
+    let label = field.value_label(value)?;
+    match field.field_as.as_deref() {
+        Some("badge") => Some(format!("[{label}]")),
+        Some("choice") => Some(format!("‹{label}›")),
+        Some("tags" | "secret" | "toggle" | "json") => None,
+        _ => Some(label.to_owned()),
+    }
 }
 
 /// A field's value, drawn by the field's `as`.
@@ -1997,7 +2010,12 @@ impl App {
             }
             Primitive::Badge(badge) => {
                 let value = text_of(badge.text.as_ref(), badge.field.as_ref());
-                vec![Span::styled(format!("[{}]", display(&value)), bold())]
+                let shown = badge
+                    .labels
+                    .as_ref()
+                    .and_then(|labels| labels.label(&value))
+                    .map_or_else(|| display(&value), str::to_owned);
+                vec![Span::styled(format!("[{shown}]"), bold())]
             }
             Primitive::Icon(icon) => {
                 let glyph = match icon.icon.as_str() {

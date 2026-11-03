@@ -42,6 +42,7 @@ const OPAQUE: &[&str] = &[
     "grid",
     "tone_by",
     "variant_by",
+    "labels",
 ];
 
 pub(crate) fn expand(
@@ -123,6 +124,8 @@ pub(crate) fn expand(
     expand_widgets(&mut document)?;
     // `tone_by.tones`, once every argument it may come from is substituted
     resolve_tones(&mut document)?;
+    // `labels: <name>`, likewise
+    resolve_labels(&mut document)?;
 
     // 3. local shorthands
     let local = Local {
@@ -1526,6 +1529,148 @@ impl Tones<'_> {
         };
         tone_by.insert(Value::from("map"), map);
         Ok(())
+    }
+}
+
+// ── label maps ───────────────────────────────────────────────────────────────────────────────
+
+/// Normalizes `label_maps`, then rewrites every `labels` in the shells, pages and widget
+/// declarations to `{map, name}`: a map written out as itself, a name as the `label_maps` entry
+/// it names, so that after loading `Labels.map` is always the map and no reader looks a name up.
+fn resolve_labels(document: &mut Mapping) -> Result<()> {
+    let at = NodePath::root().child("label_maps");
+    let mut maps = Mapping::new();
+    match document.get("label_maps") {
+        None => {}
+        Some(Value::Mapping(declared)) => {
+            for (name, map) in declared {
+                let name = key_text(name);
+                let normalized = label_map(map, &at.child(&name))?;
+                maps.insert(Value::from(name), normalized);
+            }
+        }
+        Some(_) => {
+            return Err(LoadError::new(
+                at,
+                "`label_maps` maps a name to a value-to-label map",
+            ))
+        }
+    }
+    if !maps.is_empty() {
+        document.insert(Value::from("label_maps"), Value::Mapping(maps.clone()));
+    }
+    for key in ["shells", "pages", "widgets"] {
+        if let Some(value) = document.get_mut(key) {
+            let labels = LabelMaps {
+                maps: &maps,
+                declaration: key == "widgets",
+            };
+            labels.value(value, &At::Path(&NodePath::root().child(key)))?;
+        }
+    }
+    Ok(())
+}
+
+/// A value-to-label map with every key written as text, so a boolean or a number written
+/// unquoted is keyed as `"true"`, `"false"` or the number, as a value is looked up.
+fn label_map(map: &Value, at: &NodePath) -> Result<Value> {
+    let Value::Mapping(entries) = map else {
+        return Err(LoadError::new(
+            at.clone(),
+            "a label map maps a value to the text shown for it",
+        ));
+    };
+    let mut normalized = Mapping::new();
+    for (value, label) in entries {
+        let key = key_text(value);
+        let Value::String(label) = label else {
+            return Err(LoadError::new(
+                at.child(&key),
+                format!("the label of `{key}` is text, not {label:?}"),
+            ));
+        };
+        if normalized
+            .insert(Value::from(key.clone()), Value::from(label.clone()))
+            .is_some()
+        {
+            return Err(LoadError::new(
+                at.child(&key),
+                format!("`{key}` is labelled twice"),
+            ));
+        }
+    }
+    Ok(Value::Mapping(normalized))
+}
+
+/// Resolves every `labels` to `{map, name}` (see [`resolve_labels`]).
+struct LabelMaps<'a> {
+    maps: &'a Mapping,
+    /// Walking widget declarations, where `labels: args.<param>` is still unbound.
+    declaration: bool,
+}
+
+impl LabelMaps<'_> {
+    fn value(&self, value: &mut Value, at: &At<'_>) -> Result<()> {
+        match value {
+            Value::Mapping(mapping) => {
+                for (key, child) in mapping.iter_mut() {
+                    let key = key_text(key);
+                    let here = at.child(&key);
+                    if key == "labels" {
+                        *child = self.labels(child, &here.path())?;
+                    } else if !OPAQUE.contains(&key.as_str()) {
+                        self.value(child, &here)?;
+                    }
+                }
+                Ok(())
+            }
+            Value::Sequence(entries) => {
+                for entry in entries {
+                    let segment = entry_segment(entry);
+                    self.value(entry, &at.child(&segment))?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn labels(&self, labels: &Value, at: &NodePath) -> Result<Value> {
+        let mut resolved = Mapping::new();
+        match labels {
+            Value::Mapping(_) => {
+                resolved.insert(Value::from("map"), label_map(labels, at)?);
+            }
+            Value::String(name) if self.declaration && name.starts_with("args.") => {
+                resolved.insert(Value::from("name"), Value::from(name.clone()));
+            }
+            Value::String(name) => {
+                let Some(map) = self.maps.get(name.as_str()) else {
+                    let declared: Vec<String> = self.maps.keys().map(key_text).collect();
+                    let hint = if declared.is_empty() {
+                        "the document declares no `label_maps`".to_owned()
+                    } else {
+                        format!("the label maps are {}", declared.join(", "))
+                    };
+                    return Err(LoadError::new(
+                        at.clone(),
+                        format!("`{name}` names no entry of `label_maps`"),
+                    )
+                    .with_hint(&hint));
+                };
+                resolved.insert(Value::from("map"), map.clone());
+                resolved.insert(Value::from("name"), Value::from(name.clone()));
+            }
+            other => {
+                return Err(LoadError::new(
+                    at.clone(),
+                    format!(
+                        "`labels` is a value-to-label map or the name of a label map, not {other:?}"
+                    ),
+                ))
+            }
+        }
+        Ok(Value::Mapping(resolved))
     }
 }
 

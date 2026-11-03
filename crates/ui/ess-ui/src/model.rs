@@ -231,6 +231,9 @@ pub struct Document {
     /// Value-to-tone maps, named by `tone_by.tones`.
     #[serde(default)]
     pub tone_maps: BTreeMap<String, ToneMap>,
+    /// Value-to-label maps, named by the `labels` of a field or a badge.
+    #[serde(default)]
+    pub label_maps: BTreeMap<String, LabelMap>,
     /// Every name a choice's `options` write that resolved to an enum of the model the document
     /// was loaded with ([`crate::load_str_with`]), to its qualified name (beyond10x/ess#330).
     /// Never authored: empty for a document loaded without a model.
@@ -2070,6 +2073,8 @@ pub struct Badge {
     pub tone: Option<Tone>,
     /// Tone per value.
     pub tone_by: Option<ToneBy>,
+    /// The words shown for a value; the tone is still chosen by the raw value.
+    pub labels: Option<Labels>,
 }
 
 /// Tone per value.
@@ -2214,8 +2219,81 @@ pub struct Field {
     pub binds: Option<Expr>,
     /// Shows a field of a related view, matched by this field's value, instead of the value.
     pub label_from: Option<LabelFrom>,
+    /// The words a column or record shows for a value, in place of the value.
+    pub labels: Option<Labels>,
     /// Author remark.
     pub note: Option<String>,
+}
+
+impl Field {
+    /// The label a column or record shows for `value`: the field's own `labels` first, then the
+    /// label of a fixed option of its choice; `None` shows the value itself.
+    pub fn value_label(&self, value: &Value) -> Option<&str> {
+        if let Some(label) = self.labels.as_ref().and_then(|labels| labels.label(value)) {
+            return Some(label);
+        }
+        let key = Labels::key(value)?;
+        self.choice_options()
+            .find(|option| Labels::key(&option.value).as_deref() == Some(key.as_str()))
+            .map(|option| option.label.as_str())
+    }
+
+    /// Every label [`Self::value_label`] can give, keyed as [`Labels::key`] keys a value: the
+    /// choice's fixed options whose label differs from their value, under the field's own.
+    pub fn value_labels(&self) -> LabelMap {
+        let mut labels = LabelMap::new();
+        for option in self.choice_options() {
+            if let Some(key) = Labels::key(&option.value) {
+                if option.label != key {
+                    labels.entry(key).or_insert_with(|| option.label.clone());
+                }
+            }
+        }
+        if let Some(own) = &self.labels {
+            labels.extend(own.map.clone());
+        }
+        labels
+    }
+
+    fn choice_options(&self) -> impl Iterator<Item = &ChoiceOption> {
+        let options = match self.choice.as_deref().map(|node| &node.body) {
+            Some(Body::Composite(Composite::Choice(choice))) => choice.options.as_slice(),
+            _ => &[],
+        };
+        options.iter()
+    }
+}
+
+/// The words shown for a value (`labels:` on a field or a badge). Written as a map, or as the
+/// name of a `label_maps` entry, which the loader resolves, so `map` is always the map.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Labels {
+    /// Value to label, keyed by the value's text: a boolean is `"true"` or `"false"`.
+    #[serde(default)]
+    pub map: LabelMap,
+    /// The `label_maps` entry `map` was resolved from, when it was written as a name (the unbound
+    /// `args.<param>` inside a widget declaration). No renderer needs to read it.
+    pub name: Option<String>,
+}
+
+impl Labels {
+    /// The key a value is labelled under: a string as itself, a boolean as `true` or `false`, a
+    /// number as written; any other value has no label.
+    pub fn key(value: &Value) -> Option<String> {
+        match value {
+            Value::String(text) => Some(text.clone()),
+            Value::Bool(flag) => Some(flag.to_string()),
+            Value::Number(number) => Some(number.to_string()),
+            Value::Tagged(tagged) => Self::key(&tagged.value),
+            _ => None,
+        }
+    }
+
+    /// The label of `value`, or `None` when the map does not name it.
+    pub fn label(&self, value: &Value) -> Option<&str> {
+        self.map.get(&Self::key(value)?).map(String::as_str)
+    }
 }
 
 /// A field of a related view shown in place of a key (`Field.label_from`).
@@ -2848,6 +2926,9 @@ pub struct ThemeChoice {
 
 /// A value-to-tone map, declared once in `tone_maps` and named by `tone_by.tones`.
 pub type ToneMap = BTreeMap<String, Tone>;
+
+/// A value-to-label map, declared once in `label_maps` or written out as `labels:`.
+pub type LabelMap = BTreeMap<String, String>;
 
 // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 

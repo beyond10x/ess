@@ -20,6 +20,8 @@ export interface FieldSpec {
   note?: string;
   choice?: ReactNode;
   labelFrom?: LabelFrom;
+  /** The text a column or record shows for a value, keyed by the value as text. */
+  labels?: Record<string, string>;
 }
 
 /** A field of a related view shown in place of a key: the row whose `key` (default `id`) equals it. */
@@ -74,6 +76,15 @@ export function useFieldVisible(field: FieldSpec): boolean {
   return field.visible === undefined || truthy(evaluate(field.visible, scope.values));
 }
 
+/** The label `labels` gives `value`: a string, number or boolean keyed by its text; `undefined` when none. */
+export function valueLabel(labels: Readonly<Record<string, string>> | undefined, value: unknown): string | undefined {
+  if (labels === undefined || !["string", "number", "boolean"].includes(typeof value)) {
+    return undefined;
+  }
+  const key = String(value);
+  return Object.prototype.hasOwnProperty.call(labels, key) ? labels[key] : undefined;
+}
+
 /** A field's value in a row, rendered by its `as`. */
 export function FieldValue(props: { field: FieldSpec; row: unknown }): ReactNode {
   const { field } = props;
@@ -82,7 +93,7 @@ export function FieldValue(props: { field: FieldSpec; row: unknown }): ReactNode
   switch (field.as) {
     case "badge":
     case "choice":
-      content = <span className={`ui-badge ui-badge-${String(value)}`}>{formatValue(value)}</span>;
+      content = <span className={`ui-badge ui-badge-${String(value)}`}>{valueLabel(field.labels, value) ?? formatValue(value)}</span>;
       break;
     case "tags":
       content = (Array.isArray(value) ? value : []).map((tag) => (
@@ -98,7 +109,7 @@ export function FieldValue(props: { field: FieldSpec; row: unknown }): ReactNode
       content = "••••••••";
       break;
     default:
-      content = formatValue(value, field.as);
+      content = valueLabel(field.labels, value) ?? formatValue(value, field.as);
   }
   return (
     <span className={`ui-field ui-field-${field.as ?? "text"}`} data-ui-path={useUiPath(field["data-ui-path"])}>

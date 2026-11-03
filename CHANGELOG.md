@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess-ui/1` value labels: `labels:` on a field and on a `badge` primitive gives the text shown for a value, as a map written out or as the name of an entry of the new document-level `label_maps`, which the loader resolves as it resolves `tone_by.tones`. Booleans are keyed `"true"` and `"false"`; a value the map does not name shows its raw value, and a badge keeps the raw value in its class and its tone. A choice column with fixed `options` shows each option's label. The React runtime and the terminal renderer show the labels; `ess ui check` reports a name that resolves to no map (`label_map_refs`, error) and a map nothing names (`label_map_unused`, warning) (beyond10x/ess#723; story:a-value-shows-its-declared-label-beside-its-tone).
+
 ## [0.85.0] — 2026-11-03
 
 ### Added

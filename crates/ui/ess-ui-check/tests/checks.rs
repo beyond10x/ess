@@ -973,6 +973,49 @@ fn tone_map_unused() {
     assert!(!report.has_errors(), "{:#?}", report.findings);
 }
 
+/// The base page with a badge whose value is shown through `labels`.
+fn labelled_badge_page(labels: &str) -> String {
+    format!(
+        "{{p: {{kind: detail_page, title: P, sections: [{{name: summary, reads: t.ById, \
+         children: [{{name: state, primitive: badge, field: state, labels: {labels}}}]}}]}}}}"
+    )
+}
+
+#[test]
+fn label_map_refs() {
+    let text = doc(&[
+        ("label_maps", "{run_state: {in_progress: In progress}}"),
+        ("pages", &labelled_badge_page("ghost")),
+    ]);
+    let finding = trips(
+        &text,
+        "label_map_refs",
+        "pages/p/sections/summary/children/state/labels",
+    );
+    assert!(finding.message.contains("ghost"), "{finding:?}");
+    let fine = doc(&[
+        ("label_maps", "{run_state: {in_progress: In progress}}"),
+        ("pages", &labelled_badge_page("run_state")),
+    ]);
+    let report = report(&fine);
+    assert!(errors(&report).is_empty(), "{:#?}", report.findings);
+}
+
+#[test]
+fn label_map_unused() {
+    let text = doc(&[
+        (
+            "label_maps",
+            "{run_state: {in_progress: In progress}, deal_stage: {won: Won}}",
+        ),
+        ("pages", &labelled_badge_page("run_state")),
+    ]);
+    let report = report(&text);
+    trips_in(&report, "label_map_unused", "label_maps/deal_stage");
+    clean_at(&report, "label_map_unused", "label_maps/run_state");
+    assert!(!report.has_errors(), "{:#?}", report.findings);
+}
+
 // ── rules the schema states outside `checks.list` ───────────────────────────────────────────
 
 #[test]
