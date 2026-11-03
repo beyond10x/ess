@@ -810,6 +810,56 @@ fn format_29_refuses_an_input_refusal_declared_after_unknown_instance() {
     );
 }
 
+/// An input refusal answers at step 1, before an unknown addressed identity (step 2) and a related
+/// row's `exists: false` (step 4), so from `ess/29` declaring either above it is refused, naming
+/// both branches and the order to declare them in
+/// (`story:unknown-instance-and-input-guard-agree-on-order`).
+#[test]
+fn format_29_names_both_branches_where_an_input_refusal_is_declared_below_a_missing_row() {
+    // The input refusal, the missing-row branches, the move and the wrong-state marker: the one
+    // pair out of step order is the one named.
+    for (order, above, step) in [
+        (
+            [UNKNOWN, TOO_MUCH, NO_TIER, RELEASED, NOT_HELD],
+            UNKNOWN,
+            "2",
+        ),
+        (
+            [NO_TIER, TOO_MUCH, RELEASED, NOT_HELD, UNKNOWN],
+            NO_TIER,
+            "4",
+        ),
+    ] {
+        let refusals = step_refusals(&steps_model("ess/29", &order));
+        let above = name_of(above);
+        assert_eq!(refusals.len(), 1, "{above}: {refusals:#?}");
+        assert!(
+            refusals[0].contains(&format!(
+                "`too-much` answers at step 1 of the precedence order and `{above}`, declared above \
+                 it, at step {step}"
+            )) && refusals[0].contains(&format!("declare `too-much` before `{above}`")),
+            "{above}: {refusals:#?}"
+        );
+    }
+}
+
+/// The order the story's adopter declared, the input refusal above the unknown identity and the
+/// missing row, is the step order: it validates at every format that states which of
+/// `unknown_instance:` and `when_related:` answers first.
+#[test]
+fn an_input_refusal_declared_above_an_unknown_identity_and_a_missing_row_validates() {
+    for format in ["ess/27", "ess/28", "ess/29"] {
+        spec(&steps_model(format, &IN_STEP_ORDER))
+            .unwrap_or_else(|errors| panic!("{format}:\n{errors}"));
+    }
+    // Below `ess/29` the declaration order is not checked against these steps: the other order
+    // validates too, and the format's precedence answers.
+    let order = [NO_TIER, UNKNOWN, TOO_MUCH, RELEASED, NOT_HELD];
+    for format in ["ess/27", "ess/28"] {
+        spec(&steps_model(format, &order)).unwrap_or_else(|errors| panic!("{format}:\n{errors}"));
+    }
+}
+
 #[test]
 fn format_29_admits_out_of_order_declarations_the_prover_shows_disjoint() {
     // The finite prover decides Booleans and enums; a guard over an Integer it declines counts as
