@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-delete-may-have-a-no-op-branch-that-emits-nothing
 kind: story
-status: draft
+status: active
 title: A delete of an absent row may succeed and emit nothing
 summary: A no-op delete branch is refused with ESS-SYNTH-001 (a2a wave 1, M3).
 tags:
@@ -19,7 +19,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/unknown_instance.rs
-revision: 4
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-03T05:57:26Z", actor: "human:timo", revision: 8}
+- {from: "proposed", to: "active", at: "2026-11-03T05:57:26Z", actor: "human:timo", revision: 9}
 ---
 ## Need
 
@@ -110,3 +113,21 @@ Fixture: the Reproduction's model, written by the test.
 Release 0.70.0 (wave A unit A10, with
 `story:a-branch-may-leave-its-addressed-record-unchanged-without-a-view`). The release tag on the
 artifact marks it.
+
+## Scope
+
+Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is **cited** (read from the story or the tree) or **inferred** (a reading that could be wrong).
+
+- **Primary surface:** `crates/verify/ess-conformance` (the `absent` scenario of a non-refusing `unknown_instance:` branch) — cited
+- **Files:** `crates/verify/ess-conformance/src/synthesize.rs:15258` (`fn unknown_instance`, the scenario builder, no view read-back today) — cited
+- **Files:** `crates/verify/ess-conformance/tests/unknown_instance.rs` (new cases `a_no_op_branch_that_writes_a_row_fails`, `a_no_op_delete_of_an_absent_row_passes`) — cited
+- **Files:** `crates/specify/ess-domain/src/command.rs:8027-8037` (ESS-COMMAND-005 message and hint for `instance:` without an effect; lists only `creates`, `moves`, `updates` though `deletes` is a declared verb at `:7982`) and its test module at `:9657` — cited
+- **Symbols:** `ViewExpectation::Excludes` (`synthesize.rs:9825`, `:12018`) as the read-back mechanism — cited
+- **Also likely:** `synthesize.rs:3766` (the `unobserved` note route for models with no immediate view) — inferred
+- **Documents:** none
+- **Confidence:** high — both sites confirmed in the tree; the story's line numbers are stale (`synthesize.rs:13639` is inside `fn identifying`; `command.rs:7605-7614` is now `:8027-8037`)
+- **Would collide with:** `story:a-branch-may-leave-its-addressed-record-unchanged-without-a-view` (W13, not this wave) on `synthesize.rs`; any unit editing the `unknown_instance` builder or its callers (`synthesize.rs:14919`, `:15012`, `:15035`); any unit changing outcome validation in `command.rs` around `:7963-8040` — inferred
+- **Safety fact:** the read-back changes only the `absent` scenario built in `unknown_instance`, which no other builder emits — inferred
+- **Not established:** whether the stricter `absent` scenario needs a suite format bump (`SUPPORTED_SUITE_FORMATS` ends at `suite/63`, `scenario.rs:558-563`); whether an identity view exists for a related-guard delete. The story summary says the no-op is "refused with ESS-SYNTH-001", its Reproduction says it is accepted.
+- **Size:** medium, about 150-230 hand-written lines; no spec format version (`ess/33`) — inferred
+- **Targeted run:** ess-conformance `--test unknown_instance`, `unknown_instance_not_found`, `related_guard_unknown_instance`, `accepting_branch_below_unknown_instance`; ess-domain `--lib`; ess-cli (domain change) — inferred

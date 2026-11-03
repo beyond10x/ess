@@ -17,7 +17,22 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
-revision: 4
+scope:
+- confidence: cited
+  path: crates/specify/ess-compiler/src/resolve.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/command.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret/execute.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- confidence: cited
+  path: docs/design/refusal-with-effect.md
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-16T10:20:20Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-16T10:20:20Z", actor: "human:timo", revision: 3}
@@ -147,3 +162,22 @@ Each is a named conformance scenario, written failing first.
 ## State
 
 2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): beyond10x/ess#587 done; beyond10x/ess#581 and beyond10x/ess#585 remain; scheduled W2.
+
+## Scope
+
+Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is **cited** (read from the story or the tree) or **inferred** (a reading that could be wrong).
+
+- **Primary surface:** `crates/verify/ess-conformance` (synthesis read-back and witness dispatch) — cited
+- **Files:** `crates/specify/ess-domain/src/command.rs` (`validate_compensation` 359-440; the `Deletes` arm refuses a delete beside `compensates:`, 402-419) — cited
+- **Files:** `crates/specify/ess-compiler/src/resolve.rs` (`complete_refusal` at 5975, moved from the story's 5415) — cited
+- **Files:** `crates/verify/ess-conformance/src/synthesize.rs` (`reads_back_compensation` 4476-4500 reads moves and updates only; `Witness` enum 4127; `arranged_as` 10934) — cited
+- **Documents:** `docs/design/refusal-with-effect.md` (83-84, "no `deletes:`") — cited
+- **Also likely:** `crates/specify/ess-domain/src/system.rs` (`FormatVersion::V34`; `FORMAT_HISTORY` at 78; highest today `V33` at 501) — inferred
+- **Also likely:** `crates/verify/ess-conformance/src/synthesize/subject_fact.rs` (`preserve`, 2780) and `crates/verify/ess-conformance/src/interpret/execute.rs` (`Deletes`, 2434) — inferred
+- **Confidence:** medium — the #585 and #587 sites are read at file:line; the #581 complement path is not traced to a line
+- **Would collide with:** any unit adding `ess/34` to `system.rs`; any unit editing the synthesis witness dispatch or external-refusal read-back; any unit on `command.rs` refusal markers (`before_row`, `compensates`) — inferred
+- **Safety fact:** a delete beside `compensates:` is refused only by the `Deletes` arm of `validate_compensation`, at every format; a V34 gate on that arm leaves ess/33 and below refusing it — inferred
+- **Already in the tree (partly):** #587 is on main (`resolve.rs:5975-5990`, `synthesize.rs:5379-5440`, `tests/external_beside_held_guard.rs:1579` `external_refusal_requires_the_row_unchanged`). Not on main: the input-guarded and related-row read-back, the #581 extra-witness expectation, and #585 (no `FormatVersion::V34`) — cited
+- **Not established:** the #581 complement path; whether `ess verify diff` (`outcome-compensates-changed`) needs a change for a delete; whether a compensating delete needs an absence step. `ess/34` is assumed; nothing in the tree claims it yet.
+- **Size:** large, about 250-300 non-test lines plus about 400 test lines; spec format `ess/34` — inferred
+- **Targeted run:** ess-conformance `--test external_beside_held_guard`, `subject_fact_complete_refusal`, `adversary_461_pass1`, `synthesis_suite_bytes_table`, plus one new file; ess-domain, ess-compiler, ess-cli — inferred

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-mutation-audit-reports-the-sites-it-could-not-mutate
 kind: story
-status: draft
+status: active
 title: The mutation audit reports the sites it could not mutate
 summary: transition-to, emit-drop and sets-drop leave common shapes without a live mutant, and the audit still exits 0 without saying how much it covered (#711)
 tags:
@@ -11,7 +11,23 @@ tags:
 refs:
 - provider: github
   reference: beyond10x/ess#711
-revision: 3
+relations:
+- serves: vision:O2
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/mutate_cli.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/mutate.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/mutation_audit.rs
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-03T05:57:41Z", actor: "human:timo", revision: 12}
+- {from: "proposed", to: "active", at: "2026-11-03T05:57:41Z", actor: "human:timo", revision: 13}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -76,3 +92,21 @@ The operators behave as documented. The gap is what the audit reports. Stillborn
 excluded `sets` sites do not count against the result, and the excluded sites are absent from the
 report and manifest. An emit-swap site with no alternative, by contrast, is `unavailable` and blocks
 exit 0.
+
+## Scope
+
+Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is **cited** (read from the story or the tree) or **inferred** (a reading that could be wrong).
+
+- **Primary surface:** `crates/verify/ess-conformance/src/mutate.rs` (the mutation-audit module) — cited: classes at `mutate.rs:101-142`, transition sites at `:1598`, sets-drop at `:1160`
+- **Files:** `crates/edge/ess-cli/src/main.rs:958-1004` (the `mutate` flags) and `:4717-4732` (exit status) — cited
+- **Symbols:** `sets_drop_site` (:1160), `unmutated_sets` (:1185), `transition_sites` (:1598), `UnavailableSite` (:1360), `MutationReport::unaudited_sites` (:3581), `REPORT_FORMAT_7` (:92), `MANIFEST_FORMAT_6` (:4997) — cited
+- **Also likely:** `crates/verify/ess-conformance/src/synthesize.rs` — inferred: a literal retarget may need synthesis to send a value that separates the literal from the row's (sibling-retarget handling at `:12426-12476`)
+- **Also likely:** `crates/verify/ess-conformance/tests/mutation_audit.rs`, `crates/edge/ess-cli/tests/mutate_cli.rs` — inferred: both pin today's transition-to stillborn verdicts and report bytes
+- **Documents:** `website/docs/reference/formats.md`, `website/docs/reference/spec-versions.md` — inferred: a new report or manifest version is written in both
+- **Confidence:** high for the surface; medium for the synthesis and test files
+- **Would collide with:** any unit touching the audit module's enumeration, its report/manifest members or `UnavailableSite`; `mutate`'s flags or exit mapping in `ess-cli` `main.rs`; sibling-retarget synthesis in `synthesize.rs` — inferred
+- **Safety fact:** new sites only add mutant ids and remove none, because `transition_sites` and `outcome_sites` only push (`mutate.rs:1598-1617, 1692-1701`) — inferred
+- **Already in the tree (partly):** sets-drop reasons computed once per entry (`mutate.rs:1070-1084, 1185-1216`), printed only as stderr notes (`main.rs:4517-4523`); emit-swap unavailable sites already block exit 0 (`mutate.rs:1355-1432`, `main.rs:4725-4728`). Absent: a persisted list of excluded sites, a transition-to alternative search, sets-retarget to a literal, the opt-in exit flag, a coverage count — cited
+- **Not established:** sets-drop of an `Optional` field to absent is excluded today because no synthesized row states an absence (`mutate.rs:1218-1222`); transition-to on a linear lifecycle probably reduces to "listed as unavailable" (`ESS-ENTITY-011`, `resolve.rs:148`); the literal per type; what "sites considered" counts; the flag name; whether the listing is written only when non-empty (D135, the `/4` pattern at `mutate.rs:4958-4968`); the #711 toy spec is not in the tree.
+- **Size:** large, about 700-950 hand-written lines; new report and manifest versions — inferred
+- **Targeted run:** ess-conformance `--test mutation_audit`, `mutation_sets_entries`, `mutation_emit_swap`; ess-cli `--test mutate_cli`, `mutate_report_v2` — inferred

@@ -2,13 +2,29 @@
 format: aep.planning-md/3
 id: story:components-sharing-a-cli-binary-generate-one-tree-with-every-group
 kind: story
-status: draft
+status: active
 title: Components sharing a CLI binary generate one tree with every group
 summary: clap synthesis keeps only the last component group when several components declare the same binary; validate passes it (0.77.0)
 tags:
 - ess-batch-4
 - ess-next
-revision: 4
+relations:
+- serves: vision:O2
+scope:
+- confidence: inferred
+  path: Taskfile.yml
+- confidence: cited
+  path: crates/generate/ess-synth/src/clap/tree.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/clap.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/component.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/system.rs
+revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-03T05:57:39Z", actor: "human:timo", revision: 13}
+- {from: "proposed", to: "active", at: "2026-11-03T05:57:39Z", actor: "human:timo", revision: 14}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -73,3 +89,21 @@ reproduced in this repository.
 
 Minimal repro to write: the model of `crates/generate/ess-synth/tests/clap.rs` (binary `desk`) plus a
 second component that declares the same `binary:` and its own group.
+
+## Scope
+
+Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is **cited** (read from the story or the tree) or **inferred** (a reading that could be wrong).
+
+- **Primary surface:** `crates/generate/ess-synth/src/clap/tree.rs` and `crates/specify/ess-domain/src/component.rs` — cited
+- **Files:** `tree.rs:232-279` builds the tree from `surfaces.first()` only, so one component's groups reach `tree.rs` — cited
+- **Files:** `tree.rs:384-472` `main_module` dispatches every surface's groups (loop at :421) — cited
+- **Files:** `component.rs:1338-1380` `validate_components` checks ownership and `accepts` only; nothing compares `cli.binary` or group names across components — cited
+- **Files:** `crates/generate/ess-synth/tests/clap.rs` (the `desk` fixture, `fixture` at :17) holds the repro base — cited
+- **Symbols:** `surfaces`, `tree_module`, `main_module`, `validate_components`, `DuplicateDeclaration` (reusable, no new code) — cited
+- **Also likely:** `crates/specify/ess-domain/src/system.rs:53-56` (`SUPPORTED_FORMATS` ends at 33) and its `FORMAT_HISTORY` row — inferred, only if the refusal is stricter than ess/33
+- **Also likely:** `Taskfile.yml` — inferred, only if the binary-run test needs a harness task (W1 lesson: no test spawns cargo)
+- **Confidence:** high — the tree, dispatch and validate code agree; not reproduced, so the Problem's "last component" wording is unverified (the code keeps the first in component-name order, `tree.rs:232`, `components` a `BTreeMap`, `ir.rs:3313`)
+- **Would collide with:** the clap emitter (`crates/generate/ess-synth/src/clap/`); `validate_components` and its tests in `component.rs`; the format table in `system.rs` — inferred
+- **Safety fact:** `tree.rs` and `main.rs` both walk the same `surfaces` vector (`tree.rs:32`, `mod.rs:69`), so a tree built from every surface matches dispatch — inferred
+- **Not established:** which Acceptance option `approval-record:d220-batch-4-after-0780` chose (its :30 does not say). A different-binary case has the same defect (`tree.rs:232` and `:491` take the first surface's binary for the whole crate); the story does not cover it. Gates: an `ess-domain` change also gates `ess-cli`; a format bump needs `task test-xtask`; reuse `DuplicateDeclaration` rather than a new `ValidationCode`.
+- **Size:** medium, about 230 hand-written lines; a new format version only if the refusal is stricter than ess/33 — inferred
