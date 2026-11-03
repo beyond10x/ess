@@ -14,6 +14,8 @@ refs:
 relations:
 - serves: vision:O2
 scope:
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/lib.rs
 - confidence: inferred
   path: crates/ui/ess-ui-check/src/rules.rs
 - confidence: cited
@@ -21,18 +23,26 @@ scope:
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/actions.tsx.tmpl
 - confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/expr.ts.tmpl
+- confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/fields.tsx.tmpl
 - confidence: inferred
   path: crates/ui/ess-ui-tui/src/app.rs
 - confidence: cited
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: cited
+  path: crates/ui/ess-ui/src/filter.rs
+- confidence: cited
+  path: crates/ui/ess-ui/src/lib.rs
+- confidence: cited
   path: crates/ui/ess-ui/src/model.rs
+- confidence: cited
+  path: crates/ui/ess-ui/src/toggle.rs
 - confidence: cited
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T16:24:11Z", actor: "human:timo", revision: 11}
 - {from: "proposed", to: "active", at: "2026-11-03T16:24:11Z", actor: "human:timo", revision: 12}
@@ -111,3 +121,16 @@ Named scenarios; each is a test function, and the story is done when each runs a
 
 Accept, redesigned (2026-11-03, wave lead under D420): both of the requester's alternatives, with the
 derivation restricted to one `not <expr>` bind entry and no name-based fallback.
+
+## Delivered
+
+UI-adopter wave 1 (D418, D420), release 0.86.0.
+
+- Unit `b8b53b81da` merged at `d29dd12cc3`. Fix round 1 `dd38413e71` merged at `f8b12559cf`, round 2 `a4cef75e13` at `efbf3380d0`, round 3 `6d819f3177` at `976e4e7b07`.
+- An action takes `checked:` (only with `as: toggle`, else `checked_needs_toggle`).
+- Without `checked:`, a `does:` toggle shows the `<expr>` of its one bind entry written `not <expr>`. `ess_ui::toggle_state` reads that `<expr>` from the parse tree; every string literal is quoted, and every path must start at an admitted root (row, params, state, shell, args). Otherwise `toggle_state_unknown` warns and the toggle renders off.
+- The React runtime and the terminal read the same state. The terminal evaluates it in the filter grammar with that grammar's truthiness. React reads negative number literals.
+- `checked_unreadable` warns on a `checked:` the filter grammar does not read. A column `as: toggle` renders a switch.
+- Every named acceptance scenario passes. Adversary passes 1 to 3 needed revision and were fixed. Pass 4 approved with two INFEASIBLE notes, filed as `story:a-checked-that-reads-no-path-draws-alike` and `story:both-renderers-tokenize-whitespace-alike`.
+- Out of scope: a bare root word read alike in both grammars is `story:a-bare-root-word-reads-alike-in-both-grammars`, and terminal header toggles are `story:terminal-header-toggles-show-their-state` (all backlog).
+- Scope: confirmed by the diff. `filter.rs`, `toggle.rs`, `lib.rs`, `expr.ts.tmpl` and the check `lib.rs` were added.
