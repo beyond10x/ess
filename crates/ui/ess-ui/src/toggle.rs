@@ -37,11 +37,15 @@ pub struct ToggleState {
 ///
 /// In order: `checked:` when written; else for a toggle with `sets`, the first key it sets
 /// (the state it has always shown); else for a toggle with `does`, the expression `<expr>` of its
-/// only `bind` entry that parses as `not <expr>` as a whole and reads a path, `<expr>` written in
-/// canonical text without redundant parentheses (`not (row.on)` and `(not row.on)` both name
-/// `row.on`), so the terminal's evaluator reads it as the React runtime does. Two such entries,
-/// an entry whose `not` is one operand of `and` or `or`, or a `not` over literal text name no
-/// state. A row field named like the action is never read: a name match is a guess.
+/// only `bind` entry that parses as `not <expr>` as a whole, where `<expr>` reads a path and
+/// every path it reads starts at a root the filter grammar admits
+/// ([`Predicate::allowed_roots`]). `<expr>` is written in canonical text without redundant
+/// parentheses and with every string quoted (`not (row.on)` and `(not row.on)` both name
+/// `row.on`; `not (row.stage == 'draft')` names `row.stage == 'draft'`), so the terminal reads it
+/// with the filter grammar as the React runtime reads it. Two such entries, an entry whose `not`
+/// is one operand of `and` or `or`, or a `not` over literal text (`not yet sent`, or a dotted
+/// word such as `item.enabled` that starts at no root) name no state. A row field named like the
+/// action is never read: a name match is a guess.
 pub fn toggle_state(action: &Action) -> Option<ToggleState> {
     if action.action_as != Some(ActionAs::Toggle) {
         return None;
@@ -76,13 +80,15 @@ pub fn toggle_state(action: &Action) -> Option<ToggleState> {
 }
 
 /// The state `text` flips: the operand of a `bind` entry that parses as one negation as a whole
-/// (`not x`, `not(x)`, `(not x)`, `not (x)`) and reads a path, written back in canonical text so
-/// every renderer reads the same expression however the entry was spaced or parenthesised.
+/// (`not x`, `not(x)`, `(not x)`, `not (x)`) and reads a path, every path from an admitted root,
+/// written back in canonical text so every renderer reads the same expression however the entry
+/// was spaced or parenthesised. A dotted word whose first segment is no root is literal text to
+/// both renderers, so an operand that reads one names no state.
 fn negated(text: &str) -> Option<String> {
     let Predicate::Not(inner) = filter::parse(text)? else {
         return None;
     };
-    if inner.paths().is_empty() {
+    if inner.paths().is_empty() || !inner.allowed_roots() {
         return None;
     }
     canonical(&inner)
@@ -139,23 +145,18 @@ fn canonical(predicate: &Predicate) -> Option<String> {
     })
 }
 
-/// A scalar literal as the grammar spells it: a bare word where it reads back as the same
-/// string, else quoted.
+/// A scalar literal as the grammar spells it. A string is always quoted: a bare word reads back
+/// as the same string in the filter grammar, but the renderers read a bare root name (`draft`,
+/// `state`, `row`, ...) as a path, so only a quoted string is text to every reader.
 fn literal(value: &Value) -> Option<String> {
     match value {
         Value::Null => Some("null".to_owned()),
         Value::Bool(value) => Some(value.to_string()),
         Value::Number(number) => number.as_f64().map(|number| number.to_string()),
-        Value::String(text) => {
-            let bare = Predicate::Literal(Value::String(text.clone()));
-            if filter::parse(text).as_ref() == Some(&bare) {
-                return Some(text.clone());
-            }
-            ['\'', '"']
-                .into_iter()
-                .find(|quote| !text.contains(*quote))
-                .map(|quote| format!("{quote}{text}{quote}"))
-        }
+        Value::String(text) => ['\'', '"']
+            .into_iter()
+            .find(|quote| !text.contains(*quote))
+            .map(|quote| format!("{quote}{text}{quote}")),
         _ => None,
     }
 }
@@ -165,9 +166,10 @@ mod tests {
     use super::{canonical, negated};
     use crate::filter;
 
-    /// The class behind F2 and F3: the state is read off the parse tree, never sliced from the
-    /// source text, so every spelling of one negation names one state and that state parses back
-    /// to the operand's tree.
+    /// The class behind round 1's F2 and F3 and round 2's F1: the state is read off the parse
+    /// tree, never sliced from the source text, so every spelling of one negation names one state,
+    /// that state parses back to the operand's tree, and every string in it is quoted (a bare
+    /// root name such as `draft` or `state` is a path to the renderers).
     #[test]
     fn every_spelling_of_one_negation_names_the_operand_in_canonical_text() {
         let cases = [
@@ -179,7 +181,8 @@ mod tests {
             ("((not ((row.enabled))))", "row.enabled"),
             ("not not row.enabled", "not row.enabled"),
             ("not (not (row.enabled))", "not row.enabled"),
-            ("not (row.state == 'on')", "row.state == on"),
+            ("not (row.state == 'on')", "row.state == 'on'"),
+            ("not (row.stage == 'state')", "row.stage == 'state'"),
             ("not row.state=='on air'", "row.state == 'on air'"),
             (
                 "not (row.a and (row.b or row.c))",
@@ -195,7 +198,7 @@ mod tests {
             ),
             (
                 "not (row.kind in [a, 'b c', 2, true])",
-                "row.kind in [a, 'b c', 2, true]",
+                "row.kind in ['a', 'b c', 2, true]",
             ),
             ("not ((not row.a) == row.b)", "(not row.a) == row.b"),
             ("not (row.note == \"it's\")", "row.note == \"it's\""),
@@ -221,7 +224,8 @@ mod tests {
         }
     }
 
-    /// Anything that is not one negation of an expression reading a path names no state.
+    /// Anything that is not one negation of an expression reading a path, every path from an
+    /// admitted root, names no state.
     #[test]
     fn anything_but_one_negation_of_a_path_names_no_state() {
         for text in [
@@ -230,6 +234,9 @@ mod tests {
             "(not row.a) or row.b",
             "not yet sent",
             "not 'x'",
+            "not item.enabled",
+            "not (row.a and item.b)",
+            "not (row.kind in [a, item.b])",
             "not (row.a",
             "not",
             "",
