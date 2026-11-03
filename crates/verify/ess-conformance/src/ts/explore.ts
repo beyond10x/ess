@@ -341,13 +341,13 @@ function scope(ir: Node, name: string): void {
   const owns = new Set<string>(list(component.owns).map(String));
   const accepts = new Set<string>(list(component.accepts).map(String));
   const commands: { [name: string]: Node } = {};
-  for (const [key, command] of Object.entries(isObject(ir.commands) ? ir.commands : {})) {
+  for (const [key, command] of Object.entries<Node>(isObject(ir.commands) ? ir.commands : {})) {
     if (accepts.has(String(command.name)) || owns.has(String(command.domain))) {
       commands[key] = command;
     }
   }
   const views: { [name: string]: Node } = {};
-  for (const [key, view] of Object.entries(isObject(ir.views) ? ir.views : {})) {
+  for (const [key, view] of Object.entries<Node>(isObject(ir.views) ? ir.views : {})) {
     if (owns.has(String(view.domain))) views[key] = view;
   }
   ir.commands = commands;

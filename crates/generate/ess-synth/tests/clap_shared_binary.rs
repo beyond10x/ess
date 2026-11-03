@@ -145,6 +145,19 @@ fn binary() -> PathBuf {
         "{STORY}: {BINARY}={} names no binary: run `task clap-shared-binary`",
         path.display()
     );
+    // CI hands the binary to the test shards in an artifact, which keeps no mode bits.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut permissions = std::fs::metadata(&path)
+            .unwrap_or_else(|error| panic!("{STORY}: {BINARY}={}: {error}", path.display()))
+            .permissions();
+        if permissions.mode() & 0o111 == 0 {
+            permissions.set_mode(permissions.mode() | 0o755);
+            std::fs::set_permissions(&path, permissions)
+                .unwrap_or_else(|error| panic!("{STORY}: the binary is made executable: {error}"));
+        }
+    }
     path
 }
 
