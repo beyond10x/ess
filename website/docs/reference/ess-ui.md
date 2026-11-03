@@ -2070,7 +2070,7 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `page_refs` | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
 | `filter_export` | `export.params` | `{must: not_claim_to_copy_client_filter}` | warning |
 | `checked_needs_toggle` | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
-| `toggle_state_unknown` | `**.checked absent on an as toggle action with does and no loads` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
+| `toggle_state_unknown` | `**.checked absent on an as toggle action with does` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
 
 ### FixtureIndex
 
@@ -2735,7 +2735,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `pager_outside_collection` | [Reads](#reads) | `reads.pager` | `{must: belong_to_a_collection_reads}` | error |
 | `account_menu_keys` | every node | `shells.*.regions.*.props.actions[] of an account_menu` | `{must_be_in: [name, label, opens, does, sets, navigate]}` | error |
 | `checked_needs_toggle` | [Action](#action) | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
-| `toggle_state_unknown` | [Action](#action) | `**.checked absent on an as toggle action with does and no loads` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
+| `toggle_state_unknown` | [Action](#action) | `**.checked absent on an as toggle action with does` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
 
 ## Retrofits and lowering
 

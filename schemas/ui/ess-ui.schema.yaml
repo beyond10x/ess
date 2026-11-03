@@ -1703,4 +1703,4 @@ checks:
     - {id: pager_outside_collection, subject: "reads.pager", must: belong_to_a_collection_reads, severity: error}
     - {id: account_menu_keys, subject: "shells.*.regions.*.props.actions[] of an account_menu", must_be_in: [name, label, opens, does, sets, navigate], severity: error}
     - {id: checked_needs_toggle, subject: "**.checked", must: sit_on_an_as_toggle_action, severity: error}
-    - {id: toggle_state_unknown, subject: "**.checked absent on an as toggle action with does and no loads", must: [write_checked, or_bind_exactly_one_input_as_not_expr], severity: warning}
+    - {id: toggle_state_unknown, subject: "**.checked absent on an as toggle action with does", must: [write_checked, or_bind_exactly_one_input_as_not_expr], severity: warning}
