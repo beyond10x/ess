@@ -14,6 +14,8 @@ refs:
 relations:
 - serves: vision:O2
 scope:
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/lib.rs
 - confidence: inferred
   path: crates/ui/ess-ui-check/src/rules.rs
 - confidence: cited
@@ -26,7 +28,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T16:24:12Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-03T16:24:12Z", actor: "human:timo", revision: 9}
@@ -106,3 +108,15 @@ declares only who pages (`Reads.paging`, `crates/ui/ess-ui/src/model.rs:2318-231
 
 Accept, redesigned (2026-11-03, wave lead under D420): declared pager naming read params; `sizes`
 optional with a documented default; no name-based recognition.
+
+## Delivered
+
+UI-adopter wave 1 (D418, D420), release 0.86.0.
+
+- Unit `05114f9e2f` merged at `29c551f188`; fix round 1 `2f504a8c57` at `6b1798614c`; fix round 2 `c22f85428a` at `4815c9fbb8`.
+- A read with `paging: server` takes `pager: {page, size, sizes}`; `sizes` defaults to `[25, 50, 100]`.
+- The React collection footer shows Previous, the page (of N when known) and Next, and with a `size` a per-page select. The select writes page and size in one update and returns to page 1. It offers the current size, and lists a held value the pager does not count under its own text.
+- The footer writes the state paths the params bind.
+- `ess ui check` adds `pager_paging`, `pager_params` (including overlapping paths), `pager_sizes` and `pager_outside_collection`.
+- Every named acceptance scenario passes. Adversary passes 1 and 2 needed revision and were fixed; pass 3 approved. The pass-3 cases are kept (`adversary_w086_u3_pass3.rs`).
+- Out of scope: the fixture adapter paging by the pager params is now `story:the-fixture-adapter-pages-by-the-pager-params` (backlog).

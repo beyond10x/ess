@@ -14,23 +14,31 @@ refs:
 relations:
 - serves: vision:O2
 scope:
-- confidence: inferred
-  path: crates/ui/ess-ui-check/src/style.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/classify.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/lib.rs
 - confidence: cited
   path: crates/ui/ess-ui-react/src/emit.rs
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/fields.tsx.tmpl
 - confidence: cited
+  path: crates/ui/ess-ui-react/templates/runtime/primitives/badge.tsx.tmpl
+- confidence: cited
+  path: crates/ui/ess-ui-tui/src/app.rs
+- confidence: cited
   path: crates/ui/ess-ui-tui/src/view.rs
-- confidence: inferred
+- confidence: cited
   path: crates/ui/ess-ui/src/expand.rs
+- confidence: cited
+  path: crates/ui/ess-ui/src/lib.rs
 - confidence: cited
   path: crates/ui/ess-ui/src/model.rs
 - confidence: cited
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T16:24:10Z", actor: "human:timo", revision: 11}
 - {from: "proposed", to: "active", at: "2026-11-03T16:24:11Z", actor: "human:timo", revision: 12}
@@ -116,3 +124,15 @@ written-out form; a named form (`label_maps`) is added so a label set is declare
 B7 ("Enum labels declared in the spec are not applied to badges", quoted from the adopter list) is
 read as labels the document declares, including a choice column's option labels; whether it meant
 something else is unclear and was not asked.
+
+## Delivered
+
+UI-adopter wave 1 (D418, D420), release 0.86.0.
+
+- Unit `fe9b8046d8` merged at `27fb9d4b22`; fix round 1 `4f160cbe6f` merged at `2a329a6b5c`.
+- `labels:` takes a map written out or the name of a `label_maps` entry, resolved in `model.rs` and `expand.rs` as `tone_maps` are. It is a value map only in a mapping with `field:` text or `primitive: badge`, so a node or entry named `labels` elsewhere loads as before.
+- The React runtime (`fields.tsx`, `badge.tsx`) and the terminal (`view.rs`) show the label, and a badge keeps the raw value in its class and tone. A choice column with fixed `options` shows the option label.
+- `ess ui check` reports `label_map_refs` (error) and `label_map_unused` (warning).
+- Every named acceptance scenario passes. Adversary pass 1 needed revision and was fixed in round 1; pass 2 approved, and its 14 cases are kept (`adversary_w086_u1_pass2.rs`).
+- Scope: the cited lines are confirmed by the diff. `style.rs` was not touched; `classify.rs`, `lib.rs` and `badge.tsx.tmpl` were added.
+- Out of scope: a node named `tone_by` that is not a tone is `story:a-node-named-tone-by-is-not-a-tone` (backlog).

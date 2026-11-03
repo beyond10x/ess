@@ -14,6 +14,12 @@ refs:
 relations:
 - serves: vision:O2
 scope:
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/filter.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/lib.rs
+- confidence: cited
+  path: crates/ui/ess-ui-check/src/model.rs
 - confidence: inferred
   path: crates/ui/ess-ui-check/src/rules.rs
 - confidence: cited
@@ -22,8 +28,6 @@ scope:
   path: crates/ui/ess-ui-react/templates/runtime/actions.tsx.tmpl
 - confidence: cited
   path: crates/ui/ess-ui-react/templates/runtime/core.tsx.tmpl
-- confidence: inferred
-  path: crates/ui/ess-ui-tui/src/app.rs
 - confidence: cited
   path: crates/ui/ess-ui-tui/src/view.rs
 - confidence: cited
@@ -34,7 +38,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 13
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T16:24:12Z", actor: "human:timo", revision: 12}
 - {from: "proposed", to: "active", at: "2026-11-03T16:24:13Z", actor: "human:timo", revision: 13}
@@ -127,3 +131,15 @@ and an expression is a scalar (`model.rs:33-45`), so `params: {ids: selection.id
 
 Accept (2026-11-03, wave lead under D420): (a) fixed at its cause; (b) `params` on an export accepts
 a map of params beside the expression form; (c) `title` on an empty state accepted.
+
+## Delivered
+
+UI-adopter wave 1 (D418, D420), release 0.86.0.
+
+- Unit `c75123668d` merged at `af1451bf4b`; fix round 1 `086515559c` at `082647b2d2`.
+- `locate.rs` reports a refused node at its own path. A list entry whose name or `field` matches an action key is no longer read as an action. A section's `states` and its entries are read as such only on a page section. Entries of the document maps an author names (`themes`, `tone_maps`, `label_maps`) are read as names.
+- An export's `params` is a map or one expression. A hand-written reader names both shapes on a wrong one.
+- `export_selection` admits `selection.<field>` only on an action of `bulk_actions`.
+- An empty state takes a `title`; an empty title is no title in the terminal.
+- Every named acceptance scenario passes. Adversary pass 1 needed revision and was fixed in round 1; pass 2 approved with two infeasible notes (a node named `bulk_actions`, a whitespace-only title), recorded and not fixed.
+- Out of scope: an author key named `action` with a map value is `story:an-author-key-named-action-is-not-an-action`, and a node named like an action position is `story:a-node-named-like-an-action-position-loads` (both backlog).
