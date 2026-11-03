@@ -2074,6 +2074,12 @@ fn pager_params() {
         "pager_params",
         "pages/p/sections/list/reads/pager/size",
     );
+    trips(
+        &paged_page("paging: server, pager: {page: p, size: q}")
+            .replace("q: params.id", "q: state.at"),
+        "pager_params",
+        "pages/p/sections/list/reads/pager",
+    );
 }
 
 #[test]
