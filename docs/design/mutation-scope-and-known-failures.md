@@ -330,7 +330,9 @@ The audit names the sites it could not mutate (story
 - A site a selected class excludes, or where no edit compiles, is an *unmutated site*:
   `{class, id, reason, unaudited}`, in byte order of id, under `unmutated_sites`. The reasons are
   the three `sets-drop` exclusions (`creates_row`, `source_not_input`, `optional_field`),
-  `no_admissible_state` (`transition-to`) and `no_retarget_source` (`sets-retarget`). Each
+  `no_admissible_state` (`transition-to`), `no_retarget_source` (`sets-retarget`) and, since
+  story `error-swap-mutates-refusals-that-carry-a-payload`, `no_compatible_error_alternative`
+  (`error-swap`, a refusal whose `payload:` entry is keyed by its error). Each
   reason belongs to one class, and the manifest reader refuses a site whose reason is another
   class's.
 - The field is new and persisted, so it takes `ess-mutation-report/8` and

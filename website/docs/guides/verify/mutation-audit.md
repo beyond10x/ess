@@ -38,6 +38,12 @@ weakening it: a mutant that only says less could never be killed by a correct ta
   `guard-boundary/<command>/<outcome>/when_related/0`. A `when:` mutant keeps the id it had. The
   `{field, equals}` form of `when_subject:` and a row set's `where`, `count` and `forall` are not
   edited this way; a row set's `count:` bound has its own `guard-boundary` mutant.
+- `error-swap` makes a refusal report another error of the command's domain, the first in byte
+  order of name. Where the refusal's `payload:` says where its error's fields come from, the entry
+  is re-keyed to the new error when both errors have exactly the same fields (names and types),
+  and dropped otherwise; there the first error that compiles in its place is taken, and a refusal
+  none compiles for is listed as `no_compatible_error_alternative`. The change then says what
+  became of the entry.
 - `sets-drop` removes one `sets: field: input.x` entry from a branch that updates or moves an
   existing row. There the drop is not weaker: the field keeps what the row held instead of taking
   the input. Synthesis sends an input no `sets:` entry reads apart from what the row holds in the
@@ -84,7 +90,8 @@ something about the operator, not about the suite, and does not change the exit 
 A site a selected class excludes, or where it finds no edit the model admits, is *unmutated*: the
 report and the manifest list it under `unmutated_sites` as `{class, id, reason, unaudited}`, beside
 the stillborn mutants. The reasons are the `sets-drop` ones above, `no_admissible_state`
-(`transition-to`) and `no_retarget_source` (`sets-retarget`). An unmutated site is not a mutant
+(`transition-to`), `no_retarget_source` (`sets-retarget`) and `no_compatible_error_alternative`
+(`error-swap`). An unmutated site is not a mutant
 and is not counted in `counts`.
 
 A mutant can make one of its own outcomes unsatisfiable, so synthesis refuses that outcome's

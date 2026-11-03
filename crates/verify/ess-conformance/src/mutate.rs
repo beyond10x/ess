@@ -1554,6 +1554,10 @@ pub enum UnmutatedReason {
     /// A write on a creating branch or to an `Optional` field, with no other input of its type,
     /// whose type has no literal the audit writes or whose literal the model refuses.
     NoRetargetSource,
+    /// A refusal whose `payload:` says where its error's fields come from, where no other error of
+    /// the domain compiles in place of the reported one, its entry re-keyed or dropped
+    /// (beyond10x/ess#709).
+    NoCompatibleErrorAlternative,
 }
 
 impl UnmutatedReason {
@@ -1566,6 +1570,7 @@ impl UnmutatedReason {
             Self::OptionalField => SetsDropReason::OptionalField.as_str(),
             Self::NoAdmissibleState => "no_admissible_state",
             Self::NoRetargetSource => "no_retarget_source",
+            Self::NoCompatibleErrorAlternative => "no_compatible_error_alternative",
         }
     }
 
@@ -1577,6 +1582,7 @@ impl UnmutatedReason {
             }
             Self::NoAdmissibleState => MutantClass::TransitionTo,
             Self::NoRetargetSource => MutantClass::SetsRetarget,
+            Self::NoCompatibleErrorAlternative => MutantClass::ErrorSwap,
         }
     }
 }
@@ -1685,7 +1691,8 @@ pub fn selection(documents: &[Document], classes: &[MutantClass]) -> Selection {
     };
     // Whether the unmutated model compiles, asked once for the classes that compile a candidate.
     let compiles = (selected.contains(&MutantClass::TransitionTo)
-        || selected.contains(&MutantClass::SetsRetarget))
+        || selected.contains(&MutantClass::SetsRetarget)
+        || selected.contains(&MutantClass::ErrorSwap))
         && compile(documents.clone(), &SourceMap::new()).is_ok();
     let mut unmutated = Vec::new();
     let mut checked = Vec::new();
@@ -1694,6 +1701,9 @@ pub fn selection(documents: &[Document], classes: &[MutantClass]) -> Selection {
     }
     if selected.contains(&MutantClass::SetsRetarget) {
         literal_sites(documents, compiles, &mut checked, &mut unmutated);
+    }
+    if selected.contains(&MutantClass::ErrorSwap) {
+        error_payload_sites(documents, compiles, &mut checked, &mut unmutated);
     }
     if selected.contains(&MutantClass::SetsDrop) {
         unmutated.extend(
@@ -1950,6 +1960,113 @@ fn swap_candidates(ir: &EssIr, command: &str, event: &str) -> Vec<String> {
     found
 }
 
+/// Whether `outcome` says where the fields of the error it reports come from: a `payload:` entry
+/// keyed by that error (beyond10x/ess#709).
+fn carries_error_payload(outcome: &RawOutcome) -> bool {
+    outcome
+        .error
+        .as_ref()
+        .is_some_and(|error| outcome.payload.0.iter().any(|(key, _)| key == error))
+}
+
+/// The declared errors of `command`'s domain, in byte order of name: the candidates `error-swap`
+/// takes from.
+fn domain_errors(documents: &[Document], command: &str) -> Vec<String> {
+    let domain = namespace(command);
+    let mut errors: Vec<String> = documents
+        .iter()
+        .flat_map(|(_, file)| &file.errors)
+        .map(|error| error.name.to_string())
+        .filter(|error| namespace(error) == domain)
+        .collect();
+    errors.sort();
+    errors
+}
+
+/// The fields of the declared error `name`, as `(name, type)` in byte order of name; `None` where
+/// no error of that name is declared.
+fn error_fields(
+    documents: &[Document],
+    name: &str,
+) -> Option<Vec<(String, ess_domain::types::TypeRef)>> {
+    let declared = documents
+        .iter()
+        .flat_map(|(_, file)| &file.errors)
+        .find(|error| error.name.to_string() == name)?;
+    let mut fields: Vec<(String, ess_domain::types::TypeRef)> = declared
+        .fields
+        .iter()
+        .map(|field| (field.name.clone(), field.type_ref.clone()))
+        .collect();
+    fields.sort_by(|left, right| left.0.cmp(&right.0));
+    Some(fields)
+}
+
+/// Whether the declared errors `from` and `to` have exactly the same fields, names and types, so
+/// a `payload:` entry that fills one fills the other the same way.
+fn same_error_fields(documents: &[Document], from: &str, to: &str) -> bool {
+    error_fields(documents, from).is_some_and(|from| error_fields(documents, to) == Some(from))
+}
+
+/// Each `error-swap` site on a refusal that carries its error's payload (beyond10x/ess#709): the
+/// first other error of the domain, in byte order of name, that compiles in place of the reported
+/// one, its `payload:` entry re-keyed where the two errors have the same fields and dropped
+/// otherwise. A site no candidate compiles for is listed (`no_compatible_error_alternative`).
+/// Where the unmutated model does not compile nothing is compiled, and the first other error is
+/// taken, as for a refusal without a payload.
+fn error_payload_sites(
+    documents: &[Document],
+    compiles: bool,
+    found: &mut Vec<Mutation>,
+    unmutated: &mut Vec<UnmutatedSite>,
+) {
+    let texts = SourceMap::new();
+    for command in commands(documents) {
+        let command_name = command.name.to_string();
+        let errors = domain_errors(documents, &command_name);
+        for outcome in command
+            .outcomes
+            .iter()
+            .filter(|outcome| carries_error_payload(outcome))
+        {
+            let Some(current) = outcome.error.as_ref().map(ToString::to_string) else {
+                continue;
+            };
+            let outcome_name = outcome.name.to_string();
+            let mut candidates = errors
+                .iter()
+                .filter(|error| **error != current)
+                .map(|error| Mutation::ErrorSwap {
+                    command: command_name.clone(),
+                    outcome: outcome_name.clone(),
+                    error: error.clone(),
+                });
+            if !compiles {
+                found.extend(candidates.next());
+                continue;
+            }
+            let admitted = candidates.find(|mutation| {
+                apply(documents, mutation).is_ok_and(|mutated| compile(mutated, &texts).is_ok())
+            });
+            if let Some(mutation) = admitted {
+                found.push(mutation);
+            } else {
+                unmutated.push(UnmutatedSite {
+                    class: MutantClass::ErrorSwap,
+                    id: format!("{}/{command_name}/{outcome_name}", MutantClass::ErrorSwap),
+                    reason: UnmutatedReason::NoCompatibleErrorAlternative,
+                    unaudited: format!(
+                        "the error of `{command_name}/{outcome_name}` was not swapped: no other \
+                         error of its domain compiles in place of `{current}`, with its \
+                         `payload:` entry re-keyed where the fields are the same and dropped \
+                         otherwise"
+                    ),
+                });
+            }
+        }
+    }
+}
+
 /// Every site of every class.
 fn sites(documents: &[Document]) -> Vec<Mutation> {
     let mut found = Vec::new();
@@ -2001,14 +2118,7 @@ fn transition_sites(documents: &[Document], found: &mut Vec<Mutation>) {
 #[allow(clippy::too_many_lines)]
 fn outcome_sites(documents: &[Document], command: &RawCommandSpec, found: &mut Vec<Mutation>) {
     let command_name = command.name.to_string();
-    let domain = namespace(&command_name);
-    let mut errors: Vec<String> = documents
-        .iter()
-        .flat_map(|(_, file)| &file.errors)
-        .map(|error| error.name.to_string())
-        .filter(|error| namespace(error) == domain)
-        .collect();
-    errors.sort();
+    let errors = domain_errors(documents, &command_name);
     for outcome in &command.outcomes {
         let outcome_name = outcome.name.to_string();
         let at = |mutation: fn(String, String) -> Mutation| {
@@ -2098,7 +2208,12 @@ fn outcome_sites(documents: &[Document], command: &RawCommandSpec, found: &mut V
                 });
             }
         }
-        if let Some(current) = &outcome.error {
+        // A refusal that carries its error's payload is compiled for in `error_payload_sites`.
+        if let Some(current) = outcome
+            .error
+            .as_ref()
+            .filter(|_| !carries_error_payload(outcome))
+        {
             let current = current.to_string();
             if let Some(other) = errors.iter().find(|error| **error != current) {
                 found.push(Mutation::ErrorSwap {
@@ -2284,8 +2399,16 @@ fn describe(documents: &[Document], mutation: &Mutation) -> Option<String> {
             outcome,
             error,
         } => {
-            let current = self::outcome(documents, command, outcome)?.error.as_ref()?;
-            format!("`error: {current}` becomes `error: {error}`")
+            let found = self::outcome(documents, command, outcome)?;
+            let current = found.error.as_ref()?;
+            let swapped = format!("`error: {current}` becomes `error: {error}`");
+            if !carries_error_payload(found) {
+                swapped
+            } else if same_error_fields(documents, &current.to_string(), error) {
+                format!("{swapped}, and its `payload:` entry is keyed by `{error}`")
+            } else {
+                format!("{swapped}, and its `payload:` entry is dropped")
+            }
         }
         Mutation::EmitDrop {
             command,
@@ -2515,12 +2638,28 @@ pub fn apply(documents: &[Document], mutation: &Mutation) -> Result<Vec<Document
             outcome,
             error,
         } => {
+            let current = self::outcome(&mutated, command, outcome)
+                .and_then(|it| it.error.as_ref())
+                .map(ToString::to_string)
+                .ok_or_else(absent)?;
+            let same = same_error_fields(&mutated, &current, error);
             let error = ess_domain::name::QualifiedName::new(error).map_err(|e| e.to_string())?;
             let found = outcome_mut(&mut mutated, command, outcome).ok_or_else(absent)?;
-            if found.error.is_none() {
-                return Err(absent());
+            found.error = Some(error.clone());
+            // The entry that says where the reported error's fields come from follows the error
+            // where the two have the same fields, and goes otherwise (beyond10x/ess#709).
+            if same {
+                for (key, _) in &mut found.payload.0 {
+                    if key.to_string() == current {
+                        *key = error.clone();
+                    }
+                }
+            } else {
+                found
+                    .payload
+                    .0
+                    .retain(|(key, _)| key.to_string() != current);
             }
-            found.error = Some(error);
         }
         Mutation::EmitDrop {
             command,

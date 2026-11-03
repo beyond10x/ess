@@ -931,8 +931,10 @@ enum ConformCommand {
     /// model admits, is listed as unmutated with its reason, in the text and in the report and
     /// manifest (`unmutated_sites`): a sets-drop entry on a creating branch or of an Optional field,
     /// a transition no other state can be the target of (`no_admissible_state`), a write with no
-    /// sibling input and no admissible literal (`no_retarget_source`). The summary ends its
-    /// counts with how many of the sites considered have a scored mutant (killed or survived).
+    /// sibling input and no admissible literal (`no_retarget_source`), a refusal carrying its
+    /// error's payload where no other error compiles (`no_compatible_error_alternative`). The
+    /// summary ends its counts with how many of the sites considered have a scored mutant (killed
+    /// or survived).
     /// Listed sites do not change the exit status; `--fail-on-unmutated` makes a stillborn mutant
     /// or an unmutated site exit 3.
     ///

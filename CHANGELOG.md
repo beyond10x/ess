@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- `ess verify conform mutate`'s `error-swap` mutates a refusal that says where its error's fields come from (a `payload:` entry keyed by the error): the entry is re-keyed to the error swapped in where the two have the same fields and dropped otherwise, and the first error that compiles there is taken. Such a refusal had only a stillborn mutant (`ESS-COMMAND-001`, or `ESS-COMMAND-004` on an `unknown_instance` refusal); one where no error compiles is listed as `no_compatible_error_alternative` (story:error-swap-mutates-refusals-that-carry-a-payload).
 - `ess verify conform mutate --target interpreted` runs its synthesized scenarios on the scenario clock `run --target interpreted` uses, so on a model with a `now` guard the baseline executes every scenario `run` passes (it was refused as "nothing scored" or left them unsupported) and a guard mutant on that guard is scored by the scenario that pins it. A target that keeps its own clock declines the new defaulted `ConformanceTarget::take_command_clock` and runs as before; a model with no `now` guard keeps its report and manifest bytes (story:mutate-interpreted-synthesized-scenarios-run-on-the-scenario-clock).
 
 ## [0.84.0] — 2026-11-03
