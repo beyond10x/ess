@@ -4,7 +4,7 @@
 
 ### Added
 
-- Format `ess/34`: a compensating refusal (`compensates: true` beside `external:`) may delete its addressed row with `deletes:` and `instance:`; the interpreted target removes the row and answers the error, and its scenario requires the error, no event and the row absent from every immediate view. Below `ess/34` the delete keeps its `refusal_mutated_state`, now naming `ess/34`. From `ess/34` a named `when:` or `when_related:` refusal of a command addressing an existing row snapshots that row completely and requires it unchanged; below it suites keep their bytes. At every format, a further witness of a deleting branch (a conjunct of a compound guard's complement) requires the deleted row absent instead of present (beyond10x/ess#581, #585, #587; story:every-witness-reads-back-its-outcome-effect).
+- Format `ess/34`: a compensating refusal (`compensates: true` beside `external:`) may delete its addressed row with `deletes:` and `instance:`; the interpreted target removes the row and answers the error, and its scenario requires the error, no event and the row absent from every immediate view. Below `ess/34` the delete keeps its `refusal_mutated_state`, now naming `ess/34`; from `ess/34` the `missing_declaration` of a compensation declaring no change names `deletes:` in its message and hint. From `ess/34` a named `when:` or `when_related:` refusal of a command addressing an existing row snapshots that row completely and requires it unchanged; below it suites keep their bytes. At every format, a further witness of a deleting branch (a conjunct of a compound guard's complement) requires the deleted row absent instead of present (beyond10x/ess#581, #585, #587; story:every-witness-reads-back-its-outcome-effect).
 
 ### Changed
 

@@ -379,14 +379,25 @@ impl Specification {
             headers.as_slice(),
             [Some(format)] if format.major() >= FormatVersion::V23.major()
         );
+        // From `ess/34` a compensation declaring no change is pointed at `deletes:` too.
+        let names_compensating_delete = matches!(
+            headers.as_slice(),
+            [Some(format)] if format.major() >= FormatVersion::V34.major()
+        );
         crate::command::converting_input_namespace(reads_input_namespace, || {
             crate::command::set_effects::converting_deletions(admits_deletions, || {
                 crate::expression::attributes::converting(reads_attributes, || {
-                    for (source, file) in files {
-                        // Every refusal pushed from here to the end of `absorb` is this file's.
-                        mark(&mut provenance.read, &errors, Some(&source));
-                        parts.push(collected.absorb(&source, file, &mut errors));
-                    }
+                    crate::command::converting_compensating_deletes(
+                        names_compensating_delete,
+                        || {
+                            for (source, file) in files {
+                                // Every refusal pushed from here to the end of `absorb` is this
+                                // file's.
+                                mark(&mut provenance.read, &errors, Some(&source));
+                                parts.push(collected.absorb(&source, file, &mut errors));
+                            }
+                        },
+                    );
                 });
             });
         });

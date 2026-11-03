@@ -18,6 +18,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 
 use ess_compiler::ir::EssIr;
 use ess_compiler::{resolve::compile, source::SourceMap};
@@ -38,6 +39,7 @@ use ess_conformance::{
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use ess_primitives::node::Node;
+use sha2::{Digest, Sha256};
 
 /// The reproduction, `{format}` to fill, `{compensating}` the `consumed-on-failure` branch or
 /// nothing.
@@ -585,4 +587,66 @@ fn compensating_delete_refused_below_the_format() {
         "the refusal names the format: {errors}"
     );
     parsed(&tickets("ess/34", true)).unwrap_or_else(|errors| panic!("{errors}"));
+}
+
+/// The SHA-256 and length of `suite`'s canonical JSON, as the suite-bytes tables write it.
+fn suite_digest(suite: &ConformanceSuite) -> String {
+    let json = suite.to_canonical_json().expect("the suite serializes");
+    let hex = Sha256::digest(json.as_bytes())
+        .iter()
+        .fold(String::new(), |mut hex, byte| {
+            write!(hex, "{byte:02x}").expect("a string takes a write");
+            hex
+        });
+    format!("{hex}:{}", json.len())
+}
+
+/// The `when:` and `when_related:` refusals the story reads back completely keep their suite
+/// below `ess/34`: no complete snapshot, and the bytes the release before this story wrote.
+///
+/// `GUARDED` declares no delete, no `unknown_instance:` branch and no `Optional<T>` conversion,
+/// so nothing this wave changes at every format reaches it; below `ess/34` its suite is the base
+/// behaviour, pinned here by digest. The `ess/34` suite differs, so the pin sees the shapes.
+#[test]
+fn older_formats_keep_their_suite_bytes() {
+    const BELOW: &str = "d1b99c6b5035c4e34173000132f6f5a1ba72d72fac5b474f2f0604a35dd97128:22565";
+    let older = synthesize(&ir(&GUARDED.replace("{format}", "ess/33")));
+    for outcome in ["empty-note", "no-card"] {
+        let id = format!("demo.passes.Annotate/outcome/{outcome}");
+        let witness = scenario(&older, &id);
+        assert!(
+            !reads_complete(witness, "demo.passes.Annotate", outcome),
+            "below ess/34 `{id}` keeps its steps: {:#?}",
+            witness.steps
+        );
+    }
+    assert_eq!(suite_digest(&older.suite), BELOW, "the ess/33 suite moved");
+    let current = synthesize(&ir(&GUARDED.replace("{format}", "ess/34")));
+    assert_ne!(
+        suite_digest(&current.suite),
+        BELOW,
+        "from ess/34 the refusals read the row back, so the suite differs"
+    );
+}
+
+/// The refusal of a compensation declaring no change names `deletes:` from `ess/34` only.
+#[test]
+fn a_compensation_declaring_no_change_names_deletes_from_ess_34_only() {
+    let unchanged = |format: &str| {
+        tickets(format, true).replace(
+            "        deletes: demo.tickets.Ticket\n        instance: ticket_id\n        error: \
+             demo.tickets.ConsumedOnFailure",
+            "        error: demo.tickets.ConsumedOnFailure",
+        )
+    };
+    let current = parsed(&unchanged("ess/34")).expect_err("refused at ess/34");
+    assert!(
+        current.contains("deletes it") && current.contains("or with `deletes:` and `instance:`"),
+        "{current}"
+    );
+    let older = parsed(&unchanged("ess/33")).expect_err("refused at ess/33");
+    assert!(
+        older.contains("moves the row or writes its fields") && !older.contains("deletes:"),
+        "{older}"
+    );
 }
