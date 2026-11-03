@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- `ess-ui/1`: a row toggle that runs a command shows the row's state instead of always rendering off. An action takes an optional `checked:` expression (valid only with `as: toggle`, else `checked_needs_toggle`); without it, a `does:` toggle shows the `<expr>` of its one `bind` entry written `not <expr>`, and a `sets:` toggle keeps the key it sets. A `does:` toggle with neither warns `toggle_state_unknown` and renders off; no row field named like the action is read. One function, `ess_ui::toggle_state`, resolves the expression for the React project and the terminal, which marks a toggle in its action hint `[x]` or `[ ]`. A column `as: toggle` renders a disabled checkbox labelled by its column in React, not the text `true` or `false` (beyond10x/ess#723; story:a-toggle-shows-the-row-state-it-flips).
+- `ess-ui/1`: a row toggle that runs a command shows the row's state instead of always rendering off. An action takes an optional `checked:` expression (valid only with `as: toggle`, else `checked_needs_toggle`); without it, a `does:` toggle shows the `<expr>` of its one `bind` entry written `not <expr>` (every path in `<expr>` from a known root), and a `sets:` toggle keeps the key it sets. A `does:` toggle with neither warns `toggle_state_unknown` and renders off; no row field named like the action is read. One function, `ess_ui::toggle_state`, resolves the expression for the React project and the terminal, which marks a toggle in its action hint `[x]` or `[ ]`. A column `as: toggle` renders a disabled checkbox labelled by its column in React, not the text `true` or `false` (beyond10x/ess#723; story:a-toggle-shows-the-row-state-it-flips).
 
 ## [0.85.0] — 2026-11-03
 

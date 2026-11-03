@@ -2000,8 +2000,8 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `label` | `string` |   |   | button or menu text |
 | `as` | one of: `button` \| `icon` \| `toggle` \| `choice` \| `menu_item` \| `link` |   | `button` | presentation hint |
 | `choice` | [Node](#node) |   |   | options for as choice |
-| `loads` | [Reads](#reads) |   |   | current value for a header toggle or choice |
-| `checked` | `expr` |   |   | the state an `as: toggle` action shows, on when truthy; only on a toggle. Absent, a toggle with `does` shows the `<expr>` of its one `bind` entry written `not <expr>`, and a toggle with `sets` the key it sets; a row field named like the action is never read |
+| `loads` | [Reads](#reads) |   |   | a view the action declares it reads, checked against the model and given fixture rows; no renderer reads its rows for the action's value, so it sets no toggle's state |
+| `checked` | `expr` |   |   | the state an `as: toggle` action shows, on when truthy; only on a toggle. Absent, a toggle with `does` shows the `<expr>` of its one `bind` entry written `not <expr>` (every path in `<expr>` from a known root), and a toggle with `sets` the key it sets; a row field named like the action is never read |
 | `confirm` | one of: name of an [overlay](#overlay) \| record \{ `title`: `string`, `show`: optional `expr`, `confirm_label`: optional `string` \} |   |   | confirm first; confirming runs this action, whether or not the confirm declares `does` |
 | `optimistic` | `boolean` |   | `false` | apply the expected outcome at once and revert on refusal; requires: `{does.outcome: unique_for_input}` |
 | `bulk` | `boolean` |   | `false` | applies to the collection's selection |

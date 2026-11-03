@@ -1639,11 +1639,27 @@ impl App {
     /// Whether an `as: toggle` action is on, evaluating the one state expression
     /// [`ess_ui::toggle_state`] names, which the React project is handed too; a toggle whose
     /// state no expression names is off. `None` for an action that is not a toggle.
+    ///
+    /// The state is read in the filter grammar the library writes it in (`and`, `or`, `in`,
+    /// `not`, comparisons), resolving each path as `App::keeps` does, so the terminal and the
+    /// React runtime agree on every state the library names. A `checked:` the filter grammar does
+    /// not read, or that reads a path from a root it does not admit (a function form, `draft.*`),
+    /// is evaluated as a display expression, as before.
     pub(crate) fn toggle_on(&self, action: &Action, ctx: &Ctx<'_>) -> Option<bool> {
         (action.action_as == Some(ActionAs::Toggle)).then(|| {
-            ess_ui::toggle_state(action)
-                .and_then(|state| self.eval(&state.expr.0, ctx))
-                .is_some_and(|value| truthy(&value))
+            ess_ui::toggle_state(action).is_some_and(|state| {
+                let text = &state.expr.0;
+                match ess_ui::filter::parse(text).filter(ess_ui::filter::Predicate::allowed_roots) {
+                    Some(predicate) => truthy(&predicate.evaluate(&|path| {
+                        let segments: Vec<_> = path[1..].iter().map(String::as_str).collect();
+                        match (Scope { app: self, ctx }).resolve(&path[0], &segments[..1]) {
+                            Resolved::Whole(value) => ess_ui::filter::path(&value, &segments[1..]),
+                            Resolved::Root(value) => ess_ui::filter::path(&value, &segments),
+                        }
+                    })),
+                    None => self.eval(text, ctx).is_some_and(|value| truthy(&value)),
+                }
+            })
         })
     }
 
