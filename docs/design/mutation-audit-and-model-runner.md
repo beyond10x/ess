@@ -81,7 +81,11 @@ direction can and cannot show.
   pass 1).** It runs on the interpreter built as `run --target interpreted` builds it: on the
   scenario-clock runner (`now_offset::scenario_clock_runner`, shared with `run`), the interpreter
   handed that runner's command clock, so a `now` guard is decided at the instant of the step and a
-  scenario `run` passes executes in the baseline and against every mutant. Only a scenario the
+  scenario `run` passes executes in the baseline and against every mutant. The synthesized suites
+  run the same way on a target that takes the runner's command clock
+  (`ConformanceTarget::take_command_clock`, which the interpreter takes and every other target
+  declines), so a `now`-guarded model's synthesized scenarios execute in the audit too
+  (story:mutate-interpreted-synthesized-scenarios-run-on-the-scenario-clock). Only a scenario the
   baseline executed witnesses an outcome: one it answered `unsupported` or `skipped` requires that
   outcome of nothing that ran. Such an excluded authored scenario hides a kill whatever its body,
   because the mutant's copy runs against the mutant's interpreter rather than the target the

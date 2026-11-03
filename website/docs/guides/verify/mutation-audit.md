@@ -186,7 +186,8 @@ them; a refused document exits 1 before anything runs. Each authored scenario ru
 interpreter of your specification as part of the baseline, and against the interpreter of each
 mutant beside that mutant's synthesized suite, on the clock `run --target interpreted` uses: a
 `now` guard is decided at the instant of the step, so a scenario `run` passes executes here too.
-The interpreter of a mutant is an implementation of the mutant, so an authored scenario that fails
+The synthesized scenarios of `--target interpreted` run on that clock as well, authored scenarios
+or not. The interpreter of a mutant is an implementation of the mutant, so an authored scenario that fails
 there kills it, and the report names it among the killers as it names a synthesized scenario
 (`killed … — by <domain>/authored/<scenario>`). An authored scenario the baseline fails refuses the
 audit with `ESS-MUTATE-001`, as a synthesized one does. An authored scenario the baseline executed that requires an outcome makes that

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ess verify conform mutate --target interpreted` runs its synthesized scenarios on the scenario clock `run --target interpreted` uses, so on a model with a `now` guard the baseline executes every scenario `run` passes (it was refused as "nothing scored" or left them unsupported) and a guard mutant on that guard is scored by the scenario that pins it. A target that keeps its own clock declines the new defaulted `ConformanceTarget::take_command_clock` and runs as before; a model with no `now` guard keeps its report and manifest bytes (story:mutate-interpreted-synthesized-scenarios-run-on-the-scenario-clock).
+
 ## [0.84.0] — 2026-11-03
 
 ### Added

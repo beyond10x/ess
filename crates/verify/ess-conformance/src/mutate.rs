@@ -4657,7 +4657,16 @@ fn run_checked<T: ConformanceTarget>(
     let admitted = AdmittedSuite::from_suite(&suite)
         .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
     check(&admitted)?;
-    let executed = Runner::for_suite(&suite).run_admitted(&admitted, &new_target());
+    // A target that decides `now` by the step being executed is run as `ess verify conform run`
+    // runs it, on the scenario clock, as the authored half is (`AuthoredSuite::on`); any other on
+    // the runner it always had.
+    let mut target = new_target();
+    let mut clocked = crate::now_offset::scenario_clock_runner(&suite);
+    let executed = if target.take_command_clock(Box::new(clocked.command_clock())) {
+        clocked.run_admitted(&admitted, &target)
+    } else {
+        Runner::for_suite(&suite).run_admitted(&admitted, &target)
+    };
     Ok(Ran {
         observed: Observed::of(&executed, &suite),
         refused: Refused {

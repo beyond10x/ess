@@ -422,6 +422,23 @@ pub trait ConformanceTarget {
         ))
     }
 
+    /// Offers this target `clock`, the [command clock](crate::Runner::command_clock) of the runner
+    /// about to run it, and answers whether it now decides by it.
+    ///
+    /// For a caller that makes the target and the runner apart, as the mutation audit does
+    /// (`story:mutate-interpreted-synthesized-scenarios-run-on-the-scenario-clock`): a target that
+    /// takes it is run on the scenario clock
+    /// ([`scenario_clock_runner`](crate::now_offset::scenario_clock_runner)), as `ess verify
+    /// conform run --target interpreted` runs one, and a target that declines on the runner it
+    /// would have had. The default body declines, so a target with a clock of its own, or none,
+    /// keeps it and runs as before.
+    fn take_command_clock(
+        &mut self,
+        _clock: Box<dyn crate::occurrence_clock::CommandClock + Send>,
+    ) -> bool {
+        false
+    }
+
     /// Lets a window close and reports what its clock read, and what it published on the way.
     ///
     /// The eleventh method, and the one the whole elapsed-time feature rests on. §7's rule holds
