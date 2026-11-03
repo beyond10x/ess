@@ -101,8 +101,9 @@ timeline:
 /// "`DIR` is read and refused as `ess verify conform run --scenarios` reads it" — and `run
 /// --target interpreted --scenarios` passes this authored scenario, deciding the `now` guard at
 /// the step's instant (<https://github.com/beyond10x/ess/issues/510>). `mutate --scenarios
-/// --target interpreted` runs it on interpreters built with no command clock, so it is
-/// `unsupported` on the baseline and cannot kill the `error-swap` mutant it pins.
+/// --target interpreted` runs it, and since 0.85.0 the synthesized suite as well, on the
+/// scenario clock, so both the authored scenario and the synthesized `outcome/expired` kill the
+/// `error-swap` mutant it pins.
 #[test]
 fn an_authored_scenario_run_passes_kills_the_mutant_it_pins() {
     let directory = scratch("clocked");
@@ -162,7 +163,10 @@ fn an_authored_scenario_run_passes_kills_the_mutant_it_pins() {
     assert_eq!(mutant["verdict"], "killed", "{report:#}");
     assert_eq!(
         mutant["killers"],
-        serde_json::json!(["demo.tok/authored/long-expired"]),
+        serde_json::json!([
+            "demo.tok.Present/outcome/expired",
+            "demo.tok/authored/long-expired"
+        ]),
         "{mutant:#}"
     );
 }
