@@ -460,21 +460,19 @@ fn overlays_named_field_and_labels_load() {
 fn a_label_map_keyed_by_structural_words_stays_as_written() {
     let words = "{component: card, reads: t.Runs, tone_by: Toned, children: Kids, columns: Cols, \
                  args: Args, body: Body, field: Field, primitive: badge, labels: Labels, type: Type}";
-    let widgets = format!(
-        "widgets:
+    let widgets = "widgets:
   card:
     summary: A card.
-    params: {{}}
+    params: {}
     body:
-      - {{name: t, primitive: text, field: title}}
+      - {name: t, primitive: text, field: title}
   passed:
     summary: A badge whose labels are passed.
     params:
-      labels: {{type: {{map: {{key: string, value: string}}}}, required: true, note: the labels}}
+      labels: {type: {map: {key: string, value: string}}, required: true, note: the labels}
     body:
-      - {{name: badge, primitive: badge, text: row.state, labels: args.labels}}
-"
-    );
+      - {name: badge, primitive: badge, text: row.state, labels: args.labels}
+";
     let page = format!(
         "pages:
   p:
@@ -491,7 +489,7 @@ fn a_label_map_keyed_by_structural_words_stays_as_written() {
           - {{name: passed, component: passed, args: {{labels: {words}}}}}
 "
     );
-    let document = loaded(&[NAV_P, &widgets, &page]);
+    let document = loaded(&[NAV_P, widgets, &page]);
     let expected: LabelMap = [
         ("args", "Args"),
         ("body", "Body"),
