@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/witnesses-grants-and-mutation-sites-0.85.0
+repository: ess
+publishedAt: 2026-11-03T00:00:00Z
+title: Every witness reads back its effect, and the mutation audit covers grants and lists its gaps
+summary: >-
+  From format ess/34 a compensating refusal may delete its row, and a named refusal requires the
+  row it addressed unchanged. The mutation audit gains grant-drop and grant-add, lists the sites it
+  could not mutate, mutates refusals that carry a payload and runs on the scenario clock. Go
+  synthesis, the clap target and the generated explorers fix six defects.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.85.0
+  version: 0.85.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]

@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.85.0](#every-witness-reads-back-its-effect-and-the-mutation-audit-covers-grants-and-lists-its-gaps) | Every witness reads back its effect, and the mutation audit covers grants and lists its gaps | capability | significant |
 | [0.84.0](#generated-servers-refuse-what-their-openapi-refuses-and-generated-uis-call-their-bindings-routes) | Generated servers refuse what their OpenAPI refuses, and generated UIs call their binding's routes | capability | significant |
 | [0.83.0](#optional-list-appends-binding-refusals-that-check-event-identities-and-refusals-that-tell-states-apart) | Optional list appends, binding refusals that check event identities, and refusals that tell states apart | capability | notable |
 | [0.82.0](#binding-scenarios-that-check-event-identities-refusals-that-probe-the-record-and-validation-that-names-the-file) | Binding scenarios that check event identities, refusals that probe the record, and validation that names the file | capability | notable |
@@ -95,6 +96,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.85.0 — 2026-11-03
+
+### Every witness reads back its effect, and the mutation audit covers grants and lists its gaps
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.85.0)
+
+From format ess/34 a compensating refusal may delete its row, and a named refusal requires the row it addressed unchanged. The mutation audit gains grant-drop and grant-add, lists the sites it could not mutate, mutates refusals that carry a payload and runs on the scenario clock. Go synthesis, the clap target and the generated explorers fix six defects.
 
 ## 0.84.0 — 2026-11-03
 

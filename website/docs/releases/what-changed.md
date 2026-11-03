@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.85.0 — 2026-11-03
+
+### Every witness reads back its effect, and the mutation audit covers grants and lists its gaps
+
+capability · significant impact · [release post](https://beyond10x.github.io/ess/releases/every-witness-reads-back-and-the-audit-covers-grants) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.85.0)
+
+From format ess/34 a compensating refusal may delete its row, and a named refusal requires the row it addressed unchanged. The mutation audit gains grant-drop and grant-add, lists the sites it could not mutate, mutates refusals that carry a payload and runs on the scenario clock. Go synthesis, the clap target and the generated explorers fix six defects.
+
 ## 0.84.0 — 2026-11-03
 
 ### Generated servers refuse what their OpenAPI refuses, and generated UIs call their binding's routes

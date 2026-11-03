@@ -362,7 +362,7 @@ pub const FORMAT_HISTORY: &[FormatHistoryEntry] = &[
     },
     FormatHistoryEntry {
         major: 34,
-        release: None,
+        release: Some("0.85.0"),
         added: &[
             "A compensating refusal (`compensates: true` beside `external:`) may delete the row its `instance:` names, `deletes:` as an accepting branch spells it: the interpreted target removes the row and answers the error, and its scenario forces the branch, requires the error and no event, and requires the row absent from every immediate view of the entity. `creates:`, `affects:` and `emits:` beside the marker stay refused. Below `ess/34` the delete is refused as `refusal_mutated_state` naming `ess/34` (beyond10x/ess#585).",
         ],

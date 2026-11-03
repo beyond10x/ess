@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.85.0] — 2026-11-03
+
 ### Added
 
 - Format `ess/34`: a compensating refusal (`compensates: true` beside `external:`) may delete its addressed row with `deletes:` and `instance:`; the interpreted target removes the row and answers the error, and its scenario requires the error, no event and the row absent from every immediate view. Below `ess/34` the delete keeps its `refusal_mutated_state`, now naming `ess/34`; from `ess/34` the `missing_declaration` of a compensation declaring no change names `deletes:` in its message and hint. From `ess/34` a named `when:` or `when_related:` refusal of a command addressing an existing row snapshots that row completely and requires it unchanged; below it suites keep their bytes. At every format, a further witness of a deleting branch (a conjunct of a compound guard's complement) requires the deleted row absent instead of present (beyond10x/ess#581, #585, #587; story:every-witness-reads-back-its-outcome-effect).
@@ -25,6 +27,8 @@
 - A guard's boundary row for a `deletes:` branch is sent for a row of its own, arranged fresh, as for a `moves:` branch; it was sent for the row the scenario's own act had already deleted, so the interpreted target failed it (story:a-boundary-row-of-a-deleting-branch-is-sent-for-a-row-that-exists).
 - `ess verify conform mutate`'s `error-swap` mutates a refusal that says where its error's fields come from (a `payload:` entry keyed by the error): the entry is re-keyed to the error swapped in where the two have the same fields and dropped otherwise, and the first error that compiles there is taken. Such a refusal had only a stillborn mutant (`ESS-COMMAND-001`, or `ESS-COMMAND-004` on an `unknown_instance` refusal); one where no error compiles is listed as `no_compatible_error_alternative` (story:error-swap-mutates-refusals-that-carry-a-payload).
 - `ess verify conform mutate --target interpreted` runs its synthesized scenarios on the scenario clock `run --target interpreted` uses, so on a model with a `now` guard the baseline executes every scenario `run` passes (it was refused as "nothing scored" or left them unsupported) and a guard mutant on that guard is scored by the scenario that pins it. A target that keeps its own clock declines the new defaulted `ConformanceTarget::take_command_clock` and runs as before; a model with no `now` guard keeps its report and manifest bytes (story:mutate-interpreted-synthesized-scenarios-run-on-the-scenario-clock).
+
+Language: 0 general, 1 one-to-one, 0 part (general share 0%; cumulative 16%).
 
 ## [0.84.0] — 2026-11-03
 
