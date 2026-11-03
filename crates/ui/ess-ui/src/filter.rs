@@ -117,7 +117,9 @@ pub fn keeps(text: &str, resolve: &impl Fn(&[String]) -> Value) -> bool {
     })
 }
 
-fn truthy(value: &Value) -> bool {
+/// Whether a filter value counts as true: null, `false`, zero, NaN, empty text and an empty list do
+/// not; every other value does, the text `false` included, as the React runtime reads it.
+pub fn truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(value) => *value,

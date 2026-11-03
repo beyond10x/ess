@@ -126,7 +126,9 @@ fn fnv(text: &str) -> u64 {
 /// a toggle reads the `checked` expression the generator resolves, and a toggle column is a
 /// switch; re-pinned for story:a-refused-node-is-reported-at-its-own-path: an export takes a
 /// params map and an empty state a title; re-pinned for
-/// story:a-server-paged-collection-has-a-page-size-control: the collection's pager footer.
+/// story:a-server-paged-collection-has-a-page-size-control: the collection's pager footer;
+/// re-pinned for story:a-toggle-shows-the-row-state-it-flips: a display expression reads a
+/// negative number literal (`expr.ts`).
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
@@ -136,7 +138,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x036a_4d67_6dc4_1ac6),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x7083_7fde_11d7_77ea;
+const PLAIN_PROJECT: u64 = 0x0b80_5930_96e4_2ab0;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {
