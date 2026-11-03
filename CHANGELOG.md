@@ -6,6 +6,7 @@
 
 - Go synthesis copies a required event field into an Optional command input as a pointer to its value, so the generated module builds; it assigned the value into the `*T` field and `go build` refused it. An Optional value into a required binding input or payload field stays refused by validation as `type_mismatch` unless a binding condition or an outcome guard proves it present (story:go-synthesis-refuses-an-optional-into-required-assignment).
 - Go synthesis of a served component named `server` or `wire`, or of two served components with one Go stem, writes the component's surface file under a repaired name (`server/servercomponent.go`); it panicked on `two artifacts claimed server/server.go`. Two artifacts claiming one path are now a `path-collision` target failure naming the path and both artifacts, never a panic (story:go-synthesis-repairs-a-served-component-named-server).
+- `--target clap` generates one crate for components that declare the same `cli.binary`, whose tree defines every group and command of every such component, as `main.rs` already dispatched them; the tree held the first component's only. `ess specify validate` refuses, as `duplicate_declaration`, a group, command or view that two components sharing a binary both declare, naming both. A model with one component per binary keeps its bytes (story:components-sharing-a-cli-binary-generate-one-tree-with-every-group).
 
 ## [0.84.0] — 2026-11-03
 
