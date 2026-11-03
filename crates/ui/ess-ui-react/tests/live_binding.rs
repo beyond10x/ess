@@ -130,7 +130,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x036a_4d67_6dc4_1ac6),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x01b0_8449_b3e8_318a;
+const PLAIN_PROJECT: u64 = 0x2f87_9021_a051_4bd8;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {
