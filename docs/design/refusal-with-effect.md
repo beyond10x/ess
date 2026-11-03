@@ -47,7 +47,7 @@ as leaving the key out, as `returns: false` is.
 |---|---|---|
 | `compensates: true` under a source below `ess/22` | `unsupported_format_version` (`ESS-COMMAND-009`), the only error the branch earns | `…outcomes.<o>.compensates` |
 | `compensates: true` on a branch that names no `error:` | `conflicting_declaration` (`ESS-COMMAND-004`) | `…outcomes.<o>.compensates` |
-| `compensates: true` on a refusal that declares no change (no `moves:`/`updates:` + `instance:`), or an `updates:` that sets nothing | `missing_declaration` (`ESS-COMMAND-005`) | `…outcomes.<o>.compensates` |
+| `compensates: true` on a refusal that declares no change (no `moves:`/`updates:` + `instance:`, nor from `ess/34` `deletes:` + `instance:`), or an `updates:` that sets nothing; from `ess/34` its message and hint name `deletes:` | `missing_declaration` (`ESS-COMMAND-005`) | `…outcomes.<o>.compensates` |
 | `compensates: true` on a refusal not decided by `external:` | `refusal_mutated_state` (`ESS-COMMAND-004`) | `…outcomes.<o>` |
 | `compensates: true` beside `creates:` or `affects:`, or beside `deletes:` below `ess/34` | `refusal_mutated_state` (`ESS-COMMAND-004`) | `…outcomes.<o>` |
 | `compensates: true` beside `emits:` | `refusal_mutated_state` (`ESS-COMMAND-004`), the existing emits rule, unchanged | `…outcomes.<o>` |

@@ -425,23 +425,66 @@ fn validate_compensation(outcome: &Outcome, at: &ConstructRef) -> ValidationErro
             ),
         );
     } else if unchanged {
-        errors.push(
-            ValidationError::at(
-                marker,
-                ValidationCode::MissingDeclaration,
-                format!(
-                    "outcome `{}` declares `compensates: true` and no change to its addressed \
-                         row; a compensating refusal moves the row or writes its fields",
-                    outcome.name
-                ),
-            )
-            .with_hint(
-                "declare the change with `moves:` or `updates:`, `instance:` and `sets:`, or \
-                     drop `compensates:`",
-            ),
-        );
+        errors.push(unchanged_compensation(
+            outcome,
+            marker,
+            names_compensating_delete(),
+        ));
     }
     errors
+}
+
+/// The refusal of a `compensates: true` branch that declares no change to its addressed row.
+///
+/// `deletes` is set while an `ess/34` source converts (`converting_compensating_deletes`), where a
+/// compensating refusal may delete its row, so the text names `deletes:` there and is unchanged
+/// below (`story:every-witness-reads-back-its-outcome-effect`).
+fn unchanged_compensation(
+    outcome: &Outcome,
+    marker: ConstructRef,
+    deletes: bool,
+) -> ValidationError {
+    let (change, declare) = if deletes {
+        (
+            "moves the row, writes its fields or deletes it",
+            "declare the change with `moves:` or `updates:`, `instance:` and `sets:`, or with \
+             `deletes:` and `instance:`, or drop `compensates:`",
+        )
+    } else {
+        (
+            "moves the row or writes its fields",
+            "declare the change with `moves:` or `updates:`, `instance:` and `sets:`, or drop \
+             `compensates:`",
+        )
+    };
+    ValidationError::at(
+        marker,
+        ValidationCode::MissingDeclaration,
+        format!(
+            "outcome `{}` declares `compensates: true` and no change to its addressed row; a \
+             compensating refusal {change}",
+            outcome.name
+        ),
+    )
+    .with_hint(declare)
+}
+
+thread_local! {
+    static NAMES_COMPENSATING_DELETE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `convert` with the refusal of a compensation declaring no change naming `deletes:` when
+/// `admitted` (an `ess/34` source), restoring what was set before, so a nested assembly cannot leak
+/// its format into its caller's.
+pub(crate) fn converting_compensating_deletes<T>(admitted: bool, convert: impl FnOnce() -> T) -> T {
+    let before = NAMES_COMPENSATING_DELETE.with(|cell| cell.replace(admitted));
+    let converted = convert();
+    NAMES_COMPENSATING_DELETE.with(|cell| cell.set(before));
+    converted
+}
+
+fn names_compensating_delete() -> bool {
+    NAMES_COMPENSATING_DELETE.with(std::cell::Cell::get)
 }
 
 /// The refusal of a `compensates: true` branch no `external:` cause decides, without its hint.
