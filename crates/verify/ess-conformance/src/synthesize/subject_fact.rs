@@ -8403,6 +8403,21 @@ fn send_for_row(
         )),
         None => steps.push(ScenarioStep::ExpectNoError),
     }
+    // A deleting branch leaves no row to observe: the further row is read back absent, as the
+    // branch's own row is (`story:every-witness-reads-back-its-outcome-effect`, beyond10x/ess#581).
+    if let Some(deleted) = outcome
+        .subject
+        .as_ref()
+        .filter(|own| own.effect == ResolvedEffect::Deletes)
+    {
+        steps.extend(super::absence_reads(
+            ir,
+            deleted,
+            Some(&arrangement.instance),
+            source,
+        ));
+        return Ok(());
+    }
     let held = (arrangement.state.clone(), arrangement.settled.clone());
     let mut left = arrangement.settled.clone();
     absorb(

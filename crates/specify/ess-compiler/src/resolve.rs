@@ -5972,25 +5972,40 @@ fn names(values: impl IntoIterator<Item = String>) -> String {
 /// subject of its own on a command whose other branches address an existing row through the input
 /// (beyond10x/ess#587): forcing the branch changes nothing on that row, which its scenario reads
 /// back. A `compensates: true` refusal names its subject and keeps its own read-back.
+///
+/// From `ess/34` so does a refusal decided by input (`when:`) or by a related row
+/// (`when_related:`) on such a command (`story:every-witness-reads-back-its-outcome-effect`):
+/// every named refusal of a command addressing an existing row changes nothing on it. Below
+/// `ess/34` both keep their observation and their suite's bytes.
 fn complete_refusal(major: u32, command: &CommandSpec, outcome: &Outcome) -> bool {
     let named = outcome.error.is_some();
     let wrong_state = major >= 7 && outcome.condition == OutcomeCondition::WrongState;
     let stored = major >= ess_domain::system::FormatVersion::V23.major()
         && outcome.condition.reads_subject_fact()
         && outcome.subject.is_none();
+    let addresses = || {
+        command.outcomes.iter().any(|branch| {
+            branch.subject.as_ref().is_some_and(|subject| {
+                subject.effect != Effect::Creates
+                    && subject.surface() == InstanceSurface::CommandInput
+            })
+        })
+    };
     let external = major >= ess_domain::system::FormatVersion::V26.major()
         && matches!(
             outcome.condition,
             OutcomeCondition::External { .. } | OutcomeCondition::ExternalWhen { .. }
         )
         && outcome.subject.is_none()
-        && command.outcomes.iter().any(|branch| {
-            branch.subject.as_ref().is_some_and(|subject| {
-                subject.effect != Effect::Creates
-                    && subject.surface() == InstanceSurface::CommandInput
-            })
-        });
-    named && (wrong_state || stored || external)
+        && addresses();
+    let guarded = major >= ess_domain::system::FormatVersion::V34.major()
+        && matches!(
+            outcome.condition,
+            OutcomeCondition::When(_) | OutcomeCondition::Related { .. }
+        )
+        && outcome.subject.is_none()
+        && addresses();
+    named && (wrong_state || stored || external || guarded)
 }
 
 /// The IR's spelling of an outcome's condition.

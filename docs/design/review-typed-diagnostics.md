@@ -337,12 +337,16 @@ implies the guard of an input-guarded refusal answered before it is refused as
 `unreachable_branch` at `command.<name>.outcomes.<branch>`, from the command's own `site()`, so it
 adds no head literal below.
 
+`command.rs` gains one typed site with format `ess/34`: a compensating external refusal that
+declares `deletes:` below `ess/34` is refused as `refusal_mutated_state` at the outcome's
+`ConstructRef`, so it adds no head literal below.
+
 <!-- inventory:begin -->
 ```text
 accessor.rs 1 0
 actor.rs 3 4
 binding.rs 36 0
-command.rs 15 66
+command.rs 15 67
 component.rs 15 9
 domain.rs 5 0
 entity.rs 19 6
