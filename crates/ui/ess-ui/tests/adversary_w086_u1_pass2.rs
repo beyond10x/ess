@@ -84,7 +84,11 @@ fn assert_run_state(document: &Document, path: &str) {
             all_paths(document)
         );
     };
-    assert_eq!(map, &run_state(), "`labels: run_state` resolved at `{path}`");
+    assert_eq!(
+        map,
+        &run_state(),
+        "`labels: run_state` resolved at `{path}`"
+    );
     assert_eq!(name.as_deref(), Some("run_state"), "at `{path}`");
 }
 
@@ -382,9 +386,8 @@ pages:
     sections:
       - {name: rows, component: collection, reads: t.Runs, columns: [{field: state, as: badge, labels: run_state}]}
 ";
-    let document = load(&[RUN_STATE, pages]).unwrap_or_else(|error| {
-        panic!("pages named `field` and `labels` load as before: {error}")
-    });
+    let document = load(&[RUN_STATE, pages])
+        .unwrap_or_else(|error| panic!("pages named `field` and `labels` load as before: {error}"));
     assert_run_state(&document, "pages/field/sections/rows/columns/state");
     assert_run_state(&document, "pages/labels/sections/rows/columns/state");
 }
@@ -419,8 +422,14 @@ fn widgets_named_field_and_labels_load_and_expand() {
     });
     assert_run_state(&document, "widgets/field/body/badge");
     assert_run_state(&document, "widgets/labels/body/badge");
-    assert_run_state(&document, "pages/p/sections/summary/children/one/body/badge");
-    assert_run_state(&document, "pages/p/sections/summary/children/two/body/badge");
+    assert_run_state(
+        &document,
+        "pages/p/sections/summary/children/one/body/badge",
+    );
+    assert_run_state(
+        &document,
+        "pages/p/sections/summary/children/two/body/badge",
+    );
 }
 
 #[test]
@@ -507,7 +516,10 @@ fn a_label_map_keyed_by_structural_words_stays_as_written() {
         "pages/p/sections/summary/item/passed/body/badge",
     ] {
         let Some((map, _)) = found.get(path) else {
-            panic!("no labels at `{path}`: {:?}", found.keys().collect::<Vec<_>>());
+            panic!(
+                "no labels at `{path}`: {:?}",
+                found.keys().collect::<Vec<_>>()
+            );
         };
         assert_eq!(map, &expected, "at `{path}`");
     }
@@ -575,5 +587,8 @@ pages:
         assert_run_state(&document, &path);
         toned += 1;
     }
-    assert_eq!(toned, 7, "two in the widget declaration, two on page `labels`, two in its use, one on page `field`");
+    assert_eq!(
+        toned, 7,
+        "two in the widget declaration, two on page `labels`, two in its use, one on page `field`"
+    );
 }
