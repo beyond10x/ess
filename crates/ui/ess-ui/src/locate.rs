@@ -7,8 +7,10 @@
 //!
 //! A position is read from the container keys above the node only. A list entry's segment (its
 //! `name`, `field` or `view`) and the key of an entry of a map of named nodes (`state`,
-//! `overlays`, …) are names the author chose: a form field `{field: action}` is a field, and a
-//! state named `states` a state, whatever a key of that name would hold.
+//! `overlays`, … and the document's own maps of names, such as `tone_maps`) are names the author
+//! chose: a form field `{field: action}` is a field, a state named `states` a state and a label
+//! map named `action` a label map, whatever a key of that name would hold. A section's `states`
+//! and the states in it are read as such only where the schema puts them, on a section.
 
 use ess_yaml::{Mapping, Value};
 use serde::de::DeserializeOwned;
@@ -42,11 +44,12 @@ fn visit<'a>(value: &'a Value, at: &NodePath, keys: &[Option<&'a str>]) -> Optio
     };
     // A page kind is a partial template, read as types only inside the pages that use it.
     let template = at.segments().first().map(String::as_str) == Some("page_kinds");
-    let names = keys
-        .last()
-        .copied()
-        .flatten()
-        .is_some_and(|key| named_maps().contains(key));
+    let grammar = Grammar::get();
+    let names = match keys {
+        [Some(key)] => grammar.named.contains(*key) || grammar.document_named.contains(*key),
+        [.., Some(key)] => grammar.named.contains(*key),
+        _ => false,
+    };
     for (key, child) in mapping {
         let Some(key) = key.as_str() else { continue };
         if template
@@ -120,7 +123,7 @@ fn classify(keys: &[Option<&str>], mapping: &Mapping) -> Option<Expected> {
         (2, Some("shells")) => return Some(Expected::Shell),
         (2, Some("channels")) => return Some(Expected::Channel),
         (2, Some("widgets")) => return Some(Expected::Widget),
-        (4, Some("pages")) if at(2) == Some("sections") => return Some(Expected::Section),
+        _ if section_at(keys) => return Some(Expected::Section),
         _ => {}
     }
     if from_end(2) == Some("overlays")
@@ -128,13 +131,19 @@ fn classify(keys: &[Option<&str>], mapping: &Mapping) -> Option<Expected> {
     {
         return Some(Expected::Overlay);
     }
-    match (from_end(2), from_end(1)) {
-        (_, Some("states")) => return Some(Expected::States),
-        (Some("states"), Some("empty")) => return Some(Expected::Empty),
-        (Some("states"), Some("failed")) => return Some(Expected::Failed),
-        (Some("states"), Some("forbidden")) => return Some(Expected::Forbidden),
-        (Some("states"), Some("stale")) => return Some(Expected::Stale),
-        _ => {}
+    if states_at(keys) {
+        return Some(Expected::States);
+    }
+    if let Some((last, above)) = keys.split_last() {
+        if states_at(above) {
+            match *last {
+                Some("empty") => return Some(Expected::Empty),
+                Some("failed") => return Some(Expected::Failed),
+                Some("forbidden") => return Some(Expected::Forbidden),
+                Some("stale") => return Some(Expected::Stale),
+                _ => {}
+            }
+        }
     }
     let positions = Schema::embedded().positions();
     let held = |set: &BTreeSet<(String, Shape)>, key: Option<&str>, shape: Shape| {
@@ -155,26 +164,80 @@ fn classify(keys: &[Option<&str>], mapping: &Mapping) -> Option<Expected> {
     None
 }
 
-/// The containers whose entries are named by their key (`NodePath.syntax.containers`, those with
-/// `child_name: map_key`): a key of such a map is a name, not a container key.
-fn named_maps() -> &'static BTreeSet<String> {
-    static NAMED: OnceLock<BTreeSet<String>> = OnceLock::new();
-    NAMED.get_or_init(|| {
-        let schema: Value = ess_yaml::from_str(crate::SCHEMA).expect("the embedded schema is YAML");
-        let named: BTreeSet<String> = schema["constructs"]["NodePath"]["syntax"]["containers"]
-            .as_sequence()
-            .into_iter()
-            .flatten()
-            .filter(|entry| entry["child_name"].as_str() == Some("map_key"))
-            .flat_map(|entry| entry["container"].as_sequence().into_iter().flatten())
-            .filter_map(|container| container.as_str().map(str::to_owned))
-            .collect();
-        assert!(
-            named.contains("state"),
-            "the schema names the containers whose entries are named by their key"
-        );
-        named
-    })
+/// A section of a page (`pages.<page>.<key>[<entry>]`), at a key where `Page` holds a list of
+/// `Section`. A page kind's sections are read only inside the pages that use the kind.
+fn section_at(keys: &[Option<&str>]) -> bool {
+    matches!(
+        keys,
+        [Some("pages"), None, Some(key), None] if Grammar::get().sections.contains(*key)
+    )
+}
+
+/// A section's states: a key where `Section` holds its `SectionStates`, on a section.
+fn states_at(keys: &[Option<&str>]) -> bool {
+    matches!(
+        keys.split_last(),
+        Some((Some(key), above)) if Grammar::get().section_states.contains(*key) && section_at(above)
+    )
+}
+
+/// The parts of the embedded schema that say which keys are names and where a section and its
+/// states stand.
+struct Grammar {
+    /// The containers whose entries are named by their key (`NodePath.syntax.containers`, those
+    /// with `child_name: map_key`), at any depth: a key of such a map is a name.
+    named: BTreeSet<String>,
+    /// The document's fields that map a name to a value (`themes`, `tone_maps`, …): at the top
+    /// level a key of such a map is a name too.
+    document_named: BTreeSet<String>,
+    /// The keys at which `Page` holds a list of `Section`.
+    sections: BTreeSet<String>,
+    /// The keys at which `Section` holds its `SectionStates`.
+    section_states: BTreeSet<String>,
+}
+
+impl Grammar {
+    fn get() -> &'static Self {
+        static GRAMMAR: OnceLock<Grammar> = OnceLock::new();
+        GRAMMAR.get_or_init(|| {
+            let schema: Value =
+                ess_yaml::from_str(crate::SCHEMA).expect("the embedded schema is YAML");
+            let constructs = &schema["constructs"];
+            let named: BTreeSet<String> = constructs["NodePath"]["syntax"]["containers"]
+                .as_sequence()
+                .into_iter()
+                .flatten()
+                .filter(|entry| entry["child_name"].as_str() == Some("map_key"))
+                .flat_map(|entry| entry["container"].as_sequence().into_iter().flatten())
+                .filter_map(|container| container.as_str().map(str::to_owned))
+                .collect();
+            let fields_where = |construct: &str, holds: &dyn Fn(&Value) -> bool| {
+                constructs[construct]["fields"]
+                    .as_mapping()
+                    .into_iter()
+                    .flatten()
+                    .filter(|(_, spec)| holds(&spec["type"]))
+                    .filter_map(|(key, _)| key.as_str().map(str::to_owned))
+                    .collect::<BTreeSet<String>>()
+            };
+            let grammar = Self {
+                document_named: fields_where("Document", &|ty| {
+                    ty["map"]["key"].as_str() == Some("name")
+                }),
+                sections: fields_where("Page", &|ty| ty["list"].as_str() == Some("Section")),
+                section_states: fields_where("Section", &|ty| ty.as_str() == Some("SectionStates")),
+                named,
+            };
+            assert!(
+                grammar.named.contains("state")
+                    && grammar.document_named.contains("tone_maps")
+                    && grammar.sections.contains("sections")
+                    && grammar.section_states.contains("states"),
+                "the schema names the maps of names, a page's sections and a section's states"
+            );
+            grammar
+        })
+    }
 }
 
 fn refused<T: DeserializeOwned>(value: &Value) -> Option<String> {

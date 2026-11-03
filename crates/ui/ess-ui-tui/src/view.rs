@@ -559,8 +559,10 @@ impl App {
             }
             Lifecycle::Empty => {
                 let empty = states.and_then(|states| states.empty.as_ref());
+                // `title: ""` is no title, as React draws no heading for it.
                 let mut lines: Vec<Line<'static>> = empty
                     .and_then(|empty| empty.title.clone())
+                    .filter(|title| !title.is_empty())
                     .map(|title| Line::styled(title, bold()))
                     .into_iter()
                     .collect();
