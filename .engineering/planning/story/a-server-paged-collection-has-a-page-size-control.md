@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-server-paged-collection-has-a-page-size-control
 kind: story
-status: active
+status: implemented
 title: A server-paged collection has a page-size control and a pager footer
 summary: reads.pager names the page and size params of a server-paged read; React renders a per-page select and a pager footer on the bound state paths (D12; beyond10x/ess#723)
 tags:
@@ -28,10 +28,11 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T16:24:12Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-03T16:24:12Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-11-03T21:47:48Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}}
 ---
 # Story: a server-paged collection has a page-size control and a pager footer
 

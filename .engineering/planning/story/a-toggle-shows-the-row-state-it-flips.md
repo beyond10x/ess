@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-toggle-shows-the-row-state-it-flips
 kind: story
-status: active
+status: implemented
 title: A toggle shows the row state it flips
 summary: 'A command toggle derives its state from the not-bind it flips or a checked: expression, and a toggle column renders a switch (D16, B1, D3; beyond10x/ess#723)'
 tags:
@@ -42,10 +42,11 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T16:24:11Z", actor: "human:timo", revision: 11}
 - {from: "proposed", to: "active", at: "2026-11-03T16:24:11Z", actor: "human:timo", revision: 12}
+- {from: "active", to: "implemented", at: "2026-11-03T21:47:47Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1,"review_outcome":4}}}
 ---
 # Story: a toggle shows the row state it flips
 

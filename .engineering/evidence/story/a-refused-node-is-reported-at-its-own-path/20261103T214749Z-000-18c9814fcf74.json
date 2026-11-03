@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-03T21:47:49Z",
+  "actor": "human:timo",
+  "artifact": "story:a-refused-node-is-reported-at-its-own-path",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "UI-adopter wave 1 0.86.0 staged local gate on integration/ess-0.86.0: R (xtask regen, every --check, release verify 0.86.0) and S8 S6 S7 on 917dc235a2, S7r (generate_ui_http with the ui-http servers) S1-S4 exit 0, S5 (clippy all-targets, fmt-check) exit 0 after a5ec01db01 (FINAL=0, 2026-11-03T21:47Z); peak target 10G",
+    "reference": "a5ec01db01"
+  }
+}

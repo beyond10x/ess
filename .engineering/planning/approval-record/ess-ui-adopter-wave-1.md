@@ -12,7 +12,7 @@ relations:
 - decides: story:a-toggle-shows-the-row-state-it-flips
 - decides: story:a-server-paged-collection-has-a-page-size-control
 - decides: story:a-refused-node-is-reported-at-its-own-path
-revision: 2
+revision: 3
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-03T16:24:10Z", actor: "human:timo", revision: 2}
 ---
@@ -107,19 +107,17 @@ Decider: operator
 
 ## Wave record
 
-Scratch root `~/.cache/ess-wave-0.86.0/`; trees under the worktree manager's `b10x/ess/` root, each
-building into its own `target/`.
+Scratch root `~/.cache/ess-wave-0.86.0/`. The trees are under the worktree manager's `b10x/ess/` root, and each builds into its own `target/`.
 
 | unit | tree id | branch | build dir | scratch | stage |
 |---|---|---|---|---|---|
-| int | ess-w086-int | integration/ess-0.86.0 | tree `target/` | `~/.cache/ess-wave-0.86.0/` | open |
-| U1 | ess-w086-u1 | unit/ess-0.86.0-u1 | tree `target/` | `~/.cache/ess-wave-0.86.0/u1/` | planned |
-| U2 | ess-w086-u2 | unit/ess-0.86.0-u2 | tree `target/` | `~/.cache/ess-wave-0.86.0/u2/` | planned |
-| U3 | ess-w086-u3 | unit/ess-0.86.0-u3 | tree `target/` | `~/.cache/ess-wave-0.86.0/u3/` | planned |
-| U4 | ess-w086-u4 | unit/ess-0.86.0-u4 | tree `target/` | `~/.cache/ess-wave-0.86.0/u4/` | planned |
+| int | ess-w086-int | integration/ess-0.86.0 | tree `target/` | `~/.cache/ess-wave-0.86.0/` | gate green (FINAL=0, 2026-11-03T21:47Z), release prepare 917dc235a2 |
+| U1 | ess-w086-u1 | unit/ess-0.86.0-u1 | tree `target/` | `~/.cache/ess-wave-0.86.0/u1/` | merged (fix round 1); adversary pass 2 approved |
+| U2 | ess-w086-u2 | unit/ess-0.86.0-u2 | tree `target/` | `~/.cache/ess-wave-0.86.0/u2/` | merged (fix round 3); adversary pass 4 approved |
+| U3 | ess-w086-u3 | unit/ess-0.86.0-u3 | tree `target/` | `~/.cache/ess-wave-0.86.0/u3/` | merged (fix round 2); adversary pass 3 approved |
+| U4 | ess-w086-u4 | unit/ess-0.86.0-u4 | tree `target/` | `~/.cache/ess-wave-0.86.0/u4/` | merged (fix round 1); adversary pass 2 approved |
 
-Pre-flight 2026-11-03: / 141G free of 848G. Trees of earlier waves are still registered with the
-worktree manager; none is this wave's and none is touched.
+All four stories are implemented, each with test_result and review_outcome evidence. Pre-flight 2026-11-03: / had 141G free of 848G. Earlier waves' trees are still registered with the worktree manager; none belongs to this wave and none is touched.
 
 ## Waves output
 

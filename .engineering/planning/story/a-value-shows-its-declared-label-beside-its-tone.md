@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-value-shows-its-declared-label-beside-its-tone
 kind: story
-status: active
+status: implemented
 title: A value shows its declared label beside its tone
 summary: Boolean and enum values on columns and badges show labels the document declares (labels:, label_maps), in React and the terminal (D17, B7; beyond10x/ess#723)
 tags:
@@ -38,10 +38,11 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: cited
   path: website/docs/reference/ess-ui.md
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T16:24:10Z", actor: "human:timo", revision: 11}
 - {from: "proposed", to: "active", at: "2026-11-03T16:24:11Z", actor: "human:timo", revision: 12}
+- {from: "active", to: "implemented", at: "2026-11-03T21:47:46Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 # Story: a value shows its declared label beside its tone
 
