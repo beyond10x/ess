@@ -207,6 +207,9 @@ pub const CHECKS: &[Check] = &[
     // `header.title_from` names a section that reads: the title's record is its first row
     // (beyond10x/ess#354).
     rule("header_record"),
+    // An export's params read `selection.<field>` only on a bulk action, where the selection is
+    // in scope (beyond10x/ess#723).
+    rule("export_selection"),
 ];
 
 fn severity_of(id: &str) -> Severity {

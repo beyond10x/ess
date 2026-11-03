@@ -5,10 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use ess_ui::{
-    Action, ActionAs, ActionConfirm, Body, Composite, Document, FixtureIndex, GuardThen, Header,
-    Located, NavPages, NodeCommon, NodePath, NodeRef, OverlayKind, PageLayout, Paging,
-    PlacementProfile, Primitive, Profile, Reads, RegionKind, State, StateClass, Store, TabFields,
-    TypeExpr, WidgetUse,
+    Action, ActionAs, ActionConfirm, Body, Composite, Document, Export, ExportParams, FixtureIndex,
+    GuardThen, Header, Located, NavPages, NodeCommon, NodePath, NodeRef, OverlayKind, PageLayout,
+    Paging, PlacementProfile, Primitive, Profile, Reads, RegionKind, State, StateClass, Store,
+    TabFields, TypeExpr, WidgetUse,
 };
 use ess_yaml::Value;
 
@@ -42,6 +42,62 @@ pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mu
     degrades_cover(&located, options, sink);
     crate::enums::run(document, &located, sink);
     crate::names::overlay_params(&located, sink);
+}
+
+/// `export_selection`: an export's params read `selection.<field>` only on a bulk action (one of
+/// a collection's `bulk_actions`, or `bulk: true`), the one place the section's selection is in
+/// the action's scope. Anywhere else the path reads nothing and the view is read without it.
+fn export_selection(sink: &mut Sink, path: &NodePath, action: &Action, export: &Export) {
+    let bulk = action.bulk
+        || path.segments().iter().rev().nth(1).map(String::as_str) == Some("bulk_actions");
+    if bulk {
+        return;
+    }
+    let params = path.child("export").child("params");
+    let written: Vec<(NodePath, &str)> = match &export.params {
+        None => Vec::new(),
+        Some(ExportParams::Expression(expr)) => vec![(params, expr.0.as_str())],
+        Some(ExportParams::Map(map)) => map
+            .iter()
+            .map(|(name, expr)| (params.child(name), expr.0.as_str()))
+            .collect(),
+    };
+    for (at, text) in written {
+        for field in selection_paths(text) {
+            sink.push(
+                "export_selection",
+                &at,
+                format!(
+                    "`selection.{field}` reads the section's selection, which only a bulk action \
+                     has in scope (`bulk_actions` or `bulk: true`)"
+                ),
+            );
+        }
+    }
+}
+
+/// The field of each `selection.<field>` path in an expression, where `selection` stands alone
+/// (not the tail of `section.<name>.selection` or of a longer name).
+fn selection_paths(text: &str) -> Vec<&str> {
+    let name_char = |character: char| character.is_ascii_alphanumeric() || character == '_';
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(offset) = text[from..].find("selection.") {
+        let start = from + offset;
+        let field_start = start + "selection.".len();
+        let field_end = text[field_start..]
+            .find(|character: char| !name_char(character))
+            .map_or(text.len(), |end| field_start + end);
+        let alone = text[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|before| !name_char(before) && before != '.');
+        if alone && field_end > field_start {
+            found.push(&text[field_start..field_end]);
+        }
+        from = field_start;
+    }
+    found
 }
 
 /// The keys of an account menu entry every renderer draws: the terminal reads an entry as a whole
@@ -930,6 +986,9 @@ impl Checker<'_> {
             self.reads(sink, &path.child("loads"), reads);
         }
         toggle_state(sink, path, action);
+        if let Some(export) = &action.export {
+            export_selection(sink, path, action, export);
+        }
     }
 
     /// `opens_resolves`: in a page, the page's overlays (its kind's included, since the page was

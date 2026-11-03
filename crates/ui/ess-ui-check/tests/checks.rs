@@ -333,6 +333,27 @@ fn header_record() {
 }
 
 #[test]
+fn export_selection() {
+    let report = report(&page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}, \
+         {name: list, component: collection, selection: multiple, reads: t.All, columns: [name], \
+         row_actions: [{name: one, export: {reads: t.Bundle, as: zip, params: {ids: selection.id}}}], \
+         bulk_actions: [{name: all, export: {reads: t.Bundle, as: zip, params: {ids: selection.id}}}]}]}",
+    ));
+    let finding = trips_in(
+        &report,
+        "export_selection",
+        "pages/p/sections/list/row_actions/one/export/params/ids",
+    );
+    assert!(finding.message.contains("selection.id"), "{finding:?}");
+    assert_eq!(
+        tripped(&report, "export_selection").len(),
+        1,
+        "the bulk action may read the selection: {report:#?}"
+    );
+}
+
+#[test]
 fn layout_complete() {
     let text = page(
         "{kind: detail_page, title: P, layout: {columns: [{name: main, sections: []}]}, \

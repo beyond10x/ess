@@ -22,7 +22,8 @@ export interface ActionSpec {
   bind?: Record<string, string>;
   opens?: string;
   navigate?: { to: string; params?: Record<string, string> };
-  export?: { reads: string; as: string; params?: string };
+  /** `params`: one expression (`same_as(<section>)`), or each param's expression. */
+  export?: { reads: string; as: string; params?: string | Record<string, string> };
   upload?: { accept: string[]; does: string };
   copy?: string;
   sets?: Record<string, string>;
@@ -186,7 +187,19 @@ export async function runAction(
     }
     scope.navigate(hrefFor(action.navigate.to, params));
   } else if (action.export) {
-    const params = action.export.params ? evaluate(action.export.params, values) : {};
+    const written = action.export.params;
+    let params: unknown = {};
+    if (typeof written === "string") {
+      params = evaluate(written, values);
+    } else if (written) {
+      // Each param is evaluated in the action's scope: on a bulk action `selection.<field>`
+      // reads that field of every selected row.
+      const each: Record<string, unknown> = {};
+      for (const [name, expr] of Object.entries(written)) {
+        each[name] = evaluate(expr, values);
+      }
+      params = each;
+    }
     const result = await dataAdapter().read({
       view: action.export.reads,
       params: isObject(params) ? params : {},

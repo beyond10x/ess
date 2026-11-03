@@ -48,8 +48,8 @@ use ess_ui::binding::{
     Binding, CommandRoute, EnumLookup, EnumVariant, ErrorRoute, ModelEnums, QueryParam, ViewRoute,
 };
 use ess_ui::{
-    Action, ActorSource, Body, Carries, Channel, Composite, Document, Expr, NavPages, NodePath,
-    NodeRef, Paging, Reads, Region, RegionKind,
+    Action, ActorSource, Body, Carries, Channel, Composite, Document, ExportParams, Expr, NavPages,
+    NodePath, NodeRef, Paging, Reads, Region, RegionKind,
 };
 use ess_yaml::Value;
 
@@ -899,10 +899,10 @@ fn enum_values(
 static NONE: BTreeMap<String, Expr> = BTreeMap::new();
 
 /// The parameters a view named at `node` is bound with, when the document states them: a read's
-/// `params:` map; nothing, for a menu's `from_view` and an export without `params:`; and for an
-/// export's `params: same_as(<section>)`, that section's read's map. `None` where the document
-/// does not say — any other export expression, a channel's view, a confirm's references, a
-/// completion — so no parameter is reported unbound there.
+/// `params:` map; nothing, for a menu's `from_view` and an export without `params:`; an export's
+/// `params:` map; and for an export's `params: same_as(<section>)`, that section's read's map.
+/// `None` where the document does not say — any other export expression, a channel's view, a
+/// confirm's references, a completion — so no parameter is reported unbound there.
 fn bound_params<'a>(
     document: &'a Document,
     node: &NodePath,
@@ -911,7 +911,8 @@ fn bound_params<'a>(
     match bound {
         Bound::Read(read) => Some(read.params),
         Bound::Nothing | Bound::Export(None) => Some(&NONE),
-        Bound::Export(Some(expr)) => {
+        Bound::Export(Some(ExportParams::Map(params))) => Some(params),
+        Bound::Export(Some(ExportParams::Expression(expr))) => {
             let section = expr
                 .0
                 .trim()
@@ -1036,8 +1037,8 @@ enum Bound<'a> {
     Read(Read<'a>),
     /// No `params:` slot, so nothing: a dynamic menu's `from_view`.
     Nothing,
-    /// An export's `params:` expression, when it has one.
-    Export(Option<&'a Expr>),
+    /// An export's `params:`, when it has them: a map, or one expression.
+    Export(Option<&'a ExportParams>),
     /// Something the document does not state may supply them — a channel's session, a confirm's
     /// context, a completion's input — so an unbound parameter is not reported there.
     Elsewhere,
