@@ -23,7 +23,7 @@ relations:
 - decides: story:mutate-interpreted-synthesized-scenarios-run-on-the-scenario-clock
 - decides: story:the-mutation-audit-reports-the-sites-it-could-not-mutate
 - decides: story:the-mutation-audit-covers-actor-grants
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-03T05:57:18Z", actor: "human:timo", revision: 2}
 ---
@@ -160,3 +160,16 @@ guard declared above an unknown-instance branch. The precedence section of
 `docs/design/cross-record-and-stored-field-guards.md` makes that order the correct one, and
 `ess/29` already refuses the reverse order. The precedence code is not changed. Bullet 2 stays as
 the story's acceptance, and the story moves to implemented at the wave's close.
+
+## D413 (orchestrator, 2026-11-03): MUT1 review finding F1 follow-up
+
+
+MUT1 fix round 1 (ee16051c22) lists a `sets-retarget` literal no view or derivation reads as
+`unobserved_field`. `sets-retarget/oracle.order.PlaceOrder/accepted/weight_grams` stays pinned as an
+equivalent survivor in `ORACLE_SURVIVORS` (4b58a5ee95), because its invariant names the field. A
+narrower notion of "read" (an invariant alone does not observe a field) would change the story's
+acceptance, so it is not done in W2: filed as the backlog draft
+story:a-literal-on-a-field-only-an-invariant-names-is-not-a-survivor, citing the oracle fixture's
+default exit moving from 3 to 1 in ebed16afd6. Not accepted.
+
+Recorded here because review-result:adversary-w2-mut1-pass-1 is immutable.
