@@ -1063,8 +1063,8 @@ fn store_name(store: &Store) -> Option<&'static str> {
 /// `checked_needs_toggle`: only a toggle shows a state, so `checked:` on any other action would
 /// be read by no renderer. `toggle_state_unknown`: a toggle that runs a command shows the state
 /// [`ess_ui::toggle_state`] names; with neither `checked:` nor one `bind` entry written
-/// `not <expr>` it names none, and every renderer draws the toggle off. A toggle with `loads`
-/// takes its value from that read instead, so it is not reported.
+/// `not <expr>` it names none, and every renderer draws the toggle off. No renderer reads a
+/// toggle's state from its `loads`, so `loads` exempts nothing.
 fn toggle_state(sink: &mut Sink, path: &NodePath, action: &Action) {
     let toggle = action.action_as == Some(ActionAs::Toggle);
     if action.checked.is_some() && !toggle {
@@ -1074,11 +1074,7 @@ fn toggle_state(sink: &mut Sink, path: &NodePath, action: &Action) {
             "`checked` is the state of a toggle; write `as: toggle` or drop `checked`",
         );
     }
-    if toggle
-        && action.does.is_some()
-        && action.loads.is_none()
-        && ess_ui::toggle_state(action).is_none()
-    {
+    if toggle && action.does.is_some() && ess_ui::toggle_state(action).is_none() {
         sink.push(
             "toggle_state_unknown",
             path,
