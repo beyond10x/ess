@@ -1329,7 +1329,7 @@ fn domain_idents(ir: &EssIr) -> Vec<(QualifiedName, String)> {
 
 /// Moves a package name out of the way of one already taken, by appending a word that says what
 /// it is.
-fn repair(taken: &mut BTreeSet<String>, mut candidate: String, suffix: &str) -> String {
+pub(crate) fn repair(taken: &mut BTreeSet<String>, mut candidate: String, suffix: &str) -> String {
     while taken.contains(&candidate) {
         candidate.push_str(suffix);
     }

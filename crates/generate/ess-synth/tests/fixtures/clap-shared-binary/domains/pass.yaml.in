@@ -1,0 +1,57 @@
+domain: desk.pass
+
+types:
+  - name: desk.pass.Building
+    kind: enum
+    variants: [North, South, Annex]
+
+entities:
+  - name: desk.pass.Visit
+    identity:
+      name: visit_id
+      type: Uuid
+    fields:
+      - name: building
+        type: desk.pass.Building
+    lifecycle:
+      initial: Expected
+      states: [Expected]
+      terminal: [Expected]
+
+commands:
+  - name: desk.pass.RegisterVisit
+    naming:
+      wire: register
+      summary: Record a visit somebody is expecting
+    input:
+      - name: building
+        type: desk.pass.Building
+    outcomes:
+      - name: registered
+        creates: desk.pass.Visit
+        instance: visit_id
+        emits:
+          - desk.pass.VisitRegistered
+        payload:
+          desk.pass.VisitRegistered:
+            building: input.building
+        summary: The visit is recorded.
+
+events:
+  - name: desk.pass.VisitRegistered
+    fields:
+      - name: visit_id
+        type: Uuid
+      - name: building
+        type: desk.pass.Building
+
+views:
+  - name: desk.pass.ExpectedVisits
+    source: desk.pass.Visit
+    consistency: eventual
+    fields:
+      - name: visit_id
+        type: Uuid
+    naming:
+      wire: expected
+      summary: Who is expected

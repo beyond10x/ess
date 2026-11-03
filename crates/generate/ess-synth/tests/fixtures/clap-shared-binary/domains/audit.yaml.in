@@ -1,0 +1,41 @@
+domain: desk.audit
+
+entities:
+  - name: desk.audit.Entry
+    identity:
+      name: entry_id
+      type: Uuid
+    fields:
+      - name: note
+        type: String
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+
+commands:
+  - name: desk.audit.RecordEntry
+    naming:
+      wire: record
+      summary: Record an entry in the desk's log
+    input:
+      - name: note
+        type: String
+    outcomes:
+      - name: recorded
+        creates: desk.audit.Entry
+        instance: entry_id
+        emits:
+          - desk.audit.EntryRecorded
+        payload:
+          desk.audit.EntryRecorded:
+            note: input.note
+        summary: The entry is recorded.
+
+events:
+  - name: desk.audit.EntryRecorded
+    fields:
+      - name: entry_id
+        type: Uuid
+      - name: note
+        type: String

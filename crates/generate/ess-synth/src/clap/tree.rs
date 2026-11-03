@@ -229,7 +229,7 @@ pub(crate) fn tree_module(ir: &EssIr, surfaces: &[Surface<'_>], provenance: &Pro
          #[must_use]\n\
          pub fn command() -> ::clap::Command {\n",
     );
-    let Some(surface) = surfaces.first() else {
+    let Some(first) = surfaces.first() else {
         out.push_str(
             "    // No component declares `reached_by: command_line`, so there is no tree.\n\
              \x20   ::clap::Command::new(\"unnamed\")\n}\n",
@@ -240,42 +240,51 @@ pub(crate) fn tree_module(ir: &EssIr, surfaces: &[Surface<'_>], provenance: &Pro
         out,
         "    ::clap::Command::new({:?})\n        .subcommand_required(true)\n        \
          .arg_required_else_help(true)",
-        surface.cli.binary.as_str()
+        first.cli.binary.as_str()
     );
-    if let Some(summary) = &surface.component.naming.summary {
+    if let Some(summary) = &first.component.naming.summary {
         let _ = write!(out, "\n        .about({summary:?})");
     }
-    for handle in &surface.cli.commands {
-        let _ = write!(
-            out,
-            "\n{}",
-            command_source(ir, ir.command(handle), "        ")
-        );
-    }
-    for handle in &surface.cli.views {
-        let _ = write!(out, "\n{}", view_source(ir, handle, "        "));
-    }
-    for group in &surface.cli.groups {
-        let _ = write!(
-            out,
-            "\n        .subcommand(\n            ::clap::Command::new({:?})\n                \
-             .subcommand_required(true)\n                .arg_required_else_help(true)",
-            group.name.as_str()
-        );
-        if let Some(summary) = &group.summary {
-            let _ = write!(out, "\n                .about({summary:?})");
-        }
-        for handle in &group.commands {
+    // Every component declaring this binary contributes its words to the one tree, in component
+    // order: the order `main.rs` dispatches them in. Validation refuses a word two of them
+    // claim, so the merge never places one twice
+    // (story:components-sharing-a-cli-binary-generate-one-tree-with-every-group).
+    for surface in surfaces
+        .iter()
+        .filter(|surface| surface.cli.binary == first.cli.binary)
+    {
+        for handle in &surface.cli.commands {
             let _ = write!(
                 out,
                 "\n{}",
-                command_source(ir, ir.command(handle), "                ")
+                command_source(ir, ir.command(handle), "        ")
             );
         }
-        for handle in &group.views {
-            let _ = write!(out, "\n{}", view_source(ir, handle, "                "));
+        for handle in &surface.cli.views {
+            let _ = write!(out, "\n{}", view_source(ir, handle, "        "));
         }
-        out.push_str(",\n        )");
+        for group in &surface.cli.groups {
+            let _ = write!(
+                out,
+                "\n        .subcommand(\n            ::clap::Command::new({:?})\n                \
+                 .subcommand_required(true)\n                .arg_required_else_help(true)",
+                group.name.as_str()
+            );
+            if let Some(summary) = &group.summary {
+                let _ = write!(out, "\n                .about({summary:?})");
+            }
+            for handle in &group.commands {
+                let _ = write!(
+                    out,
+                    "\n{}",
+                    command_source(ir, ir.command(handle), "                ")
+                );
+            }
+            for handle in &group.views {
+                let _ = write!(out, "\n{}", view_source(ir, handle, "                "));
+            }
+            out.push_str(",\n        )");
+        }
     }
     out.push_str(
         "\n        .subcommand(\n            ::clap::Command::new(\"completions\")\n                \

@@ -343,7 +343,7 @@ accessor.rs 1 0
 actor.rs 3 4
 binding.rs 36 0
 command.rs 15 66
-component.rs 15 9
+component.rs 15 10
 domain.rs 5 0
 entity.rs 19 6
 expression.rs 1 0

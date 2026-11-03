@@ -1409,6 +1409,84 @@ pub fn validate_components(
         }
     }
 
+    errors.extend(validate_shared_binaries(components));
+    errors
+}
+
+/// Components that declare one `cli.binary` are one command tree, so a word two of them claim is
+/// typed once and answered twice.
+///
+/// | refused | code |
+/// |---|---|
+/// | a group two components sharing a binary both declare | [`DuplicateDeclaration`](ValidationCode::DuplicateDeclaration) |
+/// | a command or view two components sharing a binary both place | [`DuplicateDeclaration`](ValidationCode::DuplicateDeclaration) |
+///
+/// The second is [`ComponentSpec::validate_command_line`]'s "a command has one path", across the
+/// components the binary joins. Each refusal names every component that claims the word.
+fn validate_shared_binaries(
+    components: &BTreeMap<ComponentName, ComponentSpec>,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let mut binaries: BTreeMap<&CliName, Vec<(&ComponentName, &CommandLineSurface)>> =
+        BTreeMap::new();
+    for (name, component) in components {
+        if let Some(cli) = &component.cli {
+            binaries.entry(&cli.binary).or_default().push((name, cli));
+        }
+    }
+    for (binary, sharing) in binaries {
+        if sharing.len() < 2 {
+            continue;
+        }
+        let mut groups: BTreeMap<&CliName, BTreeSet<&ComponentName>> = BTreeMap::new();
+        let mut placed: BTreeMap<&QualifiedName, BTreeSet<&ComponentName>> = BTreeMap::new();
+        for (name, cli) in &sharing {
+            for group in &cli.groups {
+                groups.entry(&group.name).or_default().insert(name);
+                for placed_name in group.commands.iter().chain(&group.views) {
+                    placed.entry(placed_name).or_default().insert(name);
+                }
+            }
+            for placed_name in cli.commands.iter().chain(&cli.views) {
+                placed.entry(placed_name).or_default().insert(name);
+            }
+        }
+        // Sited at the last claimant in component order: the first keeps the word, as the tree
+        // would have given it.
+        let refuse =
+            |errors: &mut ValidationErrors, what: String, owners: &BTreeSet<&ComponentName>| {
+                let last = owners
+                    .iter()
+                    .next_back()
+                    .map_or_else(String::new, ToString::to_string);
+                errors.push(
+                    ValidationError::at(
+                        ConstructRef::new(ConstructKind::Component, last).key("cli"),
+                        ValidationCode::DuplicateDeclaration,
+                        format!(
+                            "{what} is declared by more than one component sharing the binary \
+                         `{binary}`: {}",
+                            quoted(owners)
+                        ),
+                    )
+                    .with_hint(
+                        "a binary several components share is one command tree, and a word in it \
+                     has one owner; keep it in one component's `cli:` block, or give the other \
+                     component its own binary",
+                    ),
+                );
+            };
+        for (group, owners) in &groups {
+            if owners.len() > 1 {
+                refuse(&mut errors, format!("the group `{group}`"), owners);
+            }
+        }
+        for (placed_name, owners) in &placed {
+            if owners.len() > 1 {
+                refuse(&mut errors, format!("a place for `{placed_name}`"), owners);
+            }
+        }
+    }
     errors
 }
 
@@ -2408,6 +2486,114 @@ cli:
             "the refusal names the command with no place: {}",
             error.message
         );
+    }
+
+    // ---- components sharing one binary --------------------------------------------------
+    //
+    // story:components-sharing-a-cli-binary-generate-one-tree-with-every-group.
+
+    /// A command-line component placing `command` under `group` of `binary`.
+    fn sharing(name: &str, binary: &str, group: &str, command: &str) -> ComponentSpec {
+        component(&format!(
+            "\
+component: {name}
+reached_by: command_line
+accepts:
+  commands:
+    - {command}
+cli:
+  binary: {binary}
+  groups:
+    - name: {group}
+      commands:
+        - {command}
+"
+        ))
+    }
+
+    fn duplicates(errors: &ValidationErrors) -> Vec<&ValidationError> {
+        errors
+            .as_slice()
+            .iter()
+            .filter(|error| error.code == ValidationCode::DuplicateDeclaration)
+            .collect()
+    }
+
+    #[test]
+    fn two_components_sharing_a_binary_with_their_own_groups_are_accepted() {
+        let errors = check(&catalogue([
+            sharing(
+                "audit-cli",
+                "desk",
+                "audit",
+                "billing.invoice.CreateInvoice",
+            ),
+            sharing("visits-cli", "desk", "visits", "billing.email.SendEmail"),
+        ]));
+        assert!(duplicates(&errors).is_empty(), "{errors:?}");
+    }
+
+    #[test]
+    fn a_group_two_components_sharing_a_binary_both_declare_is_refused_naming_both() {
+        let errors = check(&catalogue([
+            sharing(
+                "audit-cli",
+                "desk",
+                "inspect",
+                "billing.invoice.CreateInvoice",
+            ),
+            sharing("visits-cli", "desk", "inspect", "billing.email.SendEmail"),
+        ]));
+        let refused = duplicates(&errors);
+        assert_eq!(refused.len(), 1, "{errors:?}");
+        let message = &refused[0].message;
+        for named in ["`inspect`", "`desk`", "`audit-cli`", "`visits-cli`"] {
+            assert!(message.contains(named), "names {named}: {message}");
+        }
+    }
+
+    #[test]
+    fn a_command_two_components_sharing_a_binary_both_place_is_refused_naming_both() {
+        // `billing.invoice` has no owner here, so both may accept the command; the shared tree
+        // would still give it two paths.
+        let errors = check(&catalogue([
+            sharing(
+                "audit-cli",
+                "desk",
+                "audit",
+                "billing.invoice.CreateInvoice",
+            ),
+            sharing(
+                "visits-cli",
+                "desk",
+                "visits",
+                "billing.invoice.CreateInvoice",
+            ),
+        ]));
+        let refused = duplicates(&errors);
+        assert_eq!(refused.len(), 1, "{errors:?}");
+        let message = &refused[0].message;
+        for named in [
+            "`billing.invoice.CreateInvoice`",
+            "`audit-cli`",
+            "`visits-cli`",
+        ] {
+            assert!(message.contains(named), "names {named}: {message}");
+        }
+    }
+
+    #[test]
+    fn one_group_name_under_two_binaries_is_two_trees_and_accepted() {
+        let errors = check(&catalogue([
+            sharing(
+                "audit-cli",
+                "audit",
+                "inspect",
+                "billing.invoice.CreateInvoice",
+            ),
+            sharing("visits-cli", "visits", "inspect", "billing.email.SendEmail"),
+        ]));
+        assert!(duplicates(&errors).is_empty(), "{errors:?}");
     }
 
     #[test]
