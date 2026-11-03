@@ -1195,7 +1195,7 @@ constructs:
       by another field, with or without a channel. `endpoint` and `derived` are
       traceability for retrofits. `pager` names, among `params`, the param that carries a
       server read's page and the one that carries its page size, each bound to a
-      `state.<path>`: a renderer shows Previous, the page and Next on those paths, and with a
+      `state.<path>`: a collection shows Previous, the page and Next on those paths, and with a
       `size` a per-page select over `sizes` that returns to page 1.
     shorthand:
       - {accepts: {ref: view}, expands_to: {view: $value}}
@@ -1213,7 +1213,7 @@ constructs:
       params:      {type: {map: {key: name, value: expr}}, note: view params bound to state}
       filter:      {type: expr, note: "Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging."}
       paging:      {type: {enum: [server, client, cursor, append, none]}, default: none, note: who pages}
-      pager:       {type: {record: {page: name, size: {optional: name}, sizes: {optional: {list: integer}}}}, sizes_default: [25, 50, 100], note: "the params of this read that carry the page and the page size, and the sizes offered; only with `paging: server`"}
+      pager:       {type: {record: {page: name, size: {optional: name}, sizes: {optional: {list: integer}}}}, sizes_default: [25, 50, 100], note: "the params of this read that carry the page and the page size, and the sizes offered; only on a collection's `reads`, with `paging: server`"}
       debounce:    {type: duration, note: coalesce param changes before reading}
       refresh:     {type: {one_of: [duration, expr]}, note: poll interval}
       cache:       {type: {record: {store: Store, ttl: {optional: duration}}}, default: {store: {resolve: {class: view_cache}}}, note: where the result is cached}
@@ -1700,6 +1700,7 @@ checks:
     - {id: pager_paging, subject: "reads.pager", must: use_server_paging, severity: error}
     - {id: pager_params, subject: ["reads.pager.page", "reads.pager.size"], must: name_distinct_params_of_the_read_each_bound_to_a_state_path, severity: error}
     - {id: pager_sizes, subject: "reads.pager.sizes", must: list_at_least_one_size_each_at_least_1, severity: error}
+    - {id: pager_outside_collection, subject: "reads.pager", must: belong_to_a_collection_reads, severity: error}
     - {id: account_menu_keys, subject: "shells.*.regions.*.props.actions[] of an account_menu", must_be_in: [name, label, opens, does, sets, navigate], severity: error}
     - {id: checked_needs_toggle, subject: "**.checked", must: sit_on_an_as_toggle_action, severity: error}
     - {id: toggle_state_unknown, subject: "**.checked absent on an as toggle action with does and no loads", must: [write_checked, or_bind_exactly_one_input_as_not_expr], severity: warning}

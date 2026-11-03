@@ -1937,7 +1937,7 @@ How the UI reads ESS views, runs ESS commands, and runs without a backend.
 
 The ESS view a section or composite reads — or, while designing, a named placeholder backed by a fixture.
 
-Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `key` names the field that identifies a row when it is not `id`, so row paths and row actions address the rows of a view keyed by another field, with or without a channel. `endpoint` and `derived` are traceability for retrofits. `pager` names, among `params`, the param that carries a server read's page and the one that carries its page size, each bound to a `state.<path>`: a renderer shows Previous, the page and Next on those paths, and with a `size` a per-page select over `sizes` that returns to page 1.
+Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `key` names the field that identifies a row when it is not `id`, so row paths and row actions address the rows of a view keyed by another field, with or without a channel. `endpoint` and `derived` are traceability for retrofits. `pager` names, among `params`, the param that carries a server read's page and the one that carries its page size, each bound to a `state.<path>`: a collection shows Previous, the page and Next on those paths, and with a `size` a per-page select over `sizes` that returns to page 1.
 
 **Properties**
 
@@ -1950,7 +1950,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 | `params` | map of `name` → `expr` |   |   | view params bound to state |
 | `filter` | `expr` |   |   | Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging. |
 | `paging` | one of: `server` \| `client` \| `cursor` \| `append` \| `none` |   | `none` | who pages |
-| `pager` | record \{ `page`: `name`, `size`: optional `name`, `sizes`: optional list of `integer` \} |   |   | the params of this read that carry the page and the page size, and the sizes offered; only with `paging: server`; sizes default: `[25, 50, 100]` |
+| `pager` | record \{ `page`: `name`, `size`: optional `name`, `sizes`: optional list of `integer` \} |   |   | the params of this read that carry the page and the page size, and the sizes offered; only on a collection's `reads`, with `paging: server`; sizes default: `[25, 50, 100]` |
 | `debounce` | `duration` |   |   | coalesce param changes before reading |
 | `refresh` | one of: `duration` \| `expr` |   |   | poll interval |
 | `cache` | record \{ `store`: [Store](#store), `ttl`: optional `duration` \} |   | `{store: {resolve: {class: view_cache}}}` | where the result is cached |
@@ -1998,6 +1998,7 @@ fixture: fixtures/forecast.yaml
 | `pager_paging` | `reads.pager` | `{must: use_server_paging}` | error |
 | `pager_params` | `reads.pager.page`, `reads.pager.size` | `{must: name_distinct_params_of_the_read_each_bound_to_a_state_path}` | error |
 | `pager_sizes` | `reads.pager.sizes` | `{must: list_at_least_one_size_each_at_least_1}` | error |
+| `pager_outside_collection` | `reads.pager` | `{must: belong_to_a_collection_reads}` | error |
 
 ### Action
 
@@ -2731,6 +2732,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `pager_paging` | [Reads](#reads) | `reads.pager` | `{must: use_server_paging}` | error |
 | `pager_params` | [Reads](#reads) | `reads.pager.page`, `reads.pager.size` | `{must: name_distinct_params_of_the_read_each_bound_to_a_state_path}` | error |
 | `pager_sizes` | [Reads](#reads) | `reads.pager.sizes` | `{must: list_at_least_one_size_each_at_least_1}` | error |
+| `pager_outside_collection` | [Reads](#reads) | `reads.pager` | `{must: belong_to_a_collection_reads}` | error |
 | `account_menu_keys` | every node | `shells.*.regions.*.props.actions[] of an account_menu` | `{must_be_in: [name, label, opens, does, sets, navigate]}` | error |
 | `checked_needs_toggle` | [Action](#action) | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
 | `toggle_state_unknown` | [Action](#action) | `**.checked absent on an as toggle action with does and no loads` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |

@@ -2176,6 +2176,26 @@ fn pager_sizes() {
 }
 
 #[test]
+fn pager_outside_collection() {
+    let record = paged_page("paging: server, pager: {page: p}")
+        .replace(
+            "name: list, component: collection,",
+            "name: one, component: record,",
+        )
+        .replace("}}]}", "}, fields: [label]}]}");
+    trips(
+        &record,
+        "pager_outside_collection",
+        "pages/p/sections/one/reads/pager",
+    );
+    let listed = report(&paged_page("paging: server, pager: {page: p}"));
+    assert!(
+        tripped(&listed, "pager_outside_collection").is_empty(),
+        "{listed:?}"
+    );
+}
+
+#[test]
 fn filter_over_param() {
     let root = crate_dir().join("tests/fixtures/model");
     let read = |file: &str| std::fs::read_to_string(root.join(file)).unwrap();

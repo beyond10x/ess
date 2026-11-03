@@ -162,11 +162,29 @@ fn reads_of<'a>(located: &'a Located<'_>) -> Vec<(NodePath, &'a Reads)> {
 /// two params of that read each bound to a `state.<path>` a renderer can set, and offers at
 /// least one page size, each at least 1. Nothing is recognised by its name: a param is a pager
 /// param only when the pager names it.
+///
+/// `pager_outside_collection`: only a collection renders a pager footer, so a `pager` on any
+/// other read (another composite's, a graph editor's edges', an action's `loads`) is a key no
+/// renderer honours.
 fn pagers(located: &Located<'_>, sink: &mut Sink) {
+    let collection = matches!(
+        body_of(located.node),
+        Some(Body::Composite(Composite::Collection(_)))
+    );
     for (at, read) in reads_of(located) {
         let Some(pager) = &read.pager else {
             continue;
         };
+        let pager_at = at.child("pager");
+        if !collection {
+            sink.push(
+                "pager_outside_collection",
+                &pager_at,
+                "only a collection renders a pager; a `pager` here is shown by no renderer, so \
+                 move it to a collection's `reads` or remove it",
+            );
+            continue;
+        }
         if !matches!(read.paging, Some(Paging::Server)) {
             sink.push(
                 "pager_paging",
@@ -174,7 +192,6 @@ fn pagers(located: &Located<'_>, sink: &mut Sink) {
                 "a `pager` pages a read the server pages: it needs `paging: server`",
             );
         }
-        let pager_at = at.child("pager");
         for (key, name) in [("page", Some(&pager.page)), ("size", pager.size.as_ref())] {
             let Some(name) = name else {
                 continue;
