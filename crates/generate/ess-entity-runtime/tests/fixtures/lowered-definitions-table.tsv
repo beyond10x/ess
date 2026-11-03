@@ -1,4 +1,4 @@
-#	models=443	lines=605
+#	models=447	lines=609
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -212,10 +212,14 @@ crates/verify/ess-conformance/tests/fixtures/explore-adv-order.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-adv-overlap.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-before-row.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-codes.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-component.yaml	components=2
+crates/verify/ess-conformance/tests/fixtures/explore-direct-response.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-external-adversary.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-external-exits.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-external.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-guards-first.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-held-state-external.yaml	components=0
+crates/verify/ess-conformance/tests/fixtures/explore-input-beside-unknown.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-pair/pair.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-preconditions-list.yaml	components=0
 crates/verify/ess-conformance/tests/fixtures/explore-preconditions.yaml	components=0
