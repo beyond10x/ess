@@ -10,8 +10,8 @@ use std::time::Duration;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ess_ui::binding::{Answer, Binding};
 use ess_ui::{
-    Action, ActionConfirm, Body, Columns, Composite, Document, Effect, Field, FilterBar, Form,
-    GuardThen, Live, NavPages, NodePath, Overlay, Page, PagedAway, Reads, Section, TabFields,
+    Action, ActionAs, ActionConfirm, Body, Columns, Composite, Document, Effect, Field, FilterBar,
+    Form, GuardThen, Live, NavPages, NodePath, Overlay, Page, PagedAway, Reads, Section, TabFields,
 };
 use ess_yaml::{Mapping, Value};
 
@@ -1634,6 +1634,17 @@ impl App {
         let (rows, _) = self.page_rows(ui, collection, ctx);
         let cursor = self.ui(ui).cursor.min(rows.len().saturating_sub(1));
         rows.get(cursor).cloned()
+    }
+
+    /// Whether an `as: toggle` action is on, evaluating the one state expression
+    /// [`ess_ui::toggle_state`] names, which the React project is handed too; a toggle whose
+    /// state no expression names is off. `None` for an action that is not a toggle.
+    pub(crate) fn toggle_on(&self, action: &Action, ctx: &Ctx<'_>) -> Option<bool> {
+        (action.action_as == Some(ActionAs::Toggle)).then(|| {
+            ess_ui::toggle_state(action)
+                .and_then(|state| self.eval(&state.expr.0, ctx))
+                .is_some_and(|value| truthy(&value))
+        })
     }
 
     /// The row actions of a collection that apply to `row`, with their keys.

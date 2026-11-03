@@ -2392,6 +2392,8 @@ pub struct Action {
     pub choice: Option<Box<Node>>,
     /// Current value for a header toggle or choice.
     pub loads: Option<Reads>,
+    /// A toggle's state, on when truthy; only with `as: toggle` ([`crate::toggle_state`]).
+    pub checked: Option<Expr>,
     /// Confirm first.
     pub confirm: Option<ActionConfirm>,
     /// Apply the expected outcome at once.

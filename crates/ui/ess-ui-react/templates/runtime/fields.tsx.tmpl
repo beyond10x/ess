@@ -97,6 +97,10 @@ export function FieldValue(props: { field: FieldSpec; row: unknown }): ReactNode
     case "secret":
       content = "••••••••";
       break;
+    case "toggle":
+      // A read-only switch: the value as on or off, named by its column.
+      content = <input type="checkbox" checked={truthy(value)} disabled aria-label={fieldLabel(field)} />;
+      break;
     default:
       content = formatValue(value, field.as);
   }
