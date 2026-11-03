@@ -147,6 +147,9 @@ pub const CHECKS: &[Check] = &[
     schema_check("filter_paging", Severity::Error),
     schema_check("filter_over_param", Severity::Warning),
     schema_check("filter_export", Severity::Warning),
+    schema_check("pager_paging", Severity::Error),
+    schema_check("pager_params", Severity::Error),
+    schema_check("pager_sizes", Severity::Error),
     schema_check("account_menu_keys", Severity::Error),
     // The loader refused the document for a reason no other check names.
     rule("document_loads"),

@@ -2317,6 +2317,8 @@ pub struct Reads {
     pub params: BTreeMap<String, Expr>,
     /// Who pages.
     pub paging: Option<Paging>,
+    /// The params that carry a server page and its size, and the sizes a reader may choose.
+    pub pager: Option<Pager>,
     /// Coalesce param changes before reading.
     pub debounce: Option<String>,
     /// Poll interval.
@@ -2346,6 +2348,47 @@ pub enum Paging {
     /// A value a retrofit could not determine (`unmapped_marker`).
     #[serde(untagged)]
     Unmapped(UnmappedMarker),
+}
+
+impl Reads {
+    /// The `state.<path>` param `name` binds, when its whole expression is that one path: the
+    /// state a pager sets to change what the read sends.
+    pub fn state_path(&self, name: &str) -> Option<&str> {
+        let text = self.params.get(name)?.0.trim();
+        let path = text.strip_prefix("state.")?;
+        path.split('.')
+            .all(|segment| {
+                let mut chars = segment.chars();
+                chars
+                    .next()
+                    .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+                    && chars.all(|rest| rest.is_ascii_alphanumeric() || rest == '_')
+            })
+            .then_some(text)
+    }
+}
+
+/// The params of a server-paged read that carry its page and its page size, named among the
+/// read's `params`, and the page sizes a reader may choose.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Pager {
+    /// The read param that carries the page number.
+    pub page: String,
+    /// The read param that carries the page size; absent, the footer offers no size.
+    pub size: Option<String>,
+    /// The page sizes offered, in order; absent, [`Pager::DEFAULT_SIZES`].
+    #[serde(default = "Pager::default_sizes")]
+    pub sizes: Vec<i64>,
+}
+
+impl Pager {
+    /// The sizes a pager offers when it lists none (the schema's `sizes_default`).
+    pub const DEFAULT_SIZES: [i64; 3] = [25, 50, 100];
+
+    fn default_sizes() -> Vec<i64> {
+        Self::DEFAULT_SIZES.to_vec()
+    }
 }
 
 /// Where a read result is cached.

@@ -11,6 +11,12 @@ import { isObject, stableKey, type Json } from "../json";
 export function Collection(props: {
   "data-ui-path"?: string;
   reads?: ReadSpec;
+  /**
+   * The pager footer, on the state paths the read's page and size params bind. A `declared`
+   * pager (`reads.pager`) always shows its footer; otherwise it shows when the total exceeds
+   * the rows.
+   */
+  pager?: { page: string; size?: string; sizes?: number[]; declared?: boolean };
   columns?: FieldSpec[];
   columnsBind?: string;
   sort?: { by: string; dir?: "asc" | "desc"; allowed: string[]; mode?: "server" | "client" };
@@ -243,21 +249,62 @@ export function Collection(props: {
           {list(entries)}
         </div>
       ))}
-      {data && data.total !== undefined && data.total > rows.length && data.params.page !== undefined ? (
-        <div className="ui-pager">
-          <button
-            type="button"
-            className="ui-button"
-            disabled={Number(data.params.page) <= 1}
-            onClick={() => scope.set("state.page", Number(data.params.page) - 1)}
+      {data && props.pager ? <Pager pager={props.pager} total={data.total} rows={rows.length} /> : null}
+    </div>
+  );
+}
+
+/**
+ * Previous, the page (of how many, when the total and the size are known), Next (disabled on
+ * the last page when they are), and with a size path a per-page select that returns to page 1.
+ * Reads and writes only the state paths it is handed.
+ */
+function Pager(props: {
+  pager: { page: string; size?: string; sizes?: number[]; declared?: boolean };
+  total?: number;
+  rows: number;
+}): ReactNode {
+  const scope = useScope();
+  const { pager, total } = props;
+  const current = evaluate(pager.page, scope.values);
+  if (!pager.declared && (current === undefined || total === undefined || total <= props.rows)) {
+    return null;
+  }
+  const page = Number(current ?? 1) || 1;
+  const sizes = pager.sizes ?? [];
+  const size = pager.size === undefined ? undefined : Number(evaluate(pager.size, scope.values) ?? sizes[0]) || sizes[0];
+  const pages = pager.declared && total !== undefined && size !== undefined ? Math.max(1, Math.ceil(total / size)) : undefined;
+  return (
+    <div className="ui-pager">
+      <button type="button" className="ui-button" disabled={page <= 1} onClick={() => scope.set(pager.page, page - 1)}>
+        Previous
+      </button>
+      <span>{pages === undefined ? `Page ${page}` : `Page ${page} of ${pages}`}</span>
+      <button
+        type="button"
+        className="ui-button"
+        disabled={pages !== undefined && page >= pages}
+        onClick={() => scope.set(pager.page, page + 1)}
+      >
+        Next
+      </button>
+      {pager.size !== undefined ? (
+        <label className="ui-page-size">
+          <span className="ui-form-label">Per page</span>
+          <select
+            value={String(size)}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+              scope.set(pager.size as string, Number(event.target.value));
+              scope.set(pager.page, 1);
+            }}
           >
-            Previous
-          </button>
-          <span>Page {String(data.params.page)}</span>
-          <button type="button" className="ui-button" onClick={() => scope.set("state.page", Number(data.params.page) + 1)}>
-            Next
-          </button>
-        </div>
+            {sizes.map((option) => (
+              <option key={option} value={String(option)}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
       ) : null}
     </div>
   );

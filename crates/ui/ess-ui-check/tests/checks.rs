@@ -2046,6 +2046,45 @@ fn filter_export() {
     );
 }
 
+/// Page `p` whose `list` section reads `t.All` with `reads` written inside the read's braces.
+fn paged_page(reads: &str) -> String {
+    page(&format!("{{kind: detail_page, title: P, state: {{at: {{type: integer, class: page_state, store: url, default: 1}}}}, sections: [{{name: list, component: collection, reads: {{view: t.All, params: {{p: state.at, q: params.id}}, {reads}}}}}]}}"))
+}
+
+#[test]
+fn pager_paging() {
+    trips(
+        &paged_page("paging: client, pager: {page: p}"),
+        "pager_paging",
+        "pages/p/sections/list/reads",
+    );
+    let served = report(&paged_page("paging: server, pager: {page: p}"));
+    assert!(tripped(&served, "pager_paging").is_empty(), "{served:?}");
+}
+
+#[test]
+fn pager_params() {
+    trips(
+        &paged_page("paging: server, pager: {page: missing}"),
+        "pager_params",
+        "pages/p/sections/list/reads/pager/page",
+    );
+    trips(
+        &paged_page("paging: server, pager: {page: p, size: q}"),
+        "pager_params",
+        "pages/p/sections/list/reads/pager/size",
+    );
+}
+
+#[test]
+fn pager_sizes() {
+    trips(
+        &paged_page("paging: server, pager: {page: p, sizes: [0]}"),
+        "pager_sizes",
+        "pages/p/sections/list/reads/pager/sizes",
+    );
+}
+
 #[test]
 fn filter_over_param() {
     let root = crate_dir().join("tests/fixtures/model");

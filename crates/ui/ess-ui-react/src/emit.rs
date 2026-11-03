@@ -658,6 +658,33 @@ impl<'d> Gen<'d> {
         ]))
     }
 
+    /// The collection's pager: the state paths its read's page and size params bind, resolved
+    /// here so the runtime never assumes `state.page` or `state.size`. A declared `pager` always
+    /// shows its footer; a read with a `page` param and no `pager` keeps the footer it had,
+    /// shown when the total exceeds the rows, on the state path that param binds.
+    fn pager(reads: Option<&Reads>) -> Option<String> {
+        let reads = reads?;
+        let Some(pager) = &reads.pager else {
+            return reads
+                .state_path("page")
+                .map(|page| ts::object([("page", Some(ts::string(page)))]));
+        };
+        let page = reads.state_path(&pager.page)?;
+        let size = pager
+            .size
+            .as_deref()
+            .and_then(|size| reads.state_path(size));
+        Some(ts::object([
+            ("page", Some(ts::string(page))),
+            ("size", size.map(ts::string)),
+            (
+                "sizes",
+                size.map(|_| ts::array(pager.sizes.iter().map(ToString::to_string))),
+            ),
+            ("declared", Some("true".to_owned())),
+        ]))
+    }
+
     fn action(&mut self, at: &NodePath, action: &Action) -> String {
         let navigate = action.navigate.as_ref().map(navigate);
         let export = action.export.as_ref().map(|export| {
@@ -1076,6 +1103,7 @@ impl<'d> Gen<'d> {
                 El::new(&component)
                     .path_if(!opts.framed, &path)
                     .opt("reads", Self::own_reads(opts, c.reads.as_ref()))
+                    .opt("pager", Self::pager(c.reads.as_ref()))
                     .opt("columns", columns)
                     .opt("columnsBind", columns_bind)
                     .opt("sort", sort)

@@ -6,8 +6,9 @@ use std::path::Path;
 
 use ess_ui::{
     Action, ActionConfirm, Body, Composite, Document, FixtureIndex, GuardThen, Header, Located,
-    NavPages, NodeCommon, NodePath, NodeRef, OverlayKind, PageLayout, PlacementProfile, Primitive,
-    Profile, Reads, RegionKind, State, StateClass, Store, TabFields, TypeExpr, WidgetUse,
+    NavPages, NodeCommon, NodePath, NodeRef, OverlayKind, PageLayout, Paging, PlacementProfile,
+    Primitive, Profile, Reads, RegionKind, State, StateClass, Store, TabFields, TypeExpr,
+    WidgetUse,
 };
 use ess_yaml::Value;
 
@@ -35,6 +36,7 @@ pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mu
             if let Some(Body::Composite(composite)) = body_of(node.node) {
                 keys_together(composite, &node.path, sink);
             }
+            pagers(node, sink);
         }
     }
     degrades_cover(&located, options, sink);
@@ -130,6 +132,84 @@ fn account_menu_keys(document: &Document, sink: &mut Sink) {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Every read a node holds, with its path: a composite's own, a graph editor's edges', an
+/// action's `loads`.
+fn reads_of<'a>(located: &'a Located<'_>) -> Vec<(NodePath, &'a Reads)> {
+    let mut reads = Vec::new();
+    if let Some(Body::Composite(composite)) = body_of(located.node) {
+        if let Some((key, read)) = composite_reads(composite) {
+            reads.push((located.path.child(key), read));
+        }
+        if let Composite::GraphEditor(editor) = composite {
+            if let Some(read) = editor.edges.as_ref().and_then(|edges| edges.reads.as_ref()) {
+                reads.push((located.path.child("edges").child("reads"), read));
+            }
+        }
+    }
+    if let NodeRef::Action(action) = located.node {
+        if let Some(read) = &action.loads {
+            reads.push((located.path.child("loads"), read));
+        }
+    }
+    reads
+}
+
+/// `pager_paging`, `pager_params`, `pager_sizes`: a read's `pager` pages a server read, names
+/// two params of that read each bound to a `state.<path>` a renderer can set, and offers at
+/// least one page size, each at least 1. Nothing is recognised by its name: a param is a pager
+/// param only when the pager names it.
+fn pagers(located: &Located<'_>, sink: &mut Sink) {
+    for (at, read) in reads_of(located) {
+        let Some(pager) = &read.pager else {
+            continue;
+        };
+        if !matches!(read.paging, Some(Paging::Server)) {
+            sink.push(
+                "pager_paging",
+                &at,
+                "a `pager` pages a read the server pages: it needs `paging: server`",
+            );
+        }
+        let pager_at = at.child("pager");
+        for (key, name) in [("page", Some(&pager.page)), ("size", pager.size.as_ref())] {
+            let Some(name) = name else {
+                continue;
+            };
+            let message = match read.params.get(name) {
+                None => format!(
+                    "`pager.{key}` names `{name}`, which is no param of this read; name one of \
+                     its `params`"
+                ),
+                Some(bound) if read.state_path(name).is_none() => format!(
+                    "`pager.{key}` names `{name}`, bound to `{}`; a pager param is bound to a \
+                     `state.<path>` the pager sets",
+                    bound.0
+                ),
+                Some(_) if key == "size" && name == &pager.page => format!(
+                    "`pager.size` names `{name}`, the page param; the size needs a param of its \
+                     own"
+                ),
+                Some(_) => continue,
+            };
+            sink.push("pager_params", &pager_at.child(key), message);
+        }
+        if pager.sizes.is_empty() {
+            sink.push(
+                "pager_sizes",
+                &pager_at.child("sizes"),
+                "`sizes` offers no page size; list at least one, or leave it out for the default",
+            );
+        }
+        for size in pager.sizes.iter().filter(|size| **size < 1) {
+            sink.push(
+                "pager_sizes",
+                &pager_at.child("sizes"),
+                format!("a page size is at least 1, not {size}"),
+            );
         }
     }
 }
