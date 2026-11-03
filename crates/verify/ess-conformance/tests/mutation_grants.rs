@@ -333,3 +333,194 @@ fn a_version_6_manifest_naming_a_grant_mutant_is_refused() {
         "{STORY}: {refusal}"
     );
 }
+
+// ---- every grant is a mutant or listed (story:the-mutation-audit-reports-the-sites-it-could-not-mutate)
+
+const LISTED: &str = "story:the-mutation-audit-reports-the-sites-it-could-not-mutate";
+
+/// [`GRANTS`] with its `actors:` block replaced by `actors`.
+fn with_actors(actors: &str) -> String {
+    let declared = "actors:
+  - name: library.shelf.Librarian
+    may: [library.shelf.CatalogueBook]
+  - name: library.shelf.Reader
+";
+    assert!(GRANTS.contains(declared));
+    GRANTS.replace(declared, &format!("actors:\n{actors}"))
+}
+
+/// Every `.yaml` file under `examples/<name>`.
+fn example(name: &str) -> Vec<Document> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../examples")
+        .join(name);
+    let mut pending = vec![root];
+    let mut found = Vec::new();
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir).expect("readable") {
+            let path = entry.expect("entry").path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().is_some_and(|it| it == "yaml") {
+                found.push(path);
+            }
+        }
+    }
+    found.sort();
+    found
+        .into_iter()
+        .map(|path| {
+            let text = std::fs::read_to_string(&path).expect("readable");
+            let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{error}"));
+            (Source::new(path.display().to_string()), raw)
+        })
+        .collect()
+}
+
+/// The reason each `grant-drop/<actor>/<command>` of a declared `may:` entry is listed with, or
+/// `"mutant"` where it is a mutant; a grant that is neither fails.
+fn every_grant(documents: &[Document]) -> BTreeMap<String, String> {
+    let selection = mutate::selection(documents, &[MutantClass::GrantDrop, MutantClass::GrantAdd]);
+    let mut accounted = BTreeMap::new();
+    for (_, file) in documents {
+        for actor in &file.actors {
+            for command in &actor.may {
+                let id = format!("grant-drop/{}/{command}", actor.name);
+                let how = if selection.mutants.iter().any(|mutant| mutant.id == id) {
+                    "mutant".to_owned()
+                } else {
+                    let site = selection
+                        .unmutated
+                        .iter()
+                        .find(|site| site.id == id)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "{LISTED}: `{id}` is neither a mutant nor listed: {selection:#?}"
+                            )
+                        });
+                    site.reason.as_str().to_owned()
+                };
+                accounted.insert(id, how);
+            }
+        }
+    }
+    accounted
+}
+
+/// The class the adversary found two members of: every `may:` entry a specification declares is a
+/// `grant-drop` mutant or an unmutated site with its reason, the system actor's and those of
+/// commands nothing serves included, over billing and the grant toys.
+#[test]
+fn every_declared_grant_is_a_grant_drop_mutant_or_listed() {
+    assert_eq!(
+        every_grant(&example("billing")),
+        BTreeMap::from([(
+            "grant-drop/billing.invoice.Customer/billing.invoice.CreateInvoice".to_owned(),
+            "command_not_served".to_owned()
+        )])
+    );
+    assert_eq!(
+        every_grant(&documents(GRANTS).0),
+        BTreeMap::from([(DROP.to_owned(), "mutant".to_owned())])
+    );
+    let unserved = GRANTS.replace("    reached_by: network\n", "");
+    assert_eq!(
+        every_grant(&documents(&unserved).0),
+        BTreeMap::from([(DROP.to_owned(), "command_not_served".to_owned())])
+    );
+    let system = with_actors(
+        "  - name: library.shelf.Keeper
+    system: true
+    may: [library.shelf.CatalogueBook]
+  - name: library.shelf.Librarian
+    may: [library.shelf.CatalogueBook]
+  - name: library.shelf.Reader
+",
+    );
+    assert_eq!(
+        every_grant(&documents(&system).0),
+        BTreeMap::from([
+            (
+                "grant-drop/library.shelf.Keeper/library.shelf.CatalogueBook".to_owned(),
+                "system_actor".to_owned()
+            ),
+            (DROP.to_owned(), "mutant".to_owned()),
+        ])
+    );
+}
+
+/// Each listed grant says what was not audited, and its reason belongs to its class.
+#[test]
+fn a_listed_grant_says_why() {
+    let selection = mutate::selection(&example("billing"), &[MutantClass::GrantDrop]);
+    let site = selection
+        .unmutated
+        .iter()
+        .find(|site| site.class == MutantClass::GrantDrop)
+        .unwrap_or_else(|| panic!("{LISTED}: {selection:#?}"));
+    assert!(
+        site.unaudited.contains("`billing.invoice.Customer`")
+            && site.unaudited.contains("`billing.invoice.CreateInvoice`")
+            && site.unaudited.contains("network"),
+        "{LISTED}: {}",
+        site.unaudited
+    );
+    let without = mutate::selection(&example("billing"), &[MutantClass::GrantAdd]);
+    assert!(
+        without.unmutated.is_empty(),
+        "a held grant is listed under grant-drop only: {without:#?}"
+    );
+}
+
+/// Where the gaining actor carries attributes beside an attribute-carrying holder, no scenario
+/// can be sent as it asking what it asked the holder: the site is listed as `attributed_holder`,
+/// not left a mutant that can only survive.
+#[test]
+fn a_grant_add_no_scenario_can_be_sent_for_is_listed() {
+    let text = with_actors(
+        "  - name: library.shelf.Librarian
+    attributes: [{name: branch, type: String}]
+    may: [library.shelf.CatalogueBook]
+  - name: library.shelf.Reader
+    attributes: [{name: branch, type: String}]
+",
+    );
+    let (documents, texts) = documents(&text);
+    mutate::compile(documents.clone(), &texts).unwrap_or_else(|error| panic!("{error:?}"));
+    let selection = mutate::selection(&documents, &[MutantClass::GrantAdd]);
+    let site = selection
+        .unmutated
+        .iter()
+        .find(|site| site.id == ADD)
+        .unwrap_or_else(|| panic!("{STORY}: `{ADD}` is not listed: {selection:#?}"));
+    assert_eq!(site.reason.as_str(), "attributed_holder", "{STORY}");
+    assert!(
+        !selection.mutants.iter().any(|mutant| mutant.id == ADD),
+        "{STORY}: {selection:#?}"
+    );
+}
+
+/// The `grant/admitted/<actor>` copy a grant-add mutant of an attribute-carrying holder gets is
+/// written only under the mutation audit: the toy's own synthesis keeps its scenarios.
+#[test]
+fn the_added_grant_scenario_is_the_mutants_alone() {
+    let text = with_actors(
+        "  - name: library.shelf.Librarian
+    attributes: [{name: branch, type: String}]
+    may: [library.shelf.CatalogueBook]
+  - name: library.shelf.Reader
+    may: [library.shelf.CatalogueBook]
+",
+    );
+    let (documents, texts) = documents(&text);
+    let ir = mutate::compile(documents, &texts).unwrap_or_else(|error| panic!("{error:?}"));
+    let suite = synthesize(&ir).suite;
+    assert!(
+        !suite
+            .scenarios
+            .keys()
+            .any(|id| id.to_string().contains("/grant/admitted/")),
+        "{STORY}: {:?}",
+        suite.scenarios.keys().collect::<Vec<_>>()
+    );
+}

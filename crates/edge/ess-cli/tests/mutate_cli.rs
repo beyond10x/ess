@@ -231,8 +231,10 @@ fn the_json_output_is_the_report_bytes() {
         report.to_str().unwrap(),
     ]);
     // Every class includes `emit-swap` (beyond10x/ess#295): billing's two swaps are killed and its
-    // three sites without an alternative are unavailable, so the audit exits 3. Its ten unmutated
-    // sites (beyond10x/ess#711) make it `/8`.
+    // three sites without an alternative are unavailable, so the audit exits 3. Its eleven
+    // unmutated sites (beyond10x/ess#711) make it `/8`: the ten of
+    // story:the-mutation-audit-reports-the-sites-it-could-not-mutate and `Customer`'s grant of a
+    // command nothing serves (story:the-mutation-audit-covers-actor-grants).
     assert_eq!(output.status.code(), Some(3), "{}", text(&output.stderr));
     let written = std::fs::read(&report).expect("--report-out is written");
     assert_eq!(output.stdout, written);
@@ -242,7 +244,7 @@ fn the_json_output_is_the_report_bytes() {
     assert_eq!(value["counts"]["killed"], 14);
     assert_eq!(value["counts"]["stillborn"], 5);
     assert_eq!(value["unavailable_sites"].as_array().map(Vec::len), Some(3));
-    assert_eq!(value["unmutated_sites"].as_array().map(Vec::len), Some(10));
+    assert_eq!(value["unmutated_sites"].as_array().map(Vec::len), Some(11));
 
     let yaml = mutate(&[
         "--path",

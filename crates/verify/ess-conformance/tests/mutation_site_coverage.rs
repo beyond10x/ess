@@ -202,28 +202,94 @@ fn the_report_names_each_site_without_a_live_mutant() {
     }
 }
 
-/// The creating write and the `Optional` write, neither of which has a sibling input of its type,
-/// each get a live `sets-retarget` mutant: a literal of the field's type in place of the input.
-/// `sets-drop` still lists the `Optional` write, whose absence no synthesized row states.
+/// The creating write, which has no sibling input of its type and whose field a view reads, gets
+/// a live `sets-retarget` mutant: a literal of the field's type in place of the input, and it is
+/// killed. The `Optional` write has no sibling either, but no view, guard or other write reads
+/// `note`, so no target's answer could tell a literal there from the input: it is listed as
+/// `unobserved_field` rather than left a mutant that can only survive, which kept the default exit
+/// of the toy at 0 (story:the-mutation-audit-reports-the-sites-it-could-not-mutate, re-pinned from
+/// a live mutant). `sets-drop` still lists the `Optional` write, whose absence no synthesized row
+/// states.
 #[test]
 fn a_creating_or_optional_write_gets_a_live_mutant() {
     let report = audit_of(shelf(), &[MutantClass::SetsDrop, MutantClass::SetsRetarget]);
-    let optional = listed(&json(&report), OPTIONAL_DROP).clone();
+    let json = json(&report);
+    let optional = listed(&json, OPTIONAL_DROP).clone();
     assert_eq!(optional["reason"], "optional_field", "{optional:#}");
-    for id in [CREATING_LITERAL, OPTIONAL_LITERAL] {
-        let entry = report
+    let unread = listed(&json, OPTIONAL_LITERAL).clone();
+    assert_eq!(
+        (&unread["class"], &unread["reason"]),
+        (
+            &Value::from("sets-retarget"),
+            &Value::from(UnmutatedReason::UnobservedField.as_str())
+        ),
+        "{STORY}: {unread:#}"
+    );
+    assert!(
+        !report
             .mutants
             .iter()
-            .find(|entry| entry.id == id)
-            .unwrap_or_else(|| panic!("{STORY}: no `{id}`: {}", report.render_text()));
-        assert_ne!(entry.verdict, Verdict::Stillborn, "{STORY}: {entry:#?}");
-    }
+            .any(|entry| entry.id == OPTIONAL_LITERAL),
+        "{STORY}: a listed site is not also a mutant: {}",
+        report.render_text()
+    );
     let literal = report
         .mutants
         .iter()
         .find(|entry| entry.id == CREATING_LITERAL)
-        .expect("present");
+        .unwrap_or_else(|| panic!("{STORY}: no `{CREATING_LITERAL}`: {}", report.render_text()));
     assert_eq!(literal.verdict, Verdict::Killed, "{}", report.render_text());
+}
+
+/// Whether a field is read is the compiler's to say: once a view reads `note`, the `Optional`
+/// write gets its literal mutant again, and it is killed.
+#[test]
+fn a_field_a_view_reads_keeps_its_literal_mutant() {
+    let read = SHELF.replace(
+        "      - {name: position, type: Integer}\ncomponents:",
+        "      - {name: position, type: Integer}\n      - {name: note, type: Optional<String>}\ncomponents:",
+    );
+    assert_ne!(read, SHELF, "the view gains `note`");
+    let report = audit_of(documents(&read, "shelf.yaml"), &[MutantClass::SetsRetarget]);
+    assert!(
+        !report
+            .unmutated_sites
+            .iter()
+            .flatten()
+            .any(|site| site.id == OPTIONAL_LITERAL),
+        "{STORY}: {}",
+        report.render_text()
+    );
+    let entry = report
+        .mutants
+        .iter()
+        .find(|entry| entry.id == OPTIONAL_LITERAL)
+        .unwrap_or_else(|| panic!("{STORY}: no `{OPTIONAL_LITERAL}`: {}", report.render_text()));
+    assert_eq!(entry.verdict, Verdict::Killed, "{}", report.render_text());
+}
+
+/// A selection that finds only unmutated sites is refused (`ESS-MUTATE-003`), and the refusal
+/// names each site with its reason instead of saying it found none.
+#[test]
+fn a_refusal_over_unmutated_sites_names_them() {
+    let (documents, texts) = shelf();
+    let ir = mutate::compile(documents.clone(), &texts).expect("the toy compiles");
+    let refusal = mutate::audit(&documents, &texts, &[MutantClass::TransitionTo], || {
+        Interpreted::for_model(ir.clone())
+    })
+    .expect_err("transition-to alone finds no mutant over the toy");
+    let said = refusal.to_string();
+    assert!(
+        said.starts_with("refusal[ESS-MUTATE-003]: `transition-to` find(s) no site it can mutate"),
+        "{STORY}: {said}"
+    );
+    assert!(
+        said.lines().any(
+            |line| line.starts_with(&format!("unmutated {TRANSITION} (no_admissible_state): "))
+        ),
+        "{STORY}: {said}"
+    );
+    assert!(!said.contains("find(s) no site in"), "{STORY}: {said}");
 }
 
 /// The summary line ends with the coverage count: sites with a scored mutant out of the sites
