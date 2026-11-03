@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:27Z",
+  "actor": "human:timo",
+  "artifact": "story:browser-fixture-startup-deadline",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "crates/edge/ess-cli/tests/support/browser.rs:247"
+  }
+}

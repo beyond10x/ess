@@ -613,6 +613,103 @@ fn unmapped_reported() {
     assert!(!report.has_errors(), "{:#?}", report.findings);
 }
 
+/// story:account-menu-entries-keep-sets-and-navigate: an account menu entry declares only keys
+/// every renderer draws; any other key is refused, naming the entry and the key.
+#[test]
+fn account_menu_keys() {
+    let shell = |entries: &str| {
+        format!(
+            "{{app: {{regions: {{main: {{kind: page_outlet}}, account: {{kind: account_menu, \
+             props: {{actions: [{entries}]}}}}}}}}}}"
+        )
+    };
+    let drawn = doc(&[(
+        "shells",
+        &shell(
+            "{name: org, label: Org, opens: org}, {name: out, does: t.SignOut}, \
+             {name: dark, sets: {shell.theme: \"'dark'\"}}, {name: home, navigate: {to: p}}",
+        ),
+    )]);
+    assert!(
+        tripped(&report(&drawn), "account_menu_keys").is_empty(),
+        "{:#?}",
+        report(&drawn).findings
+    );
+    let dropped = doc(&[(
+        "shells",
+        &shell(
+            "{name: out, does: t.SignOut, bind: {who: state.me}, icon: exit}, \
+             {name: copy, copy: state.me}",
+        ),
+    )]);
+    let written = report(&dropped);
+    for (path, key) in [
+        ("shells/app/regions/account/props/actions/out/bind", "bind"),
+        ("shells/app/regions/account/props/actions/out/icon", "icon"),
+        ("shells/app/regions/account/props/actions/copy/copy", "copy"),
+    ] {
+        let finding = trips_in(&written, "account_menu_keys", path);
+        assert!(finding.message.contains(&format!("`{key}`")), "{finding:?}");
+    }
+    assert_eq!(
+        tripped(&written, "account_menu_keys").len(),
+        3,
+        "{:#?}",
+        written.findings
+    );
+    // An entry the terminal cannot read as an action is dropped whole, though every key it
+    // declares is drawn (story:account-menu-entries-keep-sets-and-navigate).
+    let unread = doc(&[(
+        "shells",
+        &shell(
+            "{label: Dark, sets: {shell.theme: \"'dark'\"}}, {name: away, navigate: p}, \
+             {name: dark, sets: \"'dark'\"}",
+        ),
+    )]);
+    let unread = report(&unread);
+    for path in [
+        "shells/app/regions/account/props/actions",
+        "shells/app/regions/account/props/actions/away",
+        "shells/app/regions/account/props/actions/dark",
+    ] {
+        let finding = trips_in(&unread, "account_menu_keys", path);
+        assert!(
+            finding.message.contains("does not read as an action"),
+            "story:account-menu-entries-keep-sets-and-navigate: {finding:?}"
+        );
+    }
+    assert_eq!(
+        tripped(&unread, "account_menu_keys").len(),
+        3,
+        "{:#?}",
+        unread.findings
+    );
+    // `sets` beside what a renderer runs instead of it is refused.
+    let beside = doc(&[(
+        "shells",
+        &shell(
+            "{name: a, does: t.SignOut, sets: {shell.theme: \"'dark'\"}}, \
+             {name: b, navigate: {to: p}, sets: {shell.theme: \"'dark'\"}}, \
+             {name: c, opens: org, sets: {shell.theme: \"'dark'\"}}",
+        ),
+    )]);
+    let beside = report(&beside);
+    for (name, other) in [("a", "does"), ("b", "navigate"), ("c", "opens")] {
+        let path = format!("shells/app/regions/account/props/actions/{name}/sets");
+        let finding = trips_in(&beside, "account_menu_keys", &path);
+        assert!(
+            finding.message.contains(&format!("beside `{other}`")),
+            "story:account-menu-entries-keep-sets-and-navigate: {finding:?}"
+        );
+    }
+    assert_eq!(
+        tripped(&beside, "account_menu_keys").len(),
+        3,
+        "{:#?}",
+        beside.findings
+    );
+}
+
 // ── style: tokens, themes, the theme choice, tone maps ──────────────────────────────────────
 
 /// No finding of `id` at `path`.

@@ -9,10 +9,13 @@ tags:
 - adopter-report
 - ess-0.71.0
 - feature-request
+refs:
+- provider: github
+  reference: beyond10x/ess#640
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
-revision: 3
+- decomposes: epic:adopter-gaps-synthesis
+revision: 4
 ---
 ## Need
 

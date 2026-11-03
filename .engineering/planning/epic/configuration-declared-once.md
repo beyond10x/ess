@@ -2,12 +2,13 @@
 format: aep.planning-md/3
 id: epic:configuration-declared-once
 kind: epic
-status: active
+status: implemented
 title: Configuration is declared once and delivered many ways
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-13T09:34:20Z", actor: "human:timo", revision: 2, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-13T09:34:22Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-11-02T20:54:56Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 # Epic: configuration is declared once and delivered many ways
 

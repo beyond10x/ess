@@ -7,7 +7,7 @@ title: Every read-back of a generated server's own answer ignores the intake dep
 summary: Rust single() and the Go envelope read-backs read the server's own output at any depth, like entry::read.
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-generated-code
 revision: 1
 ---
 ## Need

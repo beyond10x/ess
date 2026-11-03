@@ -6,7 +6,7 @@ status: draft
 title: A channel address parameter may come from an id newtype field
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-event-client
 revision: 1
 ---
 ## Outcome

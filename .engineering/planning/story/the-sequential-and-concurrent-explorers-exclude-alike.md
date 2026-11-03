@@ -5,8 +5,8 @@ kind: story
 status: draft
 title: The sequential and concurrent explorers exclude alike
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-verdicts
 revision: 1
 ---
 ## Outcome

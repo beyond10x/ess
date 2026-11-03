@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:35Z",
+  "actor": "human:timo",
+  "artifact": "story:a-command-with-two-related-selectors-arranges-both",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "0cc1bb8e2"
+  }
+}

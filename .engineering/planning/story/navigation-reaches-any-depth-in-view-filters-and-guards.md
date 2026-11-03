@@ -25,7 +25,7 @@ scope:
   path: crates/specify/ess-domain/src/view.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/related.rs
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:07:59Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:07:59Z", actor: "human:timo", revision: 3}
@@ -118,3 +118,7 @@ Crates: ess-domain, ess-synth, ess-conformance (sizing: M).
 Lane L4b, after `story:a-set-effect-selection-reads-the-rows-state`, before
 `story:a-view-source-list-is-refused-by-name`. Serialized with the L4a lane on ess-domain
 related-guard code.
+
+## State
+
+2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): Not started; scheduled W11, 0.94.0.

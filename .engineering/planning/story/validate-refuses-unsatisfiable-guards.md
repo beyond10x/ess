@@ -8,8 +8,8 @@ tags:
 - adopter-report
 - defect
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-domain-language
 revision: 1
 ---
 ## Outcome

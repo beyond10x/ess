@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: task:land-the-struct-shorthand-unit
 kind: task
-status: draft
+status: archived
 title: 'Gate and merge unit/ess-u594 (#594, shorthand: on a struct, ess/27)'
 summary: The half-done shorthand unit is finished against the batch's formats and lands
 refs:
@@ -12,7 +12,9 @@ relations:
 - decomposes: epic:downstream-reported-gaps
 - depends_on: task:land-the-schema-tools-wave-branch
 - depends_on: task:land-the-2026-10-13-port
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-02T20:54:49Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 
@@ -83,3 +85,9 @@ lib.rs, go/mod.rs, rust/mod.rs, web/mod.rs}`,
 `crates/verify/ess-conformance/src/synthesize/shorthand.rs`, `crates/verify/ess-diff/src/*.rs`,
 `models/toolchain/domains/{generate,specify}.yaml`, `schemas/generated/ess.schema.json`,
 `website/docs/reference/{formats,spec-versions}.md`, `website/docs/start/first-specification.md`.
+
+## Resolution
+
+Archived by the 2026-11-02 reconcile (store hygiene H0 of wave W1, section 2e). The branch this task
+would land was merged and shipped in 0.63.0: every issue it names was closed on 2026-10-19 (read
+back with `gh issue view` on 2026-11-02).

@@ -402,7 +402,7 @@ const payloadAgreesWithShape = (payload, declared) => {
 }
 const stepFields = {
   configure_external_outcome: ['force', ''], execute_command: ['command', 'actor input'], expect_outcome: ['outcome', ''],
-  expect_error: ['error', 'fields'], expect_event: ['event', 'payload shape'], expect_event_values: ['event payload', 'shape'], eventually_event: ['event', 'payload shape'],
+  expect_no_error: ['', ''], expect_error: ['error', 'fields'], expect_event: ['event', 'payload shape'], expect_event_values: ['event payload', 'shape'], eventually_event: ['event', 'payload shape'],
   expect_no_event: ['event', ''], redeliver_event: ['event', ''], capture_instance: ['instance entity event field', ''],
   expect_invocation: ['binding command', 'input'], query_view: ['view', 'params'], expect_view: ['view expectation', ''],
   eventually_view: ['view expectation', 'params'], mark_instant: ['instant', ''], expect_not_before: ['instant elapsed', ''],
@@ -411,6 +411,8 @@ const stepFields = {
 function step(value, major) {
   const fields = stepFields[object(value).step]
   require(fields !== undefined && own(stepFields, value.step), 'unsupported suite step')
+  // An authored success act asserts no error (suite/10 onwards), as `admission.rs` admits it.
+  require(value.step !== 'expect_no_error' || major >= 10, 'no-error assertions require suite/10')
   closed(value, `step ${fields[0]}`, fields[1])
   const result = { ...value }
   for (const key of fields[1].split(' ')) {

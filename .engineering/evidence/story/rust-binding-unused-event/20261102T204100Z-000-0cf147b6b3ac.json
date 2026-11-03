@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:41:00Z",
+  "actor": "human:timo",
+  "artifact": "story:rust-binding-unused-event",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "48d5cc77b"
+  }
+}

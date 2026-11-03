@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:30Z",
+  "actor": "human:timo",
+  "artifact": "story:external-branch-narrowed-by-subject-guard",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "crates/specify/ess-domain/tests/external_narrowed_by_subject.rs"
+  }
+}

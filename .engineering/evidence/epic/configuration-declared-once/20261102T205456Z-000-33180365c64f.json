@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:54:56Z",
+  "actor": "human:timo",
+  "artifact": "epic:configuration-declared-once",
+  "kind": "epic",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "CHANGELOG.md:4395 (settings: on a component states each configuration input once)"
+  }
+}

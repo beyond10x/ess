@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:41:09Z",
+  "actor": "human:timo",
+  "artifact": "story:unreadable-git-tests-report-a-privileged-skip",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "crates/edge/ess-cli/src/git_checkout.rs:146-156"
+  }
+}

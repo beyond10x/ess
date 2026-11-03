@@ -7,10 +7,10 @@ title: 'An HTTP binding states transport framing: long-polling, CORS, JSONP, Web
 tags:
 - ess-0.71.0
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
 - informed_by: epic:messages-are-exchanged-independent-of-the-wire
 - informed_by: architecture-decision-record:messages-are-exchanged-independent-of-the-wire
+- decomposes: epic:adopter-gaps-wire-and-answers
 revision: 2
 ---
 ## Outcome

@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:49Z",
+  "actor": "human:timo",
+  "artifact": "story:http-binding-response-headers-challenges-and-redirects",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "crates/specify/ess-http/tests/headers.rs:143"
+  }
+}

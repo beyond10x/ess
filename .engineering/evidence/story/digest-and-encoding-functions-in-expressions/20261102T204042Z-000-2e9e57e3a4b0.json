@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:42Z",
+  "actor": "human:timo",
+  "artifact": "story:digest-and-encoding-functions-in-expressions",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "CHANGELOG.md:473 (0.63.0, ess/27)"
+  }
+}

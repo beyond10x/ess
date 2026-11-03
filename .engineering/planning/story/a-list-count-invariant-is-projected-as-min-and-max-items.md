@@ -10,7 +10,7 @@ refs:
   reference: beyond10x/ess#685
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-wire-and-answers
 revision: 1
 ---
 ## Problem

@@ -10,8 +10,8 @@ tags:
 - ess-0.70.0
 - ess-0.70.0-first
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-generated-code
 scope:
 - confidence: cited
   path: crates/generate/ess-synth/src/go/http.rs

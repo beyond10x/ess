@@ -26,6 +26,7 @@ pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mu
     checker.navigation(sink);
     checker.pages(sink);
     checker.shells(sink);
+    account_menu_keys(document, sink);
     checker.declared_types(sink);
     checker.widget_cycles(&located, sink);
     for node in &located {
@@ -39,6 +40,98 @@ pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mu
     degrades_cover(&located, options, sink);
     crate::enums::run(document, &located, sink);
     crate::names::overlay_params(&located, sink);
+}
+
+/// The keys of an account menu entry every renderer draws: the terminal reads an entry as a whole
+/// action, the React menu these keys.
+const ACCOUNT_MENU_KEYS: &[&str] = &["name", "label", "opens", "does", "sets", "navigate"];
+
+/// `account_menu_keys`: each key an `account_menu` region's `actions` entry declares is one every
+/// renderer draws, so no key is accepted and dropped without a word. Region `props` are opaque to
+/// the loader, so nothing else reads them.
+///
+/// Refused besides: an entry that does not read as an action, the terminal's own reading of it,
+/// since a renderer then drops the whole entry (no `name`, `navigate` written as a page name,
+/// `sets` as a scalar); and `sets` beside `does`, `navigate` or `opens`, which both renderers run
+/// instead of it.
+fn account_menu_keys(document: &Document, sink: &mut Sink) {
+    for (shell_name, shell) in &document.shells {
+        for (region_name, region) in &shell.regions {
+            if region.kind != RegionKind::AccountMenu {
+                continue;
+            }
+            let Some(Value::Sequence(entries)) = region.props.get("actions") else {
+                continue;
+            };
+            let actions = NodePath::root()
+                .child("shells")
+                .child(shell_name)
+                .child("regions")
+                .child(region_name)
+                .child("props")
+                .child("actions");
+            for entry in entries.iter().filter_map(Value::as_mapping) {
+                let at = match entry.get("name").and_then(Value::as_str) {
+                    Some(name) => actions.child(name),
+                    None => actions.clone(),
+                };
+                for key in entry.keys().filter_map(Value::as_str) {
+                    if !ACCOUNT_MENU_KEYS.contains(&key) {
+                        sink.push(
+                            "account_menu_keys",
+                            &at.child(key),
+                            format!(
+                                "`{key}` on an account menu entry is dropped by a renderer: an \
+                                 entry is drawn from `name`, `label`, `opens`, `does`, `sets` \
+                                 and `navigate` only"
+                            ),
+                        );
+                    }
+                }
+                // The keys refused above are left out, so each reason below is about a drawn key.
+                let drawn = entry
+                    .iter()
+                    .filter(|(key, _)| {
+                        key.as_str()
+                            .is_some_and(|key| ACCOUNT_MENU_KEYS.contains(&key))
+                    })
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect();
+                let action = match ess_yaml::from_value::<ess_ui::Action>(Value::Mapping(drawn)) {
+                    Ok(action) => action,
+                    Err(error) => {
+                        sink.push(
+                            "account_menu_keys",
+                            &at,
+                            format!(
+                                "this account menu entry does not read as an action, so a \
+                                 renderer drops it whole: {error}"
+                            ),
+                        );
+                        continue;
+                    }
+                };
+                let instead = [
+                    ("does", action.does.is_some()),
+                    ("navigate", action.navigate.is_some()),
+                    ("opens", action.opens.is_some()),
+                ];
+                if !action.sets.is_empty() {
+                    if let Some((other, _)) = instead.iter().find(|(_, declared)| *declared) {
+                        sink.push(
+                            "account_menu_keys",
+                            &at.child("sets"),
+                            format!(
+                                "`sets` beside `{other}` on an account menu entry is dropped: a \
+                                 renderer runs `{other}` instead; give the state change an \
+                                 entry of its own"
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Keys that mean something only beside another: a metric's `aggregate`, `field` and `reads`

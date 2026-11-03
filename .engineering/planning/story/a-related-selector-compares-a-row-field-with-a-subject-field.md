@@ -6,7 +6,7 @@ status: draft
 title: A related selector that compares a row field with a subject field gets a witness
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-synthesis
 revision: 2
 ---
 ## Need

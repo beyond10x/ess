@@ -15,9 +15,9 @@ refs:
 - provider: github
   reference: beyond10x/ess#587
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 3
+- decomposes: epic:adopter-gaps-synthesis
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-16T10:20:20Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-16T10:20:20Z", actor: "human:timo", revision: 3}
@@ -143,3 +143,7 @@ Each is a named conformance scenario, written failing first.
 `synthesize/subject_fact.rs` (witness expectations, `preserve_refused_subject`),
 `crates/verify/ess-conformance/src/interpret/execute.rs`, `docs/design/refusal-with-effect.md`,
 `website/docs/reference/spec-versions.md`, the command guide.
+
+## State
+
+2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): beyond10x/ess#587 done; beyond10x/ess#581 and beyond10x/ess#585 remain; scheduled W2.

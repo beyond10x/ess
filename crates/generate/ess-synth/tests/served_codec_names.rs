@@ -929,19 +929,25 @@ fn digest(result: Result<Synthesis, SynthesisFailure>) -> String {
 /// letter, a digit, `-` or `_` was refused then, and only such a label derives another identifier
 /// now, so a model without one keeps every byte. Re-recorded for 0.79.0, where the generated Rust
 /// `json.rs` and Go `server/wire.go` decoders check the whole-number grammar and read an integral
-/// number with a zero fraction as an Integer.
+/// number with a zero fraction as an Integer. The Rust and web rows were re-recorded again for the
+/// story `the-generated-rust-server-refuses-what-its-openapi-refuses`, where the Rust `json.rs` and
+/// `wire.rs` decoders refuse a non-RFC 3339 `Timestamp` and a member a closed object does not
+/// declare, and once more after review: the Rust and web rows for the corrected `timestamp_at`
+/// documentation, the Go rows because a Go route derived without a binding refuses a member no
+/// input field names (`closedInput`, story `a-json-command-body-refuses-an-unknown-member`) and
+/// the Go `server/wire.go` reads a `Timestamp` as the Rust decoder does (`timestampAt`).
 const BEFORE_DERIVED_LABELS: &[(&str, &str)] = &[
-    ("aliased rust-workspace", "25 artifact(s) 404c72c13909a62d"),
-    ("aliased rust-crate", "22 artifact(s) 33863312813698a3"),
-    ("aliased web", "14 artifact(s) f9888e117d9a232e"),
-    ("cross rust-workspace", "26 artifact(s) 9d975910562a5fa6"),
-    ("cross rust-crate", "23 artifact(s) 1872b78b985ecfb6"),
-    ("cross web", "14 artifact(s) 233e93d86746e05d"),
-    ("cross go", "20 artifact(s) fa98787a2c15c671"),
-    ("labelled rust-workspace", "25 artifact(s) dd88003b3b37fc70"),
-    ("labelled rust-crate", "22 artifact(s) ab8a5db996aea8f9"),
-    ("labelled web", "14 artifact(s) 14f13d874c7903e8"),
-    ("labelled go", "19 artifact(s) a99032e02de18b7b"),
+    ("aliased rust-workspace", "25 artifact(s) 6a5badcfc44d5494"),
+    ("aliased rust-crate", "22 artifact(s) b987d4ddda990b7e"),
+    ("aliased web", "14 artifact(s) 6627557201bb4415"),
+    ("cross rust-workspace", "26 artifact(s) 6519a7de5bcff579"),
+    ("cross rust-crate", "23 artifact(s) 2c1ab6f97a50acf3"),
+    ("cross web", "14 artifact(s) de37506b1332580c"),
+    ("cross go", "20 artifact(s) 3fdd5951495b733b"),
+    ("labelled rust-workspace", "25 artifact(s) 3cdee1359d4b672e"),
+    ("labelled rust-crate", "22 artifact(s) 0d725438bffb40f5"),
+    ("labelled web", "14 artifact(s) 6169b63ce86ae55c"),
+    ("labelled go", "19 artifact(s) 470c9b48709f82a2"),
 ];
 
 #[test]

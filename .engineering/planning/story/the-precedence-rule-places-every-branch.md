@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-precedence-rule-places-every-branch
 kind: story
-status: active
+status: implemented
 title: Under format A the precedence plan places every branch by the one rule
 tags:
 - adopter-report
@@ -12,10 +12,11 @@ refs:
 relations:
 - decomposes: epic:generic-guard-precedence
 - serves: vision:O2
-revision: 6
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T02:54:26Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 - {from: "proposed", to: "active", at: "2026-10-21T02:54:26Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:33Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 
@@ -143,3 +144,7 @@ the interpreted target only (`selection_precedence.rs`,
 the generated behaviours of the rule are covered by `ess-synth`'s own tests. Entity Runtime keeps
 refusing `when_related:` by name, the reason recorded in
 `docs/design/generic-language-features.md` § G4 "Entity Runtime and `when_related:`".
+
+## Reconcile note (2026-11-02)
+
+Store hygiene H0 of wave W1, section 2i: Deviation recorded: the tenth acceptance test runs on the interpreted target only, not on generated Rust and Go. The story moved to implemented with that deviation (section 2a).

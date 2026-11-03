@@ -8,8 +8,8 @@ tags:
 - adopter-report
 - ess-0.70.0
 relations:
-- decomposes: epic:downstream-reported-gaps
-revision: 3
+- decomposes: epic:adopter-gaps-wire-and-answers
+revision: 4
 ---
 ## Need
 
@@ -153,3 +153,7 @@ In crates/verify/ess-conformance/tests/minted_value_sources.rs:
 opened once for the open-issue batch that carries the `ess/33` language changes
 (`docs/plan/wave-ess-issues-1.md` § Batches). Read `ess/31` above as `ess/33`, and `ess/30` as
 "below `ess/33`". Store drift fixed under D136 (`approval-record:d136-synthesis-defects-and-store-drift`).
+
+## Reconcile note (2026-11-02)
+
+Store hygiene H0 of wave W1, section 2i: The body names a format version that has since shipped without this change; it targets the next free format version instead.

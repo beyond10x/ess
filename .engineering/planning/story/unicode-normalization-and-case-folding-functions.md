@@ -5,8 +5,8 @@ kind: story
 status: draft
 title: Predicates compare text through nfc, nfkc and casefold, and mutate wraps comparisons in them
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-domain-language
 revision: 1
 ---
 ## Outcome

@@ -291,8 +291,12 @@ func formObject(request *http.Request, body []byte, fields []flatField, carried 
 
 // jsonBody is a `json` body as the value the input's decoder reads, read by parseJSON as the Rust
 // server reads one. Where the body is not required, no body, or one of only whitespace, is the
-// input {}.
-func jsonBody(body []byte, required bool) (any, error) {
+// input {}. A JSON body stays closed: a member none of fields names is malformed, the first in
+// the order the members arrived, with the status the Rust server answers. The detail is not
+// always the Rust decoder's: a member sent under a field's model name rather than its wire name
+// is refused there for that, and here as a member no field names. A member the path carries is a
+// field, and withPath refuses it.
+func jsonBody(body []byte, required bool, fields []string) (any, error) {
 	if !utf8.Valid(body) {
 		return nil, fmt.Errorf("the body is not UTF-8")
 	}
@@ -302,6 +306,17 @@ func jsonBody(body []byte, required bool) (any, error) {
 	value, err := parseJSON(string(body))
 	if err != nil {
 		return nil, fmt.Errorf("the body is not JSON: %s", err)
+	}
+	if object, ok := value.(jsonObject); ok {
+		for _, member := range object {
+			named := false
+			for _, field := range fields {
+				named = named || field == member.name
+			}
+			if !named {
+				return nil, DecodeError{At: nested("body", member.name), Expected: "no member: no field is named so", Found: describes(memberValue(member.value))}
+			}
+		}
 	}
 	return decoderValue(value), nil
 }
@@ -1240,8 +1255,14 @@ fn command(
     let ignore = request.unknown == ess_http::Unknown::Ignore;
     let read = match request.encoding {
         Encoding::Json => format!(
-            "jsonBody(body, {})",
-            http::body_required_without(command, &http::carried(ir, route))
+            "jsonBody(body, {}, []string{{{}}})",
+            http::body_required_without(command, &http::carried(ir, route)),
+            command
+                .input
+                .iter()
+                .map(|field| go_string(ess_gen::schema::wire_field_name(field)))
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
         Encoding::Form => format!(
             "formObject(request, body, {}, {}, {ignore})",

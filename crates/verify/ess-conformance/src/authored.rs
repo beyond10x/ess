@@ -3336,8 +3336,6 @@ impl<'a> Compiler<'a> {
         self.source.insert(command_ref.clone().into());
         // Cloned out of the IR so the borrow ends here: every refusal below takes `&mut self`.
         let input_fields = command.input.clone();
-        let outcomes: Vec<OutcomeName> =
-            command.outcomes.iter().map(|it| it.name.clone()).collect();
         self.reach(&input_fields);
 
         if act.refused == Some(Refused::NotGranted) {
@@ -3376,7 +3374,7 @@ impl<'a> Compiler<'a> {
         self.steps.push(step);
         self.unordered_tie(&command_ref, command, act, sent.as_ref());
 
-        self.expected_outcome(&command_ref, &outcomes, act);
+        self.expected_outcome(&command_ref, command, act);
         self.guarded_outcome(&command_ref, command, act, sent.as_ref());
         self.generated_claims(command, act);
 
@@ -4347,26 +4345,37 @@ impl<'a> Compiler<'a> {
             .is_some_and(|declared| declared.type_ref.required() == identity.required())
     }
 
-    /// The branch `act` expects under `outcome:`, one of `outcomes`, the branches of
-    /// `command_ref`; refused where the command declares no such branch.
-    fn expected_outcome(&mut self, command_ref: &CommandRef, outcomes: &[OutcomeName], act: &Act) {
+    /// The branch `act` expects under `outcome:`, one of the branches of `command`; refused where
+    /// the command declares no such branch.
+    ///
+    /// A branch that declares no error is a success, so the step also requires that no error came
+    /// back: matched by name alone, a target answering the success branch with an error passed.
+    /// A refusing branch is unchanged; its error is the act's `error:` claim to state.
+    fn expected_outcome(&mut self, command_ref: &CommandRef, command: &ResolvedCommand, act: &Act) {
         let Some(written) = &act.outcome else {
             return;
         };
-        match OutcomeName::new(written)
+        let declared = OutcomeName::new(written)
             .ok()
-            .filter(|outcome| outcomes.contains(outcome))
-        {
+            .and_then(|name| command.outcomes.iter().find(|outcome| outcome.name == name));
+        match declared {
             Some(outcome) => {
-                let reference = OutcomeRef::new(command_ref.clone(), outcome);
+                let reference = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
                 self.source.insert(reference.clone().into());
                 self.steps
                     .push(ScenarioStep::ExpectOutcome { outcome: reference });
+                if outcome.error.is_none() {
+                    self.steps.push(ScenarioStep::ExpectNoError);
+                }
             }
             None => self.refuse(Cause::UndeclaredOutcome {
                 command: command_ref.clone(),
                 outcome: written.clone(),
-                declared: outcomes.iter().map(ToString::to_string).collect(),
+                declared: command
+                    .outcomes
+                    .iter()
+                    .map(|outcome| outcome.name.to_string())
+                    .collect(),
             }),
         }
     }

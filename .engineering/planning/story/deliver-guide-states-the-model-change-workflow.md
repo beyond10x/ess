@@ -9,8 +9,8 @@ tags:
 - deployment-chain
 - docs
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-delivery
 revision: 1
 ---
 ## Outcome

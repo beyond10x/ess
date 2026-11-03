@@ -5370,6 +5370,9 @@
           }
         },
         {
+          "step": "expect_no_error"
+        },
+        {
           "step": "expect_event",
           "event": "billing.invoice.InvoiceCreated",
           "payload": {
@@ -5427,6 +5430,9 @@
           }
         },
         {
+          "step": "expect_no_error"
+        },
+        {
           "step": "execute_command",
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
@@ -5454,6 +5460,9 @@
             "command": "billing.invoice.CreateInvoice",
             "outcome": "accepted"
           }
+        },
+        {
+          "step": "expect_no_error"
         },
         {
           "step": "expect_event",
@@ -5507,6 +5516,9 @@
             "command": "billing.invoice.IssueInvoice",
             "outcome": "issued"
           }
+        },
+        {
+          "step": "expect_no_error"
         },
         {
           "step": "query_view",

@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:32Z",
+  "actor": "human:timo",
+  "artifact": "story:the-language-policy-is-counted-and-cited",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "crates/edge/ess-xtask/src/docs.rs:1523"
+  }
+}

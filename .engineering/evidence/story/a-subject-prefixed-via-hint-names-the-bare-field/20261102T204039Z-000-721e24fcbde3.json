@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:39Z",
+  "actor": "human:timo",
+  "artifact": "story:a-subject-prefixed-via-hint-names-the-bare-field",
+  "kind": "story",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "f9fa4d12d"
+  }
+}

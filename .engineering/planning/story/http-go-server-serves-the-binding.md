@@ -2,11 +2,16 @@
 format: aep.planning-md/3
 id: story:http-go-server-serves-the-binding
 kind: story
-status: draft
+status: implemented
 title: The synthesized Go server serves an ess-http/1 binding
 relations:
 - depends_on: story:http-rust-server-serves-the-binding
-revision: 1
+- serves: vision:O2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:41:28Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:41:29Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:41:29Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

@@ -6,9 +6,12 @@ status: draft
 title: 'Store the value an outcome returns with {response: <field>} in sets: (ess/24)'
 tags:
 - ess-0.71.0
+refs:
+- provider: github
+  reference: beyond10x/ess#498
 relations:
 - serves: vision:O2
-revision: 4
+revision: 6
 ---
 ## Outcome
 
@@ -332,3 +335,7 @@ In crates/verify/ess-conformance/tests/interpreted_response_values.rs:
 opened once for the open-issue batch that carries the `ess/33` language changes
 (`docs/plan/wave-ess-issues-1.md` § Batches). Read `ess/31` above as `ess/33`, and `ess/30` as
 "below `ess/33`". Store drift fixed under D136 (`approval-record:d136-synthesis-defects-and-store-drift`).
+
+## Reconcile note (2026-11-02)
+
+Store hygiene H0 of wave W1, section 2i: The body names a format version that has since shipped without this change; it targets the next free format version instead.

@@ -111,6 +111,9 @@ fn a1a_the_interpreter_answers_the_input_refusal_before_a_stored_missing_row() {
     assert!(refused.is_complete(), "{:?}", refusals(&refused));
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(&model));
     suite.scenarios = refused.scenarios;
+    // story:authored-success-step-asserts-no-error: a success act now states `expect_no_error`,
+    // which the hand-built suite admits only at the format the CLI selects.
+    suite.select_fresh_format_for(&model);
     assert_eq!(not_passed(model, &suite), Vec::<String>::new());
 }
 

@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:41Z",
+  "actor": "human:timo",
+  "artifact": "story:create-only-command-cannot-refuse",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "CHANGELOG.md:3413 (0.38.0, existing_instance:, beyond10x/ess#164)"
+  }
+}

@@ -1,0 +1,25 @@
+format: ess-ui/1
+app: desk
+model: shelf
+placement_profile: fat
+shells: {app: {regions: {main: {kind: page_outlet}}}}
+navigation: {home: desk, sections: [{name: all, pages: [desk]}]}
+pages:
+  desk:
+    kind: detail_page
+    title: Shelf
+    sections:
+      - name: items
+        component: collection
+        reads: items.AllItems
+      - name: stamps
+        component: collection
+        reads: items.AllStamps
+      - name: add_item
+        component: form
+        does: items.AddItem
+        fields: [created_at]
+      - name: add_stamp
+        component: form
+        does: items.AddStamp
+        fields: [stamped_at]

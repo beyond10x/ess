@@ -11,7 +11,7 @@ tags:
 - ess-0.70.0
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-wire-and-answers
 scope:
 - confidence: cited
   path: crates/generate/ess-gen/src/asyncapi.rs

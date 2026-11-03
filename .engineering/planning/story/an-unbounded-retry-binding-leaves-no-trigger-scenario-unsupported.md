@@ -12,8 +12,9 @@ tags:
 - ess-0.69.0-first
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
 - depends_on: story:a-binding-trigger-acts-on-the-row-its-setup-arranged
+- supersedes: story:a-delivery-under-unbounded-retry-is-not-sent-unsupported
+- decomposes: epic:adopter-gaps-synthesis
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
@@ -21,7 +22,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/binding_effects.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/binding_arranged_rows.rs
-revision: 7
+revision: 8
 ---
 ## Need
 
@@ -110,3 +111,17 @@ Test: `crates/verify/ess-conformance/tests/binding_arranged_rows.rs`, two new ca
   target that drops the binding still fails `grant-on-assigned/binding/flow` on the fixed suite.
 - **No regression.** d3a (the trigger guards the row's existence) keeps 6 of 6 passed and its suite bytes; every existing case
   in `binding_arranged_rows.rs`, `bounded_retry.rs` and `refusal_policy.rs` keeps its verdict.
+
+## Merged case
+
+Merged 2026-11-02 from `story:a-delivery-under-unbounded-retry-is-not-sent-unsupported` (store
+hygiene H0 of wave W1), same mechanism (`interpret/bindings.rs:303`).
+
+- Found by adversary pass 1 of wave D350 U2 (`review-result:adversary-d350-u2-pass-1`, O1, out of
+  scope, origin undecided): a binding delivery scenario (`raise-on-lowered/binding/delivery`) is
+  synthesized where the second delivery's command (`Raise`) refuses under an unbounded
+  `on_failure: retry`, and the model interpreter reports it `Unsupported` ("binding invocation
+  budget exhausted"). Raise has no related guard; not checked on a base tree.
+- Acceptance carried over: a red case first reproduces the delivery scenario on the base and names
+  whether it predates D350; synthesis does not send a delivery scenario whose retried command cannot
+  succeed, or the interpreter answers it with a declared outcome; it is not reported `Unsupported`.

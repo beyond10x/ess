@@ -7,8 +7,8 @@ title: A CLI binding declares a command path deeper than two tokens
 tags:
 - feature-request
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-generated-code
 revision: 1
 ---
 ## Outcome

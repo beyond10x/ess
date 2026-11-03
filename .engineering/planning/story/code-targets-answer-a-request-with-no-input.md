@@ -8,8 +8,8 @@ tags:
 - adopter-report
 - feature
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-generated-code
 revision: 1
 ---
 ## Outcome

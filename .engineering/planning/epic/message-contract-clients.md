@@ -2,11 +2,15 @@
 format: aep.planning-md/3
 id: epic:message-contract-clients
 kind: epic
-status: draft
+status: implemented
 title: A message contract in ESS projects a complete AsyncAPI and generates typed Go and Rust publishers
 relations:
 - serves: vision:O2
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:54:58Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:54:58Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:54:58Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

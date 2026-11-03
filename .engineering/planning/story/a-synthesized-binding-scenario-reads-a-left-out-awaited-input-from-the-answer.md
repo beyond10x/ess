@@ -7,7 +7,7 @@ title: A synthesized binding scenario reads a left-out awaited input from the an
 summary: The binding scenario for an awaited Optional input passes against a target that leaves it out, without a hand edit.
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-synthesis
 revision: 1
 ---
 ## Need

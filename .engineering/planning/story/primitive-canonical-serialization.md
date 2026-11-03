@@ -33,7 +33,7 @@ scope:
   path: crates/verify/ess-conformance/src/report.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/witness.rs
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-12T01:29:11Z", actor: "human:timo", revision: 12, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-12T01:29:14Z", actor: "human:timo", revision: 13, imported: true}
@@ -59,3 +59,7 @@ Reader and writer move together behind one format version (design page, "What st
 - `crates/generate/ess-gen/src/types.rs`, `crates/generate/ess-synth/src/{rust/wire.rs,go/http.rs}` — cited by stage one.
 - A format version for `ess-conformance-report/1`, suites and witnesses — inferred.
 - Would collide with: any unit touching those files or the report/suite/witness formats — cited.
+
+## State
+
+2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): Integer half done (`crates/specify/ess-primitives/tests/canonical_number_serialization.rs`); Decimal half lands with `story:a-rust-runner-compares-a-decimal-by-exact-value` in W5.

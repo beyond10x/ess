@@ -12,7 +12,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:generic-aggregates
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 3}
@@ -57,3 +57,7 @@ Accept, redesigned: per-element grouping is spelled explicitly.
 - `group_per_list_element_counts_a_row_in_each_group`: a window naming two services counts once
   under each.
 - `group_by_whole_list_stays_refused`: today's refusal holds for a bare list key.
+
+## State
+
+2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): Not started (`view.rs:1474` still refuses); scheduled W9, 0.92.0.

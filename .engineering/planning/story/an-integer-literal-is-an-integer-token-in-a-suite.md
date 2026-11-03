@@ -7,9 +7,9 @@ title: A synthesized Integer literal is an integer token from suite /52, not a f
 tags:
 - adopter-report
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
 - informed_by: release-plan:ess-063-downstream
+- decomposes: epic:adopter-gaps-verdicts
 scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/src/scenario.rs

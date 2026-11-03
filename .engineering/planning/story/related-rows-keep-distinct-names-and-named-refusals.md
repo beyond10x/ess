@@ -7,8 +7,8 @@ title: Related rows keep distinct names, existence refusals name their guard, an
 summary: 'Follow-up to the U6 related-guard stories: a suite-level no-double-capture check after per-row distinctions, the existence-outcome refusal test, and TagMachine on a references-only relation (0.70.0).'
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
-revision: 2
+- decomposes: epic:adopter-gaps-synthesis
+revision: 3
 ---
 ## Need
 
@@ -65,3 +65,7 @@ Class gaps the unit fixed only at the two sites the reports reached:
   a test asserts disjointness over the full range of `d` and `nth` the synthesizer can reach.
 - Each `with_row` call site is either moved to `with_row_where` or the story records why its order
   is safe.
+
+## Reconcile note (2026-11-02)
+
+Store hygiene H0 of wave W1, section 2i: This is a grab-bag of eight items. The block-overlap item no longer applies (the overlap is gone). The rest is split into one story per item before the wave that takes it.

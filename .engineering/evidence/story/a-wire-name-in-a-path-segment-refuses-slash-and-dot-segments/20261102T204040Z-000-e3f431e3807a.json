@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:40Z",
+  "actor": "human:timo",
+  "artifact": "story:a-wire-name-in-a-path-segment-refuses-slash-and-dot-segments",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "f6874b5e7"
+  }
+}

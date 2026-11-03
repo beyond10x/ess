@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-361
 kind: story
-status: draft
+status: implemented
 title: Witness aggregate group-key parameter selection
 refs:
 - provider: github
@@ -53,7 +53,11 @@ scope:
   path: crates/verify/ess-conformance/tests/aggregate_observation_execution.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/support_aggregate_observation
-revision: 22
+revision: 25
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:40:45Z", actor: "human:timo", revision: 23, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:40:45Z", actor: "human:timo", revision: 24, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:45Z", actor: "human:timo", revision: 25, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

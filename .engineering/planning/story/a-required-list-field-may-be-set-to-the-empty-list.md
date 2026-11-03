@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-required-list-field-may-be-set-to-the-empty-list
 kind: story
-status: active
+status: implemented
 title: A required list field may be set to the empty list
 summary: 'From ess/31 a sets: entry may store [] in a required List field, so a view publishing it can be filled (adopter row 16); 0.69.0.'
 tags:
@@ -11,10 +11,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-22T21:27:56Z", actor: "human:timo", revision: 2, correlation: "ess-0690"}
 - {from: "proposed", to: "active", at: "2026-10-22T21:27:56Z", actor: "human:timo", revision: 3, correlation: "ess-0690"}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:25Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Need
 

@@ -276,3 +276,227 @@ fn a_suite_pinned_below_the_read_grant_format_refuses_a_read_as() {
         .expect_err("suite/33 has no read grants");
     assert!(error.to_string().contains("suite/34"), "{error}");
 }
+
+/// Two domains, each with a `Client` neither of which the view `demo.tasks.AllTasks` names, and a
+/// granted `demo.tasks.Agent` (a2a wave-1 gaps, M6). [`two_domains`] compiles them.
+const TWO_SYSTEM: &str = "format: ess/32
+system: demo
+version: v1
+domains:
+  - demo.public
+  - demo.tasks
+";
+const TWO_COMPONENTS: &str = "components:
+  - component: demo-service
+    owns: {domains: [demo.public, demo.tasks]}
+    accepts: {commands: [demo.tasks.OpenTask]}
+    publishes: {events: [demo.tasks.TaskOpened]}
+    reached_by: network
+";
+const TWO_PUBLIC: &str = "domain: demo.public
+
+actors:
+  - name: demo.public.Client
+    may: [demo.tasks.OpenTask]
+";
+const TWO_TASKS: &str = "domain: demo.tasks
+
+entities:
+  - name: demo.tasks.Task
+    identity: {name: id, type: String}
+    fields:
+      - {name: title, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+
+events:
+  - name: demo.tasks.TaskOpened
+    fields:
+      - {name: id, type: String}
+
+commands:
+  - name: demo.tasks.OpenTask
+    input:
+      - {name: id, type: String}
+      - {name: title, type: String}
+    outcomes:
+      - name: opened
+        creates: demo.tasks.Task
+        instance: id
+        sets: {title: input.title}
+        emits: [demo.tasks.TaskOpened]
+        payload:
+          demo.tasks.TaskOpened: {id: input.id}
+
+views:
+  - name: demo.tasks.AllTasks
+    source: demo.tasks.Task
+    consistency: read_your_writes
+    fields:
+      - {name: id, type: String}
+      - {name: title, type: String}
+
+actors:
+  - name: demo.tasks.Agent
+    may: [demo.tasks.OpenTask, demo.tasks.AllTasks]
+  - name: demo.tasks.Client
+    may: [demo.tasks.OpenTask]
+";
+
+const ALL_TASKS_DENIED: &str = "demo.tasks.AllTasks/grant/read/denied";
+
+/// The two-domain model; `tasks_client_reads` grants `demo.tasks.Client` the view too.
+fn two_domains(tasks_client_reads: bool) -> EssIr {
+    let tasks = if tasks_client_reads {
+        TWO_TASKS.replace(
+            "  - name: demo.tasks.Client\n    may: [demo.tasks.OpenTask]\n",
+            "  - name: demo.tasks.Client\n    may: [demo.tasks.OpenTask, demo.tasks.AllTasks]\n",
+        )
+    } else {
+        TWO_TASKS.to_owned()
+    };
+    let mut sources = SourceMap::new();
+    let mut parsed = Vec::new();
+    for (label, text) in [
+        ("system.yaml", TWO_SYSTEM.to_owned()),
+        ("components.yaml", TWO_COMPONENTS.to_owned()),
+        ("domains/public.yaml", TWO_PUBLIC.to_owned()),
+        ("domains/tasks.yaml", tasks),
+    ] {
+        let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{label}: {error}"));
+        sources.insert(label.to_owned(), text);
+        parsed.push((Source::new(label), raw));
+    }
+    let specification =
+        Specification::assemble(parsed).unwrap_or_else(|errors| panic!("demo: {errors}"));
+    compile(&specification, &sources).unwrap_or_else(|errors| panic!("demo: {errors}"))
+}
+
+/// The actors the denied scenario of `AllTasks` reads as, in order, `None` for no actor.
+fn denied_readers(suite: &ConformanceSuite) -> Vec<Option<String>> {
+    let id: ScenarioId = ALL_TASKS_DENIED.parse().unwrap();
+    let scenario = suite.scenario(&id).expect("the denied read is filed");
+    readers_of(scenario, "demo.tasks.AllTasks")
+}
+
+/// story:a-denied-scenario-covers-every-ungranted-actor-of-the-domain: the denied read is sent as
+/// an ungranted actor of the view's own domain, not the lowest-named across domains.
+#[test]
+fn the_denied_read_prefers_an_actor_of_the_views_domain() {
+    let synthesis = ess_conformance::synthesize(&two_domains(false));
+    assert_eq!(
+        denied_readers(&synthesis.suite),
+        [Some("demo.tasks.Client".to_owned()), None],
+        "story:a-denied-scenario-covers-every-ungranted-actor-of-the-domain"
+    );
+}
+
+/// A target that admits `demo.tasks.Client` to `AllTasks` fails the denied scenario; the honest
+/// one passes every scenario.
+#[test]
+fn a_target_admitting_an_ungranted_actor_of_the_views_domain_fails() {
+    let suite = ess_conformance::synthesize(&two_domains(false)).suite;
+    let admitted = AdmittedSuite::from_suite(&suite).expect("admits");
+    let verdicts = |model: EssIr| -> Vec<(String, Status)> {
+        Runner::for_suite(&suite)
+            .run_admitted(&admitted, &Interpreted::for_model(model))
+            .into_report()
+            .scenarios
+            .iter()
+            .map(|result| (result.scenario.to_string(), result.status))
+            .collect()
+    };
+    let honest = verdicts(two_domains(false));
+    assert!(
+        honest.iter().all(|(_, status)| *status == Status::Passed),
+        "{honest:#?}"
+    );
+    let leaking = verdicts(two_domains(true));
+    let failed: Vec<&str> = leaking
+        .iter()
+        .filter(|(_, status)| *status != Status::Passed)
+        .map(|(id, _)| id.as_str())
+        .collect();
+    assert_eq!(
+        failed,
+        [ALL_TASKS_DENIED],
+        "story:a-denied-scenario-covers-every-ungranted-actor-of-the-domain: {leaking:#?}"
+    );
+}
+
+/// Where the view's domain has no ungranted actor, the denied read is today's: the lowest-named
+/// declared actor the grant does not name, then no actor, under today's purpose.
+#[test]
+fn the_denied_read_falls_back_to_the_lowest_named_actor() {
+    let synthesis = ess_conformance::synthesize(&two_domains(true));
+    let id: ScenarioId = ALL_TASKS_DENIED.parse().unwrap();
+    let scenario = synthesis
+        .suite
+        .scenario(&id)
+        .expect("the denied read is filed");
+    assert!(
+        matches!(
+            scenario.steps.as_slice(),
+            [
+                ScenarioStep::ReadAs { actor: Some(first) },
+                ScenarioStep::QueryView { .. },
+                ScenarioStep::ExpectNotGranted { actor: Some(refused), .. },
+                ScenarioStep::ReadAs { actor: None },
+                ScenarioStep::QueryView { .. },
+                ScenarioStep::ExpectNotGranted { actor: None, .. },
+            ] if first.to_string() == "demo.public.Client" && refused == first
+        ),
+        "{:?}",
+        scenario.steps
+    );
+    assert_eq!(
+        scenario.purpose.to_string(),
+        "`demo.tasks.AllTasks` read as `demo.public.Client`, whose grant does not name it, and as \
+         no actor is refused before anything is read"
+    );
+}
+
+/// Every ungranted actor of the view's domain is read as, lowest-named first, then no actor; an
+/// ungranted actor of another domain is not.
+#[test]
+fn every_ungranted_actor_of_the_views_domain_is_refused() {
+    let mut sources = SourceMap::new();
+    let mut parsed = Vec::new();
+    let tasks = TWO_TASKS.replace(
+        "  - name: demo.tasks.Client\n",
+        "  - name: demo.tasks.Guest\n    may: [demo.tasks.OpenTask]\n  - name: demo.tasks.Client\n",
+    );
+    for (label, text) in [
+        ("system.yaml", TWO_SYSTEM.to_owned()),
+        ("components.yaml", TWO_COMPONENTS.to_owned()),
+        ("domains/public.yaml", TWO_PUBLIC.to_owned()),
+        ("domains/tasks.yaml", tasks),
+    ] {
+        let raw = RawSpecFile::parse(&text).unwrap_or_else(|error| panic!("{label}: {error}"));
+        sources.insert(label.to_owned(), text);
+        parsed.push((Source::new(label), raw));
+    }
+    let specification =
+        Specification::assemble(parsed).unwrap_or_else(|errors| panic!("demo: {errors}"));
+    let ir = compile(&specification, &sources).unwrap_or_else(|errors| panic!("demo: {errors}"));
+    let synthesis = ess_conformance::synthesize(&ir);
+    assert_eq!(
+        denied_readers(&synthesis.suite),
+        [
+            Some("demo.tasks.Client".to_owned()),
+            Some("demo.tasks.Guest".to_owned()),
+            None
+        ],
+        "story:a-denied-scenario-covers-every-ungranted-actor-of-the-domain"
+    );
+    let admitted = AdmittedSuite::from_suite(&synthesis.suite).expect("admits");
+    let report =
+        Runner::for_suite(&synthesis.suite).run_admitted(&admitted, &Interpreted::for_model(ir));
+    assert!(
+        report
+            .scenarios
+            .iter()
+            .all(|scenario| scenario.status == Status::Passed),
+        "{:#?}",
+        report.scenarios
+    );
+}

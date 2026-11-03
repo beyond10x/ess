@@ -5,8 +5,10 @@
 //!
 //! - [`Binding`]: the route table a renderer reads instead of deriving a path. It is computed from
 //!   the model by `ess_ui_check::binding` through `ess_gen::http::routes` — the one derivation the
-//!   synthesized servers answer — and covers only the views and commands the document names. It
-//!   serialises to JSON for a generator that is not Rust.
+//!   synthesized servers answer — and covers only the views and commands the document names. With
+//!   an `ess-http/1` binding (`ess_ui_check::binding_over`) each route is the one that binding
+//!   declares, through `ess_gen::http::bound_routes`, with its method and path variables
+//!   (beyond10x/ess#713). It serialises to JSON for a generator that is not Rust.
 //! - [`classify`]: the one reading of a command's answer. A served command answers a declared
 //!   branch (`outcome`, `published`, and `error`/`payload` when it refused) or a refusal the surface
 //!   makes itself (`refused`, plus `actor` on a `403` for a caller no grant admits and `committed`
@@ -44,6 +46,22 @@ impl Binding {
         self.components
             .values()
             .find_map(|served| served.views.get(qualified))
+    }
+
+    /// Whether any route leaves the derived surface's method or carries a path parameter: what
+    /// an `ess-http/1` binding moves (beyond10x/ess#713). A renderer that reads only paths needs
+    /// nothing more when this is `false`.
+    pub fn routed(&self) -> bool {
+        self.components.values().any(|served| {
+            served
+                .views
+                .values()
+                .any(|route| route.method.is_some() || !route.path_params.is_empty())
+                || served
+                    .commands
+                    .values()
+                    .any(|route| route.method.is_some() || !route.path_params.is_empty())
+        })
     }
 }
 
@@ -120,7 +138,8 @@ pub struct ServedComponent {
     pub commands: BTreeMap<String, CommandRoute>,
 }
 
-/// How one view is read: a `GET` on `path`, with its parameters in the query.
+/// How one view is read: a `GET` on `path`, with its parameters in the query, unless an
+/// `ess-http/1` binding names another method or carries a parameter in the path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ViewRoute {
     /// The path, as the served surface answers it.
@@ -133,6 +152,14 @@ pub struct ViewRoute {
     /// keeps its bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<String>,
+    /// The method, where an `ess-http/1` binding serves the view on another than `GET`; absent
+    /// from the JSON at `GET`, so a route table computed without a binding keeps its bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    /// Each variable of [`Self::path`] (`{name}`) to the parameter, by [`QueryParam::name`], whose
+    /// value it carries; a carried parameter leaves the query. Absent from the JSON when empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub path_params: BTreeMap<String, String>,
 }
 
 /// One view parameter, carried as a query parameter.
@@ -149,11 +176,28 @@ pub struct QueryParam {
     pub scalar: String,
 }
 
-/// How one command is sent: a `POST` on `path`.
+/// How one command is sent: a `POST` on `path`, unless an `ess-http/1` binding names another
+/// method or carries an input field in the path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommandRoute {
     /// The path, as the served surface answers it.
     pub path: String,
+    /// The method, where an `ess-http/1` binding serves the command on another than `POST`;
+    /// absent from the JSON at `POST`, so a route table computed without a binding keeps its
+    /// bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    /// Each variable of [`Self::path`] (`{name}`) to the input field, by the name the body
+    /// carries it under, whose value it carries; a carried field leaves the body. Absent from the
+    /// JSON when empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub path_params: BTreeMap<String, String>,
+    /// Each variable of [`Self::path_params`] whose field is renamed on the wire, to the field's
+    /// model name: a `bind` may send the field under either name, so the variable is filled from
+    /// the other when the wire name holds no value, and both leave the body. Absent from the JSON
+    /// when empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub path_aliases: BTreeMap<String, String>,
     /// Whether a request must carry a body (`ess_gen::http::body_required`).
     pub body_required: bool,
     /// Every declared error the command can answer, by its wire code (the `error` member of a

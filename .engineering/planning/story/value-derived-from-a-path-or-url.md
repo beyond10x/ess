@@ -7,8 +7,8 @@ title: A value is declared as derived from a path or URL input
 tags:
 - feature-request
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-domain-language
 revision: 1
 ---
 ## Outcome

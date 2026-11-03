@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:an-external-creators-further-runs-name-arranged-rows
 kind: story
-status: draft
+status: implemented
 title: An external creating branch beside a related guard sends only arranged rows
 summary: 0.69.1 synthesized RenderPatch/outcome/rendered-limited for a downstream specification with a further run naming a patch no step created; the interpreter failed it. Further runs of such a branch are now its siblings'.
 tags:
@@ -12,7 +12,11 @@ relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
 - informed_by: story:rows-a-guarded-move-reaches-are-made-once
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:40:38Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:40:38Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:38Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 

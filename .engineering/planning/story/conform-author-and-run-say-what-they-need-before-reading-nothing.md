@@ -11,7 +11,7 @@ tags:
 - feature-request
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-generated-code
 scope:
 - confidence: cited
   path: crates/edge/ess-cli/src/input_discovery.rs

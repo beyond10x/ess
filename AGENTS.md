@@ -206,7 +206,12 @@ in `adversary_287_pass1` fail with `TS2688: Cannot find type definition file for
 `ess-synth`'s `integer_spellings` runs a Rust harness built once by `task integer-spellings-harness`
 (no test builds with cargo, `no_test_builds.rs`); `task test` and the CI shards set
 `ESS_INTEGER_SPELLINGS_HARNESS` to it, and a bare `cargo test -p ess-synth` needs that task run and
-the variable set, or its Rust cases fail naming the task.
+the variable set, or its Rust cases fail naming the task. The same holds for `task
+json-body-harnesses` (`json_body_closure` and `adversary_w1_gen1_security`, through
+`ESS_JSON_BODY_CLOSURE_HARNESS` and `ESS_JSON_BODY_SECURITY_HARNESS`) and `task ui-http-servers`
+(`ess-cli`'s `generate_ui_http`, through `ESS_UI_HTTP_SHELF_SERVER` and `ESS_UI_HTTP_ITEMS_SERVER`).
+Each generates its server from a committed model and `http.yaml.in` binding beside the test; a
+change to either needs the task run again.
 Put the JavaScript tools `ci.yml` installs globally on `PATH` too (`typescript@6.0.3`,
 `prettier@3.8.1`, `esbuild@0.28.2`, for example `npm install --prefix <dir>` and `<dir>/node_modules/.bin`
 first on `PATH`): without `esbuild` the generated React app's `npm run dev` and `npm run preview`

@@ -2,13 +2,14 @@
 format: aep.planning-md/3
 id: story:integrate-source-driven-realizations
 kind: story
-status: draft
+status: implemented
 title: Integrate source-driven realizations with the remediation baseline
 relations:
 - depends_on: story:review-format-catalog
 - depends_on: story:review-rust-target-feasibility
 - depends_on: story:types-only-realizations
 - depends_on: story:source-pinned-data-normalization
+- serves: vision:O2
 scope:
 - confidence: cited
   path: CHANGELOG.md
@@ -22,7 +23,11 @@ scope:
   path: docs/design/review-rust-target-feasibility.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:41:32Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":2}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:41:32Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":2}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:41:32Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Evidence
 

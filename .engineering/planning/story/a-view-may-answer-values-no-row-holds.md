@@ -12,8 +12,8 @@ refs:
   reference: beyond10x/ess#674
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
 - informed_by: architecture-decision-record:a-command-guard-reads-a-component-setting
+- decomposes: epic:adopter-gaps-wire-and-answers
 revision: 3
 ---
 ## Problem

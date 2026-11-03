@@ -7,8 +7,8 @@ title: A field's naming.code chooses its identifier in Rust and Go
 summary: Code emitters read naming.code for declarations and enum variants but not for fields; split from beyond10x/ess#659.
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
 - depends_on: story:a-command-input-and-response-field-may-share-a-name-in-rust
+- decomposes: epic:adopter-gaps-generated-code
 revision: 1
 ---
 ## Need

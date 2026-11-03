@@ -11,8 +11,10 @@
 //!   wherever the reader in force does not name the view. Reads of open views are left as they
 //!   are.
 //! - **Who is refused.** One `<view>/grant/read/denied` per read-granted view: the view read as
-//!   the lowest-named declared actor its grant does not name, where there is one, and then as no
-//!   actor at all, each requiring the standard refusal of the read naming whom it was read as.
+//!   each actor of the view's own domain its grant does not name, in name order — the actors a
+//!   target is likeliest to admit by mistake — or, where that domain has none, as the lowest-named
+//!   declared actor its grant does not name, where there is one; and then as no actor at all; each
+//!   requiring the standard refusal of the read naming whom it was read as.
 //!   Where every declared actor names the view only the no-actor read is made, and a
 //!   [`Note::ReadGrantedToEveryActor`] says so.
 //! - **Who is admitted.** One `<view>/grant/read/admitted/<actor>` per actor naming the view, read
@@ -182,18 +184,29 @@ fn witness(ir: &EssIr, view: &QualifiedName, synthesis: &mut Synthesis) {
             .push(Note::ReadGrantUnwitnessed { view: view_ref });
         return;
     };
-    let denied = ir
-        .actors()
-        .values()
-        .find(|actor| !actor.may_read(view))
-        .map(|actor| ActorRef::new(actor.name.clone()));
+    // Every actor of the view's own domain its grant does not name, in name order: the actors a
+    // target is likeliest to admit by mistake. Where that domain has none, the lowest-named
+    // declared actor the grant does not name, as before (a2a wave-1 gaps, M6).
+    let domain = ir.views().get(view).map(|declared| &declared.domain);
+    let ungranted = || ir.actors().values().filter(|actor| !actor.may_read(view));
+    let mut denied: Vec<ActorRef> = ungranted()
+        .filter(|actor| Some(&actor.domain) == domain)
+        .map(|actor| ActorRef::new(actor.name.clone()))
+        .collect();
+    if denied.is_empty() {
+        denied.extend(
+            ungranted()
+                .next()
+                .map(|actor| ActorRef::new(actor.name.clone())),
+        );
+    }
     let mut filed: Vec<(ScenarioId, ConformanceScenario)> = vec![(
         ScenarioId::ReadGrant {
             view: view_ref.clone(),
         },
-        denied_reads(&arranged, view, denied.as_ref()),
+        denied_reads(&arranged, view, &denied),
     )];
-    if denied.is_none() {
+    if denied.is_empty() {
         synthesis.notes.push(Note::ReadGrantedToEveryActor {
             view: view_ref.clone(),
         });
@@ -226,20 +239,20 @@ fn witness(ir: &EssIr, view: &QualifiedName, synthesis: &mut Synthesis) {
     synthesis.refusals.extend(refusals);
 }
 
-/// The denied reads of a read-granted view: as `sender`, an actor its grant does not name, where
-/// one is declared, and always as no actor, each requiring the standard refusal of the read
-/// naming whom it was read as.
+/// The denied reads of a read-granted view: as each of `senders`, actors its grant does not name,
+/// in turn, and always as no actor, each requiring the standard refusal of the read naming whom
+/// it was read as.
 fn denied_reads(
     arranged: &Arranged,
     view: &QualifiedName,
-    sender: Option<&ActorRef>,
+    senders: &[ActorRef],
 ) -> ConformanceScenario {
     let mut steps = arranged.steps.clone();
     let mut source = arranged.source.clone();
     if let Some(read) = read_of(&arranged.read) {
         source.insert(read.clone().into());
     }
-    for actor in sender.into_iter().map(Some).chain([None]) {
+    for actor in senders.iter().map(Some).chain([None]) {
         steps.push(ScenarioStep::ReadAs {
             actor: actor.cloned(),
         });
@@ -252,12 +265,21 @@ fn denied_reads(
             source.insert(actor.clone().into());
         }
     }
-    let purpose = match sender {
-        Some(sender) => format!(
+    let purpose = match senders {
+        [] => format!("`{view}` read as no actor is refused before anything is read"),
+        [sender] => format!(
             "`{view}` read as `{sender}`, whose grant does not name it, and as no actor is \
              refused before anything is read"
         ),
-        None => format!("`{view}` read as no actor is refused before anything is read"),
+        senders => format!(
+            "`{view}` read as {}, whose grants do not name it, and as no actor is refused \
+             before anything is read",
+            senders
+                .iter()
+                .map(|sender| format!("`{sender}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     };
     ConformanceScenario::new(clipped(&purpose), steps, source)
 }

@@ -36,7 +36,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 pub use model::{
-    binding, compile_sources, load_model, model_from_sources, BindingError, Model, Refusal,
+    binding, binding_over, compile_sources, load_model, model_from_sources, BindingError,
+    HttpBinding, Model, Refusal,
 };
 
 /// The format marker of the JSON report.
@@ -146,6 +147,7 @@ pub const CHECKS: &[Check] = &[
     schema_check("filter_paging", Severity::Error),
     schema_check("filter_over_param", Severity::Warning),
     schema_check("filter_export", Severity::Warning),
+    schema_check("account_menu_keys", Severity::Error),
     // The loader refused the document for a reason no other check names.
     rule("document_loads"),
     // `layers`: a node stands where its layer may not.

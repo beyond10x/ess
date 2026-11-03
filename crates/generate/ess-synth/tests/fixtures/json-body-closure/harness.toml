@@ -1,0 +1,12 @@
+[package]
+name = "json-body-closure-harness"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+shelf-server = { path = "../shelf/crates/shelf-server" }
+shelf-system = { path = "../shelf/crates/shelf-system" }
+shelf-service = { path = "../shelf/crates/shelf-service" }
+shelf-types = { path = "../shelf/crates/shelf-types" }
+
+[workspace]

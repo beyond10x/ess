@@ -9,10 +9,13 @@ tags:
 - adopter-report
 - ess-0.71.0
 - feature-request
+refs:
+- provider: github
+  reference: beyond10x/ess#638
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
-revision: 3
+- decomposes: epic:adopter-gaps-domain-language
+revision: 5
 ---
 ## Need
 
@@ -46,3 +49,9 @@ uniqueness constraint over the pair.
 ## Schedule
 
 Gap; tagged `ess-0.69.0` as filed from a2a wave 1. Likely a new format version.
+
+## Acceptance addendum (2026-11-02, beyond10x/ess#638)
+
+- One part of a composite identity may come from a caller attribute and another from an input:
+  `instance: {account_id: {caller: account_id}, app_id: input.app_id}` addresses the row by both,
+  and synthesis arranges the caller attribute it needs.

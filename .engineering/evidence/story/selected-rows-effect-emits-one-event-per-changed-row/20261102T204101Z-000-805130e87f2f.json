@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:41:01Z",
+  "actor": "human:timo",
+  "artifact": "story:selected-rows-effect-emits-one-event-per-changed-row",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "03045dab8"
+  }
+}

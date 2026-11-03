@@ -38,6 +38,9 @@
             "command": "billing.invoice.CreateInvoice",
             "outcome": "accepted"
           }
+        },
+        {
+          "step": "expect_no_error"
         }
       ],
       "source": [

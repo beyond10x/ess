@@ -10,8 +10,8 @@ refs:
 - provider: github
   reference: beyond10x/ess#512
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-verdicts
 revision: 1
 ---
 ## Outcome

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:browser-fixture-startup-deadline
 kind: story
-status: active
+status: implemented
 title: The Firefox BiDi fixture assumes a 30-second startup on a shared runner
 summary: Three ess-cli browser tests fail on a slow runner at a constant 30 s deadline; report the environment refusal and stop the three starts competing.
 tags:
@@ -14,10 +14,11 @@ scope:
   path: crates/edge/ess-cli/tests/coverage_browser.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-12T04:18:07Z", actor: "human:timo", revision: 3, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-12T04:18:08Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:27Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 # The Firefox BiDi fixture assumes a 30-second startup on a shared runner
 

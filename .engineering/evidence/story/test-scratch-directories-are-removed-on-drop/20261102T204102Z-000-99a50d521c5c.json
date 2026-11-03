@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:41:02Z",
+  "actor": "human:timo",
+  "artifact": "story:test-scratch-directories-are-removed-on-drop",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "0dc41047b"
+  }
+}

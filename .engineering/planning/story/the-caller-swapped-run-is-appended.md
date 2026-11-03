@@ -5,7 +5,7 @@ kind: story
 status: draft
 title: The caller-swapped run of a caller-written set effect is appended, and a test fails without it
 relations:
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-synthesis
 revision: 2
 ---
 ## Outcome

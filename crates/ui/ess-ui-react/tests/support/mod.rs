@@ -268,6 +268,25 @@ pub fn compile(project: &Path, modules: &[&str]) {
     );
 }
 
+/// Runs `script` (after the prelude) under node in `project` and returns what it printed;
+/// panics with its output on failure.
+pub fn node_stdout(project: &Path, name: &str, script: &str) -> String {
+    let path = project.join(format!("{name}.cjs"));
+    write(&path, &format!("{PRELUDE}\n{script}"));
+    let output = Command::new("node")
+        .arg(&path)
+        .current_dir(project)
+        .output()
+        .expect("node is on PATH");
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
 /// Runs `script` (after the prelude) under node in `project`; panics with its output on failure.
 pub fn node(project: &Path, name: &str, script: &str) {
     let path = project.join(format!("{name}.cjs"));

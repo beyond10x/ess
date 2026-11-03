@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:52Z",
+  "actor": "human:timo",
+  "artifact": "story:http-stage-2-design-answers",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "docs/design/http-presentation-binding.md:758"
+  }
+}

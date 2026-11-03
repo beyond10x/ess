@@ -5,8 +5,8 @@ kind: story
 status: draft
 title: mutate --target interpreted runs synthesized scenarios on the scenario clock run uses
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
+- decomposes: epic:adopter-gaps-verdicts
 revision: 1
 ---
 ## Outcome

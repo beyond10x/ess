@@ -72,7 +72,9 @@ pub const REQUESTS: &[[&str; 7]] = &[
     ],
     // A `json` body read as the Rust server's `json::parse` reads one, where `encoding/json`
     // reads it otherwise: a lone surrogate escape and nesting past 64 are refused, a raw control
-    // character in a string and a leading zero are read. A member no field declares is not read.
+    // character in a string and a leading zero are read. A member no field declares is malformed
+    // (story:a-json-command-body-refuses-an-unknown-member), so `put-leading-zero` is refused
+    // for its member and `place-leading-zero` reads the leading zero in a declared field.
     [
         "put-lone-surrogate",
         "y",
@@ -113,6 +115,27 @@ pub const REQUESTS: &[[&str; 7]] = &[
         "",
         "",
         r#"{"title":"Lamp","extra":-01}"#,
+    ],
+    [
+        "place-leading-zero",
+        "y",
+        "POST",
+        "/places",
+        "",
+        "",
+        r#"{"item_id":"j5","count":-01}"#,
+    ],
+    // A JSON command body with a member no input field names, under the default `unknown:
+    // refuse`: `refusals.malformed` (story:a-json-command-body-refuses-an-unknown-member), the
+    // design's "an unknown key under `refuse`" (`docs/design/http-presentation-binding.md`).
+    [
+        "place-unknown-member",
+        "y",
+        "POST",
+        "/places",
+        "",
+        "",
+        r#"{"item_id":"i1","count":1,"x":1}"#,
     ],
     ["docs", "y", "GET", "/docs", "", "", ""],
     ["openapi", "y", "GET", "/openapi.json", "", "", ""],

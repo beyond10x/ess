@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:test-scratch-directories-are-removed-on-drop
 kind: story
-status: draft
+status: implemented
 title: Every test that creates a TMPDIR directory removes it on drop, panics included
 relations:
 - serves: vision:O2
@@ -31,7 +31,11 @@ scope:
   path: crates/ui/ess-ui-tui/tests/read_filter.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests
-revision: 13
+revision: 16
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:41:03Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:41:03Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:41:03Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Finding
 

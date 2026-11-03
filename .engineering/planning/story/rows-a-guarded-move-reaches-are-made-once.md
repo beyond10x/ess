@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:rows-a-guarded-move-reaches-are-made-once
 kind: story
-status: draft
+status: implemented
 title: Synthesis makes the rows a guarded move reaches once
 summary: 0.69.0 synthesized a downstream specification for over 13 minutes where 0.68.0 took 56 s; the creating branches' rows are now made once per model and context.
 tags:
@@ -13,7 +13,11 @@ relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
 - informed_by: story:seeded-state-reaches-related-rows
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:41:00Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":2}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:41:00Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":2}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:41:00Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Need
 

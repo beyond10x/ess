@@ -2,11 +2,13 @@
 format: aep.planning-md/3
 id: story:a-delivery-under-unbounded-retry-is-not-sent-unsupported
 kind: story
-status: draft
+status: archived
 title: A binding delivery under an unbounded retry is not synthesized as Unsupported
 relations:
 - serves: vision:O2
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-02T20:43:58Z", actor: "human:timo", revision: 3}
 ---
 ## Finding
 
@@ -22,3 +24,10 @@ budget exhausted"). Raise has no related guard; not checked on a base tree.
   D350.
 - Synthesis does not send a delivery scenario whose retried command cannot succeed, or the
   interpreter answers it with a declared outcome; it is not reported `Unsupported`.
+
+## Resolution
+
+2026-11-02, store hygiene H0 of wave W1 (reconcile roadmap section 2b, R2): merged into
+`story:an-unbounded-retry-binding-leaves-no-trigger-scenario-unsupported`, which supersedes this
+story. Same mechanism (`interpret/bindings.rs:303`); the delivery case is appended to the target's
+body under "Merged case". Archived.

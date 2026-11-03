@@ -8,8 +8,8 @@ tags:
 - adopter-report
 - ess-0.70.0
 relations:
-- decomposes: epic:downstream-reported-gaps
-revision: 3
+- decomposes: epic:adopter-gaps-wire-and-answers
+revision: 4
 ---
 ## Need
 
@@ -59,3 +59,7 @@ added to it:
 
 - A view with parameters generates a request type holding them, and a paged view generates
   its answer type (rows, continuation token, page size), in Rust and Go.
+
+## Reconcile note (2026-11-02)
+
+Store hygiene H0 of wave W1, section 2i: Split into its four constructs, one story each, before W8 takes it.

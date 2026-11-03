@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:expression-arithmetic-and-time
 kind: story
-status: active
+status: implemented
 title: 'Expressions compute arithmetic and time: Timestamp difference, Decimal division, now as an operand'
 tags:
 - adopter-report
@@ -14,10 +14,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:generic-expression-language
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T00:20:54Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 - {from: "proposed", to: "active", at: "2026-10-21T00:20:54Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:29Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":3}}}
 ---
 ## Outcome
 
@@ -141,3 +142,7 @@ Same refusal with `format: ess/30` on 0.68.0. Against an `Integer`, `now` is rea
 ### Regression status
 
 Not a 0.68.0 regression: identical refusals on 0.67.0 and 0.68.0. Gap. Does not block 0.68.0.
+
+## Reconcile note (2026-11-02)
+
+Store hygiene H0 of wave W1, section 2i: The view-filter remnant the 2026-10-21 note calls not done shipped in 0.68.0 (CHANGELOG.md:310, 0.68.0: a view filter may order a Timestamp field against now, #560); that note is stale.

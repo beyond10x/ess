@@ -11,9 +11,9 @@ refs:
 - provider: github
   reference: beyond10x/ess#579
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 3
+- decomposes: epic:adopter-gaps-generated-code
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-16T10:20:19Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-16T10:20:19Z", actor: "human:timo", revision: 3}
@@ -85,3 +85,7 @@ every constraint its type publishes, or the generator refuses the type by name".
 
 `crates/generate/ess-synth/src/rust/` (wire decoders), `crates/generate/ess-gen/src/types.rs`
 (Rust types target), `crates/generate/ess-synth/src/go/`, the TypeScript generator, CHANGELOG.
+
+## State
+
+2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): Rust half done; Go and TypeScript half remains; scheduled W3.

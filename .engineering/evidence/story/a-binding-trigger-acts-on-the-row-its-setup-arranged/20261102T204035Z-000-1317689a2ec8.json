@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:35Z",
+  "actor": "human:timo",
+  "artifact": "story:a-binding-trigger-acts-on-the-row-its-setup-arranged",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "eb2dfa52d"
+  }
+}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:binding-delivery-at-most-once
 kind: story
-status: proposed
+status: implemented
 title: A binding can say it delivers at most once
 summary: Add a single-attempt delivery word for bindings whose invocation is one try with no redelivery, with conformance, docs and schema consequences
 owner: timo
@@ -36,9 +36,11 @@ scope:
   path: docs/design/binding-delivery-guarantees.md
 - confidence: cited
   path: schemas/generated/ess.schema.json
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-10T11:51:32Z", actor: "agent:ess-evolution-integration", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-11-02T20:40:13Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:13Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Context
 `ess/1` bindings require `delivery:`, and `ess-domain::binding::Delivery` has one variant, `AtLeastOnce` (crates/specify/ess-domain/src/binding.rs:194-200, "the only guarantee this build implements"). The review design left the door open: docs/design/ess-review-v0.1.md:95 writes `delivery: at_least_once # the only value v0.1 accepts`. The first consumer that needed the other word arrived on 2026-09-10: `specs/services/pusher` (the consumer repository) models two crossings that are single HTTP attempts — the pusher's authorization request to the backend (`request` with no retry, auth.js:177) and the backend's publish to the pusher (response never read, HttpBrowserPusher.groovy:153). ESS 0.20.0 refused `delivery: at_most_once` with `unknown variant, expected at_least_once`; the model now says `at_least_once` and carries a header comment stating that the word is false. A specification forced to state a stronger guarantee than the system gives is the failure F3 exists to prevent.

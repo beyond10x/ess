@@ -409,7 +409,8 @@ fn without_a_binding_the_go_server_keeps_its_bytes() {
 /// `encoding/json` and the Rust server's `json::parse` disagree on what a document is, the Go
 /// server answers as the Rust one. A lone surrogate escape and nesting past 64 are
 /// `refusals.malformed`; a raw control character in a string and a number with a leading zero
-/// in a member no field declares are read, and the command runs.
+/// in a declared field are read, and the command runs. A member no field declares is malformed
+/// (story:a-json-command-body-refuses-an-unknown-member), the leading zero in it included.
 #[test]
 fn a_json_body_is_read_as_the_rust_server_reads_it() {
     let rust = shared::rust_answers();
@@ -417,13 +418,16 @@ fn a_json_body_is_read_as_the_rust_server_reads_it() {
         ("put-lone-surrogate", 400),
         ("put-nested-65", 400),
         ("put-raw-control", 202),
-        ("put-leading-zero", 202),
+        ("put-leading-zero", 400),
+        ("place-leading-zero", 201),
+        ("place-unknown-member", 400),
     ] {
         let go = served(label);
         assert_eq!(
             (rust[label].status, go.status),
             (status, status),
-            "{label}: rust {:?}\ngo   {go:?}",
+            "{label} (story:a-json-command-body-refuses-an-unknown-member: a member no field \
+             names is malformed): rust {:?}\ngo   {go:?}",
             rust[label]
         );
         assert_eq!(go.body, rust[label].body, "{label}");

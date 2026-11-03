@@ -7,9 +7,9 @@ title: ess verify diff rates a domain summary edit as documentation and decides 
 tags:
 - adopter-report
 relations:
-- decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
 - informed_by: release-plan:ess-063-downstream
+- decomposes: epic:adopter-gaps-verdicts
 scope:
 - confidence: cited
   path: crates/verify/ess-diff/src/compatibility.rs
@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-diff/tests/domain_entry.rs
 - confidence: cited
   path: crates/verify/ess-diff/tests/narrowed_acceptance.rs
-revision: 2
+revision: 3
 ---
 ## Outcome
 
@@ -92,3 +92,7 @@ Accept. Part 1 is a defect fix that can land alone; part 2 is a gap on the same 
 - Tests: `crates/verify/ess-diff/tests/domain_entry.rs`, `crates/verify/ess-diff/tests/narrowed_acceptance.rs`.
 
 Part 1 is one unit today; part 2 is one unit in the `ess-diff/20` release.
+
+## Reconcile note (2026-11-02)
+
+Store hygiene H0 of wave W1, section 2i: Narrowed to part 2: an added Optional input or field, and a related-guard refusal, which ess verify diff still rates unknown. Part 1 shipped.

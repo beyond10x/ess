@@ -11,7 +11,7 @@ relations:
 scope:
 - confidence: cited
   path: crates/ui/ess-ui
-revision: 2
+revision: 3
 ---
 ## Outcome
 
@@ -38,3 +38,7 @@ a TUI maps what it can and degrades the rest.
 ## Origin
 
 A voice-driven UI editor plans Components, Styles and Docs workspaces over one document (R8).
+
+## Reconcile note (2026-11-02)
+
+Store hygiene H0 of wave W1, section 2i: Half of this story shipped. What remains is narrowed to user preferences and the renderers' degrade capabilities; the shipped token half is out of its acceptance.

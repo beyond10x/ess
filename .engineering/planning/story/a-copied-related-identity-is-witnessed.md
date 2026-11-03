@@ -5,7 +5,7 @@ kind: story
 status: draft
 title: A row-set guard over a copied related identity is witnessed or refused by name
 relations:
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-synthesis
 revision: 2
 ---
 ## Outcome

@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:45Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-362",
+  "kind": "story",
+  "revision": 22,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "CHANGELOG.md:1960 (0.53.0, beyond10x/ess#362 closed completed)"
+  }
+}

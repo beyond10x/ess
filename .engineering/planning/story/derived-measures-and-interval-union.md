@@ -15,7 +15,7 @@ relations:
 - serves: vision:O2
 - decomposes: epic:generic-aggregates
 - depends_on: story:expression-arithmetic-and-time
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-21T22:08:02Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-21T22:08:03Z", actor: "human:timo", revision: 4}
@@ -70,3 +70,7 @@ decision to build the four generic features.
 - `interval_union_clips_to_the_period`: a window across two periods counts its part in each.
 - `uptime_ratio_over_the_parameter_span`: uptime is witnessed with a half-even tie and a zero-length
   period answering absent.
+
+## State
+
+2026-11-02 (store hygiene H0 of wave W1, reconcile roadmap section 2d; decision D9 option A, kept active with a dated note): Not started; scheduled W9.

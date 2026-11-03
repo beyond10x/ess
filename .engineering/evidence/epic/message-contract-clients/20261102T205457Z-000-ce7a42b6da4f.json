@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:54:57Z",
+  "actor": "human:timo",
+  "artifact": "epic:message-contract-clients",
+  "kind": "epic",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "CHANGELOG.md:2069 (ess generate client emits typed Rust and Go event publishers)"
+  }
+}

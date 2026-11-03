@@ -16,7 +16,9 @@
 //!
 //! [`render_bound`] binds the same project to the HTTP surface an ESS model serves, from the
 //! route table `ess_ui_check::binding` computes ([`ess_ui::binding::Binding`]); without a binding
-//! it gives exactly what [`render`] gives.
+//! it gives exactly what [`render`] gives. Only a table that moves a method or carries a path
+//! parameter ([`ess_ui::binding::Binding::routed`], beyond10x/ess#713) adds the runtime code that
+//! sends them, so every other bound project keeps its bytes.
 //!
 //! This crate has no command line of its own; [`run`] is what `ess generate ui --target react`
 //! wraps, and [`ReactArgs`] its arguments.
@@ -117,7 +119,11 @@ pub fn render_bound(
     if let Some(refusal) = gen.errors.first() {
         return Err(refusal.clone());
     }
-    files.extend(assets::runtime(&gen.used, binding.is_some()));
+    files.extend(assets::runtime(
+        &gen.used,
+        binding.is_some(),
+        binding.is_some_and(Binding::routed),
+    ));
     if files.contains_key("src/runtime/live.ts") {
         files.insert("src/channels.ts".to_owned(), gen.channels());
     }

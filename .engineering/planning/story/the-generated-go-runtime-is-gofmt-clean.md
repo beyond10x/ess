@@ -2,8 +2,10 @@
 format: aep.planning-md/3
 id: story:the-generated-go-runtime-is-gofmt-clean
 kind: story
-status: draft
+status: implemented
 title: The emitted Go runtime is not gofmt-stable, so an adopter's formatter changes it
+relations:
+- serves: vision:O2
 scope:
 - confidence: cited
   path: Taskfile.yml
@@ -11,7 +13,11 @@ scope:
   path: crates/edge/ess-xtask
 - confidence: cited
   path: crates/verify/ess-conformance
-revision: 7
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:41:36Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:41:36Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:41:36Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## What is wrong
 

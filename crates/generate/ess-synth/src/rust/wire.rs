@@ -236,22 +236,7 @@ fn type_decoder(
             newtype_body(out, surface, &path, of, declared.body.is_constrained());
         }
         ResolvedBody::Struct { fields, .. } => {
-            if fields.is_empty() {
-                // A `fields: []` struct (`ess/32`) reads no member, and a member read is what
-                // refuses a value that is no object; it is held to being one here.
-                out.push_str("    json::members_at(value, at, \"an object\")?;\n");
-            }
-            model_name_refusals(out, fields);
-            let _ = writeln!(out, "    Ok({path} {{");
-            for (position, field) in fields.iter().enumerate() {
-                let _ = writeln!(
-                    out,
-                    "        {}: {},",
-                    name::value_ident(&field.name),
-                    decode_member(surface, field, position)
-                );
-            }
-            out.push_str("    })\n");
+            struct_body(out, surface, declared, &path, fields);
         }
         ResolvedBody::Enum { variants } => {
             let expected = variant_list(
@@ -281,6 +266,8 @@ fn type_decoder(
         ResolvedBody::Union { tag, variants } => {
             let content = ess_gen::schema::union_content_key(tag);
             let expected = variant_list(&variants.keys().cloned().collect::<Vec<_>>());
+            // Each branch's published object is closed: its tag, and its content where it has one.
+            closure(out, &[tag.as_str(), content]);
             let _ = writeln!(
                 out,
                 "    let tag = json::member_at(value, at, {tag:?})?;\n    let at_tag = \
@@ -322,6 +309,43 @@ fn type_decoder(
         }
     }
     out.push_str("}\n");
+}
+
+/// A struct's decoder body: its members read in declaration order.
+fn struct_body(
+    out: &mut String,
+    surface: &dyn Surface,
+    declared: &ess_compiler::ir::ResolvedType,
+    path: &str,
+    fields: &[ResolvedField],
+) {
+    if fields.is_empty() {
+        // A `fields: []` struct (`ess/32`) reads no member, and a member read is what refuses a
+        // value that is no object; it is held to being one here.
+        out.push_str("    json::members_at(value, at, \"an object\")?;\n");
+    }
+    model_name_refusals(out, fields);
+    // Closed unless the struct declares `undeclared_fields: ignored` (`ess/24`), as its published
+    // schema is at every place it is reached.
+    if !surface.ir().undeclared_fields(&declared.name).is_ignored() {
+        closure(
+            out,
+            &fields
+                .iter()
+                .map(ess_gen::schema::wire_field_name)
+                .collect::<Vec<_>>(),
+        );
+    }
+    let _ = writeln!(out, "    Ok({path} {{");
+    for (position, field) in fields.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "        {}: {},",
+            name::value_ident(&field.name),
+            decode_member(surface, field, position)
+        );
+    }
+    out.push_str("    })\n");
 }
 
 /// The set of legal spellings, as one phrase a refusal can carry.
@@ -519,6 +543,15 @@ fn command_decoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
         out.push_str("    json::members_at(value, at, \"an object\")?;\n");
     }
     model_name_refusals(out, &command.input);
+    // A command's input is never opened (`ess/24`): its published schema is closed.
+    closure(
+        out,
+        &command
+            .input
+            .iter()
+            .map(ess_gen::schema::wire_field_name)
+            .collect::<Vec<_>>(),
+    );
     let _ = writeln!(out, "    Ok({path} {{");
     for (position, field) in command.input.iter().enumerate() {
         let _ = writeln!(
@@ -871,6 +904,13 @@ fn model_name_refusals(out: &mut String, fields: &[ResolvedField]) {
     }
 }
 
+/// The statement that refuses a member of the object being read that none of `wires` names
+/// (beyond10x/ess#707), after [`model_name_refusals`], so a member sent under a field's model name
+/// keeps the refusal that says what it is sent as.
+fn closure(out: &mut String, wires: &[&str]) {
+    let _ = writeln!(out, "    json::closed_at(value, at, &{wires:?})?;");
+}
+
 /// One field of an object being read, absence included where the declaration permits it.
 fn decode_member(surface: &dyn Surface, field: &ResolvedField, position: usize) -> String {
     let wire = ess_gen::schema::wire_field_name(field);
@@ -970,7 +1010,7 @@ fn decode_primitive(surface: &dyn Surface, primitive: Primitive, value: &str, at
             "{primitives}::Decimal(json::decimal_at({value}, {at}, \"a decimal string\")?.to_owned())"
         ),
         Primitive::Timestamp => format!(
-            "{primitives}::Timestamp(json::text_at({value}, {at}, \"an RFC 3339 \
+            "{primitives}::Timestamp(json::timestamp_at({value}, {at}, \"an RFC 3339 \
              instant\")?.to_owned())"
         ),
         Primitive::Duration => format!(
@@ -994,7 +1034,9 @@ fn decode_key(surface: &dyn Surface, primitive: Primitive, key: &str, at: &str) 
         Primitive::Integer => format!("json::key_integer({key}, {at})?"),
         Primitive::Bytes => format!("json::key_bytes({key}, {at})?"),
         Primitive::Decimal => format!("{primitives}::Decimal({key}.clone())"),
-        Primitive::Timestamp => format!("{primitives}::Timestamp({key}.clone())"),
+        Primitive::Timestamp => {
+            format!("{primitives}::Timestamp(json::key_timestamp({key}, {at})?)")
+        }
         Primitive::Duration => format!("{primitives}::Duration({key}.clone())"),
         Primitive::Uuid => format!("{primitives}::Uuid({key}.clone())"),
     }

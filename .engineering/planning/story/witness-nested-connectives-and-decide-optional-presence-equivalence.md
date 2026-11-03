@@ -2,11 +2,15 @@
 format: aep.planning-md/3
 id: story:witness-nested-connectives-and-decide-optional-presence-equivalence
 kind: story
-status: draft
+status: implemented
 title: Witness nested any/all connectives per child and decide Optional presence in mutation equivalence
 relations:
 - serves: vision:O2
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:41:11Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:41:11Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:41:11Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

@@ -12,7 +12,7 @@ tags:
 - gap
 relations:
 - serves: vision:O2
-- decomposes: epic:downstream-reported-gaps
+- decomposes: epic:adopter-gaps-synthesis
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs

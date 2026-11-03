@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:interpreted-trust-gate
 kind: story
-status: draft
+status: implemented
 title: The interpreter is checked against both hand-written targets
 summary: Billing and oracle suites as green as hand-written, and the fault matrix still discriminates
 owner: ess
@@ -35,7 +35,11 @@ scope:
   path: suites/generated/billing/suite.json
 - confidence: cited
   path: suites/generated/oracle-fixture/suite.json
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-02T20:40:57Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
+- {from: "proposed", to: "active", at: "2026-11-02T20:40:58Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
+- {from: "active", to: "implemented", at: "2026-11-02T20:40:58Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 # Story: the interpreter is checked against both hand-written targets
 

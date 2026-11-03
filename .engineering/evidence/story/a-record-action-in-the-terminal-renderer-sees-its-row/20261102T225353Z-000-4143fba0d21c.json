@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-02T22:53:53Z",
+  "actor": "human:timo",
+  "artifact": "story:a-record-action-in-the-terminal-renderer-sees-its-row",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:security-w1-ui1-pass-1",
+    "review": "review-result:security-w1-ui1-pass-1",
+    "outcome": "no-op"
+  }
+}

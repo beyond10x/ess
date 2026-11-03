@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:41:08Z",
+  "actor": "human:timo",
+  "artifact": "story:typescript-conformance-target",
+  "kind": "story",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "70bc49085"
+  }
+}

@@ -2,15 +2,16 @@
 format: aep.planning-md/3
 id: task:consumer-backlog-20261002
 kind: task
-status: active
+status: archived
 title: Process the full consumer-defect backlog in grouped deliveries
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 13
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 2, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
 - {from: "proposed", to: "active", at: "2026-10-02T08:40:21Z", actor: "human:timo", revision: 3, executor: "agent:codex-ess-backlog", correlation: "consumer-backlog-20261002"}
+- {from: "active", to: "archived", at: "2026-11-02T20:54:50Z", actor: "human:timo", revision: 15}
 ---
 ## Outcome
 
@@ -87,3 +88,10 @@ Accepted correction: pin .github/workflows/planning.yml to released AEP0.68.0 co
 Frozen source committed2220bce9b9 retains patch SHA2568e46d087f26a7bbbddd72364a01610d869af5191c1036fedb4aae7bd99b67733. Full cargo test -p ess-cli --locked --no-fail-fast completed2026-10-02T12:42:44Z with exit0:109 test binaries plus doc-test result,904 passed/0 failed/0 ignored. Log target/backlog-input/browser-full-cli.log in the managed browser tree. Focused identical-test baseline17pass/6fail to23pass/0fail, counter/lock mutants, strict all-target Clippy, formatting and independent no-findings review remain retained.
 
 Because correcting PR387's obsolete planning parser already requires a new exact head and full gate, include these now-reviewed browser fixes in that correction. This avoids a separate browser PR/full gate while keeping unfinished318 and307/360 source out. The still-running prior-head remote correctness shards will be read before publication so any additional concrete failure can be corrected together. No planning or correctness check is waived.
+
+## Resolution
+
+Archived by the 2026-11-02 reconcile (store hygiene H0 of wave W1, section 2e). The reconcile of
+2026-11-02 is the disposition of the whole consumer backlog this task asked for; its roadmap waves
+W1 onward deliver the actionable rows, and `epic:downstream-reported-gaps` is split into seven
+`adopter-gaps-*` theme epics.

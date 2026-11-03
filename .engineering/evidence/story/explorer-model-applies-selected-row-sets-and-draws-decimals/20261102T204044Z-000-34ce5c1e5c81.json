@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T20:40:44Z",
+  "actor": "human:timo",
+  "artifact": "story:explorer-model-applies-selected-row-sets-and-draws-decimals",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "CHANGELOG.md:1384 (0.60.0, beyond10x/ess#538 closed completed)"
+  }
+}

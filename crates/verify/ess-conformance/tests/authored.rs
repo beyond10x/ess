@@ -1145,6 +1145,7 @@ fn the_steps_are_the_vocabulary_a_generated_scenario_already_uses() {
         .map(|step| match step {
             ScenarioStep::ExecuteCommand { .. } => "execute",
             ScenarioStep::ExpectOutcome { .. } => "outcome",
+            ScenarioStep::ExpectNoError => "no-error",
             ScenarioStep::ExpectEvent { .. } => "event",
             ScenarioStep::CaptureInstance { .. } => "capture",
             ScenarioStep::EventuallyView { .. } => "eventually-view",
@@ -1157,7 +1158,15 @@ fn the_steps_are_the_vocabulary_a_generated_scenario_already_uses() {
     // the model decided it, exactly as it decides it for a generated scenario.
     assert_eq!(
         shape,
-        vec!["execute", "outcome", "event", "capture", "eventually-view"]
+        vec![
+            "execute",
+            "outcome",
+            "no-error",
+            "event",
+            "capture",
+            "eventually-view"
+        ],
+        "{SUCCESS_NO_ERROR_STORY}: `accepted` is a success, so the step also asserts no error"
     );
 }
 
@@ -1905,6 +1914,7 @@ fn an_elapsed_claim_compiles_to_the_four_steps_that_carry_it_and_they_come_befor
         .map(|step| match step {
             ScenarioStep::ExecuteCommand { .. } => "execute",
             ScenarioStep::ExpectOutcome { .. } => "outcome",
+            ScenarioStep::ExpectNoError => "no-error",
             ScenarioStep::MarkInstant { .. } => "mark",
             ScenarioStep::ExpectNotBefore { .. } => "not-before",
             ScenarioStep::ExpectQuiet { .. } => "quiet",
@@ -1916,13 +1926,14 @@ fn an_elapsed_claim_compiles_to_the_four_steps_that_carry_it_and_they_come_befor
         vec![
             "execute",
             "outcome",
+            "no-error",
             "mark",
             "not-before",
             "quiet",
             "execute"
         ],
         "the instant is named after the act that reaches it, and the windows close before the act \
-         that claims them"
+         that claims them ({SUCCESS_NO_ERROR_STORY}: the success act also asserts no error)"
     );
     assert!(scenario.steps.iter().any(|step| matches!(
         step,
@@ -2870,5 +2881,243 @@ fn below_scenario_6_an_out_of_type_input_still_compiles() {
                 compiled.refusals
             );
         }
+    }
+}
+
+// ---- a success step also asserts that no error came back ---------------------------------------
+
+/// The story that adds `ExpectNoError` after a success outcome, named in each changed assertion.
+const SUCCESS_NO_ERROR_STORY: &str = "story:authored-success-step-asserts-no-error";
+
+/// A refused creation: `amount.amount > 0` does not hold, so `rejected` answers with its error.
+const REJECTED: &str = "\
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: billing.invoice.CreateInvoice
+    actor: billing.invoice.Customer
+    input:
+      account_id: 00000000-0000-4000-8000-000000000001
+      customer_email: buyer@example.test
+      amount: {amount: 0, currency: EUR}
+    outcome: rejected
+    error:
+      name: billing.invoice.InvalidAmount
+";
+
+mod success_asserts_no_error {
+    use super::*;
+    use ess_compiler::refs::ErrorRef;
+    use ess_conformance::interpret::Interpreted;
+    use ess_conformance::report::{ConformanceReport, ConformanceStatus, Status};
+    use ess_conformance::target::*;
+
+    /// The interpreter of the model, except that every `accepted` answer of `CreateInvoice` also
+    /// carries `InvalidAmount`: the success outcome is reached under its own name and refuses.
+    struct RefusingSuccess {
+        inner: Interpreted,
+    }
+
+    impl ConformanceTarget for RefusingSuccess {
+        fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+            self.inner.identity()
+        }
+        fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+            self.inner.begin_scenario(scenario)
+        }
+        fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+            self.inner.end_scenario(scenario)
+        }
+        fn execute_command(
+            &self,
+            request: SemanticCommandRequest,
+        ) -> Result<SemanticCommandResult, TargetError> {
+            let mut result = self.inner.execute_command(request)?;
+            if result.outcome.as_ref().is_some_and(|reached| {
+                reached.to_string() == "billing.invoice.CreateInvoice/accepted"
+            }) {
+                result.error = Some(DeclaredErrorValue::new(ErrorRef::new(
+                    "billing.invoice.InvalidAmount"
+                        .parse()
+                        .expect("a qualified name"),
+                )));
+            }
+            Ok(result)
+        }
+        fn query_view(
+            &self,
+            request: SemanticViewRequest,
+        ) -> Result<SemanticViewResult, TargetError> {
+            self.inner.query_view(request)
+        }
+        fn observe_events(
+            &self,
+            request: EventObservationRequest,
+        ) -> Result<Vec<ObservedEvent>, TargetError> {
+            self.inner.observe_events(request)
+        }
+        fn configure_external_outcome(
+            &self,
+            request: ExternalOutcomeControl,
+        ) -> Result<(), TargetError> {
+            self.inner.configure_external_outcome(request)
+        }
+        fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+            self.inner.redeliver_event(request)
+        }
+    }
+
+    /// `body` compiled against the billing example and run, alone, against `target`, in the
+    /// format `ess verify conform run --scenarios` selects for it.
+    fn run(ir: &EssIr, body: &str, target: &impl ConformanceTarget) -> ConformanceReport {
+        let compiled = authoring(ir, &document(body));
+        assert!(compiled.is_complete(), "{:?}", compiled.refusals);
+        let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
+        for (id, scenario) in compiled.scenarios {
+            suite.insert(id, scenario).expect("one id");
+        }
+        suite.select_fresh_format_for(ir);
+        let admitted = ess_conformance::AdmittedSuite::from_suite(&suite)
+            .unwrap_or_else(|error| panic!("{error}"));
+        ess_conformance::Runner::for_suite(admitted.suite())
+            .run_admitted(&admitted, target)
+            .into_report()
+    }
+
+    #[test]
+    fn a_success_step_fails_against_a_target_whose_success_outcome_refuses() {
+        let ir = example("billing");
+        let body = format!("{CREATED}{OBSERVED}");
+        let honest = run(&ir, &body, &Interpreted::for_model(ir.clone()));
+        assert_eq!(
+            honest.status,
+            ConformanceStatus::Passed,
+            "{SUCCESS_NO_ERROR_STORY}: the model's own interpreter passes: {honest:?}"
+        );
+
+        let report = run(
+            &ir,
+            &body,
+            &RefusingSuccess {
+                inner: Interpreted::for_model(ir.clone()),
+            },
+        );
+        let scenario = report.scenarios.first().expect("the authored scenario ran");
+        assert_eq!(
+            scenario.status,
+            Status::Failed,
+            "{SUCCESS_NO_ERROR_STORY}: `outcome: accepted` answered with an error fails: {report:?}"
+        );
+        assert!(
+            scenario
+                .checks
+                .iter()
+                .any(|check| check.status == Status::Passed
+                    && check.about == "outcome billing.invoice.CreateInvoice/accepted"),
+            "{SUCCESS_NO_ERROR_STORY}: the outcome name alone still matches: {report:?}"
+        );
+        let failed: Vec<_> = scenario
+            .checks
+            .iter()
+            .filter(|check| check.status == Status::Failed)
+            .collect();
+        assert_eq!(failed.len(), 1, "{SUCCESS_NO_ERROR_STORY}: {report:?}");
+        let diagnostic = failed[0]
+            .diagnostic
+            .as_ref()
+            .expect("a failed check explains");
+        assert_eq!(
+            failed[0].about, "no error",
+            "{SUCCESS_NO_ERROR_STORY}: {report:?}"
+        );
+        assert_eq!(
+            diagnostic.expected,
+            vec!["no error".to_owned()],
+            "{SUCCESS_NO_ERROR_STORY}: {diagnostic:?}"
+        );
+        assert_eq!(
+            diagnostic.observed,
+            vec!["error = billing.invoice.InvalidAmount".to_owned()],
+            "{SUCCESS_NO_ERROR_STORY}: the step names the unexpected error: {diagnostic:?}"
+        );
+    }
+
+    #[test]
+    fn a_success_step_is_followed_by_its_no_error_check() {
+        let ir = example("billing");
+        let compiled = authoring(&ir, &document(CREATED));
+        assert!(compiled.is_complete(), "{:?}", compiled.refusals);
+        let scenario = compiled.scenarios.values().next().expect("one scenario");
+        let at = scenario
+            .steps
+            .iter()
+            .position(|step| matches!(step, ScenarioStep::ExpectOutcome { .. }))
+            .expect("the act expects its outcome");
+        assert!(
+            matches!(
+                scenario.steps.get(at + 1),
+                Some(ScenarioStep::ExpectNoError)
+            ),
+            "{SUCCESS_NO_ERROR_STORY}: {:?}",
+            scenario.steps
+        );
+    }
+
+    /// A built coverage suite is selected fresh, so it states a format at or above suite/35
+    /// (`coverage_build.rs`, `scenario_initial_state`), which admits `expect_no_error` (suite/11):
+    /// the new step moves no authored coverage suite's format.
+    #[test]
+    fn an_authored_coverage_suite_with_a_success_act_keeps_its_format() {
+        use ess_conformance::{
+            coverage::{Origins, Scope},
+            coverage_build::{build, CoverageSource},
+        };
+        let ir = example("billing");
+        let version = |body: &str| {
+            let files = [CoverageSource::new("a.yaml", document(body)).unwrap()];
+            let input =
+                build(&ir, &files, Scope::System, Origins::Authored).expect("build inventory");
+            input
+                .selected()
+                .suite()
+                .provenance
+                .suite_version
+                .to_string()
+        };
+        let (success, refusal) = (version(CREATED), version(REJECTED));
+        assert_eq!(
+            success, refusal,
+            "{SUCCESS_NO_ERROR_STORY}: a success act's `expect_no_error` does not move the format"
+        );
+        assert_eq!(success, "ess-conformance/35", "{SUCCESS_NO_ERROR_STORY}");
+    }
+
+    #[test]
+    fn a_refusal_step_is_unchanged() {
+        let ir = example("billing");
+        let compiled = authoring(&ir, &document(REJECTED));
+        assert!(compiled.is_complete(), "{:?}", compiled.refusals);
+        let scenario = compiled.scenarios.values().next().expect("one scenario");
+        let shape: Vec<&str> = scenario
+            .steps
+            .iter()
+            .map(|step| match step {
+                ScenarioStep::ExecuteCommand { .. } => "execute",
+                ScenarioStep::ExpectOutcome { .. } => "outcome",
+                ScenarioStep::ExpectNoError => "no-error",
+                ScenarioStep::ExpectError { .. } => "error",
+                other => panic!("a refusing act emitted {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            shape,
+            vec!["execute", "outcome", "error"],
+            "{SUCCESS_NO_ERROR_STORY}: a refusing outcome asserts its error and no absence of one"
+        );
+        let report = run(&ir, REJECTED, &Interpreted::for_model(ir.clone()));
+        assert_eq!(
+            report.status,
+            ConformanceStatus::Passed,
+            "{SUCCESS_NO_ERROR_STORY}: {report:?}"
+        );
     }
 }
