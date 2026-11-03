@@ -362,8 +362,9 @@ The audit names the sites it could not mutate (story
   Whether the field is read is the compiler's to say, not a list of readers here: the field is
   renamed where it is declared and where a `sets:` entry writes it, and the copy is compiled.
   Every reader names it by name, so a copy that compiles has none; a copy refused for any reason
-  counts as read and keeps the mutant. The oracle fixture's `weight_grams` literal, once pinned
-  as an equivalent survivor, is listed the same way.
+  counts as read and keeps the mutant. The oracle fixture's `weight_grams` literal is not listed:
+  its entity's `weight_grams >= 0` invariant names the field, so the probe counts it as read, and
+  the literal stays a survivor no answer can kill. That survivor is open work for this story.
 - The text summary gives `; S of N site(s) scored` after the baseline's counts, before
   `; N out of scope` and `; N unavailable`. `S` counts the killed and survived mutants. `N` counts
   every mutant, every unmutated site and every in-scope unavailable site.
