@@ -24,6 +24,7 @@
 
 - The precedence section of `docs/design/cross-record-and-stored-field-guards.md` states how an input refusal and an `unknown_instance:` or `exists: false` branch are ordered in each format: the input refusal answers first from `ess/27`, `ess/29` refuses either declared above it naming both and the order, and below `ess/29` either order validates. No behaviour changes. Validation and the interpreter already agreed, and so did both explorers on the `unknown_instance:` pair; they leave a `when_related:` command out. Tests now pin it (story:unknown-instance-and-input-guard-agree-on-order).
 - The scenario of a non-refusing `unknown_instance:` branch reads every immediate view of the addressed entity afterwards and requires no row with the identity it sent, so a no-op that stores a row fails; where no such view exists a note names the scenario and the entity. ESS-COMMAND-005 for an `instance:` without an effect now names `deletes` among the effects, and its hint names `deletes:` and `unknown_instance: true, refuses: false` (story:a-delete-may-have-a-no-op-branch-that-emits-nothing).
+- CI: the test archives are built with their symbol tables stripped, about a quarter smaller, and each archive download attempt may take 40 minutes instead of 30, so a shard on a slow runner gets its archive.
 
 ### Fixed
 
