@@ -1084,7 +1084,39 @@ fn toggle_state_unknown() {
     assert!(!report.has_errors(), "{:#?}", report.findings);
 }
 
-// ── rules the schema states outside `checks.list` ───────────────────────────────────────────
+#[test]
+fn checked_unreadable() {
+    let report = report(&row_actions_page(
+        "{name: member, as: toggle, does: t.SetFlag, bind: {id: row.id}, checked: row.id in row.owners}, \
+         {name: admin, as: toggle, does: t.SetFlag, bind: {id: row.id}, checked: actor.admin}, \
+         {name: listed, as: toggle, does: t.SetFlag, bind: {id: row.id}, checked: \"row.kind in [a, b] and not row.gone\"}, \
+         {name: plain, as: toggle, does: t.SetFlag, bind: {id: row.id}, checked: row.on}",
+    ));
+    let finding = trips_in(
+        &report,
+        "checked_unreadable",
+        "pages/p/sections/list/row_actions/member/checked",
+    );
+    assert!(
+        finding.message.contains("terminal cannot evaluate"),
+        "{finding:?}"
+    );
+    trips_in(
+        &report,
+        "checked_unreadable",
+        "pages/p/sections/list/row_actions/admin/checked",
+    );
+    for clean in ["listed", "plain"] {
+        clean_at(
+            &report,
+            "checked_unreadable",
+            &format!("pages/p/sections/list/row_actions/{clean}/checked"),
+        );
+    }
+    assert!(!report.has_errors(), "{:#?}", report.findings);
+}
+
+// ── rules the schema states outside `checks.list`───────────────────────────────────────────
 
 #[test]
 fn document_loads() {

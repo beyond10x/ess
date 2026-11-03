@@ -1245,9 +1245,13 @@ fn store_name(store: &Store) -> Option<&'static str> {
 /// `checked_needs_toggle`: only a toggle shows a state, so `checked:` on any other action would
 /// be read by no renderer. `toggle_state_unknown`: a toggle that runs a command shows the state
 /// [`ess_ui::toggle_state`] names; with neither `checked:` nor one `bind` entry written
-/// `not <expr>` (`<expr>` reading paths from an admitted root only; `not item.enabled` is literal
-/// text) it names none, and every renderer draws the toggle off. No renderer reads a
-/// toggle's state from its `loads`, so `loads` exempts nothing.
+/// `not <expr>` (`<expr>` reading paths from `row`, `params`, `state`, `shell` or `args` only;
+/// `not item.enabled` is literal text) it names none, and every renderer draws the toggle off. No
+/// renderer reads a toggle's state from its `loads`, so `loads` exempts nothing.
+/// `checked_unreadable`: the terminal evaluates a toggle's `checked:` with the filter grammar
+/// ([`ess_ui::filter::parse`], paths from [`ess_ui::filter::Predicate::allowed_roots`] only); one
+/// outside it (`row.id in row.owners`, `actor.admin`) the terminal cannot evaluate, so it may draw
+/// the toggle off where React draws it on.
 fn toggle_state(sink: &mut Sink, path: &NodePath, action: &Action) {
     let toggle = action.action_as == Some(ActionAs::Toggle);
     if action.checked.is_some() && !toggle {
@@ -1257,13 +1261,27 @@ fn toggle_state(sink: &mut Sink, path: &NodePath, action: &Action) {
             "`checked` is the state of a toggle; write `as: toggle` or drop `checked`",
         );
     }
+    if let Some(checked) = action.checked.as_ref().filter(|_| toggle) {
+        let readable =
+            ess_ui::filter::parse(&checked.0).is_some_and(|predicate| predicate.allowed_roots());
+        if !readable {
+            sink.push(
+                "checked_unreadable",
+                &path.child("checked"),
+                "the terminal cannot evaluate this `checked`: it reads a toggle's state in the \
+                 filter grammar (paths from row, params, state, shell or args; `in` over a \
+                 literal list), so it may draw the toggle off where React draws it on; rewrite \
+                 it in that grammar",
+            );
+        }
+    }
     if toggle && action.does.is_some() && ess_ui::toggle_state(action).is_none() {
         sink.push(
             "toggle_state_unknown",
             path,
             "this toggle runs a command but names no state, so every renderer draws it off; \
              write `checked: <expr>`, or bind exactly one input as `not <expr>` over a path \
-             from a known root",
+             from row, params, state, shell or args",
         );
     }
 }
