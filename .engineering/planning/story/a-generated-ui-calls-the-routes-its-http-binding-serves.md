@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-generated-ui-calls-the-routes-its-http-binding-serves
 kind: story
-status: active
+status: implemented
 title: A generated UI calls the routes its HTTP binding serves
 summary: ess generate ui and ess ui run take no ess-http binding, so a generated UI calls the default surface and every call 404s on a server generated with --http (#713)
 tags:
@@ -32,10 +32,11 @@ scope:
   path: crates/ui/ess-ui-tui/src/lib.rs
 - confidence: cited
   path: crates/ui/ess-ui/src/binding.rs
-revision: 15
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T20:48:51Z", actor: "human:timo", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-02T20:48:51Z", actor: "human:timo", revision: 15}
+- {from: "active", to: "implemented", at: "2026-11-03T02:29:25Z", actor: "human:timo", revision: 17, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -113,3 +114,7 @@ Derived 2026-11-02 by `aep:story-scoper` for wave W1 on b81deac78. Every line is
 - **Safety fact:** `bound_routes(ir, c, None)` returns `routes(ir, c)` unchanged (`crates/generate/ess-gen/src/http.rs:517-524`) — cited. **Unproven:** that `binding.ts` and `binding.rs` keep their bytes once a `method` member is added; that needs the member omitted at its default, as `identity` is at `ess-ui/src/binding.rs:17` — inferred.
 - **Size:** medium, about 250 lines plus 150 test lines; no format version (`ess-ui/1`, `ess-http/1` only read) — cited.
 - **Targeted runs:** `ess-cli` tests `generate_ui_tui`, `ui_commands`; `ess-ui-check` test `binding`; no ess-conformance target — cited.
+
+## Delivered
+
+W1 (D394), 2026-11-02: a generated UI calls the routes its HTTP binding serves (beyond10x/ess#713). Unit 939c2caf4, with ef648eee7 (bound path variables stay on their route) and 9d2643a5a (review cases); merged cce755258 and 2324f9c1b.

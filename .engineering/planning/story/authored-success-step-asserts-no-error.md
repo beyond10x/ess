@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:authored-success-step-asserts-no-error
 kind: story
-status: active
+status: implemented
 title: An authored step naming a success outcome also asserts no error came back
 tags:
 - adopter-report
@@ -17,10 +17,11 @@ scope:
   path: crates/verify/ess-conformance/tests/authored.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/authored_external_answer.rs
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T20:48:57Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-02T20:48:57Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-11-03T02:29:31Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 
@@ -56,3 +57,7 @@ Derived 2026-11-02 by `aep:story-scoper` for wave W1 on b81deac78. Every line is
 - **Not established:** the awaited path for system-issued commands (`authored.rs:3491-3505`, `AwaitOutcome` with no check) was not read through — inferred.
 - **Size:** small, about 20 lines in `authored.rs` and 70 in tests; no new suite or spec format version — cited.
 - **ess-conformance targets:** `authored`, `authored_external_answer`, `authored_outcome_guards`, `mutation_authored` — inferred.
+
+## Delivered
+
+W1 (D394), 2026-11-02: an authored success step also asserts that no error came back (suite/10 and later, expect_no_error). Unit 029c8529d, with 819b869f1, 8154d8a90 and the review cases 3bad875f9; merged 5a5ee4797 and d663aa2c1. The browser coverage replay admits the step from fix1 d49d2b71d (merged 7ad2a25c7). The authored-success act that claims an error stays backlog draft story:an-authored-success-act-claiming-an-error-is-refused.

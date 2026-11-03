@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-json-command-body-refuses-an-unknown-member
 kind: story
-status: active
+status: implemented
 title: A JSON command body refuses a member no input field names
 summary: 'Generated servers answer 201 to an unknown JSON member under the default unknown: refuse; the design says malformed.'
 relations:
@@ -15,10 +15,11 @@ scope:
   path: crates/generate/ess-synth/src/rust/http/bound.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/http_binding/shared.rs
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T20:48:50Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-02T20:48:50Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-11-03T02:29:23Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Need
 
@@ -66,3 +67,7 @@ Derived 2026-11-02 by `aep:story-scoper` for wave W1 on b81deac78. Every line is
 - **Not established:** depth — a top-level check leaves nested struct members open in Go; the Rust nested case is the sibling story's; a `Json`-typed field must stay open (`go.rs:1351-1373` sends extra members inside one) — inferred.
 - **Size:** medium, about 120 lines; no format version — inferred.
 - **Targeted run:** `cargo test -p ess-synth --test http_binding_rust` (covers the Go module) and `cargo test -p ess-gen --test openapi_http` — inferred.
+
+## Delivered
+
+W1 (D394), 2026-11-02: a JSON command body refuses an undeclared member in generated Rust and Go servers, and Go derived routes refuse it too. Unit 1af2b1a6c, with 93c9d4155 (review round 1) and 9471e396a (review cases); merged 12ca705bc and e1aa6bc04.

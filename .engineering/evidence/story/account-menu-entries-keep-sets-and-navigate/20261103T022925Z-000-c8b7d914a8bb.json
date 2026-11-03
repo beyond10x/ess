@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-03T02:29:25Z",
+  "actor": "human:timo",
+  "artifact": "story:account-menu-entries-keep-sets-and-navigate",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "W1 local full gate (staged, ~/.cache/ess-w1-wave/gate/gate-all.sh, runs 1-8, GATE-EXIT=0 on b69082c7d): A1 591/0 (e5a4600d3), A2 286/0 (b69082c7d), A3 555/0 (7ad2a25c7), A4 493/0 (7ad2a25c7), A5 201/0 (b69082c7d), A6 506/0 (b69082c7d), A7 clippy and fmt (b69082c7d), A8 doc (afc5e780b), B release verify, whats-changed, site-data and projection checks, test-xtask 420/0 (b69082c7d); peak target/ 15G, lowest / free 106G",
+    "reference": "b69082c7d"
+  }
+}

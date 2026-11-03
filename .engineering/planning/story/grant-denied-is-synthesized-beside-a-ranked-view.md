@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:grant-denied-is-synthesized-beside-a-ranked-view
 kind: story
-status: active
+status: implemented
 title: grant/denied is synthesized beside a ranked view
 summary: 'Synthesize withholds grant/denied for a command on an existing row when a view of its entity has order_by: the grant template reads the scenario''s last send (#712)'
 tags:
@@ -18,10 +18,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/grant.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/grant_denied.rs
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T20:48:55Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-02T20:48:55Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-11-03T02:29:30Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -100,3 +101,7 @@ Derived 2026-11-02 by `aep:story-scoper` for wave W1 on b81deac78. Every line is
 - **Unproven:** widening the template pool leaves the template an existing `grant/denied` uses unchanged (sort at grant.rs:579-582) — inferred.
 - **Size:** small, about 15 lines in grant.rs and 60-100 lines of tests; no suite format change (`COVERAGE_SUITE_FORMAT = "ess-conformance/5"`, coverage.rs:15) — inferred.
 - **ess-conformance targets:** `grant_denied`, `adversary_j_pass1`, `caller_arranged_rows`, `synthesis_suite_bytes_table` — inferred.
+
+## Delivered
+
+W1 (D394), 2026-11-02: grant/denied is synthesized beside a ranked view (beyond10x/ess#712). Unit e5905e8e6, with review cases 7f3ecac9f, d5181ba7a and da9a26af1; merged 7835e2196 and ad36f5642.

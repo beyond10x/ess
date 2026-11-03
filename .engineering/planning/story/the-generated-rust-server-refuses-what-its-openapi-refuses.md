@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-generated-rust-server-refuses-what-its-openapi-refuses
 kind: story
-status: active
+status: implemented
 title: The generated Rust server refuses what its OpenAPI refuses
 summary: The Rust server admits any string as a Timestamp and ignores undeclared JSON members that its served OpenAPI refuses (#707)
 tags:
@@ -22,10 +22,11 @@ scope:
   path: crates/generate/ess-synth/src/rust/wire.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/http_binding_rust.rs
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T20:48:49Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-11-02T20:48:49Z", actor: "human:timo", revision: 10}
+- {from: "active", to: "implemented", at: "2026-11-03T02:29:22Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -117,3 +118,7 @@ Derived 2026-11-02 by `aep:story-scoper` for wave W1 on b81deac78. Every line is
 - **Safety fact:** the new refusals add nothing the served OpenAPI does not already state: `Timestamp` is `format: date-time` (`crates/generate/ess-gen/src/types.rs:667`) and a struct is `additionalProperties: false` unless `undeclared_fields: ignored` (`types.rs:43`) — cited.
 - **Not established:** whether a JSON route with `unknown: ignore` must admit extra members (the served JSON body is a `$ref` to the command input, `crates/generate/ess-gen/src/openapi.rs:1129-1138`; the route's `unknown:` is consulted only for form bodies); whether the Go server shares the Timestamp gap (`textAt`, `crates/generate/ess-synth/src/go/http.rs:2285`) — inferred.
 - **Size:** medium, about 200 emitter lines and 150 test lines; no spec format change (`SUPPORTED_FORMATS` ends at 33, `crates/specify/ess-domain/src/system.rs:53-56`) — cited.
+
+## Delivered
+
+W1 (D394), 2026-11-02: generated Rust codecs refuse what the served OpenAPI refuses, which covers the beyond10x/ess#707 classes (a malformed Timestamp, an undeclared member). Unit 56b6441ef, with review round 1 in 93c9d4155 and the review cases in 9471e396a; merged 12ca705bc and e1aa6bc04. Known limit: an Optional member sent as null is still taken as absent, tracked as backlog draft story:an-optional-member-sent-as-null-is-answered-as-the-openapi-answers-it.

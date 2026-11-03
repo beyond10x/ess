@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-row-actions-confirm-is-addressed-by-the-views-key
 kind: story
-status: active
+status: implemented
 title: A row action's inline confirm is addressed by the view's key
 summary: ess-ui-tui addresses row confirms by live.match or id and ignores reads.key, so a view without id cannot reach its open confirm (0.77.0)
 tags:
@@ -16,10 +16,11 @@ scope:
   path: crates/ui/ess-ui-test/tests/confirm.rs
 - confidence: cited
   path: crates/ui/ess-ui-tui/src/app.rs
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T20:48:54Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-02T20:48:54Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-11-03T02:29:28Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -89,3 +90,7 @@ Derived 2026-11-02 by `aep:story-scoper` for wave W1 on b81deac78. Every line is
 - **Safety fact:** `drawn_at` is set only from `row_scoped` at `app.rs:3479` and `3494` and read only at `view.rs:654` — cited, unproven at runtime.
 - **Not established:** whether accept on a key-less view carries the row key to the command's `bind`; shell-hosted sections keep the `id` key (`app.rs:3318`); the live-event path keys by `live.match_field` alone (`app.rs:1808`, `1975`, `4128`), outside this acceptance — inferred.
 - **Size:** small, about 10 lines in `app.rs` and a 50-line test; no format change (`FORMAT = "ess-ui/1"`, `crates/ui/ess-ui/src/lib.rs:47`) — cited.
+
+## Delivered
+
+W1 (D394), 2026-11-02: a row action's inline confirm in the terminal renderer is addressed by the view's row key. Unit 642617588; merged cce755258 and 2324f9c1b.

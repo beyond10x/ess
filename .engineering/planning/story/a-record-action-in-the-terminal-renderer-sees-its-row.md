@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-record-action-in-the-terminal-renderer-sees-its-row
 kind: story
-status: active
+status: implemented
 title: A record action in the terminal renderer sees its row
 summary: 'ess-ui-tui leaves row out of scope: a row.<key> bind sends null and a row-guarded action does not act; React differs (0.77.0)'
 tags:
@@ -18,10 +18,11 @@ scope:
   path: crates/ui/ess-ui-tui/src/app.rs
 - confidence: inferred
   path: crates/ui/ess-ui-tui/src/view.rs
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T20:48:53Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-11-02T20:48:53Z", actor: "human:timo", revision: 10}
+- {from: "active", to: "implemented", at: "2026-11-03T02:29:27Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -95,3 +96,7 @@ Derived 2026-11-02 by `aep:story-scoper` for wave W1 on b81deac78. Every line is
 - **Safety fact:** `record_actions` has two callers (view.rs:865, app.rs:2575) — cited.
 - **Not established:** the React "row in scope" claim is from the story and `ess-ui-react/templates/runtime/composites/record.tsx.tmpl:20`, not run; a record inside a collection's `expand` was not traced — inferred.
 - **Size:** medium, about 35 production lines and 120 test lines; no format change (`ess-ui/1`, `ess-ui-test/1`) — cited.
+
+## Delivered
+
+W1 (D394), 2026-11-02: a record action in the terminal renderer sees the row the record shows. Unit c0daa4b1f; merged cce755258 and 2324f9c1b.

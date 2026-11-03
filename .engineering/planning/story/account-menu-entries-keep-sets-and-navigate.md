@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:account-menu-entries-keep-sets-and-navigate
 kind: story
-status: active
+status: implemented
 title: Account menu entries keep sets and navigate
 summary: account_menu entries silently drop sets and navigate, so the documented theme switch does nothing and ess ui check is silent (0.77.0)
 tags:
@@ -26,10 +26,11 @@ scope:
   path: crates/ui/ess-ui-react/templates/runtime/shell.tsx.tmpl
 - confidence: inferred
   path: schemas/ui/ess-ui.schema.yaml
-revision: 13
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-02T20:48:52Z", actor: "human:timo", revision: 12}
 - {from: "proposed", to: "active", at: "2026-11-02T20:48:52Z", actor: "human:timo", revision: 13}
+- {from: "active", to: "implemented", at: "2026-11-03T02:29:26Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -92,3 +93,7 @@ Derived 2026-11-02 by `aep:story-scoper` for wave W1 on b81deac78. Every line is
 - **Would collide with:** `crates/ui/ess-ui-react/src/emit.rs` (region and action serializers, `:650`), `ess-ui-check`'s `CHECKS` list and the schema's `checks.list`; the theme switch is state-only until `story:light-and-dark-themes-render-differently` lands — inferred.
 - **Safety fact:** the TUI parses `props.actions` on its own (`crates/ui/ess-ui-tui/src/app.rs:3439-3446`), so a React-only fix leaves it unchanged — cited.
 - **Size:** medium, about 60 lines for the React path and 120 for the check path; no format change (`ess-ui/1`; region `props` stay `json`, `schemas/ui/ess-ui.schema.yaml:288`) — cited.
+
+## Delivered
+
+W1 (D394), 2026-11-02: account menu entries keep sets and navigate; ess-ui-check parses each entry as an Action, refuses sets beside does, navigate or opens, and the emitter refuses an entry it cannot parse. Unit c942ffcd1, with 097f53e06 and 9d2643a5a (review cases); merged cce755258 and 2324f9c1b.
