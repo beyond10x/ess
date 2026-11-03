@@ -717,14 +717,26 @@ fn the_mutation_audit_reaches_the_compensating_branch_and_its_suite_kills_it() {
     let original = mutate::compile(documents.clone(), &texts).unwrap_or_else(|error| {
         panic!("{error:?}");
     });
-    let mutants = mutate::mutants(&documents, MutantClass::ALL);
+    let selection = mutate::selection(&documents, MutantClass::ALL);
+    // `reset` is the one transition to `Offline`: sending it back to `Idle` leaves `Offline`
+    // unreachable, which the model refuses, and no other state is admitted either, so the site is
+    // listed rather than left stillborn (beyond10x/ess#711).
+    assert!(
+        selection.unmutated.iter().any(|site| {
+            site.id == "transition-to/shop.order.Order.reset"
+                && site.reason == mutate::UnmutatedReason::NoAdmissibleState
+        }),
+        "{:#?}",
+        selection.unmutated
+    );
+    let mutants = selection.mutants;
     let reaching: Vec<_> = mutants
         .iter()
         .filter(|mutant| {
-            // `reset` is the one transition to `Offline`, and `failed` the one branch reporting
-            // `Refused`: the compensating move's arrival and the compensating branch's error.
-            (mutant.class == MutantClass::TransitionTo
-                && mutant.change == "`to: Offline` becomes `to: Idle`")
+            // `failed` is the one branch reporting `Refused`, and the one writing `failure`: the
+            // compensating branch's error, and its write retargeted to a literal (#711).
+            (mutant.class == MutantClass::SetsRetarget
+                && mutant.change == "`failure: input.reason` becomes `failure: mutant-literal`")
                 || (mutant.class == MutantClass::ErrorSwap
                     && mutant.change.starts_with("`error: shop.order.Refused`"))
         })
@@ -743,13 +755,8 @@ fn the_mutation_audit_reaches_the_compensating_branch_and_its_suite_kills_it() {
             Interpreted::for_model(original.clone())
         })
         .unwrap_or_else(|refusal| panic!("{}: {refusal:?}", mutant.id));
-        // Sending `reset` back to `Idle` leaves `Offline` unreachable, which the model refuses:
-        // stillborn, never a survivor. Reporting another error is killed by the compensating
-        // scenario's `expect_error`.
-        let expected = match mutant.class {
-            MutantClass::TransitionTo => Verdict::Stillborn,
-            _ => Verdict::Killed,
-        };
-        assert_eq!(entry.verdict, expected, "{}: {entry:#?}", mutant.id);
+        // Reporting another error is killed by the compensating scenario's `expect_error`, and
+        // writing another `failure` by the row it leaves.
+        assert_eq!(entry.verdict, Verdict::Killed, "{}: {entry:#?}", mutant.id);
     }
 }

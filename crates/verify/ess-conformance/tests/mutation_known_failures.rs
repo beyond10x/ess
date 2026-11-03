@@ -24,7 +24,7 @@ use ess_conformance::mutate::{
     self, AuditRefusal, BoundDeclaration, Document, Emission, Exclusion, ExclusionReason,
     KnownFailing, Manifest, MutantClass, MutationReport, Verdict, BASELINE_DIR,
     KNOWN_FAILURES_FILE, MANIFEST_FILE, MANIFEST_FORMAT, MANIFEST_FORMAT_4, REPORT_FILE,
-    REPORT_FORMAT_4, SUITE_FILE,
+    SUITE_FILE,
 };
 use ess_conformance::reference::Billing;
 use ess_conformance::runner::Runner;
@@ -284,7 +284,9 @@ fn a_declared_failure_is_excluded_and_independent_eligible_scenarios_still_kill(
     let declaration = declaration(&baseline, &baseline.implementation, &failed);
     let report = audit(CLASSES, defective, Some(bound(&declaration, &build('a'))))
         .unwrap_or_else(|refusal| panic!("scored, not {refusal}"));
-    assert_eq!(report.format, REPORT_FORMAT_4);
+    // `/8`: billing's transitions have no admissible other target, so they are listed
+    // (beyond10x/ess#711).
+    assert_eq!(report.format, mutate::REPORT_FORMAT_8);
     let summary = report
         .known_failures
         .as_ref()
@@ -478,7 +480,7 @@ fn emit_and_collect_under_the_same_declaration_is_the_direct_audit() {
     let failed = with_status(&baseline.report, &baseline.suite, "failed");
     let declaration = declaration(&baseline, &baseline.implementation, &failed);
     let (emission, written) = collected_emission(MutantClass::ALL, Some(&declaration));
-    assert_eq!(emission.manifest.format, MANIFEST_FORMAT_4);
+    assert_eq!(emission.manifest.format, mutate::MANIFEST_FORMAT_7);
     assert_eq!(
         emission.manifest.known_failures,
         Some(BoundDeclaration {
@@ -523,7 +525,8 @@ fn collect_refuses_a_late_changed_or_tampered_declaration() {
     let declaration = declaration(&baseline, &baseline.implementation, &failed);
     // Late: an emission that bound none cannot be scored under one supplied afterwards.
     let (unbound, written) = collected_emission(CLASSES, None);
-    assert_eq!(unbound.manifest.format, MANIFEST_FORMAT);
+    assert_eq!(unbound.manifest.format, mutate::MANIFEST_FORMAT_7);
+    assert!(unbound.manifest.known_failures.is_none());
     let refusal = known_failures(collect(&written, Some(&declaration)).expect_err("late"));
     assert_eq!(refusal.kind, RefusalKind::Unbound, "{refusal}");
     assert!(

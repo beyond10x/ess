@@ -16,7 +16,7 @@ use ess_compiler::source::SourceMap;
 use ess_conformance::faulty::{self, Fault};
 use ess_conformance::mutate::{
     self, AuditRefusal, Document, Emission, MutantClass, Verdict, BASELINE_DIR, MANIFEST_FILE,
-    MANIFEST_FORMAT_4, MUTANT_FILE, REPORT_FILE, SUITE_FILE,
+    MUTANT_FILE, REPORT_FILE, SUITE_FILE,
 };
 use ess_conformance::reference::Billing;
 use ess_conformance::runner::Runner;
@@ -117,9 +117,10 @@ fn the_emission_is_a_manifest_a_baseline_and_one_directory_per_mutant() {
     let emission = mutate::emit(&files, &texts, MutantClass::ALL).expect("billing emits");
     let manifest: serde_json::Value =
         serde_json::from_str(&emission.files[MANIFEST_FILE]).expect("the manifest is JSON");
-    // `/4`: every class includes `emit-swap`, a class only `/4` readers know, and billing has
-    // emit-swap mutants and unavailable sites (beyond10x/ess#295).
-    assert_eq!(manifest["format"], MANIFEST_FORMAT_4);
+    // `/7`: every class includes `emit-swap`, a class only `/4` readers know, and billing has
+    // emit-swap mutants and unavailable sites (beyond10x/ess#295) and unmutated sites
+    // (beyond10x/ess#711).
+    assert_eq!(manifest["format"], mutate::MANIFEST_FORMAT_7);
     assert_eq!(emission.manifest.baseline.dir, BASELINE_DIR);
     assert!(emission
         .files

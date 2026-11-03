@@ -927,6 +927,15 @@ enum ConformCommand {
     /// listed as unavailable (`no_compatible_event_alternative`): single-event substitution was not
     /// audited there, which is neither a kill nor a stillborn mutant.
     ///
+    /// A selected site of another class that the class excludes, or where it finds no edit the
+    /// model admits, is listed as unmutated with its reason, in the text and in the report and
+    /// manifest (`unmutated_sites`): a sets-drop entry on a creating branch or of an Optional field,
+    /// a transition no other state can be the target of (`no_admissible_state`), a write with no
+    /// sibling input and no admissible literal (`no_retarget_source`). The summary ends its
+    /// counts with how many of the sites considered have a scored mutant (killed or survived).
+    /// Listed sites do not change the exit status; `--fail-on-unmutated` makes a stillborn mutant
+    /// or an unmutated site exit 3.
+    ///
     /// Exit 0: no baseline scenario failed or ended error, at least one mutant ran and was not
     /// equivalent, every scored mutant was killed or equivalent, none is inconclusive or
     /// unwitnessed, and no selected in-scope site is unavailable. Exit 1: the specification did not
@@ -945,8 +954,9 @@ enum ConformCommand {
     /// a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3,
     /// or /4 where it holds a sets-drop, precedence-swap or emit-swap mutant or an unavailable
     /// site, or names a component, /5 where a precedence-swap mutant's two branches give an
-    /// identical answer, and /6 where branches answered before both take their overlap;
-    /// `--collect` also reads the /2 and /1 manifests earlier releases wrote.
+    /// identical answer, /6 where branches answered before both take their overlap, and /7 where
+    /// it lists an unmutated site; `--collect` also reads the /2 and /1 manifests earlier releases
+    /// wrote.
     ///
     /// For a repository that implements one component, `--emit --component NAME` writes the
     /// component's suites, as `synthesize --component` writes them, and marks out of scope every
@@ -980,9 +990,13 @@ enum ConformCommand {
         component: Option<String>,
         /// Where to write the `ess-mutation-report/3` document (`/4` for a component, a
         /// declaration or unavailable sites, `/5` where a mutant's two branches answer alike, `/6`
-        /// where earlier branches take their overlap).
+        /// where earlier branches take their overlap, `/8` where a site is unmutated).
         #[arg(long)]
         report_out: Option<PathBuf>,
+        /// Exit 3 where a selected in-scope site has no live mutant: a stillborn mutant or an
+        /// unmutated site, as an unavailable site always does.
+        #[arg(long, conflicts_with = "emit")]
+        fail_on_unmutated: bool,
         /// An `ess-known-failures/1` declaration of baseline scenarios the target is known to fail.
         /// They are excluded from scoring rather than refused, and each mutant is scored on the
         /// scenarios the baseline passed: a declared scenario, or one the baseline's suite does not
@@ -4378,6 +4392,7 @@ fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
         collect,
         component,
         report_out,
+        fail_on_unmutated,
         known_failing,
         scenarios,
         format,
@@ -4386,6 +4401,10 @@ fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
         unreachable!("dispatched on `Mutate` only");
     };
     let component = component.as_deref();
+    let out = MutationOut {
+        report_out: report_out.as_deref(),
+        fail_on_unmutated,
+    };
     let declaration = match known_failing.as_deref().map(|file| {
         fs::read_to_string(file).map_err(|error| {
             format!(
@@ -4416,7 +4435,7 @@ fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
             &path,
             target,
             &class,
-            report_out.as_deref(),
+            out,
             format,
             declaration,
             scenarios.as_deref(),
@@ -4424,15 +4443,19 @@ fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
         (None, Some(emit), None) => {
             conform_mutate_emit(&path, &class, &emit, component, format, declaration)
         }
-        (None, None, Some(collect)) => conform_mutate_collect(
-            &collect,
-            component,
-            report_out.as_deref(),
-            format,
-            declaration,
-        ),
+        (None, None, Some(collect)) => {
+            conform_mutate_collect(&collect, component, out, format, declaration)
+        }
         _ => unreachable!("clap requires exactly one of --target, --emit and --collect"),
     }
+}
+
+/// Where a mutation report goes besides standard output, and whether a site without a live mutant
+/// fails the audit (`--fail-on-unmutated`, beyond10x/ess#711).
+#[derive(Debug, Clone, Copy)]
+struct MutationOut<'a> {
+    report_out: Option<&'a Path>,
+    fail_on_unmutated: bool,
 }
 
 /// `ess verify conform mutate`: the specification's mutants, each run against `target`.
@@ -4440,7 +4463,7 @@ fn conform_mutate(
     path: &Path,
     target: ReferenceTarget,
     classes: &[MutateClass],
-    report_out: Option<&Path>,
+    out: MutationOut<'_>,
     format: Format,
     declaration: Option<&str>,
     scenarios: Option<&Path>,
@@ -4504,7 +4527,7 @@ fn conform_mutate(
             &authored,
         ),
     };
-    let exit = finish_mutation_audit(audited, report_out, format);
+    let exit = finish_mutation_audit(audited, out, format);
     note_unmutated_sets(&raw.parsed, &classes);
     exit
 }
@@ -4512,8 +4535,8 @@ fn conform_mutate(
 /// Each `sets:` entry with no `sets-drop` site, with its reason, as a note after the audit's own
 /// output, where `sets-drop` is selected (<https://github.com/beyond10x/ess/issues/515>).
 ///
-/// On stderr and in every format, as `synthesize` notes what it owes no scenario: the report and
-/// manifest formats carry no such field, so their bytes are unchanged.
+/// On stderr and in every format, as `synthesize` notes what it owes no scenario; the report and
+/// manifest list the same entries in `unmutated_sites` (beyond10x/ess#711).
 fn note_unmutated_sets(
     documents: &[ess_conformance::mutate::Document],
     classes: &[ess_conformance::mutate::MutantClass],
@@ -4672,7 +4695,7 @@ fn print_emission(manifest: &ess_conformance::mutate::Manifest, dir: &Path) {
 fn conform_mutate_collect(
     dir: &Path,
     component: Option<&str>,
-    report_out: Option<&Path>,
+    out: MutationOut<'_>,
     format: Format,
     declaration: Option<&str>,
 ) -> Result<ExitCode> {
@@ -4681,17 +4704,21 @@ fn conform_mutate_collect(
         component,
         declaration,
     );
-    finish_mutation_audit(collected, report_out, format)
+    finish_mutation_audit(collected, out, format)
 }
 
 /// Writes and renders a mutation report, or its refusal, and says what it exits with.
 fn finish_mutation_audit(
     audited: Result<ess_conformance::mutate::MutationReport, ess_conformance::mutate::AuditRefusal>,
-    report_out: Option<&Path>,
+    out: MutationOut<'_>,
     format: Format,
 ) -> Result<ExitCode> {
     use ess_conformance::mutate::Verdict;
 
+    let MutationOut {
+        report_out,
+        fail_on_unmutated,
+    } = out;
     let report = match audited {
         Ok(report) => report,
         Err(refusal) if refusal.is_inconclusive() => {
@@ -4723,9 +4750,20 @@ fn finish_mutation_audit(
     // A selected site with no admissible mutant was not audited (beyond10x/ess#295): never a
     // success, but no survivor either.
     let unaudited = report.unaudited_sites();
+    // A site with no live mutant decides the exit only where asked (D135, beyond10x/ess#711).
+    let unmutated = if fail_on_unmutated {
+        report.sites_without_a_live_mutant()
+    } else {
+        0
+    };
     Ok(if counts.survived > 0 {
         ExitCode::from(1)
-    } else if counts.unwitnessed > 0 || counts.inconclusive > 0 || ran == 0 || unaudited > 0 {
+    } else if counts.unwitnessed > 0
+        || counts.inconclusive > 0
+        || ran == 0
+        || unaudited > 0
+        || unmutated > 0
+    {
         ExitCode::from(3)
     } else {
         ExitCode::SUCCESS

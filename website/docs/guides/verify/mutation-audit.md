@@ -53,8 +53,16 @@ weakening it: a mutant that only says less could never be killed by a correct ta
   which synthesis cannot send apart from what the row held), and `optional_field` (a row nothing
   wrote holds an `Optional` field absent, and no scenario asserts an absence). A model whose every
   write is on a creating branch therefore has no `sets-drop` mutant, and `--class sets-drop`
-  refuses with `ESS-MUTATE-003` and then names each entry. The report and the manifest carry no
-  such list, so their formats are unchanged.
+  refuses with `ESS-MUTATE-003` and then names each entry. The report and the manifest list each
+  such entry too (below).
+- `sets-retarget` points one `sets: field: input.x` entry at another input of the same type. A
+  write on a creating branch, or to an `Optional` field, with no such sibling input is retargeted
+  to a literal of the field's type instead, the first the model admits: `-7919`, else `7919`, for
+  an `Integer`; `-7919.5`, else `7919.5`, for a `Decimal`; `"mutant-literal"` for a `String`. A
+  write of another type, or one no literal is admitted for, is listed as `no_retarget_source`.
+- `transition-to` sends a transition to another declared state: the first, in declared order, that
+  the model admits as its target. A transition no other state can be the target of, such as the
+  only step of a linear lifecycle, is listed as `no_admissible_state` rather than left stillborn.
 - `precedence-swap` swaps two adjacent branches guarded by their input alone, both accepting or
   both refusing, so the second answers where both guards hold. Where no input satisfies both
   guards, the swap decides nothing and is *equivalent* (below). A branch the held state, a stored
@@ -67,12 +75,17 @@ weakening it: a mutant that only says less could never be killed by a correct ta
   component, is *unavailable* (`no_compatible_event_alternative`): no mutant exists, so the event
   there is not audited by substitution, and the audit cannot succeed (below).
 
-A mutant the model refuses is *stillborn*, with the refusing check's own code. For example, a
-transition sent to another state is stillborn wherever its old arrival state has no other way in
-(`ESS-ENTITY-011`), and so is dropping the only event of an outcome that names no error
-(`ESS-COMMAND-007`); `emit-swap` audits those outcomes instead, or lists them as unavailable. A
-stillborn mutant says something about the operator, not about the suite, and does not change the
-exit status.
+A mutant the model refuses is *stillborn*, with the refusing check's own code. For example,
+dropping the only event of an outcome that names no error is stillborn (`ESS-COMMAND-007`);
+`emit-swap` audits those outcomes instead, or lists them as unavailable. A stillborn mutant says
+something about the operator, not about the suite, and does not change the exit status unless
+`--fail-on-unmutated` is given (below).
+
+A site a selected class excludes, or where it finds no edit the model admits, is *unmutated*: the
+report and the manifest list it under `unmutated_sites` as `{class, id, reason, unaudited}`, beside
+the stillborn mutants. The reasons are the `sets-drop` ones above, `no_admissible_state`
+(`transition-to`) and `no_retarget_source` (`sets-retarget`). An unmutated site is not a mutant
+and is not counted in `counts`.
 
 A mutant can make one of its own outcomes unsatisfiable, so synthesis refuses that outcome's
 scenario and the mutant's suite is the baseline's minus it. Such a mutant is *unwitnessed*
@@ -165,7 +178,11 @@ model's, so against the unchanged target it runs identically in every mutant's s
 |---|---|
 | 0 | No baseline scenario failed or ended `error`, at least one mutant that is not equivalent ran, every scored mutant was killed or equivalent, none is inconclusive or unwitnessed, and no selected site is unavailable. Baseline scenarios that were not executed are listed, not scored. |
 | 1 | The specification did not load, or at least one mutant survived. |
-| 3 | `ESS-MUTATE-001` (a baseline scenario failed or ended `error`), nothing scored (the baseline executed no scenario), `ESS-MUTATE-003` (no site), or no survivor and at least one mutant unwitnessed or inconclusive or a selected site unavailable, or every mutant stillborn or equivalent. |
+| 3 | `ESS-MUTATE-001` (a baseline scenario failed or ended `error`), nothing scored (the baseline executed no scenario), `ESS-MUTATE-003` (no site), or no survivor and at least one mutant unwitnessed or inconclusive or a selected site unavailable, or every mutant stillborn or equivalent, or, under `--fail-on-unmutated`, any stillborn mutant or unmutated site. |
+
+Unmutated sites and stillborn mutants do not change the exit status by default. `--fail-on-unmutated`
+makes each one block exit 0, as an unavailable `emit-swap` site does; it applies to `--target` and
+`--collect`.
 
 ### Run your authored scenarios against each mutant
 
@@ -225,7 +242,8 @@ run each <dir>/suite.json and write its conformance report to <dir>/report.json,
 - `manifest.json`, an `ess-mutation-manifest/3` listing all of them, or `/4` where it holds a
   `sets-drop`, `precedence-swap` or `emit-swap` mutant or an unavailable site, or names a component.
   A stillborn mutant has an entry and no suite; an unavailable site is listed under
-  `unavailable_sites` and has no directory.
+  `unavailable_sites` and has no directory. The manifest is `/7` where it lists an unmutated site
+  under `unmutated_sites`, which `--collect` carries into the report.
 
 Run your runner over every `suite.json` and write its conformance report to `report.json` in the
 same directory. The generated Go and TypeScript packages write the report named by
@@ -234,7 +252,7 @@ score the reports:
 
 ```shell-session
 $ ess verify conform mutate --collect target/mutants
-mutation audit of billing v3 against billing-reference 0.51.0: 4 mutant(s), 3 killed, 0 survived, 1 inconclusive, 0 stillborn, 0 unwitnessed, 0 equivalent (baseline: 32 scenario(s), 0 refusal(s))
+mutation audit of billing v3 against billing-reference 0.51.0: 4 mutant(s), 3 killed, 0 survived, 1 inconclusive, 0 stillborn, 0 unwitnessed, 0 equivalent (baseline: 32 scenario(s), 0 refusal(s)); 3 of 4 site(s) scored
 inconclusive guard-negate/billing.invoice.CreateInvoice/accepted: `when: amount.amount > 0` becomes `when: not (amount.amount > 0)`
 killed guard-boundary/billing.invoice.CreateInvoice/accepted/0: `amount.amount > 0` becomes `amount.amount >= 0` — by billing.invoice.CreateInvoice/outcome/accepted (1 in total); …
 …
@@ -336,10 +354,14 @@ accounting alone and rewrites nothing.
 
 The text output prints one summary line, then any declared known failures, then the baseline
 scenarios not scored, then out-of-scope mutants, then survivors, unwitnessed and inconclusive
-mutants, then unavailable sites, then equivalent, stillborn and killed mutants, one line each. An
+mutants, then unavailable sites, then equivalent and stillborn mutants, then unmutated sites, then
+killed mutants, one line each. An
 unavailable site's line reads `unavailable <id>: no_compatible_event_alternative — single-event
-substitution was not audited here: …`, and the summary line ends `; N unavailable`.
+substitution was not audited here: …`, and the summary line ends `; N unavailable`. An unmutated
+site's line reads `unmutated <id> (<reason>): …`. After the baseline's counts the summary line
+gives the coverage, `; S of N site(s) scored`: the sites with a killed or survived mutant out of
+every mutant, unmutated site and in-scope unavailable site.
 `--report-out` writes an
 [`ess-mutation-report/3`](../../reference/formats.md#change-and-conformance-records) document, or
-`/4` with a component, a known-failure declaration or `unavailable_sites`, and `--format json`
-prints the same bytes.
+`/4` with a component, a known-failure declaration or `unavailable_sites`, or `/8` with
+`unmutated_sites`, and `--format json` prints the same bytes.

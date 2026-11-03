@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess verify conform mutate` lists each site a selected class excluded or left without a live mutant, with its reason, under `unmutated_sites` in the report (`ess-mutation-report/8`) and the manifest (`ess-mutation-manifest/7`), and as `unmutated <id> (<reason>): …` lines beside the stillborn mutants. The summary line gives `; S of N site(s) scored`. `transition-to` takes the first other state the model admits, or lists the transition as `no_admissible_state`. `sets-retarget` retargets a creating or `Optional` write that has no sibling input of its type to a literal. `--fail-on-unmutated` makes such a site, or a stillborn mutant, block exit 0. The default exit status is unchanged, and a report or manifest that lists no such site keeps its format and bytes (story:the-mutation-audit-reports-the-sites-it-could-not-mutate).
+
 ### Fixed
 
 - `ess verify conform mutate --target interpreted` runs its synthesized scenarios on the scenario clock `run --target interpreted` uses, so on a model with a `now` guard the baseline executes every scenario `run` passes (it was refused as "nothing scored" or left them unsupported) and a guard mutant on that guard is scored by the scenario that pins it. A target that keeps its own clock declines the new defaulted `ConformanceTarget::take_command_clock` and runs as before; a model with no `now` guard keeps its report and manifest bytes (story:mutate-interpreted-synthesized-scenarios-run-on-the-scenario-clock).
