@@ -1,4 +1,4 @@
-#	models=364	commands=725
+#	models=366	commands=727
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -28,6 +28,10 @@ crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	ir=27e2debc5eb282404f
 crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	demo.rules.AddCondition	default: added
 crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	demo.rules.TestRule	accepting: not-met | default: met
 crates/edge/ess-cli/tests/fixtures/synthesis-seeds/model/system.yaml	ASSEMBLE
+crates/edge/ess-cli/tests/fixtures/ui-http/items/system.yaml	ir=9de18b04c2893f086c3c0668da2ecb5f8946a344086bf9abc784652720cdcdf7:9544
+crates/edge/ess-cli/tests/fixtures/ui-http/items/system.yaml	items.catalog.AddItem	default: added
+crates/edge/ess-cli/tests/fixtures/ui-http/items/system.yaml	items.catalog.RenameItem	default: renamed
+crates/edge/ess-cli/tests/fixtures/ui-http/shelf/spec/system.yaml	ASSEMBLE
 crates/generate/ess-cli-project/tests/fixtures/model.yaml	ir=681bdd12b53cad171c642078ffc01b84ab40f7235c9521627a8e13c78536fae8:4209
 crates/generate/ess-entity-runtime/tests/fixtures/contract/system.yaml	ASSEMBLE
 crates/generate/ess-entity-runtime/tests/fixtures/held-state-after-disjoint-accepting.yaml	ir=a6284c23792559df2983605b19dbf42486a9385e8a773635c3ddb0e72e8f42aa:13284

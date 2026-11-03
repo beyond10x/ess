@@ -1,4 +1,4 @@
-#	models=439	lines=596
+#	models=443	lines=605
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor-service	REFUSED	95eb461796949834a9d78ef0c04afcab1acfa13dbf2dfd6da3af2f3c93549630:687
 crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing/system.yaml	ASSEMBLE
@@ -17,6 +17,9 @@ crates/edge/ess-cli/tests/fixtures/stored-rules/fold.yaml	rules	REFUSED	e9d38759
 crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	components=1
 crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	rules	REFUSED	4d69430ae363d2442112bed442e147606ab7591abf820acc0b54727ccdfb297b:334
 crates/edge/ess-cli/tests/fixtures/synthesis-seeds/model/system.yaml	ASSEMBLE
+crates/edge/ess-cli/tests/fixtures/ui-http/items/system.yaml	components=1
+crates/edge/ess-cli/tests/fixtures/ui-http/items/system.yaml	items	REFUSED	1727c7137611ce670ce3f797b0c8abee4c2826bf2ca87a169360899cc2b2f14a:348
+crates/edge/ess-cli/tests/fixtures/ui-http/shelf/spec/system.yaml	ASSEMBLE
 crates/generate/ess-cli-project/tests/fixtures/model.yaml	components=0
 crates/generate/ess-entity-runtime/tests/fixtures/contract/system.yaml	ASSEMBLE
 crates/generate/ess-entity-runtime/tests/fixtures/held-state-after-disjoint-accepting.yaml	components=1
@@ -421,6 +424,12 @@ system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/b
 system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	invoice-service	billing.invoice.Invoice	billing.invoice.IssueInvoice	issued, wrong-state
 system-dir:crates/edge/ess-cli/tests/fixtures/coverage-producers/inputs/models/billing-repeated-gap	invoice-service	billing.invoice.Invoice	billing.invoice.PayInvoice	settled, rejected, wrong-state
 system-dir:crates/edge/ess-cli/tests/fixtures/synthesis-seeds/model	components=0
+system-dir:crates/edge/ess-cli/tests/fixtures/ui-http/items	PARSE
+system-dir:crates/edge/ess-cli/tests/fixtures/ui-http/shelf/spec	components=1
+system-dir:crates/edge/ess-cli/tests/fixtures/ui-http/shelf/spec	shelf-service	shelf.items.Item	definition=66d8a898865f1985afa26e12eb1c582c4284cbfc8f16a1dec398f036113422f1:3992
+system-dir:crates/edge/ess-cli/tests/fixtures/ui-http/shelf/spec	shelf-service	shelf.items.Item	create	added
+system-dir:crates/edge/ess-cli/tests/fixtures/ui-http/shelf/spec	shelf-service	shelf.items.Stamp	definition=d9823390c69bf52aa89ff013b253d26fc826ed2d38b70f386d115a8d1a4bb932:1844
+system-dir:crates/edge/ess-cli/tests/fixtures/ui-http/shelf/spec	shelf-service	shelf.items.Stamp	create	added
 system-dir:crates/generate/ess-entity-runtime/tests/fixtures/contract	components=2
 system-dir:crates/generate/ess-entity-runtime/tests/fixtures/contract	foreign-service	REFUSED	b7f2b6847ef51030e923aeeb1020fdb4d907d114180b4a485ee30c82802d2fad:723
 system-dir:crates/generate/ess-entity-runtime/tests/fixtures/contract	local-service	contract.foreign.Owner	definition=207bdf589c3a677a85feb29044c55d9572ba3e688f4d353b2972292dce033f55:605
