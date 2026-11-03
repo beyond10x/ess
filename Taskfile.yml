@@ -9,6 +9,10 @@ vars:
   # The Rust harness `ess-synth`'s `integer_spellings` test runs, built once by
   # `integer-spellings-harness` beside the archives, so it reaches the test shards with them.
   INTEGER_SPELLINGS_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/integer-spellings-harness'
+  JSON_BODY_CLOSURE_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/json-body-closure-harness'
+  JSON_BODY_SECURITY_HARNESS: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/json-body-security-harness'
+  UI_HTTP_SHELF_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/ui-http-shelf-server'
+  UI_HTTP_ITEMS_SERVER: '{{.ROOT_DIR}}/{{.NEXTEST_ARCHIVES}}/ui-http-items-server'
   # The feature-off cases a pull request runs, when `FEATURE_OFF=number-semantics`: every package
   # but ess-cli, ess-cli's unit tests, and the ess-cli binaries about number semantics — every one
   # whose source names `arbitrary_precision` among them, which `ci_lanes.rs` checks. The `main`
@@ -69,8 +73,14 @@ tasks:
   test:
     env:
       ESS_INTEGER_SPELLINGS_HARNESS: '{{.INTEGER_SPELLINGS_HARNESS}}'
+      ESS_JSON_BODY_CLOSURE_HARNESS: '{{.JSON_BODY_CLOSURE_HARNESS}}'
+      ESS_JSON_BODY_SECURITY_HARNESS: '{{.JSON_BODY_SECURITY_HARNESS}}'
+      ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
+      ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
     cmds:
       - task: integer-spellings-harness
+      - task: json-body-harnesses
+      - task: ui-http-servers
       - cargo test --workspace --exclude ess-xtask --locked
       # The workspace run has serde_json's `arbitrary_precision` on: entity-core enables it, and
       # ess-entity-runtime unifies it in. This run selects packages that do not depend on
@@ -95,6 +105,8 @@ tasks:
       - mkdir -p {{.NEXTEST_ARCHIVES}}
       - cargo nextest archive --workspace --exclude ess-xtask --locked --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst
       - task: integer-spellings-harness
+      - task: json-body-harnesses
+      - task: ui-http-servers
 
   # A test that runs cargo builds a crate graph inside its lane
   # (`crates/edge/ess-xtask/tests/no_test_builds.rs`), so the harness the `integer_spellings` test
@@ -122,6 +134,59 @@ tasks:
         cargo build --offline --quiet --manifest-path {{.WORK}}/harness/Cargo.toml --target-dir {{.WORK}}/target
       - cp {{.WORK}}/target/debug/harness {{.INTEGER_SPELLINGS_HARNESS}}
       # The generated server is in the binary; its build tree is not needed again.
+      - rm -rf {{.WORK}}
+
+  json-body-harnesses:
+    desc: >-
+      Build the Rust harnesses ess-synth's json_body_closure and adversary_w1_gen1_security run, at
+      JSON_BODY_CLOSURE_HARNESS and JSON_BODY_SECURITY_HARNESS (no test builds with cargo,
+      no_test_builds.rs).
+    vars:
+      WORK: target/json-body-harnesses
+      FIXTURES: crates/generate/ess-synth/tests/fixtures
+    cmds:
+      - cargo build --workspace --exclude ess-xtask --locked --bin ess
+      - rm -rf {{.WORK}}
+      - mkdir -p {{.WORK}}/closure-harness/src {{.WORK}}/security-harness/src {{.NEXTEST_ARCHIVES}}
+      - cp {{.FIXTURES}}/json-body-closure/model.yaml.in {{.WORK}}/shelf.yaml
+      - cp {{.FIXTURES}}/json-body-security/model.yaml.in {{.WORK}}/rack.yaml
+      - target/debug/ess generate synthesize --path {{.WORK}}/shelf.yaml --target rust --http {{.FIXTURES}}/json-body-closure/http.yaml.in --out {{.WORK}}/shelf
+      - target/debug/ess generate synthesize --path {{.WORK}}/rack.yaml --target rust --http {{.FIXTURES}}/json-body-security/http.yaml.in --out {{.WORK}}/rack
+      - cp {{.FIXTURES}}/json-body-closure/harness.toml {{.WORK}}/closure-harness/Cargo.toml
+      - cp {{.FIXTURES}}/json-body-closure/main.rs {{.WORK}}/closure-harness/src/main.rs
+      - cp {{.FIXTURES}}/json-body-security/harness.toml {{.WORK}}/security-harness/Cargo.toml
+      - cp {{.FIXTURES}}/json-body-security/main.rs {{.WORK}}/security-harness/src/main.rs
+      - >-
+        env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS -u RUSTC_WRAPPER CARGO_INCREMENTAL=0
+        cargo build --offline --quiet --manifest-path {{.WORK}}/closure-harness/Cargo.toml --target-dir {{.WORK}}/target
+      - >-
+        env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS -u RUSTC_WRAPPER CARGO_INCREMENTAL=0
+        cargo build --offline --quiet --manifest-path {{.WORK}}/security-harness/Cargo.toml --target-dir {{.WORK}}/target
+      - cp {{.WORK}}/target/debug/json-body-closure-harness {{.JSON_BODY_CLOSURE_HARNESS}}
+      - cp {{.WORK}}/target/debug/adversary-w1-gen1-security-harness {{.JSON_BODY_SECURITY_HARNESS}}
+      - rm -rf {{.WORK}}
+
+  ui-http-servers:
+    desc: >-
+      Build the generated Rust servers ess-cli's generate_ui_http drives, at UI_HTTP_SHELF_SERVER and
+      UI_HTTP_ITEMS_SERVER (no test builds with cargo, no_test_builds.rs).
+    vars:
+      WORK: target/ui-http-servers
+      FIXTURES: crates/edge/ess-cli/tests/fixtures/ui-http
+    cmds:
+      - cargo build --workspace --exclude ess-xtask --locked --bin ess
+      - rm -rf {{.WORK}}
+      - mkdir -p {{.WORK}} {{.NEXTEST_ARCHIVES}}
+      - target/debug/ess generate synthesize --target rust --layout crate --path {{.FIXTURES}}/shelf/spec --http {{.FIXTURES}}/shelf/http.yaml.in --out {{.WORK}}/shelf
+      - target/debug/ess generate synthesize --target rust --layout crate --path {{.FIXTURES}}/items/system.yaml --http {{.FIXTURES}}/items/http.yaml.in --out {{.WORK}}/items
+      - >-
+        env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS -u RUSTC_WRAPPER CARGO_INCREMENTAL=0
+        cargo build --offline --quiet --features server --bin shelf-service-server --manifest-path {{.WORK}}/shelf/Cargo.toml --target-dir {{.WORK}}/target
+      - >-
+        env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS -u RUSTC_WRAPPER CARGO_INCREMENTAL=0
+        cargo build --offline --quiet --features server --bin items-server --manifest-path {{.WORK}}/items/Cargo.toml --target-dir {{.WORK}}/target
+      - cp {{.WORK}}/target/debug/shelf-service-server {{.UI_HTTP_SHELF_SERVER}}
+      - cp {{.WORK}}/target/debug/items-server {{.UI_HTTP_ITEMS_SERVER}}
       - rm -rf {{.WORK}}
 
   test-archive-feature-off:
@@ -153,6 +218,10 @@ tasks:
       vars: [SHARD]
     env:
       ESS_INTEGER_SPELLINGS_HARNESS: '{{.INTEGER_SPELLINGS_HARNESS}}'
+      ESS_JSON_BODY_CLOSURE_HARNESS: '{{.JSON_BODY_CLOSURE_HARNESS}}'
+      ESS_JSON_BODY_SECURITY_HARNESS: '{{.JSON_BODY_SECURITY_HARNESS}}'
+      ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
+      ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
     cmds:
       - cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst --workspace-remap . --extract-to . --extract-overwrite --no-fail-fast --partition slice:{{.SHARD}}
 
@@ -171,6 +240,9 @@ tasks:
     desc: Run one partition of the archive of packages without `arbitrary_precision`, e.g. `SHARD=1/4`; needs `task test-archive-feature-off`.
     requires:
       vars: [SHARD]
+    env:
+      ESS_UI_HTTP_SHELF_SERVER: '{{.UI_HTTP_SHELF_SERVER}}'
+      ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
     cmds:
       - cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst --workspace-remap . --extract-to . --extract-overwrite --no-fail-fast --partition slice:{{.SHARD}}
 

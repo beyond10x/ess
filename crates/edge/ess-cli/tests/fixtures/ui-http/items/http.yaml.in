@@ -1,0 +1,16 @@
+type: ess-http/1
+specification:
+  system: items
+  version: v1
+  source_digest: sha256:f956d63dff27f755f6cce8046ab5b53cff7d95b57670d9059c42b774dcb8aa39
+routes:
+  - view: items.catalog.AllItems
+    method: get
+    path: /items
+  - command: items.catalog.AddItem
+    method: post
+    path: /items
+  - command: items.catalog.RenameItem
+    method: put
+    path: /items/{item_id}
+    parameters: {item_id: input.item_id}

@@ -1,0 +1,74 @@
+format: ess/32
+system: rack
+version: v1
+domain: rack.items
+types:
+  - {name: rack.items.ItemId, kind: newtype, of: String}
+  - {name: rack.items.When, kind: newtype, of: Timestamp}
+  - name: rack.items.Size
+    kind: struct
+    fields:
+      - {name: width, type: Integer}
+      - {name: post_code, type: Optional<String>, naming: {wire: postalCode}}
+  - name: rack.items.Label
+    kind: struct
+    fields:
+      - {name: key, type: String}
+      - {name: size, type: Optional<rack.items.Size>}
+  - name: rack.items.Shape
+    kind: union
+    tag: kind
+    variants:
+      boxed: rack.items.Size
+      named: String
+entities:
+  - name: rack.items.Item
+    identity: {name: item_id, type: rack.items.ItemId}
+    fields:
+      - {name: label, type: rack.items.Label}
+      - {name: sizes, type: 'Map<String, rack.items.Size>'}
+      - {name: shape, type: rack.items.Shape}
+      - {name: due_at, type: Optional<rack.items.When>}
+    lifecycle: {initial: Kept, states: [Kept], terminal: [Kept], transitions: []}
+events:
+  - name: rack.items.ItemAdded
+    fields: [{name: item_id, type: rack.items.ItemId}]
+commands:
+  - name: rack.items.AddItem
+    input:
+      - {name: item_id, type: rack.items.ItemId}
+      - {name: label, type: rack.items.Label}
+      - {name: sizes, type: 'Map<String, rack.items.Size>'}
+      - {name: shape, type: rack.items.Shape}
+      - {name: due_at, type: Optional<rack.items.When>}
+    outcomes:
+      - name: added
+        creates: rack.items.Item
+        instance: item_id
+        sets:
+          label: input.label
+          sizes: input.sizes
+          shape: input.shape
+          due_at: input.due_at
+        emits: [rack.items.ItemAdded]
+        payload:
+          rack.items.ItemAdded: {item_id: input.item_id}
+views:
+  - name: rack.items.AllItems
+    source: rack.items.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: rack.items.ItemId}
+      - {name: label, type: rack.items.Label}
+      - {name: sizes, type: 'Map<String, rack.items.Size>'}
+      - {name: shape, type: rack.items.Shape}
+      - {name: due_at, type: Optional<rack.items.When>}
+actors:
+  - name: rack.items.Clerk
+    may: [rack.items.AddItem]
+components:
+  - component: rack-service
+    reached_by: network
+    owns: {domains: [rack.items]}
+    accepts: {commands: [rack.items.AddItem]}
+    publishes: {events: [rack.items.ItemAdded]}
