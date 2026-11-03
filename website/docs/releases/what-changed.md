@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.86.0 — 2026-11-03
+
+### UI documents label their values, show a toggle's state, page by size and report a refusal where it is
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/ui-labels-toggles-pager-and-refusal-paths) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.86.0)
+
+An ess-ui/1 field or badge shows a declared label for each value, a row toggle shows the state it flips, a server-paged collection gains a page-size control and a pager footer, and a refused document is reported at the refused node's own path. An export takes a params map and an empty state a title.
+
 ## 0.85.0 — 2026-11-03
 
 ### Every witness reads back its effect, and the mutation audit covers grants and lists its gaps

@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/ui-labels-toggles-pager-and-refusal-paths-0.86.0
+repository: ess
+publishedAt: 2026-11-03T00:00:00Z
+title: UI documents label their values, show a toggle's state, page by size and report a refusal where it is
+summary: >-
+  An ess-ui/1 field or badge shows a declared label for each value, a row toggle shows the state it
+  flips, a server-paged collection gains a page-size control and a pager footer, and a refused
+  document is reported at the refused node's own path. An export takes a params map and an empty
+  state a title.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.86.0
+  version: 0.86.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

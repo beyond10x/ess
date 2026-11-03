@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.86.0] — 2026-11-03
+
 ### Added
 
 - `ess-ui/1` reads take an optional `pager: {page, size, sizes}` beside `paging: server`, naming the read params that carry the page and the page size; `sizes` defaults to `[25, 50, 100]`. `ess ui check` refuses a pager without `paging: server` (`pager_paging`), a pager param that is no param of the read or is not bound to a `state.<path>`, or page and size bound to one state path or one inside the other (`pager_params`), empty or non-positive sizes (`pager_sizes`), and a pager on any read but a collection's `reads` (`pager_outside_collection`). The React collection of a declared pager always shows its footer: Previous, the page (of how many, when the total and size are known), Next disabled on the last page, and with a `size` a labelled per-page select that sets the size and returns to page 1. A read with a `page` param and no `pager` keeps its footer, which now writes the state path that param binds instead of `state.page` (beyond10x/ess#723; story:a-server-paged-collection-has-a-page-size-control).
