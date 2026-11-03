@@ -704,13 +704,30 @@ impl Specification {
                 )
             })
             .collect();
-        crate::component::validate_components(
+        let mut errors = crate::component::validate_components(
             &self.components,
             &domain_names,
             command_names,
             event_names,
             &views,
-        )
+        );
+        // The word each command and view is typed as, which a shared binary's first level is
+        // made of (story:components-sharing-a-cli-binary-generate-one-tree-with-every-group).
+        let words: BTreeMap<QualifiedName, String> = self
+            .commands
+            .iter()
+            .map(|(name, command)| (name.clone(), command.naming.wire_or(name).to_owned()))
+            .chain(
+                self.views
+                    .iter()
+                    .map(|(name, view)| (name.clone(), view.naming.wire_or(name).to_owned())),
+            )
+            .collect();
+        errors.extend(crate::component::validate_shared_binary_words(
+            &self.components,
+            &words,
+        ));
+        errors
     }
 
     /// Checks that every member belongs to a declared domain, and to the right one.
