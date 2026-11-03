@@ -18,7 +18,7 @@ scope:
   path: crates/edge/ess-cli/src/main.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/mutate.rs
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:40Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:40Z", actor: "human:timo", revision: 10}
@@ -97,3 +97,13 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Not established:** the ESS-COMMAND-001/004 refusals on a stale payload come from the story, not a traced run; whether the billing `error-swap` count of 5 (`tests/mutation_audit.rs:330`) moves; the #709 toy spec is unplaced; "fields can be filled the same way" has no definition in the tree; whether `unknown_instance` needs an explicit effect-free check. ess-cli `mutate_cli` and `mutate_report_v2` also pin error-swap output.
 - **Size:** medium, about 150 lines plus about 120 test lines; a new unavailable reason needs `ess-mutation-report/8` by the crate's convention (`REPORT_FORMAT_5`-`_7`, `mutate.rs:82-92`) — inferred
 - **Targeted run:** ess-conformance `--test mutation_audit`, `mutation_emit_swap`, `mutation_authored`, `refusal_with_effect`, `mutation_unkillable`, plus one new; ess-cli `--test mutate_cli`, `mutate_report_v2` — inferred
+
+## Resolution
+
+Acceptance bullet 1c (drop the payload only where the swapped-in error has no fields, otherwise
+list the site) cannot hold beside bullet 2 (both toy refusals get a live mutant): on the #709 toy
+every candidate error has different, non-empty fields. Found by the W2 MUT1 adversary pass
+(review-result:adversary-w2-mut1-pass-1, F6). Wave lead's decision, 2026-11-03: bullet 2 and the
+issue's text stand as the acceptance. `error-swap` re-keys the `payload:` entry where both errors
+have the same fields, drops it where they differ, takes the first error that compiles, and lists a
+refusal none compiles for as `no_compatible_error_alternative` (W2 unit MUT1, `578fde2652`).
