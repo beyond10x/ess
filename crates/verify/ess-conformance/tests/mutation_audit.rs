@@ -305,8 +305,15 @@ const BILLING_VERDICTS: &[(&str, Verdict, &str)] = &[
     ),
 ];
 
-/// Billing's unmutated sites, each with its reason (beyond10x/ess#711).
+/// Billing's unmutated sites, each with its reason (beyond10x/ess#711). `Customer`'s grant is listed
+/// because billing serves nothing over the network
+/// (story:the-mutation-audit-reports-the-sites-it-could-not-mutate,
+/// story:the-mutation-audit-covers-actor-grants).
 const BILLING_UNMUTATED: &[(&str, &str)] = &[
+    (
+        "grant-drop/billing.invoice.Customer/billing.invoice.CreateInvoice",
+        "command_not_served",
+    ),
     (
         "sets-drop/billing.invoice.CreateInvoice/accepted/account_id",
         "creates_row",
@@ -369,7 +376,9 @@ fn the_billing_audit_pins_every_mutant_and_kills_every_one_that_ran() {
             ("emit-swap", 2),
             ("error-swap", 5),
             ("from-drop", 2),
-            // No actor is declared, so no grant site (story:the-mutation-audit-covers-actor-grants).
+            // Billing declares `Customer` and `Auditor` and serves nothing over the network, so no
+            // grant is a mutant; `Customer`'s grant is listed
+            // (story:the-mutation-audit-covers-actor-grants).
             ("grant-add", 0),
             ("grant-drop", 0),
             ("guard-boundary", 2),
@@ -387,7 +396,7 @@ fn the_billing_audit_pins_every_mutant_and_kills_every_one_that_ran() {
     pinned_verdicts(&report, BILLING_VERDICTS);
     pinned_survivors(&report, BILLING_SURVIVORS);
     assert_eq!(unmutated(&report), BILLING_UNMUTATED);
-    assert_eq!(report.coverage(), (14, 32));
+    assert_eq!(report.coverage(), (14, 33));
     assert_eq!(report.implementation, "billing-reference");
     assert_eq!(report.specification, "billing v3");
     assert_eq!(report.counts.mutants, 19);

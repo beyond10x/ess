@@ -929,20 +929,26 @@ enum ConformCommand {
     ///
     /// grant-drop removes one command a served component accepts from one actor's `may:`, and
     /// grant-add gives an actor one such command it lacks. Where either is selected the baseline
-    /// and every mutant's suite keep their `<command>/grant/denied` scenarios, and a grant-drop
-    /// mutant's refusal is sent as the actor that lost the grant; without them the baseline leaves
-    /// those scenarios out, as no other class alters a grant.
+    /// and every mutant's suite keep their `<command>/grant/denied` scenarios, a grant-drop
+    /// mutant's refusal is sent as the actor that lost the grant, and a grant-add mutant's suite
+    /// sends the command as the actor that gained it, in a `grant/admitted/<actor>` copy where an
+    /// actor carrying attributes holds the command; without them the baseline leaves those
+    /// scenarios out, as no other class alters a grant.
     ///
-    /// A selected site of another class that the class excludes, or where it finds no edit the
-    /// model admits, is listed as unmutated with its reason, in the text and in the report and
-    /// manifest (`unmutated_sites`): a sets-drop entry on a creating branch or of an Optional field,
-    /// a transition no other state can be the target of (`no_admissible_state`), a write with no
-    /// sibling input and no admissible literal (`no_retarget_source`), a refusal carrying its
-    /// error's payload where no other error compiles (`no_compatible_error_alternative`). The
-    /// summary ends its counts with how many of the sites considered have a scored mutant (killed
-    /// or survived).
-    /// Listed sites do not change the exit status; `--fail-on-unmutated` makes a stillborn mutant
-    /// or an unmutated site exit 3.
+    /// A selected site that its class excludes, or where it finds no edit the model admits or a
+    /// target could tell apart, is listed as unmutated with its reason, in the text and in the
+    /// report and manifest (`unmutated_sites`): a sets-drop entry on a creating branch or of an
+    /// Optional field, a transition no other state can be the target of (`no_admissible_state`), a
+    /// write with no sibling input and no admissible literal (`no_retarget_source`) or to a field
+    /// nothing reads (`unobserved_field`), a refusal carrying its error's payload where no other
+    /// error compiles (`no_compatible_error_alternative`), a grant of the system actor
+    /// (`system_actor`) or of a command nothing serves (`command_not_served`), and a grant-add no
+    /// scenario can be sent for, the command held by an actor carrying attributes and the gaining
+    /// actor carrying attributes or the command reading one (`attributed_holder`). The summary
+    /// ends its counts with how many of the sites considered have a scored mutant (killed or
+    /// survived). Listed sites do not change the exit status; `--fail-on-unmutated` makes a
+    /// stillborn mutant or an unmutated site exit 3. Where the classes find only unmutated sites,
+    /// ESS-MUTATE-003 refuses and prints each one after the refusal.
     ///
     /// Exit 0: no baseline scenario failed or ended error, at least one mutant ran and was not
     /// equivalent, every scored mutant was killed or equivalent, none is inconclusive or

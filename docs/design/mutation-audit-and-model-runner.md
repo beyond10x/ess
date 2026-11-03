@@ -272,7 +272,7 @@ would have killed it.
 |---|---|---|
 | `ESS-MUTATE-001` | The baseline suite did not pass against the target | stderr `refusal[ESS-MUTATE-001]: …` with every non-passing scenario id; exit 3; no report is written |
 | `ESS-MUTATE-002` | A mutant was refused by `assemble` or `compile` | on that mutant's report entry, with the refusal's own code |
-| `ESS-MUTATE-003` | The selected classes found no site in the specification | stderr; exit 3; no report is written. A vacuous audit that exits 0 would be a green exit that ran nothing. |
+| `ESS-MUTATE-003` | The selected classes found no site in the specification | stderr; exit 3; no report is written. A vacuous audit that exits 0 would be a green exit that ran nothing. Where the classes found only unmutated sites (beyond10x/ess#711), the refusal says it found no site it can mutate and lists each one's `unmutated <id> (<reason>): …` line after it. |
 
 The numbers are derived from the variant, as `RefusalCause::code` does (`synthesize.rs:525-548`).
 A test asserts that every variant's code appears in `website/docs/reference/formats.md`, so a new

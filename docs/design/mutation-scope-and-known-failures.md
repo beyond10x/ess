@@ -332,7 +332,9 @@ The audit names the sites it could not mutate (story
   the three `sets-drop` exclusions (`creates_row`, `source_not_input`, `optional_field`),
   `no_admissible_state` (`transition-to`), `no_retarget_source` (`sets-retarget`) and, since
   story `error-swap-mutates-refusals-that-carry-a-payload`, `no_compatible_error_alternative`
-  (`error-swap`, a refusal whose `payload:` entry is keyed by its error). Each
+  (`error-swap`, a refusal whose `payload:` entry is keyed by its error), then `unobserved_field`
+  (`sets-retarget`, below) and, with story `the-mutation-audit-covers-actor-grants`,
+  `system_actor` and `command_not_served` (`grant-drop`) and `attributed_holder` (`grant-add`). Each
   reason belongs to one class, and the manifest reader refuses a site whose reason is another
   class's.
 - The field is new and persisted, so it takes `ess-mutation-report/8` and
@@ -341,8 +343,10 @@ The audit names the sites it could not mutate (story
 - An unmutated site is neither a mutant nor counted in `counts`, and unlike an unavailable
   `emit-swap` site it does not block exit 0 by default. `--fail-on-unmutated` makes every
   unmutated site and every stillborn mutant exit 3. `ESS-MUTATE-003` still refuses a selection
-  with no mutant and no unavailable site, even when it has unmutated sites; the `sets-drop`
-  notes on stderr still name each entry.
+  with no mutant and no unavailable site, even when it has unmutated sites. It writes no report,
+  so the refusal itself then says it found sites it could not mutate ("no site it can mutate")
+  and prints each one's `unmutated <id> (<reason>): …` line after it; the `sets-drop` notes on
+  stderr still name each entry.
 - `transition-to` tries the other declared states in declared order and keeps the first that
   compiles. A baseline that does not compile keeps the first candidate, as before. Where none
   compiles, as on a linear lifecycle, the site is listed rather than left stillborn.
@@ -351,6 +355,16 @@ The audit names the sites it could not mutate (story
   `-7919.5`, else `7919.5`, or `"mutant-literal"`. A write of any other type, or one no literal
   is admitted for, is listed. `sets-drop` still excludes an `Optional` field, because no
   synthesized row states an absence.
+- A literal written to a field nothing reads cannot be told from the input by any answer of a
+  target, so such a mutant could only survive, and the default audit of #711's own toy (its
+  `note`, which no view reads) would exit 1. The write is listed as `unobserved_field` instead
+  of scored `equivalent`: listing keeps the default exit status and needs no new mutant member.
+  Whether the field is read is the compiler's to say, not a list of readers here: the field is
+  renamed where it is declared and where a `sets:` entry writes it, and the copy is compiled.
+  Every reader names it by name, so a copy that compiles has none; a copy refused for any reason
+  counts as read and keeps the mutant. The oracle fixture's `weight_grams` literal is not listed:
+  its entity's `weight_grams >= 0` invariant names the field, so the probe counts it as read, and
+  the literal stays a survivor no answer can kill. That survivor is open work for this story.
 - The text summary gives `; S of N site(s) scored` after the baseline's counts, before
   `; N out of scope` and `; N unavailable`. `S` counts the killed and survived mutants. `N` counts
   every mutant, every unmutated site and every in-scope unavailable site.
@@ -364,13 +378,27 @@ The audit covers actor grants (story `the-mutation-audit-covers-actor-grants`).
   component accepts, because only a served surface answers a grant refusal; the system's own actor
   is left out, because it is no caller of a served surface. Each id is
   `<class>/<actor>/<command>`.
+- Every grant a `may:` declares is a `grant-drop` mutant or, where `grant-drop` is selected, an
+  unmutated site (#711): the system actor's as `system_actor`, and one of a command no served
+  component accepts as `command_not_served` (billing serves nothing, so `Customer`'s
+  `CreateInvoice` is one). A grant an actor lacks of a command nothing serves, or the system
+  actor lacks, is no `grant-add` site and is not listed: it is no grant the model declares, and
+  listing every such pair would name each actor once per unserved command.
 - Where either class is selected, the baseline and every mutant's suite keep the
   `<command>/grant/denied` scenarios (`synthesized_from`). Without them they are left out as
   before, so a selection without a grant class keeps its baseline, its suite bytes and its ids.
 - A `grant-drop` mutant's synthesis is told the dropped grant (`with_dropped_grant`, in
   `synthesize/grant.rs`), and sends the refusal as the actor that lost it wherever that actor now
   lacks the grant. The lowest-named lacking actor, the choice outside the audit, may be one a
-  correct target refuses too. A `grant-add` mutant is killed by the `grant/admitted/<actor>`
-  scenario synthesis already writes for each actor holding the command.
+  correct target refuses too.
+- A `grant-add` mutant is killed by a scenario that sends the command as the actor that gained
+  it. Where no actor carrying attributes holds the command, the rotation over its holders sends
+  one, or a `grant/admitted/<actor>` copy, as each. Where one does, synthesis keeps the actor it
+  chose (`GrantRotationSkipped`), because the scenarios' expectations are read for that actor's
+  values; the mutant's synthesis is then told the added grant (`with_added_grant`) and writes
+  the `grant/admitted/<actor>` copy of the simplest scenario sending the command, sent as the
+  gaining actor with no caller values. That is only sound where the gaining actor carries no
+  attributes and the command reads none, so the copy asks what it asked the holder; every other
+  such site is listed as `attributed_holder` rather than left to survive.
 - A grant mutant takes `ess-mutation-manifest/7` (a `/6` manifest naming one is refused naming
   `/7`) and `ess-mutation-report/8`. An emission or report without one keeps its version.

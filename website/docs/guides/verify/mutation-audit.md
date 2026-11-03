@@ -65,7 +65,11 @@ weakening it: a mutant that only says less could never be killed by a correct ta
   write on a creating branch, or to an `Optional` field, with no such sibling input is retargeted
   to a literal of the field's type instead, the first the model admits: `-7919`, else `7919`, for
   an `Integer`; `-7919.5`, else `7919.5`, for a `Decimal`; `"mutant-literal"` for a `String`. A
-  write of another type, or one no literal is admitted for, is listed as `no_retarget_source`.
+  write of another type, or one no literal is admitted for, is listed as `no_retarget_source`. A
+  write to a field nothing in the model reads (no view, guard, derivation or other write names
+  it) is listed as `unobserved_field`: no target's answer tells the literal from the input, so
+  its mutant could never be killed. The audit decides it by renaming the field where it is
+  declared and written and compiling the copy; a copy the model refuses counts as read.
 - `transition-to` sends a transition to another declared state: the first, in declared order, that
   the model admits as its target. A transition no other state can be the target of, such as the
   only step of a linear lifecycle, is listed as `no_admissible_state` rather than left stillborn.
@@ -84,10 +88,17 @@ weakening it: a mutant that only says less could never be killed by a correct ta
   actor's `may:`, and `grant-add` gives an actor one such command its `may:` lacks; the system's own
   actor is left out. Where either class is selected, the baseline and every mutant's suite keep the
   `<command>/grant/denied` scenarios synthesis writes, so a target that admits the actor that lost
-  the grant, or refuses the one that gained it (its `grant/admitted/<actor>` scenario), fails the
-  mutant's suite. A `grant-drop` mutant's refusal is sent as the actor that lost the grant, not as
-  the lowest-named actor lacking it, which a correct target refuses too. Without a grant class the
-  baseline leaves those scenarios out, as before: no other class alters a grant.
+  the grant, or refuses the one that gained it, fails the mutant's suite. A `grant-drop` mutant's
+  refusal is sent as the actor that lost the grant, not as the lowest-named actor lacking it,
+  which a correct target refuses too. A `grant-add` mutant's suite sends the command as the actor
+  that gained it: in the scenarios synthesis sends in turn as each holder, or, where an actor
+  carrying attributes holds the command and those scenarios keep the actor synthesis chose, in a
+  `grant/admitted/<actor>` copy of the simplest of them sent as the gaining actor. Where the
+  gaining actor carries attributes too, or the command reads one, that copy would not ask what
+  it asked the holder, and the site is listed as `attributed_holder`. A grant `grant-drop` leaves
+  alone is listed too: the system actor's (`system_actor`) and one of a command no served
+  component accepts (`command_not_served`). Without a grant class the baseline leaves the
+  `grant/denied` scenarios out, as before: no other class alters a grant.
 
 A mutant the model refuses is *stillborn*, with the refusing check's own code. For example,
 dropping the only event of an outcome that names no error is stillborn (`ESS-COMMAND-007`);
@@ -98,9 +109,12 @@ something about the operator, not about the suite, and does not change the exit 
 A site a selected class excludes, or where it finds no edit the model admits, is *unmutated*: the
 report and the manifest list it under `unmutated_sites` as `{class, id, reason, unaudited}`, beside
 the stillborn mutants. The reasons are the `sets-drop` ones above, `no_admissible_state`
-(`transition-to`), `no_retarget_source` (`sets-retarget`) and `no_compatible_error_alternative`
-(`error-swap`). An unmutated site is not a mutant
-and is not counted in `counts`.
+(`transition-to`), `no_retarget_source` and `unobserved_field` (`sets-retarget`),
+`no_compatible_error_alternative` (`error-swap`), `system_actor` and `command_not_served`
+(`grant-drop`) and `attributed_holder` (`grant-add`). Each reason belongs to one class. An
+unmutated site is not a mutant and is not counted in `counts`. Where the selected classes find
+only unmutated sites, the audit refuses with `ESS-MUTATE-003`, writes no report, and prints each
+site's `unmutated <id> (<reason>): …` line after the refusal.
 
 A mutant can make one of its own outcomes unsatisfiable, so synthesis refuses that outcome's
 scenario and the mutant's suite is the baseline's minus it. Such a mutant is *unwitnessed*

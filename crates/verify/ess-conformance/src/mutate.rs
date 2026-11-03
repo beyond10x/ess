@@ -150,11 +150,16 @@ pub enum MutantClass {
     EmitSwap,
     /// Remove one command a served component accepts from one actor's `may:` (beyond10x/ess#710).
     /// Where it or [`Self::GrantAdd`] is selected the baseline keeps its `grant/denied` scenarios,
-    /// and the mutant's refusal is sent as the actor that lost the grant.
+    /// and the mutant's refusal is sent as the actor that lost the grant. A grant of the system's
+    /// own actor, or of a command nothing serves, is an [`UnmutatedSite`].
     GrantDrop,
     /// Give one actor a command a served component accepts that its `may:` lacks
     /// (beyond10x/ess#710): the mutant's suite sends the command as that actor and expects it
-    /// to run.
+    /// to run, in a scenario the rotation over its holders sends as it or, where an actor carrying
+    /// attributes holds the command, in the `grant/admitted/<actor>` copy synthesis writes for it
+    /// (`with_added_grant`). Where that actor carries
+    /// attributes too, or the command reads one, no such scenario exists and the site is an
+    /// [`UnmutatedSite`] (`attributed_holder`).
     GrantAdd,
 }
 
@@ -1357,6 +1362,53 @@ fn optional_field(documents: &[Document], outcome: &RawOutcome, target: &str) ->
         .is_some_and(|field| field.type_ref.is_optional())
 }
 
+/// The entity whose row `outcome`'s `sets:` writes: the one it creates, updates or moves.
+fn written_entity(outcome: &RawOutcome) -> Option<String> {
+    match (&outcome.creates, &outcome.updates, &outcome.moves) {
+        (Some(entity), _, _) | (None, Some(entity), _) => Some(entity.to_string()),
+        (None, None, Some(moves)) => Some(namespace(&moves.to_string()).to_owned()),
+        (None, None, None) => None,
+    }
+}
+
+/// Whether anything in the model reads `entity`'s `field`, decided by the compiler rather than a
+/// list of readers kept here: the field is renamed where it is declared and where a `sets:` entry
+/// writes it, and the copy is compiled. A view, guard, derivation, payload or other write that
+/// names the field then names one the entity lacks and is refused, so a copy that compiles has no
+/// reader of it (beyond10x/ess#711). A copy refused for any reason counts as read, so a doubt keeps
+/// the mutant.
+fn field_is_read(documents: &[Document], entity: &str, field: &str) -> bool {
+    let renamed = format!("{field}_unread_probe");
+    let mut copy = documents.to_vec();
+    let mut declared = false;
+    for (_, file) in &mut copy {
+        for declaration in &mut file.entities {
+            if declaration.name.to_string() != entity {
+                continue;
+            }
+            for it in &mut declaration.fields {
+                if it.name == field {
+                    it.name.clone_from(&renamed);
+                    declared = true;
+                }
+            }
+        }
+        for command in &mut file.commands {
+            for outcome in &mut command.outcomes {
+                if written_entity(outcome).as_deref() != Some(entity) {
+                    continue;
+                }
+                for set in &mut outcome.sets.0 {
+                    if set.target == field {
+                        set.target.clone_from(&renamed);
+                    }
+                }
+            }
+        }
+    }
+    !declared || compile(copy, &SourceMap::new()).is_err()
+}
+
 fn swap_connective(node: &mut Predicate) {
     *node = match std::mem::take(node) {
         Predicate::All(children) => Predicate::Any(children),
@@ -1567,7 +1619,8 @@ fn unaudited(command: &str, event: &str) -> String {
 
 /// Why a selected site of a class other than `emit-swap` has no mutant
 /// (<https://github.com/beyond10x/ess/issues/711>). A closed set: the four [`SetsDropReason`]s,
-/// then one per class that looks for an admissible edit and can find none.
+/// then the reasons of the classes that look for an admissible or observable edit and can find
+/// none, and the grants the grant classes leave alone. Each is given for one class only.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -1591,6 +1644,22 @@ pub enum UnmutatedReason {
     /// the domain compiles in place of the reported one, its entry re-keyed or dropped
     /// (beyond10x/ess#709).
     NoCompatibleErrorAlternative,
+    /// A write [`Self::NoRetargetSource`] would otherwise retarget to a literal, to a field nothing
+    /// in the model reads: no view, guard, derivation or other write names it, so no answer of a
+    /// target tells the literal from the input and the mutant could never be killed.
+    UnobservedField,
+    /// A grant of the system's own actor (`system: true`): it issues its steps itself and is no
+    /// caller of a served surface, so no request is refused or admitted on it (beyond10x/ess#710).
+    SystemActor,
+    /// A grant of a command no component reached over the network (`reached_by: network`)
+    /// accepts: no served surface answers a refusal, and the grant is the caller's to enforce
+    /// (beyond10x/ess#710).
+    CommandNotServed,
+    /// A grant an actor lacks of a command an actor carrying attributes holds, where the actor
+    /// that would gain it carries attributes too or the command reads one: synthesis sends such a
+    /// command as the actor it chose, its expectations read for that actor's values, so no
+    /// scenario sends it as the actor that gained the grant (beyond10x/ess#710).
+    AttributedHolder,
 }
 
 impl UnmutatedReason {
@@ -1604,6 +1673,10 @@ impl UnmutatedReason {
             Self::NoAdmissibleState => "no_admissible_state",
             Self::NoRetargetSource => "no_retarget_source",
             Self::NoCompatibleErrorAlternative => "no_compatible_error_alternative",
+            Self::UnobservedField => "unobserved_field",
+            Self::SystemActor => "system_actor",
+            Self::CommandNotServed => "command_not_served",
+            Self::AttributedHolder => "attributed_holder",
         }
     }
 
@@ -1614,8 +1687,10 @@ impl UnmutatedReason {
                 MutantClass::SetsDrop
             }
             Self::NoAdmissibleState => MutantClass::TransitionTo,
-            Self::NoRetargetSource => MutantClass::SetsRetarget,
+            Self::NoRetargetSource | Self::UnobservedField => MutantClass::SetsRetarget,
             Self::NoCompatibleErrorAlternative => MutantClass::ErrorSwap,
+            Self::SystemActor | Self::CommandNotServed => MutantClass::GrantDrop,
+            Self::AttributedHolder => MutantClass::GrantAdd,
         }
     }
 }
@@ -1739,7 +1814,7 @@ pub fn selection(documents: &[Document], classes: &[MutantClass]) -> Selection {
         error_payload_sites(documents, compiles, &mut checked, &mut unmutated);
     }
     if selected.contains(&MutantClass::GrantDrop) || selected.contains(&MutantClass::GrantAdd) {
-        grant_sites(documents, &mut checked);
+        grant_sites(documents, &selected, &mut checked, &mut unmutated);
     }
     if selected.contains(&MutantClass::SetsDrop) {
         unmutated.extend(
@@ -1837,7 +1912,8 @@ fn transition_to_sites(
 /// branch or to an `Optional` field, which `sets-drop` leaves alone, where no other input has the
 /// field's type, so no sibling retarget is either. Its mutant writes a [`SetsLiteralKind`] in place
 /// of the input where the model admits it; every other such write is listed
-/// (`no_retarget_source`). Where the unmutated model does not compile there is no such site.
+/// (`no_retarget_source`), and so is a write to a field nothing reads ([`field_is_read`],
+/// `unobserved_field`). Where the unmutated model does not compile there is no such site.
 fn literal_sites(
     documents: &[Document],
     compiles: bool,
@@ -1866,6 +1942,30 @@ fn literal_sites(
                     continue;
                 }
                 let outcome_name = outcome.name.to_string();
+                let id = format!(
+                    "{}/{command_name}/{outcome_name}/{}",
+                    MutantClass::SetsRetarget,
+                    set.target
+                );
+                // A literal in a field nothing reads is told from the input by no answer of any
+                // target: listed, never a survivor (beyond10x/ess#711).
+                if let Some(entity) = written_entity(outcome) {
+                    if !field_is_read(documents, &entity, &set.target) {
+                        unmutated.push(UnmutatedSite {
+                            class: MutantClass::SetsRetarget,
+                            id,
+                            reason: UnmutatedReason::UnobservedField,
+                            unaudited: format!(
+                                "`{}: {}` was not retargeted to a literal: nothing in the model \
+                                 reads `{entity}`'s `{}` (no view, guard, derivation or other \
+                                 write names it), so no answer of a target tells a literal there \
+                                 from the input",
+                                set.target, set.source, set.target
+                            ),
+                        });
+                        continue;
+                    }
+                }
                 let admitted = SetsLiteralKind::candidates(&written.type_ref)
                     .iter()
                     .map(|&literal| Mutation::SetsLiteral {
@@ -1882,11 +1982,7 @@ fn literal_sites(
                     Some(mutation) => found.push(mutation),
                     None => unmutated.push(UnmutatedSite {
                         class: MutantClass::SetsRetarget,
-                        id: format!(
-                            "{}/{command_name}/{outcome_name}/{}",
-                            MutantClass::SetsRetarget,
-                            set.target
-                        ),
+                        id,
                         reason: UnmutatedReason::NoRetargetSource,
                         unaudited: format!(
                             "`{}: {}` was not retargeted: no other input of `{command_name}` has \
@@ -2107,7 +2203,18 @@ fn error_payload_sites(
 /// served component accepts, a `grant-drop` where the actor holds the command and a `grant-add`
 /// where it does not. Read from the compiled model, as synthesis reads who is served; a
 /// specification that does not compile has none here, and is refused by whatever compiles it.
-fn grant_sites(documents: &[Document], found: &mut Vec<Mutation>) {
+///
+/// Every grant the classes leave alone is listed where its class is selected (beyond10x/ess#711):
+/// a held grant of the system's own actor (`system_actor`) or of a command nothing serves
+/// (`command_not_served`) under `grant-drop`, and a `grant-add` no scenario can be sent for
+/// (`attributed_holder`).
+fn grant_sites(
+    documents: &[Document],
+    selected: &BTreeSet<MutantClass>,
+    found: &mut Vec<Mutation>,
+    unmutated: &mut Vec<UnmutatedSite>,
+) {
+    use crate::synthesize::GrantExclusion;
     let Ok(ir) = compile(documents.to_vec(), &SourceMap::new()) else {
         return;
     };
@@ -2116,11 +2223,56 @@ fn grant_sites(documents: &[Document], found: &mut Vec<Mutation>) {
             actor,
             command,
             held,
+            excluded,
         } = grant;
-        found.push(if held {
-            Mutation::GrantDrop { actor, command }
+        let class = if held {
+            MutantClass::GrantDrop
         } else {
-            Mutation::GrantAdd { actor, command }
+            MutantClass::GrantAdd
+        };
+        let Some(excluded) = excluded else {
+            found.push(if held {
+                Mutation::GrantDrop { actor, command }
+            } else {
+                Mutation::GrantAdd { actor, command }
+            });
+            continue;
+        };
+        if !selected.contains(&class) {
+            continue;
+        }
+        let (reason, unaudited) = match excluded {
+            GrantExclusion::SystemActor => (
+                UnmutatedReason::SystemActor,
+                format!(
+                    "`{actor}`'s grant of `{command}` was not audited: `{actor}` is the system's \
+                     own actor, which issues its steps itself and is no caller of a served \
+                     surface, so no request is refused or admitted on the grant"
+                ),
+            ),
+            GrantExclusion::CommandNotServed => (
+                UnmutatedReason::CommandNotServed,
+                format!(
+                    "`{actor}`'s grant of `{command}` was not audited: no component reached over \
+                     the network accepts `{command}`, so no served surface refuses a caller and \
+                     the grant is the caller's to enforce"
+                ),
+            ),
+            GrantExclusion::AttributedHolder => (
+                UnmutatedReason::AttributedHolder,
+                format!(
+                    "`{actor}` gaining `{command}` was not audited: an actor carrying attributes \
+                     holds `{command}`, so its scenarios keep the actor synthesis chose, and \
+                     `{actor}` carries attributes or `{command}` reads one, so no scenario can be \
+                     sent as `{actor}` asking what it asked the holder"
+                ),
+            ),
+        };
+        unmutated.push(UnmutatedSite {
+            class,
+            id: format!("{class}/{actor}/{command}"),
+            reason,
+            unaudited,
         });
     }
 }
@@ -2142,6 +2294,26 @@ fn dropped_grant(mutation: &Mutation) -> Option<crate::synthesize::DroppedGrant>
     Some(crate::synthesize::DroppedGrant {
         actor: actor.clone(),
         command: command.clone(),
+    })
+}
+
+/// The grant a `grant-add` mutation gives, as synthesis of its model is told it
+/// ([`with_added_grant`](crate::synthesize::with_added_grant)); `None` for any other mutation.
+fn added_grant(mutation: &Mutation) -> Option<crate::synthesize::AddedGrant> {
+    let Mutation::GrantAdd { actor, command } = mutation else {
+        return None;
+    };
+    Some(crate::synthesize::AddedGrant {
+        actor: actor.clone(),
+        command: command.clone(),
+    })
+}
+
+/// Runs `synthesize` with the grant `mutation` drops or adds told to synthesis, so a grant
+/// mutant's suite asks its refusal or its admission of the actor whose grant changed.
+fn with_changed_grant<R>(mutation: &Mutation, synthesize: impl FnOnce() -> R) -> R {
+    crate::synthesize::with_dropped_grant(dropped_grant(mutation), || {
+        crate::synthesize::with_added_grant(added_grant(mutation), synthesize)
     })
 }
 
@@ -4544,10 +4716,13 @@ pub enum AuditRefusal {
         /// Every scenario that failed or ended `error`, in suite order.
         not_passed: Vec<String>,
     },
-    /// `ESS-MUTATE-003`: the selected classes found no site.
+    /// `ESS-MUTATE-003`: the selected classes found no site with a mutant or an unavailable site.
     NoSite {
         /// The classes asked for.
         classes: Vec<MutantClass>,
+        /// The sites they found and could not mutate, in byte order of id, each printed with the
+        /// refusal, since no report is written to list them (beyond10x/ess#711).
+        unmutated: Vec<UnmutatedSite>,
     },
     /// The baseline executed no scenario — every one was `unsupported` or `skipped`, or the suite
     /// holds none — so no mutant can be scored on anything.
@@ -4618,17 +4793,36 @@ impl fmt::Display for AuditRefusal {
                 }
                 Ok(())
             }
-            Self::NoSite { classes } => write!(
-                f,
-                "refusal[{}]: {} find(s) no site in this specification, so the audit would run \
-                 nothing",
-                MutateCode::NoSite.code(),
-                classes
+            Self::NoSite { classes, unmutated } => {
+                let classes = classes
                     .iter()
                     .map(|class| format!("`{class}`"))
                     .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+                    .join(", ");
+                let code = MutateCode::NoSite.code();
+                if unmutated.is_empty() {
+                    return write!(
+                        f,
+                        "refusal[{code}]: {classes} find(s) no site in this specification, so \
+                         the audit would run nothing"
+                    );
+                }
+                write!(
+                    f,
+                    "refusal[{code}]: {classes} find(s) no site it can mutate in this \
+                     specification, so the audit would run nothing; {} site(s) found and not \
+                     mutated:",
+                    unmutated.len()
+                )?;
+                for site in unmutated {
+                    write!(
+                        f,
+                        "\nunmutated {} ({}): {}",
+                        site.id, site.reason, site.unaudited
+                    )?;
+                }
+                Ok(())
+            }
             Self::NothingScored {
                 implementation,
                 not_scored,
@@ -5506,7 +5700,7 @@ fn measure<T: ConformanceTarget>(
             return Ok(entry);
         }
     };
-    let mut ran = crate::synthesize::with_dropped_grant(dropped_grant(&mutant.mutation), || {
+    let mut ran = with_changed_grant(&mutant.mutation, || {
         run(&ir, dropped_write(documents, &mutant.mutation), new_target)
     })?;
     if let Some(authored) = authored {
@@ -5611,7 +5805,7 @@ pub fn audit_with_authored<T: ConformanceTarget>(
         let mut classes = classes.to_vec();
         classes.sort();
         classes.dedup();
-        return Err(AuditRefusal::NoSite { classes });
+        return Err(AuditRefusal::NoSite { classes, unmutated });
     }
     let authored = AuthoredSuite::of(&baseline_ir, authored)?;
     let baseline = baseline_with(
@@ -6556,7 +6750,7 @@ pub fn emit_with(
         let mut classes = classes.to_vec();
         classes.sort();
         classes.dedup();
-        return Err(AuditRefusal::NoSite { classes });
+        return Err(AuditRefusal::NoSite { classes, unmutated });
     }
     let transitions = performers(&baseline_ir.to_compact_json()).unwrap_or_default();
     let scope = component.and_then(|name| {
@@ -6605,13 +6799,12 @@ pub fn emit_with(
         }
         match compile(mutated, texts) {
             Ok(ir) => {
-                let synthesized =
-                    crate::synthesize::with_dropped_grant(dropped_grant(&mutant.mutation), || {
-                        crate::synthesize::with_dropped_write(
-                            dropped_write(documents, &mutant.mutation),
-                            || synthesized_for(&ir, component),
-                        )
-                    })?;
+                let synthesized = with_changed_grant(&mutant.mutation, || {
+                    crate::synthesize::with_dropped_write(
+                        dropped_write(documents, &mutant.mutation),
+                        || synthesized_for(&ir, component),
+                    )
+                })?;
                 let mut suite = emit_suite(&ir, synthesized, &mutant.id, &mut files)?;
                 digest_of(&mut suite);
                 entry.dir = Some(suite.dir);
@@ -6774,6 +6967,13 @@ fn unmutated_in_component(
             .strip_prefix(&format!("{}/", site.class))
             .and_then(|transition| performers.get(transition))
             .is_some_and(|by| by.iter().any(|(command, _)| handles(command)));
+    }
+    if matches!(site.class, MutantClass::GrantDrop | MutantClass::GrantAdd) {
+        // `<class>/<actor>/<command>`: the command's component answers for the grant.
+        return site
+            .id
+            .rsplit_once('/')
+            .is_some_and(|(_, command)| handles(command));
     }
     outcome_site(site.class, &site.id).is_some_and(|(command, _)| handles(command))
 }
