@@ -98,7 +98,7 @@ pub const REPORT_FORMAT_8: &str = "ess-mutation-report/8";
 
 // ---- the classes --------------------------------------------------------------------------------
 
-/// The twelve altering classes, a closed set with an [`ALL`](Self::ALL) constant as `Fault` has.
+/// The fourteen altering classes, a closed set with an [`ALL`](Self::ALL) constant as `Fault` has.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -148,6 +148,14 @@ pub enum MutantClass {
     /// command publishes, the first in byte order of name that compiles (beyond10x/ess#295). A site
     /// with no such event is an [`UnavailableSite`], never a mutant.
     EmitSwap,
+    /// Remove one command a served component accepts from one actor's `may:` (beyond10x/ess#710).
+    /// Where it or [`Self::GrantAdd`] is selected the baseline keeps its `grant/denied` scenarios,
+    /// and the mutant's refusal is sent as the actor that lost the grant.
+    GrantDrop,
+    /// Give one actor a command a served component accepts that its `may:` lacks
+    /// (beyond10x/ess#710): the mutant's suite sends the command as that actor and expects it
+    /// to run.
+    GrantAdd,
 }
 
 impl MutantClass {
@@ -165,14 +173,18 @@ impl MutantClass {
         Self::SetsDrop,
         Self::PrecedenceSwap,
         Self::EmitSwap,
+        Self::GrantDrop,
+        Self::GrantAdd,
     ];
 
     /// The oldest manifest format whose readers know this class: [`MANIFEST_FORMAT_4`] for the two
     /// classes beyond10x/ess#212 added and for `emit-swap` (beyond10x/ess#295),
-    /// [`MANIFEST_FORMAT_1`] for the rest.
+    /// [`MANIFEST_FORMAT_7`] for the two grant classes (beyond10x/ess#710), [`MANIFEST_FORMAT_1`]
+    /// for the rest.
     pub fn manifest_format(self) -> &'static str {
         match self {
             Self::SetsDrop | Self::PrecedenceSwap | Self::EmitSwap => MANIFEST_FORMAT_4,
+            Self::GrantDrop | Self::GrantAdd => MANIFEST_FORMAT_7,
             _ => MANIFEST_FORMAT_1,
         }
     }
@@ -192,6 +204,8 @@ impl MutantClass {
             Self::SetsDrop => "sets-drop",
             Self::PrecedenceSwap => "precedence-swap",
             Self::EmitSwap => "emit-swap",
+            Self::GrantDrop => "grant-drop",
+            Self::GrantAdd => "grant-add",
         }
     }
 }
@@ -532,6 +546,20 @@ pub enum Mutation {
         /// The declared event it emits instead.
         to: String,
     },
+    /// Remove `command` from `actor`'s `may:` (beyond10x/ess#710).
+    GrantDrop {
+        /// The actor.
+        actor: String,
+        /// The command it may no longer invoke.
+        command: String,
+    },
+    /// Add `command` to `actor`'s `may:` (beyond10x/ess#710).
+    GrantAdd {
+        /// The actor.
+        actor: String,
+        /// The command it may now invoke.
+        command: String,
+    },
 }
 
 /// The literal a [`Mutation::SetsLiteral`] writes: a value no synthesized input is sent, so the row
@@ -610,6 +638,8 @@ impl Mutation {
             Self::EmitDrop { .. } => MutantClass::EmitDrop,
             Self::OrderFlip { .. } => MutantClass::OrderFlip,
             Self::EmitSwap { .. } => MutantClass::EmitSwap,
+            Self::GrantDrop { .. } => MutantClass::GrantDrop,
+            Self::GrantAdd { .. } => MutantClass::GrantAdd,
         }
     }
 
@@ -693,6 +723,9 @@ impl Mutation {
                 event,
                 to,
             } => format!("{command}/{outcome}/{event}/{to}"),
+            Self::GrantDrop { actor, command } | Self::GrantAdd { actor, command } => {
+                format!("{actor}/{command}")
+            }
         }
     }
 }
@@ -1705,6 +1738,9 @@ pub fn selection(documents: &[Document], classes: &[MutantClass]) -> Selection {
     if selected.contains(&MutantClass::ErrorSwap) {
         error_payload_sites(documents, compiles, &mut checked, &mut unmutated);
     }
+    if selected.contains(&MutantClass::GrantDrop) || selected.contains(&MutantClass::GrantAdd) {
+        grant_sites(documents, &mut checked);
+    }
     if selected.contains(&MutantClass::SetsDrop) {
         unmutated.extend(
             unmutated_sets_of(documents)
@@ -2067,6 +2103,48 @@ fn error_payload_sites(
     }
 }
 
+/// Each grant site (beyond10x/ess#710): for every actor but the system's own and every command a
+/// served component accepts, a `grant-drop` where the actor holds the command and a `grant-add`
+/// where it does not. Read from the compiled model, as synthesis reads who is served; a
+/// specification that does not compile has none here, and is refused by whatever compiles it.
+fn grant_sites(documents: &[Document], found: &mut Vec<Mutation>) {
+    let Ok(ir) = compile(documents.to_vec(), &SourceMap::new()) else {
+        return;
+    };
+    for grant in crate::synthesize::audited_grants(&ir) {
+        let crate::synthesize::AuditedGrant {
+            actor,
+            command,
+            held,
+        } = grant;
+        found.push(if held {
+            Mutation::GrantDrop { actor, command }
+        } else {
+            Mutation::GrantAdd { actor, command }
+        });
+    }
+}
+
+/// Whether a `grant-drop` or `grant-add` mutant is among `classes`: then the baseline and every
+/// mutant's suite keep their `grant/denied` scenarios (beyond10x/ess#710).
+fn audits_grants(classes: &[MutantClass]) -> bool {
+    classes
+        .iter()
+        .any(|class| matches!(class, MutantClass::GrantDrop | MutantClass::GrantAdd))
+}
+
+/// The grant a `grant-drop` mutation removes, as synthesis of its model is told it
+/// ([`with_dropped_grant`](crate::synthesize::with_dropped_grant)); `None` for any other mutation.
+fn dropped_grant(mutation: &Mutation) -> Option<crate::synthesize::DroppedGrant> {
+    let Mutation::GrantDrop { actor, command } = mutation else {
+        return None;
+    };
+    Some(crate::synthesize::DroppedGrant {
+        actor: actor.clone(),
+        command: command.clone(),
+    })
+}
+
 /// Every site of every class.
 fn sites(documents: &[Document]) -> Vec<Mutation> {
     let mut found = Vec::new();
@@ -2361,6 +2439,9 @@ fn describe(documents: &[Document], mutation: &Mutation) -> Option<String> {
         Mutation::SetsDrop { .. } | Mutation::PrecedenceSwap { .. } => {
             return describe_drop_or_swap(documents, mutation)
         }
+        Mutation::GrantDrop { .. } | Mutation::GrantAdd { .. } => {
+            return describe_grant(documents, mutation)
+        }
         Mutation::SetsRetarget {
             command,
             outcome,
@@ -2480,6 +2561,38 @@ fn describe_drop_or_swap(documents: &[Document], mutation: &Mutation) -> Option<
                 guard(first)?,
                 guard(second)?
             )
+        }
+        _ => return None,
+    })
+}
+
+/// The declared actor `name`.
+fn actor<'a>(documents: &'a [Document], name: &str) -> Option<&'a ess_domain::actor::RawActorSpec> {
+    documents
+        .iter()
+        .flat_map(|(_, file)| &file.actors)
+        .find(|actor| actor.name.to_string() == name)
+}
+
+/// What a `grant-drop` or `grant-add` changes, or `None` when its site is absent: the actor holds
+/// the command it drops, and lacks the command it is given.
+fn describe_grant(documents: &[Document], mutation: &Mutation) -> Option<String> {
+    let holds = |actor: &str, command: &str| {
+        self::actor(documents, actor)
+            .map(|found| found.may.iter().any(|it| it.to_string() == command))
+    };
+    Some(match mutation {
+        Mutation::GrantDrop { actor, command } => {
+            if !holds(actor, command)? {
+                return None;
+            }
+            format!("`{actor}` may no longer invoke `{command}`")
+        }
+        Mutation::GrantAdd { actor, command } => {
+            if holds(actor, command)? {
+                return None;
+            }
+            format!("`{actor}` may invoke `{command}`")
         }
         _ => return None,
     })
@@ -2694,6 +2807,23 @@ pub fn apply(documents: &[Document], mutation: &Mutation) -> Result<Vec<Document
                 }
             }
         }
+        Mutation::GrantDrop { actor, command } | Mutation::GrantAdd { actor, command } => {
+            let command =
+                ess_domain::name::QualifiedName::new(command).map_err(|e| e.to_string())?;
+            let found = mutated
+                .iter_mut()
+                .flat_map(|(_, file)| &mut file.actors)
+                .find(|it| it.name.to_string() == *actor)
+                .ok_or_else(absent)?;
+            let changed = if matches!(mutation, Mutation::GrantDrop { .. }) {
+                found.may.remove(&command)
+            } else {
+                found.may.insert(command)
+            };
+            if !changed {
+                return Err(absent());
+            }
+        }
         Mutation::OrderFlip { view, field } => {
             let key = mutated
                 .iter_mut()
@@ -2888,7 +3018,11 @@ fn outcome_site(class: MutantClass, id: &str) -> Option<(&str, &str)> {
         | MutantClass::SetsDrop
         | MutantClass::PrecedenceSwap
         | MutantClass::EmitSwap => {}
-        MutantClass::FromDrop | MutantClass::TransitionTo | MutantClass::OrderFlip => return None,
+        MutantClass::FromDrop
+        | MutantClass::TransitionTo
+        | MutantClass::OrderFlip
+        | MutantClass::GrantDrop
+        | MutantClass::GrantAdd => return None,
     }
     let mut segments = id
         .strip_prefix(class.as_str())?
@@ -5340,6 +5474,7 @@ pub fn evaluate<T: ConformanceTarget>(
     mutant: &Mutant,
     new_target: impl Fn() -> T,
 ) -> Result<MutantEntry, AuditRefusal> {
+    let _grants = KeepingGrants::when(&[mutant.class]);
     let baseline_ir = compile(documents.to_vec(), texts).map_err(AuditRefusal::Unloadable)?;
     let ruler = baseline(&baseline_ir, &new_target)?.ruler;
     measure(
@@ -5371,7 +5506,9 @@ fn measure<T: ConformanceTarget>(
             return Ok(entry);
         }
     };
-    let mut ran = run(&ir, dropped_write(documents, &mutant.mutation), new_target)?;
+    let mut ran = crate::synthesize::with_dropped_grant(dropped_grant(&mutant.mutation), || {
+        run(&ir, dropped_write(documents, &mutant.mutation), new_target)
+    })?;
     if let Some(authored) = authored {
         ran.observed.absorb(authored.on(&ir));
     }
@@ -5448,6 +5585,7 @@ pub fn audit_with_authored<T: ConformanceTarget>(
     known: Option<KnownFailing<'_>>,
     authored: &BTreeMap<crate::ScenarioId, crate::ConformanceScenario>,
 ) -> Result<MutationReport, AuditRefusal> {
+    let _grants = KeepingGrants::when(classes);
     let baseline_ir = compile(documents.to_vec(), texts).map_err(AuditRefusal::Unloadable)?;
     crate::admission::model_without_binary64(&baseline_ir)
         .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
@@ -5526,7 +5664,7 @@ pub fn audit_with_authored<T: ConformanceTarget>(
     })
 }
 
-/// [`MANIFEST_FORMAT_7`] where `seventh` (an unmutated site) asks for it, else
+/// [`MANIFEST_FORMAT_7`] where `seventh` (an unmutated site or a grant mutant, beyond10x/ess#710) asks for it, else
 /// [`MANIFEST_FORMAT_6`] where a mutant carries `overlap_taken_by`, else [`MANIFEST_FORMAT_5`] where one
 /// carries `identical_answer`, else [`MANIFEST_FORMAT_4`] where `version4`, else [`MANIFEST_FORMAT`].
 /// A `precedence-swap` mutant, the only one carrying either, already makes the emission version 4,
@@ -5545,14 +5683,15 @@ fn manifest_format(entries: &[EmittedMutant], version4: bool, seventh: bool) -> 
     }
 }
 
-/// [`REPORT_FORMAT_8`] where `eighth` (an unmutated site) asks for it, which `/7` does not have;
+/// [`REPORT_FORMAT_8`] where `eighth` (an unmutated site) or a grant mutant (beyond10x/ess#710) asks
+/// for it, which `/7` does not have;
 /// else [`REPORT_FORMAT_7`] where a mutant carries `unchanged_suite`, which `/6` does not have; else
 /// [`REPORT_FORMAT_6`] where a mutant carries `overlap_taken_by`, which `/5` does not have; else
 /// [`REPORT_FORMAT_5`] where a mutant carries `identical_answer`, which `/4` does not have; else
 /// [`REPORT_FORMAT_4`] where `fourth` (a component, a declaration or an unavailable site) asks for
 /// it; else [`REPORT_FORMAT`].
 fn report_format(entries: &[MutantEntry], fourth: bool, eighth: bool) -> String {
-    if eighth {
+    if eighth || entries.iter().any(|entry| audits_grants(&[entry.class])) {
         REPORT_FORMAT_8
     } else if entries.iter().any(|entry| entry.unchanged_suite) {
         REPORT_FORMAT_7
@@ -6147,26 +6286,24 @@ impl Manifest {
         let (keyed, guarded, scoped) = (version >= 2, version >= 3, version >= 4);
         // Before the class check, so an earlier manifest carrying it is refused by this name.
         manifest.swap_members(version)?;
-        if !scoped {
-            if manifest.component.is_some() {
-                return Err(format!(
-                    "{MANIFEST_FILE} names a `component`, which `{}` does not have; it is \
-                     `{MANIFEST_FORMAT_4}`",
-                    manifest.format
-                ));
-            }
-            if let Some(mutant) = manifest.mutants.iter().find(|mutant| {
-                version_of(mutant.class.manifest_format()).is_some_and(|needs| needs > version)
-            }) {
-                return Err(format!(
-                    "{MANIFEST_FILE}: `{}` is a `{}` mutant, a class `{}` does not have; it is \
-                     `{}`",
-                    mutant.id,
-                    mutant.class,
-                    manifest.format,
-                    mutant.class.manifest_format()
-                ));
-            }
+        if !scoped && manifest.component.is_some() {
+            return Err(format!(
+                "{MANIFEST_FILE} names a `component`, which `{}` does not have; it is \
+                 `{MANIFEST_FORMAT_4}`",
+                manifest.format
+            ));
+        }
+        // Of every version: the grant classes are `/7`'s (beyond10x/ess#710).
+        if let Some(mutant) = manifest.mutants.iter().find(|mutant| {
+            version_of(mutant.class.manifest_format()).is_some_and(|needs| needs > version)
+        }) {
+            return Err(format!(
+                "{MANIFEST_FILE}: `{}` is a `{}` mutant, a class `{}` does not have; it is `{}`",
+                mutant.id,
+                mutant.class,
+                manifest.format,
+                mutant.class.manifest_format()
+            ));
         }
         if let Some(mutant) = manifest.mutants.iter().find(|mutant| mutant.out_of_scope) {
             if manifest.component.is_none() {
@@ -6262,13 +6399,36 @@ fn contained(dir: &str) -> Result<(), String> {
 /// The suite `ir` obliges, synthesized as the built-in audit synthesizes it, and its refusals,
 /// sorted.
 ///
-/// Without its `…/grant/denied` scenarios (beyond10x/ess#265), for the reason no authored scenario
-/// is run here: no class alters a grant, so each asks every mutant's suite exactly the question it
-/// asks the baseline's and could never kill one. Leaving them in would move a suite that needs
-/// nothing newer onto the suite major that carries them, which the audit's report/1 evidence does
-/// not read.
+/// Without its `…/grant/denied` scenarios (beyond10x/ess#265) unless a grant class is selected
+/// ([`KeepingGrants`], beyond10x/ess#710): no other class alters a grant, so each asks every
+/// mutant's suite exactly the question it asks the baseline's and could never kill one. Leaving
+/// them in would move a suite that needs nothing newer onto the suite major that carries them, so
+/// an audit without a grant class keeps the baseline and the bytes it had.
 fn synthesized(ir: &EssIr) -> (crate::ConformanceSuite, Vec<RefusalKey>) {
     synthesized_from(crate::synthesize(ir), ir)
+}
+
+thread_local! {
+    /// Whether the audit or emission running on this thread selected a grant class, so every suite
+    /// it synthesizes keeps its `grant/denied` scenarios (beyond10x/ess#710).
+    static GRANTS_KEPT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// While held, every suite [`synthesized`] on this thread keeps its `grant/denied` scenarios
+/// exactly where `classes` holds a grant class; what was there before comes back on drop, also on
+/// a panic.
+struct KeepingGrants(bool);
+
+impl KeepingGrants {
+    fn when(classes: &[MutantClass]) -> Self {
+        Self(GRANTS_KEPT.with(|it| it.replace(audits_grants(classes))))
+    }
+}
+
+impl Drop for KeepingGrants {
+    fn drop(&mut self) {
+        GRANTS_KEPT.with(|it| it.set(self.0));
+    }
 }
 
 /// [`synthesized`], scoped to `component` as `synthesize --component` scopes a suite
@@ -6290,9 +6450,11 @@ fn synthesized_from(
     ir: &EssIr,
 ) -> (crate::ConformanceSuite, Vec<RefusalKey>) {
     let mut suite = synthesis.suite;
-    suite
-        .scenarios
-        .retain(|id, _| !matches!(id, crate::ScenarioId::Grant { .. }));
+    if !GRANTS_KEPT.with(std::cell::Cell::get) {
+        suite
+            .scenarios
+            .retain(|id, _| !matches!(id, crate::ScenarioId::Grant { .. }));
+    }
     suite.select_fresh_format_for(ir);
     let mut refused: Vec<RefusalKey> = synthesis.refusals.iter().map(RefusalKey::of).collect();
     refused.sort();
@@ -6376,6 +6538,7 @@ pub fn emit_with(
     component: Option<&str>,
     declaration: Option<&str>,
 ) -> Result<Emission, AuditRefusal> {
+    let _grants = KeepingGrants::when(classes);
     let baseline_ir = compile(documents.to_vec(), texts).map_err(AuditRefusal::Unloadable)?;
     crate::admission::model_without_binary64(&baseline_ir)
         .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
@@ -6415,7 +6578,7 @@ pub fn emit_with(
         || !unmutated.is_empty()
         || selected
             .iter()
-            .any(|mutant| mutant.class.manifest_format() == MANIFEST_FORMAT_4);
+            .any(|mutant| mutant.class.manifest_format() != MANIFEST_FORMAT_1);
     let digest_of = |suite: &mut EmittedSuite| {
         if !version4 {
             suite.suite_digest = None;
@@ -6442,10 +6605,13 @@ pub fn emit_with(
         }
         match compile(mutated, texts) {
             Ok(ir) => {
-                let synthesized = crate::synthesize::with_dropped_write(
-                    dropped_write(documents, &mutant.mutation),
-                    || synthesized_for(&ir, component),
-                )?;
+                let synthesized =
+                    crate::synthesize::with_dropped_grant(dropped_grant(&mutant.mutation), || {
+                        crate::synthesize::with_dropped_write(
+                            dropped_write(documents, &mutant.mutation),
+                            || synthesized_for(&ir, component),
+                        )
+                    })?;
                 let mut suite = emit_suite(&ir, synthesized, &mutant.id, &mut files)?;
                 digest_of(&mut suite);
                 entry.dir = Some(suite.dir);
@@ -6464,7 +6630,11 @@ pub fn emit_with(
         files.insert(format!("{}/{MUTANT_FILE}", mutant.id), canonical(&entry));
         entries.push(entry);
     }
-    let format = manifest_format(&entries, version4, !unmutated.is_empty());
+    let format = manifest_format(
+        &entries,
+        version4,
+        !unmutated.is_empty() || entries.iter().any(|entry| audits_grants(&[entry.class])),
+    );
     if let Some(component) = scope {
         outside(&baseline_ir, component, &mut unavailable);
     }
@@ -6569,7 +6739,9 @@ fn in_component(
         | Mutation::EmitDrop { command, .. }
         | Mutation::EmitSwap { command, .. }
         | Mutation::SetsDrop { command, .. }
-        | Mutation::PrecedenceSwap { command, .. } => handles(command),
+        | Mutation::PrecedenceSwap { command, .. }
+        | Mutation::GrantDrop { command, .. }
+        | Mutation::GrantAdd { command, .. } => handles(command),
         Mutation::OrderFlip { view, .. } => ess_domain::name::QualifiedName::new(view)
             .is_ok_and(|name| crate::synthesize::owns_view(ir, component, &name)),
         Mutation::FromDrop {

@@ -354,3 +354,23 @@ The audit names the sites it could not mutate (story
 - The text summary gives `; S of N site(s) scored` after the baseline's counts, before
   `; N out of scope` and `; N unavailable`. `S` counts the killed and survived mutants. `N` counts
   every mutant, every unmutated site and every in-scope unavailable site.
+
+## Implementation decisions for #710
+
+The audit covers actor grants (story `the-mutation-audit-covers-actor-grants`).
+
+- Two classes follow `emit-swap` in `MutantClass::ALL`: `grant-drop` removes one command from one
+  actor's `may:`, and `grant-add` adds one the actor lacks. Their sites are the commands a served
+  component accepts, because only a served surface answers a grant refusal; the system's own actor
+  is left out, because it is no caller of a served surface. Each id is
+  `<class>/<actor>/<command>`.
+- Where either class is selected, the baseline and every mutant's suite keep the
+  `<command>/grant/denied` scenarios (`synthesized_from`). Without them they are left out as
+  before, so a selection without a grant class keeps its baseline, its suite bytes and its ids.
+- A `grant-drop` mutant's synthesis is told the dropped grant (`with_dropped_grant`, in
+  `synthesize/grant.rs`), and sends the refusal as the actor that lost it wherever that actor now
+  lacks the grant. The lowest-named lacking actor, the choice outside the audit, may be one a
+  correct target refuses too. A `grant-add` mutant is killed by the `grant/admitted/<actor>`
+  scenario synthesis already writes for each actor holding the command.
+- A grant mutant takes `ess-mutation-manifest/7` (a `/6` manifest naming one is refused naming
+  `/7`) and `ess-mutation-report/8`. An emission or report without one keeps its version.

@@ -927,6 +927,12 @@ enum ConformCommand {
     /// listed as unavailable (`no_compatible_event_alternative`): single-event substitution was not
     /// audited there, which is neither a kill nor a stillborn mutant.
     ///
+    /// grant-drop removes one command a served component accepts from one actor's `may:`, and
+    /// grant-add gives an actor one such command it lacks. Where either is selected the baseline
+    /// and every mutant's suite keep their `<command>/grant/denied` scenarios, and a grant-drop
+    /// mutant's refusal is sent as the actor that lost the grant; without them the baseline leaves
+    /// those scenarios out, as no other class alters a grant.
+    ///
     /// A selected site of another class that the class excludes, or where it finds no edit the
     /// model admits, is listed as unmutated with its reason, in the text and in the report and
     /// manifest (`unmutated_sites`): a sets-drop entry on a creating branch or of an Optional field,
@@ -957,8 +963,8 @@ enum ConformCommand {
     /// or /4 where it holds a sets-drop, precedence-swap or emit-swap mutant or an unavailable
     /// site, or names a component, /5 where a precedence-swap mutant's two branches give an
     /// identical answer, /6 where branches answered before both take their overlap, and /7 where
-    /// it lists an unmutated site; `--collect` also reads the /2 and /1 manifests earlier releases
-    /// wrote.
+    /// it lists an unmutated site or holds a grant-drop or grant-add mutant; `--collect` also
+    /// reads the /2 and /1 manifests earlier releases wrote.
     ///
     /// For a repository that implements one component, `--emit --component NAME` writes the
     /// component's suites, as `synthesize --component` writes them, and marks out of scope every
@@ -992,7 +998,8 @@ enum ConformCommand {
         component: Option<String>,
         /// Where to write the `ess-mutation-report/3` document (`/4` for a component, a
         /// declaration or unavailable sites, `/5` where a mutant's two branches answer alike, `/6`
-        /// where earlier branches take their overlap, `/8` where a site is unmutated).
+        /// where earlier branches take their overlap, `/8` where a site is unmutated or a grant
+        /// mutant is scored).
         #[arg(long)]
         report_out: Option<PathBuf>,
         /// Exit 3 where a selected in-scope site has no live mutant: a stillborn mutant or an
@@ -1108,6 +1115,8 @@ enum MutateClass {
     SetsDrop,
     PrecedenceSwap,
     EmitSwap,
+    GrantDrop,
+    GrantAdd,
 }
 
 impl From<MutateClass> for ess_conformance::mutate::MutantClass {
@@ -1125,6 +1134,8 @@ impl From<MutateClass> for ess_conformance::mutate::MutantClass {
             MutateClass::SetsDrop => Self::SetsDrop,
             MutateClass::PrecedenceSwap => Self::PrecedenceSwap,
             MutateClass::EmitSwap => Self::EmitSwap,
+            MutateClass::GrantDrop => Self::GrantDrop,
+            MutateClass::GrantAdd => Self::GrantAdd,
         }
     }
 }

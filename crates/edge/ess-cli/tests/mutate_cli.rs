@@ -285,9 +285,9 @@ fn the_help_names_the_twelve_classes_and_the_exit_statuses() {
         help.contains(
             "[possible values: from-drop, transition-to, guard-boundary, sets-retarget, \
              guard-negate, guard-connective, error-swap, emit-drop, order-flip, sets-drop, \
-             precedence-swap, emit-swap]"
+             precedence-swap, emit-swap, grant-drop, grant-add]"
         ),
-        "{help}"
+        "story:the-mutation-audit-covers-actor-grants: {help}"
     );
     assert!(
         help.contains("[possible values: billing, oracle-fixture, interpreted]"),

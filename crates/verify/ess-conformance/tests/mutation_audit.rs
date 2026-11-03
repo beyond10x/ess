@@ -369,6 +369,9 @@ fn the_billing_audit_pins_every_mutant_and_kills_every_one_that_ran() {
             ("emit-swap", 2),
             ("error-swap", 5),
             ("from-drop", 2),
+            // No actor is declared, so no grant site (story:the-mutation-audit-covers-actor-grants).
+            ("grant-add", 0),
+            ("grant-drop", 0),
             ("guard-boundary", 2),
             ("guard-connective", 0),
             ("guard-negate", 2),
@@ -583,6 +586,9 @@ fn the_oracle_audit_pins_every_mutant_and_kills_every_one_that_ran() {
             ("emit-swap", 2),
             ("error-swap", 5),
             ("from-drop", 2),
+            // No actor is declared, so no grant site (story:the-mutation-audit-covers-actor-grants).
+            ("grant-add", 0),
+            ("grant-drop", 0),
             ("guard-boundary", 4),
             ("guard-connective", 0),
             ("guard-negate", 2),
@@ -795,7 +801,8 @@ fn the_verdict_classification_reads_scenario_statuses() {
 // ---- P1-8: the closed class list -----------------------------------------------------------------
 
 /// Eleven since beyond10x/ess#212 added `sets-drop` and `precedence-swap`; twelve since
-/// beyond10x/ess#295 added `emit-swap`.
+/// beyond10x/ess#295 added `emit-swap`; fourteen since beyond10x/ess#710 added `grant-drop` and
+/// `grant-add` (story:the-mutation-audit-covers-actor-grants).
 #[test]
 fn the_classes_are_exactly_the_twelve_altering_classes() {
     let names: Vec<&str> = MutantClass::ALL
@@ -817,6 +824,8 @@ fn the_classes_are_exactly_the_twelve_altering_classes() {
             "sets-drop",
             "precedence-swap",
             "emit-swap",
+            "grant-drop",
+            "grant-add",
         ]
     );
 }

@@ -20,10 +20,10 @@ $ ess verify conform mutate \
 
 It changes the **specification**, one edit per mutant, and runs each mutant's freshly synthesized
 suite against the unchanged reference target. A mutant is *killed* when its suite fails there. A
-*survivor* is a declared rule that no synthesized scenario pins down. The twelve classes are
+*survivor* is a declared rule that no synthesized scenario pins down. The fourteen classes are
 `from-drop`, `transition-to`, `guard-boundary`, `sets-retarget`, `guard-negate`,
-`guard-connective`, `error-swap`, `emit-drop`, `order-flip`, `sets-drop`, `precedence-swap` and
-`emit-swap`;
+`guard-connective`, `error-swap`, `emit-drop`, `order-flip`, `sets-drop`, `precedence-swap`,
+`emit-swap`, `grant-drop` and `grant-add`;
 `--class` selects some of them and repeats. Every class *changes* the specification rather than
 weakening it: a mutant that only says less could never be killed by a correct target.
 
@@ -80,6 +80,14 @@ weakening it: a mutant that only says less could never be killed by a correct ta
   values. A site where no event qualifies, including every site of a model that declares no
   component, is *unavailable* (`no_compatible_event_alternative`): no mutant exists, so the event
   there is not audited by substitution, and the audit cannot succeed (below).
+- `grant-drop` removes one command a served component (`reached_by: network`) accepts from one
+  actor's `may:`, and `grant-add` gives an actor one such command its `may:` lacks; the system's own
+  actor is left out. Where either class is selected, the baseline and every mutant's suite keep the
+  `<command>/grant/denied` scenarios synthesis writes, so a target that admits the actor that lost
+  the grant, or refuses the one that gained it (its `grant/admitted/<actor>` scenario), fails the
+  mutant's suite. A `grant-drop` mutant's refusal is sent as the actor that lost the grant, not as
+  the lowest-named actor lacking it, which a correct target refuses too. Without a grant class the
+  baseline leaves those scenarios out, as before: no other class alters a grant.
 
 A mutant the model refuses is *stillborn*, with the refusing check's own code. For example,
 dropping the only event of an outcome that names no error is stillborn (`ESS-COMMAND-007`);

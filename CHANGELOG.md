@@ -5,6 +5,7 @@
 ### Added
 
 - `ess verify conform mutate` lists each site a selected class excluded or left without a live mutant, with its reason, under `unmutated_sites` in the report (`ess-mutation-report/8`) and the manifest (`ess-mutation-manifest/7`), and as `unmutated <id> (<reason>): …` lines beside the stillborn mutants. The summary line gives `; S of N site(s) scored`. `transition-to` takes the first other state the model admits, or lists the transition as `no_admissible_state`. `sets-retarget` retargets a creating or `Optional` write that has no sibling input of its type to a literal. `--fail-on-unmutated` makes such a site, or a stillborn mutant, block exit 0. The default exit status is unchanged, and a report or manifest that lists no such site keeps its format and bytes (story:the-mutation-audit-reports-the-sites-it-could-not-mutate).
+- `ess verify conform mutate` audits actor grants with two new classes, `grant-drop` (one command removed from one actor's `may:`) and `grant-add` (one served command added to an actor that lacks it). Where either is selected, which the default selection does, the baseline and every mutant's suite keep their `<command>/grant/denied` scenarios, and a `grant-drop` mutant's refusal is sent as the actor that lost the grant; a grant mutant takes `ess-mutation-manifest/7` and `ess-mutation-report/8`. A selection without a grant class keeps its baseline, its bytes and its ids (story:the-mutation-audit-covers-actor-grants).
 
 ### Fixed
 

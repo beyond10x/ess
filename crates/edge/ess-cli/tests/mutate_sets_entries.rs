@@ -1,8 +1,9 @@
 //! `ess verify conform mutate` accounts for every `sets:` entry
 //! (<https://github.com/beyond10x/ess/issues/515>): an entry with a `sets-drop` site is mutated and
 //! scored, and every other entry is named on stderr with the reason it has none, after the audit's
-//! own output and in every format. The report and the manifest carry no such field. The library's
-//! decision is held in `crates/verify/ess-conformance/tests/mutation_sets_entries.rs`.
+//! own output and in every format; the report and the manifest list them under
+//! `unmutated_sites` (story:the-mutation-audit-reports-the-sites-it-could-not-mutate). The
+//! library's decision is held in `crates/verify/ess-conformance/tests/mutation_sets_entries.rs`.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -74,7 +75,7 @@ fn the_site_is_killed_and_every_other_entry_is_listed_with_its_reason() {
     let stderr = text(&output.stderr);
     assert_eq!(output.status.code(), Some(0), "{stderr}");
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["format"], "ess-mutation-report/3", "{report:#}");
+    assert_eq!(report["format"], "ess-mutation-report/8", "{report:#}");
     let mutants = report["mutants"].as_array().expect("mutants");
     assert_eq!(mutants.len(), 1, "{report:#}");
     assert_eq!(
@@ -83,10 +84,19 @@ fn the_site_is_killed_and_every_other_entry_is_listed_with_its_reason() {
     );
     assert_eq!(mutants[0]["verdict"], "killed", "{report:#}");
     assert_eq!(notes(&stderr), LISTED, "{stderr}");
-    assert!(
-        !text(&output.stdout).contains("creates_row"),
-        "the report carries no listed entry"
-    );
+    let listed: Vec<String> = report["unmutated_sites"]
+        .as_array()
+        .expect("the report lists the entries under unmutated_sites")
+        .iter()
+        .map(|site| {
+            format!(
+                "note: {} has no mutant ({}): ",
+                site["id"].as_str().unwrap(),
+                site["reason"].as_str().unwrap()
+            )
+        })
+        .collect();
+    assert_eq!(listed, LISTED, "{report:#}");
 }
 
 /// Every class is the default, and it selects `sets-drop`; a selection without it lists nothing.
@@ -137,7 +147,8 @@ fn a_model_with_no_site_refuses_and_then_names_every_entry() {
     );
 }
 
-/// `--emit` lists the same entries, and its manifest is the format the site alone asks for.
+/// `--emit` lists the same entries, and its manifest is `/7`, the format that lists unmutated
+/// sites.
 #[test]
 fn the_emission_lists_the_entries_and_keeps_its_manifest_format() {
     let directory = scratch("emit");
@@ -156,7 +167,7 @@ fn the_emission_lists_the_entries_and_keeps_its_manifest_format() {
     let manifest: serde_json::Value =
         serde_json::from_slice(&std::fs::read(directory.join("manifest.json")).unwrap()).unwrap();
     assert_eq!(
-        manifest["format"], "ess-mutation-manifest/4",
+        manifest["format"], "ess-mutation-manifest/7",
         "{manifest:#}"
     );
     let ids: Vec<&str> = manifest["mutants"]
