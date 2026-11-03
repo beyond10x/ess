@@ -2,9 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Format `ess/34`: a compensating refusal (`compensates: true` beside `external:`) may delete its addressed row with `deletes:` and `instance:`; the interpreted target removes the row and answers the error, and its scenario requires the error, no event and the row absent from every immediate view. Below `ess/34` the delete keeps its `refusal_mutated_state`, now naming `ess/34`. From `ess/34` a named `when:` or `when_related:` refusal of a command addressing an existing row snapshots that row completely and requires it unchanged; below it suites keep their bytes. At every format, a further witness of a deleting branch (a conjunct of a compound guard's complement) requires the deleted row absent instead of present (beyond10x/ess#581, #585, #587; story:every-witness-reads-back-its-outcome-effect).
+
 ### Changed
 
 - The precedence section of `docs/design/cross-record-and-stored-field-guards.md` states how an input refusal and an `unknown_instance:` or `exists: false` branch are ordered in each format: the input refusal answers first from `ess/27`, `ess/29` refuses either declared above it naming both and the order, and below `ess/29` either order validates. No behaviour changes. Validation and the interpreter already agreed, and so did both explorers on the `unknown_instance:` pair; they leave a `when_related:` command out. Tests now pin it (story:unknown-instance-and-input-guard-agree-on-order).
+- The scenario of a non-refusing `unknown_instance:` branch reads every immediate view of the addressed entity afterwards and requires no row with the identity it sent, so a no-op that stores a row fails; where no such view exists a note names the scenario and the entity. ESS-COMMAND-005 for an `instance:` without an effect now names `deletes` among the effects, and its hint names `deletes:` and `unknown_instance: true, refuses: false` (story:a-delete-may-have-a-no-op-branch-that-emits-nothing).
 
 ### Fixed
 
@@ -14,6 +19,8 @@
 - Go synthesis copies a required event field into an Optional command input as a pointer to its value, so the generated module builds; it assigned the value into the `*T` field and `go build` refused it. An Optional value into a required binding input or payload field stays refused by validation as `type_mismatch` unless a binding condition or an outcome guard proves it present (story:go-synthesis-refuses-an-optional-into-required-assignment).
 - Go synthesis of a served component named `server` or `wire`, or of two served components with one Go stem, writes the component's surface file under a repaired name (`server/servercomponent.go`); it panicked on `two artifacts claimed server/server.go`. Two artifacts claiming one path are now a `path-collision` target failure naming the path and both artifacts, never a panic (story:go-synthesis-repairs-a-served-component-named-server).
 - `--target clap` generates one crate for components that declare the same `cli.binary`, whose tree defines every group and command of every such component, as `main.rs` already dispatched them; the tree held the first component's only. `ess specify validate` refuses, as `duplicate_declaration`, a group, command or view that two components sharing a binary both declare, naming both. A model with one component per binary keeps its bytes (story:components-sharing-a-cli-binary-generate-one-tree-with-every-group).
+- A view row field an outcome sets from an `Optional<T>` input through the declared `Optional<T> -> T` conversion is asserted at the value sent, so a target that stores another input there fails; a conversion synthesis cannot compute leaves the field out and is named in a note (story:view-asserts-field-set-from-optional-input).
+- A guard's boundary row for a `deletes:` branch is sent for a row of its own, arranged fresh, as for a `moves:` branch; it was sent for the row the scenario's own act had already deleted, so the interpreted target failed it (story:a-boundary-row-of-a-deleting-branch-is-sent-for-a-row-that-exists).
 
 ## [0.84.0] — 2026-11-03
 

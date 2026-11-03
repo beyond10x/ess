@@ -452,6 +452,31 @@ pub enum Note {
         /// The position, as the compiler's Binary64 inventory spells it.
         location: String,
     },
+    /// An outcome's `sets:` entry fills a field a view publishes across a declared conversion that
+    /// may change the value, so no scenario asserts what the row holds there
+    /// (`story:view-asserts-field-set-from-optional-input`). Only `Optional<T> -> T` from an input
+    /// hands a present value on unchanged; every other crossing computes a value the model does not
+    /// state.
+    ConvertedFieldUnasserted {
+        /// The outcome.
+        outcome: OutcomeRef,
+        /// The entity field it sets.
+        field: String,
+        /// The conversion's source type.
+        from: String,
+        /// The conversion's target type: the field's.
+        to: String,
+    },
+    /// A no-op `unknown_instance:` branch of a command that removes or changes a row (a `deletes:`
+    /// beside `{unknown_instance: true, refuses: false}`) is witnessed by its answer and the events
+    /// it does not publish, and no immediate view of the entity shows that it stored no row for the
+    /// identity it was sent (`story:a-delete-may-have-a-no-op-branch-that-emits-nothing`).
+    UnobservedNoOp {
+        /// The scenario.
+        scenario: ScenarioId,
+        /// The entity the command addresses.
+        entity: EntityRef,
+    },
 }
 
 impl fmt::Display for Note {
@@ -574,6 +599,23 @@ impl fmt::Display for Note {
                 f,
                 "`{location}` is a `Binary64` in a type outside everything a scenario sends \
                  or reads, so no run exercises it"
+            ),
+            Self::ConvertedFieldUnasserted {
+                outcome,
+                field,
+                from,
+                to,
+            } => write!(
+                f,
+                "`{outcome}` sets `{field}` across the declared conversion `{from}` -> `{to}`, \
+                 which says the two types may meet and not what it computes, so no scenario \
+                 asserts the value a row holds in `{field}` after it"
+            ),
+            Self::UnobservedNoOp { scenario, entity } => write!(
+                f,
+                "`{scenario}` answers an identity no record carries without effect, and no \
+                 immediate view of `{entity}` publishes its identity, so nothing shows that the \
+                 target stored no row for it"
             ),
         }
     }
@@ -3184,6 +3226,9 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
     // it (ess/33).
     let provided = provided::notes(&synthesis.suite);
     synthesis.notes.extend(provided);
+    // A `sets:` entry across a conversion that may change the value is asserted by no row
+    // (story:view-asserts-field-set-from-optional-input).
+    synthesis.notes.extend(converted_fields_unasserted(ir));
     disclosure::augment(ir, &mut synthesis);
     // A Binary64 position in a type nothing reaches refuses nothing; it is named, so a reader sees
     // what the run does not exercise.
@@ -3222,7 +3267,8 @@ fn about_scenario(note: &Note, id: &ScenarioId) -> bool {
         | Note::CrossCallerUnswapped { scenario, .. }
         | Note::CrossCallerUnwitnessed { scenario, .. }
         | Note::UnaccompaniedRelatedCopy { scenario, .. }
-        | Note::ProvidedRelatedRow { scenario, .. } => scenario == id,
+        | Note::ProvidedRelatedRow { scenario, .. }
+        | Note::UnobservedNoOp { scenario, .. } => scenario == id,
         _ => false,
     }
 }
@@ -4457,20 +4503,29 @@ fn unread_compensation(
     run: &Run,
     asserted: &[ScenarioStep],
 ) -> Option<RefusalCause> {
-    (outcome.compensates && !reads_back_compensation(outcome, run, asserted)).then(|| {
-        RefusalCause::NoWitness(WitnessGap {
-            path: format!("{}.{}", command.name, outcome.name),
-            type_ref: outcome
-                .subject
-                .as_ref()
-                .map_or_else(String::new, |subject| {
-                    ir.entity(&subject.entity).name.to_string()
-                }),
-            reason: "a compensating refusal's change is observed only by reading its row back \
+    // A compensating delete (ess/34, beyond10x/ess#585) is read back absent by
+    // [`deletion_witness`], as an accepting `deletes:` is, wherever an immediate view shows the
+    // row's identity.
+    let deleted = outcome.subject.as_ref().is_some_and(|subject| {
+        subject.effect == ResolvedEffect::Deletes
+            && !absence_reads(ir, subject, run.instance.as_ref(), &mut BTreeSet::new()).is_empty()
+    });
+    (outcome.compensates && !deleted && !reads_back_compensation(outcome, run, asserted)).then(
+        || {
+            RefusalCause::NoWitness(WitnessGap {
+                path: format!("{}.{}", command.name, outcome.name),
+                type_ref: outcome
+                    .subject
+                    .as_ref()
+                    .map_or_else(String::new, |subject| {
+                        ir.entity(&subject.entity).name.to_string()
+                    }),
+                reason: "a compensating refusal's change is observed only by reading its row back \
                      through an immediate view of the entity showing the state it moves to or a \
                      field it sets, and none does",
-        })
-    })
+            })
+        },
+    )
 }
 
 /// Whether `asserted` reads the row a compensating refusal changed (ess/22, beyond10x/ess#197):
@@ -5079,6 +5134,11 @@ fn arranged(
         setup,
         (Distinction::PLAIN, Some(&input)),
     )?;
+    // A complete input-guarded or related-row refusal (ess/34) is sent for a row that exists, which
+    // [`external_read_back`] reads back unchanged.
+    if guarded_complete(outcome) && !has_subject_guards(command) {
+        return Ok((addressed_row(ir, command, actors, setup), input));
+    }
     Ok((setup, input))
 }
 
@@ -5394,7 +5454,10 @@ fn external_read_back(
             | ResolvedCondition::ExternalWhen { .. }
             | ResolvedCondition::ExternalSubject { .. }
     );
-    if !outcome.complete_refusal || !external || outcome.subject.is_some() {
+    if !outcome.complete_refusal
+        || !(external || guarded_complete(outcome))
+        || outcome.subject.is_some()
+    {
         return Ok(BTreeSet::new());
     }
     let Some(subject) = addressed(command) else {
@@ -5421,6 +5484,19 @@ fn external_read_back(
     setup.source.extend(preservation.source);
     after.extend(preservation.after);
     Ok(preservation.unobserved.into_iter().collect())
+}
+
+/// Whether `outcome` is a complete refusal decided by input (`when:`) or by a related row
+/// (`when_related:`) naming no subject of its own: from `ess/34` its scenario is sent for an
+/// arranged row of the entity its command addresses and reads that row back unchanged, as a
+/// complete external refusal's is (`story:every-witness-reads-back-its-outcome-effect`).
+pub(super) fn guarded_complete(outcome: &ResolvedOutcome) -> bool {
+    outcome.complete_refusal
+        && outcome.subject.is_none()
+        && matches!(
+            outcome.condition,
+            ResolvedCondition::When { .. } | ResolvedCondition::Related { .. }
+        )
 }
 
 /// `setup` with a row of the entity `command` addresses arranged and named by the input field
@@ -12046,7 +12122,10 @@ fn present_leaves(
 ///   refuses such a literal where it is written, so this is a floor and not a working case — see
 ///   [`spelled_as_text`];
 /// * a field that crosses a declared **conversion** — the conversion says the two types may meet
-///   and nothing says what it computes, so the value the row holds is not the value sent;
+///   and nothing says what it computes, so the value the row holds is not the value sent. The one
+///   crossing that computes nothing for a present value is `Optional<T> -> T` from an input
+///   ([`unwraps_unchanged`], `story:view-asserts-field-set-from-optional-input`): the row holds
+///   what was sent, and the field is kept;
 /// * a field the arrangement did not choose a **literal** for — an identity captured from an
 ///   earlier step is a name for a value rather than the value, and a row carrying it is a claim
 ///   two reads have to agree on before it says anything about this one.
@@ -12061,7 +12140,7 @@ fn settled(
 ) -> BTreeMap<String, Determined> {
     let mut out = BTreeMap::new();
     for field in &outcome.sets {
-        if field.conversion.is_some() {
+        if field.conversion.is_some() && !unwraps_unchanged(ir, field) {
             continue;
         }
         let value = match &field.value {
@@ -12136,6 +12215,69 @@ fn settled(
         );
     }
     out
+}
+
+/// Whether a `sets:` entry crossing a declared conversion hands a present value on unchanged: it
+/// reads an input of `Optional<T>` into a field of exactly `T` through the declared conversion
+/// `Optional<T> -> T` (`story:view-asserts-field-set-from-optional-input`,
+/// `docs/design/binding-mapping-bounded-accessor.md`, "Converted values in a row"). What that
+/// conversion yields for an absent value is the implementation's; [`settled`] asserts nothing for
+/// an input the invocation left out of a field that is not `Optional`.
+fn unwraps_unchanged(ir: &EssIr, field: &ess_compiler::ir::ResolvedPayloadField) -> bool {
+    let (Some(because), ResolvedPayloadValue::InputField { type_ref, .. }) =
+        (&field.conversion, &field.value)
+    else {
+        return false;
+    };
+    matches!(type_ref, ResolvedTypeRef::Optional { of } if **of == field.target_type)
+        && ir.conversions().iter().any(|declared| {
+            declared.from == *type_ref
+                && declared.to == field.target_type
+                && declared.because == *because
+        })
+}
+
+/// One [`Note::ConvertedFieldUnasserted`] for each `sets:` entry of each outcome that crosses a
+/// declared conversion [`unwraps_unchanged`] does not admit, into a field some view of the entity
+/// publishes, in command name order (`story:view-asserts-field-set-from-optional-input`).
+fn converted_fields_unasserted(ir: &EssIr) -> Vec<Note> {
+    let mut notes = Vec::new();
+    for command in ir.commands().values() {
+        for outcome in &command.outcomes {
+            let Some(subject) = &outcome.subject else {
+                continue;
+            };
+            for field in &outcome.sets {
+                let Some(because) = &field.conversion else {
+                    continue;
+                };
+                if unwraps_unchanged(ir, field)
+                    || !ir.views().values().any(|view| {
+                        view.source == subject.entity && view.field(&field.target).is_some()
+                    })
+                {
+                    continue;
+                }
+                let from = ir
+                    .conversions()
+                    .iter()
+                    .find(|declared| {
+                        declared.to == field.target_type && declared.because == *because
+                    })
+                    .map_or_else(|| "?".to_owned(), |declared| declared.from.to_string());
+                notes.push(Note::ConvertedFieldUnasserted {
+                    outcome: OutcomeRef::new(
+                        CommandRef::new(command.name.clone()),
+                        outcome.name.clone(),
+                    ),
+                    field: field.target.clone(),
+                    from,
+                    to: field.target_type.to_string(),
+                });
+            }
+        }
+    }
+    notes
 }
 
 /// Folds what one act determined into what the acts before it left, invalidating first.
@@ -14944,7 +15086,17 @@ fn unknown_instances(
                 outcome: OutcomeRef::new(command_ref, declared.name.clone()),
             };
             match unknown_instance(ir, command, &acting, declared, actors) {
-                Ok(scenario) => insert(suite, id, scenario, refusals),
+                Ok(scenario) => {
+                    if let Some((subject, views)) = no_op_views(ir, command, declared) {
+                        if views.is_empty() {
+                            notes.push(Note::UnobservedNoOp {
+                                scenario: id.clone(),
+                                entity: EntityRef::from(&subject.entity),
+                            });
+                        }
+                    }
+                    insert(suite, id, scenario, refusals);
+                }
                 Err(cause) => refusals.push(Refusal::about(&id, cause)),
             }
             continue;
@@ -15373,6 +15525,30 @@ fn unknown_instance(
         ir, command, declared, field, &input, actors, &forbidden,
     ));
     source.extend(forbidden.into_iter().map(EssSemanticRef::from));
+    // A no-op answer stores nothing for the identity it was sent: every immediate view of the
+    // entity holds no row carrying it (`story:a-delete-may-have-a-no-op-branch-that-emits-nothing`).
+    if let Some((subject, views)) = no_op_views(ir, command, declared) {
+        let ResolvedInstance::Supplied { field: named } = &subject.instance else {
+            unreachable!("`addressed` returns a supplied instance only");
+        };
+        let identity = ir.entity(&subject.entity).identity.name.clone();
+        if let Some(sent) = supplied.get(&named.name) {
+            for view in views {
+                let name = ViewRef::new(view.name.clone());
+                steps.push(ScenarioStep::QueryView {
+                    view: name.clone(),
+                    params: BTreeMap::new(),
+                });
+                steps.push(ScenarioStep::ExpectView {
+                    view: name.clone(),
+                    expectation: ViewExpectation::Excludes {
+                        fields: [(identity.clone(), sent.clone())].into_iter().collect(),
+                    },
+                });
+                source.insert(name.into());
+            }
+        }
+    }
 
     let text = match &reported {
         Some(error) => format!(
@@ -15385,6 +15561,37 @@ fn unknown_instance(
         ),
     };
     Ok(ConformanceScenario::new(clipped(&text), steps, source))
+}
+
+/// Where `declared` is a no-op `unknown_instance:` answer (`refuses: false`, no subject) of a
+/// command addressing an existing row: that row's subject, and the views a scenario reads its
+/// absence through — the entity's immediate row views read whole that publish its identity
+/// (`story:a-delete-may-have-a-no-op-branch-that-emits-nothing`). The list is empty where no view
+/// does; `None` for every other branch.
+fn no_op_views<'i>(
+    ir: &'i EssIr,
+    command: &'i ResolvedCommand,
+    declared: &ResolvedOutcome,
+) -> Option<(&'i ResolvedSubject, Vec<&'i ResolvedView>)> {
+    if declared.condition != ResolvedCondition::UnknownInstance
+        || declared.refuses
+        || declared.subject.is_some()
+    {
+        return None;
+    }
+    let subject = addressed(command)?;
+    let identity = &ir.entity(&subject.entity).identity.name;
+    let views = row_projections(ir)
+        .remove(&subject.entity)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|view| {
+            view.consistency == ess_domain::view::Consistency::ReadYourWrites
+                && paging::read_whole(view)
+                && view.field(identity).is_some()
+        })
+        .collect();
+    Some((subject, views))
 }
 
 /// The further sends of [`unknown_instance`] (beyond10x/ess#454): the identity `plain` carries, sent
@@ -15501,6 +15708,42 @@ fn unknown_answer<'c>(ir: &EssIr, command: &'c ResolvedCommand) -> Option<&'c Re
     }
 }
 
+/// The reads that show `subject`'s row, called `instance`, gone: every immediate row view of the
+/// entity read whole is queried and holds no row with its identity. Each view read is added to
+/// `source`. Nothing for a view that publishes no identity, or where `instance` is `None` for a
+/// supplied subject.
+pub(super) fn absence_reads(
+    ir: &EssIr,
+    subject: &ResolvedSubject,
+    instance: Option<&InstanceName>,
+    source: &mut BTreeSet<EssSemanticRef>,
+) -> Vec<ScenarioStep> {
+    let mut steps = Vec::new();
+    let projections = row_projections(ir);
+    for view in projections.get(&subject.entity).into_iter().flatten() {
+        if view.consistency != ess_domain::view::Consistency::ReadYourWrites
+            || !paging::read_whole(view)
+        {
+            continue;
+        }
+        let identity = identifying(ir, subject, instance, view);
+        if identity.is_empty() {
+            continue;
+        }
+        let name = ViewRef::new(view.name.clone());
+        steps.push(ScenarioStep::QueryView {
+            view: name.clone(),
+            params: BTreeMap::new(),
+        });
+        steps.push(ScenarioStep::ExpectSubjectAbsent {
+            view: name.clone(),
+            subject: identity,
+        });
+        source.insert(name.into());
+    }
+    steps
+}
+
 /// What a `deletes:` branch (ess/15), or a re-keying `updates:` (ess/23, beyond10x/ess#429), is
 /// witnessed by, after its own assertions: every immediate row view of the entity holds no row with
 /// the removed — or left — identity, and the same command sent for it again takes the
@@ -15524,28 +15767,7 @@ fn deletion_witness(
     }) else {
         return steps;
     };
-    let projections = row_projections(ir);
-    for view in projections.get(&subject.entity).into_iter().flatten() {
-        if view.consistency != ess_domain::view::Consistency::ReadYourWrites
-            || !paging::read_whole(view)
-        {
-            continue;
-        }
-        let identity = identifying(ir, subject, run.instance.as_ref(), view);
-        if identity.is_empty() {
-            continue;
-        }
-        let name = ViewRef::new(view.name.clone());
-        steps.push(ScenarioStep::QueryView {
-            view: name.clone(),
-            params: BTreeMap::new(),
-        });
-        steps.push(ScenarioStep::ExpectSubjectAbsent {
-            view: name.clone(),
-            subject: identity,
-        });
-        source.insert(name.into());
-    }
+    steps.extend(absence_reads(ir, subject, run.instance.as_ref(), source));
     if let Some(answer) = unknown_answer(ir, command) {
         let command_ref = CommandRef::new(command.name.clone());
         let branch = OutcomeRef::new(command_ref.clone(), answer.name.clone());
@@ -17741,7 +17963,9 @@ fn sent_requiring(
 ///
 /// Each further invocation requires the branch and, where it declares one, its error — which is
 /// what a moved boundary changes. A `moves:` branch acts on a fresh instance in the state the
-/// scenario's own subject was arranged in, because that one has already moved; an `updates:`
+/// scenario's own subject was arranged in, because that one has already moved, and so does a
+/// `deletes:` branch, whose own subject is gone
+/// (`story:a-boundary-row-of-a-deleting-branch-is-sent-for-a-row-that-exists`); an `updates:`
 /// branch acts on the scenario's subject again, which an update leaves where it was. Only for the
 /// branches whose input alone selects them: a guard over the held state or the stored row is
 /// arranged by searches of their own, and an externally decided or replayed branch has no boundary
@@ -17881,6 +18105,13 @@ fn boundaries(
             .subject
             .as_ref()
             .filter(|subject| subject.effect.transition().is_some());
+        // A `deletes:` branch has removed the scenario's own row as well, so its boundary row is sent
+        // a fresh one in the same state, as a move's is
+        // (story:a-boundary-row-of-a-deleting-branch-is-sent-for-a-row-that-exists).
+        let deleting = outcome
+            .subject
+            .as_ref()
+            .filter(|subject| subject.effect == ResolvedEffect::Deletes);
         if let Some((field, mut arrangement)) = identity_row {
             models.mark(caller::InvocationPhase::Arrange, &mut arrangement.steps);
             out.0.extend(arrangement.steps);
@@ -17889,7 +18120,7 @@ fn boundaries(
                 settled = with_held_state(ir, &arrangement.settled, &subject.entity, Some(before));
             }
             supplied.insert(field, ScenarioValue::instance(arrangement.instance));
-        } else if let Some(subject) = transition {
+        } else if let Some(subject) = transition.or(deleting) {
             let (Some(before), ResolvedInstance::Supplied { field }) =
                 (&run.before, &subject.instance)
             else {

@@ -264,6 +264,15 @@ source. For new accessors it emits an explicit mapping-conversion coverage refus
 the transformation is mechanically determined. Existing flat serialization is unchanged;
 any pre-existing flat-conversion conformance defect is reported separately.
 
+**Converted values in a row** (`story:view-asserts-field-set-from-optional-input`). One
+crossing is not opaque for a present value: an outcome's `sets:` entry that reads an
+`Optional<T>` input into a field of exactly `T` through the declared `Optional<T> -> T`
+conversion. Where a scenario sends that input present, the row holds the value sent, and
+the synthesized view expectation asserts it as it asserts a field set without a
+conversion. What the conversion yields for an absent value stays the implementation's and
+is never asserted. Every other crossing in a `sets:` entry stays out of the asserted row,
+and synthesis names the field and the conversion in a note.
+
 ## Typed model and compatibility
 
 ### Authored specification and compiler IR

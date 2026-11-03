@@ -264,9 +264,10 @@ names, then answers its error:
   sets: {failure: input.reason}
 ```
 
-The change is `moves:` or `updates:` with `instance:`, and `sets:` on the same record. A
-compensating refusal creates, deletes and publishes nothing, and changes no other record
-(`affects:`). Only an `external:` refusal may carry the marker: a refusal the input, a held state
+The change is `moves:` or `updates:` with `instance:`, and `sets:` on the same record, or from
+`ess/34` `deletes:` with `instance:`, which removes that record before the error is answered. A
+compensating refusal creates and publishes nothing, and changes no other record (`affects:`).
+Only an `external:` refusal may carry the marker: a refusal the input, a held state
 or a related row decides is answered before the record is read, and still changes nothing. The
 record must rest in a state the move starts from; otherwise the command's `wrong_state:` answer
 applies, as for any move.

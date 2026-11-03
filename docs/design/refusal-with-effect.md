@@ -49,7 +49,7 @@ as leaving the key out, as `returns: false` is.
 | `compensates: true` on a branch that names no `error:` | `conflicting_declaration` (`ESS-COMMAND-004`) | `…outcomes.<o>.compensates` |
 | `compensates: true` on a refusal that declares no change (no `moves:`/`updates:` + `instance:`), or an `updates:` that sets nothing | `missing_declaration` (`ESS-COMMAND-005`) | `…outcomes.<o>.compensates` |
 | `compensates: true` on a refusal not decided by `external:` | `refusal_mutated_state` (`ESS-COMMAND-004`) | `…outcomes.<o>` |
-| `compensates: true` beside `creates:` or `deletes:`, or beside `affects:` | `refusal_mutated_state` (`ESS-COMMAND-004`) | `…outcomes.<o>` |
+| `compensates: true` beside `creates:` or `affects:`, or beside `deletes:` below `ess/34` | `refusal_mutated_state` (`ESS-COMMAND-004`) | `…outcomes.<o>` |
 | `compensates: true` beside `emits:` | `refusal_mutated_state` (`ESS-COMMAND-004`), the existing emits rule, unchanged | `…outcomes.<o>` |
 | an unmarked refusal with a subject | `refusal_mutated_state` (`ESS-COMMAND-004`), unchanged text | `…outcomes.<o>` |
 
@@ -81,9 +81,29 @@ condition.
 ### One addressed instance, no creation, no events
 
 The effect is one change of the row `instance:` names: a move along a declared transition, field
-writes with `sets:`, or both. No `affects:` fan-out, no `instances:` set, no `creates:`, no
-`deletes:`, and no `emits:` — no consumer need for an event on a refusal has been shown, and the
-existing emits rule refuses one unchanged.
+writes with `sets:`, or both, or from `ess/34` its deletion. No `affects:` fan-out, no `instances:`
+set, no `creates:`, and no `emits:` — no consumer need for an event on a refusal has been shown,
+and the existing emits rule refuses one unchanged.
+
+### A compensating delete (`ess/34`)
+
+`story:every-witness-reads-back-its-outcome-effect`, beyond10x/ess#585. A single-use row consumed
+before work that can still fail is deleted, and the failure answers an error with the row gone:
+
+```yaml
+- name: consumed-on-failure
+  external: the grant fails after the ticket is consumed
+  compensates: true
+  deletes: demo.tickets.Ticket
+  instance: ticket_id
+  error: demo.tickets.ConsumedOnFailure
+```
+
+`deletes:` with `instance:` is spelled as on an accepting branch. The interpreter removes the row
+and answers the error (`take`, unchanged). The scenario forces the branch, requires the error and
+no event, and requires the row absent from every immediate view of the entity read whole
+(`expect_subject_absent`), as an accepting `deletes:` is read back. Below `ess/34` the branch is
+refused as `refusal_mutated_state`, its message and hint naming `ess/34`.
 
 ## Meaning
 
