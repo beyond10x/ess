@@ -1427,17 +1427,7 @@ fn validate_shared_binaries(
     components: &BTreeMap<ComponentName, ComponentSpec>,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
-    let mut binaries: BTreeMap<&CliName, Vec<(&ComponentName, &CommandLineSurface)>> =
-        BTreeMap::new();
-    for (name, component) in components {
-        if let Some(cli) = &component.cli {
-            binaries.entry(&cli.binary).or_default().push((name, cli));
-        }
-    }
-    for (binary, sharing) in binaries {
-        if sharing.len() < 2 {
-            continue;
-        }
+    for (binary, sharing) in sharing_binaries(components) {
         let mut groups: BTreeMap<&CliName, BTreeSet<&ComponentName>> = BTreeMap::new();
         let mut placed: BTreeMap<&QualifiedName, BTreeSet<&ComponentName>> = BTreeMap::new();
         for (name, cli) in &sharing {
@@ -1451,43 +1441,120 @@ fn validate_shared_binaries(
                 placed.entry(placed_name).or_default().insert(name);
             }
         }
-        // Sited at the last claimant in component order: the first keeps the word, as the tree
-        // would have given it.
-        let refuse =
-            |errors: &mut ValidationErrors, what: String, owners: &BTreeSet<&ComponentName>| {
-                let last = owners
-                    .iter()
-                    .next_back()
-                    .map_or_else(String::new, ToString::to_string);
-                errors.push(
-                    ValidationError::at(
-                        ConstructRef::new(ConstructKind::Component, last).key("cli"),
-                        ValidationCode::DuplicateDeclaration,
-                        format!(
-                            "{what} is declared by more than one component sharing the binary \
-                         `{binary}`: {}",
-                            quoted(owners)
-                        ),
-                    )
-                    .with_hint(
-                        "a binary several components share is one command tree, and a word in it \
-                     has one owner; keep it in one component's `cli:` block, or give the other \
-                     component its own binary",
-                    ),
-                );
-            };
         for (group, owners) in &groups {
             if owners.len() > 1 {
-                refuse(&mut errors, format!("the group `{group}`"), owners);
+                errors.push(shared_word_refusal(
+                    binary,
+                    &format!("the group `{group}`"),
+                    owners,
+                ));
             }
         }
         for (placed_name, owners) in &placed {
             if owners.len() > 1 {
-                refuse(&mut errors, format!("a place for `{placed_name}`"), owners);
+                errors.push(shared_word_refusal(
+                    binary,
+                    &format!("a place for `{placed_name}`"),
+                    owners,
+                ));
             }
         }
     }
     errors
+}
+
+/// The first level of a binary several components share: one word there, two meanings.
+///
+/// | refused | code |
+/// |---|---|
+/// | a first-level word (a group's name, a top-level command's or view's word) that two components sharing a binary give two meanings | [`DuplicateDeclaration`](ValidationCode::DuplicateDeclaration) |
+///
+/// `words` is the word each command and view is typed as (`naming.wire`, else its local name),
+/// which only the specification knows, so this rule is the specification's to call rather than
+/// [`validate_components`]'s. A word every claimant gives one meaning (one group name, one
+/// placed command) is [`validate_components`]'s refusal already and is not refused twice. A word
+/// one component gives two meanings is that component's own placement rule, not this one
+/// (story:components-sharing-a-cli-binary-generate-one-tree-with-every-group).
+pub fn validate_shared_binary_words(
+    components: &BTreeMap<ComponentName, ComponentSpec>,
+    words: &BTreeMap<QualifiedName, String>,
+) -> ValidationErrors {
+    /// What a first-level word stands for.
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    enum Meaning<'a> {
+        Group,
+        Placed(&'a QualifiedName),
+    }
+    let mut errors = ValidationErrors::new();
+    for (binary, sharing) in sharing_binaries(components) {
+        let mut first: BTreeMap<&str, (BTreeSet<Meaning<'_>>, BTreeSet<&ComponentName>)> =
+            BTreeMap::new();
+        for (name, cli) in &sharing {
+            for group in &cli.groups {
+                let claim = first.entry(group.name.as_str()).or_default();
+                claim.0.insert(Meaning::Group);
+                claim.1.insert(name);
+            }
+            for placed_name in cli.commands.iter().chain(&cli.views) {
+                let word = words
+                    .get(placed_name)
+                    .map_or_else(|| placed_name.local(), String::as_str);
+                let claim = first.entry(word).or_default();
+                claim.0.insert(Meaning::Placed(placed_name));
+                claim.1.insert(name);
+            }
+        }
+        for (word, (meanings, owners)) in &first {
+            if meanings.len() > 1 && owners.len() > 1 {
+                errors.push(shared_word_refusal(
+                    binary,
+                    &format!("the word `{word}` at the first level"),
+                    owners,
+                ));
+            }
+        }
+    }
+    errors
+}
+
+/// Every binary at least two components declare, with those components in component order.
+fn sharing_binaries(
+    components: &BTreeMap<ComponentName, ComponentSpec>,
+) -> BTreeMap<&CliName, Vec<(&ComponentName, &CommandLineSurface)>> {
+    let mut binaries: BTreeMap<&CliName, Vec<(&ComponentName, &CommandLineSurface)>> =
+        BTreeMap::new();
+    for (name, component) in components {
+        if let Some(cli) = &component.cli {
+            binaries.entry(&cli.binary).or_default().push((name, cli));
+        }
+    }
+    binaries.retain(|_, sharing| sharing.len() > 1);
+    binaries
+}
+
+/// One word of a shared binary claimed by more than one component, sited at the last claimant in
+/// component order: the first keeps the word, as the tree would have given it.
+fn shared_word_refusal(
+    binary: &CliName,
+    what: &str,
+    owners: &BTreeSet<&ComponentName>,
+) -> ValidationError {
+    let last = owners
+        .iter()
+        .next_back()
+        .map_or_else(String::new, ToString::to_string);
+    ValidationError::at(
+        ConstructRef::new(ConstructKind::Component, last).key("cli"),
+        ValidationCode::DuplicateDeclaration,
+        format!(
+            "{what} is declared by more than one component sharing the binary `{binary}`: {}",
+            quoted(owners)
+        ),
+    )
+    .with_hint(
+        "a binary several components share is one command tree, and a word in it has one owner; \
+         keep it in one component's `cli:` block, or give the other component its own binary",
+    )
 }
 
 /// The three settings rules that need the rest of the specification.
@@ -2594,6 +2661,72 @@ cli:
             sharing("visits-cli", "visits", "inspect", "billing.email.SendEmail"),
         ]));
         assert!(duplicates(&errors).is_empty(), "{errors:?}");
+    }
+
+    /// A command-line component placing `command` at the top level of `binary`.
+    fn top_level(name: &str, binary: &str, command: &str) -> ComponentSpec {
+        component(&format!(
+            "\
+component: {name}
+reached_by: command_line
+accepts:
+  commands:
+    - {command}
+cli:
+  binary: {binary}
+  commands:
+    - {command}
+"
+        ))
+    }
+
+    /// `CreateInvoice` typed as `issue`, as `naming.wire` would spell it.
+    fn words() -> BTreeMap<QualifiedName, String> {
+        BTreeMap::from([(
+            QualifiedName::new("billing.invoice.CreateInvoice").expect("a valid name"),
+            "issue".to_owned(),
+        )])
+    }
+
+    #[test]
+    fn a_group_named_like_another_sharing_components_top_level_command_word_is_refused() {
+        let components = catalogue([
+            top_level("audit-cli", "desk", "billing.invoice.CreateInvoice"),
+            sharing("visits-cli", "desk", "issue", "billing.email.SendEmail"),
+        ]);
+        let errors = validate_shared_binary_words(&components, &words());
+        let refused = duplicates(&errors);
+        assert_eq!(refused.len(), 1, "{errors:?}");
+        let message = &refused[0].message;
+        for named in ["`issue`", "`desk`", "`audit-cli`", "`visits-cli`"] {
+            assert!(message.contains(named), "names {named}: {message}");
+        }
+        assert_eq!(refused[0].location, "component visits-cli.cli");
+    }
+
+    #[test]
+    fn a_first_level_word_with_one_meaning_is_left_to_the_group_and_place_rules() {
+        // One group name twice, and one command top-level twice: each is refused once already,
+        // by `validate_components`, and not a second time here.
+        let groups = catalogue([
+            sharing("audit-cli", "desk", "issue", "billing.email.SendEmail"),
+            sharing("visits-cli", "desk", "issue", "billing.email.SendEmail"),
+        ]);
+        assert!(validate_shared_binary_words(&groups, &words()).is_empty());
+        let placed = catalogue([
+            top_level("audit-cli", "desk", "billing.invoice.CreateInvoice"),
+            top_level("visits-cli", "desk", "billing.invoice.CreateInvoice"),
+        ]);
+        assert!(validate_shared_binary_words(&placed, &words()).is_empty());
+    }
+
+    #[test]
+    fn a_first_level_word_under_two_binaries_is_accepted() {
+        let components = catalogue([
+            top_level("audit-cli", "audit", "billing.invoice.CreateInvoice"),
+            sharing("visits-cli", "visits", "issue", "billing.email.SendEmail"),
+        ]);
+        assert!(validate_shared_binary_words(&components, &words()).is_empty());
     }
 
     #[test]
