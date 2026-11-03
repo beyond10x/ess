@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:error-swap-mutates-refusals-that-carry-a-payload
 kind: story
-status: active
+status: implemented
 title: error-swap mutates refusals that carry a payload
 summary: error-swap keeps the original error's payload mapping, so every refusal with a payload is stillborn and never audited (#709)
 tags:
@@ -18,10 +18,11 @@ scope:
   path: crates/edge/ess-cli/src/main.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/mutate.rs
-revision: 11
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:40Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:40Z", actor: "human:timo", revision: 10}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:57Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -107,3 +108,7 @@ every candidate error has different, non-empty fields. Found by the W2 MUT1 adve
 issue's text stand as the acceptance. `error-swap` re-keys the `payload:` entry where both errors
 have the same fields, drops it where they differ, takes the first error that compiles, and lists a
 refusal none compiles for as `no_compatible_error_alternative` (W2 unit MUT1, `578fde2652`).
+
+## Delivered
+
+W2 (D408), 2026-11-03: closes beyond10x/ess#709. `error-swap` re-keys a refusal's `payload:` entry to the error swapped in (dropped where the fields differ) and takes the first error that compiles; where none compiles the site is listed as `no_compatible_error_alternative`. Unit 578fde2652; merged a48d077e02. Known limit: a payload-less refusal in a single-error domain is skipped silently, pinned in 07dff602dc and tracked as backlog draft story:an-error-swap-site-without-an-alternative-error-is-listed.

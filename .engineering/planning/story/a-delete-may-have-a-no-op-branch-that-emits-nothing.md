@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-delete-may-have-a-no-op-branch-that-emits-nothing
 kind: story
-status: active
+status: implemented
 title: A delete of an absent row may succeed and emit nothing
 summary: A no-op delete branch is refused with ESS-SYNTH-001 (a2a wave 1, M3).
 tags:
@@ -19,10 +19,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/unknown_instance.rs
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:26Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:26Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:53Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Need
 
@@ -131,3 +132,7 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Not established:** whether the stricter `absent` scenario needs a suite format bump (`SUPPORTED_SUITE_FORMATS` ends at `suite/63`, `scenario.rs:558-563`); whether an identity view exists for a related-guard delete. The story summary says the no-op is "refused with ESS-SYNTH-001", its Reproduction says it is accepted.
 - **Size:** medium, about 150-230 hand-written lines; no spec format version (`ess/33`) — inferred
 - **Targeted run:** ess-conformance `--test unknown_instance`, `unknown_instance_not_found`, `related_guard_unknown_instance`, `accepting_branch_below_unknown_instance`; ess-domain `--lib`; ess-cli (domain change) — inferred
+
+## Delivered
+
+W2 (D408), 2026-11-03: the scenario of a non-refusing `unknown_instance:` branch requires no row with the identity it sent in every immediate view, and ESS-COMMAND-005 names `deletes` among the effects with a hint naming `unknown_instance: true, refuses: false`. Unit e0236a014f; merged a23b3e9e59.

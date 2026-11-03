@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:go-synthesis-repairs-a-served-component-named-server
 kind: story
-status: active
+status: implemented
 title: Go synthesis of a served component named server does not claim one file twice
 tags:
 - adopter-report
@@ -21,10 +21,11 @@ scope:
   path: crates/generate/ess-synth/src/lib.rs
 - confidence: cited
   path: crates/generate/ess-synth/tests/go.rs
-revision: 15
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:19Z", actor: "human:timo", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:19Z", actor: "human:timo", revision: 15}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:47Z", actor: "human:timo", revision: 17, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 
@@ -136,3 +137,7 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Safety fact:** `module_stem` has one caller, so renaming the surface file changes bytes only for a served component whose stem is `server`, the case that panics today — cited
 - **Not established:** the surface-file repair suffix (`layout.rs` appends `component`); whether `go/http/bound.rs` emits its own surface path under the same name; whether the `insert` refusal needs a new diagnostic code. The story's cites are stale (`lib.rs:489`/`:560` are now `:560`/`:562`; `layout.rs:210-240` is now `:264-268`; `http.rs:1207`, `:1443`, `:1600` are now `:1323`, `:1617`). The story's Decisions say "released in 0.70.0"; the tree at 0.70.0 and at b89faaa41 still has the defect — cited.
 - **Size:** medium, about 110-150 hand-written lines; no format version — inferred
+
+## Delivered
+
+W2 (D408), 2026-11-03: Go synthesis writes the surface file of a served component named `server` or `wire`, or of two components with one Go stem, under a repaired name; two artifacts claiming one path are a `path-collision` target failure, never a panic. Unit 28187ad02e; merged cffb7deb3e.

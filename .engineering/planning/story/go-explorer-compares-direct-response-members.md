@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:go-explorer-compares-direct-response-members
 kind: story
-status: active
+status: implemented
 title: The Go explorer compares direct response members
 tags:
 - adopter-report
@@ -21,10 +21,11 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/explore-target.mjs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures/explore_target.go
-revision: 11
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:21Z", actor: "human:timo", revision: 10}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:21Z", actor: "human:timo", revision: 11}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:42Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 
@@ -62,3 +63,7 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Not established:** whether the story is presence-only; "REQUIRED" read as non-Optional (`validateValue`, `runtime.go:8725`); the story's cite `explore.go:2013-2053` is stale (the comparison is at 2560-2614); whether `ExploreConcurrent` (`explore.go:4558`) is in scope.
 - **Size:** medium, about 250-350 hand-written lines; no format version (`ORDINARY = 28`, `src/direct_response.rs:12`) — inferred
 - **Targeted run:** ess-conformance `--test explore` — inferred
+
+## Delivered
+
+W2 (D408), 2026-11-03: the generated explorer (Go and TypeScript) fails a target whose answer to a `returns: true` outcome leaves out a required member of the command's `response`, naming the outcome and the member; values are not compared. Unit ab6d56ac01, README 15ce4749c6; merged 3cc17ed596. Known limit: a required member answered as `null` passes, tracked as backlog draft story:a-required-response-member-answered-as-null-fails-exploration.

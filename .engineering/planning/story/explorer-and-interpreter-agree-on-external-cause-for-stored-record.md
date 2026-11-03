@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:explorer-and-interpreter-agree-on-external-cause-for-stored-record
 kind: story
-status: active
+status: implemented
 title: The explorer and the interpreter agree on an external cause arranged for a stored record
 tags:
 - adopter-report
@@ -17,10 +17,11 @@ scope:
   path: crates/verify/ess-conformance/src/ts/explore.ts
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/explore_held_state_external.rs
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:21Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:22Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:40Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 
@@ -58,3 +59,7 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Not established:** the downstream adopter's disagreement is not reproduced (report on 0.56.0); whether wrong-state plus a holding held branch is the same defect.
 - **Size:** medium, about 40 lines in the explorers and about 150 for test and fixtures; no format version — inferred
 - **Targeted run:** ess-conformance `--test explore_stored_rows`, `explore_before_row`, `explore_external`, `explore_arranged_external_stranded`, `adversary_explore_order_pass1`, `explore_guards_first`, plus the new target (go and node on PATH) — inferred
+
+## Delivered
+
+W2 (D408), 2026-11-03: the generated explorer (Go and TypeScript) no longer expects an arranged `external:` branch where a branch the stored row selects holds, so it agrees with the interpreter's precedence. Unit ab6d56ac01 (with 15ce4749c6); merged 3cc17ed596; frozen-byte tables re-pinned for the unit's fixtures in 446c625b9f. Adversary pass 1: no finding on this story.

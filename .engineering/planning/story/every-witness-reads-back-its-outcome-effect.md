@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:every-witness-reads-back-its-outcome-effect
 kind: story
-status: active
+status: implemented
 title: Every witness reads the addressed row back and requires exactly its outcome's effect, a compensating delete included
 tags:
 - adopter-report
@@ -32,10 +32,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: docs/design/refusal-with-effect.md
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-16T10:20:20Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-16T10:20:20Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:50Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 
@@ -181,3 +182,7 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Not established:** the #581 complement path; whether `ess verify diff` (`outcome-compensates-changed`) needs a change for a delete; whether a compensating delete needs an absence step. `ess/34` is assumed; nothing in the tree claims it yet.
 - **Size:** large, about 250-300 non-test lines plus about 400 test lines; spec format `ess/34` — inferred
 - **Targeted run:** ess-conformance `--test external_beside_held_guard`, `subject_fact_complete_refusal`, `adversary_461_pass1`, `synthesis_suite_bytes_table`, plus one new file; ess-domain, ess-compiler, ess-cli — inferred
+
+## Delivered
+
+W2 (D408), 2026-11-03: format `ess/34`. A compensating refusal may delete its addressed row; a named `when:` or `when_related:` refusal of a command addressing an existing row snapshots the row and requires it unchanged; a further witness of a deleting branch requires the row absent. Unit e0236a014f; merged a23b3e9e59; review round 1 9a8e7a36bb (the no-change compensation message names `deletes:` from `ess/34`; older formats keep their suite bytes, pinned), merged fd11ea5ca9. Known limit: the Entity Runtime refuses compensating refusals.

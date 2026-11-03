@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:go-synthesis-refuses-an-optional-into-required-assignment
 kind: story
-status: active
+status: implemented
 title: Go synthesis refuses an Optional-to-required assignment it cannot represent instead of emitting code that does not compile
 tags:
 - adopter-report
@@ -15,10 +15,11 @@ scope:
   path: crates/generate/ess-synth/src/go/system.rs
 - confidence: inferred
   path: crates/generate/ess-synth/tests/binding_optional_wrap_go.rs
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:24Z", actor: "human:timo", revision: 7}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:24Z", actor: "human:timo", revision: 8}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:46Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 
@@ -66,3 +67,7 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Not established:** whether the story's `behaviour.go:322` case reaches generated Go on main (the reporter's 0.56.0 build is not in this tree); the sibling story says Go "already does" wrap a plain copy, and no such arm was found.
 - **Size:** medium, about 160 hand-written lines; no format version — inferred
 - **Targeted run:** ess-synth new target and `--test go`; ess-conformance `--test binding_condition`, `--test adversary_runtime_parity_go` — inferred
+
+## Delivered
+
+W2 (D408), 2026-11-03: Go synthesis copies a required event field into an Optional command input as a pointer, so the generated module builds; an Optional value into a required binding input or payload field was already refused by validation as `type_mismatch` and is now pinned. Unit e69e2094f5; merged cffb7deb3e.

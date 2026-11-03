@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:unknown-instance-and-input-guard-agree-on-order
 kind: story
-status: active
+status: implemented
 title: Validation, interpreter and explorer agree on an unknown-instance branch below an input guard
 tags:
 - adopter-report
@@ -18,10 +18,11 @@ scope:
   path: crates/specify/ess-domain/tests/held_state_order.rs
 - confidence: cited
   path: docs/design/cross-record-and-stored-field-guards.md
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:22Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:23Z", actor: "human:timo", revision: 10}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:43Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 
@@ -94,3 +95,7 @@ enforces. The precedence code is unchanged. Bullet 2 is the story's acceptance, 
 `crates/specify/ess-domain/tests/held_state_order.rs` and
 `crates/verify/ess-conformance/tests/explore_input_beside_unknown.rs` (W2 unit EXP1, `ab6d56ac01`).
 The story moves to implemented when wave W2 closes.
+
+## Delivered
+
+W2 (D408), 2026-11-03: bullet 1 retracted by D410 (it contradicts the precedence on the design page, which `ess/29` enforces); bullet 2 is the pinned acceptance. The precedence section of docs/design/cross-record-and-stored-field-guards.md states the order per format and tests pin it; no behaviour changed. Unit ab6d56ac01; merged 3cc17ed596. Known limit: the explorers leave out `when_related:` commands.

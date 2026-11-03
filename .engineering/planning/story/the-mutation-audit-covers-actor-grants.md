@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-mutation-audit-covers-actor-grants
 kind: story
-status: active
+status: implemented
 title: The mutation audit covers actor grants
 summary: The mutate baseline drops the grant/denied scenarios and no class mutates may:, so a wrong grant table is invisible to the audit (#710)
 tags:
@@ -26,10 +26,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/grant.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/mutation_component.rs
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:42Z", actor: "human:timo", revision: 13}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:42Z", actor: "human:timo", revision: 14}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:58Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -108,3 +109,7 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Not established:** the #710 toy spec is not in the tree; whether the report format moves (the story names only the manifest); the stale "report/1 evidence" comment at `mutate.rs:5620-5624`.
 - **Size:** large, about 500-700 hand-written lines; `ess-mutation-manifest/7` (newest `/6`, `mutate.rs:4997`), probably `ess-mutation-report/8`; no suite major (`grant::ORDINARY = 26`) — inferred
 - **Targeted run:** ess-conformance `--test mutation_audit`, `mutation_component`, `mutation_arms`, `mutation_emit_swap`, `mutation_unkillable`, `mutation_known_failures`, `mutation_external`, `adversary_mutate_pass1`, `adversary_mutate_pass2`, `adversary_caller_digest_pass1`, `adversary_244b_window_free_bytes`, `adversary_known_failures_pass1` (plus `grant_denied`, `adversary_265_pass1`, `adversary_265_pass2` if `synthesize/grant.rs` changes); ess-synth `--test adversary_e_u2_bytes`, `adversary_e_u6_bytes`; ess-cli `--test mutate_cli` — inferred
+
+## Delivered
+
+W2 (D408), 2026-11-03: closes beyond10x/ess#710. Classes `grant-drop` and `grant-add`; where either is selected the baseline and every mutant's suite keep their `<command>/grant/denied` scenarios and a grant-drop refusal is sent as the actor that lost the grant; a selection without a grant class keeps its bytes. Unit ad383e41a5 (finished by the wave lead after the implementor stalled); merged a48d077e02. Review round 1 (ee16051c22): a grant-add where an attributed actor holds the command is sent as the gaining actor (`with_added_grant`) or listed as `attributed_holder`, and every other `may:` entry no class mutates is listed (`system_actor`, `command_not_served`); merged 8dec7706dd. Full gate stage B: the where-this-stands mutation row lists both classes, b95e07bc02.

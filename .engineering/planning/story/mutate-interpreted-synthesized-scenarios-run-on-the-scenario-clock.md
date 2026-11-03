@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:mutate-interpreted-synthesized-scenarios-run-on-the-scenario-clock
 kind: story
-status: active
+status: implemented
 title: mutate --target interpreted runs synthesized scenarios on the scenario clock run uses
 relations:
 - serves: vision:O2
@@ -14,10 +14,11 @@ scope:
   path: crates/verify/ess-conformance/src/mutate.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/target.rs
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:27Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:27Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:54Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 
@@ -60,3 +61,7 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Not established:** no `mutate --target interpreted` run on a `now`-guarded model was made; whether a verdict change on clocked models needs a new `ess-mutation-report` version.
 - **Size:** medium, about 60-100 lines plus one test file; no format version (`ess-mutation-report/7`, `mutate.rs:92`; `ess-mutation-manifest/3`, `mutate.rs:4982`) — inferred
 - **Targeted run:** ess-conformance `--test mutation_authored`, `mutation_audit`, `interpreted_step_instant`, `mutation_stored_guards` — inferred
+
+## Delivered
+
+W2 (D408), 2026-11-03: `ess verify conform mutate --target interpreted` runs synthesized scenarios on the scenario clock `run` uses; a target that keeps its own clock declines `ConformanceTarget::take_command_clock`. Unit beea98d674; merged a48d077e02. Full gate stage A3: adversary_j3_pass1 (ess-conformance and ess-cli) re-pinned to the synthesized `outcome/expired` killing beside the authored scenario, 7613f051fa.

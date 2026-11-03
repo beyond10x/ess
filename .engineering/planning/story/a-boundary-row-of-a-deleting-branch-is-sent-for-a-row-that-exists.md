@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-boundary-row-of-a-deleting-branch-is-sent-for-a-row-that-exists
 kind: story
-status: active
+status: implemented
 title: A boundary row of a deleting branch is sent for a row that exists
 summary: Synthesis sends a deleting branch's boundary row for the row its own act deleted; the scenario fails on a conforming target
 relations:
@@ -13,10 +13,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/existence.rs
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:25Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:25Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:51Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Problem
 
@@ -73,3 +74,7 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Already in the tree (partly):** `identity_boundary_row` treats a deleted identity as needing a fresh row (synthesize.rs:17975-17979), but only when `existence::unknown_answers_before` holds (:17956, existence.rs:50); the story's model has no `unknown_instance:` branch — cited
 - **Size:** medium, about 30 source lines plus a test of about 150; no format version (`COVERAGE_SUITE_FORMAT`, coverage.rs:15) — inferred
 - **Targeted run:** ess-conformance `--test accepting_branch_below_unknown_instance`, `related_guard_absent_input`, `synthesis_suite_bytes_table`, `synthesis_suite_bytes_table_claim_fixtures`, `synthesis_suite_bytes_table_claim_search`, `synthesis_suite_bytes_table_cli_read`, plus the new test — inferred
+
+## Delivered
+
+W2 (D408), 2026-11-03: a guard's boundary row for a `deletes:` branch is sent for a row of its own, arranged fresh, as for a `moves:` branch. Unit e0236a014f; merged a23b3e9e59.

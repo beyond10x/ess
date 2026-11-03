@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:components-sharing-a-cli-binary-generate-one-tree-with-every-group
 kind: story
-status: active
+status: implemented
 title: Components sharing a CLI binary generate one tree with every group
 summary: clap synthesis keeps only the last component group when several components declare the same binary; validate passes it (0.77.0)
 tags:
@@ -21,10 +21,11 @@ scope:
   path: crates/specify/ess-domain/src/component.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/system.rs
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:39Z", actor: "human:timo", revision: 13}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:39Z", actor: "human:timo", revision: 14}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:48Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -107,3 +108,7 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Safety fact:** `tree.rs` and `main.rs` both walk the same `surfaces` vector (`tree.rs:32`, `mod.rs:69`), so a tree built from every surface matches dispatch — inferred
 - **Not established:** which Acceptance option `approval-record:d220-batch-4-after-0780` chose (its :30 does not say). A different-binary case has the same defect (`tree.rs:232` and `:491` take the first surface's binary for the whole crate); the story does not cover it. Gates: an `ess-domain` change also gates `ess-cli`; a format bump needs `task test-xtask`; reuse `DuplicateDeclaration` rather than a new `ValidationCode`.
 - **Size:** medium, about 230 hand-written lines; a new format version only if the refusal is stricter than ess/33 — inferred
+
+## Delivered
+
+W2 (D408), 2026-11-03: `--target clap` generates one crate whose tree defines every group and command of the components sharing a `cli.binary`; validation refuses a group, command or view two of them both declare, and (review round 1) one first-level word two sharing components give two meanings. Unit d3baeab30b with census 5811b2a6ae; merged cffb7deb3e; round 1 11f597912f and acfa41d845, merged 4489c7cf8c. Known limits: components on one CLI declaring different binaries use the first; a group named like a top-level command of its own component is tracked as backlog draft story:a-group-named-like-a-top-level-command-of-its-component-is-refused.

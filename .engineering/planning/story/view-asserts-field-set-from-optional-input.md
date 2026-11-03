@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:view-asserts-field-set-from-optional-input
 kind: story
-status: active
+status: implemented
 title: A synthesized view expectation asserts a field set through a declared conversion
 tags:
 - adopter-report
@@ -17,10 +17,11 @@ scope:
   path: crates/verify/ess-conformance/tests/synthesis.rs
 - confidence: inferred
   path: docs/design/binding-mapping-bounded-accessor.md
-revision: 11
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:23Z", actor: "human:timo", revision: 10}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:23Z", actor: "human:timo", revision: 11}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:49Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 
@@ -172,3 +173,7 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Not established:** whether `Optional<String> -> String` hands the value on unchanged; which `RefusalCause` the note naming the field and the conversion reuses (`synthesize.rs:815`).
 - **Size:** medium, about 150 hand-written lines; no format version (newest `FormatVersion::V33`, `system.rs:501`) unless the rule is format-gated — inferred
 - **Targeted run:** ess-conformance `--test synthesis`, `synthesis_suite_bytes_table`, `binding_input_through_conversion`, plus one new target — inferred
+
+## Delivered
+
+W2 (D408), 2026-11-03: a view row field set from an `Optional<T>` input through the declared conversion is asserted at the value sent; a conversion synthesis cannot compute leaves the field out and is named in a note. Unit e0236a014f; merged a23b3e9e59.

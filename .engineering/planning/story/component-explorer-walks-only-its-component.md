@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:component-explorer-walks-only-its-component
 kind: story
-status: active
+status: implemented
 title: A component's Go explorer walks only that component's commands
 tags:
 - adopter-report
@@ -19,10 +19,11 @@ scope:
   path: crates/verify/ess-conformance/src/go/explore.go
 - confidence: inferred
   path: crates/verify/ess-conformance/src/go/mod.rs
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:19Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:20Z", actor: "human:timo", revision: 10}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:44Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 
@@ -62,3 +63,7 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Not established:** the story's citation `crates/edge/ess-cli/src/main.rs:4600` is stale (the emit calls are at main.rs:4847 and 4854); whether a component-scoped suite records its component in provenance (`scenario.rs:500`); the fix route (explorer filter or scoped model digest).
 - **Size:** medium, about 150-220 hand-written lines; no format version (`COVERAGE_SUITE_FORMAT = "ess-conformance/5"`, coverage.rs:15; `SCENARIO_FORMAT = "ess-scenario/6"`, member_paths.rs:52) — inferred
 - **Targeted run:** ess-conformance `--test explore`, a new `--test explore_component`, and `--test mutation_component` if component emission bytes move — inferred
+
+## Delivered
+
+W2 (D408), 2026-11-03: a package scoped to one component explores only the commands that component accepts or whose domain it owns, and the views of the domains it owns. Unit ab6d56ac01; merged 3cc17ed596. Adversary pass 1 found the owned-domain filter untested; pinned by 077fcacc2c, merged 6bf5373c17.

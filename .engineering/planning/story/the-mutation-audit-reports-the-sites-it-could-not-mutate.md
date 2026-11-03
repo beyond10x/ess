@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-mutation-audit-reports-the-sites-it-could-not-mutate
 kind: story
-status: active
+status: implemented
 title: The mutation audit reports the sites it could not mutate
 summary: transition-to, emit-drop and sets-drop leave common shapes without a live mutant, and the audit still exits 0 without saying how much it covered (#711)
 tags:
@@ -24,10 +24,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/mutation_audit.rs
-revision: 13
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-03T05:57:41Z", actor: "human:timo", revision: 12}
 - {from: "proposed", to: "active", at: "2026-11-03T05:57:41Z", actor: "human:timo", revision: 13}
+- {from: "active", to: "implemented", at: "2026-11-03T10:46:55Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status
@@ -110,3 +111,7 @@ Derived 2026-11-03 by `aep:story-scoper` for wave W2 on b89faaa41. Every line is
 - **Not established:** sets-drop of an `Optional` field to absent is excluded today because no synthesized row states an absence (`mutate.rs:1218-1222`); transition-to on a linear lifecycle probably reduces to "listed as unavailable" (`ESS-ENTITY-011`, `resolve.rs:148`); the literal per type; what "sites considered" counts; the flag name; whether the listing is written only when non-empty (D135, the `/4` pattern at `mutate.rs:4958-4968`); the #711 toy spec is not in the tree.
 - **Size:** large, about 700-950 hand-written lines; new report and manifest versions — inferred
 - **Targeted run:** ess-conformance `--test mutation_audit`, `mutation_sets_entries`, `mutation_emit_swap`; ess-cli `--test mutate_cli`, `mutate_report_v2` — inferred
+
+## Delivered
+
+W2 (D408), 2026-11-03: closes beyond10x/ess#711. Each site a selected class excluded or left without a live mutant is listed with its reason under `unmutated_sites` in the text, `ess-mutation-report/8` and `ess-mutation-manifest/7`; the summary counts the scored sites; `--fail-on-unmutated` makes such a site block exit 0. Unit ebed16afd6, ess-cli pins re-pinned in ad383e41a5; merged a48d077e02. Review round 1 (ee16051c22, 4b58a5ee95) lists an unobservable sets-retarget literal as `unobserved_field`, prints listed sites beside ESS-MUTATE-003, and lists grants the grant classes skip; merged 8dec7706dd. Known limit (D413): a literal on a field only an invariant names stays an equivalent survivor, tracked as backlog draft story:a-literal-on-a-field-only-an-invariant-names-is-not-a-survivor.
