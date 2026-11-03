@@ -842,6 +842,7 @@ fn record(count: usize) -> (String, std::thread::JoinHandle<Vec<(String, String)
 /// The items toy with `RenameItem`'s `item_id` renamed `item` on the wire: a `bind` may send the
 /// field under either name, and the path variable is filled from whichever holds the value.
 #[test]
+#[allow(clippy::too_many_lines)]
 fn a_path_variable_whose_field_is_renamed_on_the_wire_is_filled_from_either_name() {
     let dir = scratch("renamed");
     let model = dir.join("system.yaml");
