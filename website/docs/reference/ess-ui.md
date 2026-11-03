@@ -867,7 +867,7 @@ Declare what the user sees while loading, when there is nothing, when the read f
 |---|---|---|---|---|
 | `loading` | one of: `skeleton` \| `spinner` \| `none` |   | `skeleton` | first load |
 | `refreshing` | one of: `keep_rows` \| `skeleton` |   | `keep_rows` | later loads |
-| `empty` | record \{ `message`: `string`, `action`: optional [Action](#action) \} |   |   | ready with no rows |
+| `empty` | record \{ `title`: optional `string`, `message`: `string`, `action`: optional [Action](#action) \} |   |   | ready with no rows; `title` is a heading above the message |
 | `failed` | record \{ `message`: optional `string`, `retry`: `boolean` \} |   | `{retry: true}` | read refused or transport error |
 | `forbidden` | record \{ `message`: optional `string` \} |   |   | actor lacks the grant |
 | `stale` | record \{ `mark`: (one of: `badge` \| `dim` \| `both`) \} |   | `{mark: badge}` | live channel down |
@@ -1993,7 +1993,7 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `bind` | map of `name` → `expr` |   |   | command input from row, selection or state |
 | `opens` | name of an [overlay](#overlay) |   |   | overlay to open |
 | `navigate` | record \{ `to`: name of a [Page](#page), `params`: optional map of `name` → `expr` \} |   |   | page to go to |
-| `export` | record \{ `reads`: name of an ESS `view`, `as`: (one of: `csv` \| `json` \| `zip` \| `png`), `params`: optional `expr` \} |   |   | download a view |
+| `export` | record \{ `reads`: name of an ESS `view`, `as`: (one of: `csv` \| `json` \| `zip` \| `png`), `params`: optional (one of: map of `name` → `expr` \| `expr`) \} |   |   | download a view; `params` is each param written out, or one expression such as `same_as(<section>)`; on a bulk action a param may read `selection.<field>` |
 | `upload` | record \{ `accept`: list of `string`, `does`: name of an ESS `command` \} |   |   | file picker feeding a command |
 | `copy` | `expr` |   |   | value copied to the clipboard |
 | `sets` | map of `expr` → (one of: `expr` \| exactly `toggle`) |   |   | UI state change only, never business data |

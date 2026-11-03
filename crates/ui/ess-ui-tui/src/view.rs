@@ -559,9 +559,15 @@ impl App {
             }
             Lifecycle::Empty => {
                 let empty = states.and_then(|states| states.empty.as_ref());
-                let mut lines = vec![Line::from(
-                    empty.map_or_else(|| "No rows".to_owned(), |empty| empty.message.clone()),
-                )];
+                let mut lines: Vec<Line<'static>> = empty
+                    .and_then(|empty| empty.title.clone())
+                    .map(|title| Line::styled(title, bold()))
+                    .into_iter()
+                    .collect();
+                lines.push(Line::from(empty.map_or_else(
+                    || "No rows".to_owned(),
+                    |empty| empty.message.clone(),
+                )));
                 if let Some(action) = empty.and_then(|empty| empty.action.as_ref()) {
                     lines.push(Line::styled(
                         format!(

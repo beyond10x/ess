@@ -664,7 +664,13 @@ impl<'d> Gen<'d> {
             ts::object([
                 ("reads", Some(ts::string(&export.reads))),
                 ("as", Some(ts::string(&export.export_as))),
-                ("params", expr(export.params.as_ref())),
+                (
+                    "params",
+                    export.params.as_ref().map(|params| match params {
+                        ess_ui::ExportParams::Expression(value) => ts::string(&value.0),
+                        ess_ui::ExportParams::Map(params) => exprs(params),
+                    }),
+                ),
             ])
         });
         let upload = action.upload.as_ref().map(|upload| {
@@ -1705,10 +1711,12 @@ impl<'d> Gen<'d> {
             ),
             (
                 "empty",
-                states
-                    .empty
-                    .as_ref()
-                    .map(|empty| ts::object([("message", Some(ts::string(&empty.message)))])),
+                states.empty.as_ref().map(|empty| {
+                    ts::object([
+                        ("title", quoted(empty.title.as_ref())),
+                        ("message", Some(ts::string(&empty.message))),
+                    ])
+                }),
             ),
             (
                 "failed",

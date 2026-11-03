@@ -577,7 +577,7 @@ constructs:
     fields:
       loading:    {type: {enum: [skeleton, spinner, none]}, default: skeleton, note: first load}
       refreshing: {type: {enum: [keep_rows, skeleton]}, default: keep_rows, note: later loads}
-      empty:      {type: {record: {message: string, action: {optional: Action}}}, note: ready with no rows}
+      empty:      {type: {record: {title: {optional: string}, message: string, action: {optional: Action}}}, note: "ready with no rows; `title` is a heading above the message"}
       failed:     {type: {record: {message: {optional: string}, retry: boolean}}, default: {retry: true}, note: read refused or transport error}
       forbidden:  {type: {record: {message: {optional: string}}}, note: actor lacks the grant}
       stale:      {type: {record: {mark: {enum: [badge, dim, both]}}}, default: {mark: badge}, note: live channel down}
@@ -1226,7 +1226,7 @@ constructs:
       bind:       {type: {map: {key: name, value: expr}}, note: "command input from row, selection or state"}
       opens:      {type: {ref: overlay}, note: overlay to open}
       navigate:   {type: {record: {to: {ref: page}, params: {optional: {map: {key: name, value: expr}}}}}, note: page to go to}
-      export:     {type: {record: {reads: {ref: view}, as: {enum: [csv, json, zip, png]}, params: {optional: expr}}}, note: download a view}
+      export:     {type: {record: {reads: {ref: view}, as: {enum: [csv, json, zip, png]}, params: {optional: {one_of: [{map: {key: name, value: expr}}, expr]}}}}, note: "download a view; `params` is each param written out, or one expression such as `same_as(<section>)`; on a bulk action a param may read `selection.<field>`"}
       upload:     {type: {record: {accept: {list: string}, does: {ref: command}}}, note: file picker feeding a command}
       copy:       {type: expr, note: value copied to the clipboard}
       sets:       {type: {map: {key: expr, value: {one_of: [expr, {const: toggle}]}}}, note: "UI state change only, never business data"}

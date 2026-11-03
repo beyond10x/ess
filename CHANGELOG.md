@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A refused `ess-ui` document is reported at the refused node's own path: an earlier list entry whose name or `field` is a key the schema holds an action under (a form field `{field: action}`) was read as an action and reported first, as `unknown field 'field'`, and a refused key in a section's `states` is reported at that state (`…/states/empty`). An export's `params` may now be a map `{<param>: <expr>}` beside the single expression (`same_as(<section>)`); on a bulk action a param may read `selection.<field>`, which the React runtime evaluates in the action's scope, and anywhere else check `export_selection` refuses it. An empty state may carry a `title`, shown as a heading above its message in React and as a line before it in the terminal (beyond10x/ess#723; story:a-refused-node-is-reported-at-its-own-path).
+
 ## [0.85.0] — 2026-11-03
 
 ### Added

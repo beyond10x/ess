@@ -880,6 +880,8 @@ pub enum RefreshingStyle {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EmptyState {
+    /// A heading shown above the message.
+    pub title: Option<String>,
     /// The message.
     pub message: String,
     /// An action offered.
@@ -2447,8 +2449,19 @@ pub struct Export {
     /// File format: csv, json, zip, png.
     #[serde(rename = "as")]
     pub export_as: String,
-    /// Params.
-    pub params: Option<Expr>,
+    /// Params: each written out, or one expression.
+    pub params: Option<ExportParams>,
+}
+
+/// An export's `params`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum ExportParams {
+    /// One expression, such as `same_as(<section>)`: the params of another section's read.
+    Expression(Expr),
+    /// Each param and the expression it is read with, evaluated in the action's scope; on a bulk
+    /// action `selection.<field>` reads that field of the selected rows.
+    Map(BTreeMap<String, Expr>),
 }
 
 /// File picker feeding a command.

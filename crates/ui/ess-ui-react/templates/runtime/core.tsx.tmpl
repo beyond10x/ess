@@ -345,7 +345,7 @@ export function useLoadTrigger(load: "eager" | "on_visible" | "on_demand" = "eag
 export interface SectionStates {
   loading?: "skeleton" | "spinner" | "none";
   refreshing?: "keep_rows" | "skeleton";
-  empty?: { message: string };
+  empty?: { title?: string; message: string };
   failed?: { message?: string; retry?: boolean };
   forbidden?: { message?: string };
   stale?: { mark: "badge" | "dim" | "both" };
@@ -451,6 +451,7 @@ export function SectionFrame(props: {
   } else if (data && data.status === "ready" && data.rows.length === 0 && states.empty) {
     body = (
       <div className="ui-state ui-state-empty">
+        {states.empty.title ? <h3 className="ui-state-title">{states.empty.title}</h3> : null}
         <p>{states.empty.message}</p>
         {props.emptyAction}
       </div>
