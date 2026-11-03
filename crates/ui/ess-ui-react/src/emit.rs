@@ -788,6 +788,11 @@ impl<'d> Gen<'d> {
                 ("key", quoted(label_from.key.as_ref())),
             ])
         });
+        // What a column or record shows for a value; a form input shows its own options.
+        let labels = (!in_form)
+            .then(|| field.value_labels())
+            .filter(|labels| !labels.is_empty())
+            .map(|labels| ts::string_map(&labels));
         ts::object([
             ("data-ui-path", Some(ts::string(&at.to_string()))),
             ("field", Some(ts::string(&field.field))),
@@ -798,6 +803,7 @@ impl<'d> Gen<'d> {
             ("visible", expr(field.visible.as_ref())),
             ("binds", expr(field.binds.as_ref())),
             ("labelFrom", label_from),
+            ("labels", labels),
             ("note", quoted(field.note.as_ref())),
             ("choice", choice),
         ])
@@ -1524,6 +1530,13 @@ impl<'d> Gen<'d> {
                                 ("map", Some(ts::literal(&tone_by.map))),
                             ])
                         }),
+                    )
+                    .opt(
+                        "labels",
+                        b.labels
+                            .as_ref()
+                            .filter(|labels| !labels.map.is_empty())
+                            .map(|labels| ts::string_map(&labels.map)),
                     )
                     .render()
             }

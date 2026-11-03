@@ -1,6 +1,7 @@
 //! The style checks: `tokens:` (`token_values`, `token_names`, `token_refs`), `themes:`
-//! (`theme_tokens`), `theme:` (`theme_choice`) and `tone_maps:` (`tone_map_unused`).
-//! `tone_map_refs` is the loader's refusal of a `tones` naming no map, filed by `classify`.
+//! (`theme_tokens`), `theme:` (`theme_choice`), `tone_maps:` (`tone_map_unused`) and `label_maps:`
+//! (`label_map_unused`). `tone_map_refs` and `label_map_refs` are the loader's refusals of a
+//! `tones` or a `labels` naming no map, filed by `classify`.
 //!
 //! The split is by subject: a value written under `tokens:` breaks a `token_*` check, and the
 //! same fault written in a theme's overrides breaks `theme_tokens`.
@@ -8,7 +9,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_ui::{
-    Body, Document, NodePath, Primitive, StateClass, TokenValue, Tokens, TypeExpr, TypeToken,
+    Body, Document, NodePath, NodeRef, Primitive, StateClass, TokenValue, Tokens, TypeExpr,
+    TypeToken,
 };
 
 use crate::schema;
@@ -31,6 +33,7 @@ pub(crate) fn run(document: &Document, sink: &mut Sink) {
     }
     theme_choice(document, sink);
     tone_map_unused(document, sink);
+    label_map_unused(document, sink);
 }
 
 // ── grammars ─────────────────────────────────────────────────────────────────────────────────
@@ -373,6 +376,31 @@ fn tone_map_unused(document: &Document, sink: &mut Sink) {
                 "tone_map_unused",
                 &NodePath::root().child("tone_maps").child(name),
                 format!("no `tone_by` names the tone map `{name}`"),
+            );
+        }
+    }
+}
+
+// ── label_map_unused ─────────────────────────────────────────────────────────────────────────
+
+fn label_map_unused(document: &Document, sink: &mut Sink) {
+    let mut named = BTreeSet::new();
+    for located in document.nodes() {
+        let labels = match located.node {
+            NodeRef::Field(field) => field.labels.as_ref(),
+            node => match body_of(node) {
+                Some(Body::Primitive(Primitive::Badge(badge))) => badge.labels.as_ref(),
+                _ => None,
+            },
+        };
+        named.extend(labels.and_then(|labels| labels.name.clone()));
+    }
+    for name in document.label_maps.keys() {
+        if !named.contains(name) {
+            sink.push(
+                "label_map_unused",
+                &NodePath::root().child("label_maps").child(name),
+                format!("no field or badge names the label map `{name}` in its `labels`"),
             );
         }
     }

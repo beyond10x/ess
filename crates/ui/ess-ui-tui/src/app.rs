@@ -4298,6 +4298,7 @@ pub(crate) fn columns_of(collection: &ess_ui::Collection, rows: &[Value]) -> Vec
                         visible: None,
                         binds: None,
                         label_from: None,
+                        labels: None,
                         note: None,
                     })
                     .collect()
@@ -4317,6 +4318,7 @@ fn plain_field(name: &str, field_as: Option<&str>) -> Field {
         visible: None,
         binds: None,
         label_from: None,
+        labels: None,
         note: None,
     }
 }

@@ -44,7 +44,7 @@ A field's `type` is one of three things. (1) A lowercase primitive name from `pr
 | `enum` | `{enum: [a, b]}` | `{enum: [light, dark]}` |   |
 | `one_of` | `{one_of: [T1, T2]}` | `{one_of: [duration, expr]}` |   |
 | `record` | `{record: {field: T}}` | `{record: {amount: number, currency: {enum: [EUR, USD, GBP]}}}` |   |
-| `ref` | `{ref: kind}` | `{ref: view}` | view, command, event and actor resolve in the ESS model; the others in the document; kinds: `[shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, view, command, event, actor]` |
+| `ref` | `{ref: kind}` | `{ref: view}` | view, command, event and actor resolve in the ESS model; the others in the document; kinds: `[shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, label_map, view, command, event, actor]` |
 | `const` | `{const: value}` | `{const: ess-ui/1}` |   |
 
 ### Expressions
@@ -165,6 +165,7 @@ One document describes one frontend. It names the ESS model every view, command 
 | `themes` | map of `name` → [Theme](#theme) |   |   | named looks, each the tokens it overrides |
 | `theme` | [ThemeChoice](#themechoice) |   |   | which theme is shown and the shell state that chooses it |
 | `tone_maps` | map of `name` → [ToneMap](#tonemap) |   |   | value-to-tone maps, named by `tone_by.tones` |
+| `label_maps` | map of `name` → map of `string` → `string` |   |   | value-to-label maps, named by the `labels` of a field or a badge |
 
 **Example**
 
@@ -185,6 +186,12 @@ pages:
     title: Overview
     sections: [{name: board, component: board, reads: {view: dashboards.Mine}}]
 ```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `label_map_unused` | `label_maps.*` | `{must: be_named_by_the_labels_of_a_field_or_badge}` | warning |
 
 ### Type
 
@@ -1434,7 +1441,7 @@ action: {name: send, does: tickets.PostReply}
 
 One input of a form or one column of a collection.
 
-Columns and form inputs are fields. `as` is a semantic widget, not a component; a bare name is enough when the defaults fit.
+Columns and form inputs are fields. `as` is a semantic widget, not a component; a bare name is enough when the defaults fit. `labels` gives the words a column or record shows for a value, written out or naming an entry of the document's `label_maps`; a boolean is keyed `"true"` and `"false"`, and a value the map does not name shows as it is. A badge keeps the raw value in its class. A choice column shows the label of the fixed option its value matches, under any `labels` of its own. A form input is unchanged.
 
 **Properties**
 
@@ -1449,6 +1456,7 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `visible` | `expr` |   |   | shows the field only when true |
 | `binds` | `expr` |   |   | bind to UI state instead of the command input |
 | `label_from` | record \{ `view`: name of an ESS `view`, `field`: `name`, `key`: optional `name` \} |   |   | show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params |
+| `labels` | one of: map of `string` → `string` \| `name` |   |   | the text shown for a value: a map written out, or the name of an entry of `label_maps` |
 | `note` | `string` |   |   | author remark |
 
 **You may also write**
@@ -1465,6 +1473,12 @@ field: tier
 as: choice
 choice: {component: choice, options: PartnerTier}
 ```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `label_map_refs` | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
 
 ### Tab
 
@@ -1690,7 +1704,7 @@ currency: args.value.currency
 
 A short value in a toned pill.
 
-For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value, through a map written out (`map`) or the name of an entry of the document's `tone_maps` (`tones`), exactly one of the two. The loader resolves `tones` to its map, so a renderer only reads `map`. A value the map does not name takes `tone`. What a tone looks like is the tone's entry of `Tokens.tone`.
+For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value, through a map written out (`map`) or the name of an entry of the document's `tone_maps` (`tones`), exactly one of the two. The loader resolves `tones` to its map, so a renderer only reads `map`. A value the map does not name takes `tone`. What a tone looks like is the tone's entry of `Tokens.tone`. `labels` gives the text shown for a value, written out or naming an entry of `label_maps`, as on a field; the tone is still chosen by the raw value.
 
 **Properties**
 
@@ -1700,6 +1714,7 @@ For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value, 
 | `field` | `name` |   |   | row field shown |
 | `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | fixed tone, and the tone of a value `tone_by` does not map |
 | `tone_by` | record \{ `value`: `expr`, `map`: optional map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`), `tones`: optional name of a [ToneMap](#tonemap) \} |   |   | tone per value: `map` written out, or `tones` naming an entry of `tone_maps`; exactly one of the two |
+| `labels` | one of: map of `string` → `string` \| `name` |   |   | the text shown for a value: a map written out, or the name of an entry of `label_maps` |
 
 **Exactly one of**
 
@@ -1719,6 +1734,7 @@ tone_by: {value: args.status, tones: args.tones}
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
 | `tone_map_refs` | `**.tone_by.tones` | `{must_resolve: {ref: tone_map}}` | error |
+| `label_map_refs` | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
 
 ### icon
 
@@ -2700,6 +2716,8 @@ What a validator checks in a document, and the construct each check applies to. 
 | `theme_choice` | [ThemeChoice](#themechoice) | `theme` | `{must: [default_names_a_theme, themes_declared, chosen_by_names_a_shell_preference_enum_whose_variants_and_default_name_themes]}` | error |
 | `tone_map_refs` | [badge](#badge), [icon](#icon) | `**.tone_by.tones` | `{must_resolve: {ref: tone_map}}` | error |
 | `tone_map_unused` | [ToneMap](#tonemap) | `tone_maps.*` | `{must: be_named_by_a_tone_by}` | warning |
+| `label_map_refs` | [Field](#field), [badge](#badge) | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
+| `label_map_unused` | [Document](#document) | `label_maps.*` | `{must: be_named_by_the_labels_of_a_field_or_badge}` | warning |
 | `filter_expr` | [Reads](#reads) | `reads.filter and dynamic menu filter` | `{must: parse_as_boolean_predicate}` | error |
 | `filter_roots` | [Reads](#reads) | `reads.filter and dynamic menu filter` | `{must: read_only_row_params_state_shell_args_without_calls}` | error |
 | `filter_paths` | [Reads](#reads) | `reads.filter and dynamic menu filter` | `{must: resolve_declared_paths}` | error |

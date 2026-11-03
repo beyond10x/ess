@@ -120,7 +120,9 @@ fn fnv(text: &str) -> u64 {
 /// requests with fresh refetches and source isolation; the whole-project digest additionally
 /// covers filtering, live candidate admission, menus and hidden-selection pruning. Re-pinned for
 /// story:account-menu-entries-keep-sets-and-navigate: `runAction` is exported and the account menu
-/// runs `sets` and `navigate`.
+/// runs `sets` and `navigate`. The whole-project digest re-pinned for
+/// story:a-value-shows-its-declared-label-beside-its-tone: the field runtime and the badge
+/// primitive show a value's `labels`.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
@@ -130,7 +132,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x036a_4d67_6dc4_1ac6),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x01b0_8449_b3e8_318a;
+const PLAIN_PROJECT: u64 = 0x48ef_abfb_098b_22f6;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

@@ -11,6 +11,7 @@ export function BadgeView(props: {
   field?: string;
   tone?: string;
   toneBy?: { value: string; map: Json };
+  labels?: Record<string, string>;
 }): ReactNode {
   const scope = useScope();
   const value = props.field !== undefined ? display(scope.values.row, props.field) : evaluate(props.text, scope.values);
@@ -22,9 +23,15 @@ export function BadgeView(props: {
       tone = map[key] as string;
     }
   }
+  // The text shown for the value; the tone above is still chosen by the raw value.
+  const shownKey = ["string", "number", "boolean"].includes(typeof value) ? String(value) : undefined;
+  const label =
+    props.labels !== undefined && shownKey !== undefined && Object.prototype.hasOwnProperty.call(props.labels, shownKey)
+      ? props.labels[shownKey]
+      : undefined;
   return (
     <span className={`ui-badge ui-tone-${tone}`} data-ui-path={useUiPath(props["data-ui-path"])}>
-      {formatValue(value)}
+      {label ?? formatValue(value)}
     </span>
   );
 }
