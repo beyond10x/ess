@@ -1,0 +1,12 @@
+type: ess-http/1
+specification:
+  system: rack
+  version: v1
+  source_digest: sha256:313663306c3b80c23d36485520962923db17c3cc1f61bc5b7b074ca584e0ef21
+routes:
+  - command: rack.items.AddItem
+    method: post
+    path: /items/{item_id}
+    parameters: {item_id: input.item_id}
+    request: {encoding: json, unknown: refuse}
+  - {view: rack.items.AllItems, method: get, path: /items}

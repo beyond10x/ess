@@ -12,6 +12,12 @@
 //! with every request of [`REQUESTS`], then reads both views back. Each body is also checked
 //! against the request schema of the `openapi.json` that same server serves, with `format`
 //! asserted, so a body the server refuses is one the document refuses and the other way round.
+//!
+//! The harness is not built here: a test that runs cargo compiles a crate graph inside its lane
+//! (`crates/edge/ess-xtask/tests/no_test_builds.rs`). `task json-body-harnesses` generates the
+//! server from [`MODEL`] and [`BINDING`] with `ess generate synthesize --http` and builds the
+//! harness once, before the test binaries run, and this test runs the binary [`HARNESS`] names.
+//! Without it every case fails, naming the task.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -22,127 +28,20 @@ use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 use ess_gen::ess_http;
 use ess_gen::http::Binding;
-use ess_synth::{synthesize_bound, OutputLayout, Target};
 use serde_json::{json, Value};
 
-const MODEL: &str = "format: ess/32
-system: shelf
-version: v1
-domain: shelf.items
-types:
-  - {name: shelf.items.ItemId, kind: newtype, of: String}
-  - {name: shelf.items.StampId, kind: newtype, of: String}
-  - name: shelf.items.Label
-    kind: struct
-    fields:
-      - {name: key, type: String}
-      - {name: value, type: String}
-      - {name: unit, type: Optional<String>}
-      - {name: seen_at, type: Optional<Timestamp>}
-  - name: shelf.items.Note
-    kind: struct
-    undeclared_fields: ignored
-    fields:
-      - {name: text, type: String}
-entities:
-  - name: shelf.items.Item
-    identity: {name: item_id, type: shelf.items.ItemId}
-    fields:
-      - {name: created_at, type: Timestamp}
-      - {name: due_at, type: Optional<Timestamp>}
-      - {name: stamps, type: List<Timestamp>}
-      - {name: labels, type: List<shelf.items.Label>}
-      - {name: note, type: Optional<shelf.items.Note>}
-      - {name: data, type: Optional<Json>}
-    lifecycle: {initial: Shelved, states: [Shelved], terminal: [Shelved], transitions: []}
-  - name: shelf.items.Stamp
-    identity: {name: stamp_id, type: shelf.items.StampId}
-    fields:
-      - {name: stamped_at, type: Timestamp}
-      - {name: marks, type: 'Map<Timestamp, String>'}
-    lifecycle: {initial: Kept, states: [Kept], terminal: [Kept], transitions: []}
-events:
-  - name: shelf.items.ItemAdded
-    fields: [{name: item_id, type: shelf.items.ItemId}]
-  - name: shelf.items.StampAdded
-    fields: [{name: stamp_id, type: shelf.items.StampId}]
-commands:
-  - name: shelf.items.AddItem
-    input:
-      - {name: item_id, type: shelf.items.ItemId}
-      - {name: created_at, type: Timestamp}
-      - {name: due_at, type: Optional<Timestamp>}
-      - {name: stamps, type: List<Timestamp>}
-      - {name: labels, type: List<shelf.items.Label>}
-      - {name: note, type: Optional<shelf.items.Note>}
-      - {name: data, type: Optional<Json>}
-    outcomes:
-      - name: added
-        creates: shelf.items.Item
-        instance: item_id
-        sets:
-          created_at: input.created_at
-          due_at: input.due_at
-          stamps: input.stamps
-          labels: input.labels
-          note: input.note
-          data: input.data
-        emits: [shelf.items.ItemAdded]
-        payload:
-          shelf.items.ItemAdded: {item_id: input.item_id}
-  - name: shelf.items.AddStamp
-    input:
-      - {name: stamp_id, type: shelf.items.StampId}
-      - {name: stamped_at, type: Timestamp}
-      - {name: marks, type: 'Map<Timestamp, String>'}
-    outcomes:
-      - name: added
-        creates: shelf.items.Stamp
-        instance: stamp_id
-        sets: {stamped_at: input.stamped_at, marks: input.marks}
-        emits: [shelf.items.StampAdded]
-        payload:
-          shelf.items.StampAdded: {stamp_id: input.stamp_id}
-views:
-  - name: shelf.items.AllItems
-    source: shelf.items.Item
-    consistency: read_your_writes
-    fields:
-      - {name: item_id, type: shelf.items.ItemId}
-      - {name: created_at, type: Timestamp}
-      - {name: due_at, type: Optional<Timestamp>}
-      - {name: stamps, type: List<Timestamp>}
-      - {name: labels, type: List<shelf.items.Label>}
-      - {name: note, type: Optional<shelf.items.Note>}
-      - {name: data, type: Optional<Json>}
-  - name: shelf.items.AllStamps
-    source: shelf.items.Stamp
-    consistency: read_your_writes
-    fields:
-      - {name: stamp_id, type: shelf.items.StampId}
-      - {name: stamped_at, type: Timestamp}
-      - {name: marks, type: 'Map<Timestamp, String>'}
-actors:
-  - name: shelf.items.Clerk
-    may: [shelf.items.AddItem, shelf.items.AddStamp]
-components:
-  - component: shelf-service
-    reached_by: network
-    owns: {domains: [shelf.items]}
-    accepts: {commands: [shelf.items.AddItem, shelf.items.AddStamp]}
-    publishes: {events: [shelf.items.ItemAdded, shelf.items.StampAdded]}
-";
+/// The model, read by `task json-body-harnesses` too, which generates the server the harness is
+/// built against from the same file. It is named `.yaml.in` so no walker of the repository's
+/// models reads it, as none did while it lived inside this file.
+const MODEL: &str = include_str!("fixtures/json-body-closure/model.yaml.in");
 
-/// `AddItem` states `unknown: refuse`; `AddStamp` leaves the request at its default.
-const ROUTES: &str = "routes:
-  - command: shelf.items.AddItem
-    method: post
-    path: /items
-    request: {encoding: json, unknown: refuse}
-  - {command: shelf.items.AddStamp, method: post, path: /stamps}
-  - {view: shelf.items.AllItems, method: get, path: /items}
-  - {view: shelf.items.AllStamps, method: get, path: /stamps}
-";
+/// The binding the server is generated with: `AddItem` states `unknown: refuse`; `AddStamp` leaves
+/// the request at its default. Its `source_digest` is [`MODEL`]'s, which [`binding`] holds it to.
+const BINDING: &str = include_str!("fixtures/json-body-closure/http.yaml.in");
+
+/// The variable naming the harness `task json-body-harnesses` built
+/// (`fixtures/json-body-closure/main.rs`).
+const HARNESS: &str = "ESS_JSON_BODY_CLOSURE_HARNESS";
 
 /// One request: label, path, body, and the path of the member it is refused at, or `None` for a
 /// body the server admits.
@@ -248,37 +147,6 @@ const REQUESTS: &[Sent] = &[
     ),
 ];
 
-/// The harness: every request line through the generated `dispatch`, one answer line each, then
-/// both views.
-const HARNESS: &str = r#"use shelf_server::http;
-use shelf_server::shelf_service as surface;
-use shelf_types::actor::{Actor, Caller};
-use shelf_types::behaviour::Generated;
-
-fn main() {
-    let requests = std::fs::read_to_string(std::env::args().nth(1).expect("the requests")).expect("read");
-    let mut system = shelf_system::System::new(shelf_service::ShelfService::new(Generated::new(
-        shelf_server::memory::MemoryPorts::default(),
-    )));
-    let clerk = Caller { actor: Actor::ALL[0] };
-    for line in requests.lines() {
-        let fields: Vec<&str> = line.split('\t').collect();
-        let [label, method, path, body] = fields[..] else {
-            panic!("a request line has four fields: {line}");
-        };
-        let request = http::Request {
-            method: method.to_owned(),
-            path: path.to_owned(),
-            query: String::new(),
-            headers: vec![("content-type".to_owned(), http::JSON.to_owned())],
-            body: body.as_bytes().to_vec(),
-        };
-        let answered = surface::dispatch(&mut system, Some(&clerk), &request);
-        println!("{label}\t{}\t{}", answered.status, answered.body.replace('\n', " "));
-    }
-}
-"#;
-
 fn ir() -> EssIr {
     let spec = Specification::assemble([(
         Source::new("shelf.yaml"),
@@ -290,13 +158,16 @@ fn ir() -> EssIr {
     compile(&spec, &sources).unwrap_or_else(|errors| panic!("compiles: {errors}"))
 }
 
+/// [`BINDING`], compiled against `ir`: it names `ir`'s source digest, so the server the harness
+/// was built against was generated from [`MODEL`] and this binding.
 fn binding(ir: &EssIr) -> Binding {
-    let document = format!(
-        "type: ess-http/1\nspecification:\n  system: shelf\n  version: v1\n  source_digest: \
-         sha256:{}\n{ROUTES}",
+    assert!(
+        BINDING.contains(&format!("  source_digest: sha256:{}\n", ir.source_digest())),
+        "fixtures/json-body-closure/http.yaml.in pins MODEL's source digest, sha256:{}; write it \
+         there and run `task json-body-harnesses` again",
         ir.source_digest()
     );
-    let spec = ess_http::HttpSpec::from_yaml(&document).expect("well formed");
+    let spec = ess_http::HttpSpec::from_yaml(BINDING).expect("well formed");
     let compiled = ess_http::compile(&spec, ir, &ess_gen::http::derived(ir))
         .unwrap_or_else(|refused| panic!("the binding compiles: {refused}"));
     Binding::new(compiled).unwrap_or_else(|refused| panic!("every route has a path: {refused}"))
@@ -328,65 +199,57 @@ fn request_lines() -> String {
     lines.join("\n")
 }
 
+/// The harness `task json-body-harnesses` built, from the path [`HARNESS`] names.
+///
+/// A file that is not executable is made so: an uploaded CI artifact loses its mode bits, and the
+/// test shards receive the harness beside the nextest archives.
+fn harness() -> PathBuf {
+    let Some(path) = std::env::var_os(HARNESS).map(PathBuf::from) else {
+        panic!(
+            "{HARNESS} is not set: run `task json-body-harnesses` and set it to the binary that \
+             task names, or run the tests through `task test`, which does both"
+        );
+    };
+    let metadata = std::fs::metadata(&path).unwrap_or_else(|error| {
+        panic!(
+            "{HARNESS}={} names no harness ({error}): run `task json-body-harnesses`",
+            path.display()
+        )
+    });
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut permissions = metadata.permissions();
+        if permissions.mode() & 0o111 == 0 {
+            permissions.set_mode(permissions.mode() | 0o755);
+            std::fs::set_permissions(&path, permissions).expect("the harness is made executable");
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = metadata;
+    path
+}
+
 /// The harness's answers by label, once per test binary.
 fn answers() -> &'static BTreeMap<String, Answer> {
     static ANSWERS: std::sync::OnceLock<BTreeMap<String, Answer>> = std::sync::OnceLock::new();
     ANSWERS.get_or_init(|| {
-        let ir = ir();
-        let synthesis = synthesize_bound(
-            &ir,
-            Target::Rust,
-            OutputLayout::Workspace,
-            Some(&binding(&ir)),
-        )
-        .unwrap_or_else(|failure| panic!("the bound model synthesizes: {failure}"));
+        binding(&ir());
+        let harness = harness();
         let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("json-body-closure-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        for (relative, artifact) in &synthesis.artifacts {
-            let destination = root.join("shelf").join(relative);
-            std::fs::create_dir_all(destination.parent().expect("a parent")).expect("mkdir");
-            std::fs::write(&destination, &artifact.contents).expect("write");
-        }
-        let harness = root.join("harness");
-        std::fs::create_dir_all(harness.join("src")).expect("mkdir");
-        let dependencies = [
-            "shelf-server",
-            "shelf-system",
-            "shelf-service",
-            "shelf-types",
-        ]
-        .iter()
-        .fold(String::new(), |mut out, name| {
-            let _ = writeln!(out, "{name} = {{ path = \"../shelf/crates/{name}\" }}");
-            out
-        });
-        std::fs::write(
-            harness.join("Cargo.toml"),
-            format!(
-                "[package]\nname = \"json-body-closure-harness\"\nversion = \"0.0.0\"\n\
-                 edition = \"2021\"\n\n[dependencies]\n{dependencies}\n[workspace]\n"
-            ),
-        )
-        .expect("write");
-        std::fs::write(harness.join("src/main.rs"), HARNESS).expect("write");
+        std::fs::create_dir_all(&root).expect("mkdir");
         let requests = root.join("requests.tsv");
         std::fs::write(&requests, request_lines()).expect("write");
-        let ran = Command::new(std::env::var_os("CARGO").expect("Cargo supplies its executable"))
-            .args(["run", "--offline", "--quiet", "--target-dir"])
-            .arg(root.join("target"))
-            .arg("--")
+        let ran = Command::new(&harness)
             .arg(&requests)
-            .current_dir(&harness)
-            .env_remove("CARGO_TARGET_DIR")
-            .env_remove("CARGO_ENCODED_RUSTFLAGS")
-            .env("CARGO_INCREMENTAL", "0")
             .output()
-            .expect("cargo runs");
+            .expect("the harness runs");
         let stdout = String::from_utf8_lossy(&ran.stdout).into_owned();
         eprintln!("{}\n{stdout}", String::from_utf8_lossy(&ran.stderr));
         let _ = std::fs::remove_dir_all(&root);
-        assert!(ran.status.success(), "the harness builds and runs");
+        assert!(ran.status.success(), "the harness runs");
         stdout
             .lines()
             .map(|line| {

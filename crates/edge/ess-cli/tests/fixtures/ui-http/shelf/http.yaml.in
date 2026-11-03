@@ -1,0 +1,13 @@
+type: ess-http/1
+specification:
+  system: shelf
+  version: v1
+  source_digest: sha256:de0ab21ea16322f5367eb8400638fdc0cde25784929b07d38a286f5a98cb6e5a
+routes:
+  - command: shelf.items.AddItem
+    method: post
+    path: /items
+    request: {encoding: json, unknown: refuse}
+  - {command: shelf.items.AddStamp, method: post, path: /stamps}
+  - {view: shelf.items.AllItems, method: get, path: /items}
+  - {view: shelf.items.AllStamps, method: get, path: /stamps}

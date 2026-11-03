@@ -7,6 +7,12 @@
 //! `dispatch` is driven over a model that reaches a closed object at positions the unit's own test
 //! does not: a struct as a direct field, a struct inside it, a map value, a union branch and its
 //! content, a renamed field, a path-carried route, and a newtype over `Timestamp`.
+//!
+//! The harness is not built here: a test that runs cargo compiles a crate graph inside its lane
+//! (`crates/edge/ess-xtask/tests/no_test_builds.rs`). `task json-body-harnesses` generates the
+//! server from [`MODEL`] and [`BINDING`] with `ess generate synthesize --http` and builds the
+//! harness (`fixtures/json-body-security/main.rs`) once, before the test binaries run, and this
+//! test runs the binary [`HARNESS`] names. Without it every case fails, naming the task.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -17,8 +23,12 @@ use ess_compiler::{resolve::compile, source::SourceMap, EssIr};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 use ess_gen::ess_http;
 use ess_gen::http::Binding;
-use ess_synth::{synthesize_bound, OutputLayout, Target};
 use serde_json::{json, Value};
+
+const STORY: &str = "story:the-generated-rust-server-refuses-what-its-openapi-refuses";
+
+/// The variable naming the harness `task json-body-harnesses` built.
+const HARNESS: &str = "ESS_JSON_BODY_SECURITY_HARNESS";
 
 // ---- the emitted reader, on its own ---------------------------------------------------------------
 
@@ -246,90 +256,13 @@ fn a_member_named_twice_is_read_at_its_first_and_that_one_is_validated() {
 
 // ---- a generated server, at positions the unit's own test does not reach --------------------------
 
-const MODEL: &str = "format: ess/32
-system: rack
-version: v1
-domain: rack.items
-types:
-  - {name: rack.items.ItemId, kind: newtype, of: String}
-  - {name: rack.items.When, kind: newtype, of: Timestamp}
-  - name: rack.items.Size
-    kind: struct
-    fields:
-      - {name: width, type: Integer}
-      - {name: post_code, type: Optional<String>, naming: {wire: postalCode}}
-  - name: rack.items.Label
-    kind: struct
-    fields:
-      - {name: key, type: String}
-      - {name: size, type: Optional<rack.items.Size>}
-  - name: rack.items.Shape
-    kind: union
-    tag: kind
-    variants:
-      boxed: rack.items.Size
-      named: String
-entities:
-  - name: rack.items.Item
-    identity: {name: item_id, type: rack.items.ItemId}
-    fields:
-      - {name: label, type: rack.items.Label}
-      - {name: sizes, type: 'Map<String, rack.items.Size>'}
-      - {name: shape, type: rack.items.Shape}
-      - {name: due_at, type: Optional<rack.items.When>}
-    lifecycle: {initial: Kept, states: [Kept], terminal: [Kept], transitions: []}
-events:
-  - name: rack.items.ItemAdded
-    fields: [{name: item_id, type: rack.items.ItemId}]
-commands:
-  - name: rack.items.AddItem
-    input:
-      - {name: item_id, type: rack.items.ItemId}
-      - {name: label, type: rack.items.Label}
-      - {name: sizes, type: 'Map<String, rack.items.Size>'}
-      - {name: shape, type: rack.items.Shape}
-      - {name: due_at, type: Optional<rack.items.When>}
-    outcomes:
-      - name: added
-        creates: rack.items.Item
-        instance: item_id
-        sets:
-          label: input.label
-          sizes: input.sizes
-          shape: input.shape
-          due_at: input.due_at
-        emits: [rack.items.ItemAdded]
-        payload:
-          rack.items.ItemAdded: {item_id: input.item_id}
-views:
-  - name: rack.items.AllItems
-    source: rack.items.Item
-    consistency: read_your_writes
-    fields:
-      - {name: item_id, type: rack.items.ItemId}
-      - {name: label, type: rack.items.Label}
-      - {name: sizes, type: 'Map<String, rack.items.Size>'}
-      - {name: shape, type: rack.items.Shape}
-      - {name: due_at, type: Optional<rack.items.When>}
-actors:
-  - name: rack.items.Clerk
-    may: [rack.items.AddItem]
-components:
-  - component: rack-service
-    reached_by: network
-    owns: {domains: [rack.items]}
-    accepts: {commands: [rack.items.AddItem]}
-    publishes: {events: [rack.items.ItemAdded]}
-";
+/// The model, read by `task json-body-harnesses` too, which generates the server the harness is
+/// built against from the same file; `.yaml.in`, so no walker of the repository's models reads it.
+const MODEL: &str = include_str!("fixtures/json-body-security/model.yaml.in");
 
-const ROUTES: &str = "routes:
-  - command: rack.items.AddItem
-    method: post
-    path: /items/{item_id}
-    parameters: {item_id: input.item_id}
-    request: {encoding: json, unknown: refuse}
-  - {view: rack.items.AllItems, method: get, path: /items}
-";
+/// The binding the server is generated with; its `source_digest` is [`MODEL`]'s, which
+/// [`binding`] holds it to.
+const BINDING: &str = include_str!("fixtures/json-body-security/http.yaml.in");
 
 /// One request: label, path, body, and the member it is refused at, or `None` where it runs.
 type Sent = (
@@ -407,77 +340,6 @@ const NULL_OPTIONAL: Sent = (
     None,
 );
 
-const HARNESS: &str = r##"use std::fmt::Write as _;
-
-use rack_server::{http, json};
-use rack_server::rack_service as surface;
-use rack_types::actor::{Actor, Caller};
-use rack_types::behaviour::Generated;
-
-fn main() {
-    let requests = std::fs::read_to_string(std::env::args().nth(1).expect("the requests")).expect("read");
-    let corpus = std::fs::read_to_string(std::env::args().nth(2).expect("the corpus")).expect("read");
-    for (index, text) in corpus.lines().enumerate() {
-        let held = json::Value::Text(text.to_owned());
-        let value = json::timestamp_at(&held, "body.t", "an RFC 3339 instant");
-        let key = json::key_timestamp(text, "body.k");
-        let at = value.as_ref().err().map(|error| error.at.clone()).unwrap_or_default();
-        println!("stamp\t{index}\t{}\t{}\t{at}", value.is_ok(), key.is_ok());
-    }
-    let started = std::time::Instant::now();
-    let long = format!("2026-10-29T12:00:00.{}Z", "9".repeat(4_000_000));
-    let long_ok = json::timestamp_at(&json::Value::Text(long.clone()), "t", "x").is_ok();
-    let cut = format!("{}X", &long[..long.len() - 1]);
-    let cut_ok = json::timestamp_at(&json::Value::Text(cut), "t", "x").is_ok();
-    let declared = ["a", "b", "c"];
-    let mut members = vec![("a".to_owned(), json::Value::Null); 200_000];
-    let many_ok = json::closed_at(&json::Value::Object(members.clone()), "body", &declared).is_ok();
-    members.push(("d".to_owned(), json::Value::Null));
-    let last_at = json::closed_at(&json::Value::Object(members), "body", &declared)
-        .err()
-        .map(|error| error.at)
-        .unwrap_or_default();
-    let mut text = String::from("{");
-    for index in 0..100_000 {
-        let _ = write!(text, "\"a\":{index},");
-    }
-    text.push_str("\"zz\":1}");
-    let parsed = json::parse(&text).expect("JSON");
-    let parsed_at = json::closed_at(&parsed, "body", &declared)
-        .err()
-        .map(|error| error.at)
-        .unwrap_or_default();
-    println!(
-        "hostile\t{long_ok}\t{cut_ok}\t{many_ok}\t{last_at}\t{parsed_at}\t{}",
-        started.elapsed().as_millis()
-    );
-    let first_bad = json::parse(r#"{"t":"yesterday","t":"2026-10-29T12:00:00Z"}"#).expect("JSON");
-    let first = json::timestamp_at(json::member_at(&first_bad, "body", "t").expect("present"), "body.t", "x");
-    let last_bad = json::parse(r#"{"t":"2026-10-29T12:00:00Z","t":"yesterday"}"#).expect("JSON");
-    let last = json::timestamp_at(json::member_at(&last_bad, "body", "t").expect("present"), "body.t", "x");
-    println!("duplicate\t{}\t{}", first.is_ok(), last == Ok("2026-10-29T12:00:00Z"));
-    let mut system = rack_system::System::new(rack_service::RackService::new(Generated::new(
-        rack_server::memory::MemoryPorts::default(),
-    )));
-    let clerk = Caller { actor: Actor::ALL[0] };
-    for line in requests.lines() {
-        let fields: Vec<&str> = line.split('\t').collect();
-        let [label, method, path, body] = fields[..] else {
-            panic!("a request line has four fields: {line}");
-        };
-        let request = http::Request {
-            method: method.to_owned(),
-            path: path.to_owned(),
-            query: String::new(),
-            headers: vec![("content-type".to_owned(), http::JSON.to_owned())],
-            body: body.as_bytes().to_vec(),
-        };
-        let answered = surface::dispatch(&mut system, Some(&clerk), &request);
-        println!("{label}\t{}\t{}", answered.status, answered.body.replace('\n', " "));
-    }
-}
-"##;
-
 fn ir() -> EssIr {
     let spec = Specification::assemble([(
         Source::new("rack.yaml"),
@@ -489,13 +351,16 @@ fn ir() -> EssIr {
     compile(&spec, &sources).unwrap_or_else(|errors| panic!("compiles: {errors}"))
 }
 
+/// [`BINDING`], compiled against `ir`: it names `ir`'s source digest, so the server the harness
+/// was built against was generated from [`MODEL`] and this binding.
 fn binding(ir: &EssIr) -> Binding {
-    let document = format!(
-        "type: ess-http/1\nspecification:\n  system: rack\n  version: v1\n  source_digest: \
-         sha256:{}\n{ROUTES}",
+    assert!(
+        BINDING.contains(&format!("  source_digest: sha256:{}\n", ir.source_digest())),
+        "{STORY}: fixtures/json-body-security/http.yaml.in pins MODEL's source digest, \
+         sha256:{}; write it there and run `task json-body-harnesses` again",
         ir.source_digest()
     );
-    let spec = ess_http::HttpSpec::from_yaml(&document).expect("well formed");
+    let spec = ess_http::HttpSpec::from_yaml(BINDING).expect("well formed");
     let compiled = ess_http::compile(&spec, ir, &ess_gen::http::derived(ir))
         .unwrap_or_else(|refused| panic!("the binding compiles: {refused}"));
     Binding::new(compiled).unwrap_or_else(|refused| panic!("every route has a path: {refused}"))
@@ -523,43 +388,46 @@ struct Run {
     duplicate: Vec<String>,
 }
 
-#[allow(clippy::too_many_lines)]
+/// The harness `task json-body-harnesses` built, from the path [`HARNESS`] names.
+///
+/// A file that is not executable is made so: an uploaded CI artifact loses its mode bits, and the
+/// test shards receive the harness beside the nextest archives.
+fn harness() -> PathBuf {
+    let Some(path) = std::env::var_os(HARNESS).map(PathBuf::from) else {
+        panic!(
+            "{STORY}: {HARNESS} is not set: run `task json-body-harnesses` and set it to the \
+             binary that task names, or run the tests through `task test`, which does both"
+        );
+    };
+    let metadata = std::fs::metadata(&path).unwrap_or_else(|error| {
+        panic!(
+            "{STORY}: {HARNESS}={} names no harness ({error}): run `task json-body-harnesses`",
+            path.display()
+        )
+    });
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut permissions = metadata.permissions();
+        if permissions.mode() & 0o111 == 0 {
+            permissions.set_mode(permissions.mode() | 0o755);
+            std::fs::set_permissions(&path, permissions).expect("the harness is made executable");
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = metadata;
+    path
+}
+
 fn run() -> &'static Run {
     static RUN: std::sync::OnceLock<Run> = std::sync::OnceLock::new();
     RUN.get_or_init(|| {
-        let ir = ir();
-        let synthesis = synthesize_bound(
-            &ir,
-            Target::Rust,
-            OutputLayout::Workspace,
-            Some(&binding(&ir)),
-        )
-        .unwrap_or_else(|failure| panic!("the bound model synthesizes: {failure}"));
+        binding(&ir());
+        let harness = harness();
         let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("adversary-w1-gen1-security-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        for (relative, artifact) in &synthesis.artifacts {
-            let destination = root.join("rack").join(relative);
-            std::fs::create_dir_all(destination.parent().expect("a parent")).expect("mkdir");
-            std::fs::write(&destination, &artifact.contents).expect("write");
-        }
-        let harness = root.join("harness");
-        std::fs::create_dir_all(harness.join("src")).expect("mkdir");
-        let dependencies = ["rack-server", "rack-system", "rack-service", "rack-types"]
-            .iter()
-            .fold(String::new(), |mut out, name| {
-                let _ = writeln!(out, "{name} = {{ path = \"../rack/crates/{name}\" }}");
-                out
-            });
-        std::fs::write(
-            harness.join("Cargo.toml"),
-            format!(
-                "[package]\nname = \"adversary-w1-gen1-security-harness\"\nversion = \"0.0.0\"\n\
-                 edition = \"2021\"\n\n[dependencies]\n{dependencies}\n[workspace]\n"
-            ),
-        )
-        .expect("write");
-        std::fs::write(harness.join("src/main.rs"), HARNESS).expect("write");
+        std::fs::create_dir_all(&root).expect("mkdir");
         let mut lines: Vec<String> = REQUESTS
             .iter()
             .chain(std::iter::once(&NULL_OPTIONAL))
@@ -579,24 +447,17 @@ fn run() -> &'static Run {
             }),
         )
         .expect("write");
-        let ran = Command::new(std::env::var_os("CARGO").expect("Cargo supplies its executable"))
-            .args(["run", "--offline", "--quiet", "--target-dir"])
-            .arg(root.join("target"))
-            .arg("--")
+        let ran = Command::new(&harness)
             .arg(&requests)
             .arg(&stamps)
-            .current_dir(&harness)
-            .env_remove("CARGO_TARGET_DIR")
-            .env_remove("CARGO_ENCODED_RUSTFLAGS")
-            .env("CARGO_INCREMENTAL", "0")
             .output()
-            .expect("cargo runs");
+            .expect("the harness runs");
         let stdout = String::from_utf8_lossy(&ran.stdout).into_owned();
         let stderr = String::from_utf8_lossy(&ran.stderr).into_owned();
         let _ = std::fs::remove_dir_all(&root);
         assert!(
             ran.status.success(),
-            "the harness builds and runs: {stderr}"
+            "{STORY}: the prebuilt harness runs: {stderr}"
         );
         let mut out = Run {
             answers: BTreeMap::new(),

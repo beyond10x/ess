@@ -1,0 +1,12 @@
+[package]
+name = "adversary-w1-gen1-security-harness"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+rack-server = { path = "../rack/crates/rack-server" }
+rack-system = { path = "../rack/crates/rack-system" }
+rack-service = { path = "../rack/crates/rack-service" }
+rack-types = { path = "../rack/crates/rack-types" }
+
+[workspace]

@@ -5,10 +5,15 @@
 //! binding moving every route off the default surface; `items/` adds a command bound to `put`
 //! with a path parameter. Each binding's `routes.yaml` is written below a header carrying the
 //! model's own source digest. The served cases follow `generate_ui_tui.rs`: the Rust server
-//! `ess generate synthesize --layout crate --http` writes for the same binding is built into a
-//! target directory of its own under `CARGO_TARGET_TMPDIR`, started on `127.0.0.1:0`, and driven
-//! through the generated route tables: the terminal's by `ess_ui_tui::HttpAdapter`, React's by
-//! its `httpAdapter` under `node`.
+//! `ess generate synthesize --layout crate --http` writes for the same binding is started on
+//! `127.0.0.1:0` and driven through the generated route tables: the terminal's by
+//! `ess_ui_tui::HttpAdapter`, React's by its `httpAdapter` under `node`.
+//!
+//! The servers are not built here: a test that runs cargo compiles a crate graph inside its lane
+//! (`crates/edge/ess-xtask/tests/no_test_builds.rs`). `task ui-http-servers` generates each from
+//! its toy's model and committed `http.yaml.in`, which is the binding these cases write, and builds
+//! it once, before the test binaries run; the served cases run the binary `ESS_UI_HTTP_SHELF_SERVER`
+//! or `ESS_UI_HTTP_ITEMS_SERVER` names, and fail naming the task without it.
 
 #[path = "../../../ui/ess-ui-react/tests/support/mod.rs"]
 mod support;
@@ -58,24 +63,28 @@ fn scratch(name: &str) -> PathBuf {
     dir
 }
 
-/// One toy specification: its fixture directory, its model path and its system.
+/// One toy specification: its fixture directory, its model path, its system, and the variable
+/// naming the server `task ui-http-servers` built for it.
 #[derive(Clone, Copy)]
 struct Toy {
     dir: &'static str,
     model: &'static str,
     system: &'static str,
+    server: &'static str,
 }
 
 const SHELF: Toy = Toy {
     dir: "shelf",
     model: "shelf/spec",
     system: "shelf",
+    server: "ESS_UI_HTTP_SHELF_SERVER",
 };
 
 const ITEMS: Toy = Toy {
     dir: "items",
     model: "items/system.yaml",
     system: "items",
+    server: "ESS_UI_HTTP_ITEMS_SERVER",
 };
 
 impl Toy {
@@ -450,58 +459,52 @@ impl Drop for Served {
 
 const CLERK: &str = "Actor Clerk";
 
-/// The Rust server `ess generate synthesize --layout crate --http` writes for `toy` bound by
-/// `http`, built into a target directory both toys share; returns the binary.
-fn server(dir: &Path, toy: Toy, component: &str, http: &Path) -> PathBuf {
-    let root = dir.join("server");
-    let model = toy.model();
-    let synthesized = ess(&[
-        "generate",
-        "synthesize",
-        "--target",
-        "rust",
-        "--layout",
-        "crate",
-        "--path",
-        utf8(&model),
-        "--http",
-        utf8(http),
-        "--out",
-        utf8(&root),
-    ]);
-    assert!(
-        synthesized.status.success(),
-        "{}{}",
-        text(&synthesized.stdout),
-        text(&synthesized.stderr)
+/// The Rust server `task ui-http-servers` wrote with `ess generate synthesize --layout crate
+/// --http` for `toy`, bound by its committed `http.yaml.in`, and built once; returns the binary
+/// `toy`'s variable names.
+///
+/// `http` is the binding the case wrote for `toy`, and it must be the committed one byte for byte,
+/// so the server the case drives serves the binding both UIs were generated with. A file that is
+/// not executable is made so: an uploaded CI artifact loses its mode bits, and the test shards
+/// receive the servers beside the nextest archives.
+fn server(toy: Toy, http: &Path) -> PathBuf {
+    let committed = fixture(&format!("{}/http.yaml.in", toy.dir));
+    let wrote = std::fs::read_to_string(http).expect("the binding reads");
+    let built_with = std::fs::read_to_string(&committed).expect("the committed binding reads");
+    assert_eq!(
+        wrote,
+        built_with,
+        "{STORY}: the binding this case writes is not {}, the one `task ui-http-servers` built \
+         {}'s server with: write it there and run the task again",
+        committed.display(),
+        toy.server
     );
-    let name = format!("{component}-server");
-    let target = Path::new(env!("CARGO_TARGET_TMPDIR")).join("generate-ui-http-target");
-    let built = Command::new(std::env::var_os("CARGO").expect("Cargo supplies its executable"))
-        .args([
-            "build",
-            "--offline",
-            "--quiet",
-            "--features",
-            "server",
-            "--bin",
-            &name,
-            "--target-dir",
-        ])
-        .arg(&target)
-        .current_dir(&root)
-        .env_remove("CARGO_TARGET_DIR")
-        .env_remove("CARGO_ENCODED_RUSTFLAGS")
-        .env_remove("RUSTC_WRAPPER")
-        .env("CARGO_INCREMENTAL", "0")
-        .output()
-        .expect("cargo runs");
-    assert!(
-        built.status.success(),
-        "the synthesized server builds: {}",
-        text(&built.stderr)
-    );
-    target.join("debug").join(name)
+    let Some(path) = std::env::var_os(toy.server).map(PathBuf::from) else {
+        panic!(
+            "{STORY}: {} is not set: run `task ui-http-servers` and set it to the binary that task \
+             names, or run the tests through `task test`, which does both",
+            toy.server
+        );
+    };
+    let metadata = std::fs::metadata(&path).unwrap_or_else(|error| {
+        panic!(
+            "{STORY}: {}={} names no server ({error}): run `task ui-http-servers`",
+            toy.server,
+            path.display()
+        )
+    });
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut permissions = metadata.permissions();
+        if permissions.mode() & 0o111 == 0 {
+            permissions.set_mode(permissions.mode() | 0o755);
+            std::fs::set_permissions(&path, permissions).expect("the server is made executable");
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = metadata;
+    path
 }
 
 /// Starts `binary` on an ephemeral port of `127.0.0.1`, callers named by their `Authorization`
@@ -641,7 +644,7 @@ fn both_generated_uis_reach_the_server_generated_with_the_same_binding() {
     let dir = scratch("served-shelf");
     let http = SHELF.binding(&dir, "shelf-http.yaml", &SHELF.routes());
     let (tui, react) = generated(&dir, SHELF, &http);
-    let binary = server(&dir, SHELF, "shelf-service", &http);
+    let binary = server(SHELF, &http);
     let (_server, base) = serve(&binary);
 
     let (statuses, rows) = drive_terminal(
@@ -712,7 +715,7 @@ fn a_command_bound_to_put_with_a_path_parameter_reaches_its_route() {
     let dir = scratch("served-items");
     let http = ITEMS.binding(&dir, "items-http.yaml", &ITEMS.routes());
     let (tui, react) = generated(&dir, ITEMS, &http);
-    let binary = server(&dir, ITEMS, "items", &http);
+    let binary = server(ITEMS, &http);
     let (_server, base) = serve(&binary);
 
     let (statuses, rows) = drive_terminal(
