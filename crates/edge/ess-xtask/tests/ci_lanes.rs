@@ -656,7 +656,7 @@ const ARCHIVE_DOWNLOADS: [(&str, &str, &str); 2] = [
 
 /// Attempts per archive download, and the minutes each attempt may take.
 const ARCHIVE_ATTEMPTS: usize = 3;
-const ARCHIVE_ATTEMPT_MINUTES: u64 = 30;
+const ARCHIVE_ATTEMPT_MINUTES: u64 = 40;
 
 /// The step ids of one archive's download attempts, in order: `archives`, `archives-retry`,
 /// `archives-retry-2`.
@@ -763,11 +763,19 @@ fn assert_archive_downloads_survive_slow_throughput(ci: &Value) {
 /// An archive download that is slow but progressing must not fail a shard whose tests pass. On
 /// release run 38588707717 and main run 38599096240 (2026-10-14) the 8985 MiB workspace and
 /// 5662 MiB feature-off archives ran into the 12-minute timeout of both attempts on 13 and 5 of 20
-/// shards, while shards that got them ran green. Each archive now gets three 30-minute attempts;
+/// shards, while shards that got them ran green. Each archive then got three 30-minute attempts;
 /// each runs only when every earlier one failed, the first two may fail and the last may not, so a
 /// shard that never got its archive still fails rather than silently skipping its tests.
+///
+/// By the 0.85.0 queue run 41635526432 (2026-11-03) the workspace archive was 13,916 MiB, and one
+/// runner fetched at 6.2 to 7.3 MB/s: shard 2's 9,421 MiB feature-off archive took 26.7 and
+/// 22.6 minutes in the run's two attempts, steady, so its workspace archive needed 33 to 39 and
+/// timed out in all three 30-minute attempts both times, while the same shard's tests then passed
+/// 348 of 348. A slow download restarts from nothing, so an attempt has to hold the whole archive
+/// at the slowest rate seen: 40 minutes, with the stripped archives
+/// (`the_archive_jobs_build_the_test_binaries_without_debug_information`) about a quarter smaller.
 #[test]
-fn each_nextest_archive_gets_three_thirty_minute_attempts_and_a_missing_one_fails_the_shard() {
+fn each_nextest_archive_gets_three_forty_minute_attempts_and_a_missing_one_fails_the_shard() {
     let ci = yaml(".github/workflows/ci.yml");
     assert_archive_downloads_survive_slow_throughput(&ci);
 
@@ -925,8 +933,8 @@ fn the_gate_check_aggregates_every_lane_and_cannot_be_skipped() {
     // timeout and retrying. The shard's own tests take up to 23 minutes, so 45 minutes left the
     // retry no room and cancelled two shards near their last test; 70 covers about 29 minutes of
     // downloads, 23 of tests and the setup. On 2026-10-14 downloads ran past two 12-minute
-    // attempts on most shards, so each archive now has three 30-minute attempts (see
-    // `each_nextest_archive_gets_three_thirty_minute_attempts_and_a_missing_one_fails_the_shard`),
+    // attempts on most shards, so each archive got three attempts, now of 40 minutes each (see
+    // `each_nextest_archive_gets_three_forty_minute_attempts_and_a_missing_one_fails_the_shard`),
     // and the job holds every attempt of both archives plus 45 minutes for the setup and the
     // tests. Every other job compiles or checks and stays at 30.
     let downloads: u64 = ci["jobs"]["test"]["steps"]
@@ -939,7 +947,7 @@ fn the_gate_check_aggregates_every_lane_and_cannot_be_skipped() {
     assert_eq!(
         downloads,
         2 * ARCHIVE_ATTEMPTS as u64 * ARCHIVE_ATTEMPT_MINUTES,
-        "the shards' downloads are not three 30-minute attempts per archive"
+        "the shards' downloads are not {ARCHIVE_ATTEMPTS} {ARCHIVE_ATTEMPT_MINUTES}-minute attempts per archive"
     );
     for id in gated_jobs(&ci) {
         let bound = if id == "test" { downloads + 45 } else { 30 };
@@ -1252,6 +1260,12 @@ fn test_builds_are_cheap_to_compile_link_and_run() {
 /// 42 MB compressed. The shards spent 0:35 to 4:12 downloading that artifact and 1:00 extracting
 /// it. A failing test still names its file and line; only a backtrace loses its line numbers.
 /// Local builds keep the manifest's line tables, held by `test_builds_are_cheap_to_compile_link_and_run`.
+///
+/// They strip the symbol tables too. By 0.85.0 the workspace archive was 13,916 MiB of zstd and
+/// shard downloads ran past 30 minutes (run 41635526432): twelve `debug = 0` test binaries of
+/// `ess-domain` went from 271 MB to 157 MB under `strip --strip-all`, and from 50.7 MB to 39.3 MB
+/// at zstd level 3, 23 % less to download. A panic still names its file and line; a backtrace
+/// loses its function names.
 #[test]
 fn the_archive_jobs_build_the_test_binaries_without_debug_information() {
     let ci = yaml(".github/workflows/ci.yml");
@@ -1271,6 +1285,13 @@ fn the_archive_jobs_build_the_test_binaries_without_debug_information() {
                 scalar_or_empty(&env[variable]),
                 "0",
                 "`{id}` builds test binaries with debug information: `{variable}` is not \"0\""
+            );
+        }
+        for variable in ["CARGO_PROFILE_DEV_STRIP", "CARGO_PROFILE_TEST_STRIP"] {
+            assert_eq!(
+                scalar_or_empty(&env[variable]),
+                "symbols",
+                "`{id}` archives test binaries with their symbol tables: `{variable}` is not \"symbols\""
             );
         }
     }
