@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-03T08:04:01Z",
+  "actor": "human:timo",
+  "artifact": "story:every-witness-reads-back-its-outcome-effect",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-w2-syn2-pass-1",
+    "review": "review-result:adversary-w2-syn2-pass-1",
+    "outcome": "fixed"
+  }
+}
