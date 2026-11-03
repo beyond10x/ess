@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Go synthesis copies a required event field into an Optional command input as a pointer to its value, so the generated module builds; it assigned the value into the `*T` field and `go build` refused it. An Optional value into a required binding input or payload field stays refused by validation as `type_mismatch` unless a binding condition or an outcome guard proves it present (story:go-synthesis-refuses-an-optional-into-required-assignment).
+
 ## [0.84.0] — 2026-11-03
 
 ### Added
