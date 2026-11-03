@@ -42,8 +42,23 @@ const OPAQUE: &[&str] = &[
     "grid",
     "tone_by",
     "variant_by",
-    "labels",
 ];
+
+/// Whether `mapping` is a field or a badge primitive, the two constructs whose `labels` key is
+/// a value-to-label map (story:a-value-shows-its-declared-label-beside-its-tone). A field always
+/// carries `field:` as text and a badge carries `primitive: badge`; a mapping of names (pages,
+/// states, widgets, regions, overlays) holds a map under each name, so a page or widget named
+/// `field` or `labels` never makes its siblings a field.
+fn holds_labels(mapping: &Mapping) -> bool {
+    mapping.get("field").is_some_and(Value::is_string)
+        || mapping.get("primitive").and_then(Value::as_str) == Some("badge")
+}
+
+/// Whether the walkers leave `key` of a mapping alone: a key of [`OPAQUE`], or the `labels` of a
+/// mapping that [`holds_labels`] (`labelled`), whose keys are values, not document structure.
+fn opaque(key: &str, labelled: bool) -> bool {
+    OPAQUE.contains(&key) || (labelled && key == "labels")
+}
 
 pub(crate) fn expand(
     raw: Value,
@@ -473,7 +488,7 @@ impl Local<'_> {
             .map(str::to_owned);
         let keys: Vec<String> = mapping.keys().map(key_text).collect();
         for key in keys {
-            if OPAQUE.contains(&key.as_str()) {
+            if opaque(&key, holds_labels(mapping)) {
                 continue;
             }
             // Every position the key may be, probed with one owned key rather than a copy each.
@@ -1309,9 +1324,10 @@ fn widget_uses(
 ) -> Result<()> {
     match value {
         Value::Mapping(mapping) => {
+            let labelled = holds_labels(mapping);
             for (key, child) in mapping.iter_mut() {
                 let key = key_text(key);
-                if OPAQUE.contains(&key.as_str()) {
+                if opaque(&key, labelled) {
                     continue;
                 }
                 widget_uses(child, &at.child(&key), widgets, stack, budget)?;
@@ -1462,12 +1478,13 @@ impl Tones<'_> {
     fn value(&self, value: &mut Value, at: &At<'_>) -> Result<()> {
         match value {
             Value::Mapping(mapping) => {
+                let labelled = holds_labels(mapping);
                 for (key, child) in mapping.iter_mut() {
                     let key = key_text(key);
                     let here = at.child(&key);
                     if key == "tone_by" {
                         self.tone_by(child, &here.path())?;
-                    } else if !OPAQUE.contains(&key.as_str()) {
+                    } else if !opaque(&key, labelled) {
                         self.value(child, &here)?;
                     }
                 }
@@ -1534,9 +1551,10 @@ impl Tones<'_> {
 
 // ── label maps ───────────────────────────────────────────────────────────────────────────────
 
-/// Normalizes `label_maps`, then rewrites every `labels` in the shells, pages and widget
-/// declarations to `{map, name}`: a map written out as itself, a name as the `label_maps` entry
-/// it names, so that after loading `Labels.map` is always the map and no reader looks a name up.
+/// Normalizes `label_maps`, then rewrites the `labels` of every field and badge ([`holds_labels`])
+/// in the shells, pages and widget declarations to `{map, name}`: a map written out as itself, a
+/// name as the `label_maps` entry it names, so that after loading `Labels.map` is always the map
+/// and no reader looks a name up.
 fn resolve_labels(document: &mut Mapping) -> Result<()> {
     let at = NodePath::root().child("label_maps");
     let mut maps = Mapping::new();
@@ -1613,12 +1631,13 @@ impl LabelMaps<'_> {
     fn value(&self, value: &mut Value, at: &At<'_>) -> Result<()> {
         match value {
             Value::Mapping(mapping) => {
+                let labelled = holds_labels(mapping);
                 for (key, child) in mapping.iter_mut() {
                     let key = key_text(key);
                     let here = at.child(&key);
-                    if key == "labels" {
+                    if labelled && key == "labels" {
                         *child = self.labels(child, &here.path())?;
-                    } else if !OPAQUE.contains(&key.as_str()) {
+                    } else if !opaque(&key, labelled) {
                         self.value(child, &here)?;
                     }
                 }
