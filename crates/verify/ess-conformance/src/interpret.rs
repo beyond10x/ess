@@ -325,6 +325,16 @@ fn refusal(observation: String, why: &Undetermined) -> TargetError {
 }
 
 impl ConformanceTarget for Interpreted {
+    /// Taken, unless this target already decides by a clock its caller gave it: the interpreter
+    /// reads it as [`with_command_clock`](Self::with_command_clock) hands it one.
+    fn take_command_clock(&mut self, clock: Box<dyn CommandClock + Send>) -> bool {
+        if self.clock.is_some() {
+            return false;
+        }
+        self.clock = Some(Clock(clock));
+        true
+    }
+
     fn establish_entity(
         &self,
         request: crate::target::EntitySetupRequest,

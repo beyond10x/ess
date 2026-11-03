@@ -321,3 +321,56 @@ decision, 2026-10-04) and these fill in what it leaves to the implementation.
   from an event the target did not publish, the native runner records `error` and the generated Go
   and TypeScript runners record `failed`. A creating swap is therefore killed by more scenarios in
   the generated runners; its verdict and the unavailable sites are the same through every runner.
+
+## Implementation decisions for #711
+
+The audit names the sites it could not mutate (story
+`the-mutation-audit-reports-the-sites-it-could-not-mutate`).
+
+- A site a selected class excludes, or where no edit compiles, is an *unmutated site*:
+  `{class, id, reason, unaudited}`, in byte order of id, under `unmutated_sites`. The reasons are
+  the three `sets-drop` exclusions (`creates_row`, `source_not_input`, `optional_field`),
+  `no_admissible_state` (`transition-to`), `no_retarget_source` (`sets-retarget`) and, since
+  story `error-swap-mutates-refusals-that-carry-a-payload`, `no_compatible_error_alternative`
+  (`error-swap`, a refusal whose `payload:` entry is keyed by its error). Each
+  reason belongs to one class, and the manifest reader refuses a site whose reason is another
+  class's.
+- The field is new and persisted, so it takes `ess-mutation-report/8` and
+  `ess-mutation-manifest/7`, and only where a site is listed (D135). A report or emission without
+  one keeps its version and bytes, and today's killed and survived mutant ids are unchanged.
+- An unmutated site is neither a mutant nor counted in `counts`, and unlike an unavailable
+  `emit-swap` site it does not block exit 0 by default. `--fail-on-unmutated` makes every
+  unmutated site and every stillborn mutant exit 3. `ESS-MUTATE-003` still refuses a selection
+  with no mutant and no unavailable site, even when it has unmutated sites; the `sets-drop`
+  notes on stderr still name each entry.
+- `transition-to` tries the other declared states in declared order and keeps the first that
+  compiles. A baseline that does not compile keeps the first candidate, as before. Where none
+  compiles, as on a linear lifecycle, the site is listed rather than left stillborn.
+- `sets-retarget` retargets a creating or `Optional` write with no sibling input of its type to a
+  literal of the field's type: `-7919`, else `7919` (an invariant may admit one side only),
+  `-7919.5`, else `7919.5`, or `"mutant-literal"`. A write of any other type, or one no literal
+  is admitted for, is listed. `sets-drop` still excludes an `Optional` field, because no
+  synthesized row states an absence.
+- The text summary gives `; S of N site(s) scored` after the baseline's counts, before
+  `; N out of scope` and `; N unavailable`. `S` counts the killed and survived mutants. `N` counts
+  every mutant, every unmutated site and every in-scope unavailable site.
+
+## Implementation decisions for #710
+
+The audit covers actor grants (story `the-mutation-audit-covers-actor-grants`).
+
+- Two classes follow `emit-swap` in `MutantClass::ALL`: `grant-drop` removes one command from one
+  actor's `may:`, and `grant-add` adds one the actor lacks. Their sites are the commands a served
+  component accepts, because only a served surface answers a grant refusal; the system's own actor
+  is left out, because it is no caller of a served surface. Each id is
+  `<class>/<actor>/<command>`.
+- Where either class is selected, the baseline and every mutant's suite keep the
+  `<command>/grant/denied` scenarios (`synthesized_from`). Without them they are left out as
+  before, so a selection without a grant class keeps its baseline, its suite bytes and its ids.
+- A `grant-drop` mutant's synthesis is told the dropped grant (`with_dropped_grant`, in
+  `synthesize/grant.rs`), and sends the refusal as the actor that lost it wherever that actor now
+  lacks the grant. The lowest-named lacking actor, the choice outside the audit, may be one a
+  correct target refuses too. A `grant-add` mutant is killed by the `grant/admitted/<actor>`
+  scenario synthesis already writes for each actor holding the command.
+- A grant mutant takes `ess-mutation-manifest/7` (a `/6` manifest naming one is refused naming
+  `/7`) and `ess-mutation-report/8`. An emission or report without one keeps its version.

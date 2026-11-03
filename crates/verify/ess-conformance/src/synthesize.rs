@@ -12395,6 +12395,8 @@ fn freshened(
     unread_apart(ir, command, outcome, input, held, settled)
 }
 
+pub(crate) use grant::{audited_grants, with_dropped_grant, AuditedGrant, DroppedGrant};
+
 /// One `sets:` entry a `sets-drop` mutant of the mutation audit removed: `target: input.source`
 /// on `command`'s `outcome` (beyond10x/ess#212). Only [`with_dropped_write`] names one.
 #[derive(Debug, Clone, PartialEq, Eq)]

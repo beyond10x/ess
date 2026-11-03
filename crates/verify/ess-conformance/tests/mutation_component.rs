@@ -204,7 +204,13 @@ fn collected_for(component: &str) {
     let emission = emit(component);
     let files = reported(&emission);
     let report = collect(&files, None).unwrap_or_else(|refusal| panic!("{refusal}"));
-    assert_eq!(report.format, REPORT_FORMAT_4);
+    // `/8` where the component's own sites include an unmutated one (beyond10x/ess#711).
+    let expected = if report.unmutated_sites.is_some() {
+        mutate::REPORT_FORMAT_8
+    } else {
+        REPORT_FORMAT_4
+    };
+    assert_eq!(report.format, expected);
     assert_eq!(report.component.as_deref(), Some(component));
     let out: Vec<String> = emission
         .manifest
