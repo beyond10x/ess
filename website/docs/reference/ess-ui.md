@@ -2022,6 +2022,7 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `as` | one of: `button` \| `icon` \| `toggle` \| `choice` \| `menu_item` \| `link` |   | `button` | presentation hint |
 | `choice` | [Node](#node) |   |   | options for as choice |
 | `loads` | [Reads](#reads) |   |   | current value for a header toggle or choice |
+| `checked` | `expr` |   |   | the state an `as: toggle` action shows, on when truthy; only on a toggle. Absent, a toggle with `does` shows the `<expr>` of its one `bind` entry written `not <expr>`, and a toggle with `sets` the key it sets; a row field named like the action is never read |
 | `confirm` | one of: name of an [overlay](#overlay) \| record \{ `title`: `string`, `show`: optional `expr`, `confirm_label`: optional `string` \} |   |   | confirm first; confirming runs this action, whether or not the confirm declares `does` |
 | `optimistic` | `boolean` |   | `false` | apply the expected outcome at once and revert on refusal; requires: `{does.outcome: unique_for_input}` |
 | `bulk` | `boolean` |   | `false` | applies to the collection's selection |
@@ -2067,6 +2068,8 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `opens_resolves` | `**.opens` | `{must_resolve_in: [page.overlays, page.kind.overlays, shell.overlays]}` | error |
 | `page_refs` | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
 | `filter_export` | `export.params` | `{must: not_claim_to_copy_client_filter}` | warning |
+| `checked_needs_toggle` | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
+| `toggle_state_unknown` | `**.checked absent on an as toggle action with does and no loads` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
 
 ### FixtureIndex
 
@@ -2729,6 +2732,8 @@ What a validator checks in a document, and the construct each check applies to. 
 | `pager_params` | [Reads](#reads) | `reads.pager.page`, `reads.pager.size` | `{must: name_distinct_params_of_the_read_each_bound_to_a_state_path}` | error |
 | `pager_sizes` | [Reads](#reads) | `reads.pager.sizes` | `{must: list_at_least_one_size_each_at_least_1}` | error |
 | `account_menu_keys` | every node | `shells.*.regions.*.props.actions[] of an account_menu` | `{must_be_in: [name, label, opens, does, sets, navigate]}` | error |
+| `checked_needs_toggle` | [Action](#action) | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
+| `toggle_state_unknown` | [Action](#action) | `**.checked absent on an as toggle action with does and no loads` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
 
 ## Retrofits and lowering
 

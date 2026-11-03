@@ -1016,6 +1016,53 @@ fn label_map_unused() {
     assert!(!report.has_errors(), "{:#?}", report.findings);
 }
 
+/// A collection on page `p` whose row actions are `actions`.
+fn row_actions_page(actions: &str) -> String {
+    page(&format!(
+        "{{kind: detail_page, title: P, sections: [{{name: list, component: collection, reads: t.All, columns: [title], row_actions: [{actions}]}}]}}"
+    ))
+}
+
+#[test]
+fn checked_needs_toggle() {
+    let text = row_actions_page(
+        "{name: archive, does: t.Archive, bind: {id: row.id}, checked: row.archived}",
+    );
+    let finding = trips(
+        &text,
+        "checked_needs_toggle",
+        "pages/p/sections/list/row_actions/archive",
+    );
+    assert!(finding.message.contains("as: toggle"), "{finding:?}");
+    let report = report(&row_actions_page(
+        "{name: archive, as: toggle, does: t.Archive, bind: {id: row.id}, checked: row.archived}",
+    ));
+    assert!(
+        tripped(&report, "checked_needs_toggle").is_empty(),
+        "{:#?}",
+        report.findings
+    );
+}
+
+#[test]
+fn toggle_state_unknown() {
+    let report = report(&row_actions_page(
+        "{name: enabled, as: toggle, does: t.SetFlag, bind: {id: row.id}}, \
+         {name: flipped, as: toggle, does: t.SetFlag, bind: {id: row.id, on: not row.on}}",
+    ));
+    trips_in(
+        &report,
+        "toggle_state_unknown",
+        "pages/p/sections/list/row_actions/enabled",
+    );
+    clean_at(
+        &report,
+        "toggle_state_unknown",
+        "pages/p/sections/list/row_actions/flipped",
+    );
+    assert!(!report.has_errors(), "{:#?}", report.findings);
+}
+
 // ── rules the schema states outside `checks.list` ───────────────────────────────────────────
 
 #[test]

@@ -5,10 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use ess_ui::{
-    Action, ActionConfirm, Body, Composite, Document, FixtureIndex, GuardThen, Header, Located,
-    NavPages, NodeCommon, NodePath, NodeRef, OverlayKind, PageLayout, Paging, PlacementProfile,
-    Primitive, Profile, Reads, RegionKind, State, StateClass, Store, TabFields, TypeExpr,
-    WidgetUse,
+    Action, ActionAs, ActionConfirm, Body, Composite, Document, FixtureIndex, GuardThen, Header,
+    Located, NavPages, NodeCommon, NodePath, NodeRef, OverlayKind, PageLayout, Paging,
+    PlacementProfile, Primitive, Profile, Reads, RegionKind, State, StateClass, Store, TabFields,
+    TypeExpr, WidgetUse,
 };
 use ess_yaml::Value;
 
@@ -912,6 +912,7 @@ impl Checker<'_> {
         if let Some(reads) = &action.loads {
             self.reads(sink, &path.child("loads"), reads);
         }
+        toggle_state(sink, path, action);
     }
 
     /// `opens_resolves`: in a page, the page's overlays (its kind's included, since the page was
@@ -1100,7 +1101,9 @@ fn refusals(sink: &mut Sink, path: &NodePath, state: &State, class: &str, store:
         sink.push(
             "state_resolves",
             path,
-            format!("sensitive state may not live in `{store}`: the URL and browser storage are refused"),
+            format!(
+                "sensitive state may not live in `{store}`: the URL and browser storage are refused"
+            ),
         );
     }
     if class == "credential" && !["memory", "server_session"].contains(&store) {
@@ -1136,6 +1139,34 @@ fn store_name(store: &Store) -> Option<&'static str> {
         Store::Server => "server",
         Store::Unmapped(_) => return None,
     })
+}
+
+/// `checked_needs_toggle`: only a toggle shows a state, so `checked:` on any other action would
+/// be read by no renderer. `toggle_state_unknown`: a toggle that runs a command shows the state
+/// [`ess_ui::toggle_state`] names; with neither `checked:` nor one `bind` entry written
+/// `not <expr>` it names none, and every renderer draws the toggle off. A toggle with `loads`
+/// takes its value from that read instead, so it is not reported.
+fn toggle_state(sink: &mut Sink, path: &NodePath, action: &Action) {
+    let toggle = action.action_as == Some(ActionAs::Toggle);
+    if action.checked.is_some() && !toggle {
+        sink.push(
+            "checked_needs_toggle",
+            path,
+            "`checked` is the state of a toggle; write `as: toggle` or drop `checked`",
+        );
+    }
+    if toggle
+        && action.does.is_some()
+        && action.loads.is_none()
+        && ess_ui::toggle_state(action).is_none()
+    {
+        sink.push(
+            "toggle_state_unknown",
+            path,
+            "this toggle runs a command but names no state, so every renderer draws it off; \
+             write `checked: <expr>`, or bind exactly one input as `not <expr>`",
+        );
+    }
 }
 
 fn exactly_one(sink: &mut Sink, path: &NodePath, kind: &str, fields: &[(&str, bool)]) {

@@ -715,6 +715,8 @@ impl<'d> Gen<'d> {
             None => (None, None, None),
         };
         let sets = (!action.sets.is_empty()).then(|| exprs(&action.sets));
+        // The one state expression both renderers read (`ess_ui::toggle_state`).
+        let checked = ess_ui::toggle_state(action).map(|state| ts::string(&state.expr.0));
         ts::object([
             ("data-ui-path", Some(ts::string(&at.to_string()))),
             ("name", Some(ts::string(&action.name))),
@@ -738,6 +740,7 @@ impl<'d> Gen<'d> {
             ("upload", upload),
             ("copy", expr(action.copy.as_ref())),
             ("sets", sets),
+            ("checked", checked),
             ("choice", choice),
             ("confirm", confirm),
             ("confirmShow", confirm_show),

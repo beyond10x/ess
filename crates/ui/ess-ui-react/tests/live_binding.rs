@@ -122,17 +122,19 @@ fn fnv(text: &str) -> u64 {
 /// story:account-menu-entries-keep-sets-and-navigate: `runAction` is exported and the account menu
 /// runs `sets` and `navigate`. The whole-project digest re-pinned for
 /// story:a-value-shows-its-declared-label-beside-its-tone: the field runtime and the badge
-/// primitive show a value's `labels`.
+/// primitive show a value's `labels`; re-pinned for story:a-toggle-shows-the-row-state-it-flips:
+/// a toggle reads the `checked` expression the generator resolves, and a toggle column is a
+/// switch.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
-    ("src/runtime/actions.tsx", 0xf5a4_bab2_393c_f6d2),
+    ("src/runtime/actions.tsx", 0x3fbc_94be_c597_ee00),
     ("src/runtime/composites/confirm.tsx", 0xbeef_774c_44b0_0be3),
     ("src/runtime/composites/form.tsx", 0x752b_3696_9db6_fbcc),
     ("src/runtime/data.ts", 0x036a_4d67_6dc4_1ac6),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x48ef_abfb_098b_22f6;
+const PLAIN_PROJECT: u64 = 0xd9f2_3319_74ca_ff55;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

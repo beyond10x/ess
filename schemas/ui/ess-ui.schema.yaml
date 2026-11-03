@@ -1249,6 +1249,7 @@ constructs:
       as:         {type: {enum: [button, icon, toggle, choice, menu_item, link]}, default: button, note: presentation hint}
       choice:     {type: Node, note: options for as choice}
       loads:      {type: Reads, note: current value for a header toggle or choice}
+      checked:    {type: expr, note: "the state an `as: toggle` action shows, on when truthy; only on a toggle. Absent, a toggle with `does` shows the `<expr>` of its one `bind` entry written `not <expr>`, and a toggle with `sets` the key it sets; a row field named like the action is never read"}
       confirm:    {type: {one_of: [{ref: overlay}, {record: {title: string, show: {optional: expr}, confirm_label: {optional: string}}}]}, note: "confirm first; confirming runs this action, whether or not the confirm declares `does`"}
       optimistic: {type: boolean, default: false, requires: {does.outcome: unique_for_input}, note: apply the expected outcome at once and revert on refusal}
       bulk:       {type: boolean, default: false, note: applies to the collection's selection}
@@ -1700,3 +1701,5 @@ checks:
     - {id: pager_params, subject: ["reads.pager.page", "reads.pager.size"], must: name_distinct_params_of_the_read_each_bound_to_a_state_path, severity: error}
     - {id: pager_sizes, subject: "reads.pager.sizes", must: list_at_least_one_size_each_at_least_1, severity: error}
     - {id: account_menu_keys, subject: "shells.*.regions.*.props.actions[] of an account_menu", must_be_in: [name, label, opens, does, sets, navigate], severity: error}
+    - {id: checked_needs_toggle, subject: "**.checked", must: sit_on_an_as_toggle_action, severity: error}
+    - {id: toggle_state_unknown, subject: "**.checked absent on an as toggle action with does and no loads", must: [write_checked, or_bind_exactly_one_input_as_not_expr], severity: warning}

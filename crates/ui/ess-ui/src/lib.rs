@@ -30,6 +30,7 @@ mod model;
 mod path;
 mod schema;
 mod style;
+mod toggle;
 
 use std::fmt;
 use std::path::Path;
@@ -37,6 +38,7 @@ use std::path::Path;
 pub use model::*;
 pub use path::{Located, NodePath, NodeRef, SEGMENT_PATTERN};
 pub use schema::{Positions, Shape};
+pub use toggle::{toggle_state, ToggleSource, ToggleState};
 
 /// Every key at which the schema expects a `Node`, `Action`, `Field` or `Reads`: the positions
 /// at which expansion applies their shorthands and derived names.

@@ -992,13 +992,14 @@ impl App {
                 row: Some(row),
                 ..place.ctx
             };
-            // Where each keyed action's label starts in the hint: `<key> <label>`, joined by ` · `.
+            // Where each keyed action's label starts in the hint: `<key> <switch><label>`, joined
+            // by ` · `.
             let mut hinted = std::collections::BTreeMap::new();
             if cursor_key == Some(key.as_str()) {
                 let mut x = 0;
                 for (letter, action) in self.action_keys(actions, &ctx) {
                     let shown = action.label.clone().unwrap_or_else(|| action.name.clone());
-                    let start = x + letter.len_utf8() + 1;
+                    let start = x + letter.len_utf8() + 1 + self.switch_mark(&action, &ctx).width();
                     hinted.insert(action.name.clone(), (start, shown.width()));
                     x = start + shown.width() + " · ".width();
                 }
@@ -1060,12 +1061,23 @@ impl App {
             .iter()
             .map(|(key, action)| {
                 format!(
-                    "{key} {}",
+                    "{key} {}{}",
+                    self.switch_mark(action, ctx),
                     action.label.clone().unwrap_or_else(|| action.name.clone())
                 )
             })
             .collect();
         vec![Line::styled(hint.join(" · "), dim())]
+    }
+
+    /// A toggle's on/off mark before its label in the hint (`[x] ` or `[ ] `, as a toggle column
+    /// draws it); nothing for another action.
+    fn switch_mark(&self, action: &ess_ui::Action, ctx: &Ctx<'_>) -> &'static str {
+        match self.toggle_on(action, ctx) {
+            Some(true) => "[x] ",
+            Some(false) => "[ ] ",
+            None => "",
+        }
     }
 
     /// A collection's lines. `row_actions_at` is the path segment the document lists the row

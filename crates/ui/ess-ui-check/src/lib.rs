@@ -153,6 +153,8 @@ pub const CHECKS: &[Check] = &[
     schema_check("pager_params", Severity::Error),
     schema_check("pager_sizes", Severity::Error),
     schema_check("account_menu_keys", Severity::Error),
+    schema_check("checked_needs_toggle", Severity::Error),
+    schema_check("toggle_state_unknown", Severity::Warning),
     // The loader refused the document for a reason no other check names.
     rule("document_loads"),
     // `layers`: a node stands where its layer may not.
