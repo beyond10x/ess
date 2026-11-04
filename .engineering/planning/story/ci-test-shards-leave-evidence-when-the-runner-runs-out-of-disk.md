@@ -2,13 +2,18 @@
 format: aep.planning-md/3
 id: story:ci-test-shards-leave-evidence-when-the-runner-runs-out-of-disk
 kind: story
-status: draft
+status: active
 title: CI test shards leave evidence when the runner runs out of disk
 summary: Three shards crashed with No space left on device about 2 min into the test step on 2026-11-03 (runs 41703340966, 41721030813); cause unknown, no logs (from-finding, backlog)
 tags:
 - backlog
 - from-finding
-revision: 2
+relations:
+- serves: vision:O2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-04T08:56:06Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-04T08:56:07Z", actor: "human:timo", revision: 4}
 ---
 ## Need
 
@@ -42,6 +47,27 @@ less disk than 145G.
 
 ## Schedule
 
-Backlog. Found during the 0.85.0 release follow-up (PR #724) and recorded at the orchestrator's
-request. A second crash of the same kind on the rerun of run 41721030813 makes the sampler the
-next step.
+Ride-along of the 0.87.0 wave (approval-record:ess-0870-wave), on its integration branch.
+
+Two more shards crashed the same way on main run 41783353819 (2026-11-04, 8d26c81f74): Test 8/20 (job
+126426194652) 2m10s and Test 18/20 (job 126426194659) 2m05s after their "Workspace tests" step started. Neither
+left a log.
+
+Measured on green Test 6/20 of the same run (job 126481404659):
+
+| point | `/` used | `/` free | `target/` |
+|---|---|---|---|
+| job start | 59G | 86G | |
+| after "Free runner disk" | 24G | 121G | |
+| both archives downloaded (10,660 MiB workspace + 7,099 MiB feature-off) | | about 103G | 17G |
+| workspace archive extracted: 1,800 binaries in 2m43s | | | |
+| after the workspace tests | 90G | 55G | 64G |
+| after dropping the workspace archive and its binaries | 34G | 111G | |
+| after the feature-off tests | 65G | 81G | 38G |
+
+The extraction alone takes 2m43s, so both crashes fell inside it, before any test ran. The extracted binaries are
+about 46G (64G less the 17G of archives), so a shard with 121G free ends the extraction with about 55G to spare.
+To crash there, a runner would need about 45G less free space than this one after "Free runner disk". One
+explanation is a runner with a smaller root disk, but nothing has observed one: the crashed runners left no log.
+The archive build already strips symbols and debug information (`the_archive_jobs_build_the_test_binaries_without_debug_information`),
+so a smaller debug profile cuts nothing.

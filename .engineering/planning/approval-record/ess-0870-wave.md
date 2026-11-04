@@ -13,7 +13,7 @@ relations:
 - decides: story:the-openapi-says-published-only-for-events-the-component-publishes
 - decides: story:a-value-renders-in-the-form-its-field-declares
 - decides: story:choices-filter-bars-and-forms-render-what-they-declare
-revision: 2
+revision: 3
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-04T08:47:27Z", actor: "human:timo", revision: 2, executor: "agent:ess-w1-lead"}
 ---
@@ -74,3 +74,27 @@ regenerated at each merge.
 The unit commits; the merges into `integration/ess-0.87.0`; store commits (this record, scope,
 evidence, close); the 0.87.0 release prepare; one bot pull request from a `queue/ess-0.87.0` head,
 merged on green; tag 0.87.0 and the release through ess's own process. Nothing else.
+
+## Go and build terms
+
+The orchestrator relayed the host's build terms on 2026-11-04 at 08:5xZ, and the wave started on them:
+
+| what | tell at | stop at |
+|---|---|---|
+| U1 | 8G target/ or 90 min | 10G or 150 min |
+| U2 | 12G or 45 min | 15G or 75 min |
+| U3, U4 | 4G or 120 min | 6G or 180 min |
+| each gate stage | 14G | 18G |
+
+- One ESS tree builds at a time. Every cargo call goes through the shared build slot; units never take a second slot.
+- The gate runs 9 stages with the cache discarded between stages. S6 to S9 take the second slot beside one unit, and
+  each starts only with at least 45G free on `/`.
+- Every build uses line-tables-only debug information, no incremental compilation and 4 test threads.
+- A unit's tree drops its build cache as soon as the unit merges into the integration branch.
+
+## Ride-along: CI test shards and runner disk
+
+The orchestrator added `story:ci-test-shards-leave-evidence-when-the-runner-runs-out-of-disk` to this wave as a
+ride-along on the integration branch, not as a fifth unit: "measure where the shard's disk goes; cut it, or free
+more before the build ...; add the crash-surviving sampler if it is cheap. Accept it into W1 as a ride-along; no
+fifth unit." The story moves to active with this record.
