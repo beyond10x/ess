@@ -4,7 +4,7 @@ import { ActionControl, runCommand, type ActionSpec } from "../actions";
 import { RowPath, ScopeLayer, display, rowKey, useData, useFramePath, useReport, useScope, useSectionName, type Scope } from "../core";
 import type { ReadSpec } from "../data";
 import { assignable, evaluate, truthy } from "../expr";
-import { FieldValue, fieldLabel, useLabelled, type FieldSpec } from "../fields";
+import { FieldValue, HelpNote, fieldLabel, useLabelled, type FieldSpec } from "../fields";
 import { getPath, isObject, setPath, stableKey, type Json } from "../json";
 
 /** Rows of one read as a table, cards, a list or a tree. */
@@ -219,6 +219,7 @@ export function Collection(props: {
                 ) : (
                   fieldLabel(column)
                 )}
+                <HelpNote help={column.help} />
               </th>
             ))}
             <th />

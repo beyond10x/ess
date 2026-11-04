@@ -685,6 +685,7 @@ constructs:
       creatable: {type: {record: {does: {ref: command}}}, note: typed values create new options}
       visible:   {type: expr, note: shows the choice only when true}
       note:      {type: string, note: author remark}
+      placeholder: {type: string, note: "hint shown while nothing is chosen; a dropdown's empty option shows it"}
     example: {component: choice, multiple: true, options: DealStage}
 
   filter_bar:
@@ -701,7 +702,7 @@ constructs:
       choices: {type: {list: Node}, note: "choice composites, named, in order"}
       inputs:  {type: {list: Field}, note: free inputs each bound to state with binds}
       actions: {type: {list: Action}, note: actions next to the filters}
-      reset:   {type: boolean, default: false, note: offers a reset-all button}
+      reset:   {type: {one_of: [boolean, {record: {label: string}}]}, default: false, note: "offers a reset-all button: `true`, or `{label}` naming its text"}
     example:
       component: filter_bar
       binds: [state.search, state.stage, state.min_value]
@@ -949,6 +950,7 @@ constructs:
       label_from: {type: {record: {view: {ref: view}, field: name, key: {optional: name}}}, note: "show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params"}
       labels:   {type: {one_of: [{map: {key: string, value: string}}, name]}, note: "the text shown for a value: a map written out, or the name of an entry of `label_maps`"}
       note:     {type: string, note: author remark}
+      help:     {type: {record: {text: {optional: string}, link: {optional: string}}}, note: "help text or link shown with the input; on a column, with its header"}
     example: {field: tier, as: choice, choice: {component: choice, options: PartnerTier}}
 
   Tab:
@@ -977,6 +979,7 @@ constructs:
       does:     {type: {ref: command}, note: command for this group if not the form's}
       actions:  {type: {list: Action}, note: extra actions such as rotating a key}
       endpoint: {type: string, note: traceability}
+      help:     {type: {record: {text: {optional: string}, link: {optional: string}}}, note: help text or link shown with the group}
     example: {name: profile, label: Profile, save: on_change, fields: [name, website, {field: logo, as: file}]}
 
   Composite:

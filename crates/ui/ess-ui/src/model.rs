@@ -1375,6 +1375,8 @@ pub struct Choice {
     pub creatable: Option<Creatable>,
     /// Author remark.
     pub note: Option<String>,
+    /// Hint shown while nothing is chosen; a dropdown's empty option shows it.
+    pub placeholder: Option<String>,
 }
 
 impl Choice {
@@ -1484,9 +1486,45 @@ pub struct FilterBar {
     /// Actions next to the filters.
     #[serde(default)]
     pub actions: Vec<Action>,
-    /// Offers a reset-all button.
-    #[serde(default)]
-    pub reset: bool,
+    /// Offers a reset-all button: `true`, or `{label}` naming its text.
+    pub reset: Option<FilterReset>,
+}
+
+impl FilterBar {
+    /// Whether the bar offers a reset-all button.
+    pub fn offers_reset(&self) -> bool {
+        match &self.reset {
+            Some(FilterReset::Offered(offered)) => *offered,
+            Some(FilterReset::Labelled(_)) => true,
+            None => false,
+        }
+    }
+
+    /// The text the reset-all button shows, where the document names one.
+    pub fn reset_label(&self) -> Option<&str> {
+        match &self.reset {
+            Some(FilterReset::Labelled(labelled)) => Some(&labelled.label),
+            _ => None,
+        }
+    }
+}
+
+/// The reset-all button of a filter bar: `true` or `false`, or `{label}`, which offers it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum FilterReset {
+    /// Offered or not, showing the renderer's own word.
+    Offered(bool),
+    /// Offered, showing `label`.
+    Labelled(ResetLabel),
+}
+
+/// The text of a filter bar's reset-all button.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResetLabel {
+    /// Button text.
+    pub label: String,
 }
 
 /// Free-text search of a filter bar.
@@ -2225,6 +2263,8 @@ pub struct Field {
     pub labels: Option<Labels>,
     /// Author remark.
     pub note: Option<String>,
+    /// Help text or link shown with the input, or on its column header.
+    pub help: Option<Help>,
 }
 
 impl Field {
@@ -2372,6 +2412,8 @@ pub struct FormGroup {
     pub actions: Vec<Action>,
     /// Traceability.
     pub endpoint: Option<String>,
+    /// Help text or link shown with the group.
+    pub help: Option<Help>,
 }
 
 // ── data ─────────────────────────────────────────────────────────────────────────────────────

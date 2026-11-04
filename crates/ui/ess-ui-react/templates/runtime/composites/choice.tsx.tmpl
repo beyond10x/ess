@@ -31,7 +31,10 @@ export function ChoiceView(props: {
   style?: "dropdown" | "tags" | "tree" | "grouped" | "radio" | "segmented" | "checklist";
   creatable?: { does: string };
   note?: string;
+  /** The words the choice is named by. */
   label?: string;
+  /** Shown while nothing is chosen: a dropdown's empty option. */
+  placeholder?: string;
 }): ReactNode {
   const scope = useScope();
   const raw = useRead(props.reads, scope.values, props.reads !== undefined);
@@ -65,6 +68,13 @@ export function ChoiceView(props: {
     : props.options ?? [];
   const current = props.binds ? evaluate(props.binds, scope.values) : undefined;
   const selected = (Array.isArray(current) ? current : current === undefined || current === null ? [] : [current]).map(String);
+  const write = (next: unknown) => {
+    if (props.binds) {
+      scope.set(props.binds, next);
+    } else {
+      scope.pick?.(next);
+    }
+  };
   const pick = (value: Json) => {
     let next: unknown = value;
     if (props.multiple) {
@@ -73,11 +83,7 @@ export function ChoiceView(props: {
         ? options.filter((option) => selected.includes(String(option.value)) && String(option.value) !== key).map((option) => option.value)
         : [...options.filter((option) => selected.includes(String(option.value))).map((option) => option.value), value];
     }
-    if (props.binds) {
-      scope.set(props.binds, next);
-    } else {
-      scope.pick?.(next);
-    }
+    write(next);
   };
   let control: ReactNode;
   if (props.style === "segmented" || props.style === "tags" || props.style === "checklist" || props.style === "radio" || (props.multiple && props.style !== "dropdown")) {
@@ -96,6 +102,25 @@ export function ChoiceView(props: {
         ))}
       </div>
     );
+  } else if (props.multiple) {
+    // A multi-select: the chosen values, in option order; it offers no empty option.
+    control = (
+      <select
+        multiple
+        aria-label={props.label}
+        value={selected}
+        onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+          const chosen = new Set(Array.from(event.target.selectedOptions, (entry) => entry.value));
+          write(options.filter((option) => chosen.has(String(option.value))).map((option) => option.value));
+        }}
+      >
+        {options.map((option) => (
+          <option key={String(option.value)} value={String(option.value)}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
   } else {
     control = (
       <select
@@ -106,7 +131,7 @@ export function ChoiceView(props: {
           pick(option ? option.value : null);
         }}
       >
-        <option value="">{props.label ?? "—"}</option>
+        <option value="">{props.placeholder ?? "Select…"}</option>
         {options.map((option) => (
           <option key={String(option.value)} value={String(option.value)}>
             {option.label}

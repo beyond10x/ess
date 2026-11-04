@@ -1016,6 +1016,7 @@ One composite replaces dropdowns, tag pickers, tree selects and checkbox lists. 
 | `creatable` | record \{ `does`: name of an ESS `command` \} |   |   | typed values create new options |
 | `visible` | `expr` |   |   | shows the choice only when true |
 | `note` | `string` |   |   | author remark |
+| `placeholder` | `string` |   |   | hint shown while nothing is chosen; a dropdown's empty option shows it |
 
 **You may also write**
 
@@ -1048,7 +1049,7 @@ A filter bar writes page state; sections read it in their params. Because that s
 | `choices` | list of [Node](#node) |   |   | choice composites, named, in order |
 | `inputs` | list of [Field](#field) |   |   | free inputs each bound to state with binds |
 | `actions` | list of [Action](#action) |   |   | actions next to the filters |
-| `reset` | `boolean` |   | `false` | offers a reset-all button |
+| `reset` | one of: `boolean` \| record \{ `label`: `string` \} |   | `false` | offers a reset-all button: `true`, or `{label}` naming its text |
 
 **You may also write**
 
@@ -1458,6 +1459,7 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `label_from` | record \{ `view`: name of an ESS `view`, `field`: `name`, `key`: optional `name` \} |   |   | show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params |
 | `labels` | one of: map of `string` → `string` \| `name` |   |   | the text shown for a value: a map written out, or the name of an entry of `label_maps` |
 | `note` | `string` |   |   | author remark |
+| `help` | record \{ `text`: optional `string`, `link`: optional `string` \} |   |   | help text or link shown with the input; on a column, with its header |
 
 **You may also write**
 
@@ -1521,6 +1523,7 @@ Settings pages save each group independently, often on change.
 | `does` | name of an ESS `command` |   |   | command for this group if not the form's |
 | `actions` | list of [Action](#action) |   |   | extra actions such as rotating a key |
 | `endpoint` | `string` |   |   | traceability |
+| `help` | record \{ `text`: optional `string`, `link`: optional `string` \} |   |   | help text or link shown with the group |
 
 **Example**
 
