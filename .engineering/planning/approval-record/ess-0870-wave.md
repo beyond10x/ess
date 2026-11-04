@@ -13,7 +13,7 @@ relations:
 - decides: story:the-openapi-says-published-only-for-events-the-component-publishes
 - decides: story:a-value-renders-in-the-form-its-field-declares
 - decides: story:choices-filter-bars-and-forms-render-what-they-declare
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-04T08:47:27Z", actor: "human:timo", revision: 2, executor: "agent:ess-w1-lead"}
 ---
@@ -98,3 +98,12 @@ The orchestrator added `story:ci-test-shards-leave-evidence-when-the-runner-runs
 ride-along on the integration branch, not as a fifth unit: "measure where the shard's disk goes; cut it, or free
 more before the build ...; add the crash-surviving sampler if it is cheap. Accept it into W1 as a ride-along; no
 fifth unit." The story moves to active with this record.
+
+## Ride-along: row toggles in ui journeys
+
+The orchestrator added a second ride-along on 2026-11-04: an adopter reported that since 0.86.0 a ui journey step
+that clicks a row toggle fails with "the row does not offer <label>" (18 of 573 journeys, green on 0.85.0),
+because the terminal hint now carries the toggle state mark and the runner matches the plain label.
+`story:a-journey-clicks-a-row-toggle-in-either-state` moves to active with this record. It is small and stays in
+`ess-ui-test`, so it takes the next free sub-agent slot and adds no unit; the CHANGELOG names it as a fix of the
+0.86.0 regression.
