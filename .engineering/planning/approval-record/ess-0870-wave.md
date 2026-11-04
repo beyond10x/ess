@@ -13,7 +13,7 @@ relations:
 - decides: story:the-openapi-says-published-only-for-events-the-component-publishes
 - decides: story:a-value-renders-in-the-form-its-field-declares
 - decides: story:choices-filter-bars-and-forms-render-what-they-declare
-revision: 5
+revision: 7
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-04T08:47:27Z", actor: "human:timo", revision: 2, executor: "agent:ess-w1-lead"}
 ---
@@ -117,5 +117,17 @@ AS3-8, B2-7):
 - It renders `h:mm:ss` with the hours unpadded: 73000 ms is `0:01:13`. Past 24 hours it stays in hours: 26 hours is
   `26:00:00`.
 
-It is built outside this wave, in a separate pull request. U3's scope is unchanged: its story still leaves
-`as: duration` out.
+U3's scope is unchanged. The answer is built as a ride-along of this wave (see "Ride-along: duration form and
+short columns").
+
+## Ride-along: duration form and short columns
+
+The orchestrator added two more ride-alongs on 2026-11-04. Each starts after the unit whose files it shares has
+merged into the integration branch, takes the next free sub-agent slot after U2, and runs named test targets only:
+
+- `story:a-short-text-column-is-not-truncated-while-the-table-has-room` (adopter item B8-11), after U4: the
+  collection template and styles.
+- `story:a-duration-renders-as-hours-minutes-seconds` (G-1 answered; D1, B2-7, R4-G1), after U3: the field
+  template and the field model.
+
+Both stories move to active with this record. The lead tells the orchestrator when U3 and U4 merge.
