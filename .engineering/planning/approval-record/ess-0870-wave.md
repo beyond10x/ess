@@ -13,7 +13,7 @@ relations:
 - decides: story:the-openapi-says-published-only-for-events-the-component-publishes
 - decides: story:a-value-renders-in-the-form-its-field-declares
 - decides: story:choices-filter-bars-and-forms-render-what-they-declare
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-04T08:47:27Z", actor: "human:timo", revision: 2, executor: "agent:ess-w1-lead"}
 ---
@@ -107,3 +107,15 @@ because the terminal hint now carries the toggle state mark and the runner match
 `story:a-journey-clicks-a-row-toggle-in-either-state` moves to active with this record. It is small and stays in
 `ess-ui-test`, so it takes the next free sub-agent slot and adds no unit; the CHANGELOG names it as a fix of the
 0.86.0 regression.
+
+## Answer to G-1: duration form
+
+The orchestrator answered reconcile question G-1 on 2026-11-04 (items A01 and the duration reports D1, R4-G1,
+AS3-8, B2-7):
+
+- `as: duration` takes an optional `unit: ms | s`, default `ms`.
+- It renders `h:mm:ss` with the hours unpadded: 73000 ms is `0:01:13`. Past 24 hours it stays in hours: 26 hours is
+  `26:00:00`.
+
+It is built outside this wave, in a separate pull request. U3's scope is unchanged: its story still leaves
+`as: duration` out.
