@@ -1478,8 +1478,30 @@ fn cell_value(field: &Field, value: &Value) -> String {
             .map(|text| text.replace('\n', " ").trim().to_owned())
             .unwrap_or_default(),
         Some("audio" | "iframe") => format!("↗ {}", display(value)),
+        Some("bytes") => value.as_f64().map_or_else(|| display(value), bytes),
         _ => display(value),
     }
+}
+
+/// A byte count scaled to B, KB, MB or GB in 1024 steps, with at most one decimal, as the React
+/// target shows it.
+fn bytes(count: f64) -> String {
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+    let tenths = |scaled: f64| (scaled * 10.0).round() / 10.0;
+    let mut unit = 0;
+    let mut scaled = count;
+    while unit < UNITS.len() - 1 && scaled.abs() >= 1024.0 {
+        scaled /= 1024.0;
+        unit += 1;
+    }
+    // 1048575 B is 1023.999 KB, which rounds to the next unit.
+    if unit < UNITS.len() - 1 && tenths(scaled).abs() >= 1024.0 {
+        scaled /= 1024.0;
+        unit += 1;
+    }
+    let text = format!("{:.1}", tenths(scaled));
+    let text = text.strip_suffix(".0").unwrap_or(&text);
+    format!("{text} {}", UNITS[unit])
 }
 
 /// The spark for a level between 0 and 7.
@@ -1831,7 +1853,7 @@ impl App {
             (_, None) if value.is_null() => "–".to_owned(),
             (Some(MetricFormat::Percent), Some(number)) => format!("{:.0}%", number * 100.0),
             (Some(MetricFormat::Duration), Some(number)) => format!("{number}s"),
-            (Some(MetricFormat::Bytes), Some(number)) => format!("{number} B"),
+            (Some(MetricFormat::Bytes), Some(number)) => bytes(number),
             _ => display(&value),
         };
         let label = metric.label.clone().unwrap_or_else(|| "metric".into());
