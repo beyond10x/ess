@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:choices-filter-bars-and-forms-render-what-they-declare
 kind: story
-status: draft
+status: active
 title: Choices, filter bars and forms render what they declare
 summary: Dropdown empty option and multi-select, filter labels, on-change forms, action order; choice placeholder, reset label, help on group/field/column (A11-A13, A15, A16, A18, A19, G-13/14/15; beyond10x/ess#723)
 tags:
@@ -31,7 +31,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 9
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-04T08:47:30Z", actor: "human:timo", revision: 11, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
+- {from: "proposed", to: "active", at: "2026-11-04T08:47:30Z", actor: "human:timo", revision: 12, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
 ---
 # Story: choices, filter bars and forms render what they declare
 
@@ -113,4 +116,7 @@ G-13, G-14 and G-15; a key the round declines leaves the story.
 
 ## Decisions
 
-Accept (wave lead, 2026-11-04): defects as reported; G-13, G-14, G-15 as the round decides.
+Accept (wave lead, 2026-11-04): defects as reported. Grammar keys decided 2026-11-04 by the
+coordinator (approval-record:ess-0870-wave): G-13 (a) `help: {text, link}` on a form group and a
+field, a field covering its column header; G-14 (a) `placeholder: <text>` on a choice, also the
+empty dropdown option; G-15 (a) `reset: true` or `reset: {label}`.

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-value-renders-in-the-form-its-field-declares
 kind: story
-status: draft
+status: active
 title: A value renders in the form its field declares
 summary: Dates from epoch ms, audio, links, object tags, JSON and list fields, byte sizes and fixtures.dir render or send as declared (A03-A08, A41, B7-1; beyond10x/ess#723)
 tags:
@@ -33,7 +33,10 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 10
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-04T08:47:29Z", actor: "human:timo", revision: 12, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
+- {from: "proposed", to: "active", at: "2026-11-04T08:47:30Z", actor: "human:timo", revision: 13, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
 ---
 # Story: a value renders in the form its field declares
 
@@ -109,5 +112,6 @@ Fixtures are minimal documents with invented names.
 
 ## Decisions
 
-Accept (wave lead, 2026-11-04): defects as reported; B7-1 redesigned from "`as: bytes` or
-`format: bytes`" to the metric's existing word on the field, pending Q-B7.
+Accept (wave lead, 2026-11-04): defects as reported. B7-1 decided 2026-11-04 by the coordinator,
+answer (a): `as: bytes` on a field, the metric's existing word; B/KB/MB/GB in 1024 steps; metric
+`format: bytes` scales the same way (approval-record:ess-0870-wave).

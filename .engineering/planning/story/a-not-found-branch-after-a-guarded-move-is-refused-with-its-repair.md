@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-not-found-branch-after-a-guarded-move-is-refused-with-its-repair
 kind: story
-status: draft
+status: active
 title: A not-found branch after a guarded move is refused with its repair, never as a defect in ess
 summary: An external not-found declared after a when-guarded move gets one refusal naming before_row, not ESS-SYNTH-019 (adopter report 2026-11-04, ess 0.85.0)
 tags:
@@ -16,7 +16,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/precedence_order.rs
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-04T08:47:27Z", actor: "human:timo", revision: 5, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
+- {from: "proposed", to: "active", at: "2026-11-04T08:47:28Z", actor: "human:timo", revision: 6, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
 ---
 # Story: a not-found branch after a guarded move is refused with its repair, never as a defect in ess
 
@@ -127,5 +130,6 @@ Named scenarios; each is a test function, and the story is done when each runs a
 
 Accept, redesigned (wave lead, 2026-11-04): the report asks that the refusals go away; the
 specification as written makes `not-found` unreachable, so the fix is a correct refusal with the
-repair, not a scenario. Pending Q-A of the W1 decision round; if the answer is (b), this story is
-rewritten before dispatch.
+repair, not a scenario. Decided 2026-11-04 by the coordinator, Q-A answer (a): the precedence order
+stands; one refusal whose help names `before_row: true` and declaring the not-found first; no
+ESS-SYNTH-019 (approval-record:ess-0870-wave).

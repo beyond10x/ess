@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:the-openapi-says-published-only-for-events-the-component-publishes
 kind: story
-status: draft
+status: active
 title: The OpenAPI document says published only for events the component publishes
 summary: Generated OpenAPI text names an emitted event as published to consumers only when the component publishes it (adopter report 2026-11-04, ess 0.85.0)
 tags:
@@ -24,7 +24,10 @@ scope:
   path: generated/openapi
 - confidence: cited
   path: generated/rust/gatepass/crates/gatepass-server/src/pass-service.openapi.json
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-04T08:47:29Z", actor: "human:timo", revision: 8, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
+- {from: "proposed", to: "active", at: "2026-11-04T08:47:29Z", actor: "human:timo", revision: 9, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
 ---
 # Story: the OpenAPI document says published only for events the component publishes
 
