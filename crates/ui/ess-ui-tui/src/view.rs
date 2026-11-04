@@ -1210,6 +1210,11 @@ impl App {
                 }
             }
             lines.push(Line::styled(format!("  {}", header.join("  ")), bold()));
+            // A column's help, one line each, under the heading.
+            for field in &columns {
+                let lead = format!("  {}: ", label_of(field));
+                lines.extend(field.help.as_ref().and_then(|help| help_line(&lead, help)));
+            }
         }
         let mut group = None;
         // The groups in the order they are shown, and how many of them are already drawn: a
@@ -1537,21 +1542,29 @@ impl App {
                         ),
                         bold(),
                     ));
+                    lines.extend(group.help.as_ref().and_then(|help| help_line("", help)));
                     heading = Some(&group.name);
                 }
             }
             let value = self.field_value(form, &draft, &field.field, &place.ctx);
             let shown = match field.field_as.as_deref() {
                 Some("choice") => {
-                    let options = match field.choice.as_ref().map(|node| &node.body) {
-                        Some(Body::Composite(Composite::Choice(choice))) => self
-                            .choice_options(choice, Some(&field.field), &place.ctx)
+                    let choice = match field.choice.as_ref().map(|node| &node.body) {
+                        Some(Body::Composite(Composite::Choice(choice))) => Some(choice),
+                        _ => None,
+                    };
+                    let options = choice.map_or_else(Vec::new, |choice| {
+                        self.choice_options(choice, Some(&field.field), &place.ctx)
                             .into_iter()
                             .map(|(_, label)| label)
-                            .collect::<Vec<_>>(),
-                        _ => Vec::new(),
-                    };
-                    format!("‹{}› of {}", display(&value), options.join("/"))
+                            .collect::<Vec<_>>()
+                    });
+                    // Nothing chosen: the choice's placeholder.
+                    let chosen = Some(display(&value))
+                        .filter(|text| !text.is_empty())
+                        .or_else(|| choice.and_then(|choice| choice.placeholder.clone()))
+                        .unwrap_or_default();
+                    format!("‹{chosen}› of {}", options.join("/"))
                 }
                 Some("file") => format!("path: {}", display(&value)),
                 _ => cell_value(field, &value),
@@ -1566,6 +1579,7 @@ impl App {
                 Style::default()
             };
             lines.push(Line::styled(text, style));
+            lines.extend(field.help.as_ref().and_then(|help| help_line("  ", help)));
         }
         for part in &form.parts {
             let draft_ctx = Place {
@@ -1614,7 +1628,13 @@ impl App {
         };
         let options = self.choice_options(choice, None, &place.ctx);
         let count = options.len().max(1);
-        options
+        // Nothing chosen: the placeholder, before the options.
+        let placeholder = choice
+            .placeholder
+            .as_ref()
+            .filter(|_| chosen.iter().all(String::is_empty))
+            .map(|placeholder| Span::styled(format!("‹{placeholder}› "), dim()));
+        let options = options
             .into_iter()
             .enumerate()
             .map(|(index, (value, label))| {
@@ -1631,8 +1651,8 @@ impl App {
                     Style::default()
                 };
                 Span::styled(format!("{mark} {label} "), style)
-            })
-            .collect()
+            });
+        placeholder.into_iter().chain(options).collect()
     }
 
     fn bar_lines(&self, bar: &ess_ui::FilterBar, place: &Place<'_>) -> Vec<Line<'static>> {
@@ -1710,8 +1730,9 @@ impl App {
             ));
         }
         let mut extra = self.action_hint(&bar.actions, &place.ctx);
-        if bar.reset {
-            extra.push(Line::styled("reset all", dim()));
+        if bar.offers_reset() {
+            let label = bar.reset_label().unwrap_or("reset all").to_owned();
+            extra.push(Line::styled(label, dim()));
         }
         lines.extend(extra);
         lines
@@ -2105,6 +2126,17 @@ fn flatten(lines: Vec<Line<'static>>) -> Vec<Span<'static>> {
 
 fn label_of(field: &Field) -> String {
     field.label.clone().unwrap_or_else(|| field.field.clone())
+}
+
+/// A `help: {text, link}` of a form group, field or column as one dim line after `lead`: its
+/// text, then its link; `None` when it holds neither.
+fn help_line(lead: &str, help: &ess_ui::Help) -> Option<Line<'static>> {
+    let text = [help.text.clone(), help.link.clone()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" — ");
+    (!text.is_empty()).then(|| Line::styled(format!("{lead}? {text}"), dim()))
 }
 
 /// The heading a column shows in the generated React project: its `label`, else its name with

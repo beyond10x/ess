@@ -22,6 +22,35 @@ export interface FieldSpec {
   labelFrom?: LabelFrom;
   /** The text a column or record shows for a value, keyed by the value as text. */
   labels?: Record<string, string>;
+  /** Help text or link shown with the input, or on its column header. */
+  help?: HelpSpec;
+}
+
+/** Help text or link (`help: {text, link}`). */
+export interface HelpSpec {
+  text?: string;
+  link?: string;
+}
+
+/** Help shown beside a group, an input or a column heading: its text, then its link. */
+export function HelpNote(props: { help?: HelpSpec }): ReactNode {
+  const help = props.help;
+  if (!help || (!help.text && !help.link)) {
+    return null;
+  }
+  return (
+    <small className="ui-help">
+      {help.text}
+      {help.link ? (
+        <>
+          {help.text ? " " : null}
+          <a href={help.link} target="_blank" rel="noreferrer">
+            More
+          </a>
+        </>
+      ) : null}
+    </small>
+  );
 }
 
 /** A field of a related view shown in place of a key: the row whose `key` (default `id`) equals it. */
@@ -226,6 +255,7 @@ export function FieldInput(props: { field: FieldSpec }): ReactNode {
       <span className="ui-form-label">{fieldLabel(field)}</span>
       {control}
       {field.note ? <small className="ui-note">{field.note}</small> : null}
+      <HelpNote help={field.help} />
     </label>
   );
 }
