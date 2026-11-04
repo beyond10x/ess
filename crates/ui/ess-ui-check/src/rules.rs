@@ -5,9 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use ess_ui::{
-    Action, ActionConfirm, Body, Composite, Document, FixtureIndex, GuardThen, Header, Located,
-    NavPages, NodeCommon, NodePath, NodeRef, OverlayKind, PageLayout, PlacementProfile, Primitive,
-    Profile, Reads, RegionKind, State, StateClass, Store, TabFields, TypeExpr, WidgetUse,
+    Action, ActionAs, ActionConfirm, Body, Composite, Document, Export, ExportParams, FixtureIndex,
+    GuardThen, Header, Located, NavPages, NodeCommon, NodePath, NodeRef, OverlayKind, PageLayout,
+    Paging, PlacementProfile, Primitive, Profile, Reads, RegionKind, State, StateClass, Store,
+    TabFields, TypeExpr, WidgetUse,
 };
 use ess_yaml::Value;
 
@@ -35,11 +36,67 @@ pub(crate) fn run(document: &Document, base: &Path, options: &Options, sink: &mu
             if let Some(Body::Composite(composite)) = body_of(node.node) {
                 keys_together(composite, &node.path, sink);
             }
+            pagers(node, sink);
         }
     }
     degrades_cover(&located, options, sink);
     crate::enums::run(document, &located, sink);
     crate::names::overlay_params(&located, sink);
+}
+
+/// `export_selection`: an export's params read `selection.<field>` only on one of a collection's
+/// `bulk_actions`, the one place the runtime puts the section's selection in the action's scope
+/// (`bulk: true` on any other action puts nothing there). Anywhere else the path reads nothing
+/// and the view is read without it.
+fn export_selection(sink: &mut Sink, path: &NodePath, export: &Export) {
+    if path.segments().iter().rev().nth(1).map(String::as_str) == Some("bulk_actions") {
+        return;
+    }
+    let params = path.child("export").child("params");
+    let written: Vec<(NodePath, &str)> = match &export.params {
+        None => Vec::new(),
+        Some(ExportParams::Expression(expr)) => vec![(params, expr.0.as_str())],
+        Some(ExportParams::Map(map)) => map
+            .iter()
+            .map(|(name, expr)| (params.child(name), expr.0.as_str()))
+            .collect(),
+    };
+    for (at, text) in written {
+        for field in selection_paths(text) {
+            sink.push(
+                "export_selection",
+                &at,
+                format!(
+                    "`selection.{field}` reads the section's selection, which only an action \
+                     of `bulk_actions` has in scope"
+                ),
+            );
+        }
+    }
+}
+
+/// The field of each `selection.<field>` path in an expression, where `selection` stands alone
+/// (not the tail of `section.<name>.selection` or of a longer name).
+fn selection_paths(text: &str) -> Vec<&str> {
+    let name_char = |character: char| character.is_ascii_alphanumeric() || character == '_';
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(offset) = text[from..].find("selection.") {
+        let start = from + offset;
+        let field_start = start + "selection.".len();
+        let field_end = text[field_start..]
+            .find(|character: char| !name_char(character))
+            .map_or(text.len(), |end| field_start + end);
+        let alone = text[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|before| !name_char(before) && before != '.');
+        if alone && field_end > field_start {
+            found.push(&text[field_start..field_end]);
+        }
+        from = field_start;
+    }
+    found
 }
 
 /// The keys of an account menu entry every renderer draws: the terminal reads an entry as a whole
@@ -132,6 +189,127 @@ fn account_menu_keys(document: &Document, sink: &mut Sink) {
             }
         }
     }
+}
+
+/// Every read a node holds, with its path: a composite's own, a graph editor's edges', an
+/// action's `loads`.
+fn reads_of<'a>(located: &'a Located<'_>) -> Vec<(NodePath, &'a Reads)> {
+    let mut reads = Vec::new();
+    if let Some(Body::Composite(composite)) = body_of(located.node) {
+        if let Some((key, read)) = composite_reads(composite) {
+            reads.push((located.path.child(key), read));
+        }
+        if let Composite::GraphEditor(editor) = composite {
+            if let Some(read) = editor.edges.as_ref().and_then(|edges| edges.reads.as_ref()) {
+                reads.push((located.path.child("edges").child("reads"), read));
+            }
+        }
+    }
+    if let NodeRef::Action(action) = located.node {
+        if let Some(read) = &action.loads {
+            reads.push((located.path.child("loads"), read));
+        }
+    }
+    reads
+}
+
+/// `pager_paging`, `pager_params`, `pager_sizes`: a read's `pager` pages a server read, names
+/// two params of that read each bound to a `state.<path>` a renderer can set, neither path the
+/// other or inside it (both are written when a size is chosen), and offers at least one page
+/// size, each at least 1. Nothing is recognised by its name: a param is a pager param only when
+/// the pager names it.
+///
+/// `pager_outside_collection`: only a collection renders a pager footer, so a `pager` on any
+/// other read (another composite's, a graph editor's edges', an action's `loads`) is a key no
+/// renderer honours.
+fn pagers(located: &Located<'_>, sink: &mut Sink) {
+    let collection = matches!(
+        body_of(located.node),
+        Some(Body::Composite(Composite::Collection(_)))
+    );
+    for (at, read) in reads_of(located) {
+        let Some(pager) = &read.pager else {
+            continue;
+        };
+        let pager_at = at.child("pager");
+        if !collection {
+            sink.push(
+                "pager_outside_collection",
+                &pager_at,
+                "only a collection renders a pager; a `pager` here is shown by no renderer, so \
+                 move it to a collection's `reads` or remove it",
+            );
+            continue;
+        }
+        if !matches!(read.paging, Some(Paging::Server)) {
+            sink.push(
+                "pager_paging",
+                &at,
+                "a `pager` pages a read the server pages: it needs `paging: server`",
+            );
+        }
+        for (key, name) in [("page", Some(&pager.page)), ("size", pager.size.as_ref())] {
+            let Some(name) = name else {
+                continue;
+            };
+            let message = match read.params.get(name) {
+                None => format!(
+                    "`pager.{key}` names `{name}`, which is no param of this read; name one of \
+                     its `params`"
+                ),
+                Some(bound) if read.state_path(name).is_none() => format!(
+                    "`pager.{key}` names `{name}`, bound to `{}`; a pager param is bound to a \
+                     `state.<path>` the pager sets",
+                    bound.0
+                ),
+                Some(_) if key == "size" && name == &pager.page => format!(
+                    "`pager.size` names `{name}`, the page param; the size needs a param of its \
+                     own"
+                ),
+                Some(_) => continue,
+            };
+            sink.push("pager_params", &pager_at.child(key), message);
+        }
+        if let Some(size) = pager.size.as_ref().filter(|size| *size != &pager.page) {
+            if let (Some(page_path), Some(size_path)) =
+                (read.state_path(&pager.page), read.state_path(size))
+            {
+                if overlaps(page_path, size_path) {
+                    sink.push(
+                        "pager_params",
+                        &pager_at,
+                        format!(
+                            "`pager.page` is bound to `{page_path}` and `pager.size` to \
+                             `{size_path}`; one path holds the other, so writing one replaces the \
+                             other: bind each to a state path of its own"
+                        ),
+                    );
+                }
+            }
+        }
+        if pager.sizes.is_empty() {
+            sink.push(
+                "pager_sizes",
+                &pager_at.child("sizes"),
+                "`sizes` offers no page size; list at least one, or leave it out for the default",
+            );
+        }
+        for size in pager.sizes.iter().filter(|size| **size < 1) {
+            sink.push(
+                "pager_sizes",
+                &pager_at.child("sizes"),
+                format!("a page size is at least 1, not {size}"),
+            );
+        }
+    }
+}
+
+/// Whether two `state.<path>` texts are the same path or one lies inside the other, compared
+/// segment by segment (`state.q` holds `state.q.size`, not `state.qs`).
+fn overlaps(left: &str, right: &str) -> bool {
+    left.split('.')
+        .zip(right.split('.'))
+        .all(|(left, right)| left == right)
 }
 
 /// Keys that mean something only beside another: a metric's `aggregate`, `field` and `reads`
@@ -832,6 +1010,10 @@ impl Checker<'_> {
         if let Some(reads) = &action.loads {
             self.reads(sink, &path.child("loads"), reads);
         }
+        toggle_state(sink, path, action);
+        if let Some(export) = &action.export {
+            export_selection(sink, path, export);
+        }
     }
 
     /// `opens_resolves`: in a page, the page's overlays (its kind's included, since the page was
@@ -1020,7 +1202,9 @@ fn refusals(sink: &mut Sink, path: &NodePath, state: &State, class: &str, store:
         sink.push(
             "state_resolves",
             path,
-            format!("sensitive state may not live in `{store}`: the URL and browser storage are refused"),
+            format!(
+                "sensitive state may not live in `{store}`: the URL and browser storage are refused"
+            ),
         );
     }
     if class == "credential" && !["memory", "server_session"].contains(&store) {
@@ -1056,6 +1240,50 @@ fn store_name(store: &Store) -> Option<&'static str> {
         Store::Server => "server",
         Store::Unmapped(_) => return None,
     })
+}
+
+/// `checked_needs_toggle`: only a toggle shows a state, so `checked:` on any other action would
+/// be read by no renderer. `toggle_state_unknown`: a toggle that runs a command shows the state
+/// [`ess_ui::toggle_state`] names; with neither `checked:` nor one `bind` entry written
+/// `not <expr>` (`<expr>` reading paths from `row`, `params`, `state`, `shell` or `args` only;
+/// `not item.enabled` is literal text) it names none, and every renderer draws the toggle off. No
+/// renderer reads a toggle's state from its `loads`, so `loads` exempts nothing.
+/// `checked_unreadable`: the terminal evaluates a toggle's `checked:` with the filter grammar
+/// ([`ess_ui::filter::parse`], paths from [`ess_ui::filter::Predicate::allowed_roots`] only); one
+/// outside it (`row.id in row.owners`, `actor.admin`) the terminal cannot evaluate, so it may draw
+/// the toggle off where React draws it on.
+fn toggle_state(sink: &mut Sink, path: &NodePath, action: &Action) {
+    let toggle = action.action_as == Some(ActionAs::Toggle);
+    if action.checked.is_some() && !toggle {
+        sink.push(
+            "checked_needs_toggle",
+            path,
+            "`checked` is the state of a toggle; write `as: toggle` or drop `checked`",
+        );
+    }
+    if let Some(checked) = action.checked.as_ref().filter(|_| toggle) {
+        let readable =
+            ess_ui::filter::parse(&checked.0).is_some_and(|predicate| predicate.allowed_roots());
+        if !readable {
+            sink.push(
+                "checked_unreadable",
+                &path.child("checked"),
+                "the terminal cannot evaluate this `checked`: it reads a toggle's state in the \
+                 filter grammar (paths from row, params, state, shell or args; `in` over a \
+                 literal list), so it may draw the toggle off where React draws it on; rewrite \
+                 it in that grammar",
+            );
+        }
+    }
+    if toggle && action.does.is_some() && ess_ui::toggle_state(action).is_none() {
+        sink.push(
+            "toggle_state_unknown",
+            path,
+            "this toggle runs a command but names no state, so every renderer draws it off; \
+             write `checked: <expr>`, or bind exactly one input as `not <expr>` over a path \
+             from row, params, state, shell or args",
+        );
+    }
 }
 
 fn exactly_one(sink: &mut Sink, path: &NodePath, kind: &str, fields: &[(&str, bool)]) {

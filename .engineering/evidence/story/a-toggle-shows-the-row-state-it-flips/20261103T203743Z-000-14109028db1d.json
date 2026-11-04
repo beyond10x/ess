@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-03T20:37:43Z",
+  "actor": "human:timo",
+  "artifact": "story:a-toggle-shows-the-row-state-it-flips",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:w086-u2-adversary-pass-4",
+    "review": "review-result:w086-u2-adversary-pass-4",
+    "outcome": "no-op"
+  }
+}

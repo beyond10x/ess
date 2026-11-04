@@ -140,6 +140,8 @@ pub const CHECKS: &[Check] = &[
     schema_check("theme_choice", Severity::Error),
     schema_check("tone_map_refs", Severity::Error),
     schema_check("tone_map_unused", Severity::Warning),
+    schema_check("label_map_refs", Severity::Error),
+    schema_check("label_map_unused", Severity::Warning),
     schema_check("filter_expr", Severity::Error),
     schema_check("filter_roots", Severity::Error),
     schema_check("filter_paths", Severity::Error),
@@ -147,7 +149,14 @@ pub const CHECKS: &[Check] = &[
     schema_check("filter_paging", Severity::Error),
     schema_check("filter_over_param", Severity::Warning),
     schema_check("filter_export", Severity::Warning),
+    schema_check("pager_paging", Severity::Error),
+    schema_check("pager_params", Severity::Error),
+    schema_check("pager_sizes", Severity::Error),
+    schema_check("pager_outside_collection", Severity::Error),
     schema_check("account_menu_keys", Severity::Error),
+    schema_check("checked_needs_toggle", Severity::Error),
+    schema_check("toggle_state_unknown", Severity::Warning),
+    schema_check("checked_unreadable", Severity::Warning),
     // The loader refused the document for a reason no other check names.
     rule("document_loads"),
     // `layers`: a node stands where its layer may not.
@@ -199,6 +208,9 @@ pub const CHECKS: &[Check] = &[
     // `header.title_from` names a section that reads: the title's record is its first row
     // (beyond10x/ess#354).
     rule("header_record"),
+    // An export's params read `selection.<field>` only on a bulk action, where the selection is
+    // in scope (beyond10x/ess#723).
+    rule("export_selection"),
 ];
 
 fn severity_of(id: &str) -> Severity {

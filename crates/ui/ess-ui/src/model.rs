@@ -231,6 +231,9 @@ pub struct Document {
     /// Value-to-tone maps, named by `tone_by.tones`.
     #[serde(default)]
     pub tone_maps: BTreeMap<String, ToneMap>,
+    /// Value-to-label maps, named by the `labels` of a field or a badge.
+    #[serde(default)]
+    pub label_maps: BTreeMap<String, LabelMap>,
     /// Every name a choice's `options` write that resolved to an enum of the model the document
     /// was loaded with ([`crate::load_str_with`]), to its qualified name (beyond10x/ess#330).
     /// Never authored: empty for a document loaded without a model.
@@ -880,6 +883,8 @@ pub enum RefreshingStyle {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EmptyState {
+    /// A heading shown above the message.
+    pub title: Option<String>,
     /// The message.
     pub message: String,
     /// An action offered.
@@ -2070,6 +2075,8 @@ pub struct Badge {
     pub tone: Option<Tone>,
     /// Tone per value.
     pub tone_by: Option<ToneBy>,
+    /// The words shown for a value; the tone is still chosen by the raw value.
+    pub labels: Option<Labels>,
 }
 
 /// Tone per value.
@@ -2214,8 +2221,81 @@ pub struct Field {
     pub binds: Option<Expr>,
     /// Shows a field of a related view, matched by this field's value, instead of the value.
     pub label_from: Option<LabelFrom>,
+    /// The words a column or record shows for a value, in place of the value.
+    pub labels: Option<Labels>,
     /// Author remark.
     pub note: Option<String>,
+}
+
+impl Field {
+    /// The label a column or record shows for `value`: the field's own `labels` first, then the
+    /// label of a fixed option of its choice; `None` shows the value itself.
+    pub fn value_label(&self, value: &Value) -> Option<&str> {
+        if let Some(label) = self.labels.as_ref().and_then(|labels| labels.label(value)) {
+            return Some(label);
+        }
+        let key = Labels::key(value)?;
+        self.choice_options()
+            .find(|option| Labels::key(&option.value).as_deref() == Some(key.as_str()))
+            .map(|option| option.label.as_str())
+    }
+
+    /// Every label [`Self::value_label`] can give, keyed as [`Labels::key`] keys a value: the
+    /// choice's fixed options whose label differs from their value, under the field's own.
+    pub fn value_labels(&self) -> LabelMap {
+        let mut labels = LabelMap::new();
+        for option in self.choice_options() {
+            if let Some(key) = Labels::key(&option.value) {
+                if option.label != key {
+                    labels.entry(key).or_insert_with(|| option.label.clone());
+                }
+            }
+        }
+        if let Some(own) = &self.labels {
+            labels.extend(own.map.clone());
+        }
+        labels
+    }
+
+    fn choice_options(&self) -> impl Iterator<Item = &ChoiceOption> {
+        let options = match self.choice.as_deref().map(|node| &node.body) {
+            Some(Body::Composite(Composite::Choice(choice))) => choice.options.as_slice(),
+            _ => &[],
+        };
+        options.iter()
+    }
+}
+
+/// The words shown for a value (`labels:` on a field or a badge). Written as a map, or as the
+/// name of a `label_maps` entry, which the loader resolves, so `map` is always the map.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Labels {
+    /// Value to label, keyed by the value's text: a boolean is `"true"` or `"false"`.
+    #[serde(default)]
+    pub map: LabelMap,
+    /// The `label_maps` entry `map` was resolved from, when it was written as a name (the unbound
+    /// `args.<param>` inside a widget declaration). No renderer needs to read it.
+    pub name: Option<String>,
+}
+
+impl Labels {
+    /// The key a value is labelled under: a string as itself, a boolean as `true` or `false`, a
+    /// number as written; any other value has no label.
+    pub fn key(value: &Value) -> Option<String> {
+        match value {
+            Value::String(text) => Some(text.clone()),
+            Value::Bool(flag) => Some(flag.to_string()),
+            Value::Number(number) => Some(number.to_string()),
+            Value::Tagged(tagged) => Self::key(&tagged.value),
+            _ => None,
+        }
+    }
+
+    /// The label of `value`, or `None` when the map does not name it.
+    pub fn label(&self, value: &Value) -> Option<&str> {
+        self.map.get(&Self::key(value)?).map(String::as_str)
+    }
 }
 
 /// A field of a related view shown in place of a key (`Field.label_from`).
@@ -2317,6 +2397,8 @@ pub struct Reads {
     pub params: BTreeMap<String, Expr>,
     /// Who pages.
     pub paging: Option<Paging>,
+    /// The params that carry a server page and its size, and the sizes a reader may choose.
+    pub pager: Option<Pager>,
     /// Coalesce param changes before reading.
     pub debounce: Option<String>,
     /// Poll interval.
@@ -2346,6 +2428,47 @@ pub enum Paging {
     /// A value a retrofit could not determine (`unmapped_marker`).
     #[serde(untagged)]
     Unmapped(UnmappedMarker),
+}
+
+impl Reads {
+    /// The `state.<path>` param `name` binds, when its whole expression is that one path: the
+    /// state a pager sets to change what the read sends.
+    pub fn state_path(&self, name: &str) -> Option<&str> {
+        let text = self.params.get(name)?.0.trim();
+        let path = text.strip_prefix("state.")?;
+        path.split('.')
+            .all(|segment| {
+                let mut chars = segment.chars();
+                chars
+                    .next()
+                    .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+                    && chars.all(|rest| rest.is_ascii_alphanumeric() || rest == '_')
+            })
+            .then_some(text)
+    }
+}
+
+/// The params of a server-paged read that carry its page and its page size, named among the
+/// read's `params`, and the page sizes a reader may choose.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Pager {
+    /// The read param that carries the page number.
+    pub page: String,
+    /// The read param that carries the page size; absent, the footer offers no size.
+    pub size: Option<String>,
+    /// The page sizes offered, in order; absent, [`Pager::DEFAULT_SIZES`].
+    #[serde(default = "Pager::default_sizes")]
+    pub sizes: Vec<i64>,
+}
+
+impl Pager {
+    /// The sizes a pager offers when it lists none (the schema's `sizes_default`).
+    pub const DEFAULT_SIZES: [i64; 3] = [25, 50, 100];
+
+    fn default_sizes() -> Vec<i64> {
+        Self::DEFAULT_SIZES.to_vec()
+    }
 }
 
 /// Where a read result is cached.
@@ -2392,6 +2515,8 @@ pub struct Action {
     pub choice: Option<Box<Node>>,
     /// Current value for a header toggle or choice.
     pub loads: Option<Reads>,
+    /// A toggle's state, on when truthy; only with `as: toggle` ([`crate::toggle_state`]).
+    pub checked: Option<Expr>,
     /// Confirm first.
     pub confirm: Option<ActionConfirm>,
     /// Apply the expected outcome at once.
@@ -2447,8 +2572,66 @@ pub struct Export {
     /// File format: csv, json, zip, png.
     #[serde(rename = "as")]
     pub export_as: String,
-    /// Params.
-    pub params: Option<Expr>,
+    /// Params: each written out, or one expression.
+    pub params: Option<ExportParams>,
+}
+
+/// An export's `params`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExportParams {
+    /// One expression, such as `same_as(<section>)`: the params of another section's read.
+    Expression(Expr),
+    /// Each param and the expression it is read with, evaluated in the action's scope; on one of
+    /// a collection's `bulk_actions` `selection.<field>` reads that field of the selected rows.
+    Map(BTreeMap<String, Expr>),
+}
+
+/// The two shapes an export's `params` takes, named in each refusal of another shape.
+const EXPORT_PARAMS_SHAPES: &str =
+    "an export's `params` is a map of params `{<param>: <expr>}` or one expression such as \
+     `same_as(<section>)`";
+
+impl<'de> Deserialize<'de> for ExportParams {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let scalar = |value: Value| match value {
+            Value::String(text) => Ok(Expr(text)),
+            Value::Number(number) => Ok(Expr(number.to_string())),
+            Value::Bool(flag) => Ok(Expr(flag.to_string())),
+            other => Err(other),
+        };
+        let shape = |value: &Value| match value {
+            Value::Null => "nothing",
+            Value::Sequence(_) => "a list",
+            Value::Mapping(_) => "a map",
+            Value::Tagged(_) => "a tagged value",
+            Value::String(_) | Value::Number(_) | Value::Bool(_) => "a scalar",
+        };
+        match Value::deserialize(deserializer)? {
+            Value::Mapping(entries) => entries
+                .into_iter()
+                .map(|(key, value)| {
+                    let Some(name) = key.as_str().map(str::to_owned) else {
+                        return Err(D::Error::custom(format!(
+                            "{EXPORT_PARAMS_SHAPES}; a param's name is a string, not {}",
+                            shape(&key)
+                        )));
+                    };
+                    scalar(value)
+                        .map(|expr| (name.clone(), expr))
+                        .map_err(|other| {
+                            D::Error::custom(format!(
+                                "{EXPORT_PARAMS_SHAPES}; param `{name}` is {}, not an expression",
+                                shape(&other)
+                            ))
+                        })
+                })
+                .collect::<Result<_, _>>()
+                .map(Self::Map),
+            value => scalar(value).map(Self::Expression).map_err(|other| {
+                D::Error::custom(format!("{EXPORT_PARAMS_SHAPES}, not {}", shape(&other)))
+            }),
+        }
+    }
 }
 
 /// File picker feeding a command.
@@ -2848,6 +3031,9 @@ pub struct ThemeChoice {
 
 /// A value-to-tone map, declared once in `tone_maps` and named by `tone_by.tones`.
 pub type ToneMap = BTreeMap<String, Tone>;
+
+/// A value-to-label map, declared once in `label_maps` or written out as `labels:`.
+pub type LabelMap = BTreeMap<String, String>;
 
 // ── helpers ──────────────────────────────────────────────────────────────────────────────────
 

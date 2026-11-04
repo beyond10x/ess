@@ -333,6 +333,27 @@ fn header_record() {
 }
 
 #[test]
+fn export_selection() {
+    let report = report(&page(
+        "{kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}, \
+         {name: list, component: collection, selection: multiple, reads: t.All, columns: [name], \
+         row_actions: [{name: one, export: {reads: t.Bundle, as: zip, params: {ids: selection.id}}}], \
+         bulk_actions: [{name: all, export: {reads: t.Bundle, as: zip, params: {ids: selection.id}}}]}]}",
+    ));
+    let finding = trips_in(
+        &report,
+        "export_selection",
+        "pages/p/sections/list/row_actions/one/export/params/ids",
+    );
+    assert!(finding.message.contains("selection.id"), "{finding:?}");
+    assert_eq!(
+        tripped(&report, "export_selection").len(),
+        1,
+        "the bulk action may read the selection: {report:#?}"
+    );
+}
+
+#[test]
 fn layout_complete() {
     let text = page(
         "{kind: detail_page, title: P, layout: {columns: [{name: main, sections: []}]}, \
@@ -973,7 +994,129 @@ fn tone_map_unused() {
     assert!(!report.has_errors(), "{:#?}", report.findings);
 }
 
-// ── rules the schema states outside `checks.list` ───────────────────────────────────────────
+/// The base page with a badge whose value is shown through `labels`.
+fn labelled_badge_page(labels: &str) -> String {
+    format!(
+        "{{p: {{kind: detail_page, title: P, sections: [{{name: summary, reads: t.ById, \
+         children: [{{name: state, primitive: badge, field: state, labels: {labels}}}]}}]}}}}"
+    )
+}
+
+#[test]
+fn label_map_refs() {
+    let text = doc(&[
+        ("label_maps", "{run_state: {in_progress: In progress}}"),
+        ("pages", &labelled_badge_page("ghost")),
+    ]);
+    let finding = trips(
+        &text,
+        "label_map_refs",
+        "pages/p/sections/summary/children/state/labels",
+    );
+    assert!(finding.message.contains("ghost"), "{finding:?}");
+    let fine = doc(&[
+        ("label_maps", "{run_state: {in_progress: In progress}}"),
+        ("pages", &labelled_badge_page("run_state")),
+    ]);
+    let report = report(&fine);
+    assert!(errors(&report).is_empty(), "{:#?}", report.findings);
+}
+
+#[test]
+fn label_map_unused() {
+    let text = doc(&[
+        (
+            "label_maps",
+            "{run_state: {in_progress: In progress}, deal_stage: {won: Won}}",
+        ),
+        ("pages", &labelled_badge_page("run_state")),
+    ]);
+    let report = report(&text);
+    trips_in(&report, "label_map_unused", "label_maps/deal_stage");
+    clean_at(&report, "label_map_unused", "label_maps/run_state");
+    assert!(!report.has_errors(), "{:#?}", report.findings);
+}
+
+/// A collection on page `p` whose row actions are `actions`.
+fn row_actions_page(actions: &str) -> String {
+    page(&format!(
+        "{{kind: detail_page, title: P, sections: [{{name: list, component: collection, reads: t.All, columns: [title], row_actions: [{actions}]}}]}}"
+    ))
+}
+
+#[test]
+fn checked_needs_toggle() {
+    let text = row_actions_page(
+        "{name: archive, does: t.Archive, bind: {id: row.id}, checked: row.archived}",
+    );
+    let finding = trips(
+        &text,
+        "checked_needs_toggle",
+        "pages/p/sections/list/row_actions/archive",
+    );
+    assert!(finding.message.contains("as: toggle"), "{finding:?}");
+    let report = report(&row_actions_page(
+        "{name: archive, as: toggle, does: t.Archive, bind: {id: row.id}, checked: row.archived}",
+    ));
+    assert!(
+        tripped(&report, "checked_needs_toggle").is_empty(),
+        "{:#?}",
+        report.findings
+    );
+}
+
+#[test]
+fn toggle_state_unknown() {
+    let report = report(&row_actions_page(
+        "{name: enabled, as: toggle, does: t.SetFlag, bind: {id: row.id}}, \
+         {name: flipped, as: toggle, does: t.SetFlag, bind: {id: row.id, on: not row.on}}",
+    ));
+    trips_in(
+        &report,
+        "toggle_state_unknown",
+        "pages/p/sections/list/row_actions/enabled",
+    );
+    clean_at(
+        &report,
+        "toggle_state_unknown",
+        "pages/p/sections/list/row_actions/flipped",
+    );
+    assert!(!report.has_errors(), "{:#?}", report.findings);
+}
+
+#[test]
+fn checked_unreadable() {
+    let report = report(&row_actions_page(
+        "{name: member, as: toggle, does: t.SetFlag, bind: {id: row.id}, checked: row.id in row.owners}, \
+         {name: admin, as: toggle, does: t.SetFlag, bind: {id: row.id}, checked: actor.admin}, \
+         {name: listed, as: toggle, does: t.SetFlag, bind: {id: row.id}, checked: \"row.kind in [a, b] and not row.gone\"}, \
+         {name: plain, as: toggle, does: t.SetFlag, bind: {id: row.id}, checked: row.on}",
+    ));
+    let finding = trips_in(
+        &report,
+        "checked_unreadable",
+        "pages/p/sections/list/row_actions/member/checked",
+    );
+    assert!(
+        finding.message.contains("terminal cannot evaluate"),
+        "{finding:?}"
+    );
+    trips_in(
+        &report,
+        "checked_unreadable",
+        "pages/p/sections/list/row_actions/admin/checked",
+    );
+    for clean in ["listed", "plain"] {
+        clean_at(
+            &report,
+            "checked_unreadable",
+            &format!("pages/p/sections/list/row_actions/{clean}/checked"),
+        );
+    }
+    assert!(!report.has_errors(), "{:#?}", report.findings);
+}
+
+// ── rules the schema states outside `checks.list`───────────────────────────────────────────
 
 #[test]
 fn document_loads() {
@@ -2043,6 +2186,71 @@ fn filter_export() {
         &text,
         "filter_export",
         "pages/p/header/actions/download/export/params",
+    );
+}
+
+/// Page `p` whose `list` section reads `t.All` with `reads` written inside the read's braces.
+fn paged_page(reads: &str) -> String {
+    page(&format!("{{kind: detail_page, title: P, state: {{at: {{type: integer, class: page_state, store: url, default: 1}}}}, sections: [{{name: list, component: collection, reads: {{view: t.All, params: {{p: state.at, q: params.id}}, {reads}}}}}]}}"))
+}
+
+#[test]
+fn pager_paging() {
+    trips(
+        &paged_page("paging: client, pager: {page: p}"),
+        "pager_paging",
+        "pages/p/sections/list/reads",
+    );
+    let served = report(&paged_page("paging: server, pager: {page: p}"));
+    assert!(tripped(&served, "pager_paging").is_empty(), "{served:?}");
+}
+
+#[test]
+fn pager_params() {
+    trips(
+        &paged_page("paging: server, pager: {page: missing}"),
+        "pager_params",
+        "pages/p/sections/list/reads/pager/page",
+    );
+    trips(
+        &paged_page("paging: server, pager: {page: p, size: q}"),
+        "pager_params",
+        "pages/p/sections/list/reads/pager/size",
+    );
+    trips(
+        &paged_page("paging: server, pager: {page: p, size: q}")
+            .replace("q: params.id", "q: state.at"),
+        "pager_params",
+        "pages/p/sections/list/reads/pager",
+    );
+}
+
+#[test]
+fn pager_sizes() {
+    trips(
+        &paged_page("paging: server, pager: {page: p, sizes: [0]}"),
+        "pager_sizes",
+        "pages/p/sections/list/reads/pager/sizes",
+    );
+}
+
+#[test]
+fn pager_outside_collection() {
+    let record = paged_page("paging: server, pager: {page: p}")
+        .replace(
+            "name: list, component: collection,",
+            "name: one, component: record,",
+        )
+        .replace("}}]}", "}, fields: [label]}]}");
+    trips(
+        &record,
+        "pager_outside_collection",
+        "pages/p/sections/one/reads/pager",
+    );
+    let listed = report(&paged_page("paging: server, pager: {page: p}"));
+    assert!(
+        tripped(&listed, "pager_outside_collection").is_empty(),
+        "{listed:?}"
     );
 }
 

@@ -3,7 +3,9 @@ use std::collections::BTreeSet;
 
 use ess_primitives::predicate::{CompareOp, Operand, Predicate as ModelPredicate};
 use ess_ui::filter::{self, Operator, Predicate};
-use ess_ui::{Body, Composite, Document, Expr, NavPages, NodePath, NodeRef, Paging, Reads};
+use ess_ui::{
+    Body, Composite, Document, ExportParams, Expr, NavPages, NodePath, NodeRef, Paging, Reads,
+};
 
 use crate::model::Model;
 use crate::walk::{body_of, composite_reads, in_declaration, page_of};
@@ -57,6 +59,10 @@ pub(crate) fn run(document: &Document, model: Option<&Model>, sink: &mut Sink) {
                 if let Some(section) = export
                     .params
                     .as_ref()
+                    .and_then(|params| match params {
+                        ExportParams::Expression(expr) => Some(expr),
+                        ExportParams::Map(_) => None,
+                    })
                     .and_then(|expr| expr.0.strip_prefix("same_as("))
                     .and_then(|text| text.strip_suffix(')'))
                 {

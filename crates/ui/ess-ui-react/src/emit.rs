@@ -658,13 +658,46 @@ impl<'d> Gen<'d> {
         ]))
     }
 
+    /// The collection's pager: the state paths its read's page and size params bind, resolved
+    /// here so the runtime never assumes `state.page` or `state.size`. A declared `pager` always
+    /// shows its footer; a read with a `page` param and no `pager` keeps the footer it had,
+    /// shown when the total exceeds the rows, on the state path that param binds.
+    fn pager(reads: Option<&Reads>) -> Option<String> {
+        let reads = reads?;
+        let Some(pager) = &reads.pager else {
+            return reads
+                .state_path("page")
+                .map(|page| ts::object([("page", Some(ts::string(page)))]));
+        };
+        let page = reads.state_path(&pager.page)?;
+        let size = pager
+            .size
+            .as_deref()
+            .and_then(|size| reads.state_path(size));
+        Some(ts::object([
+            ("page", Some(ts::string(page))),
+            ("size", size.map(ts::string)),
+            (
+                "sizes",
+                size.map(|_| ts::array(pager.sizes.iter().map(ToString::to_string))),
+            ),
+            ("declared", Some("true".to_owned())),
+        ]))
+    }
+
     fn action(&mut self, at: &NodePath, action: &Action) -> String {
         let navigate = action.navigate.as_ref().map(navigate);
         let export = action.export.as_ref().map(|export| {
             ts::object([
                 ("reads", Some(ts::string(&export.reads))),
                 ("as", Some(ts::string(&export.export_as))),
-                ("params", expr(export.params.as_ref())),
+                (
+                    "params",
+                    export.params.as_ref().map(|params| match params {
+                        ess_ui::ExportParams::Expression(value) => ts::string(&value.0),
+                        ess_ui::ExportParams::Map(params) => exprs(params),
+                    }),
+                ),
             ])
         });
         let upload = action.upload.as_ref().map(|upload| {
@@ -688,6 +721,8 @@ impl<'d> Gen<'d> {
             None => (None, None, None),
         };
         let sets = (!action.sets.is_empty()).then(|| exprs(&action.sets));
+        // The one state expression both renderers read (`ess_ui::toggle_state`).
+        let checked = ess_ui::toggle_state(action).map(|state| ts::string(&state.expr.0));
         ts::object([
             ("data-ui-path", Some(ts::string(&at.to_string()))),
             ("name", Some(ts::string(&action.name))),
@@ -711,6 +746,7 @@ impl<'d> Gen<'d> {
             ("upload", upload),
             ("copy", expr(action.copy.as_ref())),
             ("sets", sets),
+            ("checked", checked),
             ("choice", choice),
             ("confirm", confirm),
             ("confirmShow", confirm_show),
@@ -761,6 +797,11 @@ impl<'d> Gen<'d> {
                 ("key", quoted(label_from.key.as_ref())),
             ])
         });
+        // What a column or record shows for a value; a form input shows its own options.
+        let labels = (!in_form)
+            .then(|| field.value_labels())
+            .filter(|labels| !labels.is_empty())
+            .map(|labels| ts::string_map(&labels));
         ts::object([
             ("data-ui-path", Some(ts::string(&at.to_string()))),
             ("field", Some(ts::string(&field.field))),
@@ -771,6 +812,7 @@ impl<'d> Gen<'d> {
             ("visible", expr(field.visible.as_ref())),
             ("binds", expr(field.binds.as_ref())),
             ("labelFrom", label_from),
+            ("labels", labels),
             ("note", quoted(field.note.as_ref())),
             ("choice", choice),
         ])
@@ -1076,6 +1118,7 @@ impl<'d> Gen<'d> {
                 El::new(&component)
                     .path_if(!opts.framed, &path)
                     .opt("reads", Self::own_reads(opts, c.reads.as_ref()))
+                    .opt("pager", Self::pager(c.reads.as_ref()))
                     .opt("columns", columns)
                     .opt("columnsBind", columns_bind)
                     .opt("sort", sort)
@@ -1497,6 +1540,13 @@ impl<'d> Gen<'d> {
                             ])
                         }),
                     )
+                    .opt(
+                        "labels",
+                        b.labels
+                            .as_ref()
+                            .filter(|labels| !labels.map.is_empty())
+                            .map(|labels| ts::string_map(&labels.map)),
+                    )
                     .render()
             }
             Primitive::Icon(i) => {
@@ -1705,10 +1755,12 @@ impl<'d> Gen<'d> {
             ),
             (
                 "empty",
-                states
-                    .empty
-                    .as_ref()
-                    .map(|empty| ts::object([("message", Some(ts::string(&empty.message)))])),
+                states.empty.as_ref().map(|empty| {
+                    ts::object([
+                        ("title", quoted(empty.title.as_ref())),
+                        ("message", Some(ts::string(&empty.message))),
+                    ])
+                }),
             ),
             (
                 "failed",

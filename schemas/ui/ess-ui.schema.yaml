@@ -45,7 +45,7 @@ type_rule:
     enum:     {form: {enum: [a, b]}, example: {enum: [light, dark]}}
     one_of:   {form: {one_of: [T1, T2]}, example: {one_of: [duration, expr]}}
     record:   {form: {record: {field: T}}, example: {record: {amount: number, currency: {enum: [EUR, USD, GBP]}}}}
-    ref:      {form: {ref: kind}, kinds: [shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, view, command, event, actor], example: {ref: view},
+    ref:      {form: {ref: kind}, kinds: [shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, label_map, view, command, event, actor], example: {ref: view},
                note: "view, command, event and actor resolve in the ESS model; the others in the document"}
     const:    {form: {const: value}, example: {const: ess-ui/1}}
 
@@ -177,6 +177,7 @@ constructs:
       themes:             {type: {map: {key: name, value: Theme}}, note: "named looks, each the tokens it overrides"}
       theme:              {type: ThemeChoice, note: which theme is shown and the shell state that chooses it}
       tone_maps:          {type: {map: {key: name, value: ToneMap}}, note: "value-to-tone maps, named by `tone_by.tones`"}
+      label_maps:         {type: {map: {key: name, value: {map: {key: string, value: string}}}}, note: "value-to-label maps, named by the `labels` of a field or a badge"}
     example:
       format: ess-ui/1
       app: portal
@@ -577,7 +578,7 @@ constructs:
     fields:
       loading:    {type: {enum: [skeleton, spinner, none]}, default: skeleton, note: first load}
       refreshing: {type: {enum: [keep_rows, skeleton]}, default: keep_rows, note: later loads}
-      empty:      {type: {record: {message: string, action: {optional: Action}}}, note: ready with no rows}
+      empty:      {type: {record: {title: {optional: string}, message: string, action: {optional: Action}}}, note: "ready with no rows; `title` is a heading above the message"}
       failed:     {type: {record: {message: {optional: string}, retry: boolean}}, default: {retry: true}, note: read refused or transport error}
       forbidden:  {type: {record: {message: {optional: string}}}, note: actor lacks the grant}
       stale:      {type: {record: {mark: {enum: [badge, dim, both]}}}, default: {mark: badge}, note: live channel down}
@@ -926,7 +927,13 @@ constructs:
     group: composites
     order: 18
     summary: One input of a form or one column of a collection.
-    doc: Columns and form inputs are fields. `as` is a semantic widget, not a component; a bare name is enough when the defaults fit.
+    doc: >
+      Columns and form inputs are fields. `as` is a semantic widget, not a component; a bare name
+      is enough when the defaults fit. `labels` gives the words a column or record shows for a
+      value, written out or naming an entry of the document's `label_maps`; a boolean is keyed
+      `"true"` and `"false"`, and a value the map does not name shows as it is. A badge keeps the
+      raw value in its class. A choice column shows the label of the fixed option its value
+      matches, under any `labels` of its own. A form input is unchanged.
     shorthand:
       - {accepts: string, expands_to: {field: $value, name: $value}}
       - {at: name, accepts: absent, expands_to: {first_present: [field]}}
@@ -940,6 +947,7 @@ constructs:
       visible:  {type: expr, note: shows the field only when true}
       binds:    {type: expr, note: bind to UI state instead of the command input}
       label_from: {type: {record: {view: {ref: view}, field: name, key: {optional: name}}}, note: "show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params"}
+      labels:   {type: {one_of: [{map: {key: string, value: string}}, name]}, note: "the text shown for a value: a map written out, or the name of an entry of `label_maps`"}
       note:     {type: string, note: author remark}
     example: {field: tier, as: choice, choice: {component: choice, options: PartnerTier}}
 
@@ -1071,13 +1079,15 @@ constructs:
       map written out (`map`) or the name of an entry of the document's `tone_maps` (`tones`),
       exactly one of the two. The loader resolves `tones` to its map, so a renderer only reads
       `map`. A value the map does not name takes `tone`. What a tone looks like is the tone's
-      entry of `Tokens.tone`.
+      entry of `Tokens.tone`. `labels` gives the text shown for a value, written out or naming
+      an entry of `label_maps`, as on a field; the tone is still chosen by the raw value.
     exactly_one_of: [text, field]
     fields:
       text:    {type: expr, note: literal or expression}
       field:   {type: name, note: row field shown}
       tone:    {type: {enum: [neutral, info, success, warning, danger]}, default: neutral, note: "fixed tone, and the tone of a value `tone_by` does not map"}
       tone_by: {type: {record: {value: expr, map: {optional: {map: {key: string, value: {enum: [neutral, info, success, warning, danger]}}}}, tones: {optional: {ref: tone_map}}}}, note: "tone per value: `map` written out, or `tones` naming an entry of `tone_maps`; exactly one of the two"}
+      labels:  {type: {one_of: [{map: {key: string, value: string}}, name]}, note: "the text shown for a value: a map written out, or the name of an entry of `label_maps`"}
     example: {name: badge, primitive: badge, text: args.status, tone_by: {value: args.status, tones: args.tones}}
 
   icon:
@@ -1183,7 +1193,10 @@ constructs:
       report the placeholder as a warning until it is bound. `key` names the field that identifies
       a row when it is not `id`, so row paths and row actions address the rows of a view keyed
       by another field, with or without a channel. `endpoint` and `derived` are
-      traceability for retrofits.
+      traceability for retrofits. `pager` names, among `params`, the param that carries a
+      server read's page and the one that carries its page size, each bound to a
+      `state.<path>`: a collection shows Previous, the page and Next on those paths, and with a
+      `size` a per-page select over `sizes` that returns to page 1.
     shorthand:
       - {accepts: {ref: view}, expands_to: {view: $value}}
     exactly_one_of: [view, placeholder]
@@ -1191,6 +1204,7 @@ constructs:
       - {when: {paging: client}, requires: {view.bounded: true}, else: refuse}
       - {when: {placeholder: present}, requires: {fixture: present}, else: refuse}
       - {when: {filter: present}, requires: {paging: {one_of: [client, none]}}, else: refuse}
+      - {when: {pager: present}, requires: {paging: server}, else: refuse}
     fields:
       view:        {type: {ref: view}, note: ESS view name}
       placeholder: {type: name, note: a view name not yet bound to the model}
@@ -1199,6 +1213,7 @@ constructs:
       params:      {type: {map: {key: name, value: expr}}, note: view params bound to state}
       filter:      {type: expr, note: "Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging."}
       paging:      {type: {enum: [server, client, cursor, append, none]}, default: none, note: who pages}
+      pager:       {type: {record: {page: name, size: {optional: name}, sizes: {optional: {list: integer}}}}, sizes_default: [25, 50, 100], note: "the params of this read that carry the page and the page size, and the sizes offered; only on a collection's `reads`, with `paging: server`"}
       debounce:    {type: duration, note: coalesce param changes before reading}
       refresh:     {type: {one_of: [duration, expr]}, note: poll interval}
       cache:       {type: {record: {store: Store, ttl: {optional: duration}}}, default: {store: {resolve: {class: view_cache}}}, note: where the result is cached}
@@ -1226,14 +1241,15 @@ constructs:
       bind:       {type: {map: {key: name, value: expr}}, note: "command input from row, selection or state"}
       opens:      {type: {ref: overlay}, note: overlay to open}
       navigate:   {type: {record: {to: {ref: page}, params: {optional: {map: {key: name, value: expr}}}}}, note: page to go to}
-      export:     {type: {record: {reads: {ref: view}, as: {enum: [csv, json, zip, png]}, params: {optional: expr}}}, note: download a view}
+      export:     {type: {record: {reads: {ref: view}, as: {enum: [csv, json, zip, png]}, params: {optional: {one_of: [{map: {key: name, value: expr}}, expr]}}}}, note: "download a view; `params` is each param written out, or one expression such as `same_as(<section>)`; on one of a collection's `bulk_actions` a param may read `selection.<field>`"}
       upload:     {type: {record: {accept: {list: string}, does: {ref: command}}}, note: file picker feeding a command}
       copy:       {type: expr, note: value copied to the clipboard}
       sets:       {type: {map: {key: expr, value: {one_of: [expr, {const: toggle}]}}}, note: "UI state change only, never business data"}
       label:      {type: string, note: button or menu text}
       as:         {type: {enum: [button, icon, toggle, choice, menu_item, link]}, default: button, note: presentation hint}
       choice:     {type: Node, note: options for as choice}
-      loads:      {type: Reads, note: current value for a header toggle or choice}
+      loads:      {type: Reads, note: "a view the action declares it reads, checked against the model and given fixture rows; no renderer reads its rows for the action's value, so it sets no toggle's state"}
+      checked:    {type: expr, note: "the state an `as: toggle` action shows, on when truthy; only on a toggle; the terminal reads it in the filter grammar (`checked_unreadable` warns on one outside it). Absent, a toggle with `does` shows the `<expr>` of its one `bind` entry written `not <expr>` (every path in `<expr>` from row, params, state, shell or args), and a toggle with `sets` the key it sets; a row field named like the action is never read"}
       confirm:    {type: {one_of: [{ref: overlay}, {record: {title: string, show: {optional: expr}, confirm_label: {optional: string}}}]}, note: "confirm first; confirming runs this action, whether or not the confirm declares `does`"}
       optimistic: {type: boolean, default: false, requires: {does.outcome: unique_for_input}, note: apply the expected outcome at once and revert on refusal}
       bulk:       {type: boolean, default: false, note: applies to the collection's selection}
@@ -1672,6 +1688,8 @@ checks:
     - {id: theme_choice,        subject: theme, must: [default_names_a_theme, themes_declared, chosen_by_names_a_shell_preference_enum_whose_variants_and_default_name_themes], severity: error}
     - {id: tone_map_refs,       subject: "**.tone_by.tones", must_resolve: {ref: tone_map}, severity: error}
     - {id: tone_map_unused,     subject: "tone_maps.*", must: be_named_by_a_tone_by, severity: warning}
+    - {id: label_map_refs,      subject: "**.labels naming a label map", must_resolve: {ref: label_map}, severity: error}
+    - {id: label_map_unused,    subject: "label_maps.*", must: be_named_by_the_labels_of_a_field_or_badge, severity: warning}
     - {id: filter_expr, subject: "reads.filter and dynamic menu filter", must: parse_as_boolean_predicate, severity: error}
     - {id: filter_roots, subject: "reads.filter and dynamic menu filter", must: read_only_row_params_state_shell_args_without_calls, severity: error}
     - {id: filter_paths, subject: "reads.filter and dynamic menu filter", must: resolve_declared_paths, severity: error}
@@ -1679,4 +1697,11 @@ checks:
     - {id: filter_paging, subject: "reads.filter", must: use_client_or_none_paging, severity: error}
     - {id: filter_over_param, subject: "reads.filter", must: prefer_existing_server_parameter, severity: warning}
     - {id: filter_export, subject: "export.params", must: not_claim_to_copy_client_filter, severity: warning}
+    - {id: pager_paging, subject: "reads.pager", must: use_server_paging, severity: error}
+    - {id: pager_params, subject: ["reads.pager.page", "reads.pager.size"], must: name_distinct_params_of_the_read_each_bound_to_a_state_path_neither_inside_the_other, severity: error}
+    - {id: pager_sizes, subject: "reads.pager.sizes", must: list_at_least_one_size_each_at_least_1, severity: error}
+    - {id: pager_outside_collection, subject: "reads.pager", must: belong_to_a_collection_reads, severity: error}
     - {id: account_menu_keys, subject: "shells.*.regions.*.props.actions[] of an account_menu", must_be_in: [name, label, opens, does, sets, navigate], severity: error}
+    - {id: checked_needs_toggle, subject: "**.checked", must: sit_on_an_as_toggle_action, severity: error}
+    - {id: toggle_state_unknown, subject: "**.checked absent on an as toggle action with does", must: [write_checked, or_bind_exactly_one_input_as_not_expr], severity: warning}
+    - {id: checked_unreadable, subject: "**.checked on an as toggle action", must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args], severity: warning}

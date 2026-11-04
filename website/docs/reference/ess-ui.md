@@ -44,7 +44,7 @@ A field's `type` is one of three things. (1) A lowercase primitive name from `pr
 | `enum` | `{enum: [a, b]}` | `{enum: [light, dark]}` |   |
 | `one_of` | `{one_of: [T1, T2]}` | `{one_of: [duration, expr]}` |   |
 | `record` | `{record: {field: T}}` | `{record: {amount: number, currency: {enum: [EUR, USD, GBP]}}}` |   |
-| `ref` | `{ref: kind}` | `{ref: view}` | view, command, event and actor resolve in the ESS model; the others in the document; kinds: `[shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, view, command, event, actor]` |
+| `ref` | `{ref: kind}` | `{ref: view}` | view, command, event and actor resolve in the ESS model; the others in the document; kinds: `[shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, tone_map, label_map, view, command, event, actor]` |
 | `const` | `{const: value}` | `{const: ess-ui/1}` |   |
 
 ### Expressions
@@ -165,6 +165,7 @@ One document describes one frontend. It names the ESS model every view, command 
 | `themes` | map of `name` → [Theme](#theme) |   |   | named looks, each the tokens it overrides |
 | `theme` | [ThemeChoice](#themechoice) |   |   | which theme is shown and the shell state that chooses it |
 | `tone_maps` | map of `name` → [ToneMap](#tonemap) |   |   | value-to-tone maps, named by `tone_by.tones` |
+| `label_maps` | map of `name` → map of `string` → `string` |   |   | value-to-label maps, named by the `labels` of a field or a badge |
 
 **Example**
 
@@ -185,6 +186,12 @@ pages:
     title: Overview
     sections: [{name: board, component: board, reads: {view: dashboards.Mine}}]
 ```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `label_map_unused` | `label_maps.*` | `{must: be_named_by_the_labels_of_a_field_or_badge}` | warning |
 
 ### Type
 
@@ -867,7 +874,7 @@ Declare what the user sees while loading, when there is nothing, when the read f
 |---|---|---|---|---|
 | `loading` | one of: `skeleton` \| `spinner` \| `none` |   | `skeleton` | first load |
 | `refreshing` | one of: `keep_rows` \| `skeleton` |   | `keep_rows` | later loads |
-| `empty` | record \{ `message`: `string`, `action`: optional [Action](#action) \} |   |   | ready with no rows |
+| `empty` | record \{ `title`: optional `string`, `message`: `string`, `action`: optional [Action](#action) \} |   |   | ready with no rows; `title` is a heading above the message |
 | `failed` | record \{ `message`: optional `string`, `retry`: `boolean` \} |   | `{retry: true}` | read refused or transport error |
 | `forbidden` | record \{ `message`: optional `string` \} |   |   | actor lacks the grant |
 | `stale` | record \{ `mark`: (one of: `badge` \| `dim` \| `both`) \} |   | `{mark: badge}` | live channel down |
@@ -1434,7 +1441,7 @@ action: {name: send, does: tickets.PostReply}
 
 One input of a form or one column of a collection.
 
-Columns and form inputs are fields. `as` is a semantic widget, not a component; a bare name is enough when the defaults fit.
+Columns and form inputs are fields. `as` is a semantic widget, not a component; a bare name is enough when the defaults fit. `labels` gives the words a column or record shows for a value, written out or naming an entry of the document's `label_maps`; a boolean is keyed `"true"` and `"false"`, and a value the map does not name shows as it is. A badge keeps the raw value in its class. A choice column shows the label of the fixed option its value matches, under any `labels` of its own. A form input is unchanged.
 
 **Properties**
 
@@ -1449,6 +1456,7 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `visible` | `expr` |   |   | shows the field only when true |
 | `binds` | `expr` |   |   | bind to UI state instead of the command input |
 | `label_from` | record \{ `view`: name of an ESS `view`, `field`: `name`, `key`: optional `name` \} |   |   | show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params |
+| `labels` | one of: map of `string` → `string` \| `name` |   |   | the text shown for a value: a map written out, or the name of an entry of `label_maps` |
 | `note` | `string` |   |   | author remark |
 
 **You may also write**
@@ -1465,6 +1473,12 @@ field: tier
 as: choice
 choice: {component: choice, options: PartnerTier}
 ```
+
+**Checks**
+
+| Check | Subject | Rule | Severity |
+|---|---|---|---|
+| `label_map_refs` | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
 
 ### Tab
 
@@ -1690,7 +1704,7 @@ currency: args.value.currency
 
 A short value in a toned pill.
 
-For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value, through a map written out (`map`) or the name of an entry of the document's `tone_maps` (`tones`), exactly one of the two. The loader resolves `tones` to its map, so a renderer only reads `map`. A value the map does not name takes `tone`. What a tone looks like is the tone's entry of `Tokens.tone`.
+For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value, through a map written out (`map`) or the name of an entry of the document's `tone_maps` (`tones`), exactly one of the two. The loader resolves `tones` to its map, so a renderer only reads `map`. A value the map does not name takes `tone`. What a tone looks like is the tone's entry of `Tokens.tone`. `labels` gives the text shown for a value, written out or naming an entry of `label_maps`, as on a field; the tone is still chosen by the raw value.
 
 **Properties**
 
@@ -1700,6 +1714,7 @@ For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value, 
 | `field` | `name` |   |   | row field shown |
 | `tone` | one of: `neutral` \| `info` \| `success` \| `warning` \| `danger` |   | `neutral` | fixed tone, and the tone of a value `tone_by` does not map |
 | `tone_by` | record \{ `value`: `expr`, `map`: optional map of `string` → (one of: `neutral` \| `info` \| `success` \| `warning` \| `danger`), `tones`: optional name of a [ToneMap](#tonemap) \} |   |   | tone per value: `map` written out, or `tones` naming an entry of `tone_maps`; exactly one of the two |
+| `labels` | one of: map of `string` → `string` \| `name` |   |   | the text shown for a value: a map written out, or the name of an entry of `label_maps` |
 
 **Exactly one of**
 
@@ -1719,6 +1734,7 @@ tone_by: {value: args.status, tones: args.tones}
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
 | `tone_map_refs` | `**.tone_by.tones` | `{must_resolve: {ref: tone_map}}` | error |
+| `label_map_refs` | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
 
 ### icon
 
@@ -1921,7 +1937,7 @@ How the UI reads ESS views, runs ESS commands, and runs without a backend.
 
 The ESS view a section or composite reads — or, while designing, a named placeholder backed by a fixture.
 
-Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `key` names the field that identifies a row when it is not `id`, so row paths and row actions address the rows of a view keyed by another field, with or without a channel. `endpoint` and `derived` are traceability for retrofits.
+Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says who pages. While a screen is designed before its model exists, write `placeholder` with a view name and a `fixture` file instead of `view`; renderers read the fixture, validators report the placeholder as a warning until it is bound. `key` names the field that identifies a row when it is not `id`, so row paths and row actions address the rows of a view keyed by another field, with or without a channel. `endpoint` and `derived` are traceability for retrofits. `pager` names, among `params`, the param that carries a server read's page and the one that carries its page size, each bound to a `state.<path>`: a collection shows Previous, the page and Next on those paths, and with a `size` a per-page select over `sizes` that returns to page 1.
 
 **Properties**
 
@@ -1934,6 +1950,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 | `params` | map of `name` → `expr` |   |   | view params bound to state |
 | `filter` | `expr` |   |   | Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging. |
 | `paging` | one of: `server` \| `client` \| `cursor` \| `append` \| `none` |   | `none` | who pages |
+| `pager` | record \{ `page`: `name`, `size`: optional `name`, `sizes`: optional list of `integer` \} |   |   | the params of this read that carry the page and the page size, and the sizes offered; only on a collection's `reads`, with `paging: server`; sizes default: `[25, 50, 100]` |
 | `debounce` | `duration` |   |   | coalesce param changes before reading |
 | `refresh` | one of: `duration` \| `expr` |   |   | poll interval |
 | `cache` | record \{ `store`: [Store](#store), `ttl`: optional `duration` \} |   | `{store: {resolve: {class: view_cache}}}` | where the result is cached |
@@ -1956,6 +1973,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 - {when: {paging: client}, requires: {view.bounded: true}, else: refuse}
 - {when: {placeholder: present}, requires: {fixture: present}, else: refuse}
 - {when: {filter: present}, requires: {paging: {one_of: [client, none]}}, else: refuse}
+- {when: {pager: present}, requires: {paging: server}, else: refuse}
 ```
 
 **Example**
@@ -1977,6 +1995,10 @@ fixture: fixtures/forecast.yaml
 | `filter_place` | `reads.filter` | `{must: belong_to_listing_or_choice}` | error |
 | `filter_paging` | `reads.filter` | `{must: use_client_or_none_paging}` | error |
 | `filter_over_param` | `reads.filter` | `{must: prefer_existing_server_parameter}` | warning |
+| `pager_paging` | `reads.pager` | `{must: use_server_paging}` | error |
+| `pager_params` | `reads.pager.page`, `reads.pager.size` | `{must: name_distinct_params_of_the_read_each_bound_to_a_state_path_neither_inside_the_other}` | error |
+| `pager_sizes` | `reads.pager.sizes` | `{must: list_at_least_one_size_each_at_least_1}` | error |
+| `pager_outside_collection` | `reads.pager` | `{must: belong_to_a_collection_reads}` | error |
 
 ### Action
 
@@ -1993,14 +2015,15 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `bind` | map of `name` → `expr` |   |   | command input from row, selection or state |
 | `opens` | name of an [overlay](#overlay) |   |   | overlay to open |
 | `navigate` | record \{ `to`: name of a [Page](#page), `params`: optional map of `name` → `expr` \} |   |   | page to go to |
-| `export` | record \{ `reads`: name of an ESS `view`, `as`: (one of: `csv` \| `json` \| `zip` \| `png`), `params`: optional `expr` \} |   |   | download a view |
+| `export` | record \{ `reads`: name of an ESS `view`, `as`: (one of: `csv` \| `json` \| `zip` \| `png`), `params`: optional (one of: map of `name` → `expr` \| `expr`) \} |   |   | download a view; `params` is each param written out, or one expression such as `same_as(<section>)`; on one of a collection's `bulk_actions` a param may read `selection.<field>` |
 | `upload` | record \{ `accept`: list of `string`, `does`: name of an ESS `command` \} |   |   | file picker feeding a command |
 | `copy` | `expr` |   |   | value copied to the clipboard |
 | `sets` | map of `expr` → (one of: `expr` \| exactly `toggle`) |   |   | UI state change only, never business data |
 | `label` | `string` |   |   | button or menu text |
 | `as` | one of: `button` \| `icon` \| `toggle` \| `choice` \| `menu_item` \| `link` |   | `button` | presentation hint |
 | `choice` | [Node](#node) |   |   | options for as choice |
-| `loads` | [Reads](#reads) |   |   | current value for a header toggle or choice |
+| `loads` | [Reads](#reads) |   |   | a view the action declares it reads, checked against the model and given fixture rows; no renderer reads its rows for the action's value, so it sets no toggle's state |
+| `checked` | `expr` |   |   | the state an `as: toggle` action shows, on when truthy; only on a toggle; the terminal reads it in the filter grammar (`checked_unreadable` warns on one outside it). Absent, a toggle with `does` shows the `<expr>` of its one `bind` entry written `not <expr>` (every path in `<expr>` from row, params, state, shell or args), and a toggle with `sets` the key it sets; a row field named like the action is never read |
 | `confirm` | one of: name of an [overlay](#overlay) \| record \{ `title`: `string`, `show`: optional `expr`, `confirm_label`: optional `string` \} |   |   | confirm first; confirming runs this action, whether or not the confirm declares `does` |
 | `optimistic` | `boolean` |   | `false` | apply the expected outcome at once and revert on refusal; requires: `{does.outcome: unique_for_input}` |
 | `bulk` | `boolean` |   | `false` | applies to the collection's selection |
@@ -2046,6 +2069,9 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `opens_resolves` | `**.opens` | `{must_resolve_in: [page.overlays, page.kind.overlays, shell.overlays]}` | error |
 | `page_refs` | `**.navigate.to`, `**.to.to`, `pages.*.switch_to[]`, `shells.*.guards[].then.redirect` | `{must_resolve: {ref: page}}` | error |
 | `filter_export` | `export.params` | `{must: not_claim_to_copy_client_filter}` | warning |
+| `checked_needs_toggle` | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
+| `toggle_state_unknown` | `**.checked absent on an as toggle action with does` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
+| `checked_unreadable` | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args]}` | warning |
 
 ### FixtureIndex
 
@@ -2695,6 +2721,8 @@ What a validator checks in a document, and the construct each check applies to. 
 | `theme_choice` | [ThemeChoice](#themechoice) | `theme` | `{must: [default_names_a_theme, themes_declared, chosen_by_names_a_shell_preference_enum_whose_variants_and_default_name_themes]}` | error |
 | `tone_map_refs` | [badge](#badge), [icon](#icon) | `**.tone_by.tones` | `{must_resolve: {ref: tone_map}}` | error |
 | `tone_map_unused` | [ToneMap](#tonemap) | `tone_maps.*` | `{must: be_named_by_a_tone_by}` | warning |
+| `label_map_refs` | [Field](#field), [badge](#badge) | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
+| `label_map_unused` | [Document](#document) | `label_maps.*` | `{must: be_named_by_the_labels_of_a_field_or_badge}` | warning |
 | `filter_expr` | [Reads](#reads) | `reads.filter and dynamic menu filter` | `{must: parse_as_boolean_predicate}` | error |
 | `filter_roots` | [Reads](#reads) | `reads.filter and dynamic menu filter` | `{must: read_only_row_params_state_shell_args_without_calls}` | error |
 | `filter_paths` | [Reads](#reads) | `reads.filter and dynamic menu filter` | `{must: resolve_declared_paths}` | error |
@@ -2702,7 +2730,14 @@ What a validator checks in a document, and the construct each check applies to. 
 | `filter_paging` | [Reads](#reads) | `reads.filter` | `{must: use_client_or_none_paging}` | error |
 | `filter_over_param` | [Reads](#reads) | `reads.filter` | `{must: prefer_existing_server_parameter}` | warning |
 | `filter_export` | [Action](#action) | `export.params` | `{must: not_claim_to_copy_client_filter}` | warning |
+| `pager_paging` | [Reads](#reads) | `reads.pager` | `{must: use_server_paging}` | error |
+| `pager_params` | [Reads](#reads) | `reads.pager.page`, `reads.pager.size` | `{must: name_distinct_params_of_the_read_each_bound_to_a_state_path_neither_inside_the_other}` | error |
+| `pager_sizes` | [Reads](#reads) | `reads.pager.sizes` | `{must: list_at_least_one_size_each_at_least_1}` | error |
+| `pager_outside_collection` | [Reads](#reads) | `reads.pager` | `{must: belong_to_a_collection_reads}` | error |
 | `account_menu_keys` | every node | `shells.*.regions.*.props.actions[] of an account_menu` | `{must_be_in: [name, label, opens, does, sets, navigate]}` | error |
+| `checked_needs_toggle` | [Action](#action) | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
+| `toggle_state_unknown` | [Action](#action) | `**.checked absent on an as toggle action with does` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
+| `checked_unreadable` | [Action](#action) | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args]}` | warning |
 
 ## Retrofits and lowering
 

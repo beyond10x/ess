@@ -559,9 +559,17 @@ impl App {
             }
             Lifecycle::Empty => {
                 let empty = states.and_then(|states| states.empty.as_ref());
-                let mut lines = vec![Line::from(
-                    empty.map_or_else(|| "No rows".to_owned(), |empty| empty.message.clone()),
-                )];
+                // `title: ""` is no title, as React draws no heading for it.
+                let mut lines: Vec<Line<'static>> = empty
+                    .and_then(|empty| empty.title.clone())
+                    .filter(|title| !title.is_empty())
+                    .map(|title| Line::styled(title, bold()))
+                    .into_iter()
+                    .collect();
+                lines.push(Line::from(empty.map_or_else(
+                    || "No rows".to_owned(),
+                    |empty| empty.message.clone(),
+                )));
                 if let Some(action) = empty.and_then(|empty| empty.action.as_ref()) {
                     lines.push(Line::styled(
                         format!(
@@ -992,13 +1000,14 @@ impl App {
                 row: Some(row),
                 ..place.ctx
             };
-            // Where each keyed action's label starts in the hint: `<key> <label>`, joined by ` · `.
+            // Where each keyed action's label starts in the hint: `<key> <switch><label>`, joined
+            // by ` · `.
             let mut hinted = std::collections::BTreeMap::new();
             if cursor_key == Some(key.as_str()) {
                 let mut x = 0;
                 for (letter, action) in self.action_keys(actions, &ctx) {
                     let shown = action.label.clone().unwrap_or_else(|| action.name.clone());
-                    let start = x + letter.len_utf8() + 1;
+                    let start = x + letter.len_utf8() + 1 + self.switch_mark(&action, &ctx).width();
                     hinted.insert(action.name.clone(), (start, shown.width()));
                     x = start + shown.width() + " · ".width();
                 }
@@ -1060,12 +1069,23 @@ impl App {
             .iter()
             .map(|(key, action)| {
                 format!(
-                    "{key} {}",
+                    "{key} {}{}",
+                    self.switch_mark(action, ctx),
                     action.label.clone().unwrap_or_else(|| action.name.clone())
                 )
             })
             .collect();
         vec![Line::styled(hint.join(" · "), dim())]
+    }
+
+    /// A toggle's on/off mark before its label in the hint (`[x] ` or `[ ] `, as a toggle column
+    /// draws it); nothing for another action.
+    fn switch_mark(&self, action: &ess_ui::Action, ctx: &Ctx<'_>) -> &'static str {
+        match self.toggle_on(action, ctx) {
+            Some(true) => "[x] ",
+            Some(false) => "[ ] ",
+            None => "",
+        }
     }
 
     /// A collection's lines. `row_actions_at` is the path segment the document lists the row
@@ -1414,7 +1434,20 @@ fn browser_label(action: &ess_ui::Action) -> String {
 
 /// One cell of a row, drawn by the field's `as`.
 fn cell(field: &Field, row: &Value) -> String {
-    cell_value(field, &field_path(row, &field.field))
+    let value = field_path(row, &field.field);
+    labelled_cell(field, &value).unwrap_or_else(|| cell_value(field, &value))
+}
+
+/// A displayed value the field labels (`labels`, or a choice's fixed option), drawn by its `as`;
+/// `None` when it has no label or its `as` does not show a value as text.
+fn labelled_cell(field: &Field, value: &Value) -> Option<String> {
+    let label = field.value_label(value)?;
+    match field.field_as.as_deref() {
+        Some("badge") => Some(format!("[{label}]")),
+        Some("choice") => Some(format!("‹{label}›")),
+        Some("tags" | "secret" | "toggle" | "json") => None,
+        _ => Some(label.to_owned()),
+    }
 }
 
 /// A field's value, drawn by the field's `as`.
@@ -1997,7 +2030,12 @@ impl App {
             }
             Primitive::Badge(badge) => {
                 let value = text_of(badge.text.as_ref(), badge.field.as_ref());
-                vec![Span::styled(format!("[{}]", display(&value)), bold())]
+                let shown = badge
+                    .labels
+                    .as_ref()
+                    .and_then(|labels| labels.label(&value))
+                    .map_or_else(|| display(&value), str::to_owned);
+                vec![Span::styled(format!("[{shown}]"), bold())]
             }
             Primitive::Icon(icon) => {
                 let glyph = match icon.icon.as_str() {
