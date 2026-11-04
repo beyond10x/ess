@@ -1507,6 +1507,17 @@ impl RefusalCause {
                  branch, as the line above names, and the two answer at the held-state step in \
                  declaration order"
             }
+            // An external branch declared below an accepting `when:` branch that claims every
+            // input tried (beyond10x/ess#217): the specification, not ess, leaves it unreachable.
+            Self::GuardUnsatisfiable { predicate, .. }
+                if predicate.contains(DECLARED_BELOW_ACCEPTING) =>
+            {
+                "under the precedence order an accepting branch declared above an external one \
+                 answers every input its guard claims; to answer the external cause first, as a \
+                 not-found refusal is, declare it above that branch and mark it `before_row: \
+                 true` (ess/25), or narrow the accepting branch's `when:` so that some input \
+                 reaches this one"
+            }
             Self::GuardUnsatisfiable { .. } => {
                 "write the branch's condition over values a candidate can carry, or supply a \
                  fixture for it"
@@ -8620,7 +8631,14 @@ pub(super) struct Shadow {
     /// The accepting branches declared before it that claimed some candidate, by name
     /// (beyond10x/ess#217).
     earlier: BTreeMap<OutcomeName, String>,
+    /// Whether the branch shadowed is an `external:` one, which an accepting branch declared
+    /// before it answers first, and which `before_row: true` declared first moves before them.
+    external: bool,
 }
+
+/// The phrase a refusal of an `external:` branch every candidate of which an accepting branch
+/// declared before it claims carries, and its hint's marker.
+const DECLARED_BELOW_ACCEPTING: &str = "which answers before the external cause is asked";
 
 impl Shadow {
     pub(super) fn record(
@@ -8635,6 +8653,7 @@ impl Shadow {
             return Ok(());
         }
         self.refusal |= is_input_guarded_refusal(outcome);
+        self.external |= is_external(outcome);
         let mut claimed = false;
         for refusal in sibling_refusals(format, command, outcome) {
             let Some(guard) = when(refusal) else {
@@ -8664,6 +8683,12 @@ impl Shadow {
         if self.otherwise || (self.claimed.is_empty() && self.earlier.is_empty()) {
             return None;
         }
+        // A branch with no guard of its own, an unguarded `external:` one, is satisfied by any input.
+        let own = if guards.is_empty() {
+            "an input".to_owned()
+        } else {
+            rendered(guards, true)
+        };
         if !self.earlier.is_empty() {
             let named = |claims: &BTreeMap<OutcomeName, String>| {
                 claims
@@ -8679,15 +8704,18 @@ impl Shadow {
                     named(&self.claimed)
                 ));
             }
-            outside.push(format!(
-                "{}, the accepting branch declared first",
-                named(&self.earlier)
-            ));
-            return Some(format!(
-                "{} outside {}",
-                rendered(guards, true),
-                outside.join("; ")
-            ));
+            if self.external {
+                outside.push(format!(
+                    "{}, the accepting branch declared first, {DECLARED_BELOW_ACCEPTING}",
+                    named(&self.earlier)
+                ));
+            } else {
+                outside.push(format!(
+                    "{}, the accepting branch declared first",
+                    named(&self.earlier)
+                ));
+            }
+            return Some(format!("{own} outside {}", outside.join("; ")));
         }
         let refusals: Vec<String> = self
             .claimed
@@ -8699,14 +8727,12 @@ impl Shadow {
             // adversary pass 1), so an input a refusal declared before this one claims is that
             // refusal's.
             return Some(format!(
-                "{} outside {}, an input-guarded refusal declared before it, which answers first",
-                rendered(guards, true),
+                "{own} outside {}, an input-guarded refusal declared before it, which answers first",
                 refusals.join(", ")
             ));
         }
         Some(format!(
-            "{} outside {}, the input-guarded refusal taken first",
-            rendered(guards, true),
+            "{own} outside {}, the input-guarded refusal taken first",
             refusals.join(", ")
         ))
     }
@@ -15112,7 +15138,15 @@ fn unknown_instances(
                 let id = ScenarioId::Outcome {
                     outcome: OutcomeRef::new(command_ref, answer.name.clone()),
                 };
-                if let Ok(scenario) = unknown_instance(ir, command, &acting, answer, actors) {
+                // Sent with the input that reaches an acting branch, the fresh identity requires the
+                // not-found answer where an accepting `when:` branch declared before it may claim
+                // that input first (beyond10x/ess#217). Such a witness contradicts the precedence
+                // order, so it is not built: the scenario injecting the external cause stays, and
+                // where none could be built its refusal names the repair.
+                if let Some(scenario) = unknown_instance(ir, command, &acting, answer, actors)
+                    .ok()
+                    .filter(|scenario| contradicted(ir, &scenario.steps).is_none())
+                {
                     suite.scenarios.remove(&id);
                     insert(suite, id, scenario, refusals);
                 }
