@@ -133,6 +133,19 @@ impl FixtureAdapter {
         Ok((adapter, loaded))
     }
 
+    /// The file a placeholder's `fixture:` names: in the fixture directory when the document
+    /// declares `fixtures.dir`, as a view or script file is (a path that starts with the declared
+    /// directory names the same file); else relative to the document.
+    fn placeholder_file(&self, file: &str) -> PathBuf {
+        match &self.fixture_dir {
+            Some((declared, dir)) if !declared.is_empty() => {
+                let file = Path::new(file);
+                dir.join(file.strip_prefix(declared).unwrap_or(file))
+            }
+            _ => self.base.join(file),
+        }
+    }
+
     fn document_relative(&self, file: &str) -> PathBuf {
         if let Some((declared, dir)) = &self.fixture_dir {
             if let Some(rest) = file
@@ -186,7 +199,7 @@ impl DataAdapter for FixtureAdapter {
     fn read(&self, request: &ReadRequest) -> Result<ReadResult, String> {
         let data = match &request.fixture {
             Some(file) => {
-                let path = self.document_relative(file);
+                let path = self.placeholder_file(file);
                 let value = read_yaml(&path).map_err(|error| error.to_string())?;
                 view_data(&value, &request.view)
                     .ok_or_else(|| format!("{file} holds no rows for {}", request.view))?

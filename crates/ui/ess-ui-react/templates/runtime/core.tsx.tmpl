@@ -549,6 +549,13 @@ export function formatValue(value: unknown, format?: string, currency?: unknown)
   if (value === undefined || value === null) {
     return "";
   }
+  // A date or time is a text timestamp or a number of epoch milliseconds.
+  if ((typeof value === "string" || typeof value === "number") && (format === "date" || format === "time")) {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      return format === "date" ? date.toLocaleDateString() : date.toLocaleString();
+    }
+  }
   if (typeof value === "number") {
     switch (format) {
       case "currency":
@@ -561,15 +568,9 @@ export function formatValue(value: unknown, format?: string, currency?: unknown)
       case "duration":
         return `${value}s`;
       case "bytes":
-        return `${new Intl.NumberFormat().format(value)} B`;
+        return formatBytes(value);
       default:
         return new Intl.NumberFormat().format(value);
-    }
-  }
-  if (typeof value === "string" && (format === "date" || format === "time")) {
-    const date = new Date(value);
-    if (!Number.isNaN(date.getTime())) {
-      return format === "date" ? date.toLocaleDateString() : date.toLocaleString();
     }
   }
   if (Array.isArray(value)) {
@@ -583,6 +584,42 @@ export function formatValue(value: unknown, format?: string, currency?: unknown)
     return JSON.stringify(value);
   }
   return String(value);
+}
+
+const BYTE_UNITS = ["B", "KB", "MB", "GB"];
+
+/** A byte count scaled to B, KB, MB or GB in 1024 steps, with at most one decimal. */
+export function formatBytes(count: number): string {
+  let unit = 0;
+  let scaled = count;
+  while (unit < BYTE_UNITS.length - 1 && Math.abs(scaled) >= 1024) {
+    scaled /= 1024;
+    unit += 1;
+  }
+  // 1048575 B is 1023.999 KB, which rounds to the next unit.
+  if (unit < BYTE_UNITS.length - 1 && Math.abs(Math.round(scaled * 10) / 10) >= 1024) {
+    scaled /= 1024;
+    unit += 1;
+  }
+  const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1, useGrouping: false }).format(scaled);
+  return `${number} ${BYTE_UNITS[unit]}`;
+}
+
+/**
+ * `value` as an address a link or player may load: http, https or mailto, or a relative address;
+ * `undefined` for any other scheme (a script URL) or a value that is no text.
+ */
+export function safeUrl(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.trim() === "") {
+    return undefined;
+  }
+  try {
+    // Parsed as the browser parses it, so a scheme hidden by tabs or leading spaces is seen.
+    const protocol = new URL(value, "http://relative.invalid/").protocol;
+    return ["http:", "https:", "mailto:"].includes(protocol) ? value : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Resolves a row field or an expression to display. */

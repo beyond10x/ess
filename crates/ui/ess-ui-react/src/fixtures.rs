@@ -207,9 +207,22 @@ fn load(document: &Document, source_dir: &Path) -> Result<Fixtures, GenerateErro
             .insert(channel.clone(), script(&read_yaml(&dir.join(file))?));
     }
     for (view, file) in placeholder_reads(document) {
-        load_view_file(&mut fixtures, &source_dir.join(file), Some(&view))?;
+        let path = placeholder_file(index.dir.as_deref(), &dir, &file);
+        load_view_file(&mut fixtures, &path, Some(&view))?;
     }
     Ok(fixtures)
+}
+
+/// The file a placeholder's `fixture:` names when the document declares `fixtures.dir`: in that
+/// directory, as a view or script file of the index is. A path that starts with the declared
+/// directory names the same file, so `fixtures/forecast.yaml` and `forecast.yaml` agree under
+/// `dir: fixtures`. `dir` is the declared directory resolved against the document's.
+fn placeholder_file(declared: Option<&str>, dir: &Path, file: &str) -> PathBuf {
+    let Some(declared) = declared else {
+        return dir.join(file);
+    };
+    let file = Path::new(file);
+    dir.join(file.strip_prefix(declared).unwrap_or(file))
 }
 
 fn load_view_file(
