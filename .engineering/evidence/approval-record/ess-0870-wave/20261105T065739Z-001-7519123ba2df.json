@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-05T06:57:39Z",
+  "actor": "human:timo",
+  "artifact": "approval-record:ess-0870-wave",
+  "kind": "approval-record",
+  "revision": 15,
+  "change": {
+    "change": "redaction",
+    "literal_sha256": "aa5b5d6111de4b35515c5cde228dc6fab57ec1bed4bc6befd9796a18fa15de35",
+    "literal_chars": 4,
+    "replacement": "adopter report",
+    "count": 2,
+    "reason": "downstream adopter label"
+  }
+}

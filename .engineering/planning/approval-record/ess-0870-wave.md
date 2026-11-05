@@ -13,7 +13,7 @@ relations:
 - decides: story:the-openapi-says-published-only-for-events-the-component-publishes
 - decides: story:a-value-renders-in-the-form-its-field-declares
 - decides: story:choices-filter-bars-and-forms-render-what-they-declare
-revision: 10
+revision: 16
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-04T08:47:27Z", actor: "human:timo", revision: 2, executor: "agent:ess-w1-lead"}
 ---
@@ -26,7 +26,7 @@ request and its merge on green, a release through ess's own process), answered t
 > Q-W: a. The plan's collections and runner steps move to W2.
 > Q-A: a. Q-C: a.
 > G-3: a. G-7: a. G-8: a. G-12: a. G-13: a. G-14: a. G-15: a.
-> B7-1: a (B/KB/MB/GB in 1024 steps; metric `bytes` scales the same way).
+> adopter report: a (B/KB/MB/GB in 1024 steps; metric `bytes` scales the same way).
 > Record this in an approval record (no private ids) and move the stories to active. Release 0.87.0.
 
 The five stories below are moved draft -> proposed -> active by the wave lead on those words; the
@@ -49,7 +49,7 @@ This run is non-interactive: the wave lead is a sub-agent with no operator turn.
 | G-13, help | a: `help: {text, link}` on a form group and a field (a field covers its column header) |
 | G-14, choice placeholder | a: `placeholder: <text>` on a choice, also the empty dropdown option |
 | G-15, reset label | a: `reset: true` or `reset: {label}` |
-| B7-1, byte size | a: `as: bytes` on a field, the metric's existing word; B/KB/MB/GB in 1024 steps; metric `format: bytes` scales the same way |
+| adopter report, byte size | a: `as: bytes` on a field, the metric's existing word; B/KB/MB/GB in 1024 steps; metric `format: bytes` scales the same way |
 
 ## Units
 
@@ -110,8 +110,8 @@ because the terminal hint now carries the toggle state mark and the runner match
 
 ## Answer to G-1: duration form
 
-The orchestrator answered reconcile question G-1 on 2026-11-04 (items A01 and the duration reports D1, R4-G1,
-AS3-8, B2-7):
+The orchestrator answered reconcile question G-1 on 2026-11-04 (items A01 and the duration reports adopter report
+adopter report):
 
 - `as: duration` takes an optional `unit: ms | s`, default `ms`.
 - It renders `h:mm:ss` with the hours unpadded: 73000 ms is `0:01:13`. Past 24 hours it stays in hours: 26 hours is
@@ -125,9 +125,9 @@ short columns").
 The orchestrator added two more ride-alongs on 2026-11-04. Each starts after the unit whose files it shares has
 merged into the integration branch, takes the next free sub-agent slot after U2, and runs named test targets only:
 
-- `story:a-short-text-column-is-not-truncated-while-the-table-has-room` (adopter item B8-11), after U4: the
+- `story:a-short-text-column-is-not-truncated-while-the-table-has-room` (adopter report), after U4: the
   collection template and styles.
-- `story:a-duration-renders-as-hours-minutes-seconds` (G-1 answered; D1, B2-7, R4-G1), after U3: the field
+- `story:a-duration-renders-as-hours-minutes-seconds` (G-1 answered; adopter report), after U3: the field
   template and the field model.
 
 Both stories move to active with this record. The lead tells the orchestrator when U3 and U4 merge.
@@ -161,3 +161,19 @@ returned needs-change: 3 of 59 cases red, all introduced by this wave. The orche
 
 The correction unit merges the adversary's pins and red cases with the fix, so every case passes or is ignored
 with its reason.
+
+## Adopter labels and the squash merge
+
+The coordinator decided on 2026-11-05 that a downstream adopter's item labels stay out of every
+committed text of this public repository, the planning store included.
+
+- Mutable story bodies and summaries and this record had the labels replaced with `adopter report`
+  through `aep plan artifact redact`, one literal per call; each call left its evidence record.
+- The release changelog entries and three test comments dropped the labels in the release prepare.
+- Commits already pushed to the integration branch keep their text: history is not rewritten.
+  The pull request into `main` is merged as one squash commit with a title and body written for it,
+  so neither those commit messages nor the intermediate diffs reach `main`; the integration branch
+  is deleted after the merge.
+- A squash merge has no second parent, so the release's `prior-gate` rule 2 cannot reuse the queue
+  run. The tag goes on the squash commit after its `main` push run passes every required check
+  (rule 1); otherwise the release runs the full gate.

@@ -4,14 +4,14 @@ id: story:a-duration-renders-as-hours-minutes-seconds
 kind: story
 status: active
 title: A duration renders as hours, minutes and seconds
-summary: 'as: duration takes unit ms or s (default ms) and renders h:mm:ss with unpadded hours (G-1 answered; adopter items D1, B2-7, R4-G1)'
+summary: 'as: duration takes unit ms or s (default ms) and renders h:mm:ss with unpadded hours (G-1 answered; adopter report)'
 tags:
 - ess-w1-0870
 - from-consumer-report
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
-revision: 4
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-04T10:58:23Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-04T10:58:24Z", actor: "human:timo", revision: 3}
@@ -22,7 +22,7 @@ A field declared `as: duration` renders as `h:mm:ss`, from milliseconds or secon
 
 ## Context
 
-Today the React runtime prints a duration's raw number with an `s` suffix. Adopter reports D1, B2-7 and R4-G1 ask
+Today the React runtime prints a duration's raw number with an `s` suffix. Adopter reports adopter report ask
 for a readable form, and reconcile question G-1 is answered (see approval-record:ess-0870-wave, "Answer to G-1:
 duration form").
 
@@ -47,4 +47,4 @@ Named tests; each runs and passes, and each fails before the change.
 ## Schedule
 
 Ride-along of the 0.87.0 wave, after U3 merges (it shares fields.tsx.tmpl and the field model). The CHANGELOG cites
-D1, B2-7 and R4-G1 and says G-1 is answered.
+adopter report and says G-1 is answered.

@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-05T06:57:58Z",
+  "actor": "human:timo",
+  "artifact": "story:a-value-renders-in-the-form-its-field-declares",
+  "kind": "story",
+  "revision": 21,
+  "change": {
+    "change": "redaction",
+    "literal_sha256": "bf896e203beaf80bb0b96a03c20ac74b019c1980b08d0ee055e2b17c00b1d41a",
+    "literal_chars": 12,
+    "replacement": "adopter report",
+    "count": 1,
+    "reason": "downstream adopter label"
+  }
+}

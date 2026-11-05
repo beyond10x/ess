@@ -4,14 +4,14 @@ id: story:a-short-text-column-is-not-truncated-while-the-table-has-room
 kind: story
 status: active
 title: A short text column is not truncated while the table has room
-summary: A collection table truncates a short text column while other columns have room to give (adopter item B8-11)
+summary: A collection table truncates a short text column while other columns have room to give (adopter report)
 tags:
 - ess-w1-0870
 - from-consumer-report
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
-revision: 5
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-04T10:58:25Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-04T10:58:25Z", actor: "human:timo", revision: 3}
@@ -22,7 +22,7 @@ A short text column in a collection table shows its whole value whenever the tab
 
 ## Context
 
-Adopter report B8-11: short text columns are truncated with an ellipsis while other columns of the same table
+Adopter report adopter report: short text columns are truncated with an ellipsis while other columns of the same table
 have room to give. The report named the React collection template and styles. Reading them while implementing
 (0.87.0 wave) found no cell truncation rule there: `.ui-table` is `width: 100%` with no fixed layout, and the only
 ellipsis rule is on chart axis labels. The terminal renderer (`crates/ui/ess-ui-tui/src/view.rs`) capped every
@@ -44,7 +44,7 @@ Ride-along of the 0.87.0 wave, after U4 merges (it shares the collection templat
 
 ## Browser side (adopter answer)
 
-The adopter answered on 2026-11-05: their B8-11 screen was the browser. In headless Chrome at 1440 px, an
+The adopter answered on 2026-11-05: their adopter report screen was the browser. In headless Chrome at 1440 px, an
 11-column table measured 1357 px inside a 1114 px box. Every cell was `white-space: nowrap`, so the box scrolled
 and a downstream adopter's theme, which pins one column, covered the last columns.
 

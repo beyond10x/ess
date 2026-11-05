@@ -31,7 +31,7 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 12
+revision: 22
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-04T08:47:30Z", actor: "human:timo", revision: 11, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
 - {from: "proposed", to: "active", at: "2026-11-04T08:47:30Z", actor: "human:timo", revision: 12, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
@@ -60,16 +60,16 @@ Templates are under `crates/ui/ess-ui-react/templates/runtime/composites/`.
 
 | row | ids | defect | cause |
 |---|---|---|---|
-| A11 | R4-G7, AS3-11, B2-14 | a dropdown's empty option shows the state key; filter captions are raw binding names | `choice.tsx.tmpl:109` `props.label ?? "—"`; `crates/ui/ess-ui-react/src/emit.rs` filter-bar captions (V) |
-| A12 | R4-G8 | the filter-bar window select has no label | `filter_bar.tsx.tmpl:39` (V) |
-| A13 | R4-G9, B2-17 | `multiple` with `style: dropdown` renders a single select | `choice.tsx.tmpl:83`, `:101` (V; React half only) |
-| A15 | B6-4 | a list page renders a search box with no search param declared | emitter (R) |
-| A16 | B2-5, B4-37 | a `tree` choice sends a literal placeholder value | `choice.tsx.tmpl` (R) |
-| A18 | R4-G10, B2-4 | a `save: on_change` form still shows Save | `form.tsx.tmpl:36`, `:192` (V) |
-| A19 | B6-2 | form actions render destructive-first, not in the declared order | `form.tsx.tmpl` (R) |
-| G-14 | B2-19 | a choice has no `placeholder` | `crates/ui/ess-ui/src/model.rs:1357-1380` |
-| G-15 | B2-22 | `reset` takes a boolean only | `model.rs:1487-1489` |
-| G-13 | R4-G23 | `help` is read only in the page header | `model.rs:1555-1561` (Help), `form.tsx.tmpl` renders group label only |
+| A11 | adopter report | a dropdown's empty option shows the state key; filter captions are raw binding names | `choice.tsx.tmpl:109` `props.label ?? "—"`; `crates/ui/ess-ui-react/src/emit.rs` filter-bar captions (V) |
+| A12 | adopter report | the filter-bar window select has no label | `filter_bar.tsx.tmpl:39` (V) |
+| A13 | adopter report | `multiple` with `style: dropdown` renders a single select | `choice.tsx.tmpl:83`, `:101` (V; React half only) |
+| A15 | adopter report | a list page renders a search box with no search param declared | emitter (R) |
+| A16 | adopter report | a `tree` choice sends a literal placeholder value | `choice.tsx.tmpl` (R) |
+| A18 | adopter report | a `save: on_change` form still shows Save | `form.tsx.tmpl:36`, `:192` (V) |
+| A19 | adopter report | form actions render destructive-first, not in the declared order | `form.tsx.tmpl` (R) |
+| G-14 | adopter report | a choice has no `placeholder` | `crates/ui/ess-ui/src/model.rs:1357-1380` |
+| G-15 | adopter report | `reset` takes a boolean only | `model.rs:1487-1489` |
+| G-13 | adopter report | `help` is read only in the page header | `model.rs:1555-1561` (Help), `form.tsx.tmpl` renders group label only |
 
 ## Acceptance
 

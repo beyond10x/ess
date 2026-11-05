@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-05T06:58:10Z",
+  "actor": "human:timo",
+  "artifact": "story:choices-filter-bars-and-forms-render-what-they-declare",
+  "kind": "story",
+  "revision": 22,
+  "change": {
+    "change": "redaction",
+    "literal_sha256": "e9bbdb5f9ae89147cffce5747e6f268b3b5542f2279bfd221dc37e901c3bef7e",
+    "literal_chars": 6,
+    "replacement": "adopter report",
+    "count": 1,
+    "reason": "downstream adopter label"
+  }
+}
