@@ -7384,7 +7384,15 @@ fn created_owned(
         // Mid-arrangement of `entity`: a creator that needs a related row of an entity already
         // being arranged stops there (ess/18).
         let chain: Vec<&EntityHandle> = arranging.iter().copied().chain([entity]).collect();
-        if related_guard::routes(creator.command, creator.outcome) {
+        // An external branch reading a related row is sent naming a present row, as [`invoke`]
+        // sends it when it chooses the input itself: a chosen input naming no declared row is
+        // answered by the `when_related` sibling, not the forced branch (beyond10x/ess#736).
+        let external = input.is_some_and(|input| {
+            creator.outcome.test_strategy == TestStrategy::InjectFault
+                && related_guard::arranges_external(creator.command, creator.outcome)
+                && related_guard::reads_row(creator.command, input, bound)
+        });
+        if related_guard::routes(creator.command, creator.outcome) || external {
             related_guard::drive(
                 ir,
                 creator,
@@ -7440,7 +7448,10 @@ fn created_by<E>(
     };
 
     let mut settled = BTreeMap::new();
-    let created = run(&bound, &steps)?;
+    let mut created = run(&bound, &steps)?;
+    if distinction != Distinction::PLAIN {
+        exampled(ir, entity, creator, distinction, &mut created);
+    }
     steps.extend(created.steps);
     source.extend(created.source);
     absorb(&mut settled, creator.outcome, created.settled);
@@ -7644,6 +7655,170 @@ fn invoke(
     } else {
         Ok(invoke_with(ir, driver, instance, actors, bound, &input))
     }
+}
+
+/// A further instance's creation, with each input that declares an `example:` sent as the plain
+/// instance sends it (beyond10x/ess#736).
+///
+/// Rule 5 of [`crate::witness`] moves every leaf of a further instance's witness, examples
+/// included, so two runs of one creating command never submit one input. But what tells two rows
+/// apart is their identity and the fields something reads to tell them apart. Every other field
+/// of `widget-2` was sent as a generated placeholder, and an implementation needing a member the
+/// example carries refused a create the specification says how to build.
+///
+/// An input takes the plain instance's value where all of these hold, and keeps its own
+/// otherwise:
+///
+/// - it declares an `example:` and no fixture input;
+/// - it is not the creating branch's identity input, and no input guard reads it;
+/// - it was sent as the further instance's own unsteered witness, so no search chose it;
+/// - no field the branch copies it into is the identity or read by a view over the entity (filter,
+///   order, grouping, aggregate input, computed field or reference), where further rows are told
+///   apart, ranked or counted;
+/// - the plain value keeps the branch ([`keeps_branch`]).
+///
+/// What the branch's `sets:` leave is read again from the input sent.
+fn exampled(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+    distinction: Distinction,
+    created: &mut Invocation,
+) {
+    let command = creator.command;
+    if command.examples.is_empty() {
+        return;
+    }
+    let first = |at: Distinction| {
+        candidates(ir, command, &[], at)
+            .ok()
+            .and_then(|inputs| inputs.into_iter().next())
+    };
+    let (Some(plain), Some(own)) = (first(Distinction::PLAIN), first(distinction)) else {
+        return;
+    };
+    let name = CommandRef::new(command.name.clone());
+    let Some(input) = created.steps.iter_mut().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand {
+            command: executed,
+            input,
+            ..
+        } if *executed == name => Some(input),
+        _ => None,
+    }) else {
+        return;
+    };
+    let identity = existence::identity_input(creator.outcome);
+    let guarded: BTreeSet<&str> = input_guards(command)
+        .into_iter()
+        .flat_map(Predicate::fact_paths)
+        .map(FactPath::namespace)
+        .collect();
+    let told = told_apart(ir, entity, creator.outcome);
+    let mut swapped: BTreeSet<&str> = BTreeSet::new();
+    for field in command.examples.keys() {
+        let field = field.as_str();
+        if command.fixture_inputs.contains_key(field)
+            || identity == Some(field)
+            || guarded.contains(field)
+            || told.contains(field)
+        {
+            continue;
+        }
+        let (Some(example), Some(placeholder)) = (plain.get(field), own.get(field)) else {
+            continue;
+        };
+        if example == placeholder
+            || input.get(field) != Some(&ScenarioValue::literal(placeholder.clone()))
+        {
+            continue;
+        }
+        let literals: BTreeMap<String, Node> = input
+            .iter()
+            .filter_map(|(name, value)| match value {
+                ScenarioValue::Literal { value } => Some((name.clone(), value.clone())),
+                _ => None,
+            })
+            .collect();
+        if !keeps_branch(ir, command, &literals, field, example) {
+            continue;
+        }
+        input.insert(field.to_owned(), ScenarioValue::literal(example.clone()));
+        swapped.insert(field);
+    }
+    if swapped.is_empty() {
+        return;
+    }
+    let refreshed = settled(ir, creator.outcome, input, &BTreeMap::new());
+    for set in &creator.outcome.sets {
+        let ResolvedPayloadValue::InputField { field: read, .. } = &set.value else {
+            continue;
+        };
+        if !swapped.contains(read.split('.').next().unwrap_or(read)) {
+            continue;
+        }
+        match refreshed.get(&set.target) {
+            Some(held) => {
+                created.settled.insert(set.target.clone(), held.clone());
+            }
+            None => {
+                created.settled.remove(&set.target);
+            }
+        }
+    }
+}
+
+/// The inputs a creating branch copies into a field that tells its rows apart: the identity, or a
+/// field a view over `entity` reads in its filter, order, grouping, aggregate input, computed
+/// fields or references.
+fn told_apart<'o>(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    outcome: &'o ResolvedOutcome,
+) -> BTreeSet<&'o str> {
+    let identity = &ir.entity(entity).identity.name;
+    let views: Vec<&ResolvedView> = ir
+        .views()
+        .values()
+        .filter(|view| view.source == *entity)
+        .collect();
+    let read = |target: &str| {
+        target == identity
+            || views.iter().any(|view| {
+                reads_root(view, target)
+                    || view.order_by.iter().any(|rank| rank.field == target)
+                    || view
+                        .references
+                        .iter()
+                        .any(|reference| reference.via == target)
+                    || view.computed.values().any(|expression| {
+                        expression
+                            .reads()
+                            .into_iter()
+                            .any(|path| path.namespace() == target)
+                    })
+                    || view.aggregation.as_ref().is_some_and(|aggregation| {
+                        aggregation.group_by.iter().any(|field| field == target)
+                            || aggregation.functions.values().any(|function| {
+                                function
+                                    .input
+                                    .as_ref()
+                                    .is_some_and(|input| input.name == target)
+                            })
+                    })
+            })
+    };
+    outcome
+        .sets
+        .iter()
+        .filter(|set| read(&set.target))
+        .filter_map(|set| match &set.value {
+            ResolvedPayloadValue::InputField { field, .. } => {
+                Some(field.split('.').next().unwrap_or(field))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// `input` with the identity an arranging creation names its new row by moved to `distinction`'s
