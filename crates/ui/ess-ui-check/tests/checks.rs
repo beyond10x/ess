@@ -1037,6 +1037,33 @@ fn label_map_unused() {
     assert!(!report.has_errors(), "{:#?}", report.findings);
 }
 
+/// A form section on page `p` with one field, written as `field`.
+fn form_field_page(field: &str) -> String {
+    page(&format!(
+        "{{kind: detail_page, title: P, sections: [{{name: add, component: form, does: t.Add, fields: [{field}]}}]}}"
+    ))
+}
+
+#[test]
+fn suggests_needs_tags() {
+    let text = form_field_page("{field: owner, suggests: {reads: t.Owners, value: name}}");
+    let finding = trips(
+        &text,
+        "suggests_needs_tags",
+        "pages/p/sections/add/fields/owner",
+    );
+    assert!(finding.message.contains("as: tags"), "{finding:?}");
+    let report = report(&form_field_page(
+        "{field: tags, as: tags, suggests: {reads: t.Tags, value: name}}",
+    ));
+    assert!(
+        tripped(&report, "suggests_needs_tags").is_empty(),
+        "{:#?}",
+        report.findings
+    );
+    assert!(errors(&report).is_empty(), "{:#?}", report.findings);
+}
+
 /// A collection on page `p` whose row actions are `actions`.
 fn row_actions_page(actions: &str) -> String {
     page(&format!(

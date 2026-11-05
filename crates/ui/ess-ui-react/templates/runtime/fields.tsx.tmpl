@@ -3,7 +3,7 @@
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useUiPath } from "./core";
 import { display, formatDuration, formatValue, safeUrl, ScopeLayer, useScope } from "./core";
-import { useRead } from "./data";
+import { useRead, type ReadSpec } from "./data";
 import { evaluate, truthy } from "./expr";
 import { getPath, isObject, stableKey } from "./json";
 
@@ -24,6 +24,9 @@ export interface FieldSpec {
   labelFrom?: LabelFrom;
   /** The text a column or record shows for a value, keyed by the value as text. */
   labels?: Record<string, string>;
+  /** The values an `as: tags` input suggests: one per row of `reads`, its `value` field (`name` when
+   * absent), or the row itself when it is a plain string. */
+  suggests?: { reads: ReadSpec; value?: string };
   /** Help text or link shown with the input, or on its column header. */
   help?: HelpSpec;
 }
@@ -264,6 +267,57 @@ function ListInput(props: { value: unknown; set: (next: unknown) => void; label:
 }
 
 /** A field edited in a form; it writes to `binds`, or to `draft.<field>`. */
+/** The suggestion a row of a tags input's `suggests` read gives: the row itself when it is a plain
+ * string, else its `value` field (`name` when absent); `undefined` when it holds none. */
+export function suggestionOf(row: unknown, value: string | undefined): string | undefined {
+  if (typeof row === "string") {
+    return row;
+  }
+  const picked = isObject(row) ? getPath(row, (value ?? "name").split(".")) : undefined;
+  return picked === undefined || picked === null || typeof picked === "object" ? undefined : String(picked);
+}
+
+/** A tags input: comma-separated text, so a typed value is kept as it is, and, with `suggests`,
+ * a button per value its read answers that the input does not hold yet, which adds it. */
+function TagsInput(props: { field: FieldSpec; value: unknown; text: string; set: (next: unknown) => void }): ReactNode {
+  const scope = useScope();
+  const { field, set } = props;
+  const held = Array.isArray(props.value) ? props.value.map((tag) => String(tag)) : [];
+  const read = useRead(field.suggests?.reads, scope.values, field.suggests !== undefined);
+  const offered: string[] = [];
+  for (const row of field.suggests ? read.rows : []) {
+    const suggestion = suggestionOf(row, field.suggests?.value);
+    if (suggestion !== undefined && !held.includes(suggestion) && !offered.includes(suggestion)) {
+      offered.push(suggestion);
+    }
+  }
+  return (
+    <>
+      <input
+        value={Array.isArray(props.value) ? props.value.join(", ") : props.text}
+        placeholder="comma, separated"
+        onChange={(event: ChangeEvent<HTMLInputElement>) =>
+          set(
+            event.target.value
+              .split(",")
+              .map((tag) => tag.trim())
+              .filter((tag) => tag.length > 0),
+          )
+        }
+      />
+      {offered.length > 0 ? (
+        <span className="ui-tag-suggestions">
+          {offered.map((suggestion) => (
+            <button key={suggestion} type="button" className="ui-tag ui-tag-suggestion" onClick={() => set([...held, suggestion])}>
+              {suggestion}
+            </button>
+          ))}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 export function FieldInput(props: { field: FieldSpec }): ReactNode {
   const { field } = props;
   const scope = useScope();
@@ -331,20 +385,7 @@ export function FieldInput(props: { field: FieldSpec }): ReactNode {
       control = <ListInput value={value} set={set} label={fieldLabel(field)} />;
       break;
     case "tags":
-      control = (
-        <input
-          value={Array.isArray(value) ? value.join(", ") : text}
-          placeholder="comma, separated"
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            set(
-              event.target.value
-                .split(",")
-                .map((tag) => tag.trim())
-                .filter((tag) => tag.length > 0),
-            )
-          }
-        />
-      );
+      control = <TagsInput field={field} value={value} text={text} set={set} />;
       break;
     case "file":
       control = (

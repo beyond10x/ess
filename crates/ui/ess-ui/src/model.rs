@@ -2263,6 +2263,8 @@ pub struct Field {
     pub label_from: Option<LabelFrom>,
     /// The words a column or record shows for a value, in place of the value.
     pub labels: Option<Labels>,
+    /// The values an `as: tags` input suggests; typed values are still kept.
+    pub suggests: Option<Suggests>,
     /// Author remark.
     pub note: Option<String>,
     /// Help text or link shown with the input, or on its column header.
@@ -2410,6 +2412,25 @@ pub struct LabelFrom {
     pub field: String,
     /// The field of its row the key matches; `id` when absent.
     pub key: Option<String>,
+}
+
+/// The values an `as: tags` input suggests (`Field.suggests`): one per row of `reads`, its `value`
+/// field, or the row itself when the row is a plain string. A value the draft holds is not
+/// suggested, and a typed value is kept whether or not a row holds it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Suggests {
+    /// The read whose rows are suggested.
+    pub reads: Reads,
+    /// The row field each suggestion takes; `name` when absent.
+    pub value: Option<String>,
+}
+
+impl Suggests {
+    /// The row field each suggestion takes.
+    pub fn value(&self) -> &str {
+        self.value.as_deref().unwrap_or("name")
+    }
 }
 
 impl LabelFrom {

@@ -1459,6 +1459,7 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `binds` | `expr` |   |   | bind to UI state instead of the command input |
 | `label_from` | record \{ `view`: name of an ESS `view`, `field`: `name`, `key`: optional `name` \} |   |   | show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params |
 | `labels` | one of: map of `string` → `string` \| `name` |   |   | the text shown for a value: a map written out, or the name of an entry of `label_maps` |
+| `suggests` | record \{ `reads`: [Reads](#reads), `value`: optional `name` \} |   |   | the values an `as: tags` input suggests, one per row of `reads`: its `value` field (default `name`), or the row itself when it is a plain string; a value the input holds is not suggested, and a typed value is kept whether or not a row holds it, so no create command is needed. Only on an `as: tags` field |
 | `note` | `string` |   |   | author remark |
 | `help` | record \{ `text`: optional `string`, `link`: optional `string` \} |   |   | help text or link shown with the input; on a column, with its header |
 
@@ -1482,6 +1483,7 @@ choice: {component: choice, options: PartnerTier}
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
 | `label_map_refs` | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
+| `suggests_needs_tags` | `**.suggests` | `{must: sit_on_an_as_tags_field}` | error |
 
 ### Tab
 
@@ -2740,6 +2742,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `pager_outside_collection` | [Reads](#reads) | `reads.pager` | `{must: belong_to_a_collection_reads}` | error |
 | `account_menu_keys` | every node | `shells.*.regions.*.props.actions[] of an account_menu` | `{must_be_in: [name, label, opens, does, sets, navigate]}` | error |
 | `checked_needs_toggle` | [Action](#action) | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
+| `suggests_needs_tags` | [Field](#field) | `**.suggests` | `{must: sit_on_an_as_tags_field}` | error |
 | `toggle_state_unknown` | [Action](#action) | `**.checked absent on an as toggle action with does` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
 | `checked_unreadable` | [Action](#action) | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args]}` | warning |
 

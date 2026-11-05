@@ -950,6 +950,7 @@ constructs:
       binds:    {type: expr, note: bind to UI state instead of the command input}
       label_from: {type: {record: {view: {ref: view}, field: name, key: {optional: name}}}, note: "show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params"}
       labels:   {type: {one_of: [{map: {key: string, value: string}}, name]}, note: "the text shown for a value: a map written out, or the name of an entry of `label_maps`"}
+      suggests: {type: {record: {reads: Reads, value: {optional: name}}}, note: "the values an `as: tags` input suggests, one per row of `reads`: its `value` field (default `name`), or the row itself when it is a plain string; a value the input holds is not suggested, and a typed value is kept whether or not a row holds it, so no create command is needed. Only on an `as: tags` field"}
       note:     {type: string, note: author remark}
       help:     {type: {record: {text: {optional: string}, link: {optional: string}}}, note: "help text or link shown with the input; on a column, with its header"}
     example: {field: tier, as: choice, choice: {component: choice, options: PartnerTier}}
@@ -1707,5 +1708,6 @@ checks:
     - {id: pager_outside_collection, subject: "reads.pager", must: belong_to_a_collection_reads, severity: error}
     - {id: account_menu_keys, subject: "shells.*.regions.*.props.actions[] of an account_menu", must_be_in: [name, label, opens, does, sets, navigate], severity: error}
     - {id: checked_needs_toggle, subject: "**.checked", must: sit_on_an_as_toggle_action, severity: error}
+    - {id: suggests_needs_tags, subject: "**.suggests", must: sit_on_an_as_tags_field, severity: error}
     - {id: toggle_state_unknown, subject: "**.checked absent on an as toggle action with does", must: [write_checked, or_bind_exactly_one_input_as_not_expr], severity: warning}
     - {id: checked_unreadable, subject: "**.checked on an as toggle action", must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args], severity: warning}

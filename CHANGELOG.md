@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess-ui/1`: a field `as: tags` takes `suggests: {reads, value}`, the values the input offers: one per row of the read, its `value` field (default `name`), or the row itself when it is a plain string. The React runtime draws a button per value the input does not hold yet, which adds it, and keeps typed values whether or not a row holds them, so a tags input suggests existing tags without a create command. `ess ui check` refuses `suggests` on any other field (`suggests_needs_tags`) and, with `--model`, binds the read and a written `value`. The terminal renderer draws the input as before.
+
 ## [0.87.0] — 2026-11-05
 
 ### Added
