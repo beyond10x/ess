@@ -1952,7 +1952,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 | `fixture` | `string` |   |   | fixture file answering the placeholder: in `fixtures.dir` when the document declares one (a path that starts with that directory names the same file), else relative to the document |
 | `key` | `name` |   |   | the field that identifies a row: rows, row paths and row actions are keyed by it, and `live.match` defaults to it; absent, the section's `live.match`, else `id` |
 | `params` | map of `name` → `expr` |   |   | view params bound to state |
-| `filter` | `expr` |   |   | Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging. |
+| `filter` | `expr` |   |   | Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging. `<a> contains <b>` keeps a row whose `<a>`, read as text, holds every whitespace-separated word of `<b>` in any case, and every row while `<b>` has none; a filter bar search bound to `<b>` is then drawn. |
 | `paging` | one of: `server` \| `client` \| `cursor` \| `append` \| `none` |   | `none` | who pages |
 | `pager` | record \{ `page`: `name`, `size`: optional `name`, `sizes`: optional list of `integer` \} |   |   | the params of this read that carry the page and the page size, and the sizes offered; only on a collection's `reads`, with `paging: server`; sizes default: `[25, 50, 100]` |
 | `debounce` | `duration` |   |   | coalesce param changes before reading |

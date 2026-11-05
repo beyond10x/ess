@@ -135,6 +135,7 @@ fn canonical(predicate: &Predicate) -> Option<String> {
                 Operator::Equal => ("==", 4, 4),
                 Operator::NotEqual => ("!=", 4, 4),
                 Operator::In => ("in", 4, 4),
+                Operator::Contains => ("contains", 4, 4),
             };
             format!(
                 "{} {word} {}",

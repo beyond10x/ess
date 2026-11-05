@@ -131,7 +131,7 @@ fn fnv(text: &str) -> u64 {
 /// negative number literal (`expr.ts`). `form.tsx` and the whole-project digest re-pinned for
 /// story:choices-filter-bars-and-forms-render-what-they-declare: a form's parts are inside the
 /// layer that saves on change, and a help link or a `link` primitive's address goes through
-/// `safeUrl`.
+/// `safeUrl`. The whole-project digest re-pinned for a client filter's `contains` (`expr.ts`).
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
@@ -141,7 +141,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x036a_4d67_6dc4_1ac6),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0xc24e_bfda_5fbd_d012;
+const PLAIN_PROJECT: u64 = 0xb8a8_f12d_13e8_0e3b;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {
