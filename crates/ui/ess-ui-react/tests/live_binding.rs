@@ -128,17 +128,20 @@ fn fnv(text: &str) -> u64 {
 /// params map and an empty state a title; re-pinned for
 /// story:a-server-paged-collection-has-a-page-size-control: the collection's pager footer;
 /// re-pinned for story:a-toggle-shows-the-row-state-it-flips: a display expression reads a
-/// negative number literal (`expr.ts`).
+/// negative number literal (`expr.ts`). `form.tsx` and the whole-project digest re-pinned for
+/// story:choices-filter-bars-and-forms-render-what-they-declare: a form's parts are inside the
+/// layer that saves on change, and a help link or a `link` primitive's address goes through
+/// `safeUrl`.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
     ("src/runtime/actions.tsx", 0x129b_902b_3cbf_eed1),
     ("src/runtime/composites/confirm.tsx", 0xbeef_774c_44b0_0be3),
-    ("src/runtime/composites/form.tsx", 0x752b_3696_9db6_fbcc),
+    ("src/runtime/composites/form.tsx", 0x9029_91ee_2750_4405),
     ("src/runtime/data.ts", 0x036a_4d67_6dc4_1ac6),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x0b80_5930_96e4_2ab0;
+const PLAIN_PROJECT: u64 = 0xc24e_bfda_5fbd_d012;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

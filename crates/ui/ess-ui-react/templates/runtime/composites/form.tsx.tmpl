@@ -173,6 +173,8 @@ function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
           }
         />
       ) : null}
+      {props.parts}
+      {props.children}
     </>
   );
   return (
@@ -186,9 +188,8 @@ function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
       }}
     >
       {props.loads && loaded.status === "loading" ? <div className="ui-skeleton" role="status" /> : null}
+      {/* Everything that edits the draft (fields, groups, tabs, parts) saves on change when the form does. */}
       {onChange ? <ScopeLayer setters={savesOnChange(props.does)}>{inputs}</ScopeLayer> : inputs}
-      {props.parts}
-      {props.children}
       <div className="ui-form-actions">
         {/* The submit first, then the actions in their declared order; a form that saves on change has no submit. */}
         {props.submit?.auto || onChange ? null : (

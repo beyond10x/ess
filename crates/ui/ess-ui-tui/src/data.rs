@@ -135,24 +135,29 @@ impl FixtureAdapter {
 
     /// The file a placeholder's `fixture:` names: in the fixture directory when the document
     /// declares `fixtures.dir`, as a view or script file is (a path that starts with the declared
-    /// directory names the same file); else relative to the document.
+    /// directory names the same file, a leading `./` on either changing nothing); else relative
+    /// to the document.
     fn placeholder_file(&self, file: &str) -> PathBuf {
         match &self.fixture_dir {
             Some((declared, dir)) if !declared.is_empty() => {
-                let file = Path::new(file);
-                dir.join(file.strip_prefix(declared).unwrap_or(file))
+                let file = without_dot(Path::new(file));
+                dir.join(
+                    file.strip_prefix(without_dot(Path::new(declared)))
+                        .unwrap_or(&file),
+                )
             }
             _ => self.base.join(file),
         }
     }
 
+    /// A file named relative to the document: in the fixture directory a run gives when it lies
+    /// under the declared one (a leading `./` on either changing nothing), else beside the
+    /// document.
     fn document_relative(&self, file: &str) -> PathBuf {
         if let Some((declared, dir)) = &self.fixture_dir {
-            if let Some(rest) = file
-                .strip_prefix(declared.as_str())
-                .and_then(|rest| rest.strip_prefix('/'))
-            {
-                if !declared.is_empty() {
+            let declared = without_dot(Path::new(declared));
+            if !declared.as_os_str().is_empty() {
+                if let Ok(rest) = without_dot(Path::new(file)).strip_prefix(&declared) {
                     return dir.join(rest);
                 }
             }
@@ -193,6 +198,14 @@ impl FixtureAdapter {
         }
         Err(missing())
     }
+}
+
+/// `path` without its `.` components: `Path::strip_prefix` compares component-wise and keeps a
+/// leading `./`, so `./data` is no prefix of `data/quarters.yaml` until it is dropped.
+fn without_dot(path: &Path) -> PathBuf {
+    path.components()
+        .filter(|component| !matches!(component, std::path::Component::CurDir))
+        .collect()
 }
 
 impl DataAdapter for FixtureAdapter {

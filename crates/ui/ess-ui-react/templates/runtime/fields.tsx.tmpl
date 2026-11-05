@@ -40,15 +40,21 @@ export function HelpNote(props: { help?: HelpSpec }): ReactNode {
   if (!help || (!help.text && !help.link)) {
     return null;
   }
+  // A link the browser could run (a script address) is shown as text, as a `link` value is.
+  const href = safeUrl(help.link);
   return (
     <small className="ui-help">
       {help.text}
       {help.link ? (
         <>
           {help.text ? " " : null}
-          <a href={help.link} target="_blank" rel="noreferrer">
-            More
-          </a>
+          {href === undefined ? (
+            help.link
+          ) : (
+            <a href={href} target="_blank" rel="noreferrer">
+              More
+            </a>
+          )}
         </>
       ) : null}
     </small>

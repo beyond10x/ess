@@ -532,9 +532,14 @@ export function HeaderFrame(props: {
           {props.help.link ? (
             <>
               {" "}
-              <a href={props.help.link} target="_blank" rel="noreferrer">
-                More
-              </a>
+              {/* A link the browser could run (a script address) is shown as text. */}
+              {safeUrl(props.help.link) === undefined ? (
+                props.help.link
+              ) : (
+                <a href={props.help.link} target="_blank" rel="noreferrer">
+                  More
+                </a>
+              )}
             </>
           ) : null}
         </p>

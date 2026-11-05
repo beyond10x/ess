@@ -408,3 +408,64 @@ fn help_renders_on_a_form_group_a_field_and_a_column_header() {
 ",
     );
 }
+
+/// A help link goes through `safeUrl`, as a `link` value does: a script address on a column, a
+/// group, a field or the page header is shown as text, never as an anchor.
+#[test]
+fn a_script_help_link_renders_as_text_not_an_anchor() {
+    let sections = "      - name: list
+        component: collection
+        reads: {view: shelf.Items}
+        columns:
+          - {field: title, label: Title, help: {text: Named, link: 'javascript:alert(1)'}}
+      - name: form
+        component: form
+        does: shelf.Configure
+        groups:
+          - name: profile
+            label: Profile
+            help: {text: Who sees the shelf, link: 'JavaScript:alert(2)'}
+            fields:
+              - {field: owner, help: {text: The person, link: ' javascript:alert(3)'}}";
+    let yaml = document("detail_page", "      {}", sections).replace(
+        "    state:\n",
+        "    header: {help: {text: About items, link: 'javascript:alert(4)'}}\n    state:\n",
+    );
+    run(
+        "help_script_link",
+        &yaml,
+        r"
+  await settle();
+  const hrefs = tagged('a').map((a) => String(a.props.href));
+  assert.ok(!hrefs.some((href) => /script/i.test(href)), `no help link is an anchor to a script: ${hrefs}`);
+  const text = root.text();
+  for (const link of ['javascript:alert(1)', 'JavaScript:alert(2)', 'javascript:alert(3)', 'javascript:alert(4)']) {
+    assert.ok(text.includes(link), `the refused help link ${link} is shown as text: ${text}`);
+  }
+",
+    );
+}
+
+/// The same holds for a `link` primitive's `href`: a script address is text, an http one a link.
+#[test]
+fn a_script_link_primitive_renders_as_text_not_an_anchor() {
+    let sections = "      - name: one
+        component: record
+        reads: {view: shelf.Items}
+        fields: [title]
+        children:
+          - {name: bad, primitive: link, text: Bad site, href: 'javascript:alert(5)'}
+          - {name: good, primitive: link, text: Good site, href: 'https://example.test/site'}";
+    run(
+        "link_primitive_script",
+        &document("detail_page", "      {}", sections),
+        r"
+  await settle();
+  const anchors = tagged('a');
+  const hrefs = anchors.map((a) => String(a.props.href));
+  assert.ok(!hrefs.some((href) => /script/i.test(href)), `no link is an anchor to a script: ${hrefs}`);
+  assert.ok(anchors.some((a) => a.props.href === 'https://example.test/site' && textOf(a) === 'Good site'), `the http link is an anchor: ${hrefs}`);
+  assert.ok(root.text().includes('Bad site'), `the refused link keeps its text: ${root.text()}`);
+",
+    );
+}
