@@ -68,8 +68,10 @@
 //! * `published` — every event the branch published, in the order it emits them, each
 //!   `{"event": <qualified name>, "payload": {…}}`: `prefixItems` in emit order and `items: false`,
 //!   so the same events in another order, or one of them twice, is not this branch's answer. The
-//!   events also reach consumers through the event transport; the answer lists them so the caller
-//!   learns what its command caused, including a created identity.
+//!   events the component declares under `publishes:` also reach consumers through the event
+//!   transport, and one it keeps to itself is listed all the same: the answer lists them so the
+//!   caller learns what its command caused, including a created identity. Every sentence that says
+//!   an event is published to consumers reads `publishes:`, as the `AsyncAPI` document does.
 //!
 //! # `501` is the one status no branch declares
 //!
@@ -240,9 +242,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
-    CommandHandle, EssIr, ResolvedActor, ResolvedCommand, ResolvedComponent, ResolvedCondition,
-    ResolvedEffect, ResolvedError, ResolvedEvent, ResolvedField, ResolvedOutcome, ResolvedTypeRef,
-    ResolvedView, TypeHandle, ViewHandle,
+    CommandHandle, EssIr, EventHandle, ResolvedActor, ResolvedCommand, ResolvedComponent,
+    ResolvedCondition, ResolvedEffect, ResolvedError, ResolvedEvent, ResolvedField,
+    ResolvedOutcome, ResolvedTypeRef, ResolvedView, TypeHandle, ViewHandle,
 };
 use ess_domain::binding::Delivery;
 use ess_domain::component::Reach;
@@ -519,6 +521,34 @@ fn direct_answers(ir: &EssIr, component: &ResolvedComponent) -> &'static str {
     }
 }
 
+/// The document's sentence on what reaches consumers: the events the component declares under
+/// `publishes:`, by name, or that it publishes none. A branch may emit an event the component keeps
+/// to itself, and a client that read every emitted event as published would subscribe to one that
+/// never arrives; the component's `AsyncAPI` document reads the same declaration.
+///
+/// The `published` property is the servers' list, not the transport's: every event the branch
+/// emitted, published or not ([`published_schema`]).
+fn publication(ir: &EssIr, component: &ResolvedComponent) -> String {
+    if component.publishes.is_empty() {
+        return "This component publishes no event to consumers: an event a branch emits stays \
+                inside the component. The `published` property of every response body still \
+                lists every event its branch emitted, in the order it emits them."
+            .to_owned();
+    }
+    let events: Vec<&ResolvedEvent> = component
+        .publishes
+        .iter()
+        .map(|handle| ir.event(handle))
+        .collect();
+    format!(
+        "This component publishes {} to consumers through the event transport; an event a branch \
+         emits that is not among them stays inside the component. The `published` property of \
+         every response body lists every event its branch emitted, in the order it emits them, \
+         published or not.",
+        list(&wire_names(&events))
+    )
+}
+
 /// What a reader of this file needs to know before reading the paths.
 ///
 /// The convention is restated in the artifact and not only in this module's documentation, because
@@ -553,10 +583,10 @@ fn description(
          command's wire name under its domain's: a command is not a resource, and this document \
          does not invent one. A status code is the outcome the specification declares — 202 for a \
          branch that was taken, 422 for a refusal the input decides, 502 for a refusal decided \
-         outside the request — and the `outcome` property of every response body names the branch. \
-         Events emitted by a branch are published to consumers through the event transport, and \
-         the `published` property of every response body lists them too, in publication order.",
+         outside the request — and the `outcome` property of every response body names the branch.",
     );
+    text.push(' ');
+    text.push_str(&publication(ir, component));
     text.push_str(direct_answers(ir, component));
     if http::grants_checked_on(ir, component) {
         text.push_str(
@@ -703,9 +733,15 @@ fn paths(
             .map(|(binding, declared)| binding.refusals_on(declared));
         let refusals = refusals.as_ref();
         let served = match route.serves {
-            http::Served::Command(handle) => {
-                operation(ir, handle, &grants, checked, route.declared, refusals)
-            }
+            http::Served::Command(handle) => operation(
+                ir,
+                handle,
+                &component.publishes,
+                &grants,
+                checked,
+                route.declared,
+                refusals,
+            ),
             http::Served::View(handle) => query(ir, handle, checked, route.declared, refusals),
         };
         *out.entry(route.path).or_default().slot(route.method) = Some(served);
@@ -772,6 +808,7 @@ fn path_parameters(
 fn operation(
     ir: &EssIr,
     handle: &CommandHandle,
+    publishes: &BTreeSet<EventHandle>,
     grants: &Grants<'_>,
     checks_grants: bool,
     declared: Option<&ess_http::Route>,
@@ -836,9 +873,9 @@ fn operation(
         // A route without a stage-2 key, and a derived one, keeps the stage-1 answers and bytes.
         responses: match declared {
             Some(route) if answered_by_binding(declared, refusals) => {
-                bound_responses(ir, command, checks_grants, route, refusals)
+                bound_responses(ir, command, publishes, checks_grants, route, refusals)
             }
-            _ => responses(ir, command, checks_grants),
+            _ => responses(ir, command, publishes, checks_grants),
         },
     }
 }
@@ -1158,6 +1195,7 @@ fn request_body(
 fn responses(
     ir: &EssIr,
     command: &ResolvedCommand,
+    publishes: &BTreeSet<EventHandle>,
     checks_grants: bool,
 ) -> BTreeMap<String, Response> {
     let mut out: BTreeMap<String, Response> = by_status(ir, command)
@@ -1197,7 +1235,7 @@ fn responses(
                     "Outcomes"
                 },
                 list(&names),
-                meaning(status)
+                meaning(ir, publishes, status, &outcomes)
             );
             let schema = if checks_grants && status == FORBIDDEN {
                 description.push_str(" Or: ");
@@ -1307,6 +1345,7 @@ struct Member {
 fn bound_responses(
     ir: &EssIr,
     command: &ResolvedCommand,
+    publishes: &BTreeSet<EventHandle>,
     checks_grants: bool,
     route: &ess_http::Route,
     refusals: Option<&Refusals>,
@@ -1360,7 +1399,15 @@ fn bound_responses(
     by_status
         .into_iter()
         .map(|(status, answers)| {
-            let response = bound_response(ir, Some(command), &status, &answers, true, &route.alike);
+            let response = bound_response(
+                ir,
+                Some(command),
+                publishes,
+                &status,
+                &answers,
+                true,
+                &route.alike,
+            );
             (status, response)
         })
         .collect()
@@ -1423,7 +1470,9 @@ fn bound_view_responses<'a>(
     by_status
         .into_iter()
         .map(|(status, answers)| {
-            let response = bound_response(ir, None, &status, &answers, false, &[]);
+            // A view's answers hold no outcome, so nothing here is published or kept.
+            let response =
+                bound_response(ir, None, &BTreeSet::new(), &status, &answers, false, &[]);
             (status, response)
         })
         .collect()
@@ -1471,6 +1520,7 @@ impl Rendered {
 fn bound_response(
     ir: &EssIr,
     command: Option<&ResolvedCommand>,
+    publishes: &BTreeSet<EventHandle>,
     status: &str,
     answers: &[Answer<'_>],
     outcomes: bool,
@@ -1479,6 +1529,14 @@ fn bound_response(
     let mut members: Vec<Member> = Vec::new();
     let mut headers: Vec<(String, BTreeMap<String, HeaderDoc>)> = Vec::new();
     let mut unlisted: Vec<String> = Vec::new();
+    // The outcomes `unlisted` names, whose events the derived meaning describes.
+    let unlisted_outcomes: Vec<&ResolvedOutcome> = answers
+        .iter()
+        .filter_map(|answer| match answer {
+            Answer::Outcome(outcome, None) => Some(*outcome),
+            _ => None,
+        })
+        .collect();
     let mut sentences: Vec<String> = Vec::new();
     // The groups of outcomes declared alike whose one body is already a member.
     let mut written_groups: Vec<usize> = Vec::new();
@@ -1523,7 +1581,7 @@ fn bound_response(
                     "Outcomes"
                 },
                 list(&unlisted),
-                meaning(status)
+                meaning(ir, publishes, status, &unlisted_outcomes)
             ),
         );
     }
@@ -2042,6 +2100,7 @@ fn merged_headers(
 /// the answer to an instance no record carries, which has no payload, only `<member>` is required.
 fn error_object(
     ir: &EssIr,
+    publishes: &BTreeSet<EventHandle>,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     member: &str,
@@ -2082,7 +2141,7 @@ fn error_object(
     out.insert("additionalProperties".into(), Fragment::Bool(false));
     out.insert(
         "description".into(),
-        Fragment::String(outcome_description(ir, outcome)),
+        Fragment::String(outcome_description(ir, publishes, outcome)),
     );
     out.insert("required".into(), Fragment::Sequence(required));
     out.insert("properties".into(), Fragment::Mapping(properties));
@@ -2105,9 +2164,58 @@ fn by_status<'a>(
     grouped
 }
 
-/// What a status means here, for the response's required description.
-fn meaning(status: &str) -> &'static str {
+/// What a status means here, for the response's required description, where `outcomes` are the
+/// branches answered at it: an accepting status also says which of their events reach consumers
+/// ([`emitted`]).
+fn meaning(
+    ir: &EssIr,
+    publishes: &BTreeSet<EventHandle>,
+    status: &str,
+    outcomes: &[&ResolvedOutcome],
+) -> String {
+    if let Some(refused) = refusal_meaning(status) {
+        return refused.to_owned();
+    }
     match status {
+        ANSWERED => format!(
+            "the branch the specification declares for this input, carried out in this request: \
+             the body carries the command's response under `response`. {}",
+            emitted(ir, publishes, outcomes)
+        ),
+        _ => format!(
+            "the branch the specification declares for this input. {}",
+            emitted(ir, publishes, outcomes)
+        ),
+    }
+}
+
+/// The sentence an accepting status's description ends with: the events its branches emit are
+/// listed under `published`, and those the component does not publish stay inside it.
+///
+/// Where every one is published, or none is emitted, the sentence every document has always
+/// carried, so a component that keeps no event to itself keeps its bytes.
+fn emitted(ir: &EssIr, publishes: &BTreeSet<EventHandle>, outcomes: &[&ResolvedOutcome]) -> String {
+    let (reaching, kept) = by_publication(ir, publishes, outcomes.iter().copied());
+    if kept.is_empty() {
+        "Events this branch emits are published to consumers and listed under `published`."
+            .to_owned()
+    } else if reaching.is_empty() {
+        format!(
+            "Events this branch emits are listed under `published`: {}.",
+            stays_inside(&wire_names(&kept))
+        )
+    } else {
+        format!(
+            "Events this branch emits are listed under `published`: {}, and {}.",
+            reaches_consumers(&wire_names(&reaching)),
+            stays_inside(&wire_names(&kept))
+        )
+    }
+}
+
+/// What a refusing status means, which no event changes; `None` for an accepting one.
+fn refusal_meaning(status: &str) -> Option<&'static str> {
+    Some(match status {
         REFUSED => {
             "the request was understood and refused on domain grounds. The body names the declared \
              error and carries whatever that error declares."
@@ -2128,16 +2236,8 @@ fn meaning(status: &str) -> &'static str {
             "the caller is not one this branch admits: its guard compares the authenticated caller \
              with the input or the record. The same request from an admitted caller is accepted."
         }
-        ANSWERED => {
-            "the branch the specification declares for this input, carried out in this request: \
-             the body carries the command's response under `response`. Events this branch emits \
-             are published to consumers and listed under `published`."
-        }
-        _ => {
-            "the branch the specification declares for this input. Events this branch emits are \
-             published to consumers and listed under `published`."
-        }
-    }
+        _ => return None,
+    })
 }
 
 /// Every schema the document's `$ref`s point at, and nothing else.
@@ -2167,7 +2267,14 @@ fn schemas(
 
     for handle in &component.accepts {
         let route = binding.and_then(|binding| binding.route(http::Served::Command(handle)));
-        command_schemas(ir, ir.command(handle), route, &mut out, &mut roots);
+        command_schemas(
+            ir,
+            &component.publishes,
+            ir.command(handle),
+            route,
+            &mut out,
+            &mut roots,
+        );
     }
 
     for route in http::routes(ir, component) {
@@ -2203,6 +2310,7 @@ fn schemas(
 /// and the named types they reach, as [`schemas`] describes.
 fn command_schemas<'a>(
     ir: &'a EssIr,
+    publishes: &BTreeSet<EventHandle>,
     command: &'a ResolvedCommand,
     route: Option<&ess_http::Route>,
     out: &mut BTreeMap<String, Fragment>,
@@ -2258,7 +2366,7 @@ fn command_schemas<'a>(
             ess_http::Body::Error { member } => {
                 out.insert(
                     response_key(command, outcome),
-                    error_object(ir, command, outcome, &member),
+                    error_object(ir, publishes, command, outcome, &member),
                 );
                 if let Some(error) = &outcome.error {
                     roots.extend(types::field_leaves(&ir.error(error).fields));
@@ -2283,7 +2391,7 @@ fn command_schemas<'a>(
         }
         out.insert(
             response_key(command, outcome),
-            written(outcome_schema(ir, command, outcome)),
+            written(outcome_schema(ir, publishes, command, outcome)),
         );
         for handle in &outcome.emits {
             let event = ir.event(handle);
@@ -2401,7 +2509,12 @@ fn view_key(view: &ResolvedView) -> String {
 }
 
 /// The response body for one outcome.
-fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutcome) -> Value {
+fn outcome_schema(
+    ir: &EssIr,
+    publishes: &BTreeSet<EventHandle>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Value {
     // The unknown-instance rule answers this same branch for an instance no record carries, and
     // that answer has no payload: nothing describes an instance that does not exist
     // (`docs/design/unknown-instance-seams.md`).
@@ -2417,7 +2530,10 @@ fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutco
         }),
     );
     required.push(Value::String(PUBLISHED.to_owned()));
-    properties.insert(PUBLISHED.to_owned(), published_schema(ir, outcome, unknown));
+    properties.insert(
+        PUBLISHED.to_owned(),
+        published_schema(ir, publishes, outcome, unknown),
+    );
 
     if let Some(handle) = &outcome.error {
         let declared = ir.error(handle);
@@ -2456,10 +2572,10 @@ fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutco
             format!(
                 "{} For an instance no record carries, `payload` is absent, because an \
                  instance that does not exist has nothing for the error to describe.",
-                outcome_description(ir, outcome)
+                outcome_description(ir, publishes, outcome)
             )
         } else {
-            outcome_description(ir, outcome)
+            outcome_description(ir, publishes, outcome)
         },
         "required": required,
         "properties": properties,
@@ -2484,9 +2600,37 @@ fn carries_result(ir: &EssIr, outcome: &ResolvedOutcome) -> bool {
 /// because nothing happened. Every surface that answers a command — the served Rust and Go
 /// applications, the transport-free `handle`, the web bridge — writes this list, so the contract
 /// declares it rather than leaving each of them to contradict `additionalProperties: false`.
-fn published_schema(ir: &EssIr, outcome: &ResolvedOutcome, unknown: bool) -> Value {
-    let description = "Every event this branch published, in publication order: its qualified \
-                       name and its payload.";
+///
+/// Those surfaces list every event the branch emits, also one the component does not publish
+/// (`ess-synth`'s `items::outcome_event_fields` walks `emits` unfiltered), so where the branch
+/// emits such an event the description says it emitted rather than published, and names the ones
+/// that are listed without reaching consumers. A branch whose every event is published keeps the
+/// description it always had.
+fn published_schema(
+    ir: &EssIr,
+    publishes: &BTreeSet<EventHandle>,
+    outcome: &ResolvedOutcome,
+    unknown: bool,
+) -> Value {
+    let (_, kept) = by_publication(ir, publishes, [outcome]);
+    let description = if kept.is_empty() {
+        "Every event this branch published, in publication order: its qualified name and its \
+         payload."
+            .to_owned()
+    } else {
+        let names: Vec<String> = kept
+            .iter()
+            .map(|event| format!("`{}`", event.name))
+            .collect();
+        format!(
+            "Every event this branch emitted, in the order it emits them: its qualified name and \
+             its payload. {} {} listed too, although this component does not publish {} to \
+             consumers.",
+            list(&names),
+            if names.len() == 1 { "is" } else { "are" },
+            if names.len() == 1 { "it" } else { "them" }
+        )
+    };
     if outcome.emits.is_empty() {
         return json!({"type": "array", "description": description, "maxItems": 0});
     }
@@ -2517,7 +2661,7 @@ fn published_schema(ir: &EssIr, outcome: &ResolvedOutcome, unknown: bool) -> Val
                  to it."
             )
         } else {
-            description.to_owned()
+            description
         },
         "prefixItems": entries,
         "items": false,
@@ -2637,7 +2781,11 @@ fn condition_description(condition: &ResolvedCondition) -> String {
 }
 
 /// What the model says about one outcome, as prose.
-fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
+fn outcome_description(
+    ir: &EssIr,
+    publishes: &BTreeSet<EventHandle>,
+    outcome: &ResolvedOutcome,
+) -> String {
     let mut parts: Vec<String> = Vec::new();
     if let Some(summary) = &outcome.summary {
         parts.push(summary.clone());
@@ -2690,12 +2838,82 @@ fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
                 format!("`{}`", event.naming.wire_or(&event.name))
             })
             .collect();
-        parts.push(format!(
-            "Emits {}, published to consumers and listed under `published`.",
-            list(&events)
-        ));
+        // Only an event the component declares under `publishes:` reaches consumers; one it keeps
+        // to itself is still listed, because the servers list every emit ([`published_schema`]).
+        let (reaching, kept) = by_publication(ir, publishes, [outcome]);
+        parts.push(if kept.is_empty() {
+            format!(
+                "Emits {}, published to consumers and listed under `published`.",
+                list(&events)
+            )
+        } else if reaching.is_empty() {
+            format!(
+                "Emits {}, listed under `published`. {}.",
+                list(&events),
+                stays_inside(&wire_names(&kept))
+            )
+        } else {
+            format!(
+                "Emits {}, listed under `published`. {}; {}.",
+                list(&events),
+                reaches_consumers(&wire_names(&reaching)),
+                stays_inside(&wire_names(&kept))
+            )
+        });
     }
     parts.join(" ")
+}
+
+/// The events `outcomes` emit, each once in the order it is first emitted, split into those the
+/// component declares under `publishes:` and those it keeps to itself.
+fn by_publication<'a, 'o>(
+    ir: &'a EssIr,
+    publishes: &BTreeSet<EventHandle>,
+    outcomes: impl IntoIterator<Item = &'o ResolvedOutcome>,
+) -> (Vec<&'a ResolvedEvent>, Vec<&'a ResolvedEvent>) {
+    let mut seen: BTreeSet<&'o EventHandle> = BTreeSet::new();
+    let mut reaching = Vec::new();
+    let mut kept = Vec::new();
+    for handle in outcomes.into_iter().flat_map(|outcome| &outcome.emits) {
+        if !seen.insert(handle) {
+            continue;
+        }
+        if publishes.contains(handle) {
+            reaching.push(ir.event(handle));
+        } else {
+            kept.push(ir.event(handle));
+        }
+    }
+    (reaching, kept)
+}
+
+/// Each event's name as an outcome's text spells it: its wire name, or its local name.
+fn wire_names(events: &[&ResolvedEvent]) -> Vec<String> {
+    events
+        .iter()
+        .map(|event| format!("`{}`", event.naming.wire_or(&event.name)))
+        .collect()
+}
+
+/// `` `A` is published to consumers ``, or `` `A` and `B` are ``.
+fn reaches_consumers(names: &[String]) -> String {
+    let verb = if names.len() == 1 { "is" } else { "are" };
+    format!("{} {verb} published to consumers", list(names))
+}
+
+/// `` `A` is not published and stays inside the component ``, or `` `A` and `B` are … stay ``.
+fn stays_inside(names: &[String]) -> String {
+    if names.len() == 1 {
+        format!(
+            "{} is not published and stays inside the component",
+            list(names)
+        )
+    } else {
+        format!(
+            "{} are not published and stay inside the component",
+            list(names)
+        )
+    }
 }
 
 /// A schema fragment, as a document carries it.
