@@ -936,7 +936,7 @@ fn digest(result: Result<Synthesis, SynthesisFailure>) -> String {
 /// documentation, the Go rows because a Go route derived without a binding refuses a member no
 /// input field names (`closedInput`, story `a-json-command-body-refuses-an-unknown-member`) and
 /// the Go `server/wire.go` reads a `Timestamp` as the Rust decoder does (`timestampAt`). The Rust
-/// and Go rows were re-recorded for 0.87.0, the web rows unchanged: the served OpenAPI document
+/// and Go rows were re-recorded for 0.87.0, the web rows unchanged: the served `OpenAPI` document
 /// those trees embed calls an event published to consumers only when the component publishes it
 /// (story:the-openapi-says-published-only-for-events-the-component-publishes).
 const BEFORE_DERIVED_LABELS: &[(&str, &str)] = &[

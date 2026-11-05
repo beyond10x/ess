@@ -68,12 +68,16 @@ task check
 
 CI runs `task check` as a few jobs, each running Taskfile tasks as steps. `checks` runs `ci-lint`,
 `ci-smoke`, `test-feature-off-doc`, `test-xtask` and `fuzz-check` one after another after one
-setup. Every test binary is compiled once, into two nextest archives built side by side:
-`build-tests` runs `test-archive-workspace` and `build-feature-off` runs
-`test-archive-feature-off` (local `task test-archive` runs both). `test (<m>/4)` downloads both and
-runs `test-shard` and `test-feature-off` for partition `slice:m/4`, compiling nothing; `slice:`
-deals the whole test list out, where `count:` dealt each binary's out from shard 1 and left shard
-4 with half the work of shard 1. The shards extract into
+setup. Every test binary is compiled once, in jobs built side by side: `build-tests` runs
+`test-archive-workspace`, which writes two workspace archives from one build, `workspace-a`
+(`WORKSPACE_GROUP_A`: ess-conformance binaries `a`..`m`, 20.4 GB extracted) and `workspace-b` (its
+complement, 25.2 GB), and `build-feature-off` runs `test-archive-feature-off` (local
+`task test-archive` runs both). Each of the 20 `test (<m>/20)` jobs runs `test-shard GROUP=<a|b>
+PART=<k>/10` (shards 1–10 group a, 11–20 group b): it extracts its group's archive, deletes both
+archives and runs `slice:k/10` from the extracted metadata, because all 45.6 GB extracted did not
+fit a 52 GB hosted runner. It then runs `test-feature-off` for `slice:m/20`, compiling nothing;
+`slice:` deals the whole test list out, where `count:` dealt each binary's out from shard 1 and
+left the last shard with half the work of shard 1. The shards extract into
 the checkout's own `target/`, because test binaries bake `CARGO_BIN_EXE_*` and
 `CARGO_TARGET_TMPDIR` in at build time. The `Gate` job carries their joint result, and
 `crates/edge/ess-xtask/tests/ci_lanes.rs` fails when a step of `check` is in no job, when the

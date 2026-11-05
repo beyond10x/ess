@@ -21,6 +21,7 @@ vars:
   # run all of it.
   FEATURE_OFF_NUMBER_SEMANTICS: >-
     not package(ess-cli) | kind(lib) | kind(bin) | binary(/^(binary64|normalization|schema|execution_recovery)/)
+  WORKSPACE_GROUP_A: package(ess-conformance) & binary(/^[a-m]/)
 
 tasks:
   fmt-check:
@@ -103,10 +104,11 @@ tasks:
       - task: test-archive-feature-off
 
   test-archive-workspace:
-    desc: Compile the workspace test binaries into the nextest archive `test-shard` runs.
+    desc: Compile the workspace test binaries into the two nextest archives `test-shard` runs, groups a and b.
     cmds:
       - mkdir -p {{.NEXTEST_ARCHIVES}}
-      - cargo nextest archive --workspace --exclude ess-xtask --locked --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst
+      - cargo nextest archive --workspace --exclude ess-xtask --locked -E '{{.WORKSPACE_GROUP_A}}' --archive-file {{.NEXTEST_ARCHIVES}}/workspace-a.tar.zst
+      - cargo nextest archive --workspace --exclude ess-xtask --locked -E 'not ({{.WORKSPACE_GROUP_A}})' --archive-file {{.NEXTEST_ARCHIVES}}/workspace-b.tar.zst
       - task: integer-spellings-harness
       - task: json-body-harnesses
       - task: ui-http-servers
@@ -242,9 +244,14 @@ tasks:
   # anywhere else those paths name nothing. That holds only where the archive was built in
   # `./target` of a checkout at the same path, which is every GitHub runner.
   test-shard:
-    desc: Run one partition of the workspace test archive, e.g. `task test-shard SHARD=1/4`; needs `task test-archive-workspace`.
+    desc: Run one partition of one group of the workspace test archives, e.g. `task test-shard GROUP=a PART=1/10`; needs `task test-archive-workspace` and deletes its archives.
     requires:
-      vars: [SHARD]
+      vars:
+        - name: GROUP
+          enum: [a, b]
+        - PART
+    vars:
+      OTHER_GROUP: '{{if eq .GROUP "a"}}b{{else}}a{{end}}'
     env:
       ESS_INTEGER_SPELLINGS_HARNESS: '{{.INTEGER_SPELLINGS_HARNESS}}'
       ESS_JSON_BODY_CLOSURE_HARNESS: '{{.JSON_BODY_CLOSURE_HARNESS}}'
@@ -253,7 +260,10 @@ tasks:
       ESS_UI_HTTP_ITEMS_SERVER: '{{.UI_HTTP_ITEMS_SERVER}}'
       ESS_CLAP_SHARED_BINARY: '{{.CLAP_SHARED_BINARY}}'
     cmds:
-      - cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst --workspace-remap . --extract-to . --extract-overwrite --no-fail-fast --partition slice:{{.SHARD}}
+      - rm -f {{.NEXTEST_ARCHIVES}}/workspace-{{.OTHER_GROUP}}.tar.zst
+      - cargo nextest list --archive-file {{.NEXTEST_ARCHIVES}}/workspace-{{.GROUP}}.tar.zst --workspace-remap . --extract-to . --extract-overwrite > /dev/null
+      - rm {{.NEXTEST_ARCHIVES}}/workspace-{{.GROUP}}.tar.zst
+      - cargo nextest run --binaries-metadata target/nextest/binaries-metadata.json --cargo-metadata target/nextest/cargo-metadata.json --workspace-remap . --target-dir-remap target --no-fail-fast --partition slice:{{.PART}}
 
   test-transport-network:
     desc: Validate AsyncAPI and execute both generated publishers against real JetStream; requires explicit external test tooling.

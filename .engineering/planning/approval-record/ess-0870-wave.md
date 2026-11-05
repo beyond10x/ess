@@ -13,7 +13,7 @@ relations:
 - decides: story:the-openapi-says-published-only-for-events-the-component-publishes
 - decides: story:a-value-renders-in-the-form-its-field-declares
 - decides: story:choices-filter-bars-and-forms-render-what-they-declare
-revision: 20
+revision: 21
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-04T08:47:27Z", actor: "human:timo", revision: 2, executor: "agent:ess-w1-lead"}
 ---
@@ -221,3 +221,13 @@ watch on a 52G runner gets one re-run of the failed jobs through the bot; a seco
 brings the two-archive split into this pull request, and any other red stops the release. The
 split itself is `story:ci-test-shards-each-extract-half-the-test-binaries`, accepted as the first
 unit of the next ESS wave (0.88.0).
+
+## CI disk: the split joins this wave
+
+The third queue run (42017687798) stopped Test 4/20 on runner disk a second time, so on
+2026-11-05 the coordinator brought `story:ci-test-shards-each-extract-half-the-test-binaries` into
+this wave: the two-archive split rides in this pull request with a clippy fix the same run found
+(`doc_markdown` on a re-pin comment). Before the push the Checks job's clippy invocation,
+`cargo clippy --workspace --all-targets --locked -- -D warnings`, runs locally as one gate stage,
+since a targeted clippy missed a lint twice; the `ci_lanes` tests run with it. Each group
+archive's size is measured and stated in the pull request.
