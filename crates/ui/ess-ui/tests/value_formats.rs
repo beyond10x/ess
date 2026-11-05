@@ -1,4 +1,4 @@
-//! `as: bytes` on a field (story:a-value-renders-in-the-form-its-field-declares, B7-1): the
+//! `as: bytes` on a field (story:a-value-renders-in-the-form-its-field-declares): the
 //! schema lists the metric's existing word `bytes` among a field's `as` values, and a document
 //! that writes it loads with it.
 //!

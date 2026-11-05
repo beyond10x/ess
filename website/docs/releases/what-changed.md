@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.87.0 — 2026-11-05
+
+### UI values render in their declared form, forms show their help, and synthesis refuses a misplaced not-found once
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/ui-durations-help-and-synthesis-refusals) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.87.0)
+
+An ess-ui/1 value renders in the form its field declares, durations as h:mm:ss and byte counts in B to GB; choices, filter bars and forms show their placeholder, reset label and help. Synthesis refuses a not-found branch after a guarded move once, with its repair, and journeys find a row toggle in either state again.
+
 ## 0.86.0 — 2026-11-03
 
 ### UI documents label their values, show a toggle's state, page by size and report a refusal where it is

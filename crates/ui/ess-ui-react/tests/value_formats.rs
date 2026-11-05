@@ -316,7 +316,7 @@ for (const n of button("Add").concat(button("Remove"))) assert.strictEqual(n.pro
     );
 }
 
-/// The cases of B7-1: a byte count and what it shows, `B` to `GB` in 1024 steps.
+/// The byte-count cases: a byte count and what it shows, `B` to `GB` in 1024 steps.
 const BYTES: &str = r"
 const cases = [
   [0, /^0 B$/],

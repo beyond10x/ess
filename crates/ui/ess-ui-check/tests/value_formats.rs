@@ -1,5 +1,5 @@
-//! `as: bytes` on a field passes `enum_values` (story:a-value-renders-in-the-form-its-field-declares,
-//! B7-1), as `format: bytes` on a metric does; a word the schema does not list is still refused.
+//! `as: bytes` on a field passes `enum_values` (story:a-value-renders-in-the-form-its-field-declares),
+//! as `format: bytes` on a metric does; a word the schema does not list is still refused.
 
 use std::path::PathBuf;
 

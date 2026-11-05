@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/ui-durations-help-and-synthesis-refusals-0.87.0
+repository: ess
+publishedAt: 2026-11-05T00:00:00Z
+title: UI values render in their declared form, forms show their help, and synthesis refuses a misplaced not-found once
+summary: >-
+  An ess-ui/1 value renders in the form its field declares, durations as h:mm:ss and byte counts
+  in B to GB; choices, filter bars and forms show their placeholder, reset label and help.
+  Synthesis refuses a not-found branch after a guarded move once, with its repair, and journeys
+  find a row toggle in either state again.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.87.0
+  version: 0.87.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.87.0](#ui-values-render-in-their-declared-form-forms-show-their-help-and-synthesis-refuses-a-misplaced-not-found-once) | UI values render in their declared form, forms show their help, and synthesis refuses a misplaced not-found once | capability | notable |
 | [0.86.0](#ui-documents-label-their-values-show-a-toggles-state-page-by-size-and-report-a-refusal-where-it-is) | UI documents label their values, show a toggle's state, page by size and report a refusal where it is | capability | notable |
 | [0.85.0](#every-witness-reads-back-its-effect-and-the-mutation-audit-covers-grants-and-lists-its-gaps) | Every witness reads back its effect, and the mutation audit covers grants and lists its gaps | capability | significant |
 | [0.84.0](#generated-servers-refuse-what-their-openapi-refuses-and-generated-uis-call-their-bindings-routes) | Generated servers refuse what their OpenAPI refuses, and generated UIs call their binding's routes | capability | significant |
@@ -97,6 +98,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.87.0 — 2026-11-05
+
+### UI values render in their declared form, forms show their help, and synthesis refuses a misplaced not-found once
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.87.0)
+
+An ess-ui/1 value renders in the form its field declares, durations as h:mm:ss and byte counts in B to GB; choices, filter bars and forms show their placeholder, reset label and help. Synthesis refuses a not-found branch after a guarded move once, with its repair, and journeys find a row toggle in either state again.
 
 ## 0.86.0 — 2026-11-03
 
