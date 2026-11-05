@@ -9,7 +9,7 @@ info:
   description: |-
     The HTTP surface of `invoice-service`, one of the components of `billing` v3. It is not declared `reached_by: network`: its callers are deployed with it, so these paths describe its commands and no request reaches them.
 
-    Every path here is one semantic command, so the method is always POST and the path is the command's wire name under its domain's: a command is not a resource, and this document does not invent one. A status code is the outcome the specification declares — 202 for a branch that was taken, 422 for a refusal the input decides, 502 for a refusal decided outside the request — and the `outcome` property of every response body names the branch. Events emitted by a branch are published to consumers through the event transport, and the `published` property of every response body lists them too, in publication order.
+    Every path here is one semantic command, so the method is always POST and the path is the command's wire name under its domain's: a command is not a resource, and this document does not invent one. A status code is the outcome the specification declares — 202 for a branch that was taken, 422 for a refusal the input decides, 502 for a refusal decided outside the request — and the `outcome` property of every response body names the branch. This component publishes `InvoiceCancelled`, `InvoiceCreated`, `InvoiceIssued` and `InvoicePaid` to consumers through the event transport; an event a branch emits that is not among them stays inside the component. The `published` property of every response body lists every event its branch emitted, in the order it emits them, published or not.
   version: v3
   x-ess-provenance:
     system: billing
