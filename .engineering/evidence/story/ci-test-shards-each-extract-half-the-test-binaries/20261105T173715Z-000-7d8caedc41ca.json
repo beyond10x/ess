@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-05T17:37:15Z",
+  "actor": "human:timo",
+  "artifact": "story:ci-test-shards-each-extract-half-the-test-binaries",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ESS 0.87.0: pull request 737 (queue/ess-0.87.0 at 257abd2687) passed every check, 39 of 39, in run 42043226338 after a re-run of two go-task download failures; its squash 92a26d29f6 (same tree) passed main CI run 42062765919 and every other run on that commit (2026-11-05)",
+    "reference": "92a26d29f6"
+  }
+}
