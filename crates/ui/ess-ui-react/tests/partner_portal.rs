@@ -80,6 +80,7 @@ fn rendered_paths(document: &Document) -> BTreeSet<String> {
                     | NodeRef::Page(_)
                     | NodeRef::Section(_)
                     | NodeRef::Header(_)
+                    | NodeRef::HeaderHelp(_)
                     | NodeRef::Overlay(_)
                     | NodeRef::Node(_)
                     | NodeRef::Field(_)

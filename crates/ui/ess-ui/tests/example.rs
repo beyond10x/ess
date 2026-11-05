@@ -214,7 +214,7 @@ fn constructs_used(document: &Document) -> BTreeSet<String> {
                     mark("NavEntry");
                 }
             }
-            NodeRef::Header(_) => mark("header"),
+            NodeRef::Header(_) | NodeRef::HeaderHelp(_) => mark("header"),
             NodeRef::Section(section) => {
                 mark("Section");
                 if section.states.is_some() {

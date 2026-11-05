@@ -445,9 +445,14 @@ impl<'d> Runner<'d> {
             self.app.keys(&key_spec(key));
             return Ok(());
         }
+        let segments: Vec<&str> = target.node.split('/').collect();
+        // A page header's help opens where it is drawn. The terminal draws it open, so there is
+        // nothing to press; a renderer that draws it closed opens it on this step.
+        if let ["pages", _, "header", "help"] = segments.as_slice() {
+            return self.require_no_overlay(target);
+        }
         let action = self.action(target)?;
         self.require_no_overlay(target)?;
-        let segments: Vec<&str> = target.node.split('/').collect();
         if let ["pages", _, "header", "actions", _] = segments.as_slice() {
             self.app.keys(&format!(
                 ":do: {}<enter>",

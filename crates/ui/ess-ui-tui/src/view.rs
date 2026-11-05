@@ -452,14 +452,29 @@ impl App {
             ));
         }
         if let Some(help) = &header.help {
-            let text = [help.text.clone(), help.link.clone()]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>()
-                .join(" — ");
-            lines.push(Line::styled(format!("? {text}"), dim()));
+            lines.push(self.header_help_line(help, lines.len()));
         }
         lines
+    }
+
+    /// A page header's help as one dim line at `line` of the header, recorded as a node of its
+    /// own (`<header>/help`), as the generated React project draws it.
+    fn header_help_line(&self, help: &ess_ui::Help, line: usize) -> Line<'static> {
+        let text = [help.text.clone(), help.link.clone()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" — ");
+        self.mark(Mark {
+            path: format!("{}/header/help", self.page_path()),
+            row: None,
+            line,
+            height: 1,
+            x: 0,
+            width: None,
+            text: Some(text.clone()),
+        });
+        Line::styled(format!("? {text}"), dim())
     }
 
     fn total(&self, section: &str) -> Option<u64> {
