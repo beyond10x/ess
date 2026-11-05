@@ -1484,8 +1484,34 @@ fn cell_value(field: &Field, value: &Value) -> String {
             .unwrap_or_default(),
         Some("audio" | "iframe") => format!("↗ {}", display(value)),
         Some("bytes") => value.as_f64().map_or_else(|| display(value), bytes),
+        Some("duration") => value.as_f64().map_or_else(
+            || display(value),
+            |count| duration(count, &field.duration_unit()),
+        ),
         _ => display(value),
     }
+}
+
+/// A duration counted in `unit` as `h:mm:ss`, in whole seconds, the hours unpadded and never
+/// folded into days, as the React target shows it.
+fn duration(count: f64, unit: &ess_ui::DurationUnit) -> String {
+    if !count.is_finite() {
+        return count.to_string();
+    }
+    let millis = match unit {
+        ess_ui::DurationUnit::S => count * 1000.0,
+        _ => count,
+    };
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    // finite, floored, non-negative
+    let seconds = (millis.abs() / 1000.0).floor() as u64;
+    let sign = if millis <= -1000.0 { "-" } else { "" };
+    format!(
+        "{sign}{}:{:02}:{:02}",
+        seconds / 3600,
+        seconds / 60 % 60,
+        seconds % 60
+    )
 }
 
 /// A byte count scaled to B, KB, MB or GB in 1024 steps, with at most one decimal, as the React
@@ -1589,6 +1615,8 @@ impl App {
                     format!("‹{chosen}› of {}", options.join("/"))
                 }
                 Some("file") => format!("path: {}", display(&value)),
+                // An input edits the number the field holds, as the React input does.
+                Some("duration") => display(&value),
                 _ => cell_value(field, &value),
             };
             let current = place.focused && index == state.item;

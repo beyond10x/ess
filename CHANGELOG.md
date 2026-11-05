@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess-ui/1`: a field `as: duration` takes an optional `unit: ms | s`, default `ms`, and renders as `h:mm:ss` with the hours unpadded and never folded into days: `73000` with the default unit and `73` with `unit: s` both show `0:01:13`, 26 hours shows `26:00:00`, and part of a second is dropped, not rounded up. The React runtime shows a column or record value in that form and the terminal renderer the same; a form input keeps the number. The loader refuses any other unit, and a `unit` on a field that is not `as: duration`, at the field's path. A metric's `format: duration` is unchanged (adopter items D1, B2-7 and R4-G1; G-1 answered; story:a-duration-renders-as-hours-minutes-seconds).
+
 ### Fixed
 
 - `ess ui test`: a journey step that acts on a row toggle finds it again in either state. Since 0.86.0 the terminal writes a toggle's action hint with its state mark (`k [x] Enabled`, `k [ ] Enabled`) and the runner compared the whole hint with the plain label, so every such step failed with "the row does not offer <label>"; it now reads a toggle's label behind a `[x] ` or `[ ] ` mark, for rows, sections and overlays alike. An action that is not a toggle still matches its whole label only, so a label that starts with brackets matches as written and a toggle's mark never makes another action match. The rendered hint is unchanged (story:a-journey-clicks-a-row-toggle-in-either-state).

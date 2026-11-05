@@ -877,6 +877,15 @@ impl<'d> Gen<'d> {
             ("name", Some(ts::string(&field.name))),
             ("label", quoted(field.label.as_ref())),
             ("as", quoted(field.field_as.as_ref())),
+            // An unmapped unit is treated as absent, as every renderer treats a marker.
+            (
+                "unit",
+                field
+                    .unit
+                    .as_ref()
+                    .filter(|unit| !matches!(unit, ess_ui::DurationUnit::Unmapped(_)))
+                    .map(|unit| ts::string(unit.as_str())),
+            ),
             ("sortable", field.sortable.then(|| "true".to_owned())),
             ("visible", expr(field.visible.as_ref())),
             ("binds", expr(field.binds.as_ref())),
