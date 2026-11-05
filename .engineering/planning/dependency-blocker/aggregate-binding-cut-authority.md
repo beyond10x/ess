@@ -2,13 +2,15 @@
 format: aep.planning-md/3
 id: dependency-blocker:aggregate-binding-cut-authority
 kind: dependency-blocker
-status: open
+status: cleared
 title: Aggregate binding effects lack a verified complete query boundary
 relations:
 - blocks: story:feature-request-361
 - blocks: story:feature-request-362
 withholds: test_result
-revision: 4
+revision: 6
+transitions:
+- {from: "open", to: "cleared", at: "2026-11-04T07:28:33Z", actor: "human:timo", revision: 6, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
 ---
 ## Missing dependency
 
@@ -35,3 +37,12 @@ New aggregate program/cut vocabulary is allocated ordinary suite38/inventory39. 
 ## Design resolved; execution still required
 
 Independent final design review2of2 approves the complete causal contract and producer ownership at3dfaba0eea3108103c6e46099a56f0851f91e190, no findings. Publication report SHA256614ea21b94478af47470ee0af32cc60f5b5e9e4782d2b554a540ee851853bc3a; recorded review-result:aggregate-causal-design-20261003-r2. The default-method lifecycle, actual generated/native dispatcher and shared transaction store, immutable query cut, versioned exposure and full browser path are bound. No implementation or actual adapter acceptance has run. dependency-blocker:aggregate-binding-cut-authority remains open until its healthy/fault controls actually execute; approval of this design does not clear it.
+
+## Cleared 2026-11-04
+
+Stale. Both stories this blocker blocks are `implemented` on `main` (8d26c81f74):
+`story:feature-request-361` and `story:feature-request-362`, each moved active -> implemented on
+2026-11-02T20:40:45Z on the `test_result` recorded from CHANGELOG.md (0.53.0, issues #361 and #362
+closed as completed). Nothing is left for it to withhold. Any remaining binding-affected aggregate
+observation work is a new story, not this blocker. Cleared in the store-reconcile step of the
+0.87.0 batch wave.

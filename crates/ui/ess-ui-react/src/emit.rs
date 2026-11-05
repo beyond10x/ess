@@ -5,7 +5,7 @@ use std::fmt::{Debug, Write as _};
 
 use ess_ui::{
     Action, ActionConfirm, Body, Carries, ChartKind, Columns, Composite, Direction, Document,
-    Field, Header, Live, NavPages, Node, NodeCommon, NodePath, Overlay, Page, PageLayout,
+    Field, Header, Live, NavPages, Node, NodeCommon, NodePath, NodeRef, Overlay, Page, PageLayout,
     Primitive, Reads, Region, RegionKind, Section, SectionStates, Selection, Shell, State,
     StateClass, Store, Tab, TabFields, TabForm,
 };
@@ -44,6 +44,16 @@ fn quoted(value: Option<&String>) -> Option<String> {
 
 fn expr(value: Option<&ess_ui::Expr>) -> Option<String> {
     value.map(|value| ts::string(&value.0))
+}
+
+/// A `help: {text, link}` as the runtime's `HelpSpec`.
+fn help(help: Option<&ess_ui::Help>) -> Option<String> {
+    help.map(|help| {
+        ts::object([
+            ("text", quoted(help.text.as_ref())),
+            ("link", quoted(help.link.as_ref())),
+        ])
+    })
 }
 
 /// An action's `navigate` as the runtime's `ActionSpec` carries it: the page and its params.
@@ -101,6 +111,8 @@ struct Opts {
     choice_value: Option<String>,
     /// The local holding the rows a live nested node reads for its composite (#354).
     data: Option<&'static str>,
+    /// The words a choice is named by: the declared `label` of the field it picks for.
+    caption: Option<String>,
 }
 
 impl Opts {
@@ -115,6 +127,7 @@ impl Opts {
             row_key: None,
             choice_value: None,
             data: None,
+            caption: None,
         }
     }
 }
@@ -145,6 +158,9 @@ pub(crate) struct Gen<'d> {
     /// The route table a bound project reads: a choice over a view takes the view's identity
     /// from it (beyond10x/ess#328).
     binding: Option<ess_ui::binding::Binding>,
+    /// The expressions the reads of the page being written are given (params and filters): a
+    /// filter bar draws its search box only when one of them takes the search's state.
+    page_reads: Option<Vec<String>>,
 }
 
 /// How often a bound `live:` section reads again when its read declares no `refresh:` duration.
@@ -265,6 +281,7 @@ impl<'d> Gen<'d> {
             components: BTreeSet::new(),
             bound: binding.is_some(),
             binding: binding.cloned(),
+            page_reads: None,
         }
     }
 
@@ -636,6 +653,56 @@ impl<'d> Gen<'d> {
 
     // ── specs ────────────────────────────────────────────────────────────────────────────
 
+    /// The expressions every read on page `name` is given: each param's and each `filter`, of
+    /// its sections, nested nodes, overlays and actions.
+    fn page_read_exprs(&self, name: &str) -> Vec<String> {
+        fn of_body(body: &Body) -> Vec<&Reads> {
+            let mut reads: Vec<&Reads> = body.live_reads().into_iter().collect();
+            if let Body::Composite(Composite::Form(form)) = body {
+                reads.extend(form.loads.as_ref());
+            }
+            reads
+        }
+        let mut exprs = Vec::new();
+        for located in self.doc.nodes() {
+            let on_page = match located.path.segments() {
+                [pages, page, ..] => pages == "pages" && page == name,
+                _ => false,
+            };
+            if !on_page {
+                continue;
+            }
+            let reads = match located.node {
+                NodeRef::Section(section) => of_body(&section.body),
+                NodeRef::Node(node) => of_body(&node.body),
+                NodeRef::Overlay(overlay) => of_body(&overlay.body),
+                NodeRef::Action(action) => action.loads.iter().collect(),
+                _ => Vec::new(),
+            };
+            for read in reads {
+                exprs.extend(read.params.values().map(|param| param.0.clone()));
+                exprs.extend(read.filter.as_ref().map(|filter| filter.0.clone()));
+            }
+        }
+        exprs
+    }
+
+    /// Whether a read on the page being written takes the state at `path` (a filter bar's
+    /// search): one of its expressions names `path` or a field inside it. Outside a page, any
+    /// read may, so it is taken.
+    fn read_takes(&self, path: &str) -> bool {
+        self.page_reads.as_ref().is_none_or(|exprs| {
+            exprs.iter().any(|text| {
+                text.match_indices(path).any(|(at, _)| {
+                    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+                    let before = text[..at].chars().next_back();
+                    let after = text[at + path.len()..].chars().next();
+                    !before.is_some_and(|c| word(c) || c == '.') && !after.is_some_and(word)
+                })
+            })
+        })
+    }
+
     fn reads(reads: &Reads) -> Option<String> {
         let view = reads.view.as_ref().or(reads.placeholder.as_ref())?;
         Some(ts::object([
@@ -709,6 +776,7 @@ impl<'d> Gen<'d> {
         let choice = action.choice.as_deref().map(|node| {
             let mut opts = Opts::own();
             opts.binds = None;
+            opts.caption.clone_from(&action.label);
             self.node(&at.child("choice"), node, &opts)
         });
         let (confirm, confirm_show, confirm_opens) = match &action.confirm {
@@ -788,6 +856,7 @@ impl<'d> Gen<'d> {
                 opts.binds = None;
             }
             opts.choice_value = Some(field.field.clone());
+            opts.caption.clone_from(&field.label);
             self.node(&at.child("choice"), node, &opts)
         });
         let label_from = field.label_from.as_ref().map(|label_from| {
@@ -808,6 +877,15 @@ impl<'d> Gen<'d> {
             ("name", Some(ts::string(&field.name))),
             ("label", quoted(field.label.as_ref())),
             ("as", quoted(field.field_as.as_ref())),
+            // An unmapped unit is treated as absent, as every renderer treats a marker.
+            (
+                "unit",
+                field
+                    .unit
+                    .as_ref()
+                    .filter(|unit| !matches!(unit, ess_ui::DurationUnit::Unmapped(_)))
+                    .map(|unit| ts::string(unit.as_str())),
+            ),
             ("sortable", field.sortable.then(|| "true".to_owned())),
             ("visible", expr(field.visible.as_ref())),
             ("binds", expr(field.binds.as_ref())),
@@ -815,6 +893,7 @@ impl<'d> Gen<'d> {
             ("labels", labels),
             ("note", quoted(field.note.as_ref())),
             ("choice", choice),
+            ("help", help(field.help.as_ref())),
         ])
     }
 
@@ -1191,6 +1270,7 @@ impl<'d> Gen<'d> {
                         ("save", quoted(group.save.as_ref())),
                         ("does", quoted(group.does.as_ref())),
                         ("actions", group_actions),
+                        ("help", help(group.help.as_ref())),
                     ]));
                 }
                 let groups = (!groups.is_empty()).then(|| {
@@ -1296,7 +1376,15 @@ impl<'d> Gen<'d> {
                         }),
                     )
                     .opt("note", quoted(c.note.as_ref()))
-                    .opt("label", choice_label(at).map(|name| ts::string(&name)))
+                    .opt("placeholder", quoted(c.placeholder.as_ref()))
+                    .opt(
+                        "label",
+                        opts.caption
+                            .clone()
+                            .or_else(|| c.placeholder.clone())
+                            .or_else(|| choice_label(at))
+                            .map(|caption| ts::string(&caption)),
+                    )
                     .render()
             }
             Composite::FilterBar(bar) => {
@@ -1323,12 +1411,15 @@ impl<'d> Gen<'d> {
                     )
                     .opt(
                         "search",
-                        bar.search.as_ref().map(|search| {
-                            ts::object([
-                                ("binds", Some(ts::string(&search.binds.0))),
-                                ("placeholder", quoted(search.placeholder.as_ref())),
-                            ])
-                        }),
+                        bar.search
+                            .as_ref()
+                            .filter(|search| self.read_takes(&search.binds.0))
+                            .map(|search| {
+                                ts::object([
+                                    ("binds", Some(ts::string(&search.binds.0))),
+                                    ("placeholder", quoted(search.placeholder.as_ref())),
+                                ])
+                            }),
                     )
                     .opt(
                         "window",
@@ -1342,7 +1433,11 @@ impl<'d> Gen<'d> {
                     .opt("choices", (!choices.is_empty()).then(|| fragment(choices)))
                     .opt("inputs", inputs)
                     .opt("actions", actions)
-                    .opt("reset", (!bar.reset).then(|| "false".to_owned()))
+                    .opt(
+                        "reset",
+                        bar.offers_reset()
+                            .then(|| ts::object([("label", bar.reset_label().map(ts::string))])),
+                    )
                     .render()
             }
             Composite::Confirm(c) => {
@@ -2087,6 +2182,7 @@ impl<'d> Gen<'d> {
             .is_some_and(|from| from.section == section.name)
     }
 
+    #[allow(clippy::too_many_lines)] // one section frame, one attribute per declared concern
     fn section_component(&mut self, name: &str, page: &Page, at: &NodePath, section: &Section) {
         let mut lines = Vec::new();
         self.section_profile = section.profile.as_ref().and_then(variant);
@@ -2168,6 +2264,7 @@ impl<'d> Gen<'d> {
             row_key: section.row_key().map(str::to_owned),
             choice_value: None,
             data: None,
+            caption: None,
         };
         if let Body::Composite(Composite::Form(form)) = &section.body {
             let (local, setter) = self.draft_hook(&mut lines, at, form.draft.as_ref());
@@ -2367,6 +2464,7 @@ impl<'d> Gen<'d> {
         self.components = BTreeSet::from([format!("{owner}Page")]);
         self.page_profile = page.profile.as_ref().and_then(variant);
         self.page = Some(name.to_owned());
+        self.page_reads = Some(self.page_read_exprs(name));
         let at = NodePath::root().child("pages").child(name);
         let mut section_components = BTreeMap::new();
         for section in &page.sections {
@@ -2455,6 +2553,7 @@ impl<'d> Gen<'d> {
         }
         self.page_profile = None;
         self.page = None;
+        self.page_reads = None;
         let rendered = self.scope_layer("state", &values, &setters, &extra, hosted);
         self.import("react", "type ReactNode");
         let mut w = Writer::default();
@@ -2644,6 +2743,7 @@ impl<'d> Gen<'d> {
         self.components = BTreeSet::from([owner.clone()]);
         self.page_profile = None;
         self.page = None;
+        self.page_reads = None;
         let at = NodePath::root().child("shells").child(name);
         let mut lines = Vec::new();
         self.begin_component();
@@ -3090,14 +3190,17 @@ impl<'d> Gen<'d> {
     }
 }
 
-/// The accessible label of a choice: its own name, or the field or action it picks for.
+/// The accessible label of a choice that declares no words of its own: its name, or the name of
+/// the field or action it picks for, read as words (`owner_id` reads `owner id`), as a field's
+/// heading is.
 fn choice_label(at: &NodePath) -> Option<String> {
     let segments = at.segments();
-    match segments.split_last() {
-        Some((last, rest)) if last == "choice" => rest.last().cloned(),
-        Some((last, _)) => Some(last.clone()),
+    let name = match segments.split_last() {
+        Some((last, rest)) if last == "choice" => rest.last(),
+        Some((last, _)) => Some(last),
         None => None,
-    }
+    };
+    name.map(|name| name.replace('_', " "))
 }
 
 fn is_identifier(name: &str) -> bool {

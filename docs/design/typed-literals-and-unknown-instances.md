@@ -153,7 +153,12 @@ event. It is filed under the not-found outcome's own id and **replaces** the sce
 its external cause with `ConfigureExternalOutcome`: sending an identity no record carries is that
 cause, witnessed rather than forced. The `wrong_state` id then holds no scenario, as before
 section 2; its states remain the illegal-move family's. Where no identity is known to be fresh, the
-injected scenario stays and nothing is refused.
+injected scenario stays and nothing is refused. Where an accepting `when:` branch declared before
+the not-found outcome claims the input that reaches the acting branch, the precedence order answers
+that input with the accepting branch (`input-guard-overlap-precedence.md`), so the witness is not
+built and the injected scenario stays. The model interpreter does not yet follow that order for
+this input; `story:the-interpreter-and-synthesis-answer-a-guarded-move-before-not-found-alike`
+records the gap.
 
 ### Formats
 

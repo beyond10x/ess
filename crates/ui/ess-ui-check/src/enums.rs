@@ -178,6 +178,7 @@ mod tests {
         "Degrades.(capability)",
         "Document.actor",
         "Document.placement_profile",
+        "Field.unit",
         "Live.effect",
         "Live.when_paged_away",
         "Navigation.visibility",

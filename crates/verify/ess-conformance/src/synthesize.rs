@@ -452,6 +452,17 @@ pub enum Note {
         /// The position, as the compiler's Binary64 inventory spells it.
         location: String,
     },
+    /// A value type with invariants that no command, event, error, view, entity, actor, binding or
+    /// conversion reaches (`ess_compiler::binary64::reached_types`): no scenario sends or reads a
+    /// value of it, so its invariants refuse nothing, as an unreached `Binary64` position refuses
+    /// nothing, and no run exercises them. A type something reaches keeps its
+    /// [`RefusalCause::ValueInvariantUnwitnessed`] where no view answers it.
+    UnreachedValueInvariant {
+        /// The type.
+        value: DeclaredTypeRef,
+        /// Its invariants, as the author wrote them.
+        invariants: Vec<String>,
+    },
     /// An outcome's `sets:` entry fills a field a view publishes across a declared conversion that
     /// may change the value, so no scenario asserts what the row holds there
     /// (`story:view-asserts-field-set-from-optional-input`). Only `Optional<T> -> T` from an input
@@ -600,6 +611,18 @@ impl fmt::Display for Note {
                 "`{location}` is a `Binary64` in a type outside everything a scenario sends \
                  or reads, so no run exercises it"
             ),
+            Self::UnreachedValueInvariant { value, invariants } => {
+                let written: Vec<String> = invariants
+                    .iter()
+                    .map(|invariant| format!("`{invariant}`"))
+                    .collect();
+                write!(
+                    f,
+                    "`{value}` declares {} of every value, and is a type outside everything a \
+                     scenario sends or reads, so no run exercises it",
+                    written.join(", ")
+                )
+            }
             Self::ConvertedFieldUnasserted {
                 outcome,
                 field,
@@ -1506,6 +1529,17 @@ impl RefusalCause {
                  declaration order; narrow the race by `when_subject:` and declare it above that \
                  branch, as the line above names, and the two answer at the held-state step in \
                  declaration order"
+            }
+            // An external branch declared below an accepting `when:` branch that claims every
+            // input tried (beyond10x/ess#217): the specification, not ess, leaves it unreachable.
+            Self::GuardUnsatisfiable { predicate, .. }
+                if predicate.contains(DECLARED_BELOW_ACCEPTING) =>
+            {
+                "under the precedence order an accepting branch declared above an external one \
+                 answers every input its guard claims; to answer the external cause first, as a \
+                 not-found refusal is, declare it above that branch and mark it `before_row: \
+                 true` (ess/25), or narrow the accepting branch's `when:` so that some input \
+                 reaches this one"
             }
             Self::GuardUnsatisfiable { .. } => {
                 "write the branch's condition over values a candidate can carry, or supply a \
@@ -3237,9 +3271,38 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
             .into_iter()
             .map(|location| Note::UnreachedBinary64 { location }),
     );
+    // So do a value type's invariants, by the same reach rule.
+    synthesis.notes.extend(unreached_value_invariants(ir));
     // Last, so no pass after it can write a scenario the suite's own admission refuses.
     self_admission::withdraw_inadmissible(&mut synthesis);
     synthesis
+}
+
+/// One [`Note::UnreachedValueInvariant`] for each declared type with invariants that nothing a
+/// scenario sends or reads reaches (`ess_compiler::binary64::reached_types`), in name order:
+/// `value_object_invariants` refuses none of them.
+fn unreached_value_invariants(ir: &EssIr) -> Vec<Note> {
+    let reached = ess_compiler::binary64::reached_types(ir);
+    ir.types()
+        .values()
+        .filter(|declared| !reached.contains(&declared.name))
+        .filter_map(|declared| {
+            // The note lists the invariants it names, so it reads them; an alphabet or a prefix
+            // alone leaves nothing to list.
+            let (ResolvedBody::Newtype { invariants, .. }
+            | ResolvedBody::Struct { invariants, .. }) = &declared.body
+            else {
+                return None;
+            };
+            (!invariants.is_empty()).then(|| Note::UnreachedValueInvariant {
+                value: DeclaredTypeRef::new(declared.name.clone()),
+                invariants: invariants
+                    .iter()
+                    .map(|invariant| invariant.statement.clone())
+                    .collect(),
+            })
+        })
+        .collect()
 }
 
 /// Each scenario of `synthesis` its own admission refuses, withdrawn and refused with the scenario
@@ -8620,7 +8683,14 @@ pub(super) struct Shadow {
     /// The accepting branches declared before it that claimed some candidate, by name
     /// (beyond10x/ess#217).
     earlier: BTreeMap<OutcomeName, String>,
+    /// Whether the branch shadowed is an `external:` one, which an accepting branch declared
+    /// before it answers first, and which `before_row: true` declared first moves before them.
+    external: bool,
 }
+
+/// The phrase a refusal of an `external:` branch every candidate of which an accepting branch
+/// declared before it claims carries, and its hint's marker.
+const DECLARED_BELOW_ACCEPTING: &str = "which answers before the external cause is asked";
 
 impl Shadow {
     pub(super) fn record(
@@ -8635,6 +8705,7 @@ impl Shadow {
             return Ok(());
         }
         self.refusal |= is_input_guarded_refusal(outcome);
+        self.external |= is_external(outcome);
         let mut claimed = false;
         for refusal in sibling_refusals(format, command, outcome) {
             let Some(guard) = when(refusal) else {
@@ -8664,6 +8735,12 @@ impl Shadow {
         if self.otherwise || (self.claimed.is_empty() && self.earlier.is_empty()) {
             return None;
         }
+        // A branch with no guard of its own, an unguarded `external:` one, is satisfied by any input.
+        let own = if guards.is_empty() {
+            "an input".to_owned()
+        } else {
+            rendered(guards, true)
+        };
         if !self.earlier.is_empty() {
             let named = |claims: &BTreeMap<OutcomeName, String>| {
                 claims
@@ -8679,15 +8756,18 @@ impl Shadow {
                     named(&self.claimed)
                 ));
             }
-            outside.push(format!(
-                "{}, the accepting branch declared first",
-                named(&self.earlier)
-            ));
-            return Some(format!(
-                "{} outside {}",
-                rendered(guards, true),
-                outside.join("; ")
-            ));
+            if self.external {
+                outside.push(format!(
+                    "{}, the accepting branch declared first, {DECLARED_BELOW_ACCEPTING}",
+                    named(&self.earlier)
+                ));
+            } else {
+                outside.push(format!(
+                    "{}, the accepting branch declared first",
+                    named(&self.earlier)
+                ));
+            }
+            return Some(format!("{own} outside {}", outside.join("; ")));
         }
         let refusals: Vec<String> = self
             .claimed
@@ -8699,14 +8779,12 @@ impl Shadow {
             // adversary pass 1), so an input a refusal declared before this one claims is that
             // refusal's.
             return Some(format!(
-                "{} outside {}, an input-guarded refusal declared before it, which answers first",
-                rendered(guards, true),
+                "{own} outside {}, an input-guarded refusal declared before it, which answers first",
                 refusals.join(", ")
             ));
         }
         Some(format!(
-            "{} outside {}, the input-guarded refusal taken first",
-            rendered(guards, true),
+            "{own} outside {}, the input-guarded refusal taken first",
             refusals.join(", ")
         ))
     }
@@ -15112,7 +15190,15 @@ fn unknown_instances(
                 let id = ScenarioId::Outcome {
                     outcome: OutcomeRef::new(command_ref, answer.name.clone()),
                 };
-                if let Ok(scenario) = unknown_instance(ir, command, &acting, answer, actors) {
+                // Sent with the input that reaches an acting branch, the fresh identity requires the
+                // not-found answer where an accepting `when:` branch declared before it may claim
+                // that input first (beyond10x/ess#217). Such a witness contradicts the precedence
+                // order, so it is not built: the scenario injecting the external cause stays, and
+                // where none could be built its refusal names the repair.
+                if let Some(scenario) = unknown_instance(ir, command, &acting, answer, actors)
+                    .ok()
+                    .filter(|scenario| contradicted(ir, &scenario.steps).is_none())
+                {
                     suite.scenarios.remove(&id);
                     insert(suite, id, scenario, refusals);
                 }
@@ -18562,6 +18648,7 @@ fn value_object_invariants(
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
+    let reached = ess_compiler::binary64::reached_types(ir);
     for declared in ir.types().values() {
         let invariants = match &declared.body {
             ResolvedBody::Newtype { invariants, .. } | ResolvedBody::Struct { invariants, .. } => {
@@ -18582,6 +18669,11 @@ fn value_object_invariants(
         let wrapped =
             value_invariant::wrapped(ir, declared, invariants, &direct, actors, suite, refusals);
         if positions.is_empty() && wrapped == 0 {
+            // A type nothing a scenario sends or reads reaches refuses nothing: `synthesize_in`
+            // names it in a `Note::UnreachedValueInvariant`, as it names an unreached Binary64.
+            if !reached.contains(&declared.name) {
+                continue;
+            }
             refusals.push(Refusal {
                 subject: DeclaredTypeRef::new(declared.name.clone()).into(),
                 scenario: None,

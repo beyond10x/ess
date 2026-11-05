@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-05T06:57:47Z",
+  "actor": "human:timo",
+  "artifact": "story:a-duration-renders-as-hours-minutes-seconds",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "redaction",
+    "literal_sha256": "2fe22f11c3adad8df1936166645fb96683d7dc4abfbc01ed7cf1f71e1047ef06",
+    "literal_chars": 18,
+    "replacement": "adopter report",
+    "count": 2,
+    "reason": "downstream adopter label"
+  }
+}

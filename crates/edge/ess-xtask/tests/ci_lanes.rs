@@ -121,6 +121,8 @@ fn matrix_rows(job: &Value) -> Vec<BTreeMap<String, String>> {
 #[derive(Debug)]
 struct Lane {
     job: String,
+    /// The index of the matrix row the step runs for.
+    row: usize,
     step: usize,
     task: String,
     vars: Vec<String>,
@@ -133,7 +135,7 @@ fn lane_invocations(ci: &Value) -> Vec<Lane> {
     let mut lanes = Vec::new();
     for id in gated_jobs(ci) {
         let job = &ci["jobs"][id.as_str()];
-        for row in matrix_rows(job) {
+        for (row_index, row) in matrix_rows(job).into_iter().enumerate() {
             for (step, entry) in job["steps"].as_sequence().into_iter().flatten().enumerate() {
                 let run = text(&entry["run"]).trim();
                 let Some(command) = run.strip_prefix("task ") else {
@@ -159,6 +161,7 @@ fn lane_invocations(ci: &Value) -> Vec<Lane> {
                 for task in tasks {
                     lanes.push(Lane {
                         job: id.clone(),
+                        row: row_index,
                         step,
                         task,
                         vars: vars.clone(),
@@ -398,25 +401,93 @@ fn consumer_check_runs_in_task_check_only_when_opted_in() {
     );
 }
 
+/// The filterset of workspace group a; group b is its complement.
+///
+/// The workspace test binaries no longer fit a hosted runner extracted all at once. Queue runs
+/// 41997613644 and 42017687798 stopped Test 11/20 and Test 4/20 at 4.9 GB free on `/` while
+/// nextest extracted the one workspace archive: its 1817 binaries take 45.6 GB extracted, already
+/// built with `debug = 0` and `strip = symbols`, on runners with 52 GB free. Split by binary name
+/// on the real archive, the ess-conformance binaries `a`..`m` (its lib, `ess_conformance`, among
+/// them) are 20.43 GB in 493 binaries and everything else is 25.22 GB in 1319, so each shard
+/// extracts one of two halves.
+const WORKSPACE_GROUP_A: &str = "package(ess-conformance) & binary(/^[a-m]/)";
+
+/// The workspace groups `test-shard` accepts, read from its `requires` enum.
+fn workspace_groups(taskfile: &Value) -> BTreeSet<String> {
+    let vars = taskfile["tasks"]["test-shard"]["requires"]["vars"]
+        .as_sequence()
+        .expect("`test-shard` requires its variables");
+    let group = vars
+        .iter()
+        .find(|var| text(&var["name"]) == "GROUP")
+        .expect("`test-shard` does not require GROUP");
+    group["enum"]
+        .as_sequence()
+        .expect("`test-shard` does not restrict GROUP to the archive groups")
+        .iter()
+        .map(scalar)
+        .collect()
+}
+
 /// The archives select what `task test` selects, one task each, so that two jobs can build them
-/// side by side; local `task test-archive` still builds both.
+/// side by side; local `task test-archive` still builds both. The workspace task writes two
+/// archives from one build, a filterset and its complement over the same selection, so together
+/// they hold every workspace test binary exactly once.
 fn assert_each_archive_selects_what_task_test_selects(taskfile: &Value) {
     assert_eq!(
         direct_subtasks(taskfile, "test-archive"),
         ["test-archive-workspace", "test-archive-feature-off"],
         "`task test-archive` no longer builds both archives"
     );
-    let archive = shell_commands(taskfile, "test-archive-workspace").join("\n");
-    assert!(
-        archive.contains(
-            "cargo nextest archive --workspace --exclude ess-xtask --locked \
-             --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst"
-        ),
-        "{archive}"
+    assert_eq!(
+        text(&taskfile["vars"]["WORKSPACE_GROUP_A"]),
+        WORKSPACE_GROUP_A,
+        "workspace group a is no longer the ess-conformance binaries a..m"
     );
+    let commands = shell_commands(taskfile, "test-archive-workspace");
+    let selection = "cargo nextest archive --workspace --exclude ess-xtask --locked ";
+    let mut archives: BTreeMap<String, String> = BTreeMap::new();
+    for command in commands
+        .iter()
+        .filter(|command| command.contains("cargo nextest archive"))
+    {
+        let rest = command.strip_prefix(selection).unwrap_or_else(|| {
+            panic!("a workspace archive selects other than what `task test` selects: {command}")
+        });
+        let rest = rest.strip_prefix("-E '").unwrap_or_else(|| {
+            panic!("a workspace archive is not filtered, so a shard extracts all of it: {command}")
+        });
+        let (filterset, rest) = rest
+            .split_once("' ")
+            .unwrap_or_else(|| panic!("an unterminated filterset: {command}"));
+        let group = rest
+            .strip_prefix("--archive-file {{.NEXTEST_ARCHIVES}}/workspace-")
+            .and_then(|rest| rest.strip_suffix(".tar.zst"))
+            .unwrap_or_else(|| panic!("a workspace archive names no group archive: {command}"));
+        assert!(
+            archives
+                .insert(group.to_owned(), filterset.to_owned())
+                .is_none(),
+            "two archives of workspace group `{group}`"
+        );
+    }
+    assert_eq!(
+        archives,
+        BTreeMap::from([
+            ("a".to_owned(), "{{.WORKSPACE_GROUP_A}}".to_owned()),
+            ("b".to_owned(), "not ({{.WORKSPACE_GROUP_A}})".to_owned()),
+        ]),
+        "the workspace archives are not group a's filterset and its complement"
+    );
+    assert_eq!(
+        archives.keys().cloned().collect::<BTreeSet<_>>(),
+        workspace_groups(taskfile),
+        "`test-shard` accepts other groups than the archives `test-archive-workspace` writes"
+    );
+    let archive = commands.join("\n");
     assert!(
-        !archive.contains("/feature-off.tar.zst"),
-        "the workspace archive task also builds the feature-off archive: {archive}"
+        !archive.contains("/workspace.tar.zst") && !archive.contains("/feature-off.tar.zst"),
+        "the workspace archive task also builds an unsplit or a feature-off archive: {archive}"
     );
     // Its pull-request narrowing is held by
     // `pull_requests_run_feature_off_on_number_semantics_and_every_other_run_runs_all_of_it`.
@@ -434,17 +505,158 @@ fn assert_each_archive_selects_what_task_test_selects(taskfile: &Value) {
     );
 }
 
+/// The `(GROUP, PART)` each `test-shard` lane passes, with the job and matrix row that runs it.
+fn workspace_parts(ci: &Value) -> Vec<(String, String, (String, usize))> {
+    lane_invocations(ci)
+        .into_iter()
+        .filter(|lane| lane.task == "test-shard")
+        .map(|lane| {
+            let (mut group, mut part) = (None, None);
+            for assignment in &lane.vars {
+                let slot = if let Some(value) = assignment.strip_prefix("GROUP=") {
+                    group.replace(value.to_owned())
+                } else if let Some(value) = assignment.strip_prefix("PART=") {
+                    part.replace(value.to_owned())
+                } else {
+                    panic!("a `test-shard` lane passes `{assignment}`, not GROUP or PART")
+                };
+                assert!(slot.is_none(), "a `test-shard` lane passes {:?}", lane.vars);
+            }
+            (
+                group.unwrap_or_else(|| panic!("a `test-shard` lane passes no GROUP")),
+                part.unwrap_or_else(|| panic!("a `test-shard` lane passes no PART")),
+                (lane.job, lane.row),
+            )
+        })
+        .collect()
+}
+
+/// Each workspace group's parts are one complete partition `1/n` through `n/n`, every group the
+/// Taskfile archives runs, and every shard job runs one part of one group and one feature-off
+/// partition, which is one complete partition of its own.
+fn assert_workspace_groups_are_complete_partitions(ci: &Value, taskfile: &Value) {
+    let groups = workspace_groups(taskfile);
+    assert_eq!(
+        groups,
+        BTreeSet::from(["a".to_owned(), "b".to_owned()]),
+        "the workspace archive is not split into groups a and b"
+    );
+    let mut by_group: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (group, part, _) in workspace_parts(ci) {
+        by_group.entry(group).or_default().push(part);
+    }
+    assert_eq!(
+        by_group.keys().cloned().collect::<BTreeSet<_>>(),
+        groups,
+        "the shards of ci.yml leave a workspace group unrun or run one with no archive"
+    );
+    for (group, parts) in &by_group {
+        let total = parts.len();
+        assert!(
+            total > 1,
+            "workspace group `{group}` runs in {total} shard(s)"
+        );
+        let expected: BTreeSet<String> = (1..=total).map(|m| format!("{m}/{total}")).collect();
+        let found: BTreeSet<String> = parts.iter().cloned().collect();
+        assert_eq!(
+            found, expected,
+            "the shards of workspace group `{group}` leave a part unrun or run one twice"
+        );
+    }
+
+    assert_complete_partition(ci, "test-feature-off");
+    let mut per_row: BTreeMap<(String, usize), Vec<String>> = BTreeMap::new();
+    for lane in lane_invocations(ci)
+        .into_iter()
+        .filter(|lane| lane.task == "test-shard" || lane.task == "test-feature-off")
+    {
+        per_row
+            .entry((lane.job, lane.row))
+            .or_default()
+            .push(lane.task);
+    }
+    for ((job, row), mut tasks) in per_row {
+        tasks.sort();
+        assert_eq!(
+            tasks,
+            ["test-feature-off", "test-shard"],
+            "row {row} of `{job}` does not run one workspace part and one feature-off partition"
+        );
+    }
+}
+
+/// A workspace shard extracts its group's archive into the checkout, deletes both archives, and
+/// only then runs its part from the extracted metadata, compiling nothing. An archive left on disk
+/// beside its extracted binaries is what ran the runners out of space (see `WORKSPACE_GROUP_A`).
+fn assert_workspace_shard_extracts_deletes_and_runs(taskfile: &Value) {
+    assert_eq!(
+        text(&taskfile["tasks"]["test-shard"]["vars"]["OTHER_GROUP"]),
+        "{{if eq .GROUP \"a\"}}b{{else}}a{{end}}",
+        "`test-shard` does not name the other group's archive"
+    );
+    let commands = shell_commands(taskfile, "test-shard");
+    let [drop_other, extract, drop_own, run] = commands.as_slice() else {
+        panic!("`test-shard` does not drop, extract, delete and run in four commands: {commands:?}")
+    };
+    let own = "{{.NEXTEST_ARCHIVES}}/workspace-{{.GROUP}}.tar.zst";
+    assert_eq!(
+        drop_other, "rm -f {{.NEXTEST_ARCHIVES}}/workspace-{{.OTHER_GROUP}}.tar.zst",
+        "`test-shard` keeps the other group's archive on disk"
+    );
+    assert!(
+        extract.starts_with(&format!("cargo nextest list --archive-file {own} "))
+            && extract.ends_with(" > /dev/null"),
+        "`test-shard` does not extract its own group's archive first: {extract}"
+    );
+    for (flag, value) in [("--workspace-remap", "."), ("--extract-to", ".")] {
+        assert!(
+            passes(extract, flag, value),
+            "`test-shard` extracts without `{flag} {value}`: {extract}"
+        );
+    }
+    assert!(
+        extract
+            .split_whitespace()
+            .any(|word| word == "--extract-overwrite"),
+        "`test-shard` lacks `--extract-overwrite`: {extract}"
+    );
+    assert_eq!(
+        drop_own,
+        &format!("rm {own}"),
+        "`test-shard` runs with its archive still on disk"
+    );
+    assert!(
+        run.starts_with("cargo nextest run ")
+            && !run.contains("--archive-file")
+            && !run.contains(".tar.zst"),
+        "`test-shard` runs from an archive, not from what it extracted: {run}"
+    );
+    for (flag, value) in [
+        (
+            "--binaries-metadata",
+            "target/nextest/binaries-metadata.json",
+        ),
+        ("--cargo-metadata", "target/nextest/cargo-metadata.json"),
+        ("--workspace-remap", "."),
+        ("--target-dir-remap", "target"),
+        ("--partition", "slice:{{.PART}}"),
+    ] {
+        assert!(
+            passes(run, flag, value),
+            "`test-shard` lacks `{flag} {value}`: {run}"
+        );
+    }
+    assert!(
+        run.split_whitespace().any(|word| word == "--no-fail-fast"),
+        "`test-shard` lacks `--no-fail-fast`: {run}"
+    );
+}
+
 #[test]
 fn the_workspace_shards_are_one_complete_partition() {
     let ci = yaml(".github/workflows/ci.yml");
     let taskfile = yaml("Taskfile.yml");
-    let workspace = assert_complete_partition(&ci, "test-shard");
-    let feature_off = assert_complete_partition(&ci, "test-feature-off");
-    assert_eq!(
-        workspace, feature_off,
-        "the feature-off partitions are not the workspace partitions, so one shard job runs a \
-         partition of one archive and not of the other"
-    );
+    assert_workspace_groups_are_complete_partitions(&ci, &taskfile);
 
     // Local `task test` is unchanged: cargo test over the same two selections.
     let local = shell_commands(&taskfile, "test");
@@ -458,6 +670,7 @@ fn the_workspace_shards_are_one_complete_partition() {
     );
 
     assert_each_archive_selects_what_task_test_selects(&taskfile);
+    assert_workspace_shard_extracts_deletes_and_runs(&taskfile);
 
     // A shard runs one archive's partition and compiles nothing. It extracts into the checkout,
     // because test binaries bake `env!("CARGO_BIN_EXE_…")` and `env!("CARGO_TARGET_TMPDIR")` in
@@ -470,39 +683,34 @@ fn the_workspace_shards_are_one_complete_partition() {
     // 584 / 575 / 414 / 273 test-seconds. `slice:` deals the whole sorted list out once, which
     // on that run's own timings is 407 / 520 / 432 / 489 and 147 / 154 / 148 / 125 feature-off
     // test-seconds against 185 / 202 / 124 / 64.
-    for (task, file) in [
-        ("test-shard", "workspace"),
-        ("test-feature-off", "feature-off"),
+    let commands = shell_commands(&taskfile, "test-feature-off");
+    let [run] = commands.as_slice() else {
+        panic!(
+            "`test-feature-off` runs {} commands, not one: {commands:?}",
+            commands.len()
+        )
+    };
+    assert!(
+        run.starts_with(
+            "cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst"
+        ),
+        "`test-feature-off` does not run the feature-off archive: {run}"
+    );
+    for (flag, value) in [
+        ("--workspace-remap", "."),
+        ("--extract-to", "."),
+        ("--partition", "slice:{{.SHARD}}"),
     ] {
-        let commands = shell_commands(&taskfile, task);
-        let [run] = commands.as_slice() else {
-            panic!(
-                "`{task}` runs {} commands, not one: {commands:?}",
-                commands.len()
-            )
-        };
         assert!(
-            run.starts_with(&format!(
-                "cargo nextest run --archive-file {{{{.NEXTEST_ARCHIVES}}}}/{file}.tar.zst"
-            )),
-            "`{task}` does not run the {file} archive: {run}"
+            passes(run, flag, value),
+            "`test-feature-off` lacks `{flag} {value}`: {run}"
         );
-        for (flag, value) in [
-            ("--workspace-remap", "."),
-            ("--extract-to", "."),
-            ("--partition", "slice:{{.SHARD}}"),
-        ] {
-            assert!(
-                passes(run, flag, value),
-                "`{task}` lacks `{flag} {value}`: {run}"
-            );
-        }
-        for flag in ["--extract-overwrite", "--no-fail-fast"] {
-            assert!(
-                run.split_whitespace().any(|word| word == flag),
-                "`{task}` lacks `{flag}`: {run}"
-            );
-        }
+    }
+    for flag in ["--extract-overwrite", "--no-fail-fast"] {
+        assert!(
+            run.split_whitespace().any(|word| word == flag),
+            "`test-feature-off` lacks `{flag}`: {run}"
+        );
     }
 
     // Nextest does not run doc-tests, so both selections' doc-tests run beside it — once each.
@@ -532,6 +740,101 @@ fn the_workspace_shards_are_one_complete_partition() {
             covered_by.get(doc).copied().unwrap_or(0)
         );
     }
+}
+
+/// The split holds only while both halves run: a dropped group, a filterset that is no longer the
+/// complement, a shard that runs before deleting its archive, or a part left unrun each fail.
+#[test]
+fn the_workspace_split_fails_on_a_dropped_group_a_broken_complement_or_a_kept_archive() {
+    let ci = yaml(".github/workflows/ci.yml");
+    let taskfile = yaml("Taskfile.yml");
+    let holds = |ci: &Value, taskfile: &Value| {
+        assert_workspace_groups_are_complete_partitions(ci, taskfile);
+        assert_each_archive_selects_what_task_test_selects(taskfile);
+        assert_workspace_shard_extracts_deletes_and_runs(taskfile);
+    };
+    holds(&ci, &taskfile);
+
+    let caught = |ci: &Value, taskfile: &Value, what: &str| {
+        assert!(
+            std::panic::catch_unwind(|| holds(ci, taskfile)).is_err(),
+            "{what} went unnoticed"
+        );
+    };
+    let command_index = |taskfile: &Value, task: &str, needle: &str| {
+        taskfile["tasks"][task]["cmds"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .position(|command| command.as_str().is_some_and(|c| c.contains(needle)))
+            .unwrap()
+    };
+
+    // Group b's archive dropped.
+    let mut mutated = taskfile.clone();
+    let index = command_index(&mutated, "test-archive-workspace", "/workspace-b.tar.zst");
+    mutated["tasks"]["test-archive-workspace"]["cmds"]
+        .as_sequence_mut()
+        .unwrap()
+        .remove(index);
+    caught(&ci, &mutated, "a dropped workspace-b archive");
+
+    // Group b no longer the complement of group a.
+    let mut mutated = taskfile.clone();
+    let index = command_index(&mutated, "test-archive-workspace", "/workspace-b.tar.zst");
+    mutated["tasks"]["test-archive-workspace"]["cmds"][index] = Value::String(
+        "cargo nextest archive --workspace --exclude ess-xtask --locked \
+         -E 'not package(ess-conformance)' --archive-file {{.NEXTEST_ARCHIVES}}/workspace-b.tar.zst"
+            .to_owned(),
+    );
+    caught(&ci, &mutated, "a group b that is not group a's complement");
+
+    // Group a's filterset changed underneath both archives.
+    let mut mutated = taskfile.clone();
+    mutated["vars"]["WORKSPACE_GROUP_A"] = Value::String("package(ess-conformance)".to_owned());
+    caught(&ci, &mutated, "a changed group a filterset");
+
+    // The shard runs with its own archive still on disk.
+    let mut mutated = taskfile.clone();
+    let index = command_index(
+        &mutated,
+        "test-shard",
+        "rm {{.NEXTEST_ARCHIVES}}/workspace-{{.GROUP}}",
+    );
+    mutated["tasks"]["test-shard"]["cmds"]
+        .as_sequence_mut()
+        .unwrap()
+        .remove(index);
+    caught(&ci, &mutated, "a shard that keeps its archive");
+
+    // The shard runs from the archive again instead of from what it extracted.
+    let mut mutated = taskfile.clone();
+    let index = command_index(&mutated, "test-shard", "cargo nextest run");
+    mutated["tasks"]["test-shard"]["cmds"][index] = Value::String(
+        "cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/workspace-{{.GROUP}}.tar.zst \
+         --workspace-remap . --extract-to . --extract-overwrite --no-fail-fast \
+         --partition slice:{{.PART}}"
+            .to_owned(),
+    );
+    caught(&ci, &mutated, "a shard that runs from its archive");
+
+    // Every group-b shard removed from the matrix.
+    let mut mutated = ci.clone();
+    mutated["jobs"]["test"]["strategy"]["matrix"]["include"]
+        .as_sequence_mut()
+        .unwrap()
+        .retain(|row| text(&row["group"]) == "a");
+    caught(&mutated, &taskfile, "a matrix without group b");
+
+    // One part of a group run twice and another left unrun.
+    let mut mutated = ci.clone();
+    let rows = mutated["jobs"]["test"]["strategy"]["matrix"]["include"]
+        .as_sequence_mut()
+        .unwrap();
+    let last = rows.len() - 1;
+    let duplicate = rows[last - 1]["part"].clone();
+    rows[last]["part"] = duplicate;
+    caught(&mutated, &taskfile, "a workspace part run twice");
 }
 
 /// The test binaries are compiled once, each archive by a job of its own so that the two compile

@@ -1016,6 +1016,7 @@ One composite replaces dropdowns, tag pickers, tree selects and checkbox lists. 
 | `creatable` | record \{ `does`: name of an ESS `command` \} |   |   | typed values create new options |
 | `visible` | `expr` |   |   | shows the choice only when true |
 | `note` | `string` |   |   | author remark |
+| `placeholder` | `string` |   |   | hint shown while nothing is chosen; a dropdown's empty option shows it |
 
 **You may also write**
 
@@ -1048,7 +1049,7 @@ A filter bar writes page state; sections read it in their params. Because that s
 | `choices` | list of [Node](#node) |   |   | choice composites, named, in order |
 | `inputs` | list of [Field](#field) |   |   | free inputs each bound to state with binds |
 | `actions` | list of [Action](#action) |   |   | actions next to the filters |
-| `reset` | `boolean` |   | `false` | offers a reset-all button |
+| `reset` | one of: `boolean` \| record \{ `label`: `string` \} |   | `false` | offers a reset-all button: `true`, or `{label}` naming its text |
 
 **You may also write**
 
@@ -1195,7 +1196,7 @@ For KPI tiles and per-row live numbers. With `from` a metric reads a channel fie
 | `from` | `expr` |   |   | value from a channel field |
 | `match` | `name` |   |   | row field that picks a keyed value |
 | `window` | `duration` |   |   | time window the value covers |
-| `format` | one of: `number` \| `duration` \| `percent` \| `bytes` |   | `number` | display format |
+| `format` | one of: `number` \| `duration` \| `percent` \| `bytes` |   | `number` | display format; `bytes` shows a byte count in B, KB, MB or GB, in 1024 steps |
 | `label` | `string` |   |   | caption |
 | `aggregate` | one of: `count` \| `sum` \| `min` \| `max` \| `avg` |   |   | computed over every row of the read instead of read from one; needs `reads` |
 | `field` | `name` |   |   | row field `aggregate` reads; required for every aggregate but count |
@@ -1450,7 +1451,8 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `field` | `name` | yes |   | field of the command input or view row |
 | `name` | `name` |   | `{from: field}` | node name |
 | `label` | `string` |   | `{from: model.field_label}` | caption |
-| `as` | one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `date_range` \| `duration` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `metric` |   | `text` | semantic widget |
+| `as` | one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `date_range` \| `duration` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `metric` \| `bytes` |   | `text` | semantic widget; `bytes` shows a byte count in B, KB, MB or GB, in 1024 steps; `duration` shows `h:mm:ss`, counted in its `unit` |
+| `unit` | one of: `ms` \| `s` |   | `ms` | what an `as: duration` value counts, milliseconds or seconds, and only on such a field; it shows as `h:mm:ss` in whole seconds, the hours unpadded and never folded into days: `73000` ms and `73` s are `0:01:13`, 26 hours `26:00:00` |
 | `choice` | [Node](#node) |   |   | the choice composite for `as: choice` |
 | `sortable` | `boolean` |   | `false` | column can sort |
 | `visible` | `expr` |   |   | shows the field only when true |
@@ -1458,6 +1460,7 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `label_from` | record \{ `view`: name of an ESS `view`, `field`: `name`, `key`: optional `name` \} |   |   | show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params |
 | `labels` | one of: map of `string` → `string` \| `name` |   |   | the text shown for a value: a map written out, or the name of an entry of `label_maps` |
 | `note` | `string` |   |   | author remark |
+| `help` | record \{ `text`: optional `string`, `link`: optional `string` \} |   |   | help text or link shown with the input; on a column, with its header |
 
 **You may also write**
 
@@ -1521,6 +1524,7 @@ Settings pages save each group independently, often on change.
 | `does` | name of an ESS `command` |   |   | command for this group if not the form's |
 | `actions` | list of [Action](#action) |   |   | extra actions such as rotating a key |
 | `endpoint` | `string` |   |   | traceability |
+| `help` | record \{ `text`: optional `string`, `link`: optional `string` \} |   |   | help text or link shown with the group |
 
 **Example**
 
@@ -1945,7 +1949,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 |---|---|---|---|---|
 | `view` | name of an ESS `view` |   |   | ESS view name |
 | `placeholder` | `name` |   |   | a view name not yet bound to the model |
-| `fixture` | `string` |   |   | fixture file answering the placeholder |
+| `fixture` | `string` |   |   | fixture file answering the placeholder: in `fixtures.dir` when the document declares one (a path that starts with that directory names the same file), else relative to the document |
 | `key` | `name` |   |   | the field that identifies a row: rows, row paths and row actions are keyed by it, and `live.match` defaults to it; absent, the section's `live.match`, else `id` |
 | `params` | map of `name` → `expr` |   |   | view params bound to state |
 | `filter` | `expr` |   |   | Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging. |

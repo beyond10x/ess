@@ -151,7 +151,14 @@ one category by source position (below). So the external branch's witness (`reac
 refutes every accepting `when:` branch declared before it, searched after the refusals, and a
 binding that would force such a branch without observing the input it maps is refused
 (`PrecededExternalEligibility`), as a guarded one already was. An external branch declared first is
-taken first wherever its provider takes it.
+taken first wherever its provider takes it. Where every candidate of an external branch is claimed
+by an accepting branch declared before it, the branch is refused once under `ESS-SYNTH-003`: the
+accepting branch declared first answers before the external cause is asked, and the help names the
+repair, declaring the branch above that one with `before_row: true` (ess/25) or narrowing the
+accepting guard. The witness of a declared not-found outcome
+(`typed-literals-and-unknown-instances.md` § 2a) is not built where this order gives its input to an
+accepting branch declared first, so the precedence self-check (`ESS-SYNTH-019`) does not fire on a
+cause that lies in the specification.
 
 ### Overlaps no ladder value reaches
 

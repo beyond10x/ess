@@ -935,19 +935,22 @@ fn digest(result: Result<Synthesis, SynthesisFailure>) -> String {
 /// declare, and once more after review: the Rust and web rows for the corrected `timestamp_at`
 /// documentation, the Go rows because a Go route derived without a binding refuses a member no
 /// input field names (`closedInput`, story `a-json-command-body-refuses-an-unknown-member`) and
-/// the Go `server/wire.go` reads a `Timestamp` as the Rust decoder does (`timestampAt`).
+/// the Go `server/wire.go` reads a `Timestamp` as the Rust decoder does (`timestampAt`). The Rust
+/// and Go rows were re-recorded for 0.87.0, the web rows unchanged: the served `OpenAPI` document
+/// those trees embed calls an event published to consumers only when the component publishes it
+/// (story:the-openapi-says-published-only-for-events-the-component-publishes).
 const BEFORE_DERIVED_LABELS: &[(&str, &str)] = &[
-    ("aliased rust-workspace", "25 artifact(s) 6a5badcfc44d5494"),
-    ("aliased rust-crate", "22 artifact(s) b987d4ddda990b7e"),
+    ("aliased rust-workspace", "25 artifact(s) 6a81bf35ef2bd2bd"),
+    ("aliased rust-crate", "22 artifact(s) 6f0ccdb1da33f417"),
     ("aliased web", "14 artifact(s) 6627557201bb4415"),
-    ("cross rust-workspace", "26 artifact(s) 6519a7de5bcff579"),
-    ("cross rust-crate", "23 artifact(s) 2c1ab6f97a50acf3"),
+    ("cross rust-workspace", "26 artifact(s) 770f3f265ebf830a"),
+    ("cross rust-crate", "23 artifact(s) a7e67d2bea825dae"),
     ("cross web", "14 artifact(s) de37506b1332580c"),
-    ("cross go", "20 artifact(s) 3fdd5951495b733b"),
-    ("labelled rust-workspace", "25 artifact(s) 3cdee1359d4b672e"),
-    ("labelled rust-crate", "22 artifact(s) 0d725438bffb40f5"),
+    ("cross go", "20 artifact(s) 4dd80d1455ddcfee"),
+    ("labelled rust-workspace", "25 artifact(s) f559214e5063ba8f"),
+    ("labelled rust-crate", "22 artifact(s) 68f87223dc858022"),
     ("labelled web", "14 artifact(s) 6169b63ce86ae55c"),
-    ("labelled go", "19 artifact(s) 470c9b48709f82a2"),
+    ("labelled go", "19 artifact(s) f4381f4bbf934249"),
 ];
 
 #[test]

@@ -1375,6 +1375,8 @@ pub struct Choice {
     pub creatable: Option<Creatable>,
     /// Author remark.
     pub note: Option<String>,
+    /// Hint shown while nothing is chosen; a dropdown's empty option shows it.
+    pub placeholder: Option<String>,
 }
 
 impl Choice {
@@ -1484,9 +1486,45 @@ pub struct FilterBar {
     /// Actions next to the filters.
     #[serde(default)]
     pub actions: Vec<Action>,
-    /// Offers a reset-all button.
-    #[serde(default)]
-    pub reset: bool,
+    /// Offers a reset-all button: `true`, or `{label}` naming its text.
+    pub reset: Option<FilterReset>,
+}
+
+impl FilterBar {
+    /// Whether the bar offers a reset-all button.
+    pub fn offers_reset(&self) -> bool {
+        match &self.reset {
+            Some(FilterReset::Offered(offered)) => *offered,
+            Some(FilterReset::Labelled(_)) => true,
+            None => false,
+        }
+    }
+
+    /// The text the reset-all button shows, where the document names one.
+    pub fn reset_label(&self) -> Option<&str> {
+        match &self.reset {
+            Some(FilterReset::Labelled(labelled)) => Some(&labelled.label),
+            _ => None,
+        }
+    }
+}
+
+/// The reset-all button of a filter bar: `true` or `false`, or `{label}`, which offers it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum FilterReset {
+    /// Offered or not, showing the renderer's own word.
+    Offered(bool),
+    /// Offered, showing `label`.
+    Labelled(ResetLabel),
+}
+
+/// The text of a filter bar's reset-all button.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResetLabel {
+    /// Button text.
+    pub label: String,
 }
 
 /// Free-text search of a filter bar.
@@ -2210,6 +2248,8 @@ pub struct Field {
     /// Semantic widget.
     #[serde(rename = "as")]
     pub field_as: Option<String>,
+    /// What an `as: duration` value counts; milliseconds when not written.
+    pub unit: Option<DurationUnit>,
     /// The choice composite for `as: choice`.
     pub choice: Option<Box<Node>>,
     /// Column can sort.
@@ -2225,9 +2265,20 @@ pub struct Field {
     pub labels: Option<Labels>,
     /// Author remark.
     pub note: Option<String>,
+    /// Help text or link shown with the input, or on its column header.
+    pub help: Option<Help>,
 }
 
 impl Field {
+    /// The unit an `as: duration` value counts: its `unit`, else milliseconds. An unmapped unit
+    /// is treated as absent.
+    pub fn duration_unit(&self) -> DurationUnit {
+        match self.unit {
+            Some(DurationUnit::S) => DurationUnit::S,
+            _ => DurationUnit::Ms,
+        }
+    }
+
     /// The label a column or record shows for `value`: the field's own `labels` first, then the
     /// label of a fixed option of its choice; `None` shows the value itself.
     pub fn value_label(&self, value: &Value) -> Option<&str> {
@@ -2263,6 +2314,57 @@ impl Field {
             _ => &[],
         };
         options.iter()
+    }
+}
+
+/// What an `as: duration` value counts (`Field.unit`). The value shows as `h:mm:ss`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DurationUnit {
+    /// Milliseconds.
+    Ms,
+    /// Seconds.
+    S,
+    /// A value a retrofit could not determine (`unmapped_marker`).
+    Unmapped(UnmappedMarker),
+}
+
+impl DurationUnit {
+    /// The unit as the document spells it.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Ms => "ms",
+            Self::S => "s",
+            Self::Unmapped(marker) => &marker.0,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DurationUnit {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Unit;
+        impl serde::de::Visitor<'_> for Unit {
+            type Value = DurationUnit;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a duration unit: `ms` or `s`")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, text: &str) -> Result<DurationUnit, E> {
+                match text {
+                    "ms" => Ok(DurationUnit::Ms),
+                    "s" => Ok(DurationUnit::S),
+                    _ => match text.strip_prefix(UNMAPPED_PREFIX) {
+                        Some(reason) if !reason.is_empty() => {
+                            Ok(DurationUnit::Unmapped(UnmappedMarker(text.to_owned())))
+                        }
+                        _ => Err(E::custom(format!(
+                            "`{text}` is no duration unit: `unit` is `ms` or `s`"
+                        ))),
+                    },
+                }
+            }
+        }
+        deserializer.deserialize_str(Unit)
     }
 }
 
@@ -2372,6 +2474,8 @@ pub struct FormGroup {
     pub actions: Vec<Action>,
     /// Traceability.
     pub endpoint: Option<String>,
+    /// Help text or link shown with the group.
+    pub help: Option<Help>,
 }
 
 // ── data ─────────────────────────────────────────────────────────────────────────────────────

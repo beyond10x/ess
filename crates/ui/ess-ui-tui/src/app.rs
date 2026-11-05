@@ -4322,6 +4322,7 @@ pub(crate) fn columns_of(collection: &ess_ui::Collection, rows: &[Value]) -> Vec
                         name: key.to_owned(),
                         label: None,
                         field_as: None,
+                        unit: None,
                         choice: None,
                         sortable: false,
                         visible: None,
@@ -4329,6 +4330,7 @@ pub(crate) fn columns_of(collection: &ess_ui::Collection, rows: &[Value]) -> Vec
                         label_from: None,
                         labels: None,
                         note: None,
+                        help: None,
                     })
                     .collect()
             })
@@ -4342,6 +4344,7 @@ fn plain_field(name: &str, field_as: Option<&str>) -> Field {
         name: name.to_owned(),
         label: None,
         field_as: field_as.map(str::to_owned),
+        unit: None,
         choice: None,
         sortable: false,
         visible: None,
@@ -4349,6 +4352,7 @@ fn plain_field(name: &str, field_as: Option<&str>) -> Field {
         label_from: None,
         labels: None,
         note: None,
+        help: None,
     }
 }
 

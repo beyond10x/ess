@@ -2,10 +2,10 @@
 
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useUiPath } from "./core";
-import { display, formatValue, ScopeLayer, useScope } from "./core";
+import { display, formatDuration, formatValue, safeUrl, ScopeLayer, useScope } from "./core";
 import { useRead } from "./data";
 import { evaluate, truthy } from "./expr";
-import { getPath, isObject } from "./json";
+import { getPath, isObject, stableKey } from "./json";
 
 /** A field as the document declares it, with its node path. */
 export interface FieldSpec {
@@ -14,6 +14,8 @@ export interface FieldSpec {
   name: string;
   label?: string;
   as?: string;
+  /** What an `as: duration` value counts; milliseconds when absent. */
+  unit?: "ms" | "s";
   sortable?: boolean;
   visible?: string;
   binds?: string;
@@ -22,6 +24,41 @@ export interface FieldSpec {
   labelFrom?: LabelFrom;
   /** The text a column or record shows for a value, keyed by the value as text. */
   labels?: Record<string, string>;
+  /** Help text or link shown with the input, or on its column header. */
+  help?: HelpSpec;
+}
+
+/** Help text or link (`help: {text, link}`). */
+export interface HelpSpec {
+  text?: string;
+  link?: string;
+}
+
+/** Help shown beside a group, an input or a column heading: its text, then its link. */
+export function HelpNote(props: { help?: HelpSpec }): ReactNode {
+  const help = props.help;
+  if (!help || (!help.text && !help.link)) {
+    return null;
+  }
+  // A link the browser could run (a script address) is shown as text, as a `link` value is.
+  const href = safeUrl(help.link);
+  return (
+    <small className="ui-help">
+      {help.text}
+      {help.link ? (
+        <>
+          {help.text ? " " : null}
+          {href === undefined ? (
+            help.link
+          ) : (
+            <a href={href} target="_blank" rel="noreferrer">
+              More
+            </a>
+          )}
+        </>
+      ) : null}
+    </small>
+  );
 }
 
 /** A field of a related view shown in place of a key: the row whose `key` (default `id`) equals it. */
@@ -96,11 +133,34 @@ export function FieldValue(props: { field: FieldSpec; row: unknown }): ReactNode
       content = <span className={`ui-badge ui-badge-${String(value)}`}>{valueLabel(field.labels, value) ?? formatValue(value)}</span>;
       break;
     case "tags":
-      content = (Array.isArray(value) ? value : []).map((tag) => (
-        <span key={String(tag)} className="ui-tag">
-          {String(tag)}
+      content = (Array.isArray(value) ? value : []).map((tag, index) => (
+        <span key={`${index}:${stableKey(tag)}`} className="ui-tag">
+          {tagText(tag)}
         </span>
       ));
+      break;
+    case "audio": {
+      const src = safeUrl(value);
+      content = src === undefined ? formatValue(value) : <audio controls preload="none" src={src} />;
+      break;
+    }
+    case "link": {
+      const href = safeUrl(value);
+      const text = valueLabel(field.labels, value) ?? formatValue(value);
+      content =
+        href === undefined ? (
+          text
+        ) : (
+          <a href={href} target="_blank" rel="noreferrer">
+            {text}
+          </a>
+        );
+      break;
+    }
+    case "duration":
+      content =
+        valueLabel(field.labels, value) ??
+        (typeof value === "number" ? formatDuration(value, field.unit) : formatValue(value));
       break;
     case "json":
       content = <pre className="ui-json">{JSON.stringify(value, null, 2)}</pre>;
@@ -118,6 +178,87 @@ export function FieldValue(props: { field: FieldSpec; row: unknown }): ReactNode
   return (
     <span className={`ui-field ui-field-${field.as ?? "text"}`} data-ui-path={useUiPath(field["data-ui-path"])}>
       {content}
+    </span>
+  );
+}
+
+/** The text of one tag: an object's `label`, other data as JSON, a scalar as itself. */
+function tagText(tag: unknown): string {
+  if (isObject(tag) && tag.label !== undefined && tag.label !== null) {
+    return String(tag.label);
+  }
+  return typeof tag === "object" && tag !== null ? JSON.stringify(tag) : String(tag);
+}
+
+/**
+ * A JSON field: the text as written, the parsed value sent. Unparsable text is refused at the
+ * field (marked invalid, a validity message that stops the form's submit) and never sent.
+ */
+function JsonInput(props: { value: unknown; set: (next: unknown) => void }): ReactNode {
+  const [written, setWritten] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const text =
+    written ?? (props.value === undefined || props.value === null ? "" : JSON.stringify(props.value, null, 2));
+  return (
+    <>
+      <textarea
+        rows={6}
+        value={text}
+        aria-invalid={error !== undefined}
+        ref={(element: HTMLTextAreaElement | null) => {
+          element?.setCustomValidity(error ?? "");
+        }}
+        onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
+          const next = event.target.value;
+          setWritten(next);
+          if (next.trim() === "") {
+            setError(undefined);
+            props.set(undefined);
+            return;
+          }
+          try {
+            props.set(JSON.parse(next));
+            setError(undefined);
+          } catch (caught) {
+            setError(`not valid JSON: ${caught instanceof Error ? caught.message : String(caught)}`);
+          }
+        }}
+      />
+      {error !== undefined ? (
+        <small className="ui-field-error" role="alert">
+          {error}
+        </small>
+      ) : null}
+    </>
+  );
+}
+
+/** A list field: one input per entry, each with a remove button, and a button that adds one. */
+function ListInput(props: { value: unknown; set: (next: unknown) => void; label: string }): ReactNode {
+  const entries: unknown[] = Array.isArray(props.value) ? props.value : [];
+  return (
+    <span className="ui-list-input">
+      {entries.map((entry, index) => (
+        <span key={index} className="ui-list-entry">
+          <input
+            aria-label={`${props.label} ${index + 1}`}
+            value={entry === undefined || entry === null ? "" : typeof entry === "object" ? JSON.stringify(entry) : String(entry)}
+            onChange={(event: ChangeEvent<HTMLInputElement>) =>
+              props.set(entries.map((old, at) => (at === index ? event.target.value : old)))
+            }
+          />
+          <button
+            type="button"
+            aria-label={`Remove ${props.label} ${index + 1}`}
+            onClick={() => props.set(entries.filter((_, at) => at !== index))}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      <button type="button" aria-label={`Add ${props.label}`} onClick={() => props.set([...entries, ""])}>
+        Add
+      </button>
     </span>
   );
 }
@@ -179,14 +320,15 @@ export function FieldInput(props: { field: FieldSpec }): ReactNode {
       );
       break;
     case "rich_text":
-    case "json":
       control = (
-        <textarea
-          rows={field.as === "json" ? 6 : 4}
-          value={field.as === "json" && typeof value === "object" ? JSON.stringify(value, null, 2) : text}
-          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => set(event.target.value)}
-        />
+        <textarea rows={4} value={text} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => set(event.target.value)} />
       );
+      break;
+    case "json":
+      control = <JsonInput value={value} set={set} />;
+      break;
+    case "list":
+      control = <ListInput value={value} set={set} label={fieldLabel(field)} />;
       break;
     case "tags":
       control = (
@@ -226,6 +368,7 @@ export function FieldInput(props: { field: FieldSpec }): ReactNode {
       <span className="ui-form-label">{fieldLabel(field)}</span>
       {control}
       {field.note ? <small className="ui-note">{field.note}</small> : null}
+      <HelpNote help={field.help} />
     </label>
   );
 }

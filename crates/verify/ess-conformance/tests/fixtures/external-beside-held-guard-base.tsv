@@ -14,7 +14,7 @@ crates/edge/ess-cli/tests/fixtures/stored-rules/model.yaml	suite=6745c077d1991a3
 crates/edge/ess-cli/tests/fixtures/synthesis-seeds/model/system.yaml	ASSEMBLE b84b2c09f4674505b597:212
 crates/generate/ess-cli-project/tests/fixtures/model.yaml	suite=a5bebff8cddf98e79497:361 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/generate/ess-entity-runtime/tests/fixtures/contract/system.yaml	ASSEMBLE bfbe3990bccba3100311:459
-crates/generate/ess-gen/tests/fixtures/model-types.yaml	suite=01c5b843e68efa1d3e0a:363 refusals=bd8344ba32d2d00918b3:359 claimable=
+crates/generate/ess-gen/tests/fixtures/model-types.yaml	suite=01c5b843e68efa1d3e0a:363 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/generate/ess-synth/tests/fixtures/binding-selection.yaml	suite=1361d6cc82688779dbdc:2180 refusals=4d66337d8f495b389830:238 claimable=
 crates/generate/ess-synth/tests/fixtures/bounded-accessor.yaml	suite=5e31ae628a820681794e:7176 refusals=e35b67499ded0851e93c:837 claimable=
 crates/generate/ess-synth/tests/fixtures/clock-reading.yaml	suite=6b7c43ac8d04abdcf6a8:367 refusals=e3b0c44298fc1c149afb:0 claimable=
@@ -90,8 +90,8 @@ crates/verify/ess-conformance/tests/fixtures/event-multiplicity.yaml	suite=87be0
 crates/verify/ess-conformance/tests/fixtures/explore-adv-order.yaml	suite=df46ab5b3aa1157eb1d3:21792 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/explore-adv-overlap.yaml	suite=0d5fa7bad275223a5202:29576 refusals=0e0601057c3625c43646:705 claimable=
 crates/verify/ess-conformance/tests/fixtures/explore-external-adversary.yaml	suite=3febd88b2cb54a0db6a1:39390 refusals=e3b0c44298fc1c149afb:0 claimable=
-crates/verify/ess-conformance/tests/fixtures/explore-external-exits.yaml	suite=110b5cca61360a40533a:18834 refusals=03843445ae95de8a2f8e:1169 claimable=
-crates/verify/ess-conformance/tests/fixtures/explore-external.yaml	suite=4c73c1cd67fcd2fd10f4:29517 refusals=92126ffa688e233df54f:351 claimable=
+crates/verify/ess-conformance/tests/fixtures/explore-external-exits.yaml	suite=110b5cca61360a40533a:18834 refusals=7ba5bcde185c04381238:1462 claimable=
+crates/verify/ess-conformance/tests/fixtures/explore-external.yaml	suite=4c73c1cd67fcd2fd10f4:29517 refusals=44d73b7a9592cd0d3c76:636 claimable=
 crates/verify/ess-conformance/tests/fixtures/explore-guards-first.yaml	suite=fb7638dd5103a99c0e25:57256 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/explore-pair/pair.yaml	suite=7afef7d3d20b7b167d54:4342 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/explore-preconditions-list.yaml	suite=3bedeefadf837c4a8c4f:6477 refusals=e3b0c44298fc1c149afb:0 claimable=

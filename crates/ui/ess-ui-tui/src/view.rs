@@ -1140,7 +1140,7 @@ impl App {
             .iter()
             .map(|row| App::labelled_by(&labels, &columns, row))
             .collect();
-        let widths: Vec<usize> = columns
+        let natural: Vec<usize> = columns
             .iter()
             .map(|field| {
                 shown_rows
@@ -1149,9 +1149,10 @@ impl App {
                     .chain(std::iter::once(label_of(field).width()))
                     .max()
                     .unwrap_or(0)
-                    .min(28)
             })
             .collect();
+        // A line is the two-cell selection mark, then the columns.
+        let widths = column_widths(&natural, place.width.saturating_sub(2));
         // Recorded paths: the collection's, and its columns' where the document declares them.
         let container = place.path.to_string();
         let column_path = |field: &Field| match &collection.columns {
@@ -1210,6 +1211,11 @@ impl App {
                 }
             }
             lines.push(Line::styled(format!("  {}", header.join("  ")), bold()));
+            // A column's help, one line each, under the heading.
+            for field in &columns {
+                let lead = format!("  {}: ", label_of(field));
+                lines.extend(field.help.as_ref().and_then(|help| help_line(&lead, help)));
+            }
         }
         let mut group = None;
         // The groups in the order they are shown, and how many of them are already drawn: a
@@ -1478,8 +1484,56 @@ fn cell_value(field: &Field, value: &Value) -> String {
             .map(|text| text.replace('\n', " ").trim().to_owned())
             .unwrap_or_default(),
         Some("audio" | "iframe") => format!("↗ {}", display(value)),
+        Some("bytes") => value.as_f64().map_or_else(|| display(value), bytes),
+        Some("duration") => value.as_f64().map_or_else(
+            || display(value),
+            |count| duration(count, &field.duration_unit()),
+        ),
         _ => display(value),
     }
+}
+
+/// A duration counted in `unit` as `h:mm:ss`, in whole seconds, the hours unpadded and never
+/// folded into days, as the React target shows it.
+fn duration(count: f64, unit: &ess_ui::DurationUnit) -> String {
+    if !count.is_finite() {
+        return count.to_string();
+    }
+    let millis = match unit {
+        ess_ui::DurationUnit::S => count * 1000.0,
+        _ => count,
+    };
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    // finite, floored, non-negative
+    let seconds = (millis.abs() / 1000.0).floor() as u64;
+    let sign = if millis <= -1000.0 { "-" } else { "" };
+    format!(
+        "{sign}{}:{:02}:{:02}",
+        seconds / 3600,
+        seconds / 60 % 60,
+        seconds % 60
+    )
+}
+
+/// A byte count scaled to B, KB, MB or GB in 1024 steps, with at most one decimal, as the React
+/// target shows it.
+fn bytes(count: f64) -> String {
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+    let tenths = |scaled: f64| (scaled * 10.0).round() / 10.0;
+    let mut unit = 0;
+    let mut scaled = count;
+    while unit < UNITS.len() - 1 && scaled.abs() >= 1024.0 {
+        scaled /= 1024.0;
+        unit += 1;
+    }
+    // 1048575 B is 1023.999 KB, which rounds to the next unit.
+    if unit < UNITS.len() - 1 && tenths(scaled).abs() >= 1024.0 {
+        scaled /= 1024.0;
+        unit += 1;
+    }
+    let text = format!("{:.1}", tenths(scaled));
+    let text = text.strip_suffix(".0").unwrap_or(&text);
+    format!("{text} {}", UNITS[unit])
 }
 
 /// The spark for a level between 0 and 7.
@@ -1537,23 +1591,33 @@ impl App {
                         ),
                         bold(),
                     ));
+                    lines.extend(group.help.as_ref().and_then(|help| help_line("", help)));
                     heading = Some(&group.name);
                 }
             }
             let value = self.field_value(form, &draft, &field.field, &place.ctx);
             let shown = match field.field_as.as_deref() {
                 Some("choice") => {
-                    let options = match field.choice.as_ref().map(|node| &node.body) {
-                        Some(Body::Composite(Composite::Choice(choice))) => self
-                            .choice_options(choice, Some(&field.field), &place.ctx)
+                    let choice = match field.choice.as_ref().map(|node| &node.body) {
+                        Some(Body::Composite(Composite::Choice(choice))) => Some(choice),
+                        _ => None,
+                    };
+                    let options = choice.map_or_else(Vec::new, |choice| {
+                        self.choice_options(choice, Some(&field.field), &place.ctx)
                             .into_iter()
                             .map(|(_, label)| label)
-                            .collect::<Vec<_>>(),
-                        _ => Vec::new(),
-                    };
-                    format!("‹{}› of {}", display(&value), options.join("/"))
+                            .collect::<Vec<_>>()
+                    });
+                    // Nothing chosen: the choice's placeholder.
+                    let chosen = Some(display(&value))
+                        .filter(|text| !text.is_empty())
+                        .or_else(|| choice.and_then(|choice| choice.placeholder.clone()))
+                        .unwrap_or_default();
+                    format!("‹{chosen}› of {}", options.join("/"))
                 }
                 Some("file") => format!("path: {}", display(&value)),
+                // An input edits the number the field holds, as the React input does.
+                Some("duration") => display(&value),
                 _ => cell_value(field, &value),
             };
             let current = place.focused && index == state.item;
@@ -1566,6 +1630,7 @@ impl App {
                 Style::default()
             };
             lines.push(Line::styled(text, style));
+            lines.extend(field.help.as_ref().and_then(|help| help_line("  ", help)));
         }
         for part in &form.parts {
             let draft_ctx = Place {
@@ -1614,7 +1679,13 @@ impl App {
         };
         let options = self.choice_options(choice, None, &place.ctx);
         let count = options.len().max(1);
-        options
+        // Nothing chosen: the placeholder, before the options.
+        let placeholder = choice
+            .placeholder
+            .as_ref()
+            .filter(|_| chosen.iter().all(String::is_empty))
+            .map(|placeholder| Span::styled(format!("‹{placeholder}› "), dim()));
+        let options = options
             .into_iter()
             .enumerate()
             .map(|(index, (value, label))| {
@@ -1631,8 +1702,8 @@ impl App {
                     Style::default()
                 };
                 Span::styled(format!("{mark} {label} "), style)
-            })
-            .collect()
+            });
+        placeholder.into_iter().chain(options).collect()
     }
 
     fn bar_lines(&self, bar: &ess_ui::FilterBar, place: &Place<'_>) -> Vec<Line<'static>> {
@@ -1710,8 +1781,9 @@ impl App {
             ));
         }
         let mut extra = self.action_hint(&bar.actions, &place.ctx);
-        if bar.reset {
-            extra.push(Line::styled("reset all", dim()));
+        if bar.offers_reset() {
+            let label = bar.reset_label().unwrap_or("reset all").to_owned();
+            extra.push(Line::styled(label, dim()));
         }
         lines.extend(extra);
         lines
@@ -1831,7 +1903,7 @@ impl App {
             (_, None) if value.is_null() => "–".to_owned(),
             (Some(MetricFormat::Percent), Some(number)) => format!("{:.0}%", number * 100.0),
             (Some(MetricFormat::Duration), Some(number)) => format!("{number}s"),
-            (Some(MetricFormat::Bytes), Some(number)) => format!("{number} B"),
+            (Some(MetricFormat::Bytes), Some(number)) => bytes(number),
             _ => display(&value),
         };
         let label = metric.label.clone().unwrap_or_else(|| "metric".into());
@@ -2107,6 +2179,17 @@ fn label_of(field: &Field) -> String {
     field.label.clone().unwrap_or_else(|| field.field.clone())
 }
 
+/// A `help: {text, link}` of a form group, field or column as one dim line after `lead`: its
+/// text, then its link; `None` when it holds neither.
+fn help_line(lead: &str, help: &ess_ui::Help) -> Option<Line<'static>> {
+    let text = [help.text.clone(), help.link.clone()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" — ");
+    (!text.is_empty()).then(|| Line::styled(format!("{lead}? {text}"), dim()))
+}
+
 /// The heading a column shows in the generated React project: its `label`, else its name with
 /// `_` read as a space.
 fn browser_field_label(field: &Field) -> String {
@@ -2173,6 +2256,47 @@ fn tab_line(labels: impl Iterator<Item = String>, current: usize) -> Line<'stati
     }
     spans.push(Span::styled("[ ] switch tabs", dim()));
     Line::from(spans)
+}
+
+/// The fewest cells a table column is cut to while its table's line does not fit the box.
+const COLUMN_CAP: usize = 28;
+
+/// Each table column's width in a line of `room` cells, columns two cells apart, from each
+/// column's widest cell (`natural`): every column whole while they all fit. Otherwise the widest
+/// columns give up cells, the narrower ones keeping theirs, but none is cut below
+/// [`COLUMN_CAP`]; a line that still does not fit is cut at the box.
+fn column_widths(natural: &[usize], room: usize) -> Vec<usize> {
+    let room = room.saturating_sub(2 * natural.len().saturating_sub(1));
+    let total = |cap: usize| natural.iter().map(|width| (*width).min(cap)).sum::<usize>();
+    if total(usize::MAX) <= room {
+        return natural.to_vec();
+    }
+    // The widest cap the line fits: every column at most that wide.
+    let mut cap = COLUMN_CAP;
+    if total(COLUMN_CAP) <= room {
+        let mut over = natural.iter().copied().max().unwrap_or(0);
+        while cap < over {
+            let mid = cap + (over - cap).div_ceil(2);
+            if total(mid) <= room {
+                cap = mid;
+            } else {
+                over = mid - 1;
+            }
+        }
+    }
+    let mut widths: Vec<usize> = natural.iter().map(|width| (*width).min(cap)).collect();
+    // The cells left over go one each to the columns still cut, left to right.
+    let mut spare = room.saturating_sub(widths.iter().sum());
+    for (width, whole) in widths.iter_mut().zip(natural) {
+        if spare == 0 {
+            break;
+        }
+        if *width < *whole {
+            *width += 1;
+            spare -= 1;
+        }
+    }
+    widths
 }
 
 /// `text` cut to `width` terminal cells and padded to exactly that many.

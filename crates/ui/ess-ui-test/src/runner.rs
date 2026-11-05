@@ -12,7 +12,7 @@ use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
 
-use ess_ui::{Action, Body, Composite, Document, FixtureIndex, Form, NodeRef, TabFields};
+use ess_ui::{Action, ActionAs, Body, Composite, Document, FixtureIndex, Form, NodeRef, TabFields};
 use ess_ui_tui::live::Script;
 use ess_ui_tui::{App, DataAdapter, FixtureAdapter, Lifecycle, Options, ReadRequest, ReadResult};
 use ess_yaml::{Mapping, Value};
@@ -965,15 +965,27 @@ fn label(action: &Action) -> String {
     action.label.clone().unwrap_or_else(|| action.name.clone())
 }
 
-/// The key an action hint offers `action` under: hints read `k label · k label`.
+/// The key an action hint offers `action` under: hints read `k label · k label`. The terminal
+/// writes a toggle's hint with its state mark right after the key (`k [x] label`, `k [ ] label`),
+/// so a toggle matches only behind one of those marks; any other action matches its whole label,
+/// brackets included.
 fn hint_key<'a>(lines: impl Iterator<Item = &'a str>, action: &Action) -> Option<char> {
     let wanted = label(action);
+    let toggle = action.action_as == Some(ActionAs::Toggle);
     for line in lines {
         for hint in line.split(" · ") {
             let hint = hint.trim();
             let mut chars = hint.chars();
             if let (Some(key), Some(' ')) = (chars.next(), chars.next()) {
-                if chars.as_str() == wanted {
+                let shown = chars.as_str();
+                let shown = if toggle {
+                    ["[x] ", "[ ] "]
+                        .into_iter()
+                        .find_map(|mark| shown.strip_prefix(mark))
+                } else {
+                    Some(shown)
+                };
+                if shown == Some(wanted.as_str()) {
                     return Some(key);
                 }
             }

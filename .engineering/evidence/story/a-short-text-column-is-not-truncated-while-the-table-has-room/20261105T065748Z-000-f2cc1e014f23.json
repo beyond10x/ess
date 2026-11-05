@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-05T06:57:48Z",
+  "actor": "human:timo",
+  "artifact": "story:a-short-text-column-is-not-truncated-while-the-table-has-room",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "redaction",
+    "literal_sha256": "025cc6079c550ac1a220f0b7cfeab2844cc5344c603a3dbf2165eec9f544768c",
+    "literal_chars": 18,
+    "replacement": "adopter report",
+    "count": 1,
+    "reason": "downstream adopter label"
+  }
+}

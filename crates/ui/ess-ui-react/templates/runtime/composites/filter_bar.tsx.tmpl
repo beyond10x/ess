@@ -17,7 +17,8 @@ export function FilterBar(props: {
   choices?: ReactNode;
   inputs?: FieldSpec[];
   actions?: ActionSpec[];
-  reset?: boolean;
+  /** Offers a reset-all button showing `label`, else "Reset". */
+  reset?: { label?: string };
 }): ReactNode {
   const scope = useScope();
   const search = props.search;
@@ -37,6 +38,7 @@ export function FilterBar(props: {
       {window ? (
         <span className="ui-window">
           <select
+            aria-label="Time window"
             value={String(range.preset ?? "")}
             onChange={(event: ChangeEvent<HTMLSelectElement>) => scope.set(`${window.binds}.preset`, event.target.value)}
           >
@@ -69,13 +71,13 @@ export function FilterBar(props: {
       {(props.actions ?? []).map((action) => (
         <ActionControl key={action.name} action={action} />
       ))}
-      {props.reset !== false && props.binds.length > 0 ? (
+      {props.reset && props.binds.length > 0 ? (
         <button
           type="button"
           className="ui-button ui-tone-ghost"
           onClick={() => props.binds.forEach((bind) => scope.set(bind, null))}
         >
-          Reset
+          {props.reset.label ?? "Reset"}
         </button>
       ) : null}
     </div>
