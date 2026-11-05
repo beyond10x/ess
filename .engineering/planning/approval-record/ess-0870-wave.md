@@ -13,7 +13,7 @@ relations:
 - decides: story:the-openapi-says-published-only-for-events-the-component-publishes
 - decides: story:a-value-renders-in-the-form-its-field-declares
 - decides: story:choices-filter-bars-and-forms-render-what-they-declare
-revision: 16
+revision: 20
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-04T08:47:27Z", actor: "human:timo", revision: 2, executor: "agent:ess-w1-lead"}
 ---
@@ -177,3 +177,47 @@ committed text of this public repository, the planning store included.
 - A squash merge has no second parent, so the release's `prior-gate` rule 2 cannot reuse the queue
   run. The tag goes on the squash commit after its `main` push run passes every required check
   (rule 1); otherwise the release runs the full gate.
+
+## CI disk: the extraction footprint
+
+The coordinator decided on 2026-11-05 that the queue run's disk stop is fixed in CI by
+extracting the test archive in its own step and deleting it before the tests run, measured first:
+the push goes only if the shard's peak fits the runner's free disk with 5G to spare. A larger
+runner is spending and more shards do not shrink the one shared archive; neither is taken.
+
+Measured on the second queue run (Test 4/20, a passing shard on a runner with 121G free):
+`target/` held 17.1G of downloaded archives before extraction and 63.9G after it, so the
+extracted workspace binaries take 46.8G, and the tests add 1.2G more (65.1G peak). The stopped
+shard (Test 11/20) ran on a runner with 52G free after the cleanup step and no `/mnt`. Extracting
+and then deleting the archive peaks at the archive plus 46.8G, about 64G, and the extracted
+binaries and test output alone need 48G: neither leaves 5G on 52G. Nothing was pushed for it; a
+variant that shrinks the extracted bytes is measured first.
+
+## CI disk: the stripped-binary measurement
+
+The coordinator then decided to measure the variant that shrinks the binaries: the test-archive
+build without debug line tables (`-C strip=debuginfo`), for the CI archive jobs only, local profiles
+unchanged. One test target, `ess-conformance --test suite`, is built with line tables and its size
+compared with the same binary stripped of debug information; the 46.8G of extracted binaries is
+scaled by that ratio. At 35G or less the archive jobs strip debug information and each shard
+downloads, extracts, deletes the archive and then runs; above it, nothing is pushed. Backtraces in
+CI test binaries lose line numbers; panic locations keep file and line.
+
+Measured: the local line-table binary is 178.8 MB, 90.5 MB with its debug sections removed (0.51).
+The ratio does not apply to the 46.8G: the CI archive jobs already build with `debug = 0` and
+`strip = symbols` (`ci.yml`, held by `ci_lanes.rs`
+`the_archive_jobs_build_the_test_binaries_without_debug_information`), so the extracted binaries
+are already stripped and the estimate stays 46.8G, above 35G. Nothing was pushed. A shard that
+extracts the archive into the checkout, deletes it and runs from `target/nextest/*-metadata.json`
+was checked with a small archive (`--binaries-metadata`, `--cargo-metadata`, `--workspace-remap`,
+`--target-dir-remap`): the tests run without a rebuild.
+
+## CI disk: the release goes on, the split follows
+
+The coordinator decided on 2026-11-05 how 0.87.0 goes on. The pull request takes only the clippy
+fix (`let ... else` in the unreached-invariant note), checked locally with clippy at
+`-D warnings` on `ess-conformance --lib` and the `ci_lanes` tests. A shard stopped by the disk
+watch on a 52G runner gets one re-run of the failed jobs through the bot; a second disk stop
+brings the two-archive split into this pull request, and any other red stops the release. The
+split itself is `story:ci-test-shards-each-extract-half-the-test-binaries`, accepted as the first
+unit of the next ESS wave (0.88.0).

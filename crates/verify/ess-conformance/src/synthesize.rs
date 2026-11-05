@@ -3289,10 +3289,10 @@ fn unreached_value_invariants(ir: &EssIr) -> Vec<Note> {
         .filter_map(|declared| {
             // The note lists the invariants it names, so it reads them; an alphabet or a prefix
             // alone leaves nothing to list.
-            let invariants = match &declared.body {
-                ResolvedBody::Newtype { invariants, .. }
-                | ResolvedBody::Struct { invariants, .. } => invariants,
-                _ => return None,
+            let (ResolvedBody::Newtype { invariants, .. }
+            | ResolvedBody::Struct { invariants, .. }) = &declared.body
+            else {
+                return None;
             };
             (!invariants.is_empty()).then(|| Note::UnreachedValueInvariant {
                 value: DeclaredTypeRef::new(declared.name.clone()),
