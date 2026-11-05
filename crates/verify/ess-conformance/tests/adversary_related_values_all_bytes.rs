@@ -31,7 +31,12 @@
 //! 0.79.0 integration branch the suite and refusal digests of `text-length-positions` are re-pinned
 //! to the bytes table: a finite `Binary64` is carried through a suite at /62 and /63, so its one
 //! whole-model refusal became scenarios (unit U3, 915fe1fca,
-//! story:a-binary64-value-round-trips-through-a-conformance-suite).
+//! story:a-binary64-value-round-trips-through-a-conformance-suite). On the 0.87.0 integration
+//! branch three refusal digests are re-pinned to the bytes table, IR and suite unchanged:
+//! `model-types` refuses nothing, its unreached value invariant now a note
+//! (story:a-value-invariant-on-a-type-nothing-reaches-refuses-nothing), and `explore-external` and
+//! `explore-external-exits` carry the `ESS-SYNTH-003` refusal that names its repair
+//! (story:a-not-found-branch-after-a-guarded-move-is-refused-with-its-repair).
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 

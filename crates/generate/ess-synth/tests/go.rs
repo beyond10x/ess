@@ -1016,6 +1016,9 @@ fn a_served_component_not_named_server_keeps_its_file_names() {
     // The control: no collision, so the tree is the one emitted before the repair existed, byte
     // for byte. The digest was read from the tree on the base the story's unit forked from
     // (4a0d58c611); a change that moves it changes Go output for a model the repair is not about.
+    // Re-read for 0.87.0: the served `.openapi.json` the tree embeds calls an event published to
+    // consumers only when the component publishes it
+    // (story:the-openapi-says-published-only-for-events-the-component-publishes).
     let synthesis = served("gateway", "relay-service");
     assert_eq!(
         server_files(&synthesis),
@@ -1030,7 +1033,7 @@ fn a_served_component_not_named_server_keeps_its_file_names() {
     );
     assert_eq!(
         format!("{:016x}", tree_digest(&synthesis)),
-        "752554d7649190c4",
+        "dde261e8d3484aa8",
         "{SERVED_STORY}: the control tree keeps its bytes"
     );
     go_builds_where_present("gateway", &synthesis);

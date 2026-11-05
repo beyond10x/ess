@@ -193,6 +193,20 @@ full gate before a release: each unit passes its package gates, the queue pull r
 the merge into `main`, and that run or the tag run gates the release. A wave holds at most 5
 stories and ends in one release.
 
+**A gate of named test targets includes the repository-wide byte pins.** A change to synthesis,
+to a generator or to generated wording moves bytes that only these targets compare, and a gate
+that names targets instead of building everything misses them (0.87.0's queue run found nine
+red there):
+
+- `ess-conformance`: `synthesis_suite_bytes_table`, `synthesis_suite_bytes_table_cli_read`,
+  `adversary_related_values_all_bytes`, `external_beside_held_guard`;
+- `ess-synth`: `served_codec_names`, `go`;
+- `ess-openapi`: `adversary_ess_issues_2_u6`;
+- `ess-compiler`: `string_alphabet_and_length`;
+- `ess-cli`: `tutorial_page`.
+
+Re-pin a moved row only where the change claims it, and name the cause beside the pin.
+
 `task test-browser-product` and `task test-slow-probes` run in no CI lane (those Firefox tests and
 slow probes are ignored in the CI test shards); run them locally when a change touches what they
 cover. `test-browser-product` builds its wasm host once into one shared target and took 1120 s for 30 tests on 2026-10-22 at debuginfo 0 (about 6.8 h before, when each test built its own host on one core). To reproduce the whole gate locally, mind that `task test` alone builds about 45 GiB into

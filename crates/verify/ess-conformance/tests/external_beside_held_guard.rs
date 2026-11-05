@@ -869,7 +869,12 @@ fn unclaimed_external_witnesses_keep_their_bytes() {
 /// The suite and refusals of `text-length-positions.yaml` were re-pinned on the 0.79.0 integration
 /// branch to the bytes table: a finite `Binary64` is carried through a suite at /62 and /63, so its
 /// one whole-model refusal became scenarios (unit U3, 915fe1fca,
-/// story:a-binary64-value-round-trips-through-a-conformance-suite).
+/// story:a-binary64-value-round-trips-through-a-conformance-suite). The refusals of three rows
+/// were re-pinned on the 0.87.0 integration branch to the bytes table, suites and claimable lists
+/// unchanged: `model-types.yaml` refuses nothing, its unreached value invariant now a note
+/// (story:a-value-invariant-on-a-type-nothing-reaches-refuses-nothing), and
+/// `explore-external.yaml` and `explore-external-exits.yaml` carry the `ESS-SYNTH-003` refusal
+/// that names its repair (story:a-not-found-branch-after-a-guarded-move-is-refused-with-its-repair).
 const BASE: &str = include_str!("fixtures/external-beside-held-guard-base.tsv");
 
 fn root() -> PathBuf {
