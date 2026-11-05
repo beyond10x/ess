@@ -14,7 +14,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:adopter-gaps-synthesis
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-05T00:13:28Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-05T00:13:28Z", actor: "human:timo", revision: 3}
@@ -91,3 +91,18 @@ Two consequences:
 
 Accepted by the orchestrator on 2026-11-05. It goes first in the next ESS wave after 0.87.0; it joins 0.87.0 only
 if that wave has a free unit slot and no collision (it lands in `synthesize.rs`, which U1 holds).
+
+## Decisions
+
+The 0.88.0 adversary pass on this unit found two introduced defects; the coordinator decided on
+2026-11-05 that one correction in this wave fixes both:
+
+- A further instance takes the input's example even where a `when_related` row-set uniqueness check
+  on the create needs the instances told apart, and synthesis then refuses the created outcome.
+- A further instance takes the example where a later command's related-row or subject predicate reads
+  that field, and that command's branch loses its scenario: the code inferred that no search chose the
+  value from placeholder equality and checked only the creating command's guards.
+
+The correction treats every stored field that any command's row selection, related-row predicate or
+subject predicate reads as told apart (or carries whether a search steered the value), and adds both
+models to `suffixed_instance_inputs`.
