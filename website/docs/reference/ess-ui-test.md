@@ -92,20 +92,33 @@ A step is a map with one key, its keyword. Most steps fit on one line.
 
 ### open
 
-Opens a page, with its params.
+Opens a page, with its params. `state` opens it as a link carrying page state in its query does:
+each entry is a state the page keeps in the URL (`store: url`); any other state fails the step.
 
 ```yaml
 - open: partners.list
 - open: {page: partners.detail, params: {id: pt-001}}
+- open: {page: partners.list, state: {tier: [gold]}}
 ```
 
 ### select
 
 Focuses a section, or moves to a row (paging to it). At a tab of a section's record
-(`…/sections/<s>/tabs/<t>`) it shows that tab. Selecting the page closes an open overlay.
+(`…/sections/<s>/tabs/<t>`) it shows that tab. At a row's `expand` (`…/rows/<key>/expand`) it
+moves to the row and shows its expanded detail. Selecting the page closes an open overlay.
 
 ```yaml
 - select: pages/partners.list/sections/list/rows/pt-005
+```
+
+### mark
+
+Adds a row to its collection's selection, or takes it out when it is in it, as its checkbox does.
+The collection declares a `selection`. A bulk action then runs with `act` at
+`…/bulk_actions/<name>`, and its confirm at `…/bulk_actions/<name>/confirm/overlay`.
+
+```yaml
+- mark: pages/partners.list/sections/list/rows/pt-003
 ```
 
 ### type
@@ -119,21 +132,48 @@ the field holds.
 
 ### choose
 
-Picks an option of a choice, by its value or its label: a filter bar's choice, or a form field drawn
-`as: choice` (at the field or at its `choice` node). In a multiple choice a second pick of the same
-option removes it.
+Picks an option of a choice, by its value or its label: a filter bar's choice, a choice that is a
+section of its own, or a form field drawn `as: choice` (at the field or at its `choice` node). In a
+multiple choice a second pick of the same option removes it. At a form field drawn `as: toggle` the
+option is `true` or `false`; at a filter bar itself it is a preset of the bar's time `window`.
 
 ```yaml
 - choose: {at: pages/tickets.list/sections/filters/choices/priority, option: urgent}
 ```
 
+A form sends a toggle nobody touched as `false`, the unchecked box it shows, unless its draft
+declares a default for it.
+
 ### act
 
-Runs an action: a row's action, a header action, a section's action. On an open overlay's own path
-it runs the overlay's primary action — a confirm confirms, a form submits.
+Runs an action: a row's action, a header action, a section's action, a bulk action. On an open
+overlay's own path it runs the overlay's primary action — a confirm confirms, a form submits. On a
+section whose body is a form it submits the form. On a collection's column
+(`…/columns/<name>`) it sorts by that column as a click on its header does: ascending, or
+descending when the collection is already sorted by it ascending; the column is `sortable`. A
+form that saves on change (`save: on_change`) sends its command on every change a step makes,
+without `act`.
 
 ```yaml
 - act: pages/partners.list/sections/list/rows/pt-003/row_actions/delete
+```
+
+### move
+
+Moves a row of a collection with a `reorder` one place `up` or `down`, as its move buttons do,
+and sends the reorder command.
+
+```yaml
+- move: {at: pages/deals.board/sections/board/rows/dl-002, to: up}
+```
+
+### upload
+
+Runs an upload action with a file, named relative to the test file, and sends the action's
+command with the file's `name` and its text as `content`.
+
+```yaml
+- upload: {at: pages/partners.list/header/actions/import, file: partners.csv}
 ```
 
 ### page
@@ -219,6 +259,15 @@ A command never sent fails naming the commands that were; a command sent with ot
 showing the input it was sent with and, for each send, the first field that differs with both
 values and their types (`at website it sent string "7500", expected number 7500`).
 
+### expect_export
+
+Holds when an export action has read the view, in the format `as` when given, with at least the
+params given. Params compare as `expect_command`'s input does.
+
+```yaml
+- expect_export: {view: partners.Page, as: csv, params: {tier: [gold]}}
+```
+
 ## Fixtures
 
 A test starts from the document's fixtures. `fixtures.views` replaces a view's data, in the shape a
@@ -284,11 +333,14 @@ Every step goes through what a reader of the terminal has: key presses and the d
 
 | Step | In the terminal |
 |---|---|
-| `select` a row | focus the section, move the cursor (`j`, `k`, `n`, `p`) until the highlighted line is the row |
+| `select` a row | focus the section, move the cursor (`j`, `k`, `n`, `p`) until the highlighted line is the row; at its `expand`, then `x` unless the detail is shown |
+| `mark` | move to the row, `space` |
 | `page` | back to the first page (`p`), then `n` to the page |
 | `type` | `/` and the text in a filter bar or collection; `enter`, the text, `enter` on a form field |
-| `choose` | in a filter bar, move to the choice (`h`, `l`), to the option (`j`), `space`; in a form, move to the field (`k`, `j`), then `space` until it shows the option |
-| `act` | the key the hint line offers for the action; the palette (`:do: <label>`, which names the action past any page sharing its label) for a header action; `]` until the tab is current for a node in a record's tab; `y` or `ctrl-s` on an overlay |
+| `choose` | in a filter bar, move to the choice (`h`, `l`), to the option (`j`), `space`, or to the window and `space` until it shows the preset; in a choice section, to the option (`k`, `j`), `space`; in a form, move to the field (`k`, `j`), then `space` until it shows the option or the toggle's state, and in a multiple choice to the option (`h`, `l`), `space` |
+| `act` | the key the hint line offers for the action; the palette (`:do: <label>`, which names the action past any page sharing its label) for a header action; `]` until the tab is current for a node in a record's tab; `y` or `ctrl-s` on an overlay; `ctrl-s` on a section's form; `s` until the footer shows the column's order, `S` to turn it, on a column |
+| `move` | move to the row, `K` up or `J` down (the `move_buttons` fallback of `no_drag`) |
+| `upload` | the action's key or palette entry, then the file's path at the prompt it opens |
 | `expect` | the cells the renderer drew the node on: the screen, the section's box, the overlay, the row's line, the cell |
 
 The terminal renderer records where each frame drew each node, by path (`ess_ui_tui::App::regions`):
@@ -316,7 +368,6 @@ refuses:
 | any step at a tab's nested node (`tabs/<t>/form` that is a node) or inside it | the terminal draws it below the tab's fields but moves no focus into it |
 | `text` or `not_text` at a node the terminal does not draw on cells of its own | its text cannot be told from its neighbours' |
 | `text` or `not_text` at an icon action, or an action drawn as a choice | the browser shows no label there |
-| `choose` at a form choice field with `multiple: true` | the terminal sets one value in a form's choice field |
 | `choose` at a field `as: choice` without a `choice` node | it offers no options in either renderer |
 | `advance` or `play` past the end of the clock | the move does not fit |
 | `advance` or `play` over more than `MAX_CYCLES_PER_ADVANCE` cycles of a looping script | every cycle's events are delivered one by one |
@@ -340,14 +391,18 @@ its path, so the spec's `baseURL` is the generated project served by `npm run de
 
 | Step | In the spec |
 |---|---|
-| `open` | `page.goto` of the page's route |
-| `select` a row | a `click` event dispatched on the row element, then a check that it is the focused row (`ui-focused`); `test.fixme` for a collection with `expand`, which also expands the row it focuses |
+| `open` | `page.goto` of the page's route, with `state` as its query (a string as it is, any other value as JSON) |
+| `select` a row | a `click` event dispatched on the row element, then a check that it is the focused row (`ui-focused`); `test.fixme` for a collection with `expand`, which also expands the row it focuses; at the row's `expand`, the `click`, then a check that the detail is visible |
+| `mark` | `click` on the row's `Select row` checkbox |
 | `page` | `Previous` until the pager shows page 1, then `Next` to the page, each checked on the pager |
 | `type` | `pressSequentially` into the search input or the field's input |
-| `choose` | the option's button, or `selectOption` for a dropdown |
-| `act` | `click`; on an overlay, its primary button |
+| `choose` | the option's button, or `selectOption` for a dropdown; `setChecked` on a toggle; `selectOption` of the bar's `Time window` |
+| `act` | `click`; on an overlay, its primary button; on a section's form, its submit button; on a column, its sort button |
+| `move` | the row's first (up) or last (down) move button |
+| `upload` | `setInputFiles` on the action's file input |
 | `expect` | `toContainText`, a `RegExp` that allows digit grouping where the text holds a number of four or more digits, `toHaveCount` and `data-ui-path` of each `.ui-row`, `data-status`, `.ui-stale-badge` |
 | `expect_command` | commands captured by routing `/commands/…` |
+| `expect_export` | `test.fixme`: the spec does not capture the read an export makes |
 
 `select` does not click the row with the pointer: a click lands on the row's centre, which may be a
 link or a button in a cell, and would navigate where the terminal only moves its cursor.

@@ -40,17 +40,21 @@ pub const FORMAT: &str = "ess-ui-test/1";
 /// The format marker of the JSON report.
 pub const REPORT_FORMAT: &str = "ess-ui-test-report/1";
 /// Every step keyword, in the order the reference documents them.
-pub const STEPS: [&str; 10] = [
+pub const STEPS: [&str; 14] = [
     "open",
     "select",
+    "mark",
     "type",
     "choose",
     "act",
+    "move",
+    "upload",
     "page",
     "expect",
     "play",
     "advance",
     "expect_command",
+    "expect_export",
 ];
 
 /// A run that could not produce a report: a test file or the document does not read.

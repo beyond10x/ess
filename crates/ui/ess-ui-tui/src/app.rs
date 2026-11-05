@@ -336,6 +336,22 @@ pub(crate) enum Prompt {
         state: Option<String>,
         text: String,
     },
+    /// The file path an upload action sends: its name and its text go to `does`.
+    Upload {
+        does: String,
+        text: String,
+    },
+}
+
+/// One export the user ran ([`App::exports`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Exported {
+    /// The view it reads.
+    pub view: String,
+    /// Its file format (`as`).
+    pub format: String,
+    /// The params it reads the view with.
+    pub params: BTreeMap<String, Value>,
 }
 
 /// One entry of the navigation pane.
@@ -418,6 +434,8 @@ pub struct App {
     polls: BTreeMap<String, Duration>,
     /// How many commands have been sent.
     pub(crate) commands_sent: u64,
+    /// Every export run, in order.
+    exports: Vec<Exported>,
     /// Marks of the lines being drawn, not yet placed on the screen.
     pub(crate) marks: std::cell::RefCell<Vec<Mark>>,
     /// What the last frame drew where.
@@ -523,6 +541,7 @@ impl App {
             bound,
             polls,
             commands_sent: 0,
+            exports: Vec::new(),
             marks: std::cell::RefCell::default(),
             regions: std::cell::RefCell::default(),
         };
@@ -624,6 +643,62 @@ impl App {
             .collect();
         self.go(page, params, true);
         self.pump();
+    }
+
+    /// Opens a page as a link carrying page state in its query does: each of `state` is a state
+    /// the page keeps in the URL (`store: url`), set before the page reads. A state the page does
+    /// not declare, or keeps elsewhere, is refused and nothing is opened.
+    pub fn open_page_with_state(
+        &mut self,
+        page: &str,
+        params: &[(&str, &str)],
+        state: &BTreeMap<String, Value>,
+    ) -> Result<(), String> {
+        let Some(definition) = self.doc.pages.get(page) else {
+            return Err(format!("no page {page}"));
+        };
+        let mut paths = Vec::new();
+        for name in state.keys() {
+            if !definition.state.contains_key(name) {
+                return Err(format!("page {page} declares no state {name}"));
+            }
+            let path = format!("pages/{page}/state/{name}");
+            if self.store.store_of(&path) != ess_ui::Store::Url {
+                return Err(format!(
+                    "state {name} of page {page} is not kept in the URL, so no link opens with it"
+                ));
+            }
+            paths.push(path);
+        }
+        for (path, value) in paths.into_iter().zip(state.values()) {
+            self.store.set(&path, value.clone(), self.adapter.as_mut());
+        }
+        self.open_page(page, params);
+        Ok(())
+    }
+
+    /// The options `choice` offers on the page shown, as the terminal lists them: `(value,
+    /// label)`, read through the adapter with its params and `filter` applied, in a section's
+    /// scope when `section` is given, else in the open overlay's when `overlay`; `field` is the
+    /// form field it picks for.
+    pub fn options(
+        &self,
+        choice: &ess_ui::Choice,
+        field: Option<&str>,
+        section: Option<&str>,
+        overlay: bool,
+    ) -> Vec<(Value, String)> {
+        let ctx = Ctx {
+            section,
+            overlay,
+            ..Ctx::default()
+        };
+        self.choice_options(choice, field, &ctx)
+    }
+
+    /// Every export the user ran, in order: the view, its format and the params it was read with.
+    pub fn exports(&self) -> &[Exported] {
+        &self.exports
     }
 
     /// Opens an overlay of the page shown (or of its shell), passing the page's params.
@@ -2595,6 +2670,14 @@ impl App {
                 self.record_key(&ui, &record, section.as_deref(), overlay, key);
             }
             Composite::Confirm(confirm) => self.confirm_key(&ui, &confirm, key),
+            Composite::Choice(choice) => {
+                let ctx = Ctx {
+                    section: section.as_deref(),
+                    overlay,
+                    ..Ctx::default()
+                };
+                self.choice_key(&ui, &choice, &ctx, key);
+            }
             Composite::RichText(text) => {
                 if key.code == KeyCode::Enter && text.binds.is_some() {
                     self.ui_mut(&ui).editing = true;
@@ -2726,6 +2809,20 @@ impl App {
                 };
                 // A new order starts at the first page.
                 self.reset_page(ui);
+                // Sorted by the view: the order is page state the read sends, as in React.
+                let server = collection
+                    .sort
+                    .as_ref()
+                    .is_some_and(|sort| sort.mode == Some(ess_ui::SortMode::Server));
+                if let (true, Some((by, descending))) = (server, self.ui(ui).sort) {
+                    let mut value = Mapping::new();
+                    value.insert(Value::String("by".into()), Value::String(by));
+                    value.insert(
+                        Value::String("dir".into()),
+                        Value::String(if descending { "desc" } else { "asc" }.into()),
+                    );
+                    self.set_bound("state.sort", Value::Mapping(value), &ctx);
+                }
             }
             KeyCode::Char('x') => {
                 let state = self.ui_mut(ui);
@@ -2875,21 +2972,8 @@ impl App {
                     let picked = options[state.option % options.len()].0.clone();
                     let binds = choice_binds(bar, node, choice);
                     let Some(binds) = binds else { return };
-                    let mut value = self.eval(&binds, &ctx).unwrap_or(Value::Null);
-                    if choice.multiple {
-                        let mut items = value.as_sequence().cloned().unwrap_or_default();
-                        if let Some(at) = items
-                            .iter()
-                            .position(|item| display(item) == display(&picked))
-                        {
-                            items.remove(at);
-                        } else {
-                            items.push(picked);
-                        }
-                        value = Value::Sequence(items);
-                    } else {
-                        value = picked;
-                    }
+                    let value = self.eval(&binds, &ctx).unwrap_or(Value::Null);
+                    let value = picked_into(&value, picked, choice.multiple);
                     self.set_bound(&binds, value, &ctx);
                 }
                 Some(BarItem::Window) => {
@@ -2911,6 +2995,42 @@ impl App {
                 }
                 _ => {}
             },
+            // The bar's own actions, by the key its hint line offers.
+            KeyCode::Char(letter) => {
+                if let Some((_, action)) = self
+                    .action_keys(&bar.actions, &ctx)
+                    .into_iter()
+                    .find(|(key, _)| *key == letter)
+                {
+                    self.run_action_at(ui, &action, None);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// A key on a choice that is a section of its own: `j` and `k` move to an option, `space`
+    /// picks it (or, in a multiple choice, adds or removes it) into the state the choice binds.
+    fn choice_key(&mut self, ui: &str, choice: &ess_ui::Choice, ctx: &Ctx<'_>, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => self.ui_mut(ui).option += 1,
+            KeyCode::Char('k') | KeyCode::Up => {
+                let state = self.ui_mut(ui);
+                state.option = state.option.saturating_sub(1);
+            }
+            KeyCode::Char(' ') | KeyCode::Enter => {
+                let Some(binds) = choice.binds.as_ref().map(|binds| binds.0.clone()) else {
+                    return;
+                };
+                let options = self.choice_options(choice, None, ctx);
+                if options.is_empty() {
+                    return;
+                }
+                let picked = options[self.ui(ui).option % options.len()].0.clone();
+                let value = self.eval(&binds, ctx).unwrap_or(Value::Null);
+                let value = picked_into(&value, picked, choice.multiple);
+                self.set_bound(&binds, value, ctx);
+            }
             _ => {}
         }
     }
@@ -3034,15 +3154,24 @@ impl App {
             self.submit(target, form, draft);
             return;
         }
+        let multiple = current.as_ref().is_some_and(is_multiple_choice);
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
                 let last = fields.len().saturating_sub(1);
                 let state = self.ui_mut(ui);
                 state.item = (state.item + 1).min(last);
+                state.option = 0;
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 let state = self.ui_mut(ui);
                 state.item = state.item.saturating_sub(1);
+                state.option = 0;
+            }
+            // In a multiple choice field, `l` and `h` move to the next and the previous option.
+            KeyCode::Char('l') | KeyCode::Right if multiple => self.ui_mut(ui).option += 1,
+            KeyCode::Char('h') | KeyCode::Left if multiple => {
+                let state = self.ui_mut(ui);
+                state.option = state.option.saturating_sub(1);
             }
             KeyCode::Char(']') => {
                 let tabs = form.tabs.len().max(1);
@@ -3058,13 +3187,15 @@ impl App {
             }
             KeyCode::Char(' ') => {
                 if let Some(field) = current {
-                    self.cycle_field(form, draft, &field, &ctx);
+                    self.cycle_field(form, draft, &field, state.option, &ctx);
+                    self.save_on_change(target, form, draft);
                 }
             }
             KeyCode::Enter | KeyCode::Char('i') => {
                 if let Some(field) = current {
                     if matches!(field.field_as.as_deref(), Some("toggle" | "choice")) {
-                        self.cycle_field(form, draft, &field, &ctx);
+                        self.cycle_field(form, draft, &field, state.option, &ctx);
+                        self.save_on_change(target, form, draft);
                     } else {
                         self.ui_mut(ui).editing = true;
                     }
@@ -3083,7 +3214,16 @@ impl App {
         }
     }
 
-    fn cycle_field(&mut self, form: &Form, draft: &str, field: &Field, ctx: &Ctx<'_>) {
+    /// Steps a toggle or a choice field: a toggle flips, a choice moves to its next option, and a
+    /// multiple choice adds or takes out the option at `option` (moved by `l` and `h`).
+    fn cycle_field(
+        &mut self,
+        form: &Form,
+        draft: &str,
+        field: &Field,
+        option: usize,
+        ctx: &Ctx<'_>,
+    ) {
         let value = self.field_value(form, draft, &field.field, ctx);
         let next = match field.field_as.as_deref() {
             Some("toggle") => Value::Bool(!truthy(&value)),
@@ -3095,6 +3235,11 @@ impl App {
                 };
                 let options = self.choice_options(choice, Some(&field.field), ctx);
                 if options.is_empty() {
+                    return;
+                }
+                if choice.multiple {
+                    let picked = options[option % options.len()].0.clone();
+                    self.set_field(draft, &field.field, picked_into(&value, picked, true));
                     return;
                 }
                 let at = options
@@ -3182,9 +3327,27 @@ impl App {
             _ => return,
         }
         self.set_field(&draft, &field, Value::String(text));
+        if let Some(form) = &form {
+            self.save_on_change(target, form, &draft);
+        }
     }
 
-    fn submit(&mut self, target: Target, form: &Form, draft: &str) {
+    /// A form that saves on change (`save: on_change`) sends its command after every change, as
+    /// the generated React project does; the draft stays as typed. A refusal shows on the form.
+    fn save_on_change(&mut self, target: Target, form: &Form, draft: &str) {
+        if form.save != Some(ess_ui::FormSave::OnChange) {
+            return;
+        }
+        let input = self.form_input(target, form, draft);
+        let refused = self.run_command(&form.does, &input);
+        let ui = self.target_ui(target);
+        self.ui_mut(&ui).refusal = refused.map(|refused| refused.by("form"));
+    }
+
+    /// What a form sends: every field it shows, typed by its `as`, a dotted field as a nested
+    /// member, and an overlay's params under them. A toggle never touched is sent as the
+    /// unchecked box it shows, `false`, unless the draft declares a default for it.
+    fn form_input(&self, target: Target, form: &Form, draft: &str) -> BTreeMap<String, Value> {
         let mut input = BTreeMap::new();
         let ctx = Ctx {
             overlay: target == Target::Overlay,
@@ -3192,7 +3355,10 @@ impl App {
         };
         for field in form_fields(form, self.ui(&self.target_ui(target)).tab) {
             let value = self.field_value(form, draft, &field.field, &ctx);
-            let value = typed(field.field_as.as_deref(), value);
+            let value = match typed(field.field_as.as_deref(), value) {
+                Value::Null if field.field_as.as_deref() == Some("toggle") => Value::Bool(false),
+                value => value,
+            };
             if value.is_null() {
                 continue;
             }
@@ -3208,6 +3374,11 @@ impl App {
             params.extend(input);
             input = params;
         }
+        input
+    }
+
+    fn submit(&mut self, target: Target, form: &Form, draft: &str) {
+        let input = self.form_input(target, form, draft);
         let ui = self.target_ui(target);
         self.ui_mut(&ui).editing = false;
         // A refused submit stays on the form that sent it, with its draft. One whose effect was
@@ -3582,17 +3753,14 @@ impl App {
             }
         }
         if let Some(export) = &action.export {
-            self.notify(format!(
-                "exported {} as {} (fixture)",
-                export.reads, export.export_as
-            ));
+            self.export(export, &ctx);
         }
         if let Some(upload) = &action.upload {
-            self.notify(format!(
-                "upload for {}: pass a file path ({})",
-                upload.does,
-                upload.accept.join(", ")
-            ));
+            // The file is a path typed at a prompt (the profile's `no_file_upload` fallback).
+            self.prompt = Some(Prompt::Upload {
+                does: upload.does.clone(),
+                text: String::new(),
+            });
         }
         if let Some(copy) = &action.copy {
             let value = self
@@ -3606,6 +3774,70 @@ impl App {
             self.set_bound(target, value, &ctx);
         }
         None
+    }
+
+    /// Runs an export: records the view, its format and the params it reads the view with
+    /// ([`App::exports`]), and names them in a notice.
+    fn export(&mut self, export: &ess_ui::Export, ctx: &Ctx<'_>) {
+        let params = self.export_params(export, ctx);
+        let shown: Vec<String> = params
+            .iter()
+            .map(|(name, value)| format!("{name}={}", display(value)))
+            .collect();
+        self.notify(format!(
+            "exported {} as {} (fixture){}",
+            export.reads,
+            export.export_as,
+            if shown.is_empty() {
+                String::new()
+            } else {
+                format!(": {}", shown.join(", "))
+            }
+        ));
+        self.exports.push(Exported {
+            view: export.reads.clone(),
+            format: export.export_as.clone(),
+            params,
+        });
+    }
+
+    /// The params an export reads its view with: each written param evaluated in the action's
+    /// scope, or `same_as(<section>)`, the params of that section's read, or one expression
+    /// naming a map.
+    fn export_params(&self, export: &ess_ui::Export, ctx: &Ctx<'_>) -> BTreeMap<String, Value> {
+        match &export.params {
+            None => BTreeMap::new(),
+            Some(ess_ui::ExportParams::Map(params)) => params
+                .iter()
+                .filter_map(|(name, expr)| {
+                    self.eval(&expr.0, ctx)
+                        .filter(|value| !value.is_null())
+                        .map(|value| (name.clone(), value))
+                })
+                .collect(),
+            Some(ess_ui::ExportParams::Expression(expr)) => {
+                let written = expr.0.trim();
+                if let Some(name) = written
+                    .strip_prefix("same_as(")
+                    .and_then(|rest| rest.strip_suffix(')'))
+                {
+                    return self
+                        .section_by_name(name.trim())
+                        .and_then(|section| self.section_request(section))
+                        .map(|request| request.params)
+                        .unwrap_or_default();
+                }
+                match self.eval(written, ctx) {
+                    Some(Value::Mapping(map)) => map
+                        .into_iter()
+                        .filter_map(|(name, value)| {
+                            name.as_str().map(|name| (name.to_owned(), value))
+                        })
+                        .collect(),
+                    _ => BTreeMap::new(),
+                }
+            }
+        }
     }
 
     /// Runs an action from somewhere that has no place of its own to show a refusal (the
@@ -3687,12 +3919,38 @@ impl App {
 
     // ── prompts ─────────────────────────────────────────────────────────────────────────────
 
+    /// Sends the file at `path` to an upload's command as the generated React project does:
+    /// `{name, content}`, its file name and its text. A file that does not read is notified and
+    /// sends nothing.
+    fn upload(&mut self, does: &str, path: &str) {
+        let file = Path::new(path.trim());
+        let content = match std::fs::read_to_string(file) {
+            Ok(content) => content,
+            Err(error) => {
+                self.notify(format!("upload for {does}: {}: {error}", file.display()));
+                return;
+            }
+        };
+        let name = file
+            .file_name()
+            .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+        let input = BTreeMap::from([
+            ("name".to_owned(), Value::String(name)),
+            ("content".to_owned(), Value::String(content)),
+        ]);
+        if let Some(refused) = self.run_command(does, &input) {
+            self.notify(format!("{does} refused: {}", refused.text));
+        }
+    }
+
     fn prompt_key(&mut self, key: KeyEvent) {
         let Some(mut prompt) = self.prompt.take() else {
             return;
         };
         let text = match &mut prompt {
-            Prompt::Palette(text) | Prompt::Filter { text, .. } => text,
+            Prompt::Palette(text) | Prompt::Filter { text, .. } | Prompt::Upload { text, .. } => {
+                text
+            }
         };
         match key.code {
             KeyCode::Esc => return,
@@ -3741,6 +3999,7 @@ impl App {
                             }
                         }
                     }
+                    Prompt::Upload { does, text } => self.upload(&does, &text),
                 }
                 return;
             }
@@ -4038,6 +4297,33 @@ fn put(target: &mut Value, segments: &[&str], next: Value) {
 /// A form field's text typed by its `as`, as the React renderer types it: `number` text is a
 /// number (empty is no value) and `tags` text a comma-separated list. Text that does not parse
 /// as a number is sent as typed.
+/// Whether `field` is drawn `as: choice` with a choice of many values.
+pub(crate) fn is_multiple_choice(field: &Field) -> bool {
+    field.field_as.as_deref() == Some("choice")
+        && matches!(
+            field.choice.as_ref().map(|node| &node.body),
+            Some(Body::Composite(Composite::Choice(choice))) if choice.multiple
+        )
+}
+
+/// `picked` into a choice's `value`: the value itself, or in a multiple choice the list with
+/// `picked` added, or taken out when it is there.
+fn picked_into(value: &Value, picked: Value, multiple: bool) -> Value {
+    if !multiple {
+        return picked;
+    }
+    let mut items = value.as_sequence().cloned().unwrap_or_default();
+    if let Some(at) = items
+        .iter()
+        .position(|item| display(item) == display(&picked))
+    {
+        items.remove(at);
+    } else {
+        items.push(picked);
+    }
+    Value::Sequence(items)
+}
+
 fn typed(field_as: Option<&str>, value: Value) -> Value {
     let Value::String(text) = &value else {
         return value;

@@ -372,14 +372,19 @@ fn fixme(reason: &str) -> String {
 fn refusal(step: &Step, document: &Document) -> Option<String> {
     let (at, checks) = match step {
         Step::Select { at }
+        | Step::Mark { at }
+        | Step::Move { at, .. }
+        | Step::Upload { at, .. }
         | Step::Type { at, .. }
         | Step::Choose { at, .. }
         | Step::Act { at }
         | Step::Page { at, .. } => (at, None),
         Step::Expect { at, checks } => (at, Some(checks)),
-        Step::Open { .. } | Step::Play(_) | Step::Advance(_) | Step::ExpectCommand { .. } => {
-            return None
-        }
+        Step::Open { .. }
+        | Step::Play(_)
+        | Step::Advance(_)
+        | Step::ExpectCommand { .. }
+        | Step::ExpectExport { .. } => return None,
     };
     let target = crate::target::resolve(document, at).ok()?;
     if let Some(reason) = crate::parity::unrendered(document, &target) {
@@ -407,7 +412,11 @@ fn emit_step(
 ) -> Vec<String> {
     let refuse = |reason: String| vec![fixme(&reason)];
     match step {
-        Step::Open { page, params } => {
+        Step::Open {
+            page,
+            params,
+            state,
+        } => {
             let Some(definition) = document.pages.get(page) else {
                 return refuse(format!("open {page}: the document has no such page"));
             };
@@ -415,17 +424,59 @@ fn emit_step(
             for (name, value) in params {
                 route = route.replace(&format!(":{name}"), value);
             }
-            vec![format!("await page.goto({});", string(&route))]
+            if state.is_empty() {
+                return vec![format!("await page.goto({});", string(&route))];
+            }
+            // URL page state is a query parameter: a string as it is, any other value as JSON.
+            let query: BTreeMap<&str, String> = state
+                .iter()
+                .map(|(name, value)| {
+                    let text = match value {
+                        Value::String(text) => text.clone(),
+                        other => json(other),
+                    };
+                    (name.as_str(), text)
+                })
+                .collect();
+            vec![format!(
+                "await page.goto({} + \"?\" + new URLSearchParams({}).toString());",
+                string(&route),
+                json(&query)
+            )]
         }
         Step::Select { at } => {
             if at.split('/').count() == 2 {
                 return vec!["await page.keyboard.press(\"Escape\");".to_owned()];
             }
             if let Some((container, row)) = row_of(at) {
+                // A row's expand: focusing the row in the generated app expands it.
+                if unscope(at) == format!("{container}/expand") {
+                    return vec![
+                        format!("await {}.dispatchEvent(\"click\");", locator(&row)),
+                        format!("await expect({}).toBeVisible();", locator(at)),
+                    ];
+                }
                 return select_row(document, &container, &row);
             }
             vec![format!("await {}.scrollIntoViewIfNeeded();", locator(at))]
         }
+        Step::Mark { at } => vec![format!(
+            "await {}.locator('input[aria-label=\"Select row\"]').first().click();",
+            locator(at)
+        )],
+        Step::Move { at, up } => vec![format!(
+            "await {}.locator(\".ui-move button\").{}().click();",
+            locator(at),
+            if *up { "first" } else { "last" }
+        )],
+        Step::Upload { at, file } => vec![format!(
+            "await {}.locator('input[type=\"file\"]').setInputFiles({});",
+            locator(at),
+            string(&file.display().to_string())
+        )],
+        Step::ExpectExport { view, .. } => refuse(format!(
+            "expect_export {view}: the spec does not capture the read an export makes"
+        )),
         Step::Type { at, text } => match node_kind(document, at) {
             Kind::FilterBar => vec![format!(
                 "await page.locator('{} input[type=\"search\"]').pressSequentially({});",
@@ -442,6 +493,23 @@ fn emit_step(
             )),
         },
         Step::Choose { at, option } => {
+            match node_kind(document, at) {
+                Kind::Toggle => {
+                    return vec![format!(
+                        "await {}.locator('input[type=\"checkbox\"]').setChecked({});",
+                        locator(at),
+                        option == "true"
+                    )]
+                }
+                Kind::FilterBar => {
+                    let window = format!("{} select[aria-label=\"Time window\"]", selector(at));
+                    return vec![format!(
+                        "await page.locator('{window}').selectOption({});",
+                        string(option)
+                    )];
+                }
+                _ => {}
+            }
             let (label, buttons) = choice(document, at, option);
             if buttons {
                 vec![format!(
@@ -457,15 +525,23 @@ fn emit_step(
                 )]
             }
         }
-        Step::Act { at } => {
-            if node_kind(document, at) == Kind::Overlay {
+        Step::Act { at } => match node_kind(document, at) {
+            Kind::Overlay => {
                 let at = selector(at);
-                return vec![format!(
+                vec![format!(
                     "await page.locator('{at} button.ui-tone-danger, {at} button.ui-tone-primary').last().click();"
-                )];
+                )]
             }
-            vec![format!("await {}.click();", locator(at))]
-        }
+            Kind::Form => vec![format!(
+                "await page.locator('{} button[type=\"submit\"]').click();",
+                selector(at)
+            )],
+            Kind::Column => vec![format!(
+                "await page.locator('{} button.ui-sort').click();",
+                selector(at)
+            )],
+            _ => vec![format!("await {}.click();", locator(at))],
+        },
         Step::Page { at, to } => {
             // `to` is absolute: back to page 1 from wherever the pager is, then forward. Each click
             // waits for the pager to show the page it leads to.
@@ -629,13 +705,17 @@ fn emit_check(at: &str, check: &Check) -> Vec<String> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
     FilterBar,
+    Form,
+    Column,
     Field,
+    Toggle,
     Overlay,
     Other,
 }
 
 fn node_kind(document: &Document, at: &str) -> Kind {
     let unscoped = unscope(at);
+    let segments: Vec<&str> = unscoped.split('/').collect();
     document
         .nodes()
         .into_iter()
@@ -646,6 +726,21 @@ fn node_kind(document: &Document, at: &str) -> Kind {
             {
                 Kind::FilterBar
             }
+            NodeRef::Section(section)
+                if matches!(section.body, Body::Composite(Composite::Form(_))) =>
+            {
+                Kind::Form
+            }
+            NodeRef::Field(_)
+                if at == unscoped
+                    && matches!(
+                        segments.as_slice(),
+                        ["pages", _, "sections", _, "columns", ..]
+                    ) =>
+            {
+                Kind::Column
+            }
+            NodeRef::Field(field) if field.field_as.as_deref() == Some("toggle") => Kind::Toggle,
             NodeRef::Field(_) => Kind::Field,
             NodeRef::Overlay(_) => Kind::Overlay,
             _ => Kind::Other,
@@ -718,6 +813,11 @@ fn choice(document: &Document, at: &str, option: &str) -> (String, bool) {
         .into_iter()
         .find_map(|located| match located.node {
             NodeRef::Node(node) if located.path.to_string() == at => match &node.body {
+                Body::Composite(Composite::Choice(choice)) => Some(choice.clone()),
+                _ => None,
+            },
+            // A choice that is a section of its own.
+            NodeRef::Section(section) if located.path.to_string() == at => match &section.body {
                 Body::Composite(Composite::Choice(choice)) => Some(choice.clone()),
                 _ => None,
             },

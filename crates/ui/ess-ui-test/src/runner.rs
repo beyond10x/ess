@@ -94,11 +94,32 @@ impl<'d> Runner<'d> {
     /// Runs one step.
     pub fn step(&mut self, step: &Step) -> Result<(), String> {
         match step {
-            Step::Open { page, params } => self.open(page, params),
+            Step::Open {
+                page,
+                params,
+                state,
+            } => self.open(page, params, state),
             Step::Select { at } => {
                 let target = self.resolve(at)?;
                 self.select(&target)
             }
+            Step::Mark { at } => {
+                let target = self.resolve(at)?;
+                self.mark(&target)
+            }
+            Step::Move { at, up } => {
+                let target = self.resolve(at)?;
+                self.move_row(&target, *up)
+            }
+            Step::Upload { at, file } => {
+                let target = self.resolve(at)?;
+                self.upload(&target, file)
+            }
+            Step::ExpectExport {
+                view,
+                format,
+                params,
+            } => self.expect_export(view, format.as_deref(), params),
             Step::Type { at, text } => {
                 let target = self.resolve(at)?;
                 self.type_text(&target, text)
@@ -164,7 +185,12 @@ impl<'d> Runner<'d> {
 
     // ── open, select, type, choose, act, page ───────────────────────────────────────────────
 
-    fn open(&mut self, page: &str, params: &BTreeMap<String, String>) -> Result<(), String> {
+    fn open(
+        &mut self,
+        page: &str,
+        params: &BTreeMap<String, String>,
+        state: &BTreeMap<String, Value>,
+    ) -> Result<(), String> {
         if !self.doc.pages.contains_key(page) {
             return Err(format!("no node at pages/{page}"));
         }
@@ -172,7 +198,11 @@ impl<'d> Runner<'d> {
             .iter()
             .map(|(name, value)| (name.as_str(), value.as_str()))
             .collect();
-        self.app.open_page(page, &params);
+        if state.is_empty() {
+            self.app.open_page(page, &params);
+        } else {
+            self.app.open_page_with_state(page, &params, state)?;
+        }
         if self.app.page() != page {
             return Err(format!("opening {page} shows {} instead", self.app.page()));
         }
@@ -191,7 +221,20 @@ impl<'d> Runner<'d> {
         }
         self.require_no_overlay(target)?;
         if let Some(row) = &target.row {
-            return self.select_row(target, row);
+            self.select_row(target, row)?;
+            if target.node == format!("{}/expand", row.container) {
+                // `x` shows the cursor row's expanded detail, when it is not shown already.
+                if self.screen().region(&target.written).is_none() {
+                    self.app.keys("x");
+                }
+                if self.screen().region(&target.written).is_none() {
+                    return Err(format!(
+                        "{}: the row's expanded detail is not drawn",
+                        target.written
+                    ));
+                }
+            }
+            return Ok(());
         }
         let section = target.section().ok_or_else(|| {
             format!(
@@ -269,6 +312,21 @@ impl<'d> Runner<'d> {
         if let Some(field) = crate::parity::choice_field(self.doc, target) {
             return self.choose_field(target, &field, option);
         }
+        if let Some(field) = crate::parity::toggle_field(self.doc, target) {
+            return self.choose_toggle(target, &field, option);
+        }
+        if target.is_section() && target.row.is_none() {
+            let section = target.section().unwrap_or_default();
+            return match &self.section_def(&section)?.body {
+                Body::Composite(Composite::FilterBar(bar)) => {
+                    self.choose_window(target, &section, bar, option)
+                }
+                Body::Composite(Composite::Choice(choice)) => {
+                    self.choose_section(target, &section, choice, option)
+                }
+                _ => Err(unsupported()),
+            };
+        }
         let segments: Vec<&str> = target.node.split('/').collect();
         let ["pages", _, "sections", section, "choices", choice] = segments.as_slice() else {
             return Err(unsupported());
@@ -285,21 +343,8 @@ impl<'d> Runner<'d> {
         let Body::Composite(Composite::Choice(definition)) = &bar.choices[position].body else {
             return Err(unsupported());
         };
-        let options = self.choice_options(definition, None);
-        let index = options
-            .iter()
-            .position(|(value, label)| scalar(value) == option || label == option)
-            .ok_or_else(|| {
-                format!(
-                    "{} has no option {option:?}; it offers [{}]",
-                    target.written,
-                    options
-                        .iter()
-                        .map(|(_, label)| label.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            })?;
+        let options = self.choice_options(definition, None, Some(section));
+        let index = option_index(target, &options, option)?;
         let item = usize::from(bar.search.is_some()) + usize::from(bar.window.is_some()) + position;
         let items = item + bar.choices.len() + bar.inputs.len();
         self.require_no_overlay(target)?;
@@ -324,21 +369,43 @@ impl<'d> Runner<'d> {
         else {
             return Err(format!("{}: the field offers no options", target.written));
         };
-        let options = self.choice_options(choice, Some(&field.field));
-        let (value, _) = options
-            .iter()
-            .find(|(value, label)| scalar(value) == option || label == option)
-            .ok_or_else(|| {
-                format!(
-                    "{} has no option {option:?}; it offers [{}]",
-                    target.written,
-                    options
-                        .iter()
-                        .map(|(_, label)| label.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            })?;
+        let in_overlay = target.overlay().is_some();
+        let section = target.section().filter(|_| !in_overlay);
+        let options = self.choice_options(choice, Some(&field.field), section.as_deref());
+        let at = option_index(target, &options, option)?;
+        let value = options[at].0.clone();
+        self.move_to_field(target, field)?;
+        if choice.multiple {
+            // `h` back to the first option, `l` to the one wanted, `space` adds or takes it out.
+            self.app.keys(&"h".repeat(options.len()));
+            self.app.keys(&"l".repeat(at));
+            self.app.keys("<space>");
+            return Ok(());
+        }
+        // The field is the cursor's line; a long label is cut there, its value is not.
+        let wanted = format!("[‹{}› of ", scalar(&value));
+        let shows = |runner: &Self| {
+            runner
+                .screen()
+                .cursor_lines()
+                .iter()
+                .any(|line| line.contains(&wanted))
+        };
+        for _ in 0..=options.len() {
+            if shows(self) {
+                return Ok(());
+            }
+            self.app.keys("<space>");
+        }
+        Err(format!(
+            "{}: the field does not show {option:?} after stepping through its options",
+            target.written
+        ))
+    }
+
+    /// Moves the form's cursor to `field`: focus its section (unless it is in the open overlay),
+    /// `k` to the first field, `j` to it.
+    fn move_to_field(&mut self, target: &Target, field: &ess_ui::Field) -> Result<(), String> {
         let (form, in_overlay) = self.form_of(target)?;
         let fields = form_fields(&form);
         let index = fields
@@ -357,25 +424,112 @@ impl<'d> Runner<'d> {
         }
         self.app.keys(&"k".repeat(fields.len()));
         self.app.keys(&"j".repeat(index));
-        let label = field.label.clone().unwrap_or_else(|| field.field.clone());
-        let wanted = format!("[‹{}› of ", scalar(value));
-        let shows = |runner: &Self| {
+        Ok(())
+    }
+
+    /// Sets a form toggle to `option` (`true` or `false`): `space` when it shows the other state.
+    fn choose_toggle(
+        &mut self,
+        target: &Target,
+        field: &ess_ui::Field,
+        option: &str,
+    ) -> Result<(), String> {
+        let on = match option {
+            "true" => true,
+            "false" => false,
+            _ => {
+                return Err(format!(
+                    "{}: a toggle is chosen `true` or `false`, not {option:?}",
+                    target.written
+                ))
+            }
+        };
+        self.move_to_field(target, field)?;
+        let shows = |runner: &Self, mark: &str| {
             runner
                 .screen()
-                .text()
-                .lines()
-                .any(|line| line.contains(&label) && line.contains(&wanted))
+                .cursor_lines()
+                .iter()
+                .any(|line| line.contains(&format!("[{mark}")))
         };
-        for _ in 0..=options.len() {
-            if shows(self) {
+        let (wanted, other) = if on { ("[x]", "[ ]") } else { ("[ ]", "[x]") };
+        if shows(self, other) {
+            self.app.keys("<space>");
+        }
+        if shows(self, wanted) {
+            return Ok(());
+        }
+        Err(format!(
+            "{}: the toggle does not show {option} after it is set",
+            target.written
+        ))
+    }
+
+    /// Picks a time window preset of a filter bar: move to the window, `space` until it shows the
+    /// preset.
+    fn choose_window(
+        &mut self,
+        target: &Target,
+        section: &str,
+        bar: &ess_ui::FilterBar,
+        option: &str,
+    ) -> Result<(), String> {
+        if bar.window.is_none() {
+            return Err(format!(
+                "{}: the filter bar has no time window; choose in one of its choices",
+                target.written
+            ));
+        }
+        self.require_no_overlay(target)?;
+        self.app.focus_section(section);
+        let items = 2 + bar.choices.len() + bar.inputs.len();
+        self.app.keys(&"h".repeat(items));
+        self.app
+            .keys(&"l".repeat(usize::from(bar.search.is_some())));
+        let wanted = format!("window ‹{option}› of ");
+        let mut offered = String::new();
+        for _ in 0..=16 {
+            let lines = self.screen().cursor_lines();
+            if lines.iter().any(|line| line.contains(&wanted)) {
                 return Ok(());
+            }
+            if let Some(line) = lines.iter().find(|line| line.contains("window ‹")) {
+                offered = line
+                    .split_once("› of ")
+                    .map_or_else(String::new, |(_, presets)| presets.trim().to_owned());
             }
             self.app.keys("<space>");
         }
         Err(format!(
-            "{}: the field does not show {option:?} after stepping through its options",
-            target.written
+            "{} has no window preset {option:?}; it offers [{}]",
+            target.written,
+            offered.replace('/', ", ")
         ))
+    }
+
+    /// Picks an option of a choice that is a section of its own: `k` to the first option, `j`
+    /// to the one wanted, `space`.
+    fn choose_section(
+        &mut self,
+        target: &Target,
+        section: &str,
+        choice: &ess_ui::Choice,
+        option: &str,
+    ) -> Result<(), String> {
+        if choice.binds.is_none() {
+            return Err(format!(
+                "{}: the choice binds no state, so choosing in it changes nothing",
+                target.written
+            ));
+        }
+        let options = self.choice_options(choice, None, Some(section));
+        let index = option_index(target, &options, option)?;
+        self.require_no_overlay(target)?;
+        self.app.focus_section(section);
+        self.app.keys(&"k".repeat(options.len()));
+        self.app.keys(&"j".repeat(index));
+        self.app.keys("<space>");
+        Ok(())
     }
 
     fn act(&mut self, target: &Target) -> Result<(), String> {
@@ -445,9 +599,12 @@ impl<'d> Runner<'d> {
             self.app.keys(&key_spec(key));
             return Ok(());
         }
+        if self.act_on_form_or_column(target)? {
+            return Ok(());
+        }
+        let segments: Vec<&str> = target.node.split('/').collect();
         let action = self.action(target)?;
         self.require_no_overlay(target)?;
-        let segments: Vec<&str> = target.node.split('/').collect();
         if let ["pages", _, "header", "actions", _] = segments.as_slice() {
             self.app.keys(&format!(
                 ":do: {}<enter>",
@@ -473,6 +630,184 @@ impl<'d> Runner<'d> {
                 )
             })?;
         self.app.keys(&key_spec(key));
+        Ok(())
+    }
+
+    /// `act` at a section whose body is a form submits it, as its submit button does; at a
+    /// collection's column it sorts, as the column's header does. Whether `target` was one.
+    fn act_on_form_or_column(&mut self, target: &Target) -> Result<bool, String> {
+        if target.is_section() {
+            let section = target.section().unwrap_or_default();
+            if let Body::Composite(Composite::Form(_)) = &self.section_def(&section)?.body {
+                self.require_no_overlay(target)?;
+                self.app.focus_section(&section);
+                self.app.keys("<c-s>");
+                return Ok(true);
+            }
+        }
+        let segments: Vec<&str> = target.node.split('/').collect();
+        match segments.as_slice() {
+            ["pages", _, "sections", section, "columns", field]
+            | ["pages", _, "sections", section, "columns", "all", field] => {
+                self.sort_by(target, section, field)?;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    /// Sorts a collection by the column `field` as a click on its header does: ascending, or
+    /// descending when it is already sorted by it ascending. `s` steps to the next field (each
+    /// ascending), `S` turns the direction; the footer says the order shown.
+    fn sort_by(&mut self, target: &Target, section: &str, field: &str) -> Result<(), String> {
+        let Body::Composite(Composite::Collection(collection)) = &self.section_def(section)?.body
+        else {
+            return Err(format!(
+                "{}: only a collection's header sorts",
+                target.written
+            ));
+        };
+        let sortable = match &collection.columns {
+            Some(ess_ui::Columns::Fixed(fields)) => fields
+                .iter()
+                .any(|known| known.name == field && known.sortable),
+            Some(ess_ui::Columns::Selectable(selectable)) => selectable
+                .all
+                .iter()
+                .any(|known| known.name == field && known.sortable),
+            _ => false,
+        };
+        if !sortable {
+            return Err(format!(
+                "{}: the column is not `sortable`, so its header does not sort",
+                target.written
+            ));
+        }
+        let by = collection
+            .columns
+            .as_ref()
+            .and_then(|columns| match columns {
+                ess_ui::Columns::Fixed(fields) => fields.iter().find(|known| known.name == field),
+                ess_ui::Columns::Selectable(selectable) => {
+                    selectable.all.iter().find(|known| known.name == field)
+                }
+                ess_ui::Columns::Unmapped(_) => None,
+            })
+            .map_or_else(|| field.to_owned(), |known| known.field.clone());
+        self.require_no_overlay(target)?;
+        self.app.focus_section(section);
+        let descending = self.sorted(section)? == Some((by.clone(), false));
+        let steps = collection
+            .sort
+            .as_ref()
+            .map_or(0, |sort| sort.allowed.len())
+            .max(8);
+        for _ in 0..=steps {
+            if self.sorted(section)?.is_some_and(|(shown, _)| shown == by) {
+                break;
+            }
+            self.app.keys("s");
+        }
+        match self.sorted(section)? {
+            Some((shown, down)) if shown == by => {
+                if down != descending {
+                    self.app.keys("S");
+                }
+            }
+            _ => {
+                return Err(format!(
+                    "{}: the terminal does not sort by {by} (`sort.allowed`)",
+                    target.written
+                ))
+            }
+        }
+        Ok(())
+    }
+
+    /// The order the collection's footer shows: the field and whether it is descending.
+    fn sorted(&self, section: &str) -> Result<Option<(String, bool)>, String> {
+        let drawn = self.section_box(section)?;
+        Ok(drawn.lines.iter().find_map(|line| {
+            line.text.split(" · ").find_map(|part| {
+                let rest = part.trim().strip_prefix("sort ")?;
+                let (by, arrow) = rest.rsplit_once(' ')?;
+                Some((by.to_owned(), arrow == "↓"))
+            })
+        }))
+    }
+
+    /// Adds a row to its collection's selection, or takes it out: the cursor to the row, `space`.
+    fn mark(&mut self, target: &Target) -> Result<(), String> {
+        let Some(row) = target
+            .row
+            .as_ref()
+            .filter(|row| target.node == row.container)
+        else {
+            return Err(format!("{}: `mark` names a row", target.written));
+        };
+        let section = row_section(target, row)?;
+        let selects = match &self.section_def(&section)?.body {
+            Body::Composite(Composite::Collection(collection)) => !matches!(
+                collection.selection,
+                None | Some(ess_ui::Selection::Mode(ess_ui::SelectionMode::None))
+            ),
+            _ => false,
+        };
+        if !selects {
+            return Err(format!(
+                "{}: the collection declares no `selection`",
+                target.written
+            ));
+        }
+        self.require_no_overlay(target)?;
+        self.select_row(target, row)?;
+        self.app.keys("<space>");
+        Ok(())
+    }
+
+    /// Moves a row of a reorderable collection one place: the cursor to the row, `K` up or `J`
+    /// down, the keys the terminal's `move_buttons` fallback offers.
+    fn move_row(&mut self, target: &Target, up: bool) -> Result<(), String> {
+        let Some(row) = target
+            .row
+            .as_ref()
+            .filter(|row| target.node == row.container)
+        else {
+            return Err(format!("{}: `move` names a row", target.written));
+        };
+        let section = row_section(target, row)?;
+        self.require_no_overlay(target)?;
+        self.select_row(target, row)?;
+        if !self.section_box(&section)?.text().contains("J/K move") {
+            return Err(format!(
+                "{}: the collection offers no move (a `reorder` the terminal draws as \
+                 `move_buttons`)",
+                target.written
+            ));
+        }
+        self.app.keys(if up { "K" } else { "J" });
+        Ok(())
+    }
+
+    /// Runs an upload action with `file`: the action's key or palette entry, then the file's
+    /// path at the prompt the terminal opens for it.
+    fn upload(&mut self, target: &Target, file: &Path) -> Result<(), String> {
+        let action = self.action(target)?;
+        if action.upload.is_none() {
+            return Err(format!("{}: not an upload action", target.written));
+        }
+        if !file.is_file() {
+            return Err(format!("cannot read {}", file.display()));
+        }
+        self.act(target)?;
+        if !self.screen().text().contains("file for ") {
+            return Err(format!(
+                "{}: the terminal opened no file prompt",
+                target.written
+            ));
+        }
+        let path = file.display().to_string().replace('<', "<lt>");
+        self.app.keys(&format!("{path}<enter>"));
         Ok(())
     }
 
@@ -766,6 +1101,50 @@ impl<'d> Runner<'d> {
         ))
     }
 
+    /// Holds when the view was exported, in `format` when given, with at least the params given;
+    /// they compare as `expect_command`'s input does.
+    fn expect_export(
+        &self,
+        view: &str,
+        format: Option<&str>,
+        params: &BTreeMap<String, Value>,
+    ) -> Result<(), String> {
+        let exports = self.app.exports();
+        let named: Vec<&ess_ui_tui::Exported> = exports
+            .iter()
+            .filter(|export| export.view == view)
+            .filter(|export| format.is_none_or(|format| export.format == format))
+            .collect();
+        if named.is_empty() {
+            let others: Vec<String> = exports
+                .iter()
+                .map(|export| format!("{} as {}", export.view, export.format))
+                .collect();
+            return Err(format!(
+                "{view} was never exported{}; exported: [{}]",
+                format.map_or_else(String::new, |format| format!(" as {format}")),
+                others.join(", ")
+            ));
+        }
+        let mismatches: Vec<String> = named
+            .iter()
+            .filter_map(|export| input_mismatch(params, &export.params))
+            .collect();
+        if mismatches.len() < named.len() {
+            return Ok(());
+        }
+        Err(format!(
+            "{view} was exported with {}, not with {}: {}",
+            named
+                .iter()
+                .map(|export| show_input(&export.params))
+                .collect::<Vec<_>>()
+                .join(" and "),
+            show_input(params),
+            mismatches.join("; ")
+        ))
+    }
+
     // ── document lookups ────────────────────────────────────────────────────────────────────
 
     fn section_def(&self, name: &str) -> Result<&'d ess_ui::Section, String> {
@@ -847,41 +1226,17 @@ impl<'d> Runner<'d> {
         }
     }
 
-    /// The options of a choice as the terminal lists them ([`ess_ui::Choice::row_option`]), with
-    /// `field` the form field it picks for (beyond10x/ess#328). A test run reads fixtures, so no
-    /// binding gives a view's identity.
-    fn choice_options(&self, choice: &ess_ui::Choice, field: Option<&str>) -> Vec<(Value, String)> {
-        if !choice.options.is_empty() {
-            return choice
-                .options
-                .iter()
-                .map(|option| (option.value.clone(), option.label.clone()))
-                .collect();
-        }
-        let Some(reads) = &choice.reads else {
-            return Vec::new();
-        };
-        let request = ReadRequest {
-            view: reads
-                .view
-                .clone()
-                .or_else(|| reads.placeholder.clone())
-                .unwrap_or_default(),
-            fixture: reads.fixture.clone(),
-            params: BTreeMap::new(),
-        };
-        self.adapter
-            .borrow()
-            .read(&request)
-            .map(|result| {
-                result
-                    .rows
-                    .iter()
-                    .filter_map(|row| choice.row_option(row, field, None))
-                    .map(|(value, label)| (value, scalar(&label)))
-                    .collect()
-            })
-            .unwrap_or_default()
+    /// The options of a choice exactly as the terminal lists them ([`App::options`]): its read's
+    /// params and `filter` applied, in the scope of `section`, else of the open overlay; `field`
+    /// is the form field it picks for (beyond10x/ess#328).
+    fn choice_options(
+        &self,
+        choice: &ess_ui::Choice,
+        field: Option<&str>,
+        section: Option<&str>,
+    ) -> Vec<(Value, String)> {
+        let overlay = section.is_none() && self.screen().overlay_open();
+        self.app.options(choice, field, section, overlay)
     }
 
     /// The overlay `target` is in is the one open. A row action's inline confirm must be open
@@ -945,6 +1300,28 @@ impl<'d> Runner<'d> {
     }
 }
 
+/// Where `option` (a value or a label) is among `options`, or a failure listing them.
+fn option_index(
+    target: &Target,
+    options: &[(Value, String)],
+    option: &str,
+) -> Result<usize, String> {
+    options
+        .iter()
+        .position(|(value, label)| scalar(value) == option || label == option)
+        .ok_or_else(|| {
+            format!(
+                "{} has no option {option:?}; it offers [{}]",
+                target.written,
+                options
+                    .iter()
+                    .map(|(_, label)| label.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
+}
+
 /// The section of a row's collection: the collection is the section's body.
 fn row_section(target: &Target, row: &Row) -> Result<String, String> {
     let segments: Vec<&str> = row.container.split('/').collect();
@@ -973,6 +1350,10 @@ fn hint_key<'a>(lines: impl Iterator<Item = &'a str>, action: &Action) -> Option
     let wanted = label(action);
     let toggle = action.action_as == Some(ActionAs::Toggle);
     for line in lines {
+        // A collection's bulk actions follow the selection's count: `2 selected: A Archive`.
+        let line = line
+            .split_once(" selected: ")
+            .map_or(line, |(_, hints)| hints);
         for hint in line.split(" · ") {
             let hint = hint.trim();
             let mut chars = hint.chars();

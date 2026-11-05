@@ -52,17 +52,38 @@ impl Fixtures {
 /// One step.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Step {
-    /// `open: <page>` or `open: {page, params}`.
+    /// `open: <page>` or `open: {page, params, state}`.
     Open {
         /// The page.
         page: String,
         /// Its params.
         params: BTreeMap<String, String>,
+        /// Page state the page keeps in its URL, as a link carries it.
+        state: BTreeMap<String, Value>,
     },
-    /// `select: <path>`: focus a section, move to a row.
+    /// `select: <path>`: focus a section, move to a row, expand a row (`…/rows/<key>/expand`).
     Select {
         /// The node.
         at: String,
+    },
+    /// `mark: <row path>`: add the row to its collection's selection, or take it out.
+    Mark {
+        /// The row.
+        at: String,
+    },
+    /// `move: {at, to}`: move a row of a reorderable collection one place up or down.
+    Move {
+        /// The row.
+        at: String,
+        /// Up (`true`) or down.
+        up: bool,
+    },
+    /// `upload: {at, file}`: run an upload action with a file.
+    Upload {
+        /// The action.
+        at: String,
+        /// The file, relative to the test file.
+        file: PathBuf,
     },
     /// `type: {at, text}`: keystrokes into a search, filter or form field.
     Type {
@@ -108,6 +129,15 @@ pub enum Step {
         /// Input fields the command must have been sent with.
         input: BTreeMap<String, Value>,
     },
+    /// `expect_export: {view, as?, params?}`.
+    ExpectExport {
+        /// The view exported.
+        view: String,
+        /// Its file format.
+        format: Option<String>,
+        /// Params the export must have read the view with.
+        params: BTreeMap<String, Value>,
+    },
 }
 
 impl Step {
@@ -116,6 +146,10 @@ impl Step {
         match self {
             Self::Open { .. } => "open",
             Self::Select { .. } => "select",
+            Self::Mark { .. } => "mark",
+            Self::Move { .. } => "move",
+            Self::Upload { .. } => "upload",
+            Self::ExpectExport { .. } => "expect_export",
             Self::Type { .. } => "type",
             Self::Choose { .. } => "choose",
             Self::Act { .. } => "act",
@@ -133,6 +167,12 @@ impl fmt::Display for Step {
         match self {
             Self::Open { page, .. } => write!(formatter, "open {page}"),
             Self::Select { at } => write!(formatter, "select {at}"),
+            Self::Mark { at } => write!(formatter, "mark {at}"),
+            Self::Move { at, up } => {
+                write!(formatter, "move {at} {}", if *up { "up" } else { "down" })
+            }
+            Self::Upload { at, file } => write!(formatter, "upload {} at {at}", file.display()),
+            Self::ExpectExport { view, .. } => write!(formatter, "expect_export {view}"),
             Self::Type { at, text } => write!(formatter, "type {text:?} at {at}"),
             Self::Choose { at, option } => write!(formatter, "choose {option:?} at {at}"),
             Self::Act { at } => write!(formatter, "act {at}"),
@@ -276,6 +316,15 @@ pub fn parse_str(text: &str, source: &Path) -> Result<TestFile, TestError> {
             at(format!("tests[{}]{name}: {message}", index + 1))
         })?);
     }
+    // An upload's file is named relative to the test file.
+    let here = source.parent().unwrap_or(Path::new(""));
+    for step in parsed.iter_mut().flat_map(|test| test.steps.iter_mut()) {
+        if let Step::Upload { file, .. } = step {
+            if file.is_relative() {
+                *file = here.join(&*file);
+            }
+        }
+    }
     Ok(TestFile {
         source: source.to_path_buf(),
         document,
@@ -353,6 +402,7 @@ fn parse_fixtures(value: &Value) -> Result<Fixtures, String> {
     Ok(fixtures)
 }
 
+#[allow(clippy::too_many_lines)] // one arm per step
 fn parse_step(value: &Value) -> Result<Step, String> {
     let map = value.as_mapping().ok_or("a step is a map with one key")?;
     let mut entries = map.iter();
@@ -376,6 +426,50 @@ fn parse_step(value: &Value) -> Result<Step, String> {
                 Step::Act { at }
             } else {
                 Step::Select { at }
+            })
+        }
+        "mark" => match body {
+            Value::String(path) => Ok(Step::Mark { at: path.clone() }),
+            Value::Mapping(fields) => {
+                known(fields, &["at"])?;
+                Ok(Step::Mark { at: at(fields)? })
+            }
+            _ => Err("`mark` names a row path".into()),
+        },
+        "move" => {
+            let fields = body.as_mapping().ok_or("`move` is {at, to: up | down}")?;
+            known(fields, &["at", "to"])?;
+            let up = match fields.get("to").and_then(Value::as_str) {
+                Some("up") => true,
+                Some("down") => false,
+                _ => return Err("`to` is `up` or `down`".into()),
+            };
+            Ok(Step::Move {
+                at: at(fields)?,
+                up,
+            })
+        }
+        "upload" => {
+            let fields = body.as_mapping().ok_or("`upload` is {at, file}")?;
+            known(fields, &["at", "file"])?;
+            Ok(Step::Upload {
+                at: at(fields)?,
+                file: PathBuf::from(string(fields, "file")?),
+            })
+        }
+        "expect_export" => {
+            let fields = body
+                .as_mapping()
+                .ok_or("`expect_export` is {view, as?, params?}")?;
+            known(fields, &["view", "as", "params"])?;
+            let format = fields
+                .get("as")
+                .map(|format| format.as_str().map(str::to_owned).ok_or("`as` is a format"))
+                .transpose()?;
+            Ok(Step::ExpectExport {
+                view: string(fields, "view")?,
+                format,
+                params: value_map(fields, "params")?,
             })
         }
         "type" => {
@@ -417,16 +511,9 @@ fn parse_step(value: &Value) -> Result<Step, String> {
             }),
             Value::Mapping(fields) => {
                 known(fields, &["command", "input"])?;
-                let mut input = BTreeMap::new();
-                if let Some(given) = fields.get("input") {
-                    for (name, value) in given.as_mapping().ok_or("`input` is a map")? {
-                        let name = name.as_str().ok_or("an input name is a string")?;
-                        input.insert(name.to_owned(), value.clone());
-                    }
-                }
                 Ok(Step::ExpectCommand {
                     command: string(fields, "command")?,
-                    input,
+                    input: value_map(fields, "input")?,
                 })
             }
             _ => Err("`expect_command` names a command".into()),
@@ -438,14 +525,32 @@ fn parse_step(value: &Value) -> Result<Step, String> {
     }
 }
 
+/// The map at `key` of `fields`, by name; empty when absent.
+fn value_map(fields: &Mapping, key: &str) -> Result<BTreeMap<String, Value>, String> {
+    let mut map = BTreeMap::new();
+    if let Some(given) = fields.get(key) {
+        for (name, value) in given
+            .as_mapping()
+            .ok_or_else(|| format!("`{key}` is a map"))?
+        {
+            let name = name
+                .as_str()
+                .ok_or_else(|| format!("a name in `{key}` is a string"))?;
+            map.insert(name.to_owned(), value.clone());
+        }
+    }
+    Ok(map)
+}
+
 fn parse_open(body: &Value) -> Result<Step, String> {
     match body {
         Value::String(page) => Ok(Step::Open {
             page: page.clone(),
             params: BTreeMap::new(),
+            state: BTreeMap::new(),
         }),
         Value::Mapping(fields) => {
-            known(fields, &["page", "params"])?;
+            known(fields, &["page", "params", "state"])?;
             let mut params = BTreeMap::new();
             if let Some(given) = fields.get("params") {
                 for (name, value) in given.as_mapping().ok_or("`params` is a map")? {
@@ -456,6 +561,7 @@ fn parse_open(body: &Value) -> Result<Step, String> {
             Ok(Step::Open {
                 page: string(fields, "page")?,
                 params,
+                state: value_map(fields, "state")?,
             })
         }
         _ => Err("`open` names a page".into()),
