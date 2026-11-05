@@ -13,7 +13,7 @@ relations:
 - decides: story:the-openapi-says-published-only-for-events-the-component-publishes
 - decides: story:a-value-renders-in-the-form-its-field-declares
 - decides: story:choices-filter-bars-and-forms-render-what-they-declare
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-04T08:47:27Z", actor: "human:timo", revision: 2, executor: "agent:ess-w1-lead"}
 ---
@@ -139,3 +139,10 @@ On 2026-11-05 the orchestrator accepted beyond10x/ess#736 as one story,
 ESS wave after 0.87.0, because a downstream consumer has 30 of 48 red conformance scenarios behind it. It joins
 this wave only if a unit slot is free and nothing collides. It lands in `synthesize.rs`, which U1 holds, so it
 waits.
+
+## Short columns in the browser
+
+On 2026-11-05 the orchestrator relayed the adopter's answer to the short-column question: the report was about the
+browser. The browser side was to ride along under the same story as a CSS-only change, unless 0.87.0 no longer
+sets nowrap on text cells. The stock runtime sets no nowrap on any table cell, in 0.85.0 or now; the nowrap came
+from the adopter's theme. That is recorded in the story, and no CSS change is made.
