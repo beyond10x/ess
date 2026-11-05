@@ -92,7 +92,11 @@ enum Roots {
 
 /// The declared types a model's commands, events, errors, views, entities, actors, bindings and
 /// conversions reach, through every wrapper and declaration.
-fn reached_types(ir: &EssIr) -> BTreeSet<QualifiedName> {
+///
+/// The one reach rule: [`reached_uses`] reads it for a `Binary64` position, and conformance
+/// synthesis for a value type's invariants, so a type nothing a scenario sends or reads names is
+/// noted rather than refused by both.
+pub fn reached_types(ir: &EssIr) -> BTreeSet<QualifiedName> {
     types_reached_from(ir, Roots::All)
 }
 

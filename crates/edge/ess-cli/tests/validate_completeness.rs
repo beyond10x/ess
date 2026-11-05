@@ -709,6 +709,46 @@ fn an_unreached_binary64_type_is_noted_not_unsynthesizable() {
 }
 
 #[test]
+fn an_unreached_value_invariant_type_is_noted_not_refused() {
+    // Nothing reaches `Port`: its bounds refuse nothing, and both the text and the JSON name them
+    // in a note, as an unreached Binary64 position is named.
+    let root = scratch("unreached-invariant");
+    let model = NOTES.replace("{input}", "").replace(
+        "types:\n",
+        "types:\n  - {name: demo.notes.Port, kind: newtype, of: Integer, invariants: ['value >= 1', 'value <= 65535']}\n",
+    );
+    fs::write(root.join("system.yaml"), model).unwrap();
+    let printed = synthesized(&root, &[]);
+    assert!(lines_after(&printed, "refused: ").is_empty(), "{printed}");
+    let notes = lines_after(&printed, "note: ");
+    let port: Vec<&&str> = notes
+        .iter()
+        .filter(|note| note.contains("demo.notes.Port"))
+        .collect();
+    assert_eq!(port.len(), 1, "{printed}");
+    assert!(
+        port[0].contains("value >= 1") && port[0].contains("value <= 65535"),
+        "{printed}"
+    );
+
+    let (output, report) = validated(&root, &[]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        report["completeness"]["unscenarioed"]
+            .as_array()
+            .is_none_or(Vec::is_empty),
+        "{report}"
+    );
+    let unanswered: Vec<&str> = report["completeness"]["unanswered"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{report}"))
+        .iter()
+        .map(|note| note.as_str().unwrap())
+        .collect();
+    assert_eq!(unanswered, notes, "{report}");
+}
+
+#[test]
 fn validate_completeness_guide_section() {
     let page_path = repo().join("website/docs/guides/specify/layout-and-validation.md");
     let page = fs::read_to_string(&page_path).unwrap();
