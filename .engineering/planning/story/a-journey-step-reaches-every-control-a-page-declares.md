@@ -13,7 +13,7 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-05T18:11:27Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-05T18:11:27Z", actor: "human:timo", revision: 3}
@@ -50,3 +50,20 @@ command it sends:
 ## Out of scope
 
 #722 items 12 to 32, which reach overlays, drawers and row items; the React target's own controls.
+
+## Decisions
+
+The coordinator answered the adversary pass's two questions on 2026-11-05:
+
+- **Reorder payload.** The ESS specification's declared command input is the contract. When the
+  specification declares the input of the command a reorder sends, both targets send that input.
+  When it is silent, the terminal sends what the generated React app sends, `{id, delta}` with
+  `delta` -1 or 1, because that is what the exported browser spec runs.
+- **An untouched toggle.** The acceptance says "not absent", so both targets send a never-touched
+  toggle as its declared default, `false` when none is declared. The React form template is fixed in
+  this wave.
+
+The same correction fixes the four introduced findings: a filter-bar or form action keyed `h` or `l`
+is reached before the move keys, an uploaded file's leading byte order mark is dropped, and a file
+that is not valid UTF-8 is decoded lossily as the browser does. A plain `open` after an `open` with
+URL state shows no URL state, if the fix is small; otherwise it is a backlog draft.
