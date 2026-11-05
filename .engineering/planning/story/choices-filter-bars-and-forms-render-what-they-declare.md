@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:choices-filter-bars-and-forms-render-what-they-declare
 kind: story
-status: active
+status: implemented
 title: Choices, filter bars and forms render what they declare
 summary: Dropdown empty option and multi-select, filter labels, on-change forms, action order; choice placeholder, reset label, help on group/field/column (A11-A13, A15, A16, A18, A19, G-13/14/15; beyond10x/ess#723)
 tags:
@@ -31,10 +31,11 @@ scope:
   path: schemas/ui/ess-ui.schema.yaml
 - confidence: inferred
   path: website/docs/reference/ess-ui.md
-revision: 22
+revision: 23
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-04T08:47:30Z", actor: "human:timo", revision: 11, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
 - {from: "proposed", to: "active", at: "2026-11-04T08:47:30Z", actor: "human:timo", revision: 12, executor: "agent:ess-w1-lead", correlation: "ess-0.87.0-w1"}
+- {from: "active", to: "implemented", at: "2026-11-05T17:37:11Z", actor: "human:timo", revision: 23, decided_on: {"recorded":{"test_result":1}}}
 ---
 # Story: choices, filter bars and forms render what they declare
 

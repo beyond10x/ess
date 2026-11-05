@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-journey-clicks-a-row-toggle-in-either-state
 kind: story
-status: active
+status: implemented
 title: A journey clicks a row toggle in either state
 summary: The ui journey runner matches a row toggle whose hint carries the 0.86.0 state mark ([x] or [ ]); 18 of an adopter's 573 journeys broke on 0.86.0
 tags:
@@ -11,10 +11,11 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-04T09:03:46Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-04T09:03:47Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-11-05T17:37:13Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
