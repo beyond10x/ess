@@ -131,17 +131,18 @@ fn fnv(text: &str) -> u64 {
 /// negative number literal (`expr.ts`). `form.tsx` and the whole-project digest re-pinned for
 /// story:choices-filter-bars-and-forms-render-what-they-declare: a form's parts are inside the
 /// layer that saves on change, and a help link or a `link` primitive's address goes through
-/// `safeUrl`.
+/// `safeUrl`. `actions.tsx`, `data.ts` and the whole-project digest re-pinned for a file export:
+/// the data adapter's `download` hands over the server's answer, which the export saves as it came.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
-    ("src/runtime/actions.tsx", 0x129b_902b_3cbf_eed1),
+    ("src/runtime/actions.tsx", 0xc6f3_9de0_d12d_6bf3),
     ("src/runtime/composites/confirm.tsx", 0xbeef_774c_44b0_0be3),
     ("src/runtime/composites/form.tsx", 0x9029_91ee_2750_4405),
-    ("src/runtime/data.ts", 0x036a_4d67_6dc4_1ac6),
+    ("src/runtime/data.ts", 0x400e_ae09_0d5f_e141),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0xc24e_bfda_5fbd_d012;
+const PLAIN_PROJECT: u64 = 0x0aed_e3a7_cdb8_c209;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {
