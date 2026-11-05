@@ -2182,6 +2182,7 @@ impl<'d> Gen<'d> {
             .is_some_and(|from| from.section == section.name)
     }
 
+    #[allow(clippy::too_many_lines)] // one section frame, one attribute per declared concern
     fn section_component(&mut self, name: &str, page: &Page, at: &NodePath, section: &Section) {
         let mut lines = Vec::new();
         self.section_profile = section.profile.as_ref().and_then(variant);
