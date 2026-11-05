@@ -49,6 +49,26 @@ fn body_at<'d>(document: &'d Document, path: &str) -> Option<(Held<'d>, bool)> {
     Some((held, own))
 }
 
+/// Whether the node at `path` is a graph editor.
+fn is_graph(document: &Document, path: &str) -> bool {
+    document.nodes().into_iter().any(|located| {
+        located.path.to_string() == path
+            && matches!(
+                located.node,
+                NodeRef::Section(ess_ui::Section {
+                    body: Body::Composite(Composite::GraphEditor(_)),
+                    ..
+                }) | NodeRef::Overlay(ess_ui::Overlay {
+                    body: Body::Composite(Composite::GraphEditor(_)),
+                    ..
+                }) | NodeRef::Node(ess_ui::Node {
+                    body: Body::Composite(Composite::GraphEditor(_)),
+                    ..
+                })
+            )
+    })
+}
+
 /// Whether `collection` draws as a table (no `style`, or `table`).
 fn is_table(collection: &Collection) -> bool {
     matches!(
@@ -68,9 +88,15 @@ fn is_column(rest: &[&str]) -> bool {
 pub(crate) fn unrendered(document: &Document, target: &Target) -> Option<String> {
     let path = &target.written;
     // A row action's inline confirm is drawn where its action is: under the row that opened it.
+    // So is a graph editor's node or edge action's.
     if let (None, Some((_, overlay))) = (&target.row, target.overlay()) {
-        if let Some((container, _)) = overlay.split_once("/row_actions/") {
-            if matches!(body_at(document, container), Some((Held::Collection(_), _))) {
+        let scoped = ["/row_actions/", "/node_actions/", "/edge_actions/"]
+            .iter()
+            .find_map(|actions| overlay.split_once(actions));
+        if let Some((container, _)) = scoped {
+            if matches!(body_at(document, container), Some((Held::Collection(_), _)))
+                || is_graph(document, container)
+            {
                 return Some(format!(
                     "{path}: a row action's confirm is drawn under the row that opened it; \
                      address it under its row, as {container}/rows/<key>/{}",
