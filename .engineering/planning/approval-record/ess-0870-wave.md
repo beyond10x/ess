@@ -13,7 +13,7 @@ relations:
 - decides: story:the-openapi-says-published-only-for-events-the-component-publishes
 - decides: story:a-value-renders-in-the-form-its-field-declares
 - decides: story:choices-filter-bars-and-forms-render-what-they-declare
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-04T08:47:27Z", actor: "human:timo", revision: 2, executor: "agent:ess-w1-lead"}
 ---
@@ -131,3 +131,11 @@ merged into the integration branch, takes the next free sub-agent slot after U2,
   template and the field model.
 
 Both stories move to active with this record. The lead tells the orchestrator when U3 and U4 merge.
+
+## Accepted for the next wave: suffixed-instance synthesis
+
+On 2026-11-05 the orchestrator accepted beyond10x/ess#736 as one story,
+`story:a-suffixed-instance-is-created-with-the-inputs-the-specification-gives` (active). It goes first in the next
+ESS wave after 0.87.0, because a downstream consumer has 30 of 48 red conformance scenarios behind it. It joins
+this wave only if a unit slot is free and nothing collides. It lands in `synthesize.rs`, which U1 holds, so it
+waits.
