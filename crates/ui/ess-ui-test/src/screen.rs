@@ -173,6 +173,15 @@ impl Screen {
             .join("\n")
     }
 
+    /// The text of every line that holds a reversed cell: where the cursor is.
+    pub fn cursor_lines(&self) -> Vec<String> {
+        self.lines
+            .iter()
+            .filter(|line| line.iter().any(|cell| cell.reversed))
+            .map(|line| Self::line_text(line))
+            .collect()
+    }
+
     /// The key hints on the last line.
     fn hints(&self) -> String {
         self.lines
