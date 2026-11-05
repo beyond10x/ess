@@ -11,7 +11,7 @@ tags:
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-04T10:58:25Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-04T10:58:25Z", actor: "human:timo", revision: 3}
@@ -22,9 +22,12 @@ A short text column in a collection table shows its whole value whenever the tab
 
 ## Context
 
-Adopter report B8-11: short text columns are truncated with an ellipsis while other columns
-of the same table have room to give. The table layout is in `crates/ui/ess-ui-react/templates/runtime/collection.tsx.tmpl`
-and `styles.css`.
+Adopter report B8-11: short text columns are truncated with an ellipsis while other columns of the same table
+have room to give. The report named the React collection template and styles. Reading them while implementing
+(0.87.0 wave) found no cell truncation rule there: `.ui-table` is `width: 100%` with no fixed layout, and the only
+ellipsis rule is on chart axis labels. The terminal renderer (`crates/ui/ess-ui-tui/src/view.rs`) capped every
+column at 28 cells whatever the box width, which produces the reported symptom. Which renderer the adopter saw
+is inferred from the ellipsis, not confirmed with them.
 
 ## Acceptance
 
