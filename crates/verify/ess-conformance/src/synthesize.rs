@@ -452,6 +452,17 @@ pub enum Note {
         /// The position, as the compiler's Binary64 inventory spells it.
         location: String,
     },
+    /// A value type with invariants that no command, event, error, view, entity, actor, binding or
+    /// conversion reaches (`ess_compiler::binary64::reached_types`): no scenario sends or reads a
+    /// value of it, so its invariants refuse nothing, as an unreached `Binary64` position refuses
+    /// nothing, and no run exercises them. A type something reaches keeps its
+    /// [`RefusalCause::ValueInvariantUnwitnessed`] where no view answers it.
+    UnreachedValueInvariant {
+        /// The type.
+        value: DeclaredTypeRef,
+        /// Its invariants, as the author wrote them.
+        invariants: Vec<String>,
+    },
     /// An outcome's `sets:` entry fills a field a view publishes across a declared conversion that
     /// may change the value, so no scenario asserts what the row holds there
     /// (`story:view-asserts-field-set-from-optional-input`). Only `Optional<T> -> T` from an input
@@ -600,6 +611,18 @@ impl fmt::Display for Note {
                 "`{location}` is a `Binary64` in a type outside everything a scenario sends \
                  or reads, so no run exercises it"
             ),
+            Self::UnreachedValueInvariant { value, invariants } => {
+                let written: Vec<String> = invariants
+                    .iter()
+                    .map(|invariant| format!("`{invariant}`"))
+                    .collect();
+                write!(
+                    f,
+                    "`{value}` declares {} of every value, and is a type outside everything a \
+                     scenario sends or reads, so no run exercises it",
+                    written.join(", ")
+                )
+            }
             Self::ConvertedFieldUnasserted {
                 outcome,
                 field,
@@ -3248,9 +3271,36 @@ fn synthesize_in(ir: &EssIr, seeds: &AdmittedSeeds) -> Synthesis {
             .into_iter()
             .map(|location| Note::UnreachedBinary64 { location }),
     );
+    // So do a value type's invariants, by the same reach rule.
+    synthesis.notes.extend(unreached_value_invariants(ir));
     // Last, so no pass after it can write a scenario the suite's own admission refuses.
     self_admission::withdraw_inadmissible(&mut synthesis);
     synthesis
+}
+
+/// One [`Note::UnreachedValueInvariant`] for each declared type with invariants that nothing a
+/// scenario sends or reads reaches (`ess_compiler::binary64::reached_types`), in name order:
+/// `value_object_invariants` refuses none of them.
+fn unreached_value_invariants(ir: &EssIr) -> Vec<Note> {
+    let reached = ess_compiler::binary64::reached_types(ir);
+    ir.types()
+        .values()
+        .filter(|declared| !reached.contains(&declared.name))
+        .filter_map(|declared| match &declared.body {
+            ResolvedBody::Newtype { invariants, .. } | ResolvedBody::Struct { invariants, .. }
+                if !invariants.is_empty() =>
+            {
+                Some(Note::UnreachedValueInvariant {
+                    value: DeclaredTypeRef::new(declared.name.clone()),
+                    invariants: invariants
+                        .iter()
+                        .map(|invariant| invariant.statement.clone())
+                        .collect(),
+                })
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Each scenario of `synthesis` its own admission refuses, withdrawn and refused with the scenario
@@ -18596,6 +18646,7 @@ fn value_object_invariants(
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
+    let reached = ess_compiler::binary64::reached_types(ir);
     for declared in ir.types().values() {
         let invariants = match &declared.body {
             ResolvedBody::Newtype { invariants, .. } | ResolvedBody::Struct { invariants, .. } => {
@@ -18616,6 +18667,11 @@ fn value_object_invariants(
         let wrapped =
             value_invariant::wrapped(ir, declared, invariants, &direct, actors, suite, refusals);
         if positions.is_empty() && wrapped == 0 {
+            // A type nothing a scenario sends or reads reaches refuses nothing: `synthesize_in`
+            // names it in a `Note::UnreachedValueInvariant`, as it names an unreached Binary64.
+            if !reached.contains(&declared.name) {
+                continue;
+            }
             refusals.push(Refusal {
                 subject: DeclaredTypeRef::new(declared.name.clone()).into(),
                 scenario: None,

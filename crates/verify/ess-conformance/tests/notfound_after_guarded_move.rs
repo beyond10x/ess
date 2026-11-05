@@ -236,8 +236,10 @@ fn a_not_found_declared_first_before_the_row_is_synthesized() {
         .scenarios
         .iter()
         .find(|(id, _)| id.to_string() == NOT_FOUND_ID)
-        .map(|(_, scenario)| scenario)
-        .unwrap_or_else(|| panic!("`not-found` has a scenario: {all:#?}"));
+        .map_or_else(
+            || panic!("`not-found` has a scenario: {all:#?}"),
+            |(_, scenario)| scenario,
+        );
     assert!(
         scenario.steps.iter().any(|step| matches!(
             step,
