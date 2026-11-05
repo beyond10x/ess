@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useUiPath } from "../core";
 import { Link } from "../router";
 import { hrefFor } from "../../routes";
-import { formatValue, useScope } from "../core";
+import { formatValue, safeUrl, useScope } from "../core";
 import { evaluate } from "../expr";
 
 /** A link to a page of this app, or to an external address. */
@@ -25,8 +25,19 @@ export function LinkView(props: {
       </span>
     );
   }
+  const path = useUiPath(props["data-ui-path"]);
+  // An address the browser could run (a script URL) is no link: its text is shown alone.
+  const target = evaluate(props.href, scope.values);
+  const href = safeUrl(target === undefined || target === null ? "#" : String(target));
+  if (href === undefined) {
+    return (
+      <span className="ui-link" data-ui-path={path}>
+        {text}
+      </span>
+    );
+  }
   return (
-    <a className="ui-link" href={String(evaluate(props.href, scope.values) ?? "#")} data-ui-path={useUiPath(props["data-ui-path"])}>
+    <a className="ui-link" href={href} data-ui-path={path}>
       {text}
     </a>
   );

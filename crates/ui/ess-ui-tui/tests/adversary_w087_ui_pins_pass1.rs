@@ -8,6 +8,9 @@
 //!   less cuts; widening never cuts again; no line is wider than the screen, wide letters included.
 //! - Negative durations in the terminal (story:a-duration-renders-as-hours-minutes-seconds): the
 //!   wave tests them only in the React runtime.
+//! - A leading `./` on `fixtures.dir` or on a path under it names the same directory
+//!   (story:a-value-renders-in-the-form-its-field-declares, A41): a placeholder fixture and the
+//!   fixture index are found whichever form the document writes, as in the React target.
 
 use std::path::{Path, PathBuf};
 
@@ -94,7 +97,7 @@ fn letters(line: &str) -> String {
 
 #[test]
 fn pin_without_room_a_column_is_cut_at_exactly_28_cells() {
-    let mut app = app("floor", NAME, &"word ".repeat(60));
+    let app = app("floor", NAME, &"word ".repeat(60));
     let screen = app.render_text(40, 30);
     let row = row_line(&screen);
     // 27 letters and the ellipsis: the floor. Without it the name would shrink to fit 40 cells.
@@ -112,7 +115,7 @@ fn pin_without_room_a_column_is_cut_at_exactly_28_cells() {
 fn pin_a_table_that_just_fits_shows_every_column_whole_and_widening_never_cuts() {
     let mut first_whole = None;
     for width in 30u16..=140 {
-        let mut app = app(&format!("fit-{width}"), NAME, "ok");
+        let app = app(&format!("fit-{width}"), NAME, "ok");
         let screen = app.render_text(width, 30);
         for line in screen.lines() {
             assert!(
@@ -138,7 +141,7 @@ fn pin_a_table_that_just_fits_shows_every_column_whole_and_widening_never_cuts()
 
 #[test]
 fn pin_a_wide_letter_column_is_measured_in_cells() {
-    let mut roomy = app("wide-room", WIDE, "ok");
+    let roomy = app("wide-room", WIDE, "ok");
     let screen = roomy.render_text(140, 30);
     let row = row_line(&screen);
     assert!(
@@ -157,7 +160,7 @@ fn pin_a_wide_letter_column_is_measured_in_cells() {
         line[..byte].chars().count()
     };
     assert_eq!(at(heading, "note"), at(&row, "ok"), "{screen}");
-    let mut narrow = app("wide-narrow", WIDE, &"word ".repeat(60));
+    let narrow = app("wide-narrow", WIDE, &"word ".repeat(60));
     let screen = narrow.render_text(60, 30);
     for line in screen.lines() {
         assert!(cells(line) <= 60, "no line is wider than 60:\n{screen}");
@@ -236,4 +239,86 @@ fn pin_negative_and_fractional_durations_in_the_terminal() {
     let hundred = row("hundred");
     assert!(hundred.contains("100:00:00"), "{screen}");
     assert!(hundred.contains("100:01:01"), "{screen}");
+}
+
+/// A page whose one section is a placeholder read naming `fixture`, under `fixtures`.
+fn placeholder_doc(fixtures: &str, fixture: &str) -> String {
+    format!(
+        r"
+format: ess-ui/1
+app: t
+model: t.system
+placement_profile: fat
+fixtures: {fixtures}
+shells:
+  app: {{regions: {{main: {{kind: page_outlet}}}}}}
+navigation:
+  home: plan
+  sections: [{{name: all, pages: [plan]}}]
+pages:
+  plan:
+    kind: list_page
+    title: Plan
+    sections:
+      - name: quarters
+        component: collection
+        reads: {{placeholder: t.Quarters, fixture: {fixture}}}
+        columns: [quarter]
+"
+    )
+}
+
+const QUARTERS: &str =
+    "views:\n  t.Quarters:\n    rows:\n      - {id: q-1, quarter: from-the-fixture-dir}\n";
+
+#[test]
+fn a_placeholder_fixture_under_a_dot_slash_dir_names_the_same_file() {
+    let dir = base("dot-slash-placeholder");
+    std::fs::write(dir.join("data/quarters.yaml"), QUARTERS).expect("the fixture is written");
+    for (fixtures, fixture) in [
+        ("{dir: ./data, views: {}}", "data/quarters.yaml"),
+        ("{dir: ./data, views: {}}", "./data/quarters.yaml"),
+        ("{dir: data, views: {}}", "./data/quarters.yaml"),
+        ("{dir: ./data, views: {}}", "quarters.yaml"),
+    ] {
+        let doc = placeholder_doc(fixtures, fixture);
+        let mut app = App::from_text(&doc, &dir, Options::new(dir.join("state")))
+            .unwrap_or_else(|error| panic!("{error}"));
+        app.open_page("plan", &[]);
+        let screen = app.render_text(120, 20);
+        assert!(
+            screen.contains("from-the-fixture-dir"),
+            "`fixture: {fixture}` under `fixtures: {fixtures}` names data/quarters.yaml:\n{screen}"
+        );
+    }
+}
+
+/// The fixture index under a `./` directory moves with the directory a run gives instead.
+#[test]
+fn a_fixture_index_under_a_dot_slash_dir_moves_with_the_fixture_directory() {
+    let dir = base("dot-slash-index");
+    let elsewhere = dir.join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).expect("the other fixture dir is created");
+    std::fs::write(
+        elsewhere.join("index.yaml"),
+        "views: {t.Items: items.yaml}\n",
+    )
+    .expect("the index is written");
+    std::fs::write(
+        elsewhere.join("items.yaml"),
+        "views:\n  t.Items:\n    rows:\n      - {id: i-1, code: A-1, name: from-elsewhere, note: n}\n",
+    )
+    .expect("the fixture is written");
+    let doc = DOC.replace(
+        "fixtures: {dir: data, views: {t.Items: items.yaml}}",
+        "fixtures: {dir: ./data, index: data/index.yaml}",
+    );
+    let mut options = Options::new(dir.join("state"));
+    options.fixtures = Some(elsewhere);
+    let mut app = App::from_text(&doc, &dir, options).unwrap_or_else(|error| {
+        panic!("`index: data/index.yaml` under `dir: ./data` is read from the given dir: {error}")
+    });
+    app.open_page("items", &[]);
+    let screen = app.render_text(120, 20);
+    assert!(screen.contains("from-elsewhere"), "{screen}");
 }

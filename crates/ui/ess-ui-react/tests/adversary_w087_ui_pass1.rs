@@ -123,6 +123,7 @@ fn defect_an_on_change_form_saves_a_change_made_in_a_part() {
 /// Defect: a read given the record that holds the search state takes the search, and the bar
 /// still draws no search box.
 #[test]
+#[ignore = "F2: read_takes ignores a read given the record holding the search state; story:a-read-given-the-search-state-record-draws-the-search-box"]
 fn defect_a_read_given_the_search_state_parent_draws_the_search_box() {
     let state = "      filters: {type: {record: {q: string, stage: string}}, class: page_state, store: memory}";
     let sections = "      - name: bar

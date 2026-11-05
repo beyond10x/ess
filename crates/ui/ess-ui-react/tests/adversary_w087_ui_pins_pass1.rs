@@ -68,7 +68,7 @@ fn pin_no_script_or_data_url_becomes_an_anchor_or_a_player() {
         &project,
         "refused",
         &format!(
-            r##"{RENDER}
+            r#"{RENDER}
 const refused = [
   "JavaScript:alert(1)",
   "JAVASCRIPT:alert(1)",
@@ -98,7 +98,7 @@ for (const value of [42, true, {{ href: "https://shop.test" }}, ["https://shop.t
   assert.strictEqual(anchors(value).length, 0, `no anchor for ${{JSON.stringify(value)}}`);
   assert.strictEqual(players(value).length, 0, `no player for ${{JSON.stringify(value)}}`);
 }}
-"##
+"#
         ),
     );
 }
