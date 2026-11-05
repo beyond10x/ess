@@ -13,7 +13,7 @@ relations:
 - decides: story:the-openapi-says-published-only-for-events-the-component-publishes
 - decides: story:a-value-renders-in-the-form-its-field-declares
 - decides: story:choices-filter-bars-and-forms-render-what-they-declare
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-04T08:47:27Z", actor: "human:timo", revision: 2, executor: "agent:ess-w1-lead"}
 ---
@@ -146,3 +146,18 @@ On 2026-11-05 the orchestrator relayed the adopter's answer to the short-column 
 browser. The browser side was to ride along under the same story as a CSS-only change, unless 0.87.0 no longer
 sets nowrap on text cells. The stock runtime sets no nowrap on any table cell, in 0.85.0 or now; the nowrap came
 from the adopter's theme. That is recorded in the story, and no CSS change is made.
+
+## Adversary findings on the UI work
+
+The adversary pass over the integrated UI work (branch adv/ess-0.87.0-ui: red cases 961bb26837, pins 5ecdd17e46)
+returned needs-change: 3 of 59 cases red, all introduced by this wave. The orchestrator decided on 2026-11-05:
+
+| finding | severity | decision |
+|---|---|---|
+| F1: `form.tsx.tmpl` renders a form's parts outside the save-on-change scope layer, so a value changed in a part of a `save: on_change` form is lost | warning (U4) | fix in one correction unit: render the parts inside the layer |
+| F3: the React `placeholder_file` (fixtures.rs) strips the declared dir as a prefix, so under `dir: ./data` the path `data/quarters.yaml` resolves to `./data/data/quarters.yaml` | note (U3) | fix in the same correction unit: normalise a leading `./`; the same fix and one case in the terminal's `data.rs` |
+| F2: `read_takes` (emit.rs) ignores a read given the record that holds the search state | note (U4) | no document in the repository has that shape: a from-finding draft, no fix in this wave; its red case is ignored with a reason naming the draft |
+| ride-along | | a field help link (`HelpNote`, fields.tsx.tmpl) goes through `safeUrl`, as the page header's link does |
+
+The correction unit merges the adversary's pins and red cases with the fix, so every case passes or is ignored
+with its reason.
