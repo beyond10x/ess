@@ -158,6 +158,8 @@ pub enum Check {
     RowKeys(Vec<String>),
     /// The section is in this state.
     State(SectionState),
+    /// The form toggle is on (`true`) or off (`false`), judged on the control.
+    Checked(bool),
 }
 
 /// The state of a section, as a reader sees it.
@@ -465,8 +467,11 @@ fn parse_open(body: &Value) -> Result<Step, String> {
 fn parse_expect(body: &Value) -> Result<Step, String> {
     let fields = body
         .as_mapping()
-        .ok_or("`expect` is {at, text | not_text | rows | state}")?;
-    known(fields, &["at", "text", "not_text", "rows", "state"])?;
+        .ok_or("`expect` is {at, text | not_text | rows | state | checked}")?;
+    known(
+        fields,
+        &["at", "text", "not_text", "rows", "state", "checked"],
+    )?;
     let mut checks = Vec::new();
     if fields.contains_key("text") {
         checks.push(Check::Text(scalar_field(fields, "text")?));
@@ -506,8 +511,13 @@ fn parse_expect(body: &Value) -> Result<Step, String> {
             })?;
         checks.push(Check::State(state));
     }
+    match fields.get("checked") {
+        None => {}
+        Some(Value::Bool(on)) => checks.push(Check::Checked(*on)),
+        Some(_) => return Err("`checked` is true or false".into()),
+    }
     if checks.is_empty() {
-        return Err("`expect` checks one of text, not_text, rows, state".into());
+        return Err("`expect` checks one of text, not_text, rows, state, checked".into());
     }
     Ok(Step::Expect {
         at: string(fields, "at")?,

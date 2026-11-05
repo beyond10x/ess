@@ -232,6 +232,63 @@ pub(crate) fn text(document: &Document, target: &Target) -> Option<String> {
     }
 }
 
+/// Why a `checked` at `target` is refused, if it is: it is not a form toggle ([`form_toggle`]).
+pub(crate) fn checked(document: &Document, target: &Target) -> Option<String> {
+    form_toggle(document, target).is_none().then(|| {
+        format!(
+            "{}: `checked` is held by a form field `as: toggle` of a section's or an overlay's \
+             own form",
+            target.written
+        )
+    })
+}
+
+/// The form toggle a `checked` at `target` reads: a field `as: toggle` of a section's or an
+/// overlay's own form, directly or in one of its groups or tabs. Both renderers draw it at its
+/// path: the terminal on the field's line, the generated app as a checkbox in the field's label.
+pub(crate) fn form_toggle(document: &Document, target: &Target) -> Option<ess_ui::Field> {
+    if target.row.is_some() {
+        return None;
+    }
+    let segments: Vec<&str> = target.node.split('/').collect();
+    let [owner @ .., "fields", _] = segments.as_slice() else {
+        return None;
+    };
+    // A field of a group or a tab belongs to the form that holds the group or tab.
+    let form = if let [form @ .., "groups" | "tabs", _] = owner {
+        form
+    } else {
+        owner
+    };
+    let form = form.join("/");
+    let nodes = document.nodes();
+    let own_form = nodes.iter().any(|located| {
+        located.path.to_string() == form
+            && matches!(
+                located.node,
+                NodeRef::Section(ess_ui::Section {
+                    body: Body::Composite(Composite::Form(_)),
+                    ..
+                }) | NodeRef::Overlay(ess_ui::Overlay {
+                    body: Body::Composite(Composite::Form(_)),
+                    ..
+                })
+            )
+    });
+    if !own_form {
+        return None;
+    }
+    nodes.into_iter().find_map(|located| match located.node {
+        NodeRef::Field(field)
+            if located.path.to_string() == target.node
+                && field.field_as.as_deref() == Some("toggle") =>
+        {
+            Some(field.clone())
+        }
+        _ => None,
+    })
+}
+
 /// The form field a `choose` at `target` picks in: the target is a field drawn `as: choice`, or
 /// that field's `choice` node.
 pub(crate) fn choice_field(document: &Document, target: &Target) -> Option<ess_ui::Field> {
