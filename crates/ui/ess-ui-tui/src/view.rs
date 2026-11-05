@@ -1140,7 +1140,7 @@ impl App {
             .iter()
             .map(|row| App::labelled_by(&labels, &columns, row))
             .collect();
-        let widths: Vec<usize> = columns
+        let natural: Vec<usize> = columns
             .iter()
             .map(|field| {
                 shown_rows
@@ -1149,9 +1149,10 @@ impl App {
                     .chain(std::iter::once(label_of(field).width()))
                     .max()
                     .unwrap_or(0)
-                    .min(28)
             })
             .collect();
+        // A line is the two-cell selection mark, then the columns.
+        let widths = column_widths(&natural, place.width.saturating_sub(2));
         // Recorded paths: the collection's, and its columns' where the document declares them.
         let container = place.path.to_string();
         let column_path = |field: &Field| match &collection.columns {
@@ -2227,6 +2228,47 @@ fn tab_line(labels: impl Iterator<Item = String>, current: usize) -> Line<'stati
     }
     spans.push(Span::styled("[ ] switch tabs", dim()));
     Line::from(spans)
+}
+
+/// The fewest cells a table column is cut to while its table's line does not fit the box.
+const COLUMN_CAP: usize = 28;
+
+/// Each table column's width in a line of `room` cells, columns two cells apart, from each
+/// column's widest cell (`natural`): every column whole while they all fit. Otherwise the widest
+/// columns give up cells, the narrower ones keeping theirs, but none is cut below
+/// [`COLUMN_CAP`]; a line that still does not fit is cut at the box.
+fn column_widths(natural: &[usize], room: usize) -> Vec<usize> {
+    let room = room.saturating_sub(2 * natural.len().saturating_sub(1));
+    let total = |cap: usize| natural.iter().map(|width| (*width).min(cap)).sum::<usize>();
+    if total(usize::MAX) <= room {
+        return natural.to_vec();
+    }
+    // The widest cap the line fits: every column at most that wide.
+    let mut cap = COLUMN_CAP;
+    if total(COLUMN_CAP) <= room {
+        let mut over = natural.iter().copied().max().unwrap_or(0);
+        while cap < over {
+            let mid = cap + (over - cap).div_ceil(2);
+            if total(mid) <= room {
+                cap = mid;
+            } else {
+                over = mid - 1;
+            }
+        }
+    }
+    let mut widths: Vec<usize> = natural.iter().map(|width| (*width).min(cap)).collect();
+    // The cells left over go one each to the columns still cut, left to right.
+    let mut spare = room.saturating_sub(widths.iter().sum());
+    for (width, whole) in widths.iter_mut().zip(natural) {
+        if spare == 0 {
+            break;
+        }
+        if *width < *whole {
+            *width += 1;
+            spare -= 1;
+        }
+    }
+    widths
 }
 
 /// `text` cut to `width` terminal cells and padded to exactly that many.

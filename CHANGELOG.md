@@ -5,6 +5,7 @@
 ### Fixed
 
 - `ess ui test`: a journey step that acts on a row toggle finds it again in either state. Since 0.86.0 the terminal writes a toggle's action hint with its state mark (`k [x] Enabled`, `k [ ] Enabled`) and the runner compared the whole hint with the plain label, so every such step failed with "the row does not offer <label>"; it now reads a toggle's label behind a `[x] ` or `[ ] ` mark, for rows, sections and overlays alike. An action that is not a toggle still matches its whole label only, so a label that starts with brackets matches as written and a toggle's mark never makes another action match. The rendered hint is unchanged (story:a-journey-clicks-a-row-toggle-in-either-state).
+- `ess ui run --tui`: a table column is no longer cut at 28 cells while the table has room. Every column takes the width of its widest cell while the line fits the box; when it does not, the widest columns give up cells, the narrower ones stay whole, none is cut below 28 cells, and a value that still does not fit ends in `…` as before. The generated React project draws a table at its natural column widths and cuts no cell, so it is unchanged (adopter item B8-11; story:a-short-text-column-is-not-truncated-while-the-table-has-room).
 
 ## [0.86.0] — 2026-11-03
 
