@@ -586,6 +586,21 @@ export function formatValue(value: unknown, format?: string, currency?: unknown)
   return String(value);
 }
 
+/**
+ * A duration counted in `unit` (milliseconds when absent) as `h:mm:ss`, in whole seconds, the
+ * hours unpadded and never folded into days.
+ */
+export function formatDuration(count: number, unit?: string): string {
+  if (!Number.isFinite(count)) {
+    return String(count);
+  }
+  const millis = unit === "s" ? count * 1000 : count;
+  const seconds = Math.floor(Math.abs(millis) / 1000);
+  const sign = millis <= -1000 ? "-" : "";
+  const two = (part: number) => String(part).padStart(2, "0");
+  return `${sign}${Math.floor(seconds / 3600)}:${two(Math.floor(seconds / 60) % 60)}:${two(seconds % 60)}`;
+}
+
 const BYTE_UNITS = ["B", "KB", "MB", "GB"];
 
 /** A byte count scaled to B, KB, MB or GB in 1024 steps, with at most one decimal. */

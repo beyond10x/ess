@@ -2,7 +2,8 @@
 //! (story:a-value-renders-in-the-form-its-field-declares): an epoch-millisecond date as a date, an
 //! audio URL as a player, a link as an anchor, object tags by their label, a dotted path into a
 //! list as its values, a byte count scaled in 1024 steps; a JSON field sends the parsed value and
-//! a list field adds and removes entries.
+//! a list field adds and removes entries. A duration renders `h:mm:ss` from milliseconds or
+//! seconds as its `unit` says (story:a-duration-renders-as-hours-minutes-seconds).
 //!
 //! Each case renders the generated runtime's `FieldValue`, `FieldInput` or `MetricView` under
 //! `node`, with the field the generated page passes.
@@ -40,6 +41,8 @@ pages:
           - {field: labels, as: tags}
           - {field: owners.name, name: owners}
           - {field: size, as: bytes}
+          - {field: talk, as: duration}
+          - {field: hold, as: duration, unit: s}
 ";
 
 fn scratch(name: &str) -> PathBuf {
@@ -364,5 +367,52 @@ for (const [value, expected] of cases) {{
 }}
 "#
         ),
+    );
+}
+
+#[test]
+fn the_page_passes_a_duration_unit() {
+    let (_, pages) = generate("duration-unit");
+    let talk = column(&pages, "talk");
+    assert!(talk.contains(r#"as: "duration""#), "{talk}");
+    assert!(
+        !talk.contains("unit:"),
+        "no unit written, none passed: {talk}"
+    );
+    let hold = column(&pages, "hold");
+    assert!(hold.contains(r#"as: "duration""#), "{hold}");
+    assert!(
+        hold.contains(r#"unit: "s""#),
+        "the page passes `unit: s`: {hold}"
+    );
+}
+
+#[test]
+fn a_duration_field_renders_hours_minutes_and_seconds() {
+    let (project, _) = generate("duration");
+    render(
+        &project,
+        "duration",
+        r#"
+const talk = column("talk", { as: "duration" });
+const hold = column("hold", { as: "duration", unit: "s" });
+const ms = (value) => shown(talk, { talk: value }).text();
+const s = (value) => shown(hold, { hold: value }).text();
+assert.strictEqual(ms(73000), "0:01:13", "73000 ms with the default unit");
+assert.strictEqual(shown(column("talk", { as: "duration", unit: "ms" }), { talk: 73000 }).text(), "0:01:13");
+assert.strictEqual(s(73), "0:01:13", "73 s");
+assert.strictEqual(ms(26 * 3600 * 1000), "26:00:00", "26 hours stay hours");
+assert.strictEqual(s(26 * 3600), "26:00:00", "26 hours stay hours");
+assert.strictEqual(s(100 * 3600 + 61), "100:01:01");
+assert.strictEqual(ms(0), "0:00:00");
+assert.strictEqual(ms(59999), "0:00:59", "whole seconds, never rounded up");
+assert.strictEqual(s(3599), "0:59:59");
+assert.strictEqual(s(3600), "1:00:00", "hours are not padded");
+assert.strictEqual(s(-73), "-0:01:13");
+assert.strictEqual(ms(null), "");
+assert.strictEqual(ms("soon"), "soon", "a value that is no number shows as it is");
+// A number without `as: duration` is still a number.
+assert.strictEqual(shown(column("talk"), { talk: 73000 }).text(), new Intl.NumberFormat().format(73000));
+"#,
     );
 }

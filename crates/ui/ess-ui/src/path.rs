@@ -401,6 +401,10 @@ pub(crate) fn check(document: &Document) -> Result<(), LoadError> {
                 }
                 None
             }
+            NodeRef::Field(field) => {
+                check_unit(&located.path, field)?;
+                None
+            }
             NodeRef::Section(section) => Some(&section.body),
             NodeRef::Overlay(overlay) => Some(&overlay.body),
             NodeRef::Node(node) => Some(&node.body),
@@ -413,6 +417,27 @@ pub(crate) fn check(document: &Document) -> Result<(), LoadError> {
         }
     }
     Ok(())
+}
+
+/// A `unit` counts an `as: duration` value, so a field that is no duration refuses one. A field
+/// whose `as` is an `UNMAPPED:` marker keeps it: what the field is was not determined.
+fn check_unit(path: &NodePath, field: &Field) -> Result<(), LoadError> {
+    let Some(unit) = &field.unit else {
+        return Ok(());
+    };
+    match field.field_as.as_deref() {
+        Some("duration") => Ok(()),
+        Some(marker) if marker.starts_with("UNMAPPED: ") => Ok(()),
+        other => Err(LoadError::new(
+            path.clone(),
+            format!(
+                "`unit: {}` counts the value of an `as: duration` field, and this field is \
+                 `as: {}`",
+                unit.as_str(),
+                other.unwrap_or("text")
+            ),
+        )),
+    }
 }
 
 /// `NodePath.syntax.segment_pattern`; `tests/schema.rs` holds this text to the schema's.

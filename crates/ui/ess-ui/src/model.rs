@@ -2248,6 +2248,8 @@ pub struct Field {
     /// Semantic widget.
     #[serde(rename = "as")]
     pub field_as: Option<String>,
+    /// What an `as: duration` value counts; milliseconds when not written.
+    pub unit: Option<DurationUnit>,
     /// The choice composite for `as: choice`.
     pub choice: Option<Box<Node>>,
     /// Column can sort.
@@ -2268,6 +2270,15 @@ pub struct Field {
 }
 
 impl Field {
+    /// The unit an `as: duration` value counts: its `unit`, else milliseconds. An unmapped unit
+    /// is treated as absent.
+    pub fn duration_unit(&self) -> DurationUnit {
+        match self.unit {
+            Some(DurationUnit::S) => DurationUnit::S,
+            _ => DurationUnit::Ms,
+        }
+    }
+
     /// The label a column or record shows for `value`: the field's own `labels` first, then the
     /// label of a fixed option of its choice; `None` shows the value itself.
     pub fn value_label(&self, value: &Value) -> Option<&str> {
@@ -2303,6 +2314,57 @@ impl Field {
             _ => &[],
         };
         options.iter()
+    }
+}
+
+/// What an `as: duration` value counts (`Field.unit`). The value shows as `h:mm:ss`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DurationUnit {
+    /// Milliseconds.
+    Ms,
+    /// Seconds.
+    S,
+    /// A value a retrofit could not determine (`unmapped_marker`).
+    Unmapped(UnmappedMarker),
+}
+
+impl DurationUnit {
+    /// The unit as the document spells it.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Ms => "ms",
+            Self::S => "s",
+            Self::Unmapped(marker) => &marker.0,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DurationUnit {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Unit;
+        impl serde::de::Visitor<'_> for Unit {
+            type Value = DurationUnit;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a duration unit: `ms` or `s`")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, text: &str) -> Result<DurationUnit, E> {
+                match text {
+                    "ms" => Ok(DurationUnit::Ms),
+                    "s" => Ok(DurationUnit::S),
+                    _ => match text.strip_prefix(UNMAPPED_PREFIX) {
+                        Some(reason) if !reason.is_empty() => {
+                            Ok(DurationUnit::Unmapped(UnmappedMarker(text.to_owned())))
+                        }
+                        _ => Err(E::custom(format!(
+                            "`{text}` is no duration unit: `unit` is `ms` or `s`"
+                        ))),
+                    },
+                }
+            }
+        }
+        deserializer.deserialize_str(Unit)
     }
 }
 

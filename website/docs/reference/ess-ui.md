@@ -1451,7 +1451,8 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `field` | `name` | yes |   | field of the command input or view row |
 | `name` | `name` |   | `{from: field}` | node name |
 | `label` | `string` |   | `{from: model.field_label}` | caption |
-| `as` | one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `date_range` \| `duration` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `metric` \| `bytes` |   | `text` | semantic widget; `bytes` shows a byte count in B, KB, MB or GB, in 1024 steps |
+| `as` | one of: `text` \| `number` \| `secret` \| `toggle` \| `choice` \| `tags` \| `time` \| `date` \| `date_range` \| `duration` \| `file` \| `rich_text` \| `json` \| `list` \| `map` \| `cron` \| `color` \| `badge` \| `audio` \| `link` \| `metric` \| `bytes` |   | `text` | semantic widget; `bytes` shows a byte count in B, KB, MB or GB, in 1024 steps; `duration` shows `h:mm:ss`, counted in its `unit` |
+| `unit` | one of: `ms` \| `s` |   | `ms` | what an `as: duration` value counts, milliseconds or seconds, and only on such a field; it shows as `h:mm:ss` in whole seconds, the hours unpadded and never folded into days: `73000` ms and `73` s are `0:01:13`, 26 hours `26:00:00` |
 | `choice` | [Node](#node) |   |   | the choice composite for `as: choice` |
 | `sortable` | `boolean` |   | `false` | column can sort |
 | `visible` | `expr` |   |   | shows the field only when true |

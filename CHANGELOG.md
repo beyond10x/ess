@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess-ui/1`: a field `as: duration` takes an optional `unit: ms | s`, default `ms`, and renders as `h:mm:ss` with the hours unpadded and never folded into days: `73000` with the default unit and `73` with `unit: s` both show `0:01:13`, 26 hours shows `26:00:00`, and part of a second is dropped, not rounded up. The React runtime shows a column or record value in that form and the terminal renderer the same; a form input keeps the number. The loader refuses any other unit, and a `unit` on a field that is not `as: duration`, at the field's path. A metric's `format: duration` is unchanged (adopter items D1, B2-7 and R4-G1; G-1 answered; story:a-duration-renders-as-hours-minutes-seconds).
+
 ## [0.86.0] — 2026-11-03
 
 ### Added

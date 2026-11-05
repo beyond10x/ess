@@ -110,6 +110,96 @@ fn a_bytes_metric_scales_in_1024_steps() {
     assert!(!screen.contains("3221225472"), "{screen}");
 }
 
+/// `as: duration` columns, one per unit (story:a-duration-renders-as-hours-minutes-seconds), on a
+/// collection and on a record.
+const DURATIONS: &str = r"
+format: ess-ui/1
+app: t
+model: t.system
+placement_profile: fat
+fixtures: {dir: data, views: {t.Calls: calls.yaml}}
+shells:
+  app: {regions: {main: {kind: page_outlet}}}
+navigation:
+  home: calls
+  sections: [{name: all, pages: [calls]}]
+pages:
+  calls:
+    kind: list_page
+    title: Calls
+    sections:
+      - name: calls
+        component: collection
+        reads: {view: t.Calls}
+        columns:
+          - {field: title}
+          - {field: talk, as: duration}
+          - {field: hold, as: duration, unit: s}
+          - {field: raw}
+      - name: last
+        component: record
+        reads: {view: t.Calls}
+        fields:
+          - {field: title, label: Record}
+          - {field: talk, label: Talked, as: duration}
+          - {field: hold, label: Held, as: duration, unit: s}
+";
+
+const CALLS: &str = r"
+views:
+  t.Calls:
+    rows:
+      - {id: c-1, title: short, talk: 73000, hold: 73, raw: 73000}
+      - {id: c-2, title: long, talk: 93600000, hold: 93600, raw: 93600}
+      - {id: c-3, title: rounded, talk: 59999, hold: 3599, raw: 1}
+";
+
+fn duration_screen(test: &str) -> String {
+    let base = dir(test);
+    std::fs::write(base.join("data/calls.yaml"), CALLS).expect("the fixture is written");
+    let mut app = App::from_text(DURATIONS, &base, Options::new(base.join("state")))
+        .unwrap_or_else(|error| panic!("{error}"));
+    app.open_page("calls", &[]);
+    app.render_text(140, 48)
+}
+
+#[test]
+fn a_duration_column_shows_hours_minutes_and_seconds_from_ms_or_s() {
+    let screen = duration_screen("duration-column");
+    let short = row(&screen, "short");
+    assert!(short.contains("0:01:13"), "73000 ms and 73 s:\n{screen}");
+    assert_eq!(short.matches("0:01:13").count(), 2, "both units:\n{screen}");
+    assert_eq!(
+        short.matches("73000").count(),
+        1,
+        "only the plain `raw` column shows the number:\n{screen}"
+    );
+    let long = row(&screen, "long");
+    assert_eq!(
+        long.matches("26:00:00").count(),
+        2,
+        "26 hours stay hours:\n{screen}"
+    );
+    assert!(
+        !long.contains("1:02:00:00") && !long.contains("1d"),
+        "{screen}"
+    );
+    let rounded = row(&screen, "rounded");
+    assert!(rounded.contains("0:00:59"), "whole seconds:\n{screen}");
+    assert!(rounded.contains("0:59:59"), "{screen}");
+    assert!(
+        long.contains("93600"),
+        "a field without `as: duration` shows its number:\n{screen}"
+    );
+}
+
+#[test]
+fn a_duration_record_field_shows_hours_minutes_and_seconds() {
+    let screen = duration_screen("duration-record");
+    assert!(row(&screen, "Talked").contains("0:01:13"), "{screen}");
+    assert!(row(&screen, "Held").contains("0:01:13"), "{screen}");
+}
+
 #[test]
 fn a_placeholder_read_takes_its_fixture_from_fixtures_dir() {
     let screen = screen("placeholder");

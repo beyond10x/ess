@@ -2,7 +2,7 @@
 
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useUiPath } from "./core";
-import { display, formatValue, safeUrl, ScopeLayer, useScope } from "./core";
+import { display, formatDuration, formatValue, safeUrl, ScopeLayer, useScope } from "./core";
 import { useRead } from "./data";
 import { evaluate, truthy } from "./expr";
 import { getPath, isObject, stableKey } from "./json";
@@ -14,6 +14,8 @@ export interface FieldSpec {
   name: string;
   label?: string;
   as?: string;
+  /** What an `as: duration` value counts; milliseconds when absent. */
+  unit?: "ms" | "s";
   sortable?: boolean;
   visible?: string;
   binds?: string;
@@ -149,6 +151,11 @@ export function FieldValue(props: { field: FieldSpec; row: unknown }): ReactNode
         );
       break;
     }
+    case "duration":
+      content =
+        valueLabel(field.labels, value) ??
+        (typeof value === "number" ? formatDuration(value, field.unit) : formatValue(value));
+      break;
     case "json":
       content = <pre className="ui-json">{JSON.stringify(value, null, 2)}</pre>;
       break;
