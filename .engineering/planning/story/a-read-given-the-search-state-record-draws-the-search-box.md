@@ -2,14 +2,19 @@
 format: aep.planning-md/3
 id: story:a-read-given-the-search-state-record-draws-the-search-box
 kind: story
-status: draft
+status: active
 title: A read given the record holding the search state draws the search box
 summary: read_takes counts a read of the search field but not a read given the record that holds it (0.87.0 adversary F2; from-finding)
 tags:
 - backlog
 - from-finding
 - next-wave-first
-revision: 3
+relations:
+- serves: vision:O2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-05T18:11:37Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-05T18:11:38Z", actor: "human:timo", revision: 5}
 ---
 ## Need
 

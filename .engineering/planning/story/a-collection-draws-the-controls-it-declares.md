@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-collection-draws-the-controls-it-declares
 kind: story
-status: draft
+status: active
 title: A collection draws the controls it declares
 summary: Numeric sort, actions header, wide-table scroll, card layout, sort on cards, expand/reorder/bulk controls, item and toggle columns, default column subset (beyond10x/ess#723)
 tags:
@@ -13,7 +13,10 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-05T18:11:26Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-05T18:11:26Z", actor: "human:timo", revision: 3}
 ---
 ## Need
 

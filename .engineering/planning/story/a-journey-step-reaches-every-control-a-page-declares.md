@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-journey-step-reaches-every-control-a-page-declares
 kind: story
-status: draft
+status: active
 title: A journey step reaches every control a page declares
 summary: ess ui test steps for section forms, toggles, multiple choices, row selection, filter windows, expand, sort, reorder, upload, URL page state and filter choices (beyond10x/ess#722 items 1-11)
 tags:
@@ -13,7 +13,10 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-05T18:11:27Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-05T18:11:27Z", actor: "human:timo", revision: 3}
 ---
 ## Need
 
