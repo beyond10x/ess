@@ -100,10 +100,22 @@ fn the_interpreter_applies_a_repeated_identity_in_list_order() {
     );
     let seen = "demo.feed.SeenDocument".parse().unwrap();
     let d1 = step.next.instance(&seen, "d1").expect("d1 is held");
-    assert_eq!(d1.fields["revision"], Node::Number(Number::from(3_i64)), "{d1:?}");
-    assert_eq!(d1.fields["content_hash"], Node::Text("last".into()), "{d1:?}");
+    assert_eq!(
+        d1.fields["revision"],
+        Node::Number(Number::from(3_i64)),
+        "{d1:?}"
+    );
+    assert_eq!(
+        d1.fields["content_hash"],
+        Node::Text("last".into()),
+        "{d1:?}"
+    );
     let d2 = step.next.instance(&seen, "d2").expect("d2 is held");
-    assert_eq!(d2.fields["revision"], Node::Number(Number::from(2_i64)), "{d2:?}");
+    assert_eq!(
+        d2.fields["revision"],
+        Node::Number(Number::from(2_i64)),
+        "{d2:?}"
+    );
     assert_eq!(
         step.next
             .instances()

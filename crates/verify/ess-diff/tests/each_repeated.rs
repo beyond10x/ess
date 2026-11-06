@@ -61,10 +61,7 @@ fn adding_the_key_widens_and_removing_it_narrows() {
 #[test]
 fn another_move_beside_the_key_stays_changed() {
     let after = model(REPEATED).replacen("revision: doc.revision}", "revision: 1}", 1);
-    assert_eq!(
-        set_effect(&model(PLAIN), &after),
-        SemanticRelation::Changed
-    );
+    assert_eq!(set_effect(&model(PLAIN), &after), SemanticRelation::Changed);
 }
 
 /// The document carries the relation its own content derives, so it reads back; the line names

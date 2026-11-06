@@ -6,7 +6,7 @@
 //! as for a branch that names no instance, which is what the wire of such a branch is.
 
 use ess_compiler::ir::{
-    EssIr, ResolvedAffect, ResolvedEffect, ResolvedOutcome, ResolvedPayloadField,
+    EssIr, ResolvedAffect, ResolvedEach, ResolvedEffect, ResolvedOutcome, ResolvedPayloadField,
     ResolvedSetSubject,
 };
 
@@ -62,7 +62,7 @@ pub(crate) fn affects_sentences(ir: &EssIr, outcome: &ResolvedOutcome) -> Vec<In
 
 /// The sentence an `each:` entry admitting repeated identities adds (ess/35, beyond10x/ess#748);
 /// nothing for any other entry, which reads as it always did.
-fn repeated_sentence(each: &ess_compiler::ir::ResolvedEach) -> Vec<Inline> {
+fn repeated_sentence(each: &ResolvedEach) -> Vec<Inline> {
     if each.repeated.is_none() {
         return Vec::new();
     }
@@ -76,6 +76,71 @@ fn repeated_sentence(each: &ess_compiler::ir::ResolvedEach) -> Vec<Inline> {
     ]
 }
 
+/// The sentence of an `each:` entry (ess/23, beyond10x/ess#459): one row per element of an input
+/// list.
+fn each_sentence(ir: &EssIr, affect: &ResolvedAffect, each: &ResolvedEach) -> Vec<Inline> {
+    let entity = ir.entity(&affect.entity);
+    // From ess/27 (beyond10x/ess#596) the entry may move or remove the row an element names,
+    // for the elements its filter selects.
+    if affect.deletes || affect.moves.is_some() {
+        let mut out = vec![
+            Inline::text(" Beside its subject, for each element of "),
+            Inline::code(each.list.clone()),
+        ];
+        if let Some(filter) = &each.filter {
+            out.push(Inline::text(" where "));
+            out.push(Inline::code(filter.to_string()));
+        }
+        out.push(Inline::text(", the held "));
+        out.push(Inline::code(entity.name.to_string()));
+        out.push(Inline::text(" "));
+        out.push(Inline::code(format!("{}.{}", each.binder, each.member)));
+        out.push(Inline::text(" names "));
+        match &affect.moves {
+            Some(transition) if !affect.deletes => {
+                out.push(Inline::text("takes "));
+                out.push(Inline::code(transition.name.clone()));
+                out.push(Inline::text(
+                    ", unless it rests outside its from states; an element naming no row is skipped.",
+                ));
+            }
+            _ => out.push(Inline::text(
+                "is removed; an element naming no row is skipped.",
+            )),
+        }
+        out.extend(repeated_sentence(each));
+        return out;
+    }
+    let mut out = vec![
+        Inline::text(" Beside its subject, it writes one "),
+        Inline::code(entity.name.to_string()),
+        Inline::text(" per element of "),
+        Inline::code(each.list.clone()),
+    ];
+    if let Some(filter) = &each.filter {
+        out.push(Inline::text(" where "));
+        out.push(Inline::code(filter.to_string()));
+    }
+    out.extend([
+        Inline::text(": the row "),
+        Inline::code(format!("{}.{}", each.binder, each.member)),
+        Inline::text(" names is updated if held and created in "),
+        Inline::code(entity.lifecycle.initial.to_string()),
+        Inline::text(" if not"),
+    ]);
+    let mut written = assignments(&affect.sets);
+    for read in &each.reads {
+        written.push(Inline::text(if written.is_empty() { ": " } else { ", " }));
+        written.push(Inline::code(read.target.clone()));
+        written.push(Inline::text(" becomes "));
+        written.push(Inline::code(format!("{}.{}", each.binder, read.member)));
+    }
+    out.extend(written);
+    out.push(Inline::text("; a row no element names is left as it is."));
+    out.extend(repeated_sentence(each));
+    out
+}
+
 fn affect_sentence(ir: &EssIr, affect: &ResolvedAffect) -> Vec<Inline> {
     let entity = ir.entity(&affect.entity);
     let filter = affect
@@ -84,65 +149,7 @@ fn affect_sentence(ir: &EssIr, affect: &ResolvedAffect) -> Vec<Inline> {
         .map_or_else(String::new, ToString::to_string);
     // From ess/23 an entry may write one row per element of an input list (beyond10x/ess#459).
     if let Some(each) = &affect.each {
-        // From ess/27 (beyond10x/ess#596) the entry may move or remove the row an element names,
-        // for the elements its filter selects.
-        if affect.deletes || affect.moves.is_some() {
-            let mut out = vec![
-                Inline::text(" Beside its subject, for each element of "),
-                Inline::code(each.list.clone()),
-            ];
-            if let Some(filter) = &each.filter {
-                out.push(Inline::text(" where "));
-                out.push(Inline::code(filter.to_string()));
-            }
-            out.push(Inline::text(", the held "));
-            out.push(Inline::code(entity.name.to_string()));
-            out.push(Inline::text(" "));
-            out.push(Inline::code(format!("{}.{}", each.binder, each.member)));
-            out.push(Inline::text(" names "));
-            match &affect.moves {
-                Some(transition) if !affect.deletes => {
-                    out.push(Inline::text("takes "));
-                    out.push(Inline::code(transition.name.clone()));
-                    out.push(Inline::text(
-                        ", unless it rests outside its from states; an element naming no row is skipped.",
-                    ));
-                }
-                _ => out.push(Inline::text(
-                    "is removed; an element naming no row is skipped.",
-                )),
-            }
-            out.extend(repeated_sentence(each));
-            return out;
-        }
-        let mut out = vec![
-            Inline::text(" Beside its subject, it writes one "),
-            Inline::code(entity.name.to_string()),
-            Inline::text(" per element of "),
-            Inline::code(each.list.clone()),
-        ];
-        if let Some(filter) = &each.filter {
-            out.push(Inline::text(" where "));
-            out.push(Inline::code(filter.to_string()));
-        }
-        out.extend([
-            Inline::text(": the row "),
-            Inline::code(format!("{}.{}", each.binder, each.member)),
-            Inline::text(" names is updated if held and created in "),
-            Inline::code(entity.lifecycle.initial.to_string()),
-            Inline::text(" if not"),
-        ]);
-        let mut written = assignments(&affect.sets);
-        for read in &each.reads {
-            written.push(Inline::text(if written.is_empty() { ": " } else { ", " }));
-            written.push(Inline::code(read.target.clone()));
-            written.push(Inline::text(" becomes "));
-            written.push(Inline::code(format!("{}.{}", each.binder, read.member)));
-        }
-        out.extend(written);
-        out.push(Inline::text("; a row no element names is left as it is."));
-        out.extend(repeated_sentence(each));
-        return out;
+        return each_sentence(ir, affect, each);
     }
     // From ess/23 an entry may remove its rows (beyond10x/ess#452).
     if affect.deletes {

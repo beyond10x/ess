@@ -2464,7 +2464,7 @@
       "additionalProperties": false
     },
     "RawEach": {
-      "description": "`each: {in: input.<list>, as: <name>}` as written (ess/23, beyond10x/ess#459).",
+      "description": "`each: {in: input.<list>, as: <name>}` as written (ess/23, beyond10x/ess#459), from ess/27 with `where:` and from ess/35 with `repeated:`.",
       "type": "object",
       "required": [
         "as",
@@ -2478,6 +2478,17 @@
         "in": {
           "description": "The list, `input.<field>`.",
           "type": "string"
+        },
+        "repeated": {
+          "description": "How a list naming one row more than once is taken (ess/35, beyond10x/ess#748); where absent, a declared `distinct:` holds the identity member distinct across the list.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Repeated"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "where": {
           "description": "The elements the entry acts on: a predicate over `<as>.<member>` and `input.<field>` (ess/27, beyond10x/ess#596); every element where absent.",
@@ -4229,6 +4240,18 @@
         }
       },
       "additionalProperties": false
+    },
+    "Repeated": {
+      "description": "How an `each:` entry takes a list naming one row more than once (ess/35, beyond10x/ess#748).",
+      "oneOf": [
+        {
+          "description": "The elements apply one after another in list order, each to the row as the elements before it left it, so the last element naming a row decides what it holds.",
+          "type": "string",
+          "enum": [
+            "last_wins"
+          ]
+        }
+      ]
     },
     "RetryBound": {
       "description": "How many attempts a `retry` makes, and which refusals end it at once.\n\nRead from a document as the block under `retry:`, and serialized the same way, so a binding that states no bound serializes exactly as it did before the block existed. The reader is written by hand so that every refusal names `retry:` — `retry: {emits: …}` is the escalation block under the wrong word, and a message naming only `emits` would not say so.",

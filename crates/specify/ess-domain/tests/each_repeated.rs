@@ -24,7 +24,11 @@ fn model(format: u32, each: &str) -> String {
         assert!(text.contains(from), "the fixture holds:\n{from}");
         text.replacen(from, to, 1)
     };
-    let text = edit(EACH.to_owned(), "format: ess/23", &format!("format: ess/{format}"));
+    let text = edit(
+        EACH.to_owned(),
+        "format: ess/23",
+        &format!("format: ess/{format}"),
+    );
     let text = edit(text, DISTINCT, "");
     edit(text, PLAIN, each)
 }
@@ -80,8 +84,8 @@ fn repeated_last_wins_validates_without_distinct_at_ess_35() {
 #[test]
 fn repeated_is_refused_below_ess_35() {
     for format in [23, 27, 34] {
-        let errors = assemble(&model(format, REPEATED))
-            .expect_err("`repeated:` is refused below ess/35");
+        let errors =
+            assemble(&model(format, REPEATED)).expect_err("`repeated:` is refused below ess/35");
         let refusal = errors
             .as_slice()
             .iter()
@@ -91,12 +95,19 @@ fn repeated_is_refused_below_ess_35() {
             refusal.location.ends_with(&format!("{AT}.repeated")),
             "ess/{format}: {refusal}"
         );
-        assert!(refusal.message.contains("ess/35"), "ess/{format}: {refusal}");
+        assert!(
+            refusal.message.contains("ess/35"),
+            "ess/{format}: {refusal}"
+        );
         assert!(
             refusal.message.contains("repeated: last_wins"),
             "ess/{format}: {refusal}"
         );
-        assert_eq!(errors.len(), 1, "ess/{format}: the refusal comes alone:\n{errors}");
+        assert_eq!(
+            errors.len(),
+            1,
+            "ess/{format}: the refusal comes alone:\n{errors}"
+        );
     }
 }
 
@@ -106,8 +117,14 @@ fn an_unknown_repeated_value_is_refused() {
         let each = format!("each: {{in: input.applied, as: doc, repeated: {value}}}");
         let errors = assemble(&model(35, &each)).expect_err("only `last_wins` is a value");
         let text = errors.to_string();
-        assert!(text.contains(value), "{value}: names the value written: {text}");
-        assert!(text.contains("last_wins"), "{value}: names the value admitted: {text}");
+        assert!(
+            text.contains(value),
+            "{value}: names the value written: {text}"
+        );
+        assert!(
+            text.contains("last_wins"),
+            "{value}: names the value admitted: {text}"
+        );
     }
 }
 
