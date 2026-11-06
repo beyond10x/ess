@@ -8,12 +8,14 @@ summary: 'Issue 761: list guard scenarios fail or are refused ESS-SYNTH-019; que
 tags:
 - backlog
 - from-issue
+- queue-0.90.0
+- rank-1
 refs:
 - provider: github
   reference: beyond10x/ess#761
 relations:
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Need
 
