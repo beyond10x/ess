@@ -88,7 +88,8 @@ const press = async (label) => {
 };
 (async () => {
   await settle();
-  root.find((node) => node.tag === "input" && node.props.type === "checkbox")[0].props.onChange({ target: { checked: true } });
+  // The first box of a multiple-selection collection is its select-all (0.88.0); the row box selects one row.
+  root.find((node) => node.tag === "input" && node.props.type === "checkbox" && node.props["aria-label"] === "Select row")[0].props.onChange({ target: { checked: true } });
   await settle();
 
   await press("Download");

@@ -139,7 +139,10 @@ fn fnv(text: &str) -> u64 {
 /// re-pinned for a client filter's `contains` (`expr.ts`). The whole-project digest re-pinned: the
 /// page header's help is drawn at its own path (`core.tsx`, `<header>/help`). `actions.tsx`,
 /// `data.ts` and the whole-project digest re-pinned for a file export: the data adapter's
-/// `download` hands over the server's answer, which the export saves as it came.
+/// `download` hands over the server's answer, which the export saves as it came. The whole-project
+/// digest re-pinned for a tags input's `suggests` (`fields.tsx`, `styles.css`). The whole-project
+/// digest re-pinned again when those changes, made on 0.87.0, were merged onto 0.88.0's collection
+/// controls: the header help, `contains`, tags `suggests` and the file export together.
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
@@ -149,7 +152,7 @@ const PLAIN: [(&str, u64); 7] = [
     ("src/runtime/data.ts", 0x400e_ae09_0d5f_e141),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x4fa9_3922_39cb_d52d;
+const PLAIN_PROJECT: u64 = 0xe473_22a0_7e7e_e118;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {
