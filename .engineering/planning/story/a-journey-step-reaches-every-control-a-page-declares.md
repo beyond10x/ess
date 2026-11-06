@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-journey-step-reaches-every-control-a-page-declares
 kind: story
-status: active
+status: implemented
 title: A journey step reaches every control a page declares
 summary: ess ui test steps for section forms, toggles, multiple choices, row selection, filter windows, expand, sort, reorder, upload, URL page state and filter choices (beyond10x/ess#722 items 1-11)
 tags:
@@ -13,10 +13,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
-revision: 4
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-05T18:11:27Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-05T18:11:27Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-11-06T07:40:06Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 
@@ -67,3 +68,7 @@ The same correction fixes the four introduced findings: a filter-bar or form act
 is reached before the move keys, an uploaded file's leading byte order mark is dropped, and a file
 that is not valid UTF-8 is decoded lossily as the browser does. A plain `open` after an `open` with
 URL state shows no URL state, if the fix is small; otherwise it is a backlog draft.
+
+## Review
+
+Adversary pass 1 (2026-11-05): NEEDS-CHANGE, 4 introduced findings (actions keyed `h` or `l`, an upload's byte order mark, an upload that is not UTF-8) and 3 undecided (reorder payload, untouched toggle, URL state after a plain `open`), decided as recorded above. One correction fixed all seven; the pass's 12 cases are committed and green beside `journey_controls` (16 passed). Out of scope, filed: story:a-form-groups-own-on-change-saves-in-every-target and story:a-form-groups-own-action-runs-from-its-key.

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-collection-draws-the-controls-it-declares
 kind: story
-status: active
+status: implemented
 title: A collection draws the controls it declares
 summary: Numeric sort, actions header, wide-table scroll, card layout, sort on cards, expand/reorder/bulk controls, item and toggle columns, default column subset (beyond10x/ess#723)
 tags:
@@ -13,10 +13,11 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:ess-ui-renderer-neutral-ui
-revision: 4
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-05T18:11:26Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-05T18:11:26Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-11-06T07:40:10Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Need
 
@@ -73,3 +74,7 @@ The 0.88.0 adversary pass on this unit found six introduced defects; the coordin
   consistently.
 - An item column sorts by the field the item shows, or is not sortable unless `sort.allowed` names a
   row field.
+
+## Review
+
+Adversary pass 1 (2026-11-06): NEEDS-CHANGE, 6 introduced findings (drag across a group, the keyboard move past either end, select-all across groups, the handle's click, a reorder under a client sort, a non-transitive comparison, the item column's sort), decided as recorded above. One correction fixed all; the pass's 8 cases are committed and green beside `collection_controls` (8 passed). Pre-existing, filed: story:move-buttons-refuse-past-either-end.
