@@ -97,7 +97,7 @@ crates/verify/ess-conformance/tests/fixtures/explore-pair/pair.yaml	suite=7afef7
 crates/verify/ess-conformance/tests/fixtures/explore-preconditions-list.yaml	suite=3bedeefadf837c4a8c4f:6477 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/explore-preconditions.yaml	suite=a0326962b8e6c1e32ba6:5418 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/explore-retry/retry.yaml	suite=062041fe69fbd263c514:7329 refusals=e3b0c44298fc1c149afb:0 claimable=
-crates/verify/ess-conformance/tests/fixtures/explore-stored-rows.yaml	suite=ec65294f7d7f5832ead0:196390 refusals=e3b0c44298fc1c149afb:0 claimable=
+crates/verify/ess-conformance/tests/fixtures/explore-stored-rows.yaml	suite=0415c4076059d44644d8:196402 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/explore.yaml	suite=dd9a46ef0015799d1d4e:114279 refusals=e3b0c44298fc1c149afb:0 claimable=
 crates/verify/ess-conformance/tests/fixtures/external-beside-held-guard.yaml	suite=fe14566d46bb51734fe7:37388 refusals=e3b0c44298fc1c149afb:0 claimable=demo.desk.CheckPick/outcome/unlisted,demo.desk.Pick/transition/refuse/by/demo.desk.CheckPick/unlisted
 crates/verify/ess-conformance/tests/fixtures/filtered-related-reads.yaml	suite=87654d72cef5a4e77c0b:70006 refusals=e3b0c44298fc1c149afb:0 claimable=
