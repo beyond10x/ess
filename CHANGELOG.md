@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.88.0] — 2026-11-06
+
+### Added
+
+- `ess ui test`: a journey step reaches every control a page declares (beyond10x/ess#722 items 1 to 11; story:a-journey-step-reaches-every-control-a-page-declares). New steps: `mark` adds a row to its collection's selection (or takes it out), so a bulk action and its confirm run with `act`; `move: {at, to: up | down}` moves a row of a collection with a `reorder`; `upload: {at, file}` runs an upload action with a file named relative to the test file and sends `{name, content}`; `expect_export: {view, as?, params?}` holds when an export read the view with those params. `open` takes `state`, page state the page keeps in the URL, and a plain `open` starts without it. `act` at a section whose body is a form submits it, and at a `sortable` column sorts as its header does. `choose` sets a form toggle (`true` or `false`), picks in a multiple choice form field, a choice that is a section of its own and a filter bar's time window, and finds an option by its label however long the field's label is. `select` at a row's `expand` shows its detail, which `expect` reads on its own cells. The Playwright spec emits each (an `expect_export` as `test.fixme`).
+- `ess ui run --tui`: a form with `save: on_change` sends its command on every change; a multiple choice form field moves between its options with `l` and `h` and adds or takes out one with `space`; a choice that is a section of its own is driven with `j`, `k` and `space`; a filter bar runs its own actions by their keys, and `h`, `l` and `i` stay the view's own keys, never an action's; an upload action asks for a file path and sends the file's name and text, read as the browser reads it (a leading byte order mark dropped, text that is not UTF-8 decoded with replacement characters); an export records the params it reads its view with (`App::exports`) and names them in its notice; a sort of a collection with `sort.mode: server` writes `state.sort` as `{by, dir}`; a row's expanded detail is a region of its own at `…/rows/<key>/expand`.
+
+### Changed
+
+- `ess ui run --tui`: a row moved with `reorder` sends `{id, delta}` with `delta` -1 or 1, as the generated React app does, instead of `{id, direction}`.
+- CI: every go-task install (each job of `ci.yml` that runs a task, and the WebAssembly job of `release.yml`) retries the release download up to five times on any error with curl's doubling backoff, and a test shard's `task` steps run only when go-task installed, so an install that still fails stops the job at the install step instead of later as `task: command not found` (story:ci-go-task-install-survives-a-release-download-error).
+
+### Fixed
+
+- `ess-ui/1` React target: a collection draws the controls it declares. A client sort orders numbers by value (5, 10, 1 sorts to 1, 5, 10), and text under a numeric column (`as: number`, `currency`, `percent`, `bytes`, `duration`) as numbers; a column named in `sort.allowed` sorts as a `sortable` one does. A table sits in a frame that scrolls sideways, with a shadow on the side that has more to show, and its row actions take a trailing column headed `Actions` that lies over no declared column; a row's expanded detail spans a row of its own below it. Each `item` node and each toggle row action takes a column of its own, headed by the node's name or the toggle's label, sortable when `sort.allowed` names it. Cards, lists and trees draw the declared sort as a `Sort by` select with a direction button, the select-all of `selection: multiple` above the rows, and each row's actions below (cards) or beside (lists) its fields; a toggle column on a card is drawn in its state. `expand` draws an expand control on each row; `reorder` a drag handle that moves a row one place, or with the arrow keys, sending `{id, delta}` as the move buttons do; `selection: multiple` a select-all, and `bulk_actions` a bulk menu that counts the selection. A selectable-columns state with a `default` list draws only the columns it names (beyond10x/ess#723; story:a-collection-draws-the-controls-it-declares).
+- `ess-ui/1` React target: a form sends a toggle nobody touched as its declared default, `false` when none is declared, as the terminal does, instead of leaving it out.
+- `ess-ui/1` React target: a filter bar draws its search box when a read on the page is given the record that holds the search state (`params: {filters: state.filters}` for `search: {binds: state.filters.q}`), as it does for a read given the search field itself (story:a-read-given-the-search-state-record-draws-the-search-box).
+- `ess verify conform synthesize`: a second, suffixed instance of an entity is created with the input examples the specification gives instead of generated placeholders, and a forced `external:` create of it no longer references an undeclared row. A value a branch decision reads (a create's uniqueness check, another command's row selection, related-row or subject predicate) stays told apart between instances (beyond10x/ess#736; story:a-suffixed-instance-is-created-with-the-inputs-the-specification-gives).
+- Docs: the layout-and-validation guide says what the install page says: an exact `requires: ess X.Y.Z` pin makes a newer `ess` run the pinned release from its cache.
+
 ## [0.87.0] — 2026-11-05
 
 ### Added
