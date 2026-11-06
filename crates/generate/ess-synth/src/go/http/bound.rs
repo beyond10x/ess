@@ -150,11 +150,53 @@ func matched(template string, path string) ([]string, bool) {
 				return nil, false
 			}
 			values = append(values, given[index])
-		} else if segment != given[index] {
+		} else if segment != literalSpelling(given[index]) {
 			return nil, false
 		}
 	}
 	return values, true
+}
+
+// literalSpelling is text with each %XX escape of an unreserved character decoded (RFC 3986
+// §6.2.2.2), the spelling a segment is compared with a literal in: %7Earchived is ~archived.
+// Every other escape stays as written, and a variable's text is decoded where it is read.
+func literalSpelling(text string) string {
+	if !strings.Contains(text, "%") {
+		return text
+	}
+	var out strings.Builder
+	for index := 0; index < len(text); index++ {
+		if text[index] == '%' && index+2 < len(text) {
+			high, highOk := hexValue(text[index+1])
+			low, lowOk := hexValue(text[index+2])
+			if decoded := high*16 + low; highOk && lowOk && unreservedByte(decoded) {
+				out.WriteByte(decoded)
+				index += 2
+				continue
+			}
+		}
+		out.WriteByte(text[index])
+	}
+	return out.String()
+}
+
+// hexValue is the value of one hexadecimal digit.
+func hexValue(digit byte) (byte, bool) {
+	switch {
+	case '0' <= digit && digit <= '9':
+		return digit - '0', true
+	case 'a' <= digit && digit <= 'f':
+		return digit - 'a' + 10, true
+	case 'A' <= digit && digit <= 'F':
+		return digit - 'A' + 10, true
+	}
+	return 0, false
+}
+
+// unreservedByte is whether a byte is an RFC 3986 unreserved character.
+func unreservedByte(value byte) bool {
+	return 'a' <= value && value <= 'z' || 'A' <= value && value <= 'Z' ||
+		'0' <= value && value <= '9' || value == '-' || value == '.' || value == '_' || value == '~'
 }
 
 // flatValue is one flat text as the JSON value its field's decoder reads, or a refusal naming at
