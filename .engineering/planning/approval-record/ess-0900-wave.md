@@ -17,7 +17,7 @@ relations:
 - decides: story:a-client-row-filter-keeps-its-rows-without-paging-and-by-path-id
 - decides: story:a-column-may-show-a-plain-string-row
 - decides: story:a-client-paged-collection-offers-sizes-and-a-range
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "approved", at: "2026-11-06T22:18:50Z", actor: "human:timo", revision: 2}
 ---
@@ -106,3 +106,35 @@ On 2026-11-07, the coordinator decided under the operator's grant:
 - U3 goes to the adversary on story:a-null-tag-draws-no-chip only.
 
 The wave now delivers four stories: issue 761, host-slot stories 1 and 2, and the null tag chip.
+
+## Amendment: adversary decisions
+
+The coordinator decided the following under the operator's grant on 2026-11-07.
+
+**U1 (issue 761):**
+
+- The adversary's blocker is fixed in the unit: the creating step must send a list that satisfies
+  its guard when that branch is the only route.
+- The forall guard and the several-literal guard are pre-existing, and are drafts:
+  story:a-forall-list-guard-is-witnessed and story:a-guard-over-several-list-literals-is-witnessed.
+
+**U3 (null tag chip):**
+
+- All four adversary findings are fixed in the unit before it merges:
+  - the PLAIN_PROJECT re-pin it introduced;
+  - a picked suggestion saving the text "null";
+  - the input showing an empty item for a held null;
+  - a held null hiding a suggestion named "null".
+- Finding 2 undoes the story's outcome after a save, so the story is not done without it.
+
+**U2 (host slots 1-2):**
+
+- All five adversary findings are U2's own and are fixed in the unit before it merges:
+  - the host name is held to the node-name pattern;
+  - `reason` is a prose key;
+  - a page slot drops its kind's header refs;
+  - the reason is trimmed in the report;
+  - a leading byte-order mark in the hosts file is stripped.
+- A reused template holding a slot stays refused as "declared twice" in 0.90.0, the fail-closed
+  reading of the ADR's section 1. The draft story:a-host-slot-in-a-reused-template-is-one-registration
+  takes it to 0.91.0.
