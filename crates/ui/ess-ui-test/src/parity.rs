@@ -234,7 +234,9 @@ pub(crate) fn text(document: &Document, target: &Target) -> Option<String> {
         }
     }
     match segments.as_slice() {
-        ["pages", _, "header"] | ["pages", _, "sections", _, "children", _] => None,
+        ["pages", _, "header"]
+        | ["pages", _, "header", "help"]
+        | ["pages", _, "sections", _, "children", _] => None,
         ["pages", page, "header", "actions", name] => document
             .pages
             .get(*page)

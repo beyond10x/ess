@@ -9,8 +9,8 @@ use std::fmt;
 
 use crate::model::{
     Action, ActionConfirm, Body, Columns, Composite, Document, Field, FormGroup, Guard, Header,
-    LayoutColumn, NavSection, Node, Overlay, Page, PageKind, PageLayout, Primitive, Reads, Region,
-    Section, Shell, State, Tab, TabFields, TabForm, Widget,
+    Help, LayoutColumn, NavSection, Node, Overlay, Page, PageKind, PageLayout, Primitive, Reads,
+    Region, Section, Shell, State, Tab, TabFields, TabForm, Widget,
 };
 use crate::LoadError;
 
@@ -73,6 +73,8 @@ pub enum NodeRef<'a> {
     LayoutColumn(&'a LayoutColumn),
     /// `pages/<name>/header`.
     Header(&'a Header),
+    /// `pages/<name>/header/help`: a page header's help, a node a test opens and reads.
+    HeaderHelp(&'a Help),
     /// `pages/<name>/sections/<name>`.
     Section(&'a Section),
     /// An overlay of a page or shell, or an inline confirm.
@@ -199,6 +201,9 @@ impl<'a> Walk<'a> {
 
     fn header(&mut self, at: &NodePath, header: &'a Header) {
         self.push(at, NodeRef::Header(header));
+        if let Some(help) = &header.help {
+            self.push(&at.child("help"), NodeRef::HeaderHelp(help));
+        }
         self.actions(at, "actions", &header.actions);
         self.node_list(at, "metrics", &header.metrics);
     }

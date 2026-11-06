@@ -2346,6 +2346,10 @@ impl<'d> Gen<'d> {
         let metrics = self.node_fragment(at, "metrics", &header.metrics);
         let help = header.help.as_ref().map(|help| {
             ts::object([
+                (
+                    "data-ui-path",
+                    Some(ts::string(&at.child("help").to_string())),
+                ),
                 ("text", quoted(help.text.as_ref())),
                 ("link", quoted(help.link.as_ref())),
             ])

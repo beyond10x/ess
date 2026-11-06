@@ -74,6 +74,7 @@ field the section's `live.match` names, else `id`. A node inside a row is addres
 | `pages/partners.list/sections/list/rows/pt-003` | the row whose key is `pt-003` |
 | `pages/partners.list/sections/list/rows/pt-003/row_actions/delete` | that row's `delete` action |
 | `pages/partners.list/header/actions/create` | a header action |
+| `pages/partners.list/header/help` | the page header's help (only when the header declares `help`) |
 | `pages/invoices.list/sections/list/rows/in-03/row_actions/remind/confirm/overlay` | the inline confirm `remind` opened on row `in-03` |
 | `pages/partners.list/overlays/create/fields/name` | a form field in an overlay |
 
@@ -152,7 +153,10 @@ section whose body is a form it submits the form. On a collection's column
 (`…/columns/<name>`) it sorts by that column as a click on its header does: ascending, or
 descending when the collection is already sorted by it ascending; the column is `sortable`. A
 form that saves on change (`save: on_change`) sends its command on every change a step makes,
-without `act`.
+without `act`. At a page header's help (`pages/<page>/header/help`) it opens the help: the
+terminal and the generated app draw it open, so the step only checks that no overlay covers it,
+and an app that draws the help closed (a disclosure beside the title) opens it there. `expect`
+reads the help's text at the same path.
 
 ```yaml
 - act: pages/partners.list/sections/list/rows/pt-003/row_actions/delete
@@ -195,7 +199,7 @@ Checks a node. Every key given must hold.
 
 | Key | Holds when |
 |---|---|
-| `text` | the node shows the text on its own cells: a page the screen, a section its box, an overlay its pane, a row its line, a row's column its cell, a column its header, a row's or the header's action its label, a section's child its own place |
+| `text` | the node shows the text on its own cells: a page the screen, a section its box, an overlay its pane, a row its line, a row's column its cell, a column its header, a row's or the header's action its label, the header's help its line, a section's child its own place |
 | `not_text` | the node does not show the text |
 | `rows` | a count: the collection shows that many rows; a list: it shows the rows with these keys, in this order |
 | `state` | the section is `loading`, `empty`, `stale`, `failed`, `ready` or `not_loaded` |
@@ -344,7 +348,7 @@ Every step goes through what a reader of the terminal has: key presses and the d
 | `expect` | the cells the renderer drew the node on: the screen, the section's box, the overlay, the row's line, the cell |
 
 The terminal renderer records where each frame drew each node, by path (`ess_ui_tui::App::regions`):
-the page header and its actions, section boxes and their children, the open overlay, and for a
+the page header, its actions and its help, section boxes and their children, the open overlay, and for a
 section's or an overlay's collection a table's column headers, each row line keyed by the row's
 key, each cell (not for cards, a list or a tree with an `item`), and each row action a row offers.
 A region also carries the node's whole text where the screen cuts it (`Region::text`).

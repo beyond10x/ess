@@ -136,7 +136,8 @@ fn fnv(text: &str) -> u64 {
 /// as `false` when its draft declares no default. The whole-project digest re-pinned for
 /// story:a-collection-draws-the-controls-it-declares: the collection runtime and its stylesheet draw
 /// the declared sort, expand, reorder, selection and column controls. The whole-project digest
-/// re-pinned for a client filter's `contains` (`expr.ts`).
+/// re-pinned for a client filter's `contains` (`expr.ts`). The whole-project digest re-pinned: the
+/// page header's help is drawn at its own path (`core.tsx`, `<header>/help`).
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),

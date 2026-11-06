@@ -521,3 +521,27 @@ fn a_script_link_primitive_renders_as_text_not_an_anchor() {
 ",
     );
 }
+
+/// A page header's help is drawn at its own path, `pages/<page>/header/help`, the node an
+/// `ess-ui-test/1` step opens and reads, holding its text.
+#[test]
+fn a_page_headers_help_is_drawn_at_its_own_path() {
+    let sections = "      - name: one
+        component: record
+        reads: {view: shelf.Items}
+        fields: [title]";
+    let yaml = document("detail_page", "      {}", sections).replace(
+        "    state:\n",
+        "    header: {help: {text: Items are kept for a year, link: 'https://example.test/help'}}\n    state:\n",
+    );
+    run(
+        "header_help_path",
+        &yaml,
+        r"
+  await settle();
+  const help = tagged('p').find((p) => p.props['data-ui-path'] === 'pages/shelf.items/header/help');
+  assert.ok(help, `the help is drawn at pages/shelf.items/header/help: ${tagged('p').map((p) => p.props['data-ui-path'])}`);
+  assert.ok(textOf(help).includes('Items are kept for a year'), `the help node holds its text: ${textOf(help)}`);
+",
+    );
+}
