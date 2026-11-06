@@ -1,4 +1,4 @@
-#	models=370	commands=739
+#	models=371	commands=742
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	ir=d47970055f083eda582673dfe528f0af87f902defa07339aa014f6c8d50be57f:5099
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Publish	default: accepted
 crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml	accessor.core.Receive	default: accepted
@@ -195,6 +195,10 @@ crates/specify/ess-domain/tests/fixtures/text-length-positions.yaml	keypad.dial.
 crates/specify/ess-http/tests/fixtures/auth.yaml	ir=772a22ca29f484bc3dd1fa1e0affb84c988944fb43c167fd8f321aa21bd8aa4a:11421
 crates/specify/ess-http/tests/fixtures/auth.yaml	catalog.auth.ApproveOrder	input_refusal: denied, wired | accepting: approved | default: noted
 crates/specify/ess-http/tests/fixtures/auth.yaml	catalog.auth.ReadPrivateItem	accepting: read | default: token-refused
+crates/specify/ess-http/tests/fixtures/board.yaml	ir=e0e2b97ac89668c1b418a2f4a511531af31c68ec04679ec3f45bc8f52f12a958:11945
+crates/specify/ess-http/tests/fixtures/board.yaml	catalog.board.RenameBoard	default: renamed
+crates/specify/ess-http/tests/fixtures/board.yaml	catalog.board.SetCardPriorities	default: set
+crates/specify/ess-http/tests/fixtures/board.yaml	catalog.board.UpdateCard	default: updated
 crates/specify/ess-http/tests/fixtures/catalog.yaml	ir=11e75f985e5228749c7c2764f0725a3dc006d2be4a52d1921c9156c75f842fa1:8248
 crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.ListItem	default: listed
 crates/specify/ess-http/tests/fixtures/catalog.yaml	catalog.items.PurgeItems	default: purged
