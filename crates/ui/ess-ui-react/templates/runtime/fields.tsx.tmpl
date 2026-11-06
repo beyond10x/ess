@@ -136,7 +136,8 @@ export function FieldValue(props: { field: FieldSpec; row: unknown }): ReactNode
       content = <span className={`ui-badge ui-badge-${String(value)}`}>{valueLabel(field.labels, value) ?? formatValue(value)}</span>;
       break;
     case "tags":
-      content = (Array.isArray(value) ? value : []).map((tag, index) => (
+      // A null entry carries no tag, so it draws no chip.
+      content = (Array.isArray(value) ? value : []).filter((tag) => tag !== null && tag !== undefined).map((tag, index) => (
         <span key={`${index}:${stableKey(tag)}`} className="ui-tag">
           {tagText(tag)}
         </span>

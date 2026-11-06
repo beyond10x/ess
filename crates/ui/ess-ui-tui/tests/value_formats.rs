@@ -205,3 +205,87 @@ fn a_placeholder_read_takes_its_fixture_from_fixtures_dir() {
     let screen = screen("placeholder");
     assert!(screen.contains("from-the-fixture-dir"), "{screen}");
 }
+
+/// `as: tags` on a collection and on a record (story:a-null-tag-draws-no-chip): a `null` entry
+/// carries no tag and draws no chip; a list of only `null` draws nothing.
+const TAGS: &str = r"
+format: ess-ui/1
+app: t
+model: t.system
+placement_profile: fat
+fixtures: {dir: data, views: {t.Calls: tags.yaml, t.Last: last.yaml}}
+shells:
+  app: {regions: {main: {kind: page_outlet}}}
+navigation:
+  home: calls
+  sections: [{name: all, pages: [calls]}]
+pages:
+  calls:
+    kind: list_page
+    title: Calls
+    sections:
+      - name: calls
+        component: collection
+        reads: {view: t.Calls}
+        columns:
+          - {field: title}
+          - {field: labels, as: tags}
+          - {field: after}
+      - name: last
+        component: record
+        reads: {view: t.Last}
+        fields:
+          - {field: labels, label: Labelled, as: tags}
+";
+
+const TAG_ROWS: &str = r"
+views:
+  t.Calls:
+    rows:
+      - {id: c-1, title: mixed, labels: [a, null, b], after: end-1}
+      - {id: c-2, title: only, labels: [null], after: end-2}
+      - {id: c-3, title: scalars, labels: [3, true, x], after: end-3}
+";
+
+const LAST_ROWS: &str = "views:\n  t.Last:\n    rows:\n      - {id: l-1, labels: [p, null, q]}\n";
+
+fn tags_screen(test: &str) -> String {
+    let base = dir(test);
+    std::fs::write(base.join("data/tags.yaml"), TAG_ROWS).expect("the fixture is written");
+    std::fs::write(base.join("data/last.yaml"), LAST_ROWS).expect("the fixture is written");
+    let mut app = App::from_text(TAGS, &base, Options::new(base.join("state")))
+        .unwrap_or_else(|error| panic!("{error}"));
+    app.open_page("calls", &[]);
+    app.render_text(140, 48)
+}
+
+#[test]
+fn a_null_tag_draws_no_chip_in_a_column_or_a_record() {
+    let screen = tags_screen("null-tags");
+    let mixed = row(&screen, "mixed");
+    assert!(mixed.contains("#a #b"), "two chips, a and b:\n{screen}");
+    assert_eq!(mixed.matches('#').count(), 2, "no chip for null:\n{screen}");
+    let only = row(&screen, "only");
+    assert!(
+        !only.contains('#'),
+        "a list of only null draws no chip:\n{screen}"
+    );
+    let after = only.find("end-2").expect("the next column is drawn");
+    assert!(
+        only[only.find("only").expect("the title") + "only".len()..after]
+            .trim()
+            .is_empty(),
+        "and nothing else:\n{screen}"
+    );
+    assert!(
+        row(&screen, "scalars").contains("#3 #true #x"),
+        "other values still draw their text:\n{screen}"
+    );
+    let record = row(&screen, "Labelled");
+    assert!(record.contains("#p #q"), "{screen}");
+    assert_eq!(
+        record.matches('#').count(),
+        2,
+        "no chip for null:\n{screen}"
+    );
+}
