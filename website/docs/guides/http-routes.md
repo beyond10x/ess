@@ -53,9 +53,11 @@ ess specify http compile  --path MODEL --binding catalog-http.yaml --out catalog
 
 Every refusal is reported at once, with an `ESS-HTTP-` code and the path of the key it is about. Two
 operations on one method and path of a component, declared or derived, are refused, variable names
-ignored. Two paths one request can match, such as `/items/current` beside `/items/{item_id}`, are
-admitted: at the first segment they differ, the literal takes precedence over the variable, so
-`/items/current` is served by its own route and every other item id by `/items/{item_id}`.
+ignored. Two paths one request can match are admitted where one is more specific, holding the
+literal at every segment they differ: `/items/current` beside `/items/{item_id}` serves
+`/items/current` by its own route and every other item id by `/items/{item_id}`. Two that cross,
+each holding a literal where the other holds a variable, such as `/{tenant}/tasks` beside
+`/tasks/{id}` (both match `/tasks/tasks`), are refused: neither takes precedence.
 
 ## Protocol and server bindings
 

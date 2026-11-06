@@ -136,19 +136,26 @@ document; a refinement of a refinement is refused in `/1`.
   refused: a partial-segment template needs an escaping rule this format does not state.
 
 Two templates of one component and one method that a request path can both match overlap: they
-have as many segments, no position holds two different literals, and at the first position they
-differ one holds a literal and the other a variable (`/items/current` beside `/items/{item_id}`;
-`/items/{item_id}/a` beside `/items/current/b` does not overlap). At that position the literal
-takes precedence, the rule OpenAPI 3.1 states for its Paths Object ("concrete (non-templated)
-paths would be matched before their templated counterparts") and most HTTP routers follow:
-`/boards/b-1/cards/priority` is served by `/boards/{board_id}/cards/priority`, and every other
-`/boards/b-1/cards/<id>` by `/boards/{board_id}/cards/{card_id}`
-(`story:a-literal-path-segment-takes-precedence-over-a-variable-one`, beyond10x/ess#748). The rule
-orders every overlapping pair, so a binding states no order and the compiled IR records none. The
-generated servers try a method's routes in that order, computed segment by segment
-(`ess_gen::http::dispatch_order`), never read off the template text, in which `{` sorts before
-`~`, a path character. The OpenAPI document keeps its path order. Two templates equal but for
-variable names are one route (`ESS-HTTP-010`).
+have as many segments, no position holds two different literals, and at some position one holds a
+literal and the other a variable (`/items/current` beside `/items/{item_id}`; `/items/{item_id}/a`
+beside `/items/current/b` does not overlap). They are **nested** where one and the same template
+holds the literal at every position they differ: its paths are a strict subset of the other's, it
+is the more specific, and it answers them, the rule OpenAPI 3.1 states for its Paths Object
+("concrete (non-templated) paths would be matched before their templated counterparts") and most
+HTTP routers follow. `/boards/b-1/cards/priority` is served by `/boards/{board_id}/cards/priority`,
+and every other `/boards/b-1/cards/<id>` by `/boards/{board_id}/cards/{card_id}`
+(`story:a-literal-path-segment-takes-precedence-over-a-variable-one`, beyond10x/ess#748). They are
+**crossed** where each holds a literal at some position the other holds a variable
+(`/{tenant}/tasks` beside `/tasks/{id}`, both matching `/tasks/tasks`): neither is more specific,
+and any order between them would decide silently which identifier values one route cannot reach,
+so they stay refused (`ESS-HTTP-011`). Specificity orders every nested pair, so a binding states no
+order and the compiled IR records none; nothing reads compiled IR back across versions, so no
+older reader can serve a nested pair in another order. The generated servers try a method's routes
+in that order, computed segment by segment (`ess_gen::http::dispatch_order`), never read off the
+template text, in which `{` sorts before `~`, a path character, and compare a request segment with
+a literal after decoding percent-encoded unreserved characters (RFC 3986 §6.2.2.2), so
+`/cards/%7Earchived` reaches the `~archived` literal. The OpenAPI document keeps its path order.
+Two templates equal but for variable names are one route (`ESS-HTTP-010`).
 
 Each variable is mapped exactly once in `parameters`, and each mapping names a variable of the path.
 A command's mapped input field leaves the request body. A view's mapped parameter leaves the query
@@ -193,7 +200,7 @@ Every refusal is returned at once, with a stable code and the path of the offend
 | `ESS-HTTP-008` | a variable not mapped, mapped twice, reading a source another variable of the route already reads (a request path would give it two values), or a mapping for no variable | `routes[i].parameters.<name>`; for a source read twice, the second variable of the path that reads it |
 | `ESS-HTTP-009` | a source in the wrong namespace, naming no field, or of a type a segment cannot carry | `routes[i].parameters.<name>`, the source, its type |
 | `ESS-HTTP-010` | two operations of one component on one method and template (variable names ignored), declared or derived | both operations; the message reuses the import's wording, "two operations claim the same method and path" (`ess-openapi/src/lib.rs:76-80`) |
-| `ESS-HTTP-011` | reserved. Until 0.88.0 it refused two templates of one component and method that overlap; from 0.89.0 a literal takes precedence over a variable at the first position they differ ("Path templates"), which orders every such pair, so nothing is refused under it. The code is not reused | — |
+| `ESS-HTTP-011` | two templates of one component and one method that cross: a request path matches both, and each holds a literal at some position the other holds a variable (`/{a}/x` beside `/y/{b}`; `/{tenant}/tasks` beside `/tasks/{id}`). Until 0.88.0 it refused every overlap; from 0.89.0 a nested pair, where one template holds the literal at every position the two differ (`/items/current` beside `/items/{item_id}`), is admitted and the more specific answers ("Path templates") | both operations, a path both match, and the segment where each holds its literal |
 | `ESS-HTTP-012` | a refinement that changes a fixed method or path, leaves a fixed path open, or drops a route of the refined binding | `routes[i].method` or `routes[i].path`, the refined value and the new one; `routes` and the refined `routes[j]` for a dropped route |
 | `ESS-HTTP-013` | an operation that has no HTTP surface: a command no component accepts, a view no network component serves | the operation |
 | `ESS-HTTP-014` | a command on `get` with an input field that is neither mapped to the path nor (stage 2) query-encoded | the command and the field |
@@ -345,6 +352,10 @@ mirrors `response.<field>` on the response side
   the path does not carry it.
 - The path carries every other input field. `ess-http/1` has no per-field query placement beside
   a JSON body, so a field left in neither place is refused rather than moved to the query string.
+  On an open route that rule waits for the path: a protocol binding may fix the body of a route
+  whose path each server binding chooses, and the server binding, which restates the body
+  (`ESS-HTTP-012` for adding, dropping or changing it), is held to the rule when it fills the path
+  in.
 - `body` is refused beside `form` or `query`, on a `get` command (which carries no body) and on a
   view (which takes no request).
 - OpenAPI writes the field's own schema as the request body's (`{type: array, items: …}` for a
@@ -352,10 +363,6 @@ mirrors `response.<field>` on the response side
   holding that field alone, so a body of the wrong shape is `malformed`, as a wrong member type is.
   The generated UIs (React and terminal) send the field's value alone as the body, under its wire
   name or else its model name in the input a `bind` gives.
-  On an open route that rule waits for the path: a protocol binding may fix the body of a route
-  whose path each server binding chooses, and the server binding, which restates the body
-  (`ESS-HTTP-012` for adding, dropping or changing it), is held to the rule when it fills the path
-  in.
 - Compiled IR writes `body` only when it is declared, so every binding without one compiles to the
   bytes it compiled to before. No format version: a reader without the key refuses `request.body`
   as an unknown field by name, as stage 1 refused every stage-2 key.
@@ -798,8 +805,8 @@ Formats: the `ess-conformance/*` documents do not change. `--target` gains one v
 2. A binding cannot require that it routes every operation in stage 1; an unnamed operation keeps
    its derived route.
 3. A literal segment does not take precedence over a variable: `ESS-HTTP-011` refuses the overlap.
-   Superseded in 0.89.0: a literal takes precedence at the first position two templates differ
-   ("Path templates").
+   Superseded in 0.89.0 for nested templates: the one holding the literal at every position the two
+   differ answers; crossed templates stay `ESS-HTTP-011` ("Path templates").
 4. `refines:` is the digest of the refined file's bytes, as the specification's source pin is.
    Reformatting a refined file is a deliberate re-pin.
 5. `ess verify diff` does not compare two bindings in stage 1; that is one unit of stage 2.

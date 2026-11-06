@@ -36,7 +36,10 @@ fn dispatch_order_puts_a_literal_before_a_variable() {
         ]),
         [1, 0]
     );
-    // The first position the two differ decides, whatever comes after it.
+    // story:a-literal-path-segment-takes-precedence-over-a-variable-one, nested overlaps only:
+    // the more specific of two nested templates comes first, a chain in specificity order, and
+    // two crossed templates (`/{a}/~x` beside `/~y/{b}`), which a compiled binding refuses
+    // (`ESS-HTTP-011`), keep their order.
     assert_eq!(
         dispatch_order(&[
             ("GET", "/{a}/{b}"),
@@ -44,15 +47,22 @@ fn dispatch_order_puts_a_literal_before_a_variable() {
             ("GET", "/~y/{b}"),
             ("GET", "/~y/~x"),
         ]),
-        [3, 2, 1, 0]
+        [3, 1, 2, 0]
+    );
+    // A literal after an equal variable prefix, the variable first in path order (`e` sorts
+    // before `}`).
+    assert_eq!(
+        dispatch_order(&[("GET", "/{tenant}/x/{id}"), ("GET", "/{t}/x/current")]),
+        [1, 0]
     );
     // Templates no request path matches both of keep their order: another method, another
-    // length, two different literals at one position.
+    // length, two different literals at one position; and so do crossed ones.
     for rows in [
         [("GET", "/a/{x}"), ("PUT", "/a/~b")],
         [("GET", "/a/{x}"), ("GET", "/a/~b/c")],
         [("GET", "/a/{x}/c"), ("GET", "/a/~b/d")],
         [("GET", "/docs"), ("GET", "/openapi.json")],
+        [("GET", "/{tenant}/tasks"), ("GET", "/tasks/{id}")],
     ] {
         assert_eq!(dispatch_order(&rows), [0, 1], "{rows:?}");
     }

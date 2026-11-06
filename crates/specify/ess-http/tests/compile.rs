@@ -1002,10 +1002,10 @@ fn ess_http_010_collisions_are_checked_per_component() {
     );
 }
 
-/// story:a-literal-path-segment-takes-precedence-over-a-variable-one: two templates one request
-/// path matches both of, a literal beside a variable at the first position they differ, compile,
-/// the literal taking precedence there. Until 0.89.0 `ESS-HTTP-011` refused them; no pair is left
-/// for it to refuse, and the code stays reserved.
+/// story:a-literal-path-segment-takes-precedence-over-a-variable-one: two nested templates one
+/// request path matches both of, one holding the literal at every position they differ, compile,
+/// the more specific answering. Until 0.89.0 `ESS-HTTP-011` refused them; it refuses crossed
+/// templates only now (`a_crossed_overlap_stays_ess_http_011_naming_a_common_path`).
 #[test]
 fn ess_http_011_a_literal_beside_a_variable_after_an_equal_prefix_compiles() {
     let ir = model();
@@ -1043,6 +1043,32 @@ fn ess_http_011_a_literal_beside_a_variable_after_an_equal_prefix_compiles() {
         ),
         []
     );
+}
+
+/// Crossed templates, each holding a literal where the other holds a variable, stay
+/// `ESS-HTTP-011`: neither is more specific, and the order between them is a domain decision the
+/// binding does not state.
+#[test]
+fn a_crossed_overlap_stays_ess_http_011_naming_a_common_path() {
+    let ir = model();
+    let routes = "routes:
+  - {command: catalog.items.ListItem, method: post, path: '/{item_id}/x', parameters: {item_id: input.item_id}}
+  - {command: catalog.items.TouchItem, method: post, path: '/y/{item_id}', parameters: {item_id: input.item_id}}
+";
+    assert_eq!(
+        routes_refusals(&ir, routes),
+        [refused("ESS-HTTP-011", "routes[1]")]
+    );
+    let message = &messages(&ir, routes)[0];
+    for named in [
+        "command `catalog.items.ListItem`",
+        "command `catalog.items.TouchItem`",
+        "both match `/y/x`",
+        "segment 1 is `y`",
+        "segment 2 is `x`",
+    ] {
+        assert!(message.contains(named), "{named}: {message}");
+    }
 }
 
 /// The board of beyond10x/ess#748: card priorities on a fixed sub-resource beside a card.

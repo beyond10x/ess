@@ -544,11 +544,12 @@ pub fn bound_routes<'a>(
 }
 
 /// The order a server tries the rows of its route table in: each row a `(method, path)`, the
-/// result their indices. Of two rows on one method whose templates a request path can both match,
-/// the one with a literal at the first position they differ comes first: a literal takes
-/// precedence over a variable (`story:a-literal-path-segment-takes-precedence-over-a-variable-one`,
+/// result their indices. Of two rows on one method whose templates are nested, one holding the
+/// literal at every position they differ, that one comes first: it is the more specific
+/// (`story:a-literal-path-segment-takes-precedence-over-a-variable-one`,
 /// `docs/design/http-presentation-binding.md`, "Path templates"). Every other pair keeps the order
-/// it has in `rows`, so a table in which no two templates overlap, the table of every surface
+/// it has in `rows`, crossed templates among them, which a compiled binding never holds
+/// (`ESS-HTTP-011`). So a table in which no two templates overlap, the table of every surface
 /// without a binding among them, is tried in its own order.
 ///
 /// The order is computed segment by segment and never read off the template text, in which `{`
@@ -580,7 +581,7 @@ pub fn dispatch_order(rows: &[(&str, &str)]) -> Vec<usize> {
     let mut placed = vec![false; rows.len()];
     let mut order = Vec::with_capacity(rows.len());
     while order.len() < rows.len() {
-        // Precedence is a strict order on templates, so some row always waits on none.
+        // Specificity is a strict order on templates, so some row always waits on none.
         let Some(next) = (0..rows.len()).find(|&row| !placed[row] && waiting[row] == 0) else {
             unreachable!("literal precedence orders templates without a cycle");
         };
@@ -593,24 +594,23 @@ pub fn dispatch_order(rows: &[(&str, &str)]) -> Vec<usize> {
     order
 }
 
-/// Whether a request path can match both templates and `left` holds the literal at the first
-/// position they differ, a literal beside a variable.
+/// Whether a request path can match both templates and `left` is the more specific: it holds the
+/// literal at every position they differ, and at one at least.
 fn precedes(left: &[&str], right: &[&str]) -> bool {
     let variable = |segment: &str| segment.starts_with('{') && segment.ends_with('}');
     if left.len() != right.len() {
         return false;
     }
-    let mut first = None;
-    for (position, (one, other)) in left.iter().zip(right).enumerate() {
+    let mut narrower = false;
+    for (one, other) in left.iter().zip(right) {
         match (variable(one), variable(other)) {
             (false, false) if one != other => return false,
-            (false, true) | (true, false) => {
-                first.get_or_insert(position);
-            }
+            (true, false) => return false,
+            (false, true) => narrower = true,
             _ => {}
         }
     }
-    first.is_some_and(|position| !variable(left[position]))
+    narrower
 }
 
 /// The routes ESS derives for every component of `ir` without a binding, as `ess-http` reads them:
