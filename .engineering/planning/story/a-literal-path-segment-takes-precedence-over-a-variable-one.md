@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-literal-path-segment-takes-precedence-over-a-variable-one
 kind: story
-status: active
+status: implemented
 title: A literal path segment takes precedence over a variable one
 summary: ESS-HTTP-011 admits a literal beside a variable at the first difference; servers dispatch literal first (beyond10x/ess#748 part 2)
 tags:
@@ -23,10 +23,11 @@ scope:
   path: crates/generate/ess-synth/src/rust/http/bound.rs
 - confidence: cited
   path: crates/specify/ess-http/src/lib.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-06T10:55:31Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-06T10:55:32Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-11-06T20:27:59Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-06T20:28:18Z",
+  "actor": "human:timo",
+  "artifact": "story:a-command-route-takes-one-input-as-its-bare-request-body",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:ess-0890-u2-http-adversary",
+    "review": "review-result:ess-0890-u2-http-adversary",
+    "outcome": "fixed"
+  }
+}

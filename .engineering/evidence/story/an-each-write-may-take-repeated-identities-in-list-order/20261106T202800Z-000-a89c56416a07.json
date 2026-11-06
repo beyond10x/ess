@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-06T20:28:00Z",
+  "actor": "human:timo",
+  "artifact": "story:an-each-write-may-take-repeated-identities-in-list-order",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR 762 CI run 42274504324 (all checks green at 0307e8bc99a) and the staged local gate",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/42274504324"
+  }
+}
