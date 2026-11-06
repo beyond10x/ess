@@ -246,6 +246,32 @@ fn a_list_without_a_search_param_draws_no_search_box() {
     );
 }
 
+/// A read given a sibling of the search field, or a record whose name only starts with the name
+/// of the record holding the search, takes neither the search nor a record holding it, so the bar
+/// draws no search box (story:a-read-given-the-search-state-record-draws-the-search-box).
+#[test]
+fn a_read_given_neither_the_search_nor_a_record_holding_it_draws_no_search_box() {
+    let state = "      filters: {type: {record: {q: string, stage: string}}, class: page_state, store: memory}
+      filters_saved: {type: {record: {q: string}}, class: page_state, store: memory}";
+    let sections = "      - name: bar
+        component: filter_bar
+        binds: [state.filters.q, state.filters.stage]
+        search: {binds: state.filters.q}
+      - name: list
+        component: collection
+        reads: {view: shelf.Items, params: {stage: state.filters.stage, saved: state.filters_saved}}
+        columns: [title]";
+    run(
+        "search_sibling",
+        &document("detail_page", state, sections),
+        r"
+  await settle();
+  const boxes = root.find((node) => node.tag === 'input' && node.props.type === 'search');
+  assert.equal(boxes.length, 0, `the read is given state.filters.stage and state.filters_saved, neither of which holds state.filters.q: ${root.text()}`);
+",
+    );
+}
+
 #[test]
 fn a_tree_choice_sends_the_chosen_value() {
     let sections = "      - name: form
