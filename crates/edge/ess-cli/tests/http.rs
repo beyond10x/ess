@@ -49,21 +49,19 @@ impl Fixture {
         .unwrap();
     }
 
-    /// The digest a generated schema's provenance carries, as the transport tests read it.
+    /// The model digest the generation of its schemas records, as the transport tests read it.
     fn digest_from_schema(&self) -> String {
         let generated = self.ess(&[
             "generate", "--path", "model", "--kind", "schema", "--out", "digest",
         ]);
         assert!(generated.status.success(), "{}", text(&generated));
-        let schema = fs::read_to_string(
-            self.0
-                .join("digest/schema/events/catalog.items.ItemTouched.schema.json"),
+        let state: serde_json::Value = serde_json::from_slice(
+            &fs::read(self.0.join("digest/.ess-output/state.json")).unwrap(),
         )
         .unwrap();
-        let schema: serde_json::Value = serde_json::from_str(&schema).unwrap();
-        schema["x-ess-provenance"]["source_digest"]
+        state["payload"]["checkpoint"]["ledger"]["owners"][0]["model"]
             .as_str()
-            .unwrap_or_else(|| panic!("no source_digest in {schema}"))
+            .unwrap_or_else(|| panic!("no model digest in {state}"))
             .to_owned()
     }
 }

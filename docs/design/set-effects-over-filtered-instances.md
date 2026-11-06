@@ -234,7 +234,8 @@ the list: `{distinct: {in: <list>, as: x, by: x.<member>}}` conjoined in the bra
 or negated in the plain `when:` of a refusal of the command (`when: {not: {distinct: …}}`). A
 refusal also guarded by the stored subject (`when_subject:`) or a related row (`when_related:`)
 refuses a repeated member only where that guard holds too, so it does not count. Without one,
-validate refuses with `missing_declaration` naming the list and the member.
+validate refuses with `missing_declaration` naming the list and the member. From ess/35 an entry
+declaring `repeated: last_wins` needs none (below).
 
 **Refusals.** `each:` beside `where:`, `moves:` or `deletes:` in one entry is
 `conflicting_declaration`: the entry creates or updates the rows its elements name and selects,
@@ -364,6 +365,50 @@ its contract naming the list, the element filter and the move or removal. `ess v
 a change under `outcome-set-effect-changed`, its line naming the element filter and the move;
 generated documentation says which named rows move where. An entry without `moves:`, `deletes:` or
 an element `where:` keeps its IR, diff line and documentation bytes.
+
+## A list naming one row more than once (ess/35, beyond10x/ess#748)
+
+The `distinct:` requirement exists because two elements naming one row would leave a result that
+depends on their order. A service that defines that order cannot otherwise be specified: declaring
+`distinct:` makes the specification refuse a request the service accepts.
+
+**Construct.** `each: {in: input.<list>, as: <name>, repeated: last_wins}`. The key sits on `each:`,
+the construct whose rule it relaxes. `last_wins` is the only value in this cut; another is refused
+on read, naming the value given and `last_wins`. The requester's `order: last_wins` was renamed,
+since `order` reads as a sort of the list.
+
+**Meaning.** The elements apply one after another in list order, each to the row as the elements
+before it left it, the order `affects:` entries already apply in and the interpreter already walks.
+An upsert repeat writes over what an earlier element wrote, so the last element's values stay; a
+move repeat takes the transition only from a state in its `from`, else it is skipped (the ess/27
+skip rule), so it does not override the earlier move; a delete repeat names no row and is skipped;
+`where:` inside `each:` selects the elements before order applies. With the key no `distinct:` is
+required; one declared beside it is still admitted.
+
+**One entry per entity.** List order holds inside one entry. Entries apply one after another, so
+where two `each:` entries of an outcome write one entity (the ess/27 shape, one entry per verdict),
+a row both name would be decided by the order of the entries, not of the list (adversary pass 1,
+`ess-conformance/tests/adversary_w089_u3_pass1.rs`). The key is then refused, fail closed, as
+`conflicting_declaration` at each such entry's `each.repeated`. An entry over the same entity
+without `each:` (a `where:` selection) is admitted beside it: its rows are not taken from the list.
+
+**Format.** Below `ess/35` the key is refused as `unsupported_format_version` naming `ess/35`, at
+`affects[i].each.repeated`, alone: the entry is not also refused for the `distinct:` the key
+stands in for. Without the key nothing moves: `ResolvedEach::repeated` is left out of the IR, so
+the entry keeps its bytes and digest (`ess-compiler/tests/each_repeated_ir.rs`).
+
+**Conformance.** The witness of an updating entry sends, in its second call, the held row's element
+twice: first with the values the row already holds, then with the values it reads back, then the
+new row's element. A target keeping the first element for a repeated identity leaves the old values
+and fails the read; a target applying the list in order passes. `{count: changed}` and per-row
+events do not reach an `each:` entry: both need `instances:`, which has no single subject, and
+`affects:` needs one.
+
+**Targets.** The interpreter is unchanged: it already applies each element to `work.next` as the
+earlier ones left it. Rust and Go keep owing the command, the obligation naming the key; Entity
+Runtime refuses the entry by name at `affects[i].each.repeated`, beside the `affects:` refusal.
+`ess verify diff` writes the key into the entry's `outcome-set-effect-changed` line and derives the
+relation from the lines: the clause gained and nothing else moved is `expanded`, lost `narrowed`.
 
 ## One event per changed row (ess/25, beyond10x/ess#531)
 

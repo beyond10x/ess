@@ -273,6 +273,32 @@ fn a_read_given_neither_the_search_nor_a_record_holding_it_draws_no_search_box()
 }
 
 #[test]
+fn a_search_a_client_filter_takes_draws_its_box_and_narrows_the_loaded_rows() {
+    let filtered = "      - name: list
+        component: collection
+        reads: {view: shelf.Items, paging: client, filter: row.title contains state.search}
+        columns: [title]";
+    run(
+        "search_filter",
+        &document(
+            "list_page",
+            "      search: {type: string, class: page_state, store: memory}",
+            filtered,
+        ),
+        r"
+  await settle();
+  const boxes = root.find((node) => node.tag === 'input' && node.props.type === 'search');
+  assert.equal(boxes.length, 1, `a client filter takes the search, so the box is drawn: ${root.text()}`);
+  assert.ok(/Alpha/.test(root.text()) && /Beta/.test(root.text()), `an empty search keeps every row: ${root.text()}`);
+  boxes[0].props.onChange({ target: { value: 'ALP' } });
+  await settle();
+  assert.ok(/Alpha/.test(root.text()), `the row holding the search stays: ${root.text()}`);
+  assert.ok(!/Beta/.test(root.text()), `the row without it is hidden: ${root.text()}`);
+",
+    );
+}
+
+#[test]
 fn a_tree_choice_sends_the_chosen_value() {
     let sections = "      - name: form
         component: form
@@ -492,6 +518,30 @@ fn a_script_link_primitive_renders_as_text_not_an_anchor() {
   assert.ok(!hrefs.some((href) => /script/i.test(href)), `no link is an anchor to a script: ${hrefs}`);
   assert.ok(anchors.some((a) => a.props.href === 'https://example.test/site' && textOf(a) === 'Good site'), `the http link is an anchor: ${hrefs}`);
   assert.ok(root.text().includes('Bad site'), `the refused link keeps its text: ${root.text()}`);
+",
+    );
+}
+
+/// A page header's help is drawn at its own path, `pages/<page>/header/help`, the node an
+/// `ess-ui-test/1` step opens and reads, holding its text.
+#[test]
+fn a_page_headers_help_is_drawn_at_its_own_path() {
+    let sections = "      - name: one
+        component: record
+        reads: {view: shelf.Items}
+        fields: [title]";
+    let yaml = document("detail_page", "      {}", sections).replace(
+        "    state:\n",
+        "    header: {help: {text: Items are kept for a year, link: 'https://example.test/help'}}\n    state:\n",
+    );
+    run(
+        "header_help_path",
+        &yaml,
+        r"
+  await settle();
+  const help = tagged('p').find((p) => p.props['data-ui-path'] === 'pages/shelf.items/header/help');
+  assert.ok(help, `the help is drawn at pages/shelf.items/header/help: ${tagged('p').map((p) => p.props['data-ui-path'])}`);
+  assert.ok(textOf(help).includes('Items are kept for a year'), `the help node holds its text: ${textOf(help)}`);
 ",
     );
 }

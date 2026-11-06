@@ -486,7 +486,7 @@ fn document(
             summary: component.naming.summary.clone(),
             description: description(ir, component, binding),
             version: ir.version().to_string(),
-            provenance: provenance.clone(),
+            provenance: provenance.stamp(),
             reached_by: (component.reached_by == Reach::Network)
                 .then(|| component.reached_by.as_str()),
         },
@@ -816,7 +816,9 @@ fn operation(
 ) -> Operation {
     let command = ir.command(handle);
     let domain = ir.domain(&command.domain);
-    let request = declared.and_then(|route| route.request).unwrap_or_default();
+    let request = declared
+        .and_then(|route| route.request.clone())
+        .unwrap_or_default();
     let carried = carried(declared);
     let mut parameters = path_parameters(&command.input, declared, |field| {
         format!(
@@ -869,7 +871,12 @@ fn operation(
             .collect(),
         consistency: None,
         parameters,
-        request_body: request_body(command, &carried, request),
+        request_body: request_body(
+            command,
+            &carried,
+            &request,
+            http::bare_body(command, declared),
+        ),
         // A route without a stage-2 key, and a derived one, keeps the stage-1 answers and bytes.
         responses: match declared {
             Some(route) if answered_by_binding(declared, refusals) => {
@@ -1142,12 +1149,35 @@ fn idempotency(ir: &EssIr, command: &ResolvedCommand) -> Option<Parameter> {
 /// A command with no input gets no body at all rather than an empty object: `{}` in a request would
 /// be a shape a client has to construct for no reason. Neither does one whose every input field a
 /// bound route `carried` in its path, and a field carried there is not in the body. A route encoded
-/// `query` has no body either, and one encoded `form` sends the same fields form-encoded.
+/// `query` has no body either, and one encoded `form` sends the same fields form-encoded. A route
+/// whose body is one input field (`bare`) sends that field's value as the whole body, its schema
+/// the field's own.
 fn request_body(
     command: &ResolvedCommand,
     carried: &BTreeSet<&str>,
-    request: ess_http::Request,
+    request: &ess_http::Request,
+    bare: Option<&ResolvedField>,
 ) -> Option<RequestBody> {
+    if let Some(field) = bare {
+        let mut content = BTreeMap::new();
+        content.insert(
+            MEDIA_TYPE.to_owned(),
+            MediaType {
+                schema: embedded(&types::field(field)),
+            },
+        );
+        return Some(RequestBody {
+            description: field.naming.summary.clone().unwrap_or_else(|| {
+                format!(
+                    "The input field `{}` of `{}`, bare: the whole body is its value, and the \
+                     path carries every other input field.",
+                    field.name, command.name
+                )
+            }),
+            required: http::body_required_without(command, carried),
+            content,
+        });
+    }
     if request.encoding == ess_http::Encoding::Query
         || command
             .input
@@ -2318,16 +2348,18 @@ fn command_schemas<'a>(
 ) {
     let carried = carried(route);
     let encoding = route
-        .and_then(|route| route.request)
-        .unwrap_or_default()
-        .encoding;
+        .and_then(|route| route.request.as_ref())
+        .map(|request| request.encoding)
+        .unwrap_or_default();
     let body: Vec<ResolvedField> = command
         .input
         .iter()
         .filter(|field| !carried.contains(field.name.as_str()))
         .cloned()
         .collect();
-    if !body.is_empty() && encoding != ess_http::Encoding::Query {
+    // A bare body is one field's own schema, which `field_leaves` below reaches; no object wraps it.
+    let bare = http::bare_body(command, route).is_some();
+    if !body.is_empty() && encoding != ess_http::Encoding::Query && !bare {
         out.insert(
             format!("{}.Input", command.name),
             embedded(&types::message(&Message {
@@ -3157,7 +3189,7 @@ struct Info {
     /// Design §10, as structured data rather than only as a comment: a comment is stripped by
     /// everything that round-trips YAML, and it is a tool that asks which model a document came from.
     #[serde(rename = "x-ess-provenance")]
-    provenance: Provenance,
+    provenance: crate::provenance::ArtifactStamp,
     /// Where the specification says this component's callers are.
     ///
     /// Present only where the specification said something — an absent keyword is the model's

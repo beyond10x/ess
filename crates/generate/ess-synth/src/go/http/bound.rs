@@ -10,7 +10,10 @@
 
 use std::fmt::Write as _;
 
-use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedComponent, ResolvedField, ResolvedView};
+use ess_compiler::ir::{
+    EssIr, ResolvedBody, ResolvedCommand, ResolvedComponent, ResolvedField, ResolvedTypeRef,
+    ResolvedView,
+};
 use ess_gen::ess_http::{
     self, AnswerSource, Body, Encoding, Header, Param, RedirectMode, RefusalBody, RefusalKey,
     ResponseEncoding,
@@ -150,11 +153,53 @@ func matched(template string, path string) ([]string, bool) {
 				return nil, false
 			}
 			values = append(values, given[index])
-		} else if segment != given[index] {
+		} else if segment != literalSpelling(given[index]) {
 			return nil, false
 		}
 	}
 	return values, true
+}
+
+// literalSpelling is text with each %XX escape of an unreserved character decoded (RFC 3986
+// §6.2.2.2), the spelling a segment is compared with a literal in: %7Earchived is ~archived.
+// Every other escape stays as written, and a variable's text is decoded where it is read.
+func literalSpelling(text string) string {
+	if !strings.Contains(text, "%") {
+		return text
+	}
+	var out strings.Builder
+	for index := 0; index < len(text); index++ {
+		if text[index] == '%' && index+2 < len(text) {
+			high, highOk := hexValue(text[index+1])
+			low, lowOk := hexValue(text[index+2])
+			if decoded := high*16 + low; highOk && lowOk && unreservedByte(decoded) {
+				out.WriteByte(decoded)
+				index += 2
+				continue
+			}
+		}
+		out.WriteByte(text[index])
+	}
+	return out.String()
+}
+
+// hexValue is the value of one hexadecimal digit.
+func hexValue(digit byte) (byte, bool) {
+	switch {
+	case '0' <= digit && digit <= '9':
+		return digit - '0', true
+	case 'a' <= digit && digit <= 'f':
+		return digit - 'a' + 10, true
+	case 'A' <= digit && digit <= 'F':
+		return digit - 'A' + 10, true
+	}
+	return 0, false
+}
+
+// unreservedByte is whether a byte is an RFC 3986 unreserved character.
+func unreservedByte(value byte) bool {
+	return 'a' <= value && value <= 'z' || 'A' <= value && value <= 'Z' ||
+		'0' <= value && value <= '9' || value == '-' || value == '.' || value == '_' || value == '~'
 }
 
 // flatValue is one flat text as the JSON value its field's decoder reads, or a refusal naming at
@@ -983,7 +1028,101 @@ func boundMethodNotAllowed(allowed []string) response {
 /// The imports [`BOUND`] needs beyond the ones the helpers file always has.
 pub(super) const IMPORTS: [&str; 5] = ["net/url", "sort", "strings", "unicode", "unicode/utf8"];
 
-/// The route match of a bound surface: every row of the table, in path order, tried in turn.
+/// The reader of a bare request body (`request: {body: input.<field>}`), which follows [`BOUND`]
+/// only in a surface whose binding declares one, so every other bound surface keeps its bytes.
+pub(super) const BARE_BODY: &str = r#"
+// bareBody reads a `json` body whose whole value is the one input field `wire`, as the input
+// object holding that field alone: read as jsonBody reads a body, the value kept as a member of
+// the body is. Where the body is not required, no body, or one of only whitespace, is the input {}.
+// members, where not nil, are the members the value's struct declares, the value itself or each
+// element of the list it is, and any other member is refused, as the Rust server's decoder does.
+func bareBody(body []byte, required bool, wire string, members []string) (any, error) {
+	if !utf8.Valid(body) {
+		return nil, fmt.Errorf("the body is not UTF-8")
+	}
+	if !required && len(bytes.TrimSpace(body)) == 0 {
+		return map[string]any{}, nil
+	}
+	value, err := parseJSON(string(body))
+	if err != nil {
+		return nil, fmt.Errorf("the body is not JSON: %s", err)
+	}
+	if members != nil {
+		if err := closedMembers(value, members); err != nil {
+			return nil, err
+		}
+	}
+	return map[string]any{wire: memberValue(value)}, nil
+}
+
+// closedMembers refuses an object holding a member none of members names: the value, or each
+// element of the list it is. A value of another shape is the decoder's to refuse.
+func closedMembers(value any, members []string) error {
+	objects, at := []jsonObject{}, []string{}
+	switch shaped := value.(type) {
+	case jsonObject:
+		objects, at = append(objects, shaped), append(at, "body")
+	case []any:
+		for index, item := range shaped {
+			if object, ok := item.(jsonObject); ok {
+				objects, at = append(objects, object), append(at, fmt.Sprintf("body[%d]", index))
+			}
+		}
+	}
+	for position, object := range objects {
+		for _, member := range object {
+			named := false
+			for _, name := range members {
+				named = named || name == member.name
+			}
+			if !named {
+				return DecodeError{At: nested(at[position], member.name), Expected: "no member: no field is named so", Found: describes(memberValue(member.value))}
+			}
+		}
+	}
+	return nil
+}
+"#;
+
+/// The members a bare body's value may hold, each written as Go source: the wire names of the
+/// fields of the struct the field is, or the list of which it is, where that struct refuses the
+/// fields it does not declare. `None` for any other field, whose value the decoder holds to its
+/// type alone. A struct nested deeper is held by the decoder, as in a body that is not bare.
+fn bare_members(ir: &EssIr, field: &ResolvedField) -> Option<Vec<String>> {
+    let handle = match &field.type_ref {
+        ResolvedTypeRef::Declared { name } => name,
+        ResolvedTypeRef::List { of } => match of.as_ref() {
+            ResolvedTypeRef::Declared { name } => name,
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let declared = ir.named_type(handle);
+    let ResolvedBody::Struct { fields, .. } = &declared.body else {
+        return None;
+    };
+    ir.undeclared_fields(&declared.name).is_refused().then(|| {
+        fields
+            .iter()
+            .map(|field| go_string(ess_gen::schema::wire_field_name(field)))
+            .collect()
+    })
+}
+
+/// Whether a route of `binding` takes one input field as its bare request body, which the surface
+/// reads with [`BARE_BODY`].
+pub(super) fn reads_a_bare_body(binding: &http::Binding) -> bool {
+    binding.ir().routes().iter().any(|route| {
+        route
+            .request
+            .as_ref()
+            .is_some_and(|request| request.body.is_some())
+    })
+}
+
+/// The route match of a bound surface: every row of the table, tried in turn in
+/// [`http::dispatch_order`], path order but for a literal segment taking precedence over a
+/// variable at the first position two templates of one method differ.
 ///
 /// Every row is matched against the path as the request line spells it (`spelledPath`), as the
 /// Rust server matches: a row the binding declares is a template whose variables are
@@ -1018,7 +1157,14 @@ pub(super) fn dispatch(
          spelledPath(request)\n\tallowed := []string{{}}\n"
     );
     let mut reads_body = false;
-    for (method, path, _, _) in rows {
+    let keys: Vec<(&str, &str)> = rows
+        .iter()
+        .map(|(method, path, _, _)| (*method, path.as_str()))
+        .collect();
+    for (method, path, _, _) in http::dispatch_order(&keys)
+        .into_iter()
+        .map(|index| &rows[index])
+    {
         let route = routes
             .iter()
             .find(|route| &route.path == path && route.method.as_str() == *method);
@@ -1253,7 +1399,20 @@ fn command(
     let method = layout.declared(&command.name);
     let request = http::request(route);
     let ignore = request.unknown == ess_http::Unknown::Ignore;
+    let bare = http::bare_body(command, route.declared);
     let read = match request.encoding {
+        Encoding::Json if bare.is_some() => format!(
+            "bareBody(body, {}, {}, {})",
+            http::body_required_without(command, &http::carried(ir, route)),
+            go_string(
+                bare.map(ess_gen::schema::wire_field_name)
+                    .unwrap_or_default()
+            ),
+            bare.and_then(|field| bare_members(ir, field)).map_or_else(
+                || "nil".to_owned(),
+                |members| format!("[]string{{{}}}", members.join(", "))
+            )
+        ),
         Encoding::Json => format!(
             "jsonBody(body, {}, []string{{{}}})",
             http::body_required_without(command, &http::carried(ir, route)),

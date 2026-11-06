@@ -62,8 +62,9 @@ pub const RESERVED: [&str; 2] = [OPENAPI, DOCS];
 pub const TEXT_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
 
 /// Whether a request for the concrete `path` would match a route whose template is `segments`: as
-/// many segments, each literal equal and each variable taking whatever is there. The overlap rule
-/// of `ESS-HTTP-011`, with one side a path rather than a template.
+/// many segments, each literal equal and each variable taking whatever is there. The rule by which
+/// two templates overlap (`docs/design/http-presentation-binding.md`, "Path templates"), with one
+/// side a path rather than a template.
 pub fn template_matches(segments: &[ess_http::Segment], path: &str) -> bool {
     let Some(rest) = path.strip_prefix('/') else {
         return false;
@@ -512,8 +513,8 @@ impl std::error::Error for Unprojectable {}
 /// Without a binding it is [`routes`], exactly. With one, an operation the binding names is served
 /// at the method and path it declares, and [`Route::declared`] holds the binding's route; every
 /// other operation keeps the route [`routes`] derives for it. Compiling the binding already checked
-/// that the declared and derived routes of each component do not collide (`ESS-HTTP-010`,
-/// `ESS-HTTP-011`).
+/// that the declared and derived routes of each component do not collide (`ESS-HTTP-010`); two
+/// that overlap are both kept here, and a server tries them in [`dispatch_order`].
 pub fn bound_routes<'a>(
     ir: &'a EssIr,
     component: &'a ResolvedComponent,
@@ -540,6 +541,76 @@ pub fn bound_routes<'a>(
             .then(left.method.cmp(&right.method))
     });
     out
+}
+
+/// The order a server tries the rows of its route table in: each row a `(method, path)`, the
+/// result their indices. Of two rows on one method whose templates are nested, one holding the
+/// literal at every position they differ, that one comes first: it is the more specific
+/// (`story:a-literal-path-segment-takes-precedence-over-a-variable-one`,
+/// `docs/design/http-presentation-binding.md`, "Path templates"). Every other pair keeps the order
+/// it has in `rows`, crossed templates among them, which a compiled binding never holds
+/// (`ESS-HTTP-011`). So a table in which no two templates overlap, the table of every surface
+/// without a binding among them, is tried in its own order.
+///
+/// The order is computed segment by segment and never read off the template text, in which `{`
+/// sorts before `~`, a path character.
+pub fn dispatch_order(rows: &[(&str, &str)]) -> Vec<usize> {
+    let templates: Vec<Vec<&str>> = rows
+        .iter()
+        .map(|(_, path)| {
+            let rest = path.strip_prefix('/').unwrap_or(path);
+            if rest.is_empty() {
+                Vec::new()
+            } else {
+                rest.split('/').collect()
+            }
+        })
+        .collect();
+    // `waiting[j]`: the rows that take precedence over row `j` and are not placed yet.
+    let mut waiting = vec![0_usize; rows.len()];
+    let mut before: Vec<Vec<usize>> = vec![Vec::new(); rows.len()];
+    for (first, (method, _)) in rows.iter().enumerate() {
+        for (second, (other, _)) in rows.iter().enumerate() {
+            if first != second && method == other && precedes(&templates[first], &templates[second])
+            {
+                before[first].push(second);
+                waiting[second] += 1;
+            }
+        }
+    }
+    let mut placed = vec![false; rows.len()];
+    let mut order = Vec::with_capacity(rows.len());
+    while order.len() < rows.len() {
+        // Specificity is a strict order on templates, so some row always waits on none.
+        let Some(next) = (0..rows.len()).find(|&row| !placed[row] && waiting[row] == 0) else {
+            unreachable!("literal precedence orders templates without a cycle");
+        };
+        placed[next] = true;
+        order.push(next);
+        for &later in &before[next] {
+            waiting[later] -= 1;
+        }
+    }
+    order
+}
+
+/// Whether a request path can match both templates and `left` is the more specific: it holds the
+/// literal at every position they differ, and at one at least.
+fn precedes(left: &[&str], right: &[&str]) -> bool {
+    let variable = |segment: &str| segment.starts_with('{') && segment.ends_with('}');
+    if left.len() != right.len() {
+        return false;
+    }
+    let mut narrower = false;
+    for (one, other) in left.iter().zip(right) {
+        match (variable(one), variable(other)) {
+            (false, false) if one != other => return false,
+            (true, false) => return false,
+            (false, true) => narrower = true,
+            _ => {}
+        }
+    }
+    narrower
 }
 
 /// The routes ESS derives for every component of `ir` without a binding, as `ess-http` reads them:
@@ -804,8 +875,19 @@ pub fn carried<'a>(ir: &'a EssIr, route: &Route<'a>) -> std::collections::BTreeS
 pub fn request(route: &Route<'_>) -> ess_http::Request {
     route
         .declared
-        .and_then(|declared| declared.request)
+        .and_then(|declared| declared.request.clone())
         .unwrap_or_default()
+}
+
+/// The input field of `command` a bound route takes as its whole request body, bare
+/// (`request: {body: input.<field>}`), its JSON value the body; every other input field is carried
+/// by the path. `None` for a route whose body is the input object, and for a derived route.
+pub fn bare_body<'a>(
+    command: &'a ess_compiler::ir::ResolvedCommand,
+    declared: Option<&ess_http::Route>,
+) -> Option<&'a ess_compiler::ir::ResolvedField> {
+    let name = declared?.request.as_ref()?.body_field()?;
+    command.input.iter().find(|field| field.name == name)
 }
 
 /// The answer a bound route declares for `outcome`: the one it lists under `outcomes`, else its

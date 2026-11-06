@@ -123,7 +123,7 @@ impl Toy {
     }
 }
 
-/// The source digest of the model at `model`, as the schemas generated under `out` carry it.
+/// The source digest of the model at `model`, as the generation into `out` records it.
 fn digest_of(out: &Path, model: &Path) -> String {
     let generated = ess(&[
         "generate",
@@ -135,18 +135,19 @@ fn digest_of(out: &Path, model: &Path) -> String {
         utf8(out),
     ]);
     assert!(generated.status.success(), "{}", text(&generated.stderr));
-    for text in files(out).into_values() {
-        let Ok(schema) = serde_json::from_slice::<serde_json::Value>(&text) else {
-            continue;
-        };
-        if let Some(digest) = schema["x-ess-provenance"]["source_digest"].as_str() {
-            return digest.trim_start_matches("sha256:").to_owned();
-        }
-    }
-    panic!(
-        "no generated schema of {} carries a source digest",
-        model.display()
-    )
+    // A generated file stamps only its own slice's digest; the run records the model's.
+    let state: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join(".ess-output/state.json")).unwrap())
+            .unwrap();
+    state["payload"]["checkpoint"]["ledger"]["owners"][0]["model"]
+        .as_str()
+        .unwrap_or_else(|| {
+            panic!(
+                "the generation of {} recorded no model digest: {state}",
+                model.display()
+            )
+        })
+        .to_owned()
 }
 
 /// `ess generate ui --target <target>` of `document` into `dir/<target>`, with `--http` when

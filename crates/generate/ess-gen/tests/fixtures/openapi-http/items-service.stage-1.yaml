@@ -1,5 +1,4 @@
 # generated from catalog v1
-# model digest SOURCE_DIGEST
 # contract digest CONTRACT_DIGEST
 # do not edit: regenerate with `ess generate`
 openapi: 3.1.0
@@ -17,7 +16,6 @@ info:
   x-ess-provenance:
     system: catalog
     specification_version: v1
-    source_digest: SOURCE_DIGEST
     contract_digest: CONTRACT_DIGEST
   x-ess-reached-by: network
 tags:

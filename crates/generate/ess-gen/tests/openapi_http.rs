@@ -39,10 +39,10 @@ const TASKS: &str = include_str!("../../../specify/ess-http/tests/fixtures/tasks
 /// error (`tests/alike_and_text.rs` of `ess-http`).
 const NOTES: &str = include_str!("../../../specify/ess-http/tests/fixtures/notes.yaml");
 
-/// The items service's document as 0.60.0 generated it from [`ON_ONE_PATH`], its provenance
-/// digests written `SOURCE_DIGEST` and `CONTRACT_DIGEST`: the digests are of the compiled
-/// specification, which another ESS release may spell differently, while every other byte is the
-/// projection's own.
+/// The items service's document as 0.60.0 generated it from [`ON_ONE_PATH`], less the whole-model
+/// digest a generated file no longer stamps, its contract digest written `CONTRACT_DIGEST`: the
+/// digest is of the compiled specification, which another ESS release may spell differently,
+/// while every other byte is the projection's own.
 const STAGE_1_DOCUMENT: &str = include_str!("fixtures/openapi-http/items-service.stage-1.yaml");
 
 fn model() -> EssIr {
@@ -290,12 +290,10 @@ fn a_binding_with_an_open_route_is_refused_naming_the_operation() {
 fn without_digests(text: &str) -> String {
     let document = as_json(text);
     let provenance = &document["info"]["x-ess-provenance"];
-    let source = provenance["source_digest"].as_str().expect("source digest");
     let contract = provenance["contract_digest"]
         .as_str()
         .expect("contract digest");
-    text.replace(source, "SOURCE_DIGEST")
-        .replace(contract, "CONTRACT_DIGEST")
+    text.replace(contract, "CONTRACT_DIGEST")
 }
 
 #[test]
@@ -303,7 +301,7 @@ fn a_stage_1_binding_keeps_its_openapi_bytes() {
     let ir = model();
     let artifacts = run(&BoundOpenApi(binding(&ir, ON_ONE_PATH)), &ir).expect("generates");
     let text = without_digests(&artifacts["openapi/items-service.yaml"].contents);
-    assert!(text.contains("SOURCE_DIGEST") && text.contains("CONTRACT_DIGEST"));
+    assert!(text.contains("CONTRACT_DIGEST"));
     assert_eq!(
         text, STAGE_1_DOCUMENT,
         "a binding with no stage-2 key changed the OpenAPI bytes 0.60.0 wrote"
@@ -1119,4 +1117,51 @@ fn route_refusals_empty_bodies_and_arrays_project() {
     let document = bound_document(&ir, binding(&ir, &plain), "orders-service");
     let placed = &document["paths"]["/api/orders"]["post"]["responses"];
     assert!(!any_key(placed, "x-ess-outcomes"), "{placed:#}");
+}
+
+/// A board whose card priorities are one bare list body beside the board in the path
+/// (`story:a-command-route-takes-one-input-as-its-bare-request-body`, beyond10x/ess#748).
+const BOARD: &str = include_str!("../../../specify/ess-http/tests/fixtures/board.yaml");
+
+/// `SetCardPriorities` on `put /boards/{board_id}/cards/priority`, its list input the whole body.
+const BARE_PRIORITIES: &str = "routes:
+  - command: catalog.board.SetCardPriorities
+    method: put
+    path: /boards/{board_id}/cards/priority
+    parameters: {board_id: input.board_id}
+    request: {encoding: json, body: input.priorities}
+";
+
+#[test]
+fn a_bare_list_body_is_an_array_request_schema() {
+    let ir = model_of("board.yaml", BOARD);
+    let document = bound_document(&ir, binding(&ir, BARE_PRIORITIES), "board-service");
+    let put = &document["paths"]["/boards/{board_id}/cards/priority"]["put"];
+    let body = &put["requestBody"];
+    assert_eq!(keys(&body["content"]), ["application/json"], "{body}");
+    assert_eq!(body["required"], true, "{body}");
+    assert_eq!(
+        body["content"]["application/json"]["schema"],
+        json!({"type": "array", "items": {"$ref": "#/components/schemas/catalog.board.CardPriority"}}),
+        "{body}"
+    );
+    let description = body["description"].as_str().expect("a description");
+    assert!(description.contains("`priorities`"), "{description}");
+    // No object wraps the list, and the item type it names is published.
+    let schemas = &document["components"]["schemas"];
+    assert!(
+        schemas
+            .get("catalog.board.SetCardPriorities.Input")
+            .is_none(),
+        "{schemas:#}"
+    );
+    assert_eq!(
+        keys(&schemas["catalog.board.CardPriority"]["properties"]),
+        ["id", "priority"]
+    );
+    // The board is the one path parameter.
+    let parameters = put["parameters"].as_array().expect("parameters");
+    assert_eq!(parameters.len(), 1, "{parameters:?}");
+    assert_eq!(parameters[0]["name"], "board_id");
+    assert_eq!(parameters[0]["in"], "path");
 }

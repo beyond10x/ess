@@ -143,11 +143,11 @@ fn payload(root: &Path) -> serde_json::Value {
         .clone()
 }
 
-/// A settled `ess-output-state/3` checkpoint records neither the root nor its directory identity
+/// A settled `ess-output-state/4` checkpoint records neither the root nor its directory identity
 /// (beyond10x/ess#484), so no checkout commits another one's location.
 fn unbound(root: &Path) -> bool {
     let payload = payload(root);
-    payload["format"] == "ess-output-state/3"
+    payload["format"] == "ess-output-state/4"
         && payload.get("root").is_none()
         && payload.get("directory").is_none()
 }

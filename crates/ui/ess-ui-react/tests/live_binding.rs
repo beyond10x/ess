@@ -135,17 +135,28 @@ fn fnv(text: &str) -> u64 {
 /// story:a-journey-step-reaches-every-control-a-page-declares: a form sends a toggle never touched
 /// as `false` when its draft declares no default. The whole-project digest re-pinned for
 /// story:a-collection-draws-the-controls-it-declares: the collection runtime and its stylesheet draw
-/// the declared sort, expand, reorder, selection and column controls.
+/// the declared sort, expand, reorder, selection and column controls. The whole-project digest
+/// re-pinned for a client filter's `contains` (`expr.ts`). The whole-project digest re-pinned: the
+/// page header's help is drawn at its own path (`core.tsx`, `<header>/help`). `actions.tsx`,
+/// `data.ts` and the whole-project digest re-pinned for a file export: the data adapter's
+/// `download` hands over the server's answer, which the export saves as it came. The whole-project
+/// digest re-pinned for a tags input's `suggests` (`fields.tsx`, `styles.css`). The whole-project
+/// digest re-pinned again when those changes, made on 0.87.0, were merged onto 0.88.0's collection
+/// controls: the header help, `contains`, tags `suggests` and the file export together.
+/// `actions.tsx` and the whole-project digest re-pinned when a toggle's state was read as the
+/// terminal reads it (`holds` in `expr.ts`, so a `contains` state is a search), a `contains`
+/// search was split on the whitespace Rust splits on, and a tags input applied its suggestions
+/// read's client filter (`fields.tsx`).
 const PLAIN: [(&str, u64); 7] = [
     ("README.md", 0xdae6_c3b6_7e5c_2d28),
     ("src/main.tsx", 0x6fd5_ef21_0230_ebac),
-    ("src/runtime/actions.tsx", 0x129b_902b_3cbf_eed1),
+    ("src/runtime/actions.tsx", 0x5412_72cd_e713_733a),
     ("src/runtime/composites/confirm.tsx", 0xbeef_774c_44b0_0be3),
     ("src/runtime/composites/form.tsx", 0xa0b0_e430_a6e8_4b79),
-    ("src/runtime/data.ts", 0x036a_4d67_6dc4_1ac6),
+    ("src/runtime/data.ts", 0x400e_ae09_0d5f_e141),
     ("www/index.html", 0x5972_6d4a_5ee2_5ce2),
 ];
-const PLAIN_PROJECT: u64 = 0x4fa9_3922_39cb_d52d;
+const PLAIN_PROJECT: u64 = 0xada5_bdf3_03cd_4d08;
 
 #[test]
 fn without_a_model_the_project_is_byte_identical() {

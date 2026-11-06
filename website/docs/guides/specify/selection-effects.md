@@ -211,8 +211,9 @@ commands:
 
 `each: {in: input.<list>, as: <name>}` reads a `List` of a struct from the input.
 `instance: <name>.<member>` names a member holding the entity's identity type, and a `sets:` source
-may read `<name>.<member>` at the field's own type, beside the sources every entry takes. The list
-must be held free of repeated identities by a declared `distinct:` over that member: a refusal
+may read `<name>.<member>` at the field's own type, beside the sources every entry takes. Unless
+the entry declares `repeated: last_wins` (below), the list must be held free of repeated
+identities by a declared `distinct:` over that member: a refusal
 whose plain `when:` is `{not: {distinct: {in: <list>, as: x, by: x.<member>}}}`, as above, or the
 `distinct:` in the branch's own `when:`. A refusal that also reads the stored record
 (`when_subject:`) does not count, since it refuses only where that guard holds. Without it two
@@ -226,6 +227,22 @@ none of the records. `each:` beside `where:` is refused, and below `ess/27` so i
 `moves:` or `deletes:` (next section); so is an entry
 on a branch without a subject: `affects:` sits beside a branch that moves or updates one named
 record. Below `ess/23` `each:` is refused, naming `ess/23`.
+
+From `format: ess/35` (beyond10x/ess#748) a service that accepts a list naming one record twice,
+and applies the list in order, says so on the entry instead of declaring `distinct:`:
+`each: {in: input.applied, as: doc, repeated: last_wins}`. The elements then apply one after
+another in list order, each to the record as the elements before it left it. An updating entry's
+repeat writes over what an earlier element wrote, so the last element's values stay; a moving
+entry's repeat takes the transition only from a state in its `from`, and is skipped otherwise; a
+removing entry's repeat names no record and is skipped; `where:` inside `each:` selects the
+elements first. `last_wins` is the only value. List order holds inside one entry, so the key is
+refused as `conflicting_declaration` where another `each:` entry of the branch writes the same
+entity: write those records through one entry. Below `ess/35` the key is
+refused as `unsupported_format_version` naming `ess/35`, and an entry without it keeps the
+`distinct:` requirement. The suite then sends the record's element twice, the stale values first,
+and reads back the last element's values. Generated Rust and Go keep the command an obligation
+naming the key, and `ess verify diff` reports declaring it as a widening and dropping it as a
+narrowing.
 
 The suite sends the command once to put a record in place and a decoy beside it, gives the record
 a field the entry does not write where another command can, sends the command with an empty list,

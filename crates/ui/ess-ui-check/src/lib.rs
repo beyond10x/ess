@@ -155,6 +155,7 @@ pub const CHECKS: &[Check] = &[
     schema_check("pager_outside_collection", Severity::Error),
     schema_check("account_menu_keys", Severity::Error),
     schema_check("checked_needs_toggle", Severity::Error),
+    schema_check("suggests_needs_tags", Severity::Error),
     schema_check("toggle_state_unknown", Severity::Warning),
     schema_check("checked_unreadable", Severity::Warning),
     // The loader refused the document for a reason no other check names.

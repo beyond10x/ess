@@ -1459,6 +1459,7 @@ Columns and form inputs are fields. `as` is a semantic widget, not a component; 
 | `binds` | `expr` |   |   | bind to UI state instead of the command input |
 | `label_from` | record \{ `view`: name of an ESS `view`, `field`: `name`, `key`: optional `name` \} |   |   | show a field of a related view instead of the value: the row of `view` whose `key` (default `id`) equals the value; the view is read once, without params |
 | `labels` | one of: map of `string` → `string` \| `name` |   |   | the text shown for a value: a map written out, or the name of an entry of `label_maps` |
+| `suggests` | record \{ `reads`: [Reads](#reads), `value`: optional `name` \} |   |   | the values an `as: tags` input suggests, one per row of `reads`: its `value` field (default `name`), or the row itself when it is a plain string; a value the input holds is not suggested, and a typed value is kept whether or not a row holds it, so no create command is needed. Only on an `as: tags` field |
 | `note` | `string` |   |   | author remark |
 | `help` | record \{ `text`: optional `string`, `link`: optional `string` \} |   |   | help text or link shown with the input; on a column, with its header |
 
@@ -1482,6 +1483,7 @@ choice: {component: choice, options: PartnerTier}
 | Check | Subject | Rule | Severity |
 |---|---|---|---|
 | `label_map_refs` | `**.labels naming a label map` | `{must_resolve: {ref: label_map}}` | error |
+| `suggests_needs_tags` | `**.suggests` | `{must: sit_on_an_as_tags_field}` | error |
 
 ### Tab
 
@@ -1952,7 +1954,7 @@ Every piece of data on screen comes from an ESS view. Params bind page state; `p
 | `fixture` | `string` |   |   | fixture file answering the placeholder: in `fixtures.dir` when the document declares one (a path that starts with that directory names the same file), else relative to the document |
 | `key` | `name` |   |   | the field that identifies a row: rows, row paths and row actions are keyed by it, and `live.match` defaults to it; absent, the section's `live.match`, else `id` |
 | `params` | map of `name` → `expr` |   |   | view params bound to state |
-| `filter` | `expr` |   |   | Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging. |
+| `filter` | `expr` |   |   | Client row predicate after live effects and before local paging; never sent to the server, never authorization. Only listing reads and choices, with client or none paging. `<a> contains <b>` keeps a row whose `<a>`, read as text, holds every whitespace-separated word of `<b>` in any case, and every row while `<b>` has none; a filter bar search bound to `<b>` is then drawn. |
 | `paging` | one of: `server` \| `client` \| `cursor` \| `append` \| `none` |   | `none` | who pages |
 | `pager` | record \{ `page`: `name`, `size`: optional `name`, `sizes`: optional list of `integer` \} |   |   | the params of this read that carry the page and the page size, and the sizes offered; only on a collection's `reads`, with `paging: server`; sizes default: `[25, 50, 100]` |
 | `debounce` | `duration` |   |   | coalesce param changes before reading |
@@ -2019,7 +2021,7 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `bind` | map of `name` → `expr` |   |   | command input from row, selection or state |
 | `opens` | name of an [overlay](#overlay) |   |   | overlay to open |
 | `navigate` | record \{ `to`: name of a [Page](#page), `params`: optional map of `name` → `expr` \} |   |   | page to go to |
-| `export` | record \{ `reads`: name of an ESS `view`, `as`: (one of: `csv` \| `json` \| `zip` \| `png`), `params`: optional (one of: map of `name` → `expr` \| `expr`) \} |   |   | download a view; `params` is each param written out, or one expression such as `same_as(<section>)`; on one of a collection's `bulk_actions` a param may read `selection.<field>` |
+| `export` | record \{ `reads`: name of an ESS `view`, `as`: (one of: `csv` \| `json` \| `zip` \| `png`), `params`: optional (one of: map of `name` → `expr` \| `expr`) \} |   |   | download a view: a file the server answers (a zip, an image, a CSV it writes) is saved as it came where the data adapter offers `download`, and an answer in JSON, or an adapter without it, is written from the read rows; `params` is each param written out, or one expression such as `same_as(<section>)`; on one of a collection's `bulk_actions` a param may read `selection.<field>` |
 | `upload` | record \{ `accept`: list of `string`, `does`: name of an ESS `command` \} |   |   | file picker feeding a command |
 | `copy` | `expr` |   |   | value copied to the clipboard |
 | `sets` | map of `expr` → (one of: `expr` \| exactly `toggle`) |   |   | UI state change only, never business data |
@@ -2027,7 +2029,7 @@ One user-triggered effect: run a command (`does`), open an overlay, navigate, ex
 | `as` | one of: `button` \| `icon` \| `toggle` \| `choice` \| `menu_item` \| `link` |   | `button` | presentation hint |
 | `choice` | [Node](#node) |   |   | options for as choice |
 | `loads` | [Reads](#reads) |   |   | a view the action declares it reads, checked against the model and given fixture rows; no renderer reads its rows for the action's value, so it sets no toggle's state |
-| `checked` | `expr` |   |   | the state an `as: toggle` action shows, on when truthy; only on a toggle; the terminal reads it in the filter grammar (`checked_unreadable` warns on one outside it). Absent, a toggle with `does` shows the `<expr>` of its one `bind` entry written `not <expr>` (every path in `<expr>` from row, params, state, shell or args), and a toggle with `sets` the key it sets; a row field named like the action is never read |
+| `checked` | `expr` |   |   | the state an `as: toggle` action shows, on when truthy; only on a toggle; the terminal and the React runtime read it in the filter grammar, so it may use `contains` (`checked_unreadable` warns on one outside it). Absent, a toggle with `does` shows the `<expr>` of its one `bind` entry written `not <expr>` (every path in `<expr>` from row, params, state, shell or args), and a toggle with `sets` the key it sets; a row field named like the action is never read |
 | `confirm` | one of: name of an [overlay](#overlay) \| record \{ `title`: `string`, `show`: optional `expr`, `confirm_label`: optional `string` \} |   |   | confirm first; confirming runs this action, whether or not the confirm declares `does` |
 | `optimistic` | `boolean` |   | `false` | apply the expected outcome at once and revert on refusal; requires: `{does.outcome: unique_for_input}` |
 | `bulk` | `boolean` |   | `false` | applies to the collection's selection |
@@ -2740,6 +2742,7 @@ What a validator checks in a document, and the construct each check applies to. 
 | `pager_outside_collection` | [Reads](#reads) | `reads.pager` | `{must: belong_to_a_collection_reads}` | error |
 | `account_menu_keys` | every node | `shells.*.regions.*.props.actions[] of an account_menu` | `{must_be_in: [name, label, opens, does, sets, navigate]}` | error |
 | `checked_needs_toggle` | [Action](#action) | `**.checked` | `{must: sit_on_an_as_toggle_action}` | error |
+| `suggests_needs_tags` | [Field](#field) | `**.suggests` | `{must: sit_on_an_as_tags_field}` | error |
 | `toggle_state_unknown` | [Action](#action) | `**.checked absent on an as toggle action with does` | `{must: [write_checked, or_bind_exactly_one_input_as_not_expr]}` | warning |
 | `checked_unreadable` | [Action](#action) | `**.checked on an as toggle action` | `{must: [parse_as_a_filter_predicate, read_only_row_params_state_shell_args]}` | warning |
 

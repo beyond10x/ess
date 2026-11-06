@@ -189,11 +189,37 @@ pub fn matched(template: &str, path: &str) -> Option<Vec<String>> {
                 return None;
             }
             values.push(text.to_owned());
-        } else if *expected != text {
+        } else if *expected != literal_spelling(text) {
             return None;
         }
     }
     Some(values)
+}
+
+/// `text` with each `%XX` escape of an unreserved character decoded (RFC 3986 §6.2.2.2), the
+/// spelling a segment is compared with a literal in: `%7Earchived` is `~archived`. Every other
+/// escape stays as written, and a variable's text is decoded where it is read.
+fn literal_spelling(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let digit = |at: usize| bytes.get(at).and_then(|byte| char::from(*byte).to_digit(16));
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let escaped = match (bytes[index], digit(index + 1), digit(index + 2)) {
+            (b'%', Some(high), Some(low)) => u8::try_from(high * 16 + low)
+                .ok()
+                .filter(|byte| byte.is_ascii_alphanumeric() || b"-._~".contains(byte)),
+            _ => None,
+        };
+        if let Some(byte) = escaped {
+            out.push(byte);
+            index += 3;
+        } else {
+            out.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(out).unwrap_or_else(|_| text.to_owned())
 }
 
 /// `text` with every `%XX` escape decoded; `None` where an escape is not two hexadecimal digits or
@@ -600,7 +626,9 @@ pub fn single(rows: &str, empty: u16) -> Response {
 }
 "#;
 
-/// The route match of a bound surface: every row of the table, in path order, tried in turn.
+/// The route match of a bound surface: every row of the table, tried in turn in
+/// [`http::dispatch_order`], path order but for a literal segment taking precedence over a
+/// variable at the first position two templates of one method differ.
 ///
 /// A row the binding declares is a template ([`http::Route::declared`]); a derived row and the two
 /// documents are exact paths. A path some row matches under the request's method is answered by
@@ -626,7 +654,15 @@ pub(super) fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Ro
     }
     super::dispatch_entries(out, server, routes);
     out.push_str("{\n    let mut allowed: Vec<&str> = Vec::new();\n");
-    for (method, path, _, _) in table(routes, ir) {
+    let rows = table(routes, ir);
+    let keys: Vec<(&str, &str)> = rows
+        .iter()
+        .map(|(method, path, _, _)| (*method, path.as_str()))
+        .collect();
+    for (method, path, _, _) in http::dispatch_order(&keys)
+        .into_iter()
+        .map(|index| rows[index].clone())
+    {
         let route = routes
             .iter()
             .find(|route| route.path == path && route.method.as_str() == method);
@@ -843,7 +879,26 @@ fn command(
     let request = http::request(route);
     let variables = !http::path_fields(ir, route).is_empty();
     let ignore = request.unknown == ess_http::Unknown::Ignore;
+    let bare = http::bare_body(command, route.declared);
     let read = match request.encoding {
+        // One input field's value is the whole body: read as the object holding that field alone,
+        // or, where the body is not required, no body as the input `{}`.
+        Encoding::Json if bare.is_some() => {
+            let wire = bare.map(ess_gen::schema::wire_field_name).unwrap_or_default();
+            let held = format!(
+                "json::Value::Object(vec![({wire:?}.to_owned(), http::json_body(&request.body, \
+                 true)?)])"
+            );
+            if http::body_required_without(command, &http::carried(ir, route)) {
+                held
+            } else {
+                format!(
+                    "if http::body_text(&request.body)?.trim().is_empty() {{\n            \
+                     json::Value::Object(Vec::new())\n        }} else {{\n            {held}\n        \
+                     }}"
+                )
+            }
+        }
         Encoding::Json => format!(
             "http::json_body(&request.body, {})?",
             http::body_required_without(command, &http::carried(ir, route))

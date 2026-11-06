@@ -74,11 +74,12 @@ field the section's `live.match` names, else `id`. A node inside a row is addres
 | `pages/partners.list/sections/list/rows/pt-003` | the row whose key is `pt-003` |
 | `pages/partners.list/sections/list/rows/pt-003/row_actions/delete` | that row's `delete` action |
 | `pages/partners.list/header/actions/create` | a header action |
+| `pages/partners.list/header/help` | the page header's help (only when the header declares `help`) |
 | `pages/invoices.list/sections/list/rows/in-03/row_actions/remind/confirm/overlay` | the inline confirm `remind` opened on row `in-03` |
 | `pages/partners.list/overlays/create/fields/name` | a form field in an overlay |
 
 An inline confirm (`confirm: {title: …}`) is the overlay at its action's path and
-`confirm/overlay`; a row action's is addressed under the row that opened it. Confirming runs
+`confirm/overlay`; a row action's, and a graph editor's node or edge action's, is addressed under the row that opened it (`<editor>/rows/<key>/node_actions/<action>/confirm/overlay`). Confirming runs
 the action that opened the confirm, inline or `confirm: <overlay>`, whether or not the confirm
 declares `does`.
 
@@ -152,7 +153,10 @@ section whose body is a form it submits the form. On a collection's column
 (`…/columns/<name>`) it sorts by that column as a click on its header does: ascending, or
 descending when the collection is already sorted by it ascending; the column is `sortable`. A
 form that saves on change (`save: on_change`) sends its command on every change a step makes,
-without `act`.
+without `act`. At a page header's help (`pages/<page>/header/help`) it opens the help: the
+terminal and the generated app draw it open, so the step only checks that no overlay covers it,
+and an app that draws the help closed (a disclosure beside the title) opens it there. `expect`
+reads the help's text at the same path.
 
 ```yaml
 - act: pages/partners.list/sections/list/rows/pt-003/row_actions/delete
@@ -195,10 +199,11 @@ Checks a node. Every key given must hold.
 
 | Key | Holds when |
 |---|---|
-| `text` | the node shows the text on its own cells: a page the screen, a section its box, an overlay its pane, a row its line, a row's column its cell, a column its header, a row's or the header's action its label, a section's child its own place |
+| `text` | the node shows the text on its own cells: a page the screen, a section its box, an overlay its pane, a row its line, a row's column its cell, a column its header, a row's or the header's action its label, the header's help its line, a section's child its own place |
 | `not_text` | the node does not show the text |
 | `rows` | a count: the collection shows that many rows; a list: it shows the rows with these keys, in this order |
 | `state` | the section is `loading`, `empty`, `stale`, `failed`, `ready` or `not_loaded` |
+| `checked` | `true` or `false`: the form field `as: toggle` at `at` (`…/fields/<f>`, in a group `…/groups/<g>/fields/<f>`, in a tab `…/tabs/<t>/fields/<f>`) of a section's or an overlay's own form is on or off. The terminal reads the toggle it draws on the field's line (`[x]`, `[ ]`, or empty before it has a value, read as off); the browser reads the field's checkbox. At any other node the step is refused in both renderers |
 
 `text` never reads a wider area than the node's own. A node the terminal does not draw on cells of
 its own — a field inside an overlay, a node inside a row's `item` — fails the step naming its
@@ -344,7 +349,7 @@ Every step goes through what a reader of the terminal has: key presses and the d
 | `expect` | the cells the renderer drew the node on: the screen, the section's box, the overlay, the row's line, the cell |
 
 The terminal renderer records where each frame drew each node, by path (`ess_ui_tui::App::regions`):
-the page header and its actions, section boxes and their children, the open overlay, and for a
+the page header, its actions and its help, section boxes and their children, the open overlay, and for a
 section's or an overlay's collection a table's column headers, each row line keyed by the row's
 key, each cell (not for cards, a list or a tree with an `item`), and each row action a row offers.
 A region also carries the node's whole text where the screen cuts it (`Region::text`).
@@ -363,12 +368,13 @@ refuses:
 | any step at a column cell of a cards, list or tree collection with an `item` | the generated app renders the item there, not the cells |
 | any step at a column header of a collection that is not a table | the generated app draws no header for it |
 | any step inside the rows of a references list | the generated app does not address its rows |
-| any step at a row action's inline confirm not under a row | the generated app draws it under the row that opened it |
+| any step at a row action's, or a graph editor's node or edge action's, inline confirm not under a row | the generated app draws it under the row that opened it |
 | any step at a collection that is not a section's or an overlay's own body, or at its rows | the terminal draws it inside its section without addressing it or its rows |
 | any step at a tab's nested node (`tabs/<t>/form` that is a node) or inside it | the terminal draws it below the tab's fields but moves no focus into it |
 | `text` or `not_text` at a node the terminal does not draw on cells of its own | its text cannot be told from its neighbours' |
 | `text` or `not_text` at an icon action, or an action drawn as a choice | the browser shows no label there |
 | `choose` at a field `as: choice` without a `choice` node | it offers no options in either renderer |
+| `checked` at a node that is not a form toggle of a section's or an overlay's own form | neither renderer holds a toggle's state there |
 | `advance` or `play` past the end of the clock | the move does not fit |
 | `advance` or `play` over more than `MAX_CYCLES_PER_ADVANCE` cycles of a looping script | every cycle's events are delivered one by one |
 

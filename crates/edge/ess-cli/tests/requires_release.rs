@@ -286,7 +286,7 @@ fn generated_output_records_its_producer_and_a_changing_regeneration_by_another_
     assert_eq!(first.status.code(), Some(0), "{}", stderr(&first));
     assert!(first.stderr.is_empty(), "{}", stderr(&first));
     let payload = state(&out)["payload"].clone();
-    assert_eq!(payload["format"], "ess-output-state/3");
+    assert_eq!(payload["format"], "ess-output-state/4");
     assert_eq!(payload["producer"], format!("ess {THIS}"));
 
     // The same release regenerating a change says nothing.
@@ -326,13 +326,20 @@ fn a_version_one_checkpoint_is_read_and_its_first_changing_publication_records_t
         payload.as_object_mut().unwrap().remove("producer");
         payload["root"] = root;
         payload["directory"] = directory;
+        // No release before `ess-output-state/4` recorded an owner's model digest.
+        for owner in payload["checkpoint"]["ledger"]["owners"]
+            .as_array_mut()
+            .unwrap()
+        {
+            owner.as_object_mut().unwrap().remove("model");
+        }
     });
     edit_summary(&fixture, "An edit.");
     let output = fixture.ess(GENERATE);
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     assert!(output.stderr.is_empty(), "{}", stderr(&output));
     let payload = state(&out)["payload"].clone();
-    assert_eq!(payload["format"], "ess-output-state/3");
+    assert_eq!(payload["format"], "ess-output-state/4");
     assert_eq!(payload["producer"], format!("ess {THIS}"));
     assert!(payload.get("root").is_none(), "{payload}");
 }

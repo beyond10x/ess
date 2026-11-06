@@ -938,19 +938,20 @@ fn digest(result: Result<Synthesis, SynthesisFailure>) -> String {
 /// the Go `server/wire.go` reads a `Timestamp` as the Rust decoder does (`timestampAt`). The Rust
 /// and Go rows were re-recorded for 0.87.0, the web rows unchanged: the served `OpenAPI` document
 /// those trees embed calls an event published to consumers only when the component publishes it
-/// (story:the-openapi-says-published-only-for-events-the-component-publishes).
+/// (story:the-openapi-says-published-only-for-events-the-component-publishes). Every row was
+/// re-recorded when a generated file stopped carrying the whole-model digest.
 const BEFORE_DERIVED_LABELS: &[(&str, &str)] = &[
-    ("aliased rust-workspace", "25 artifact(s) 6a81bf35ef2bd2bd"),
-    ("aliased rust-crate", "22 artifact(s) 6f0ccdb1da33f417"),
-    ("aliased web", "14 artifact(s) 6627557201bb4415"),
-    ("cross rust-workspace", "26 artifact(s) 770f3f265ebf830a"),
-    ("cross rust-crate", "23 artifact(s) a7e67d2bea825dae"),
-    ("cross web", "14 artifact(s) de37506b1332580c"),
-    ("cross go", "20 artifact(s) 4dd80d1455ddcfee"),
-    ("labelled rust-workspace", "25 artifact(s) f559214e5063ba8f"),
-    ("labelled rust-crate", "22 artifact(s) 68f87223dc858022"),
-    ("labelled web", "14 artifact(s) 6169b63ce86ae55c"),
-    ("labelled go", "19 artifact(s) f4381f4bbf934249"),
+    ("aliased rust-workspace", "25 artifact(s) 0626c5fa6e565804"),
+    ("aliased rust-crate", "22 artifact(s) e21f4f2c7c54536c"),
+    ("aliased web", "14 artifact(s) 47cc96128e6a6873"),
+    ("cross rust-workspace", "26 artifact(s) aefc684a0ed1cea0"),
+    ("cross rust-crate", "23 artifact(s) 49c82f1e48b48437"),
+    ("cross web", "14 artifact(s) b4577b7f32e9f17f"),
+    ("cross go", "20 artifact(s) 3e128242f542e0ee"),
+    ("labelled rust-workspace", "25 artifact(s) d951d0654c63c9c0"),
+    ("labelled rust-crate", "22 artifact(s) 82bd9e41b26d8423"),
+    ("labelled web", "14 artifact(s) 5be6472be683b0b6"),
+    ("labelled go", "19 artifact(s) b4358e2d6232f611"),
 ];
 
 #[test]

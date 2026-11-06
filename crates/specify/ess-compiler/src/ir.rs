@@ -1133,6 +1133,11 @@ pub struct ResolvedEach {
     /// model keeps its bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter: Option<Predicate>,
+    /// `repeated: last_wins` (ess/35, beyond10x/ess#748): the list may name one row more than
+    /// once, and its elements apply in list order, each to the row as the elements before it left
+    /// it. Left out of the document where absent, so every model without the key keeps its bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeated: Option<ess_domain::command::set_effects::Repeated>,
 }
 
 /// One entity field an `each:` entry fills from a member of the element (ess/23,

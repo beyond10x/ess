@@ -21,7 +21,7 @@ Write one file, `spec/system.yaml`. It describes a list of tasks: a task is adde
 a priority, and can be completed once.
 
 ```yaml ess-tutorial file=tasks/spec/system.yaml title="spec/system.yaml"
-format: ess/34
+format: ess/35
 system: tasks
 version: v1
 summary: A list of tasks that can be completed.
@@ -117,7 +117,7 @@ components:
     reached_by: network
 ```
 
-`format: ess/34` is the newest version of the specification language; the
+`format: ess/35` is the newest version of the specification language; the
 [format history](../reference/spec-versions.md) lists what each version admits. A few things in the
 file are required rather than stylistic:
 
@@ -152,7 +152,7 @@ hint. The [specification guide](../guides/write-a-specification.md) covers the r
 
 ```shell-session ess-tutorial
 $ ess generate --path . --kind openapi --out generated
-openapi/task-service.yaml — 18971 byte(s)
+openapi/task-service.yaml — 18807 byte(s)
 1 artifact(s), written to generated
 ```
 

@@ -1,6 +1,5 @@
 <!--
   generated from gatepass v1
-  model digest 7d021b6ebe1c4715096f165d6564389be0f46311f67d791ed748f627314d611c
   contract digest 2668f3034afb388a33d7add462e15a830b6010fbfe83101f1dd2526fa18d52ed
   do not edit: regenerate with `ess synthesize`
 -->

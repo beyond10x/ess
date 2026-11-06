@@ -40,12 +40,12 @@ as a browsable HTML site with its own stylesheet and diagram renderer:
 ```shell-session ess-tutorial checkout
 $ ess generate --path examples/billing --kind docs --out target/projections
 …
-docs/index.md — 4140 byte(s)
+docs/index.md — 3979 byte(s)
 …
 6 artifact(s), written to target/projections
 $ ess generate --path examples/billing --kind site --out target/site
 …
-index.html — 12262 byte(s)
+index.html — 12088 byte(s)
 …
 9 artifact(s), written to target/site
 ```

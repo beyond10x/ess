@@ -39,10 +39,13 @@ output of the whole set is one command.
 $ ess generate --path examples/billing --out target/projections
 ```
 
-Every artifact carries provenance: specification version, the digest of the resolved model, a
-separate digest of the model slice it derives from, and the regeneration command. The model digest
-is over the *model*, not the source files, so it does not move when a comment does — a digest that
-moves for no reason is one every reader learns to ignore.
+Every artifact carries provenance: the system and its specification version, the digest of the
+model slice it derives from, and the regeneration command. The digest is over the *model*, not the
+source files, so it does not move when a comment does — a digest that moves for no reason is one
+every reader learns to ignore. For the same reason a file does not carry the digest of the whole
+model: a change to one entity rewrites the pages, schemas and contracts that derive from it and
+leaves every other file byte for byte. The whole-model digest a generation ran from is recorded
+once, on each projection's owner in `.ess-output/state.json`.
 
 See [the billing example](https://github.com/beyond10x/ess/tree/main/examples/billing) for one command's source next to
 each generated document.

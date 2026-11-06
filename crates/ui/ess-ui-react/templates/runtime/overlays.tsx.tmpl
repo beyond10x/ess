@@ -8,22 +8,31 @@ import { isObject } from "./json";
 /** The overlays a page or shell holds, by name. */
 export type OverlayTable = Record<string, () => ReactNode>;
 
+/** One open overlay: its name, the params its opener passed, and what confirming it runs. */
+interface OpenOverlay {
+  name: string;
+  params: Record<string, unknown>;
+  opener?: Opener;
+}
+
 /**
- * Holds which of its overlays is open (one at a time) and renders it with its params. What an
- * opener passes is the row it ran on; the overlay's scope carries it as `opener_row`, which no
- * expression can name, so an overlay evaluates its own `params` (`row.<field>`) against it.
+ * Holds which of its overlays are open and renders each with its params. An overlay opened from
+ * inside another stacks on it: the one below stays open, and closing the top one returns to it.
+ * Opening an overlay that is already open brings it to the top with the new params. Closing an
+ * overlay closes the ones stacked on it too. What an opener passes is the row it ran on; the
+ * overlay's scope carries it as `opener_row`, which no expression can name, so an overlay
+ * evaluates its own `params` (`row.<field>`) against it.
  */
 export function OverlayHost(props: { overlays: OverlayTable; children?: ReactNode }): ReactNode {
   const parent = useScope();
-  const [open, setOpen] = useState<{ name: string; params: Record<string, unknown>; opener?: Opener } | null>(null);
-  const render = open ? props.overlays[open.name] : undefined;
+  const [stack, setStack] = useState<OpenOverlay[]>([]);
   const baseParams = isObject(parent.values.params) ? parent.values.params : {};
   return (
     <ScopeLayer
       actions={{
         open: (name: string, params?: Record<string, unknown>, opener?: Opener) => {
           if (name in props.overlays) {
-            setOpen({ name, params: params ?? {}, opener });
+            setStack((open) => [...open.filter((entry) => entry.name !== name), { name, params: params ?? {}, opener }]);
           } else {
             parent.open(name, params, opener);
           }
@@ -31,14 +40,23 @@ export function OverlayHost(props: { overlays: OverlayTable; children?: ReactNod
       }}
     >
       {props.children}
-      {open && render ? (
-        <ScopeLayer
-          values={{ params: { ...baseParams, ...open.params }, opener_row: open.params }}
-          actions={{ close: () => setOpen(null), confirmed: open.opener }}
-        >
-          {render()}
-        </ScopeLayer>
-      ) : null}
+      {stack.map((entry) => {
+        const render = props.overlays[entry.name];
+        const close = () =>
+          setStack((open) => {
+            const at = open.findIndex((candidate) => candidate.name === entry.name);
+            return at < 0 ? open : open.slice(0, at);
+          });
+        return render ? (
+          <ScopeLayer
+            key={entry.name}
+            values={{ params: { ...baseParams, ...entry.params }, opener_row: entry.params }}
+            actions={{ close, confirmed: entry.opener }}
+          >
+            {render()}
+          </ScopeLayer>
+        ) : null;
+      })}
     </ScopeLayer>
   );
 }

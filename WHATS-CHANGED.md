@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.89.0](#a-route-takes-a-bare-body-a-literal-segment-wins-and-an-each-write-takes-repeated-identities) | A route takes a bare body, a literal segment wins, and an each write takes repeated identities | capability | significant |
 | [0.88.0](#journeys-reach-every-control-a-page-declares-and-a-collection-draws-the-controls-it-declares) | Journeys reach every control a page declares, and a collection draws the controls it declares | capability | notable |
 | [0.87.0](#ui-values-render-in-their-declared-form-forms-show-their-help-and-synthesis-refuses-a-misplaced-not-found-once) | UI values render in their declared form, forms show their help, and synthesis refuses a misplaced not-found once | capability | notable |
 | [0.86.0](#ui-documents-label-their-values-show-a-toggles-state-page-by-size-and-report-a-refusal-where-it-is) | UI documents label their values, show a toggle's state, page by size and report a refusal where it is | capability | notable |
@@ -99,6 +100,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.89.0 — 2026-11-06
+
+### A route takes a bare body, a literal segment wins, and an each write takes repeated identities
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.89.0)
+
+A command route may take one input field as its bare request body, and a literal path segment wins over a variable one. From ess/35 an each write may name one row more than once, in list order. A generated file carries only its own slice digest; the model digest moves to ess-output-state/4, which older releases refuse.
 
 ## 0.88.0 — 2026-11-06
 

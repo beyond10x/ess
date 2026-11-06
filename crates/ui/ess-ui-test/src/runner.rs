@@ -599,10 +599,15 @@ impl<'d> Runner<'d> {
             self.app.keys(&key_spec(key));
             return Ok(());
         }
+        let segments: Vec<&str> = target.node.split('/').collect();
+        // A page header's help opens where it is drawn. The terminal draws it open, so there is
+        // nothing to press; a renderer that draws it closed opens it on this step.
+        if let ["pages", _, "header", "help"] = segments.as_slice() {
+            return self.require_no_overlay(target);
+        }
         if self.act_on_form_or_column(target)? {
             return Ok(());
         }
-        let segments: Vec<&str> = target.node.split('/').collect();
         let action = self.action(target)?;
         self.require_no_overlay(target)?;
         if let ["pages", _, "header", "actions", _] = segments.as_slice() {
@@ -982,6 +987,7 @@ impl<'d> Runner<'d> {
                     keys.join(", ")
                 ))
             }
+            Check::Checked(wanted) => self.expect_checked(target, *wanted),
             Check::State(wanted) => {
                 let section = match (target.is_section(), target.section()) {
                     (true, Some(section)) if target.row.is_none() => section,
@@ -1009,6 +1015,52 @@ impl<'d> Runner<'d> {
                 ))
             }
         }
+    }
+
+    /// `checked` at a form field `as: toggle`: the terminal draws the toggle `[x]`, `[ ]` or, unset, empty on the
+    /// field's line, recorded at the field's path; the browser's checkbox holds the same state.
+    fn expect_checked(&self, target: &Target, wanted: bool) -> Result<(), String> {
+        if let Some(reason) = crate::parity::checked(self.doc, target) {
+            return Err(reason);
+        }
+        let toggle = crate::parity::form_toggle(self.doc, target)
+            .ok_or_else(|| format!("{}: not a form toggle", target.written))?;
+        if target.overlay().is_some() {
+            self.require_overlay(target)?;
+        }
+        let screen = self.screen();
+        let region = screen.region(&target.written).ok_or_else(|| {
+            format!(
+                "{}: the field {} is not drawn",
+                target.written,
+                toggle.label.as_deref().unwrap_or(&toggle.name)
+            )
+        })?;
+        let text = region
+            .text
+            .clone()
+            .unwrap_or_else(|| screen.text_in(region));
+        let on = if text.ends_with("[[x]]") {
+            true
+        } else if text.ends_with("[[ ]]") || text.ends_with(" []") {
+            // A toggle with no value yet is drawn empty; the browser's checkbox is off.
+            false
+        } else {
+            return Err(format!(
+                "{}: the field does not show a toggle's state: {text}",
+                target.written
+            ));
+        };
+        if on == wanted {
+            return Ok(());
+        }
+        let state = |on: bool| if on { "on" } else { "off" };
+        Err(format!(
+            "expected {} to be {}; it is {}: {text}",
+            target.written,
+            state(wanted),
+            state(on)
+        ))
     }
 
     /// The text a node shows on its own cells: the screen for a page, a section's box, the open

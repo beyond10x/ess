@@ -5,6 +5,17 @@
 //! beside them is a second copy of the release tag that rewrites every artifact whenever the tag
 //! moves and nothing else does. When a generator's output actually differs, the output differs and
 //! the diff says so; when it does not, no reader is owed the name of the build.
+//!
+//! The same argument narrows the stamp a file carries to its own inputs. A file says which system
+//! and version it was generated from and the digest of the model slice it derives from — the
+//! [`ArtifactStamp`] — and not the whole model's digest. A whole-model digest in every file is a
+//! line that moves in every file whenever anything in the model moves, so one field added to one
+//! entity rewrote every generated file, and a review had to find the few files that changed for a
+//! reason among hundreds that changed for none. The whole-model digest is a fact about the run, and
+//! the run records it once: `ess generate` writes it into the `.ess-output` record of each owner it
+//! publishes. A file generated before this change carries a `model digest` line or a
+//! `source_digest` key; the reader still reads that profile, so such a file reads as stale (its
+//! bytes differ) rather than as unreadable.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -30,6 +41,10 @@ pub struct Provenance {
     /// Of the IR rather than of the source files, deliberately: two source trees that differ only in
     /// comments and file layout mean the same system, and a digest that changes when a comment does
     /// makes every reader ignore it.
+    ///
+    /// Data, never a stamp: a record that carries provenance as data (a conformance suite, a
+    /// synthesis plan, the documentation IR) keeps it, and no generated file renders it — see the
+    /// module documentation and [`Provenance::stamp`].
     pub source_digest: String,
     /// A digest of the model slice this artifact derives from — its contract with the model.
     ///
@@ -119,17 +134,42 @@ impl Provenance {
     }
 
     /// [`Provenance::lines`], naming the command that actually regenerates the artifact.
+    ///
+    /// The file's own inputs only: no whole-model digest (module documentation).
     pub fn lines_for(&self, regenerate: &str) -> Vec<String> {
         vec![
             format!(
                 "generated from {} {}",
                 self.system, self.specification_version
             ),
-            format!("model digest {}", self.source_digest),
             format!("contract digest {}", self.contract_digest),
             format!("do not edit: regenerate with `{regenerate}`"),
         ]
     }
+
+    /// What a generated file carries as structured data: the same facts as [`Provenance::lines`].
+    #[must_use]
+    pub fn stamp(&self) -> ArtifactStamp {
+        ArtifactStamp {
+            system: self.system.clone(),
+            specification_version: self.specification_version.clone(),
+            contract_digest: self.contract_digest.clone(),
+        }
+    }
+}
+
+/// The provenance a generated file carries as structured data — `info.x-ess-provenance` of an
+/// `OpenAPI` or `AsyncAPI` document, `x-ess-provenance` of a JSON Schema.
+///
+/// [`Provenance`] without its whole-model digest, for the reason the module documentation gives.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ArtifactStamp {
+    /// The system the artifact describes.
+    pub system: String,
+    /// The version of that system's specification.
+    pub specification_version: String,
+    /// The digest of the model slice the artifact derives from.
+    pub contract_digest: String,
 }
 
 impl fmt::Display for Provenance {
@@ -392,11 +432,9 @@ fn construct_content(ir: &EssIr, member: &EssSemanticRef) -> Option<serde_json::
     }
 }
 
-/// The two digests read back off a committed artifact.
+/// The digest read back off a committed artifact.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtifactDigests {
-    /// The model the artifact claims it was generated from.
-    pub source_digest: String,
     /// The slice the artifact claims it derives from.
     pub contract_digest: String,
 }
@@ -404,7 +442,11 @@ pub struct ArtifactDigests {
 impl Provenance {
     /// Reads a complete authoritative stamp, validating its digest profile and framing.
     ///
-    /// Recognizes the comment envelopes and structured attribution locations this crate writes.
+    /// Recognizes the comment envelopes and structured attribution locations this crate writes,
+    /// with or without the whole-model digest earlier releases wrote beside the contract digest:
+    /// a file written before the stamp narrowed still reads, and a record that carries
+    /// [`Provenance`] as data (a suite, a synthesis plan) carries it. When present it must be a
+    /// well-formed digest, and a comment and a structured copy must agree about it.
     /// Arbitrary model strings are never searched. Unsupported/malformed profiles, conflicting
     /// copies and duplicate mapping keys return `None`, which every verifier treats as owed.
     /// Bare hashes retain whole/legacy meaning; expected-slice comparison decides whether a

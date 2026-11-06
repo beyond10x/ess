@@ -417,8 +417,8 @@ fn body_root<'a>(
 /// route carries in its path, built from the same message. A command the binding does not route
 /// keeps its derived route, which carries nothing in its path.
 ///
-/// `Err` says why the document publishes no body: the route is encoded `query`, its path carries
-/// every input field, or the command has no input field.
+/// `Err` says why the document publishes no body: the route is encoded `query`, takes one input
+/// field as its bare body, its path carries every input field, or the command has no input field.
 fn bound_input<'a>(
     command: &'a ResolvedCommand,
     binding: &Binding,
@@ -438,15 +438,21 @@ fn bound_input<'a>(
         })
         .unwrap_or_default();
     let encoding = route
-        .and_then(|route| route.request)
-        .unwrap_or_default()
-        .encoding;
+        .and_then(|route| route.request.as_ref())
+        .map(|request| request.encoding)
+        .unwrap_or_default();
     if encoding == ess_http::Encoding::Query {
         return Err(
             "its route is encoded `query`, so every input field its path does not carry is in \
              the query string"
                 .to_owned(),
         );
+    }
+    if let Some(field) = crate::http::bare_body(command, route) {
+        return Err(format!(
+            "its route takes input field `{}` as its bare body, whose schema is the field's own",
+            field.name
+        ));
     }
     let body: Vec<&'a ResolvedField> = command
         .input

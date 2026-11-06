@@ -4,6 +4,9 @@
 //! `CommonJS` with `tsc` and run them under `node` against a hook-level stand-in for `react`
 //! (written into the scratch project, never into the generated output): the row action is
 //! clicked, the overlay opens, and the command it sends is read off the data adapter.
+//!
+//! The same harness holds the overlay host's stacking: an overlay opened from inside another
+//! stacks on it, and closing the top one returns to the one below.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -324,6 +327,110 @@ fn a_form_overlay_opened_from_a_row_sends_the_rows_value_as_its_param() {
   assert.strictEqual(sent.length, 1, `one command is sent: ${{JSON.stringify(sent)}}`);
   assert.strictEqual(sent[0].command, "objectives.ResolveAmbiguity");
   assert.strictEqual(sent[0].input.ambiguity_id, "amb-1", `the form sends ${{JSON.stringify(sent[0].input)}}`);
+}})().catch((error) => {{ console.error(error); process.exit(1); }});
+"#
+        ),
+    );
+}
+
+/// The page of `OBJECTIVES` with a form overlay whose own action opens a second overlay.
+const STACKED: &str = r"
+format: ess-ui/1
+app: objectives
+model: objectives.system
+placement_profile: fat
+shells:
+  app: {regions: {main: {kind: page_outlet}}}
+navigation:
+  home: objectives.list
+  sections: [{name: all, pages: [objectives.list]}]
+pages:
+  objectives.list:
+    kind: detail_page
+    title: Objectives
+    sections:
+      - name: list
+        component: collection
+        reads: {view: objectives.Open}
+        columns: [goal]
+        row_actions:
+          - {name: resolve, opens: resolve, label: Resolve}
+    overlays:
+      resolve:
+        kind: drawer
+        component: form
+        title: Resolve ambiguity
+        does: objectives.ResolveAmbiguity
+        params: {ambiguity_id: row.ambiguity_id}
+        fields: [resolution]
+        actions: [{name: explain, opens: explain, label: Explain}]
+      explain:
+        kind: dialog
+        component: confirm
+        title: Explain ambiguity
+        does: objectives.ExplainAmbiguity
+";
+
+/// An overlay opened from inside another stacks on it: both stay drawn, the newer one last, and
+/// closing it returns to the one below with its params. Before, the
+/// host kept one overlay, so opening the second closed the first.
+#[test]
+fn an_overlay_opened_from_another_stacks_on_it_and_closing_it_returns_to_the_one_below() {
+    let project = generate("stacked", STACKED);
+    build(&project, &["pages/ObjectivesList.tsx"]);
+    node(
+        &project,
+        "stacked",
+        &format!(
+            r#"{HARNESS}
+const overlays = (nodes) => {{
+  const found = [];
+  const walk = (list) => {{
+    for (const node of list) {{
+      if (typeof node !== "object") continue;
+      if (node.props["data-ui-path"] && node.props.role === "dialog") found.push(node.props["data-ui-path"]);
+      walk(node.children);
+    }}
+  }};
+  walk(nodes);
+  return found;
+}};
+(async () => {{
+  const first = open("Resolve");
+  assert.deepStrictEqual(overlays(first), ["pages/objectives.list/overlays/resolve"]);
+  const explain = find(first, (n) => n.tag === "button" && text(n) === "Explain");
+  assert(explain, "the resolve form offers its Explain action");
+  explain.props.onClick();
+  const stacked = React.__renderTree(tree);
+  assert.deepStrictEqual(
+    overlays(stacked),
+    ["pages/objectives.list/overlays/resolve", "pages/objectives.list/overlays/explain"],
+    "the explain overlay opens on top of the resolve form, which stays open",
+  );
+  const closes = [];
+  const collect = (list) => {{
+    for (const node of list) {{
+      if (typeof node !== "object") continue;
+      if (node.tag === "button" && node.props["aria-label"] === "Close") closes.push(node);
+      collect(node.children);
+    }}
+  }};
+  collect(stacked);
+  assert.strictEqual(closes.length, 2, "each open overlay has its own close button");
+  closes[1].props.onClick();
+  const back = React.__renderTree(tree);
+  assert.deepStrictEqual(
+    overlays(back),
+    ["pages/objectives.list/overlays/resolve"],
+    "closing the top overlay returns to the one below",
+  );
+  const form = find(back, (n) => n.tag === "form");
+  assert(form, "the resolve form is still there");
+  form.props.onSubmit({{ preventDefault() {{}} }});
+  await settle();
+  assert.strictEqual(sent.length, 1, `one command is sent: ${{JSON.stringify(sent)}}`);
+  assert.strictEqual(sent[0].command, "objectives.ResolveAmbiguity");
+  assert.strictEqual(sent[0].input.ambiguity_id, "amb-1", `the form keeps its params: ${{JSON.stringify(sent[0].input)}}`);
 }})().catch((error) => {{ console.error(error); process.exit(1); }});
 "#
         ),

@@ -50,7 +50,9 @@ fn conflicting_locations_and_every_malformed_profile_are_refused() {
 
 #[test]
 fn complete_comments_do_not_admit_an_unknown_profile_via_body_markers() {
-    let encoded: serde_json::Value = serde_json::from_str(&schema()).unwrap();
+    let mut encoded: serde_json::Value = serde_json::from_str(&schema()).unwrap();
+    // A generated file stamps no whole-model digest; `Provenance` as data carries one.
+    encoded["x-ess-provenance"]["source_digest"] = serde_json::json!("a".repeat(64));
     let provenance: Provenance =
         serde_json::from_value(encoded["x-ess-provenance"].clone()).unwrap();
     for header in [provenance.html_comment(), provenance.commented("//")] {

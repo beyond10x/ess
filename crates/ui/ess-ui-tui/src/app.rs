@@ -3555,15 +3555,19 @@ impl App {
             })
     }
 
-    /// `path` scoped under `row` when it lies inside a collection's `row_actions`:
-    /// `<collection>/rows/<key>/row_actions/…`, the key being the section's row key
-    /// ([`ess_ui::Section::row_key`]: its read's `key`, else its `live.match`), else `id`, as the
-    /// view and `ess ui test` key the rows.
+    /// `path` scoped under `row` when it lies inside a collection's `row_actions` or a graph
+    /// editor's `node_actions` or `edge_actions`: `<container>/rows/<key>/row_actions/…`, the key
+    /// being the section's row key ([`ess_ui::Section::row_key`]: its read's `key`, else its
+    /// `live.match`), else `id`, as the view and `ess ui test` key the rows. The generated React
+    /// project scopes a graph node's actions under `rows/<key>` too.
     fn row_scoped(&self, path: &NodePath, row: &Value) -> Option<String> {
         let segments = path.segments();
-        let at = segments
-            .iter()
-            .position(|segment| segment == "row_actions")?;
+        let at = segments.iter().position(|segment| {
+            matches!(
+                segment.as_str(),
+                "row_actions" | "node_actions" | "edge_actions"
+            )
+        })?;
         let container = &segments[..at];
         let key_field = match container {
             [pages, _, sections, section] if pages == "pages" && sections == "sections" => self
@@ -4647,6 +4651,7 @@ pub(crate) fn columns_of(collection: &ess_ui::Collection, rows: &[Value]) -> Vec
                         visible: None,
                         binds: None,
                         label_from: None,
+                        suggests: None,
                         labels: None,
                         note: None,
                         help: None,
@@ -4669,6 +4674,7 @@ fn plain_field(name: &str, field_as: Option<&str>) -> Field {
         visible: None,
         binds: None,
         label_from: None,
+        suggests: None,
         labels: None,
         note: None,
         help: None,

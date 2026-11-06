@@ -63,6 +63,12 @@ fn generated_filter_matches_the_rust_predicate_and_preserves_raw_rows() {
         "row.group == and",
         "row.group in [one,]",
         "row.count == 1e0",
+        "row.group contains 'ON'",
+        "row.group contains 'o two'",
+        "row.group contains state.pick",
+        "row.count contains 1",
+        "not (row.text contains fal)",
+        "row.group contains",
     ];
     let scope: ess_yaml::Value = ess_yaml::from_str(
         "{row: {group: one, count: 1, text: 'false'}, state: {pick: null, groups: [one]}}",

@@ -30,6 +30,9 @@ pub enum Operator {
     NotEqual,
     /// Membership in a literal list.
     In,
+    /// Text search: the left side, read as text, holds every whitespace-separated word of the
+    /// right side, ignoring case. A right side with no words keeps every row.
+    Contains,
     /// Boolean conjunction.
     And,
     /// Boolean disjunction.
@@ -101,6 +104,7 @@ impl Predicate {
                         .evaluate(resolve)
                         .as_sequence()
                         .is_some_and(|items| items.iter().any(|item| equal(&left, item))),
+                    Operator::Contains => contains(&left, &right.evaluate(resolve)),
                 };
                 Value::Bool(value)
             }
@@ -146,6 +150,13 @@ fn text(value: &Value) -> String {
         Value::Mapping(_) => "[object Object]".to_owned(),
         Value::Tagged(value) => text(&value.value),
     }
+}
+
+fn contains(text_value: &Value, search: &Value) -> bool {
+    let haystack = text(text_value).to_lowercase();
+    text(search)
+        .split_whitespace()
+        .all(|word| haystack.contains(&word.to_lowercase()))
 }
 
 fn equal(left: &Value, right: &Value) -> bool {
@@ -299,6 +310,8 @@ impl Parser<'_> {
             Operator::NotEqual
         } else if self.word("in") {
             Operator::In
+        } else if self.word("contains") {
+            Operator::Contains
         } else {
             return Some(left);
         };
@@ -333,7 +346,7 @@ impl Parser<'_> {
             }
             Token::String(value) => Some(Predicate::Literal(Value::String(value))),
             Token::Word(word) => {
-                if ["and", "or", "not", "in"].contains(&word.as_str()) {
+                if ["and", "or", "not", "in", "contains"].contains(&word.as_str()) {
                     return None;
                 }
                 let number_like = word.starts_with(|c: char| c.is_ascii_digit() || c == '-');

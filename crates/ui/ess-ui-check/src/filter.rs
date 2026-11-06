@@ -73,6 +73,19 @@ pub(crate) fn run(document: &Document, model: Option<&Model>, sink: &mut Sink) {
                 }
             }
         }
+        // A tags input's suggestions read is a listing read: its filter hides the rows it excludes.
+        if let NodeRef::Field(field) = located.node {
+            if let Some(suggests) = &field.suggests {
+                read(
+                    document,
+                    model,
+                    &suggests.reads,
+                    &located.path.child("suggests").child("reads"),
+                    true,
+                    sink,
+                );
+            }
+        }
         if let NodeRef::NavSection(nav) = located.node {
             if let NavPages::Dynamic(entries) = &nav.pages {
                 if let Some(filter) = &entries.filter {

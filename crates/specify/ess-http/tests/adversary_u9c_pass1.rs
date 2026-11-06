@@ -154,7 +154,7 @@ fn every_flat_kind_compiles_on_a_delete_query_and_round_trips() {
         .expect("routed");
     assert_eq!(route.method, Method::Delete);
     assert_eq!(
-        route.request.map(|request| request.encoding),
+        route.request.as_ref().map(|request| request.encoding),
         Some(Encoding::Query)
     );
     let json = http.to_canonical_json();
@@ -243,7 +243,7 @@ routes:
         .route(&Operation::Command("catalog.items.FindItems".into()))
         .expect("routed");
     assert_eq!(
-        route.request.map(|request| request.encoding),
+        route.request.as_ref().map(|request| request.encoding),
         Some(Encoding::Query)
     );
 }

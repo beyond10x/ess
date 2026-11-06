@@ -1866,6 +1866,21 @@ pub(crate) fn pin<'a>(ir: &EssIr, entity: &EntityHandle, filter: &'a Predicate) 
 /// storage enumerates no rows by a selector.
 fn affects(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutcome) -> Result<(), String> {
     const OWED: &str = "effects on filtered rows (`affects:`)";
+    // An `each:` entry stays owed. Where any entry of the branch admits repeated identities
+    // (ess/35, beyond10x/ess#748) the obligation names the key, whichever entry is owed first, so
+    // the implementor applies that list in order.
+    if outcome.affects.iter().any(|affect| {
+        affect
+            .each
+            .as_ref()
+            .is_some_and(|each| each.repeated.is_some())
+    }) {
+        return Err(format!(
+            "{OWED}: an `each:` entry whose list may name one row more than once, its elements \
+             applied in list order, each to the row as the earlier ones left it \
+             (`repeated: last_wins`)"
+        ));
+    }
     let Some(subject) = &outcome.subject else {
         return Err(OWED.to_owned());
     };

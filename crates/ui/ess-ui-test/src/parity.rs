@@ -49,6 +49,26 @@ fn body_at<'d>(document: &'d Document, path: &str) -> Option<(Held<'d>, bool)> {
     Some((held, own))
 }
 
+/// Whether the node at `path` is a graph editor.
+fn is_graph(document: &Document, path: &str) -> bool {
+    document.nodes().into_iter().any(|located| {
+        located.path.to_string() == path
+            && matches!(
+                located.node,
+                NodeRef::Section(ess_ui::Section {
+                    body: Body::Composite(Composite::GraphEditor(_)),
+                    ..
+                }) | NodeRef::Overlay(ess_ui::Overlay {
+                    body: Body::Composite(Composite::GraphEditor(_)),
+                    ..
+                }) | NodeRef::Node(ess_ui::Node {
+                    body: Body::Composite(Composite::GraphEditor(_)),
+                    ..
+                })
+            )
+    })
+}
+
 /// Whether `collection` draws as a table (no `style`, or `table`).
 fn is_table(collection: &Collection) -> bool {
     matches!(
@@ -68,9 +88,15 @@ fn is_column(rest: &[&str]) -> bool {
 pub(crate) fn unrendered(document: &Document, target: &Target) -> Option<String> {
     let path = &target.written;
     // A row action's inline confirm is drawn where its action is: under the row that opened it.
+    // So is a graph editor's node or edge action's.
     if let (None, Some((_, overlay))) = (&target.row, target.overlay()) {
-        if let Some((container, _)) = overlay.split_once("/row_actions/") {
-            if matches!(body_at(document, container), Some((Held::Collection(_), _))) {
+        let scoped = ["/row_actions/", "/node_actions/", "/edge_actions/"]
+            .iter()
+            .find_map(|actions| overlay.split_once(actions));
+        if let Some((container, _)) = scoped {
+            if matches!(body_at(document, container), Some((Held::Collection(_), _)))
+                || is_graph(document, container)
+            {
                 return Some(format!(
                     "{path}: a row action's confirm is drawn under the row that opened it; \
                      address it under its row, as {container}/rows/<key>/{}",
@@ -208,7 +234,9 @@ pub(crate) fn text(document: &Document, target: &Target) -> Option<String> {
         }
     }
     match segments.as_slice() {
-        ["pages", _, "header"] | ["pages", _, "sections", _, "children", _] => None,
+        ["pages", _, "header"]
+        | ["pages", _, "header", "help"]
+        | ["pages", _, "sections", _, "children", _] => None,
         ["pages", page, "header", "actions", name] => document
             .pages
             .get(*page)
@@ -231,6 +259,63 @@ pub(crate) fn text(document: &Document, target: &Target) -> Option<String> {
             }
         }
     }
+}
+
+/// Why a `checked` at `target` is refused, if it is: it is not a form toggle ([`form_toggle`]).
+pub(crate) fn checked(document: &Document, target: &Target) -> Option<String> {
+    form_toggle(document, target).is_none().then(|| {
+        format!(
+            "{}: `checked` is held by a form field `as: toggle` of a section's or an overlay's \
+             own form",
+            target.written
+        )
+    })
+}
+
+/// The form toggle a `checked` at `target` reads: a field `as: toggle` of a section's or an
+/// overlay's own form, directly or in one of its groups or tabs. Both renderers draw it at its
+/// path: the terminal on the field's line, the generated app as a checkbox in the field's label.
+pub(crate) fn form_toggle(document: &Document, target: &Target) -> Option<ess_ui::Field> {
+    if target.row.is_some() {
+        return None;
+    }
+    let segments: Vec<&str> = target.node.split('/').collect();
+    let [owner @ .., "fields", _] = segments.as_slice() else {
+        return None;
+    };
+    // A field of a group or a tab belongs to the form that holds the group or tab.
+    let form = if let [form @ .., "groups" | "tabs", _] = owner {
+        form
+    } else {
+        owner
+    };
+    let form = form.join("/");
+    let nodes = document.nodes();
+    let own_form = nodes.iter().any(|located| {
+        located.path.to_string() == form
+            && matches!(
+                located.node,
+                NodeRef::Section(ess_ui::Section {
+                    body: Body::Composite(Composite::Form(_)),
+                    ..
+                }) | NodeRef::Overlay(ess_ui::Overlay {
+                    body: Body::Composite(Composite::Form(_)),
+                    ..
+                })
+            )
+    });
+    if !own_form {
+        return None;
+    }
+    nodes.into_iter().find_map(|located| match located.node {
+        NodeRef::Field(field)
+            if located.path.to_string() == target.node
+                && field.field_as.as_deref() == Some("toggle") =>
+        {
+            Some(field.clone())
+        }
+        _ => None,
+    })
 }
 
 /// The form field a `choose` at `target` picks in: the target is a field drawn `as: choice`, or

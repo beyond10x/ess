@@ -495,7 +495,8 @@ export function HeaderFrame(props: {
   filters?: string;
   switchTo?: PageLink[];
   live?: string[];
-  help?: { text?: string; link?: string };
+  /** The page header's help, drawn at its own path (`<header>/help`) so a test opens and reads it. */
+  help?: { "data-ui-path"?: string; text?: string; link?: string };
   actions?: ReactNode;
   metrics?: ReactNode;
 }): ReactNode {
@@ -527,7 +528,7 @@ export function HeaderFrame(props: {
       ) : null}
       {props.metrics ? <div className="ui-header-metrics">{props.metrics}</div> : null}
       {props.help ? (
-        <p className="ui-help">
+        <p className="ui-help" data-ui-path={props.help["data-ui-path"]}>
           {props.help.text}
           {props.help.link ? (
             <>
