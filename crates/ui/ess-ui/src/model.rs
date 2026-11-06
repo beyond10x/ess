@@ -28,6 +28,11 @@ pub const COMPOSITE_KINDS: &[&str] = &[
     "references",
 ];
 
+/// The nine primitive kinds, in the order the schema lists them.
+pub const PRIMITIVE_KINDS: &[&str] = &[
+    "text", "badge", "icon", "button", "link", "input", "toggle", "image", "divider",
+];
+
 /// A binding expression. Written as a string; a bare number or boolean is read as its text.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Expr(pub String);
@@ -547,7 +552,7 @@ pub struct NavEntry {
 
 /// One route, with its page kind merged in.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct Page {
     /// Template the page starts from.
     pub kind: String,
@@ -579,7 +584,8 @@ pub struct Page {
     pub state: BTreeMap<String, State>,
     /// Title, total, actions, live status.
     pub header: Option<Header>,
-    /// Regions of the page, in order.
+    /// Regions of the page, in order; none on a page that is a host slot.
+    #[serde(default)]
     pub sections: Vec<Section>,
     /// Drawers and dialogs of the page.
     #[serde(default)]
@@ -592,6 +598,32 @@ pub struct Page {
     /// Gaps the retrofit could not resolve.
     #[serde(default)]
     pub unmapped: Vec<String>,
+    /// The host slot the page is, when it carries `host`: the host draws the page's content in
+    /// place of sections; its header and overlays are still the document's.
+    #[serde(skip)]
+    pub host: Option<HostSlot>,
+}
+
+impl<'de> Deserialize<'de> for Page {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mapping = Mapping::deserialize(deserializer)?;
+        let (host, rest) = HostSlot::split_from(mapping).map_err(D::Error::custom)?;
+        let written = rest.contains_key("sections");
+        let mut page = Self::deserialize(Value::Mapping(rest)).map_err(D::Error::custom)?;
+        match &host {
+            None if !written => return Err(D::Error::missing_field("sections")),
+            Some(slot) if !page.sections.is_empty() => {
+                return Err(D::Error::custom(format!(
+                    "host slot `{}` is the whole page, which draws no `sections`: remove them, or \
+                     make one section the slot",
+                    slot.host
+                )))
+            }
+            _ => {}
+        }
+        page.host = host;
+        Ok(page)
+    }
 }
 
 /// A page template, merged over the kinds it extends.
@@ -995,14 +1027,85 @@ pub enum Body {
     Widget(WidgetUse),
     /// One of the nine primitives.
     Primitive(Primitive),
+    /// A place the host application draws with its own component.
+    Host(HostSlot),
+}
+
+/// The keys of a host slot. A node holding `host` is a slot, read from these keys.
+const HOST_KEYS: &[&str] = &["host", "reason", "stands_in_for", "reads", "commands"];
+
+/// A host slot: a declared place where the host application supplies its own component. ESS
+/// does not draw it and never counts it as covered by the specification. It stands where a node
+/// may stand, at one of five scopes: a page, a section, an overlay, a tab (the tab's `form`
+/// node) or a field; its scope is its node path.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostSlot {
+    /// The component name the host registers; unique in the document.
+    pub host: String,
+    /// Why the generator cannot draw it; never empty.
+    #[serde(default)]
+    pub reason: String,
+    /// The generator item the slot replaces: a member of [`COMPOSITE_KINDS`], one of
+    /// [`PRIMITIVE_KINDS`], or `none`.
+    #[serde(default)]
+    pub stands_in_for: String,
+    /// The view the host component reads, written as a composite's `reads`.
+    pub reads: Option<Reads>,
+    /// The commands the host component sends, by name.
+    #[serde(default)]
+    pub commands: Vec<String>,
+}
+
+impl HostSlot {
+    /// Reads a slot from its keys, refusing one without a `reason` or a `stands_in_for`.
+    fn from_mapping(mapping: Mapping) -> Result<Self, String> {
+        let host = match mapping.get("host") {
+            Some(Value::String(host)) => host.clone(),
+            other => return Err(format!("a host slot's `host` is a name, not {other:?}")),
+        };
+        let slot = from_mapping::<Self>(mapping)
+            .map_err(|message| format!("host slot `{host}`: {message}"))?;
+        if slot.reason.trim().is_empty() {
+            return Err(format!(
+                "host slot `{host}` needs a non-empty `reason`: why the generator cannot draw it"
+            ));
+        }
+        if slot.stands_in_for.is_empty() {
+            return Err(format!(
+                "host slot `{host}` names no `stands_in_for`: the composite or primitive it \
+                 replaces, or `none`"
+            ));
+        }
+        Ok(slot)
+    }
+
+    /// The slot written in `mapping` beside a construct's own keys (a page's or a field's), and
+    /// the construct's keys: `None` and the mapping unchanged when it carries no `host`.
+    fn split_from(mapping: Mapping) -> Result<(Option<Self>, Mapping), String> {
+        if !mapping.contains_key("host") {
+            return Ok((None, mapping));
+        }
+        let (slot, rest) = split(mapping, HOST_KEYS);
+        Ok((Some(Self::from_mapping(slot)?), rest))
+    }
 }
 
 impl Body {
-    /// The read of a composite body, where it has one; a widget's reads are in its expanded body.
+    /// The read of a composite body, where it has one; a widget's reads are in its expanded body,
+    /// and a host slot's reads are the host's own.
     pub fn reads(&self) -> Option<&Reads> {
         match self {
             Self::Composite(composite) => composite.reads(),
-            Self::Widget(_) | Self::Primitive(_) => None,
+            Self::Widget(_) | Self::Primitive(_) | Self::Host(_) => None,
+        }
+    }
+
+    /// The host slot this body is, where it is one.
+    pub fn host(&self) -> Option<&HostSlot> {
+        match self {
+            Self::Host(slot) => Some(slot),
+            Self::Composite(_) | Self::Widget(_) | Self::Primitive(_) => None,
         }
     }
 
@@ -1016,6 +1119,18 @@ impl Body {
     }
 
     fn from_mapping(rest: Mapping, allow_primitive: bool) -> Result<Self, String> {
+        if let Some(host) = rest.get("host") {
+            let host = host.as_str().unwrap_or_default();
+            for key in ["component", "primitive"] {
+                if rest.contains_key(key) {
+                    return Err(format!(
+                        "host slot `{host}` stands in for a generated node and takes no \
+                         `{key}`: name what it replaces in `stands_in_for`"
+                    ));
+                }
+            }
+            return HostSlot::from_mapping(rest).map(Self::Host);
+        }
         let component = rest.get("component").cloned();
         let has_primitive = rest.contains_key("primitive");
         match (component, has_primitive) {
@@ -2237,7 +2352,7 @@ pub struct Divider {
 
 /// One input of a form or one column of a collection.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(remote = "Self", deny_unknown_fields)]
 pub struct Field {
     /// Field of the command input or view row.
     pub field: String,
@@ -2269,6 +2384,19 @@ pub struct Field {
     pub note: Option<String>,
     /// Help text or link shown with the input, or on its column header.
     pub help: Option<Help>,
+    /// The host slot the field is, when it carries `host`: the host draws the input.
+    #[serde(skip)]
+    pub host: Option<HostSlot>,
+}
+
+impl<'de> Deserialize<'de> for Field {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mapping = Mapping::deserialize(deserializer)?;
+        let (host, rest) = HostSlot::split_from(mapping).map_err(D::Error::custom)?;
+        let mut field = Self::deserialize(Value::Mapping(rest)).map_err(D::Error::custom)?;
+        field.host = host;
+        Ok(field)
+    }
 }
 
 impl Field {

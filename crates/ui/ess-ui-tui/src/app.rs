@@ -1427,7 +1427,7 @@ impl App {
     fn node_reads(&self, at: &NodePath, body: &Body, ui: &str, ctx: &Ctx<'_>, out: &mut Wanted) {
         match body {
             Body::Widget(widget) => self.nodes_reads(at, "body", &widget.body, ui, ctx, out),
-            Body::Primitive(_) => {}
+            Body::Primitive(_) | Body::Host(_) => {}
             Body::Composite(composite) => {
                 if let Some(reads) = body_reads(body) {
                     out.reads.push(self.request(reads, ctx));
@@ -4655,6 +4655,7 @@ pub(crate) fn columns_of(collection: &ess_ui::Collection, rows: &[Value]) -> Vec
                         labels: None,
                         note: None,
                         help: None,
+                        host: None,
                     })
                     .collect()
             })
@@ -4678,6 +4679,7 @@ fn plain_field(name: &str, field_as: Option<&str>) -> Field {
         labels: None,
         note: None,
         help: None,
+        host: None,
     }
 }
 

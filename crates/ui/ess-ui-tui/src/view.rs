@@ -818,6 +818,8 @@ impl App {
                 }
             }
             Body::Composite(composite) => self.composite_lines(composite, place),
+            // `profile::check` refuses a document with a host slot before anything is drawn.
+            Body::Host(_) => Vec::new(),
         }
     }
 

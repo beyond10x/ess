@@ -22,6 +22,7 @@ mod classify;
 mod enums;
 mod expr;
 mod filter;
+mod hosts;
 mod model;
 mod names;
 mod raw;
@@ -158,6 +159,8 @@ pub const CHECKS: &[Check] = &[
     schema_check("suggests_needs_tags", Severity::Error),
     schema_check("toggle_state_unknown", Severity::Warning),
     schema_check("checked_unreadable", Severity::Warning),
+    schema_check("host_slots", Severity::Error),
+    schema_check("hosts_registered", Severity::Error),
     // The loader refused the document for a reason no other check names.
     rule("document_loads"),
     // `layers`: a node stands where its layer may not.
@@ -337,6 +340,9 @@ pub struct Options {
     /// `no_file_upload`): every construct using one must degrade to something other than
     /// `refuse`.
     pub lacks: Vec<String>,
+    /// The host component names the host registers (`--hosts`): each must be declared by a host
+    /// slot of the document. `None` checks no registration.
+    pub hosts: Option<Vec<String>>,
 }
 
 /// A check that could not run: an unreadable document, or a model that does not compile. A
@@ -378,6 +384,30 @@ pub struct CheckArgs {
     /// A capability the target renderer lacks (repeatable), such as `no_file_upload`.
     #[arg(long = "lacks", value_name = "CAPABILITY")]
     pub lacks: Vec<String>,
+    /// A file of the host component names the host application registers, one per line (`#`
+    /// starts a comment); a name no host slot of the document declares is refused.
+    #[arg(long, value_name = "FILE")]
+    pub hosts: Option<PathBuf>,
+}
+
+/// The names a `--hosts` file lists: one per line, trimmed, blank lines and `#` comments skipped.
+fn registered_hosts(file: &Path) -> Result<Vec<String>, CheckError> {
+    let text = std::fs::read_to_string(file)
+        .map_err(|error| CheckError(format!("cannot read {}: {error}", file.display())))?;
+    Ok(text
+        .lines()
+        .map(|line| line.split_once('#').map_or(line, |(name, _)| name).trim())
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect())
+}
+
+/// The [`Options`] `args` asks for.
+fn options(args: &CheckArgs) -> Result<Options, CheckError> {
+    Ok(Options {
+        lacks: args.lacks.clone(),
+        hosts: args.hosts.as_deref().map(registered_hosts).transpose()?,
+    })
 }
 
 /// Checks a document file, optionally against an ESS specification.
@@ -425,6 +455,7 @@ pub fn check_source(
             filter::run(&document, model, &mut sink);
             style::run(&document, &mut sink);
             raw::run(text, &document, &mut sink);
+            hosts::run(&document, options, &mut sink);
             if let Some(model) = model {
                 model.check(&document, &mut sink);
                 names::run(model, &document, &mut sink);
@@ -435,9 +466,7 @@ pub fn check_source(
 }
 
 fn report(args: &CheckArgs) -> Result<Report, CheckError> {
-    let options = Options {
-        lacks: args.lacks.clone(),
-    };
+    let options = options(args)?;
     check_with(&args.path, args.model.as_deref(), &options)
 }
 
@@ -451,9 +480,7 @@ pub fn exit_code(args: &CheckArgs) -> Result<u8, CheckError> {
 pub fn run_with_model(args: &CheckArgs, model: Option<&Model>) -> Result<ExitCode, CheckError> {
     let text = std::fs::read_to_string(&args.path)
         .map_err(|error| CheckError(format!("cannot read {}: {error}", args.path.display())))?;
-    let options = Options {
-        lacks: args.lacks.clone(),
-    };
+    let options = options(args)?;
     let base = args.path.parent().unwrap_or_else(|| Path::new("."));
     let report = check_source(
         &text,
