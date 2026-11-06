@@ -875,6 +875,13 @@ impl<'d> Gen<'d> {
                 ("key", quoted(label_from.key.as_ref())),
             ])
         });
+        // A tags input's suggestions read; its params evaluate in the form's scope.
+        let suggests = field.suggests.as_ref().and_then(|suggests| {
+            Some(ts::object([
+                ("reads", Some(Self::reads(&suggests.reads)?)),
+                ("value", quoted(suggests.value.as_ref())),
+            ]))
+        });
         // What a column or record shows for a value; a form input shows its own options.
         let labels = (!in_form)
             .then(|| field.value_labels())
@@ -900,6 +907,7 @@ impl<'d> Gen<'d> {
             ("binds", expr(field.binds.as_ref())),
             ("labelFrom", label_from),
             ("labels", labels),
+            ("suggests", suggests),
             ("note", quoted(field.note.as_ref())),
             ("choice", choice),
             ("help", help(field.help.as_ref())),

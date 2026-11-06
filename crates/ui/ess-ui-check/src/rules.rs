@@ -888,6 +888,16 @@ impl Checker<'_> {
                 self.body(sink, path, &node.body);
             }
             NodeRef::Action(action) => self.action(sink, path, action),
+            NodeRef::Field(field) => {
+                if let Some(suggests) = &field.suggests {
+                    suggests_needs_tags(sink, path, field.field_as.as_deref());
+                    self.reads(
+                        sink,
+                        &path.child("suggests").child("reads"),
+                        &suggests.reads,
+                    );
+                }
+            }
             NodeRef::Channel(_) => {
                 let name = path.segments().last().map_or("", String::as_str);
                 if !self.fixtures.scripts.contains(name) {
@@ -1282,6 +1292,18 @@ fn toggle_state(sink: &mut Sink, path: &NodePath, action: &Action) {
             "this toggle runs a command but names no state, so every renderer draws it off; \
              write `checked: <expr>`, or bind exactly one input as `not <expr>` over a path \
              from row, params, state, shell or args",
+        );
+    }
+}
+
+/// `suggests_needs_tags`: only an `as: tags` input offers suggestions and keeps typed values, so
+/// `suggests` on any other field would be read by no renderer.
+fn suggests_needs_tags(sink: &mut Sink, path: &NodePath, field_as: Option<&str>) {
+    if field_as != Some("tags") {
+        sink.push(
+            "suggests_needs_tags",
+            path,
+            "`suggests` offers values to a tags input; write `as: tags` or drop `suggests`",
         );
     }
 }

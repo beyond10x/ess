@@ -577,7 +577,7 @@ impl Model {
     }
 
     /// The fields and values the document reads from rows and inputs the model types: a
-    /// `group_by`, `group_order`, an aggregate's `field`, a `label_from`, a form choice's fixed
+    /// `group_by`, `group_order`, an aggregate's `field`, a `label_from`, a `suggests` `value`, a form choice's fixed
     /// options, and a choice's `value` and `label` (beyond10x/ess#351, #358, #364, #330, #328).
     fn values(&self, document: &Document, sink: &mut Sink) {
         for located in document.nodes() {
@@ -594,6 +594,16 @@ impl Model {
                             let at = path.child("label_from").child(key);
                             row_field(sink, &at, &qualified, &view.fields, name);
                         }
+                    }
+                }
+                // A written `value` names a row field; without one a plain-string row is the value.
+                let suggests = field.suggests.as_ref();
+                let written =
+                    suggests.and_then(|s| Some((s.reads.view.as_ref()?, s.value.as_ref()?)));
+                if let Some((name, value)) = written {
+                    if let Some((qualified, view)) = self.view(name) {
+                        let at = path.child("suggests").child("value");
+                        row_field(sink, &at, &qualified, &view.fields, value);
                     }
                 }
                 continue;
@@ -1144,6 +1154,18 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                         path.child("label_from"),
                         view(&label_from.view, Bound::Nothing),
                     );
+                }
+                if let Some(reads) = field.suggests.as_ref().map(|suggests| &suggests.reads) {
+                    if let Some(name) = &reads.view {
+                        push(
+                            path.child("suggests").child("reads"),
+                            Kind::View {
+                                name,
+                                bound: Bound::Read(Read::of(reads)),
+                                body: false,
+                            },
+                        );
+                    }
                 }
             }
             _ => {}
