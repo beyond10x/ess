@@ -60,6 +60,22 @@ pub(crate) fn affects_sentences(ir: &EssIr, outcome: &ResolvedOutcome) -> Vec<In
     out
 }
 
+/// The sentence an `each:` entry admitting repeated identities adds (ess/35, beyond10x/ess#748);
+/// nothing for any other entry, which reads as it always did.
+fn repeated_sentence(each: &ess_compiler::ir::ResolvedEach) -> Vec<Inline> {
+    if each.repeated.is_none() {
+        return Vec::new();
+    }
+    vec![
+        Inline::text(
+            " The elements apply in list order, so a row named more than once takes the last \
+             element (",
+        ),
+        Inline::code("repeated: last_wins"),
+        Inline::text(")."),
+    ]
+}
+
 fn affect_sentence(ir: &EssIr, affect: &ResolvedAffect) -> Vec<Inline> {
     let entity = ir.entity(&affect.entity);
     let filter = affect
@@ -96,6 +112,7 @@ fn affect_sentence(ir: &EssIr, affect: &ResolvedAffect) -> Vec<Inline> {
                     "is removed; an element naming no row is skipped.",
                 )),
             }
+            out.extend(repeated_sentence(each));
             return out;
         }
         let mut out = vec![
@@ -124,6 +141,7 @@ fn affect_sentence(ir: &EssIr, affect: &ResolvedAffect) -> Vec<Inline> {
         }
         out.extend(written);
         out.push(Inline::text("; a row no element names is left as it is."));
+        out.extend(repeated_sentence(each));
         return out;
     }
     // From ess/23 an entry may remove its rows (beyond10x/ess#452).

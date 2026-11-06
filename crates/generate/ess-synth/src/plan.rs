@@ -961,10 +961,17 @@ fn affect_clause(ir: &EssIr, affect: &ResolvedAffect) -> String {
         };
         // From ess/27 (beyond10x/ess#596): only the elements the filter selects, and a held row
         // moved or removed rather than written.
-        let selected = each
+        let mut selected = each
             .filter
             .as_ref()
             .map_or_else(String::new, |filter| format!(" where `{filter}`"));
+        // From ess/35 (beyond10x/ess#748): a list that may name one row more than once.
+        if each.repeated.is_some() {
+            selected.push_str(
+                ", applied in list order so a row named more than once takes the last element \
+                 (`repeated: last_wins`)",
+            );
+        }
         if affect.deletes {
             return format!(
                 ", removes, beside its subject, for each element of `input.{}`{selected}, the held \

@@ -3133,10 +3133,16 @@ fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
                 .collect();
             // From ess/27 (beyond10x/ess#596) the line also names the elements the entry acts on
             // and what it does to a held row; an entry without either reads as it always did.
-            let selected = each
+            let mut selected = each
                 .filter
                 .as_ref()
                 .map_or_else(String::new, |filter| format!(" where `{filter}`"));
+            // From ess/35 (beyond10x/ess#748) the line names a list that may repeat a row; the
+            // clause alone between two revisions is a widening or a narrowing
+            // (`CommandChange::relation`).
+            if each.repeated.is_some() {
+                selected.push_str(crate::change::REPEATED_CLAUSE);
+            }
             let done = match (&affect.moves, affect.deletes) {
                 (_, true) => "deletes the row if held".to_owned(),
                 (Some(transition), false) => format!(

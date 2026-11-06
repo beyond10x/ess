@@ -1878,6 +1878,19 @@ fn affects(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutcome) -> 
     let held = ir.entity(&subject.entity);
     let mut entities: Vec<&EntityHandle> = Vec::new();
     for affect in &outcome.affects {
+        // An `each:` entry stays owed; one admitting repeated identities (ess/35,
+        // beyond10x/ess#748) names the key, so the implementor applies the list in order.
+        if affect
+            .each
+            .as_ref()
+            .is_some_and(|each| each.repeated.is_some())
+        {
+            return Err(format!(
+                "{OWED}: an `each:` entry whose list may name one row more than once, its \
+                 elements applied in list order and the last naming a row winning \
+                 (`repeated: last_wins`)"
+            ));
+        }
         let Some(filter) = &affect.filter else {
             return Err(OWED.to_owned());
         };

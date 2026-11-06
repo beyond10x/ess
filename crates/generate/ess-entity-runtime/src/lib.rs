@@ -1779,6 +1779,25 @@ impl Projector<'_> {
                 );
                 refused = true;
             }
+            // A list applied in order, the last element naming a row winning (ess/35,
+            // beyond10x/ess#748), is named apart: it is the order the operation would have to
+            // keep.
+            for (index, affect) in outcome.affects.iter().enumerate() {
+                if affect
+                    .each
+                    .as_ref()
+                    .is_some_and(|each| each.repeated.is_some())
+                {
+                    self.diagnostic(
+                        LoweringCode::SetEffectUnsupported,
+                        format!("{path}.affects[{index}].each.repeated"),
+                        "an `each:` entry whose list may name one row more than once, its \
+                         elements applied in list order (ess/35, `repeated: last_wins`), has no \
+                         Entity Runtime definition; an entity-core operation acts on the one \
+                         instance its request names",
+                    );
+                }
+            }
         }
         refused
     }

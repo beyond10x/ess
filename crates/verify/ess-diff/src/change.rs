@@ -1217,6 +1217,38 @@ fn undeclared_fields_relation(after: ess_domain::types::UndeclaredFields) -> Sem
     }
 }
 
+/// What an `each:` entry's line in [`CommandChange::OutcomeSetEffectChanged`] carries where the
+/// entry declares `repeated: last_wins` (ess/35, beyond10x/ess#748).
+pub(crate) const REPEATED_CLAUSE: &str =
+    ", a row named more than once taking the last element (`repeated: last_wins`)";
+
+/// How a branch's set-effect lines moving relates the revisions: where the only difference is
+/// [`REPEATED_CLAUSE`] gained by some `each:` lines, the entries admit every list they admitted and
+/// lists naming one row more than once, a widening; where it is only that clause lost, a narrowing;
+/// anything else has no direction.
+fn repeated_relation(before: &[String], after: &[String]) -> SemanticRelation {
+    if before.len() != after.len() {
+        return SemanticRelation::Changed;
+    }
+    let gained = |from: &String, to: &String| {
+        !from.contains(REPEATED_CLAUSE) && to.replacen(REPEATED_CLAUSE, "", 1) == *from
+    };
+    let moved: Vec<(&String, &String)> = before
+        .iter()
+        .zip(after)
+        .filter(|(from, to)| from != to)
+        .collect();
+    if moved.is_empty() {
+        SemanticRelation::Changed
+    } else if moved.iter().all(|(from, to)| gained(from, to)) {
+        SemanticRelation::Expanded
+    } else if moved.iter().all(|(from, to)| gained(to, from)) {
+        SemanticRelation::Narrowed
+    } else {
+        SemanticRelation::Changed
+    }
+}
+
 impl TypeChange {
     /// The subtype word, which is also the document's `kind`.
     pub const fn kind(&self) -> &'static str {
@@ -2859,11 +2891,15 @@ impl CommandChange {
         }
     }
 
-    /// Disclosure restrictions and a response opened or closed (`ess/24`) have a set direction;
-    /// other command edits remain changed.
+    /// Disclosure restrictions and a response opened or closed (`ess/24`) have a set direction, and
+    /// so has an `each:` entry coming to admit, or no longer admitting, a list that names one row
+    /// more than once (`repeated: last_wins`, ess/35); other command edits remain changed.
     pub fn relation(&self) -> SemanticRelation {
         if let Self::ResponseUndeclaredFieldsChanged { after, .. } = self {
             return undeclared_fields_relation(*after);
+        }
+        if let Self::OutcomeSetEffectChanged { before, after, .. } = self {
+            return repeated_relation(before, after);
         }
         if let Self::OutcomeOneTimeResponseChanged { before, after, .. } = self {
             if before.iter().all(|field| after.contains(field)) {
